@@ -351,6 +351,41 @@ export const BUILTIN_PIPELINES = [
     // one sheet (plot-dwf). The two asks are the cap of a file.
     needs: { weight: 'heavy', timeMs: 120_000, workers: { vision: 2 } },
   }),
+  // The PDF Agent: it reads a PDF drawing the router called a scan, an
+  // isometric, an other drawing or unsure, page by page, into the tabs
+  // Title block and Sheet list (./pkg/pdf-sheet-read). The Reader
+  // `drawing-pdf` makes the file's database; the core gives the step the
+  // kind stored in it, and the Reader's options for the title block box.
+  pkgAgent({
+    id: 'pdf-sheet-read',
+    name: 'PDF sheet read',
+    description:
+      'Reads the title block and the tags, line numbers and sheet numbers of a PDF drawing that is a scan, an isometric, another drawing or unsure, into the tabs Title block and Sheet list. It runs after an upload and on demand, and asks a vision model at most 11 times for a file.',
+    version: '1.0.0',
+    match: { ext: ['pdf'] },
+    options: {
+      more_fields: {
+        type: 'words',
+        label: 'More title block fields',
+        help: 'Fields of this site to read from the title block, one word each; an underscore is a space (PAINT_SYSTEM).',
+        default: [],
+        maxItems: 14,
+        maxChars: 16,
+      },
+      pages: {
+        type: 'number',
+        label: 'Pages to read',
+        help: 'The pages of a file to read, from page 1. Page 1 has two asks, each page after it one.',
+        default: 10,
+        min: 1,
+        max: 10,
+      },
+    },
+    produces: { tabs: ['Title block', 'Sheet list'] },
+    // One step and no model in it: the pictures of up to 10 pages, drawn
+    // in the parser's pdfjs child. The 11 asks are the cap of a file.
+    needs: { weight: 'heavy', timeMs: 240_000, workers: { vision: 11 } },
+  }),
 ] as const;
 
 /** A built-in, with its id as a literal. */

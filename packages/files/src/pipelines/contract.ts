@@ -45,15 +45,42 @@ export const PIPELINE_ASK_HINT_MAX = 300;
 /** The largest picture of one ask, in bytes. */
 export const PIPELINE_ASK_PICTURE_MAX_BYTES = 10 * 1024 * 1024;
 
+/** The list part of an ask (docs/pipelines.md, "The list part of an
+ *  ask"): the classes of an item, the most items of one answer, and the
+ *  longest text of one item, in characters. An item of another class is
+ *  `other`. */
+export const PIPELINE_ASK_LIST_CLASSES = ['tag', 'line number', 'sheet', 'other'] as const;
+export type PipelineAskListClass = (typeof PIPELINE_ASK_LIST_CLASSES)[number];
+export const PIPELINE_ASK_LIST_MAX = 400;
+export const PIPELINE_ASK_LIST_TEXT_MAX = 120;
+/** The highest page number an ask may name. */
+export const PIPELINE_ASK_PAGE_MAX = 10_000;
+
 /** One field an ask wants: its name (the column of the Agent's tab) and a
  *  short hint for the model. */
 export type PipelineAskField = { name: string; hint?: string };
 /** The input of an Agent's picture ask: a picture the step wrote in its job
  *  folder (a file name, as a write call's picture) and the fields to read
- *  from it. The core writes the question; a step gives no free text. */
-export type PictureAskInput = { picture: string; fields: readonly PipelineAskField[] };
-/** The answer of an ask: a text or null for each field, and the model. */
-export type PipelineAskOutput = { values: Record<string, string | null>; model: string };
+ *  from it. The core writes the question; a step gives no free text.
+ *  `list: true` asks also for the list of the identifiers on the picture
+ *  (the Agent's second tab); `page` is the page of the file the picture is
+ *  of, for the list's rows. */
+export type PictureAskInput = {
+  picture: string;
+  fields: readonly PipelineAskField[];
+  list?: true;
+  page?: number;
+};
+/** One item of an ask's list: the text as the picture shows it, and its
+ *  class. */
+export type PipelineAskListItem = { text: string; class: PipelineAskListClass };
+/** The answer of an ask: a text or null for each field, the list when the
+ *  ask asked for one, and the model. */
+export type PipelineAskOutput = {
+  values: Record<string, string | null>;
+  list?: readonly PipelineAskListItem[];
+  model: string;
+};
 
 export type PipelineSource = 'builtin' | 'curated' | 'own';
 

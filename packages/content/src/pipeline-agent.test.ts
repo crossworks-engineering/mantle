@@ -4,14 +4,20 @@
  * a model's answer, and the rows of the tab with a counting stand-in for
  * the paid ask.
  */
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { PipelineCall, PipelineCallAnswer, PipelineManifest } from '@mantle/files';
 import {
   AGENT_HASH_COLUMN,
+  AGENT_TEXT_MAX_CHARS,
+  ASK_FORMAT,
   AgentAskError,
   agentRows,
+  agentTextOf,
+  askAnswerOf,
   askCapOf,
   askHashOf,
+  askListOf,
   askQuestionOf,
   askValuesOf,
   checkAsks,
@@ -269,17 +275,18 @@ describe('agentRows: the tab is the store of paid answers', () => {
     const p = paid(() => ({ ok: false, error: 'not_available', reason: 'day_cap' }));
     const out = await agentRows('Title block', asks(), [], p.fn);
     expect(p.seen).toEqual(['sheet']);
-    expect(out).toEqual({ sheet: null, made: 0, reused: 0, stopped: 'day_cap' });
+    expect(out).toEqual({ sheet: null, listSheet: null, made: 0, reused: 0, stopped: 'day_cap' });
   });
 
   it('with no ask function (a test, a dry run) no call is made', async () => {
     const out = await agentRows('Title block', asks(), []);
-    expect(out).toEqual({ sheet: null, made: 0, reused: 0, stopped: 'no_ask' });
+    expect(out).toEqual({ sheet: null, listSheet: null, made: 0, reused: 0, stopped: 'no_ask' });
   });
 
   it('a step with no ask is done: no tab, nothing stopped', async () => {
     expect(await agentRows('Title block', [], [], paid().fn)).toEqual({
       sheet: null,
+      listSheet: null,
       made: 0,
       reused: 0,
     });
@@ -288,5 +295,368 @@ describe('agentRows: the tab is the store of paid answers', () => {
   it('the hash column is the last one', async () => {
     const out = await agentRows('Title block', asks(), [], paid().fn);
     expect(out.sheet!.columns.at(-1)!.name).toBe(AGENT_HASH_COLUMN);
+  });
+});
+
+describe('the list part of an ask', () => {
+  const LISTER = {
+    ...AGENT,
+    needs: { weight: 'light', workers: { vision: 3 } },
+    produces: { tabs: ['Title block', 'Sheet list'] },
+  } as const;
+  const listCall = (key: string, picture: string, page?: number) =>
+    call(key, picture, {
+      input: { picture, fields: FIELDS, list: true, ...(page !== undefined ? { page } : {}) },
+    });
+
+  it('an ask with no list part hashes as it did before the list part', () => {
+    // The form of before, written out: the rows of iso-title-block stay good.
+    const before = createHash('sha256')
+      .update(
+        JSON.stringify([
+          ASK_FORMAT,
+          'vision',
+          AGENT.id,
+          AGENT.version,
+          FIELDS.map((f) => [f.name, f.hint ?? '']),
+        ]),
+      )
+      .update('\0')
+      .update(PNG('a'))
+      .digest('hex');
+    expect(askHashOf(AGENT, 'vision', FIELDS, PNG('a'))).toBe(before);
+    expect(askHashOf(AGENT, 'vision', FIELDS, PNG('a'), true)).not.toBe(before);
+  });
+
+  it('checkAsks takes the list part and the page', () => {
+    const asks = checkAsks(
+      LISTER,
+      [listCall('page-1', 'a.png', 1), call('corner', 'b.png')],
+      pictures,
+    );
+    expect(asks.map((a) => [a.key, a.list, a.page])).toEqual([
+      ['page-1', true, 1],
+      ['corner', false, null],
+    ]);
+    expect(asks[0]!.hash).toBe(askHashOf(LISTER, 'vision', FIELDS, PNG('a'), true));
+  });
+
+  const refused: [string, (PipelineCall & { call: 'worker' })[], object][] = [
+    ['a list part from an Agent with one tab', [listCall('1', 'a.png')], AGENT],
+    [
+      'a list part that is not true',
+      [call('1', 'a.png', { input: { picture: 'a.png', fields: FIELDS, list: 'yes' } })],
+      LISTER,
+    ],
+    ['a page of 0', [listCall('1', 'a.png', 0)], LISTER],
+    ['a page that is no whole number', [listCall('1', 'a.png', 1.5)], LISTER],
+    ['a page past the cap', [listCall('1', 'a.png', 10_001)], LISTER],
+  ];
+  it.each(refused)('refuses %s', (_n, calls, pipeline) => {
+    expect(() => checkAsks(pipeline as Parameters<typeof checkAsks>[0], calls, pictures)).toThrow(
+      AgentAskError,
+    );
+  });
+
+  it('the question of a list ask asks for "fields" and "list"', () => {
+    const q = askQuestionOf(FIELDS, true);
+    expect(q).toContain('into "fields"');
+    expect(q).toContain('into "list"');
+    expect(askQuestionOf(FIELDS)).not.toContain('"list"');
+  });
+
+  it('askListOf checks each item: a text, a known class, no doubles, a cap', () => {
+    expect(
+      askListOf([
+        { text: '  FV-1001 ', class: 'Tag' },
+        { text: 'FV-1001', class: 'tag' },
+        { text: 'FV-1001', class: 'other' },
+        { text: 42, class: 'sheet' },
+        { text: 'a\nb', class: 'line number' },
+        { text: '', class: 'tag' },
+        { text: null, class: 'tag' },
+        { text: 'X-1', class: 'pump' },
+        { text: 'X-2' },
+        ['not', 'an', 'object'],
+      ]),
+    ).toEqual([
+      { text: 'FV-1001', class: 'tag' },
+      { text: 'FV-1001', class: 'other' },
+      { text: '42', class: 'sheet' },
+      { text: 'a b', class: 'line number' },
+      { text: 'X-1', class: 'other' },
+      { text: 'X-2', class: 'other' },
+    ]);
+    expect(askListOf('not a list')).toEqual([]);
+    expect(askListOf(undefined)).toEqual([]);
+  });
+
+  it('a list answer the token cap cut: the whole fields and the whole items before the cut', () => {
+    const whole = JSON.stringify({
+      fields: { 'Line number': '6-P-101', Revision: 'B' },
+      list: [
+        { text: 'P-101', class: 'tag' },
+        { text: 'P-102', class: 'tag' },
+      ],
+    });
+    const cut = `${whole.slice(0, whole.lastIndexOf('{'))}{"text":"P-1`;
+    expect(askAnswerOf(cut, FIELDS, true)).toEqual({
+      values: { 'Line number': '6-P-101', Revision: 'B' },
+      list: [{ text: 'P-101', class: 'tag' }],
+      cut: true,
+    });
+    // A whole answer is not marked.
+    expect(askAnswerOf(whole, FIELDS, true)).not.toHaveProperty('cut');
+    // An ask with no list part reads no cut answer.
+    expect(askAnswerOf('{"Line number":"6-P', FIELDS, false)).toBeNull();
+    expect(askAnswerOf('{"fields":{"Line', FIELDS, true)).toBeNull();
+  });
+
+  it('a list answer with the fields at the top, with no "fields" key: read there', () => {
+    expect(
+      askAnswerOf('{"Line number":"6-P-101","list":[{"text":"P-1","class":"tag"}]}', FIELDS, true),
+    ).toEqual({
+      values: { 'Line number': '6-P-101', Revision: null },
+      list: [{ text: 'P-1', class: 'tag' }],
+    });
+  });
+
+  it('a field name may not take a fixed column or another field in any case', () => {
+    const named = (names: string[]) =>
+      call('1', 'a.png', { input: { picture: 'a.png', fields: names.map((name) => ({ name })) } });
+    expect(() => checkAsks(AGENT, [named(['key'])], pictures)).toThrow(/taken/);
+    expect(() => checkAsks(AGENT, [named(['INPUT HASH'])], pictures)).toThrow(/taken/);
+    expect(() => checkAsks(AGENT, [named(['Title', 'title'])], pictures)).toThrow(/taken/);
+  });
+
+  it('askAnswerOf reads the fields of a list ask from "fields"', () => {
+    const text = JSON.stringify({
+      fields: { 'Line number': '6-P-101' },
+      list: [{ text: 'P-101', class: 'tag' }],
+      'Line number': 'not here',
+    });
+    expect(askAnswerOf(text, FIELDS, true)).toEqual({
+      values: { 'Line number': '6-P-101', Revision: null },
+      list: [{ text: 'P-101', class: 'tag' }],
+    });
+    expect(askAnswerOf('{"Line number":"L"}', FIELDS, false)).toEqual({
+      values: { 'Line number': 'L', Revision: null },
+    });
+    expect(askAnswerOf('{"fields":"no"}', FIELDS, true)).toEqual({
+      values: { 'Line number': null, Revision: null },
+      list: [],
+    });
+    expect(askAnswerOf('no json', FIELDS, true)).toBeNull();
+  });
+
+  describe('agentRows with a list tab', () => {
+    const LIST = { tab: 'Sheet list', stored: [] as Record<string, unknown>[] };
+    const asks = () =>
+      checkAsks(
+        LISTER,
+        [listCall('page-1', 'a.png', 1), call('corner', 'b.png'), listCall('page-2', 'b.png', 2)],
+        pictures,
+      );
+    const paid = (fail?: (a: AgentAsk) => PipelineCallAnswer | null) => {
+      const seen: string[] = [];
+      const fn = async (a: AgentAsk): Promise<PipelineCallAnswer> => {
+        seen.push(a.key);
+        const no = fail?.(a);
+        if (no) return no;
+        return {
+          ok: true,
+          output: {
+            values: { 'Line number': `L-${a.key}`, Revision: 'A' },
+            ...(a.list
+              ? {
+                  list: [
+                    { text: `T-${a.key}`, class: 'tag' },
+                    { text: 'S-1', class: 'sheet' },
+                  ],
+                }
+              : {}),
+            model: 'made-up-model',
+          },
+        };
+      };
+      return { fn, seen };
+    };
+    type Sheet = NonNullable<Awaited<ReturnType<typeof agentRows>>['sheet']>;
+    const storedOf = (sheet: Sheet | null) =>
+      (sheet?.rows ?? []).map((r) =>
+        // A tab read back gives every cell as text.
+        Object.fromEntries(
+          sheet!.columns.map((c, i) => [c.name, r[i] === null ? null : String(r[i])]),
+        ),
+      );
+
+    it('a first run writes one list row for each item, with the key, the page and the hash of its ask', async () => {
+      const out = await agentRows('Title block', asks(), [], paid().fn, LIST);
+      expect(out.listSheet!.columns.map((c) => [c.name, c.type])).toEqual([
+        ['Key', 'text'],
+        ['Page', 'number'],
+        ['Text', 'text'],
+        ['Class', 'text'],
+        ['Input hash', 'text'],
+      ]);
+      const a = asks();
+      expect(out.listSheet!.rows).toEqual([
+        ['page-1', 1, 'T-page-1', 'tag', a[0]!.hash],
+        ['page-1', 1, 'S-1', 'sheet', a[0]!.hash],
+        ['page-2', 2, 'T-page-2', 'tag', a[2]!.hash],
+        ['page-2', 2, 'S-1', 'sheet', a[2]!.hash],
+      ]);
+      expect(out.sheet!.rows).toHaveLength(3);
+    });
+
+    it('a second run pays nothing and gives the same list rows, from the hash', async () => {
+      const first = await agentRows('Title block', asks(), [], paid().fn, LIST);
+      const p = paid();
+      const second = await agentRows('Title block', asks(), storedOf(first.sheet), p.fn, {
+        tab: 'Sheet list',
+        stored: storedOf(first.listSheet),
+      });
+      expect(p.seen).toEqual([]);
+      expect(second.listSheet).toEqual(first.listSheet);
+      expect(second.sheet).toEqual(first.sheet);
+    });
+
+    it('a stop keeps the older list rows of the stopped ask', async () => {
+      const first = await agentRows('Title block', asks(), [], paid().fn, LIST);
+      // A new picture of page 2, and the day cap at its ask.
+      const next = checkAsks(
+        LISTER,
+        [listCall('page-1', 'a.png', 1), call('corner', 'b.png'), listCall('page-2', 'c.png', 2)],
+        new Map([...pictures, ['c.png', PNG('c')]]),
+      );
+      const out = await agentRows(
+        'Title block',
+        next,
+        storedOf(first.sheet),
+        paid(() => ({ ok: false, error: 'not_available', reason: 'day_cap' })).fn,
+        { tab: 'Sheet list', stored: storedOf(first.listSheet) },
+      );
+      expect(out).toMatchObject({ made: 0, reused: 2, stopped: 'day_cap' });
+      expect(out.listSheet!.rows.filter((r) => r[0] === 'page-2')).toEqual([
+        ['page-2', 2, 'T-page-2', 'tag', asks()[2]!.hash],
+        ['page-2', 2, 'S-1', 'sheet', asks()[2]!.hash],
+      ]);
+    });
+
+    it('two asks with the same picture: ONE call, and a run again never adds the list rows up', async () => {
+      // Pages 1 and 2 are equal: the same picture, so the same hash.
+      const equal = () =>
+        checkAsks(
+          LISTER,
+          [listCall('page-1', 'a.png', 1), listCall('page-2', 'a.png', 2)],
+          pictures,
+        );
+      const p = paid();
+      const first = await agentRows('Title block', equal(), [], p.fn, LIST);
+      expect(p.seen).toEqual(['page-1']);
+      expect(first).toMatchObject({ made: 1, reused: 1 });
+      expect(first.listSheet!.rows.map((r) => [r[0], r[1], r[2]])).toEqual([
+        ['page-1', 1, 'T-page-1'],
+        ['page-1', 1, 'S-1'],
+        ['page-2', 2, 'T-page-1'],
+        ['page-2', 2, 'S-1'],
+      ]);
+      let rows = first;
+      for (let run = 0; run < 3; run += 1) {
+        rows = await agentRows('Title block', equal(), storedOf(rows.sheet), paid().fn, {
+          tab: 'Sheet list',
+          stored: storedOf(rows.listSheet),
+        });
+      }
+      expect(rows.listSheet!.rows).toEqual(first.listSheet!.rows);
+      expect(rows.sheet!.rows).toEqual(first.sheet!.rows);
+    });
+
+    it('a stop keeps the older rows of two equal pages, each under its own key and page', async () => {
+      const equal = (picture: string) =>
+        checkAsks(
+          LISTER,
+          [
+            listCall('page-1', 'b.png', 1),
+            listCall('page-2', picture, 2),
+            listCall('page-3', picture, 3),
+          ],
+          new Map([...pictures, ['c.png', PNG('c')]]),
+        );
+      const first = await agentRows('Title block', equal('a.png'), [], paid().fn, LIST);
+      // Every picture is new now (c.png), and the day cap stops at page 2.
+      let rows = first;
+      for (let run = 0; run < 3; run += 1) {
+        rows = await agentRows(
+          'Title block',
+          equal('c.png'),
+          storedOf(rows.sheet),
+          paid(() => ({ ok: false, error: 'not_available', reason: 'day_cap' })).fn,
+          { tab: 'Sheet list', stored: storedOf(rows.listSheet) },
+        );
+        expect(rows.stopped).toBe('day_cap');
+      }
+      expect(rows.listSheet!.rows.map((r) => [r[0], r[1], r[2]])).toEqual(
+        first.listSheet!.rows.map((r) => [r[0], r[1], r[2]]),
+      );
+    });
+
+    it('an Agent with no list tab gives no list sheet', async () => {
+      const out = await agentRows(
+        'Title block',
+        checkAsks(AGENT, [call('1', 'a.png')], pictures),
+        [],
+        paid().fn,
+      );
+      expect(out.listSheet).toBeNull();
+    });
+  });
+});
+
+describe('agentTextOf: the text of the tabs for a plain search', () => {
+  const sheet = (name: string, columns: string[], rows: (string | number | null)[][]) => ({
+    name,
+    columns: columns.map((c) => ({ name: c, type: 'text' as const })),
+    rows,
+  });
+
+  it('one line a row, the cells with a value, no key, model, hash or page, no line two times', () => {
+    const text = agentTextOf([
+      sheet(
+        'Title block',
+        ['Key', 'Drawing number', 'Revision', 'Model', 'Input hash'],
+        [
+          ['page-1', 'DWG-001', 'B', 'm', 'h1'],
+          ['page-1-title-block', 'DWG-001', 'B', 'm', 'h2'],
+          ['page-2', null, null, 'm', 'h3'],
+        ],
+      ),
+      null,
+      sheet(
+        'Sheet list',
+        ['Key', 'Page', 'Text', 'Class', 'Input hash'],
+        [
+          ['page-1', 1, 'P-101', 'tag', 'h1'],
+          ['page-2', 2, 'P-101', 'tag', 'h3'],
+        ],
+      ),
+    ]);
+    expect(text).toBe(
+      'Title block\nDrawing number: DWG-001; Revision: B\n\nSheet list\nText: P-101; Class: tag',
+    );
+    expect(agentTextOf([null])).toBe('');
+  });
+
+  it('is cut at its cap', () => {
+    const rows = Array.from({ length: 5_000 }, (_, i) => [
+      'k',
+      1,
+      `TAG-${i}-${'x'.repeat(20)}`,
+      'tag',
+      'h',
+    ]);
+    expect(
+      agentTextOf([sheet('Sheet list', ['Key', 'Page', 'Text', 'Class', 'Input hash'], rows)]),
+    ).toHaveLength(AGENT_TEXT_MAX_CHARS);
   });
 });

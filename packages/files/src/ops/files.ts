@@ -102,6 +102,8 @@ export const BYTE_DERIVED_DATA_KEYS = [
   // The parser failure count on these bytes (keyed by their sha256, so a
   // stale one never matches; dropped with the rest all the same).
   'parser_failures',
+  // The text of the tabs of the Agents (docs/pipelines.md, "Agents").
+  'agent_text',
 ] as const;
 
 /**

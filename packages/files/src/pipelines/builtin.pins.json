@@ -7,5 +7,6 @@
   "drawing-cad@1.0.0": "789f8b02a979d0aa",
   "drawing-raster@1.0.0": "013571e0b60a75f1",
   "site-tags@1.0.0": "5d61a195892d9b4a",
-  "iso-title-block@1.0.0": "b416b0c6751a2808"
+  "iso-title-block@1.0.0": "b416b0c6751a2808",
+  "pdf-sheet-read@1.0.0": "d165d1deede656f5"
 }

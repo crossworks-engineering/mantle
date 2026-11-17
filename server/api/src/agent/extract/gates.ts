@@ -691,7 +691,7 @@ export async function admitForExtraction(
           // content the owner just un-indexed, and search would keep serving
           // them. A fresh upload has none; the delete is a no-op there.
           await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
-          // Strip the content CACHES too (`- 'text' - 'content'`), not just the
+          // Strip the content CACHES too (`- 'text' - 'agent_text' - 'content'`), not just the
           // chunks: `search_tsv` is a generated column over the whole data blob,
           // so extracted text left in `data` keeps matching keyword search —
           // exactly the leak this mode promises not to have (2026-08-22 audit).
@@ -700,7 +700,7 @@ export async function admitForExtraction(
           await tx
             .update(nodes)
             .set({
-              data: sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'text' - 'content' - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(
+              data: sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'text' - 'agent_text' - 'content' - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(
                 {
                   summary: spine,
                   summary_model: 'metadata-only',

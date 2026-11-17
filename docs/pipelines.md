@@ -860,7 +860,8 @@ TIF scan, an SMF raster or an HP-GL plot, into the tab `Title block`.
 
 In the manifest an Agent is a pipeline, not a router, with `needs.workers`
 (`roleOf`). It has `input: 'file'` and one tab in
-`produces.tabs`. It has no `match.after`: it matches by extension only. Its
+`produces.tabs`, and may have a second: its list tab (see "The list part of
+an ask" below). It has no `match.after`: it matches by extension only. Its
 tab lives in the database a Reader made, so a file with no database is
 skipped (`no-database`).
 
@@ -890,6 +891,13 @@ with no model. So a file the step cannot read costs nothing.
 
 There is no parser job after a paid call. No code of the pipeline runs after
 a paid call: the step cannot see an answer, change it, or ask again.
+
+**A rule for a step: fewer asks replace rows.** The core writes the rows of
+the asks a step returns, and the tab gets no others. So a step that leaves
+out an ask it meant to make (a picture it could not draw) loses the paid
+row of that ask. Such a step ends `failed` instead: nothing is asked or
+written. `pdf-sheet-read` does. `iso-title-block` does not yet: a picture
+its helper did not write is left out (an open point).
 
 **The ask.** A step asks with a call of this shape:
 
@@ -1028,6 +1036,157 @@ shows what one file would ask, and asks nothing.
   and that call counts in the day count.
 - A copy of a file is asked again, and so is a file switched to private and
   back: its database is new, so no answered row is there to take.
+
+## The PDF sheet read
+
+The second built-in Agent, `pdf-sheet-read` (owner's word, 2026-11-17: "One
+Agent, list answer"). It reads a PDF drawing page by page into two tabs:
+`Title block` (the fields) and `Sheet list` (the tags, line numbers and
+sheet numbers on the sheet). The package is
+`packages/files/src/pipelines/pkg/pdf-sheet-read/step.ts`.
+
+**Which files.** The extension `pdf`, and the kind the PDF router stored in
+the file's database: `scan`, `isometric`, `unsure` or `other_drawing`. The
+core gives the step that kind (`request.kind`, read from the File tab by
+`storedPdfOf`, for a file type that has a router). A file of any other kind
+(a P&ID with a text layer, a document) is `not_mine`: one parser job, no
+call. The Reader `drawing-pdf` makes the database; a PDF with no database
+is skipped `no-database`, as for every Agent.
+
+**The pictures.** The step draws them in the parser's pdfjs child
+(`job.pdfPictures`, the same child as the Reader's pictures; no PyMuPDF), with
+no model:
+
+| Ask                  | Picture                                   | Fields | List |
+| -------------------- | ----------------------------------------- | ------ | ---- |
+| `page-1-title-block` | the title block corner of page 1, 300 DPI | yes    | no   |
+| `page-1`             | page 1, whole, 200 DPI, 4800 px at most   | yes    | yes  |
+| `page-2` and on      | each page after it, whole, as page 1      | yes    | yes  |
+
+The corner goes first: a failed ask stops the asks after it, and the list
+of a dense page is the ask most likely to fail. The step counts the pages
+of the file (pdfjs, in the job), so it draws only pages that are there.
+
+The corner is the box of the Reader's options in force
+(`title_block_width_mm`, `title_block_height_mm`, "The title block box").
+The core gives the step the Reader's options as its state
+(`state.readerOptions`), so a site that set its box gets the same crop with
+no option of the Agent. A picture is a PNG, or a JPEG (quality 90) when the
+PNG is past 5 MB (`PageWindow.maxBytes`, `packages/files/src/rasterize.ts`):
+11 pictures stay under the parser's answer budget of 64 MB, and each under
+the 10 MB of an ask. A picture still past 5 MB is left out, with a warning.
+
+**A picture that is not drawn.** When a page that is there gives no picture
+(the time ran out, the child was stopped, pdfjs cannot draw it), or the
+file does not open, the step ends `failed`: nothing is asked and nothing is
+written, so the paid rows of a run before stay as they are. The trace says
+which page. A page pdfjs can never draw keeps the Agent off that file until
+an Admin lowers the option `pages`. That option is on the box: it cuts the
+later pages of every file on their next run, so it is a last remedy.
+
+Why the whole page and no tiles: in the P0 score of 20 site PDFs, the old
+whole-page read (144 DPI; about 110 on an A0 under its pixel cap) found 24 of
+28 line numbers, and the sketch read in pieces found 6 of 28. 28 of the 29
+pages of that set (pages 1 to 10) are A4 or A3: at 200 DPI they are 2,370 to
+3,402 pixels long, under the cap of 4,800. The one A0 page gets 108 DPI, as
+the old read. Tiles stay out until a score after this build says the whole
+page is too coarse.
+
+**The fields.** Drawing number, Title, Revision, Date, Sheet, Line number,
+Unit or area, Project, Drawn by, Checked by: the same on every site.
+
+**Options** (on the box, `pipeline_set`):
+
+| Option        | Type   | Default | What it does                                                                                                                                                                      |
+| ------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `more_fields` | words  | none    | More fields of this site, one word each, 14 at most; an `_` is a space (`PAINT_SYSTEM` is the field `PAINT SYSTEM`). A word that names a field already, in any case, is left out. |
+| `pages`       | number | 10      | The pages read, from page 1, 1 to 10.                                                                                                                                             |
+
+A new value changes the question or the pictures, so the next run asks
+again for each file it runs on.
+
+**The cap.** `needs.workers` is `vision: 11`: page 1 has two asks, each page
+after it one, 10 pages at most. The day cap of the box holds all the asks,
+as for every Agent. It runs at upload and on demand, as every Agent
+("How it starts" above).
+
+**The sketch read stays.** The sketch read of a scan PDF
+(`server/api/src/agent/extract/pdf-sketch.ts`) is not changed: it writes
+its rows in the Reader's tabs, the sheet read writes its own two tabs.
+
+## The list part of an ask
+
+An ask may want, beside its fields, ONE list: the identifiers on its
+picture. The step asks for it with `list: true` in the ask's input, and may
+name the page of the picture:
+
+```
+{ call: 'worker', worker: 'vision', key, input: { picture, fields, list: true, page } }
+```
+
+- **The question.** The core writes it, with its own fixed system text
+  (`ASK_LIST_SYSTEM_TEXT`, `askQuestionOf(fields, true)`,
+  `packages/content/src/pipeline-agent.ts`). The model has no tool. It
+  answers one JSON object: `fields` (the values) and `list` (items, each a
+  `text` and a `class`).
+- **The check** (`askListOf`): the answer is data. An item is an object with
+  a text (one line, trimmed, 120 characters at most) and a class: `tag`,
+  `line number`, `sheet` or `other`; any other class is `other`. An item
+  with no text is dropped, and so is the same text and class a second time.
+  400 items an ask at most (`PIPELINE_ASK_LIST_MAX`). A page is a whole
+  number from 1 to 10,000.
+- **The answer cap.** An ask with the list part may answer 12,000 tokens;
+  an ask with no list part 1,500, as before (`pipeline-ask.ts`). The
+  question asks for one line of JSON, `fields` first. An answer the cap
+  cut is not lost: the `fields` object when it is whole, and each whole
+  item before the cut, are read (`cutAnswerOf`), each part as JSON on its
+  own; the trace step of the ask says `cut`. A model that wrote the fields
+  at the top, with no `fields` key, is read there.
+- **The tab.** An Agent with a list part has a second tab in
+  `produces.tabs`; a list part from an Agent with one tab is refused before
+  any call (`checkAsks`). One row for each item: `Key` (the ask),
+  `Page` (a number), `Text`, `Class`, `Input hash` (the hash of the ask).
+- **The store.** The input hash of a list ask has the list part in it; an
+  ask with no list part hashes as before, so the rows of `iso-title-block`
+  stay good. The first tab is the store: an ask whose hash is there takes
+  its row, and its list rows by the same hash, and pays nothing. A stopped
+  ask keeps its older row and the list rows of that row's hash. Both tabs
+  are written in the one patch, and a Reader's new read keeps both.
+- **Equal pictures.** Two asks of one run with the same input (two equal
+  pages) make one call: the second takes the first's answer. A stored hash
+  gives the list rows of one key only, so a run again never adds them up.
+- **Field names.** SQLite takes a column name with no regard to case: a
+  field may not take `Key`, `Model` or `Input hash`, nor another field's
+  name, in any case (`checkAsks`).
+
+## The fields in the file's text
+
+After a run wrote an Agent's tabs, their text goes on the file node,
+`data.agent_text`, one text for each Agent by its id (owner's yes,
+2026-11-16; `server/api/src/agent/extract/agent-text.ts`). `search_tsv` is
+generated over the whole data blob, so a plain search finds a drawing by a
+line number, a tag or a title block value. `file_sql` reads the same values
+from the tabs. This holds for every Agent, `iso-title-block` too.
+
+- The text (`agentTextOf`): the name of each tab, then one line a row,
+  `column: value` for each cell with a value; no key, model, hash or page;
+  no line two times; 64,000 characters at most.
+- One write, with no model and no announcement: an UPDATE of a node's data
+  starts no extract, and `updated_at` stays (`mantle.keep_updated_at`). It
+  writes only while the node holds the bytes the tabs were read from.
+- An OCR rescan keeps the key: the bytes and their tabs do not change, and
+  the re-extract queues no Agent run.
+- A switch to the name-only mode strips the key, and a switch back does not
+  write it again (the database is there, so no Agent run is queued). A
+  `pipeline_run` of the Agent on the file or the folder writes it again,
+  and pays nothing: every ask is a hit of its hash.
+- `agent_text` is a byte key of the extractor's (migration 0377,
+  `BYTE_DERIVED_DATA_KEYS`): new bytes drop it, the name-only mode strips it
+  with `text`, and a file in that mode gets none. A person's write cannot set
+  it.
+- A failed write is a warning of the run: the tabs stand.
+- A run that wrote no tab (a stop before any paid call) does not change the
+  text. A run whose tabs have no row takes that Agent's text out.
 
 ## Run on demand
 

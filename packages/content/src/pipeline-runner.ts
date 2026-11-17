@@ -155,19 +155,34 @@ export async function runPackaged(
  * second step: no code of the pipeline runs after a paid call. So a result
  * with a tool call (a write) is a failure, as is any status but `ok` and
  * `not_mine`.
+ *
+ * `from`: what the core holds of the file. `kind` is the kind stored in
+ * the file's database (a PDF's File tab), so an Agent of some kinds says
+ * `not_mine` to the rest; `state` is the step's first state, the options in
+ * force of the file's Reader (`readerOptions`), so an Agent cuts the same
+ * title block box the Reader reads.
  */
 export async function agentStep(
   pipeline: PipelineManifest,
   body: Buffer,
   file: NonNullable<PipelineStepRequest['file']>,
   options: Readonly<Record<string, unknown>>,
+  from: { kind?: string; state?: unknown } = {},
 ): Promise<{
   status: 'ok' | 'not_mine';
   asks: (PipelineCall & { call: 'worker' })[];
   pictures: ReadonlyMap<string, Buffer>;
   warnings: string[];
 }> {
-  const request: PipelineStepRequest = { api: PIPELINE_API, step: 1, file, options, asks: true };
+  const request: PipelineStepRequest = {
+    api: PIPELINE_API,
+    step: 1,
+    file,
+    options,
+    asks: true,
+    ...(from.kind !== undefined ? { kind: from.kind } : {}),
+    ...(from.state !== undefined ? { state: from.state } : {}),
+  };
   const { result, pictures } = await parserPipelineRun(body, pipeline, request);
   if (result.status !== 'ok' && result.status !== 'not_mine') {
     throw new PipelineRunError(`${pipeline.id} ended with the status ${result.status}`);
