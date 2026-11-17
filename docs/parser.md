@@ -53,6 +53,12 @@ operating system's:
   server or the healthcheck (`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`, set in
   the image), so the server itself writes nothing to `/tmp` but the empty
   job root.
+- **Memory of a job.** A job's garbage collector runs in step with it
+  (`BUN_JSC_useConcurrentGC=0`, `jobEnv`). With the one CPU of `cpus`, a
+  collector beside the job falls behind a large decode: the pictures of a
+  page that is one image of 99.8 M pixels passed 2 GB and the kernel killed
+  the child. In step they peak at about 1.4 GB, in the same time.
+  `scripts/probe-parser-large-image.sh` checks it on a built image.
 - **Network.** The parser sits only on the compose network `parser`
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
   `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.
