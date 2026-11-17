@@ -5,10 +5,13 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ extract: vi.fn() }));
-/** A provider that does not answer in time, as a call that throws. */
-const timeout = async () => {
-  throw new Error('timeout');
+/** The answers of the made-up provider, in order: `fail` throws (a
+ *  timeout), `read` answers. Past the end: `fail`. */
+const h = vi.hoisted(() => ({ plan: [] as ('fail' | 'read')[], calls: 0 }));
+const extract = async () => {
+  h.calls += 1;
+  if ((h.plan.shift() ?? 'fail') === 'fail') throw new Error('timeout');
+  return { text: 'read' };
 };
 
 vi.mock('@mantle/db', () => ({ bumpWorkerUsage: vi.fn(), getDefaultWorker: vi.fn() }));
@@ -27,7 +30,7 @@ vi.mock('@mantle/api-keys', () => ({
 }));
 vi.mock('@mantle/voice', () => ({
   DEFAULT_VISION_DESCRIBE_PROMPT: 'describe',
-  getVisionAdapter: () => ({ adapterName: 'made-up', extract: h.extract }),
+  getVisionAdapter: () => ({ adapterName: 'made-up', extract }),
 }));
 vi.mock('@mantle/files', async (orig) => ({
   ...(await orig<typeof import('@mantle/files')>()),
@@ -45,31 +48,32 @@ const ask = (tries?: 1 | 2) =>
   });
 
 describe('runVisionWorker tries', () => {
-  beforeEach(() => h.extract.mockReset());
+  beforeEach(() => {
+    h.plan = [];
+    h.calls = 0;
+  });
 
   it('with tries 2, a failed call is asked one time more, and its answer is kept', async () => {
-    h.extract.mockImplementationOnce(timeout).mockResolvedValueOnce({ text: 'read' });
+    h.plan = ['fail', 'read'];
     const out = await ask(2);
-    expect(h.extract).toHaveBeenCalledTimes(2);
+    expect(h.calls).toBe(2);
     expect(out).toMatchObject({ ran: true, text: 'read' });
   });
 
   it('with tries 2, two failed calls: ran false, and no third call', async () => {
-    h.extract.mockImplementation(timeout);
     const out = await ask(2);
-    expect(h.extract).toHaveBeenCalledTimes(2);
+    expect(h.calls).toBe(2);
     expect(out.ran).toBe(false);
   });
 
   it('with no tries, one call only', async () => {
-    h.extract.mockImplementation(timeout);
     expect((await ask()).ran).toBe(false);
-    expect(h.extract).toHaveBeenCalledTimes(1);
+    expect(h.calls).toBe(1);
   });
 
   it('an answer on the first call: one call', async () => {
-    h.extract.mockResolvedValue({ text: 'read' });
+    h.plan = ['read'];
     expect((await ask(2)).text).toBe('read');
-    expect(h.extract).toHaveBeenCalledTimes(1);
+    expect(h.calls).toBe(1);
   });
 });

@@ -88,7 +88,7 @@ describe('pdf-sheet-read in a parser job', () => {
     expect(calls.map((c) => (c as { key: string }).key)).toEqual(keys);
     const sent = await picturesOf(dir, calls);
     expect(sent.map((s) => s.file)).toEqual(keys.map((k) => `${k}.png`));
-    const png = Buffer.from(sent[1]!.bytes_base64, 'base64');
+    const png = Buffer.from(sent[0]!.bytes_base64, 'base64');
     expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
     // 420 mm at 200 DPI.
     expect(png.readUInt32BE(16)).toBe(Math.floor((1190.55 * 200) / 72));
