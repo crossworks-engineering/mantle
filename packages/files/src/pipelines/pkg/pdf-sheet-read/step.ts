@@ -154,28 +154,34 @@ export const step: PipelineStep = async (req, job) => {
     return { status: 'not_mine' };
   }
   const fields = fieldsOf(req.options);
-  // The pages there are, up to the cap, and the shape of each (its halves
-  // follow it): a page that is there and gives no picture is told apart
-  // from one past the end. No page is drawn here.
-  const wide = await withPdf(await job.bytes(), {}, async ({ doc }) => {
-    const out: boolean[] = [];
+  // The pages there are, up to the cap, and the shape of each on paper
+  // (page 1's size places the corner; each page's halves follow its shape):
+  // a page that is there and gives no picture is told apart from one past
+  // the end. No page is drawn here.
+  const shapes = await withPdf(await job.bytes(), {}, async ({ doc }) => {
+    const out: { wide: boolean; widthMm: number; heightMm: number }[] = [];
     for (let n = 1; n <= Math.min(pagesOf(req.options), doc.numPages); n++) {
-      // A page pdfjs cannot load is taken as wide: its drawing fails below,
-      // and the run says which page.
+      // A page pdfjs cannot load is taken as an A3 sheet: its drawing
+      // fails below, and the run says which page.
       const page = await doc.getPage(n).catch(() => null);
-      const shown = page?.getViewport({ scale: 1 });
-      out.push(!shown || shown.width >= shown.height);
+      const shown = page?.getViewport({ scale: 1 }) ?? { width: 1190.55, height: 841.89 };
+      out.push({
+        wide: shown.width >= shown.height,
+        widthMm: (shown.width * 25.4) / 72,
+        heightMm: (shown.height * 25.4) / 72,
+      });
       page?.cleanup();
     }
     return out;
   }).catch(() => null);
-  // A run that cannot draw a page that is there ends `failed`: nothing is
-  // asked or written, so the paid rows of a run before stay as they are
-  // (the time ran out, the child was stopped, pdfjs cannot draw the page).
-  // The trace says why. A page pdfjs can never draw keeps this Agent off
-  // the file until a person lowers the option `pages`.
+  // A run that cannot draw a whole page or the corner ends `failed`:
+  // nothing is asked or written, so the paid rows of a run before stay as
+  // they are (the time ran out, the child was stopped, pdfjs cannot draw
+  // the page). The trace says why. A page pdfjs can never draw keeps this
+  // Agent off the file until a person lowers the option `pages`. A half
+  // that is not drawn is a warning: the whole page is read.
   const failed = (why: string) => ({ status: 'failed' as const, warnings: [why] });
-  if (!wide || wide.length === 0) return failed('The file could not be opened.');
+  if (!shapes || shapes.length === 0) return failed('The file could not be opened.');
   const readerOptions =
     isObject(req.state) && isObject(req.state.readerOptions) ? req.state.readerOptions : {};
   const box = titleBlockOf(readerOptions);
@@ -190,30 +196,36 @@ export const step: PipelineStep = async (req, job) => {
   });
   const warnings: string[] = [];
 
-  // Page 1 first: its size on paper places the corner.
-  const [first] = await job.pdfPictures([picture(1, PAGE_DPI / 72)], job.deadline);
-  if (!first) return failed('Page 1 could not be drawn.');
-  // Then the corner, and each page's pictures in its order: page 1's
-  // halves, then the whole and the halves of each page after it.
-  type Ask = { key: string; page: number; list: boolean };
-  const asks: Ask[] = [{ key: 'page-1-title-block', page: 1, list: false }];
-  const windows = [picture(1, CORNER_DPI / 72, cornerOf(first.widthMm, first.heightMm, box))];
-  for (const [i, isWide] of wide.entries()) {
-    const n = i + 1;
-    if (n > 1) {
-      asks.push({ key: `page-${n}`, page: n, list: true });
-      windows.push(picture(n, PAGE_DPI / 72));
-    }
-    for (const [h, half] of halvesOf(isWide).entries()) {
-      asks.push({ key: `page-${n}-half-${h + 1}`, page: n, list: true });
-      windows.push(picture(n, PAGE_DPI / 72, half));
+  // One draw, in the order of the asks: page 1 whole and its corner, the
+  // whole of each page after it, then the halves of each page. A run that
+  // runs out of time loses halves first. The title block is asked first:
+  // a dense page's list may fail its ask, and a failed ask stops the asks
+  // after it.
+  type Ask = { key: string; page: number; list: boolean; half?: true };
+  const page1 = shapes[0]!;
+  const asks: Ask[] = [
+    { key: 'page-1', page: 1, list: true },
+    { key: 'page-1-title-block', page: 1, list: false },
+  ];
+  const windows = [
+    picture(1, PAGE_DPI / 72),
+    picture(1, CORNER_DPI / 72, cornerOf(page1.widthMm, page1.heightMm, box)),
+  ];
+  for (let n = 2; n <= shapes.length; n++) {
+    asks.push({ key: `page-${n}`, page: n, list: true });
+    windows.push(picture(n, PAGE_DPI / 72));
+  }
+  for (const [i, shape] of shapes.entries()) {
+    for (const [h, half] of halvesOf(shape.wide).entries()) {
+      asks.push({ key: `page-${i + 1}-half-${h + 1}`, page: i + 1, list: true, half: true });
+      windows.push(picture(i + 1, PAGE_DPI / 72, half));
     }
   }
   const drawn = await job.pdfPictures(windows, job.deadline);
-  const lost = asks.findIndex((_, i) => !drawn[i]);
+  const lost = asks.findIndex((a, i) => !drawn[i] && !a.half);
   if (lost >= 0) {
     return failed(
-      lost === 0
+      lost === 1
         ? 'The title block of page 1 could not be drawn.'
         : `Page ${asks[lost]!.page} could not be drawn.`,
     );
@@ -245,10 +257,14 @@ export const step: PipelineStep = async (req, job) => {
       input: { picture: file, fields, page: ask.page, ...(ask.list ? { list: true } : {}) },
     });
   };
-  // The title block first: a dense page's list may fail its ask, and a
-  // failed ask stops the asks after it.
+  // The title block first, then the asks in the order drawn.
+  await add(asks[1]!, drawn[1]!);
   await add(asks[0]!, drawn[0]!);
-  await add({ key: 'page-1', page: 1, list: true }, first);
-  for (const [i, ask] of asks.entries()) if (i > 0) await add(ask, drawn[i]!);
+  for (const [i, ask] of asks.entries()) {
+    if (i < 2) continue;
+    const p = drawn[i];
+    if (p) await add(ask, p);
+    else warnings.push(`The picture ${ask.key} could not be drawn, and is not read.`);
+  }
   return { status: 'ok', calls, ...(warnings.length > 0 ? { warnings } : {}) };
 };

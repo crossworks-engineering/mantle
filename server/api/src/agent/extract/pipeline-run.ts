@@ -190,7 +190,7 @@ export async function runPipelineJob(
  *  the extract's) and its Agents' text now (writeRetrievalChunks adds it).
  *  A file with no stored text yet is left: its extract adds the Agent text
  *  when it writes the passages. */
-async function passagesAgain(ownerId: string, nodeId: string): Promise<void> {
+export async function passagesAgain(ownerId: string, nodeId: string): Promise<void> {
   const [node] = await db
     .select()
     .from(nodes)

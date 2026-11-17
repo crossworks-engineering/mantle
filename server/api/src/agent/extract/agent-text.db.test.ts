@@ -34,6 +34,7 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
   let writeAgentText: typeof import('./agent-text').writeAgentText;
   let agentTextNow: typeof import('./agent-text').agentTextNow;
   let writeRetrievalChunks: typeof import('./index-writes').writeRetrievalChunks;
+  let passagesAgain: typeof import('./pipeline-run').passagesAgain;
   const owner = randomUUID();
   const SHA = 'a'.repeat(64);
   const tag = `atx${randomUUID().slice(0, 6)}`;
@@ -75,6 +76,7 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
     m = await import('@mantle/db');
     ({ writeAgentText, agentTextNow } = await import('./agent-text'));
     ({ writeRetrievalChunks } = await import('./index-writes'));
+    ({ passagesAgain } = await import('./pipeline-run'));
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
@@ -150,6 +152,28 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
       sql`select heading_path as h from content_chunks where node_id = ${id} and text like '%FV-1001%'`,
     );
     expect(heads.map((r) => r.h)).toEqual(['Read by the Agents']);
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+
+  it('a run that changed the text builds the passages again from the stored text; no stored text, no passages', async () => {
+    const chunks = async (id: string) =>
+      (
+        await x<{ t: string }>(
+          sql`select coalesce(string_agg(text, ' ' order by ordinal), '') as t from content_chunks where node_id = ${id}`,
+        )
+      )[0]!.t;
+    const id = await fileNode({ text: 'The stored body of a made-up sheet.' });
+    await extract(() =>
+      writeAgentText(owner, id, SHA, 'pdf-sheet-read', 'Sheet list\nText: LT-2002'),
+    );
+    await extract(() => passagesAgain(owner, id));
+    expect(await chunks(id)).toContain('stored body');
+    expect(await chunks(id)).toContain('LT-2002');
+    // No stored text (a cost-guard index): its passages are left as they are.
+    const bare = await fileNode();
+    await extract(() => writeAgentText(owner, bare, SHA, 'pdf-sheet-read', 'Text: LT-2003'));
+    await extract(() => passagesAgain(owner, bare));
+    expect(await chunks(bare)).toBe('');
     expect(m.takeActorMisses()).toEqual([]);
   });
 

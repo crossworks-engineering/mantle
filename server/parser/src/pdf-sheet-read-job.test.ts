@@ -79,9 +79,9 @@ describe('pdf-sheet-read in a parser job', () => {
     expect(result.warnings).toEqual(['The picture page-1-title-block is blank, and is not read.']);
     const keys = [
       'page-1',
+      'page-2',
       'page-1-half-1',
       'page-1-half-2',
-      'page-2',
       'page-2-half-1',
       'page-2-half-2',
     ];

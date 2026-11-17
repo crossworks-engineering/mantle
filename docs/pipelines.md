@@ -1103,10 +1103,13 @@ no model:
 | `page-1-half-1`, `half-2` | the two halves of page 1, as the whole page    | yes    | yes  |
 | `page-2` and on           | each page after it: whole, then its two halves | yes    | yes  |
 
-The corner goes first: a failed ask stops the asks after it, and the list
-of a dense page is the ask most likely to fail. The step counts the pages
-of the file and reads the shape of each (pdfjs, in the job, nothing
-drawn), so it draws only pages that are there.
+The asks go in this order: the corner, the whole of each page, then the
+halves of each page. A failed ask stops the asks after it, and the list of
+a dense page is the ask most likely to fail. The step counts the pages of
+the file and reads the size of each on paper (pdfjs, in the job, nothing
+drawn), so it draws only pages that are there. It draws all the pictures in
+one call of the child, in the same order (page 1 whole and its corner
+first): a run that runs out of time loses halves first.
 
 **The halves.** A half is 55 percent of the page across its long side
 (`HALF`): left and right of a wide page, top and bottom of a tall one. The
@@ -1153,14 +1156,16 @@ job can kill. The Reader's eye and pieces, and every other open, keep 75 M.
 so the image is decoded one time for the page, not for each half. Bench
 (2026-11-17, the parser image under a 2 GB limit): such a sheet drew at 200
 DPI with a peak of 1.49 GB, in 5.8 s, and the whole page and its halves in
-one process stayed under the limit. The model then read 7 of its 7 values.
+one process stayed under the limit (measured before a page was kept for its
+windows: that draws it with one decode, not three). The model then read 7 of its 7 values.
 An image past 100 M still draws white, and its picture is blank: never
 asked. A kill of the child for memory loses its picture and those after it:
 the run fails, and says which page.
 
-**A picture that is not drawn.** When a page that is there gives no picture
-(the time ran out, the child was stopped, pdfjs cannot draw it), or the
-file does not open, the step ends `failed`: nothing is asked and nothing is
+**A picture that is not drawn.** A half that gives no picture is a
+warning: the whole page is read. When a whole page or the corner gives no
+picture (the time ran out, the child was stopped, pdfjs cannot draw it), or
+the file does not open, the step ends `failed`: nothing is asked and nothing is
 written, so the paid rows of a run before stay as they are. The trace says
 which page. A page pdfjs can never draw keeps the Agent off that file until
 an Admin lowers the option `pages`. That option is on the box: it cuts the
@@ -1191,7 +1196,8 @@ again for each file it runs on.
 
 **The cap.** `needs.workers` is `vision: 31`: each page has three asks (the
 whole page and its two halves), page 1 one more (its corner), 10 pages at
-most. Cost on dev (v0.702.0): about 600 to 1,000 micro USD an ask, so about
+most. An ask the provider failed is tried one time more (below), so a file
+makes 62 calls at the very most; the day cap counts asks. Cost on dev (v0.702.0): about 600 to 1,000 micro USD an ask, so about
 3,500 a one-page drawing. The day cap of the box holds all the asks,
 as for every Agent. It runs at upload and on demand, as every Agent
 ("How it starts" above).
@@ -1272,7 +1278,12 @@ under the heading `Read by the Agents`, read from the node at the write
 changed the text (the same text again writes nothing) builds the file's
 passages again from its stored text (`data.text`); the passages of the body
 do not move, so their vectors come from the embed cache and only the new
-text is embedded. The extract and the run of one file never run at the same
+text is embedded (with `chunk_windows` on, the windows of every passage are
+embedded again: they have no cache). `data.text` holds the first 1,000,000
+characters of a file's text: the passages of a longer file end there after
+such a build, until its next extract. A run with the same text builds
+nothing: a file read by version 1.0.0 gets the Agent passages at its next
+extract or at a run that changes the text. The extract and the run of one file never run at the same
 time (the extract queue serialises the jobs of a node). A file with no
 stored text (a cost-guard index, `indexLocalOnly`; a scan its extract read
 nothing from) keeps the Agent text in the node's text only: its passages
