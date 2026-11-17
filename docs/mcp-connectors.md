@@ -156,25 +156,29 @@ Entra ID is the big one: it fronts every Microsoft MCP server, Power BI
 included. There the connector uses an app someone registered by hand, set as
 `integration.mcp.oauth.client`:
 
-| `client`                                     | Where the app comes from                                                                                      | Sign-in goes to                                                                    |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| absent                                       | RFC 7591 dynamic registration (the default)                                                                   | wherever RFC 9728 discovery points                                                 |
-| `{ source: 'microsoft' }`                    | the Settings → Microsoft app (client id, secret, tenant), resolved on every flow, never copied                | that app's **tenant** authority, `https://login.microsoftonline.com/<tenant>/v2.0` |
-| `{ source: 'manual', authorizationServer? }` | an app registered by hand: its id on `oauth.clientId`, its secret sealed in `oauth-client` like a dynamic one | `authorizationServer` if set, else discovery                                       |
+| `client`                                     | Where the app comes from                                                                                      | Sign-in goes to                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| absent                                       | RFC 7591 dynamic registration (the default)                                                                   | wherever RFC 9728 discovery points           |
+| `{ source: 'manual', authorizationServer? }` | an app registered by hand: its id on `oauth.clientId`, its secret sealed in `oauth-client` like a dynamic one | `authorizationServer` if set, else discovery |
 
-Set it at create (`"oauthClient": { "source": "microsoft" }` on
+For Entra, `authorizationServer` is the app's **tenant** authority,
+`https://login.microsoftonline.com/<tenant>/v2.0`. (The `source: 'microsoft'`
+choice, which borrowed the Settings → Microsoft app, went with the old
+Microsoft sync in Sync plan M4; a stored one asks for a manual app.)
+
+Set it at create (`"oauthClient": { "source": "manual", ... }` on
 `POST /api/mcp-connectors`) or later (`oauthClient` on
 `PATCH /api/mcp-connectors/<slug>`). A real change drops the old app's tokens,
 and the owner authorizes again; re-sending the current app is a no-op, so a
 form save cannot cut a live connection. `scope` (create and patch, `''`
 clears) overrides the scope asked for.
 
-What the Microsoft app changes, and why (engine:
+What a manual app at an Entra authority changes, and why (engine:
 `packages/tools/src/mcp-oauth.ts`, all through the SDK's own provider hooks):
 
 - **Tenant authority, not `organizations`.** Power BI's metadata names the
   generic multi-tenant endpoint. A single-tenant app cannot sign in there
-  (AADSTS50194), so `discoveryState()` points the SDK at the tenant.
+  (AADSTS50194), so set `authorizationServer` to the tenant.
 - **`offline_access` is always added** to the scope (the server's
   `scopes_supported`, unless `scope` is set). Without it Entra issues no
   refresh token, and the connection dies at the first access-token expiry.
@@ -184,8 +188,7 @@ What the Microsoft app changes, and why (engine:
   already consented.
 - **No RFC 8707 `resource` parameter** (`validateResourceURL()` returns
   nothing): Entra v2 takes the audience from the scope.
-- **The secret goes in the body** (`client_secret_post`), like the Graph
-  old Graph sign-in (removed, Sync plan M4).
+- **The secret goes in the body** (`client_secret_post`).
 
 Failures are recorded, never silent. A failed start, a refused consent on the
 callback, or a failed code exchange clears the in-flight marker and stores the
@@ -194,18 +197,19 @@ owner can hit (AADSTS700025, 7000215, 7000222, 65001, 50011, 50194). The code
 exchange keeps the FIRST token-endpoint error: on `invalid_client` the SDK
 retries by itself, and the retry's error would otherwise bury the real one.
 `GET /api/mcp-connectors` also returns `oauthRedirectUri` (the exact URL to
-register with the app) and `microsoftApp` (whether one is configured, and
-which client id and tenant).
+register with the app) and `microsoftApp`, always `{ configured: false }`
+since Sync plan M4 (kept so older clients still read it).
 
 ### Power BI (catalogue entry `powerbi`)
 
 Microsoft's remote Power BI MCP server,
-`https://api.fabric.microsoft.com/v1/mcp/powerbi`, uses the Microsoft app.
+`https://api.fabric.microsoft.com/v1/mcp/powerbi`, uses a manual Entra app
+(client id, secret, and the tenant authority as `authorizationServer`).
 Before connecting, on the customer's side:
 
 1. A Power BI admin enables the tenant setting "Users can use the Power BI
    Model Context Protocol server endpoint (preview)".
-2. On the Settings → Microsoft app in Azure: API permissions → Power BI
+2. Register an app in Azure (Entra ID) with a client secret. On it: API permissions → Power BI
    Service → delegated `Dataset.Read.All`, `MLModel.Execute.All` and
    `Workspace.Read.All`, then Grant admin consent.
 3. On the same app: add `oauthRedirectUri` as a **Web** redirect URI.

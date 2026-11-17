@@ -10620,7 +10620,7 @@
  },
  {
   "name": "contact_find",
-  "description": "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell so you can pass them to email_send / sms_send. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
+  "description": "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell for the next step. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
   "inputSchema": {
    "type": "object",
    "properties": {

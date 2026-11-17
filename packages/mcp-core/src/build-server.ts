@@ -305,10 +305,9 @@ export function registerMantleTools(
 
   // ─── Contacts ────────────────────────────────────────────────────────────────
   // The email allowlist (nodes of type='contact'). Exposing these closes the gap
-  // where an MCP client could read the brain but not extend the assistant's reach:
-  // contact_create is what lets email_send target a new recipient (and kicks off
-  // the 90-day inbound history backfill). Bridged from the in-app CONTACT_TOOLS so
-  // both surfaces share one tested handler (incl. the enqueueBackfills side effect).
+  // where an MCP client could read the brain but not extend which senders' mail
+  // it keeps. Bridged from the in-app CONTACT_TOOLS so both surfaces share one
+  // tested handler.
   registerBuiltinTools(CONTACT_TOOLS);
 
   // ─── Workers (modality delegation) ───────────────────────────────────────────

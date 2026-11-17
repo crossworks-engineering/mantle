@@ -42,7 +42,7 @@ Times use your profile timezone, so "tomorrow at 3pm" means your 3pm. See [Profi
 
 ### Subscribed calendars
 
-Calendars you subscribe to in **Settings > Calendars** show here too. They are read-only copies. Change those events where they live.
+Events from calendars you subscribed to earlier still show here. They are read-only copies. Subscribing to a calendar moves into the **Sync** service; until it is rebuilt there, those copies do not update.
 
 ## If it fails
 
