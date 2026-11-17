@@ -84,6 +84,18 @@ describe('siteTagsSheet', () => {
     ]);
   });
 
+  it('a PDF word in a table (Region table) gives no tag; the same word elsewhere does', () => {
+    const { sheet } = siteTagsSheet(
+      [
+        { Text: 'TW-43', Page: 1, Region: 'table' },
+        { Text: 'TW-43', Page: 1, Region: 'body' },
+        { Text: 'FIC-101', Page: 1, Region: 'title_block' },
+      ],
+      NONE,
+    );
+    expect(sheet.rows.map((r) => r[col(sheet, 'Tag')])).toEqual(['TW-43', 'FIC-101']);
+  });
+
   it('the profile from the options mends the two known wrongs', () => {
     const profile = siteProfileOf({ equipment_types: ['EA'], line_services: ['P'] });
     const { sheet } = siteTagsSheet([{ Text: 'EA-101 P-1001-A1A', Page: 1 }], profile);

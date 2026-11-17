@@ -5,7 +5,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
-import { pdfDrawingSheets, pdfFileTabOf } from './pdf-drawing-sheets';
+import {
+  PDF_KIND_RULES_VERSION,
+  pdfDrawingSheets,
+  pdfFileTabOf,
+  pdfReadPoorer,
+} from './pdf-drawing-sheets';
 import { SHAPES, shapesOf } from './pipelines/shapes';
 import {
   SKETCH_MAX_PAGES,
@@ -209,6 +214,47 @@ describe('the rows of a read', () => {
     ]);
   });
 
+  it('a piece in a column of a table gives no tag; a lone piece does; a line number always', () => {
+    // Made-up: four pieces stacked close at one left edge (a material list
+    // read part by part), and one piece away from them.
+    const at = (x: number, y: number): [number, number, number, number] => [x, y, x + 0.3, y + 0.03];
+    const column = sketchPageRead(
+      {
+        ...pieces(),
+        pieces: [0.2, 0.235, 0.27, 0.305, 0.2].map((y, i) => ({
+          box: i < 4 ? at(0.1, y) : at(0.6, y),
+          picture: 0,
+          scale: 1,
+        })),
+        pictures: [Buffer.from([1])],
+      },
+      ['1: ELL 90 TW-43\n2: TEE PI-42\n3: CAP 2"-P-4501-A1A\n4: FE-44 PLUG\n5: FIC-101'],
+    );
+    const rows = sketchPageRows(column, 297, 210);
+    expect(rows.tags.map((t) => t.tag)).toEqual(['FIC-101']);
+    expect(rows.lines.map((l) => l.line)).toEqual(['2"-P-4501-A1A']);
+    expect(new Set(rows.words.filter((w) => w.line <= 4).map((w) => w.region))).toEqual(
+      new Set(['table']),
+    );
+    expect(rows.words.find((w) => w.text === 'FIC-101')!.region).toBe('body');
+  });
+
+  it('a read again is poorer with another kind by the same rules, not by newer rules', () => {
+    const v = PDF_KIND_RULES_VERSION;
+    const at = (rulesKind: string, rulesVersion: number | undefined, notReadWhole = 0) => ({
+      rulesKind,
+      notReadWhole,
+      ...(rulesVersion === undefined ? {} : { rulesVersion }),
+    });
+    expect(pdfReadPoorer(at('scan', v), at('unsure', v))).toBe(true);
+    expect(pdfReadPoorer(at('scan', v), at('unsure', v - 1))).toBe(false);
+    // A read that states no version is of this code's rules.
+    expect(pdfReadPoorer(at('scan', undefined), at('unsure', v))).toBe(true);
+    expect(pdfReadPoorer(at('scan', undefined), at('unsure', v - 1))).toBe(false);
+    // More pages not read whole is poorer by any rules.
+    expect(pdfReadPoorer(at('scan', v, 1), at('scan', v - 1))).toBe(true);
+  });
+
   it('a word takes its region from the title block box it is passed, the default when none is', () => {
     const regions = (rows: ReturnType<typeof sketchPageRows>) =>
       rows.words.map((w) => [w.line, w.region]);
@@ -318,6 +364,7 @@ describe('the rows of a read', () => {
       ).toEqual({
         kind: 'isometric',
         rulesKind: 'unsure',
+        rulesVersion: PDF_KIND_RULES_VERSION,
         decision,
         visionRead: vision,
         notReadWhole: 0,
@@ -359,6 +406,7 @@ describe('the rows of a read', () => {
             asEquipment: 0,
             asLine: 0,
             rejected: 0,
+            inTable: 0,
             otherTagTokens: 0,
             fromLists: 0,
             bubbles: 0,

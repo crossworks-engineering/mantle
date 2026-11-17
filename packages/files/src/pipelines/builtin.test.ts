@@ -333,11 +333,12 @@ describe('the PDF router', () => {
     expect(router.needs.weight).toBe('light');
   });
 
-  it('drawing-pdf claims every kind the router names but document, at its version of before', () => {
+  it('drawing-pdf claims every kind the router names but document', () => {
     expect([...(reader.match.kind ?? [])].sort()).toEqual(
       named.filter((k) => k !== 'document').sort(),
     );
-    expect(reader.version).toBe('1.0.0');
+    // 1.1.0: the rows of the P3 fixes (docs/pipelines.md, "The PDF set").
+    expect(reader.version).toBe('1.1.0');
   });
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {

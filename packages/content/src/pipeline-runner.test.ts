@@ -334,9 +334,10 @@ describe('a packaged pipeline through a real parser job', () => {
     const { body, warnings } = afterBodyOf(abs, after);
     expect(warnings).toEqual([]);
     const out = await runPackaged(after, body, undefined, { options: { mode: 'after' } });
+    // Region is a column of the shape a CAD Texts tab does not have: null.
     expect(out.write?.tabs[0]?.rows).toEqual([
-      ['FIC-101', 1, 'TAGS', 10.5, 20],
-      ['A'.repeat(AFTER_CELL_MAX_CHARS), 2, 'NOTES', 1, 2],
+      ['FIC-101', 1, 'TAGS', 10.5, 20, null],
+      ['A'.repeat(AFTER_CELL_MAX_CHARS), 2, 'NOTES', 1, 2, null],
     ]);
     expect(() => afterBodyOf(abs, ECHO)).toThrow(/names no shape/);
   }, 60_000);
@@ -632,7 +633,8 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
   };
 
   it('the fixed set gives the golden files of the old path: the router job, then the reader job', async () => {
-    expect(names).toHaveLength(9);
+    // Nine of before the move and four of P3 (2026-11-17).
+    expect(names).toHaveLength(13);
     for (const name of names) {
       const bytes = fixture(name);
       const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'pdf', { pipelines }));

@@ -1,5 +1,5 @@
 {
-  "description": "PDF read as a drawing. A drawing-like PDF whose kind the rules could not decide. File holds the kind and where it came from (the rules, or the decider for a file the rules left unsure). Pages holds one row a page: its kind, its class (drawn with text, drawn with no text layer, a scan, typed text), its size, and counts with no model (characters, line segments, instrument tags, line numbers, markups). Kind from says what named a page: the rules on its own counts, its own picture, or (other_pages) the pictures of other scan pages of the file, when this one was not looked at. Notes states what a page's counts or rows leave out (rows_not_listed: the page's words, tags, line numbers and markups are not in the tabs, the file holds more rows or more text than one database lists). The other tabs hold what the text layer and the markups say, read with no model, for every page that is not a typed document page; a tab with no row is left out. Texts: a word a row, with its line, its box (X0 Y0 X1 Y1: fractions of the shown page, origin top left), Hidden (drawn invisible, such as an old OCR layer) and Spaced (put together from letter-spaced glyphs: check it). Tags: instrument tags (an ISA code with its loop number, in one token, or as a code with the number under it: Source bubble) and equipment tags (unit, type letters, number, by their shape alone: not every one is a main equipment item). Tag is upper case with one kind of dash and its digits as written (leading zeros kept); Raw is the token as written (one Raw gives a row for each item of a list after it: P-1A/B; a bubble's Raw is its code, a space and its number). Key is the tag with letters and digits only: join on it, because one item is written with and without a dash (two tags that differ only in where a dash is share a key). A three-part code with an ISA code in the middle (100-FG-2001) is listed as an instrument tag, also when it is a short line number. Lines: pipe line numbers with their size and serial; the service and the pipe class are not named, they are parts of Raw. Markups: each annotation with its text and author, and for a text markup the drawn markup beside it (a line, a cloud). Region flags words in the lower right corner (title_block, by position) and words that repeat at one place on 3 or more pages (template); they are flagged, never left out. Confidence is from a fixed table by how a row was read: under 0.8 is a value to check. Not here yet: symbols, tables and cells, and what a line connects.",
+  "description": "PDF read as a drawing. A drawing-like PDF whose kind the rules could not decide. File holds the kind and where it came from (the rules, or the decider for a file the rules left unsure). Pages holds one row a page: its kind, its class (drawn with text, drawn with no text layer, a scan, typed text), its size, and counts with no model (characters, line segments, instrument tags, line numbers, markups). Kind from says what named a page: the rules on its own counts, its own picture, or (other_pages) the pictures of other scan pages of the file, when this one was not looked at. Notes states what a page's counts or rows leave out (rows_not_listed: the page's words, tags, line numbers and markups are not in the tabs, the file holds more rows or more text than one database lists). The other tabs hold what the text layer and the markups say, read with no model, for every page; a tab with no row is left out. Texts: a word a row, with its line, its box (X0 Y0 X1 Y1: fractions of the shown page, origin top left), Hidden (drawn invisible, such as an old OCR layer) and Spaced (put together from letter-spaced glyphs: check it). Tags: instrument tags (an ISA code with its loop number, in one token, or as a code with the number under it: Source bubble) and equipment tags (unit, type letters, number, by their shape alone: not every one is a main equipment item). Tag is upper case with one kind of dash and its digits as written (leading zeros kept); Raw is the token as written (one Raw gives a row for each item of a list after it: P-1A/B; a bubble's Raw is its code, a space and its number). Key is the tag with letters and digits only: join on it, because one item is written with and without a dash (two tags that differ only in where a dash is share a key). A three-part code with an ISA code in the middle (100-FG-2001) is listed as an instrument tag, also when it is a short line number. Lines: pipe line numbers with their size and serial; the service and the pipe class are not named, they are parts of Raw. Markups: each annotation with its text and author, and for a text markup the drawn markup beside it (a line, a cloud). Region flags words in the lower right corner (title_block, by position), words that repeat at one place on 3 or more pages (template), and words in a column of a table or a list (table: the left edge lines up with 3 or more words close under or over it); they are flagged, never left out. A code in a table (an item code of a material list) is not listed as a tag; Pages counts it (In a table). A line number in a table is listed. Segments: the lines and curves of a drawn page with no text layer (its text is drawn as strokes), with their end points in the frame of the boxes; Kind curve gives the end points of a curve only. Confidence is from a fixed table by how a row was read: under 0.8 is a value to check. Not here yet: symbols, the cells of a table, and what a line connects.",
   "kind": "sheets",
   "sheets": [
     {
@@ -61,6 +61,10 @@
           "type": "checkbox"
         },
         {
+          "name": "Vision text",
+          "type": "text"
+        },
+        {
           "name": "Vision model",
           "type": "text"
         },
@@ -79,7 +83,7 @@
           "unsure",
           "rules",
           "unsure",
-          1,
+          2,
           null,
           null,
           null,
@@ -90,6 +94,7 @@
           false,
           true,
           false,
+          null,
           null,
           null,
           null
@@ -231,6 +236,10 @@
           "type": "number"
         },
         {
+          "name": "In a table",
+          "type": "number"
+        },
+        {
           "name": "Other tag tokens",
           "type": "number"
         },
@@ -296,6 +305,7 @@
           "text_outside_page",
           5,
           2,
+          0,
           0,
           0,
           0,

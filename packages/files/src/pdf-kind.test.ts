@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AXIS_MIN_MM,
   AXIS_TOLERANCE_DEG,
+  DOCUMENT_MIN_SHARE,
+  FILL_MIN_LINES,
   axisOf,
   axisShares,
   bubblePairs,
@@ -137,6 +139,33 @@ describe('axes', () => {
     const value = (name: string) => Number(new RegExp(`^${name} = ([0-9.]+)$`, 'm').exec(py)?.[1]);
     expect(value('AXIS_MIN_MM')).toBe(AXIS_MIN_MM);
     expect(value('AXIS_TOLERANCE_DEG')).toBe(AXIS_TOLERANCE_DEG);
+  });
+
+  it('a slanted line in a fill (hatching, a solid logo) is left out; the axes always count', () => {
+    // Made-up: 8 long lines on the isometric axes and a hatched patch of
+    // 40 lines at 45 degrees in one 10 mm square. Without the rule the
+    // patch is `other` and outweighs the pipes.
+    const at = (x: number, y: number, lenMm: number, deg: number): Segment => {
+      const rad = (deg * Math.PI) / 180;
+      return {
+        kind: 'L',
+        a: [x, y],
+        b: [x + (Math.cos(rad) * lenMm) / 1000, y - (Math.sin(rad) * lenMm) / 500],
+        w: 0.25,
+        c: '',
+        d: false,
+      };
+    };
+    const pipes = Array.from({ length: 8 }, (_, i) => at(0.1 + i * 0.1, 0.8, 100, i % 2 ? 30 : 150));
+    const hatch = Array.from({ length: 40 }, () => at(0.9, 0.1, 6, 45));
+    const a = axisShares([...pipes, ...hatch], 1000, 500);
+    expect(a.iso).toBe(1);
+    expect(a.other).toBe(0);
+    // FILL_MIN_LINES - 1 slanted lines in a square still count: no fill.
+    const few = axisShares([...pipes, ...hatch.slice(0, FILL_MIN_LINES - 1)], 1000, 500);
+    expect(few.other).toBeGreaterThan(0);
+    // A long slanted line alone is a line of the drawing.
+    expect(axisShares([at(0.5, 0.5, 300, 45)], 1000, 500).other).toBe(1);
   });
 
   it('a curve and an empty page give no axes', () => {
@@ -399,6 +428,19 @@ describe('kinds', () => {
     // A drawing page still names the file.
     expect(fileKindOf(['document', 'none', 'scan'], false)).toBe('scan');
     expect(fileKindOf(['document', 'pid'], false)).toBe('pid');
+  });
+
+  it('a file of typed pages but for a few unsure ones is a document (DOCUMENT_MIN_SHARE)', () => {
+    expect(DOCUMENT_MIN_SHARE).toBe(0.75);
+    expect(fileKindOf(['document', 'document', 'document', 'unsure'], true)).toBe('document');
+    expect(fileKindOf([...Array(40).fill('document'), ...Array(4).fill('unsure')], true)).toBe(
+      'document',
+    );
+    // Under the share, or something left out, or a drawing page: as before.
+    expect(fileKindOf(['document', 'document', 'unsure'], true)).toBe('unsure');
+    expect(fileKindOf(['document', 'document', 'document', 'unsure'], false)).toBe('unsure');
+    expect(fileKindOf(['document', 'document', 'document', 'scan'], true)).toBe('scan');
+    expect(fileKindOf(['unsure'], true)).toBe('unsure');
   });
 
   it('a page that reads as empty while it draws content the reader does not follow is unsure', () => {
