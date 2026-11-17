@@ -285,7 +285,9 @@ const server = serve({ fetch: app.fetch, port, hostname, overrideGlobalObjects: 
 });
 // A slow upload up to the streamed cap must finish: Node's 300 s
 // whole-request default cut a 451 MB upload at 309 s (listener-timeouts.ts).
-// Pinned by listener-timeouts.test.ts.
+// An idle keep-alive socket also outlives Caddy's 2 min upstream pool, so
+// Caddy never reuses a socket this server is closing. Pinned by
+// listener-timeouts.test.ts.
 applyListenerTimeouts(server as HttpServer, maxStreamedUploadBytes());
 
 // Compose sends SIGTERM on stop/update: close the listener, let in-flight
