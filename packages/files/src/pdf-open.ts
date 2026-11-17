@@ -63,10 +63,11 @@ export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
  *
  * Measured in the parser image under a 2 GB limit (bench, 2026-11-17): such
  * an A4 sheet (RGB with a soft mask of the same size) drawn at 200 DPI rose
- * from 69 MB to 1.49 GB at the peak, in 5.8 s; the whole page and its two
- * halves in one process stayed under the limit (`renderPdfWindows` keeps a
- * page, and its decoded images, for the windows of it one after the
- * other). A kill of the child for memory loses its picture and those after
+ * from 69 MB to 1.49 GB at the peak, in 5.8 s. The whole job of the PDF
+ * Agent on it (the whole page, its corner and its two halves in one child;
+ * `renderPdfWindows` keeps a page, and its decoded images, for the windows
+ * of it one after the other) peaked at 1,486 MB for the container, in
+ * 18.4 s. A kill of the child for memory loses its picture and those after
  * it in the same child: the run that asked fails, and says which page.
  *
  * Only `renderPdfWindows` opens with it, and only for windows that ask

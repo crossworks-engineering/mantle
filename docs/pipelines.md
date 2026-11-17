@@ -1154,10 +1154,14 @@ M, `packages/files/src/pdf-open.ts`; each of its windows says
 job can kill. The Reader's eye and pieces, and every other open, keep 75 M.
 `renderPdfWindows` keeps a page for the windows of it one after the other,
 so the image is decoded one time for the page, not for each half. Bench
-(2026-11-17, the parser image under a 2 GB limit): such a sheet drew at 200
-DPI with a peak of 1.49 GB, in 5.8 s, and the whole page and its halves in
-one process stayed under the limit (measured before a page was kept for its
-windows: that draws it with one decode, not three). The model then read 7 of its 7 values.
+(2026-11-17, the parser image of this build under a 2 GB limit, the whole
+job through the parser service): such a sheet gave its 4 pictures with a
+peak of 1,486 MB for the container, in 18.4 s, none blank. The other 19 PDFs
+of the set (1 to 6 pages, 3 to 19 asks): at most 512 MB and 4.6 s a file;
+a dense flow diagram 2.1 s. So a run of 10 such large-image pages would be
+about 180 s, under the job's 240 s; past it the run fails and says which
+page (the remedy is the option `pages`). The model then read 7 of the 7
+values of that sheet.
 An image past 100 M still draws white, and its picture is blank: never
 asked. A kill of the child for memory loses its picture and those after it:
 the run fails, and says which page.
