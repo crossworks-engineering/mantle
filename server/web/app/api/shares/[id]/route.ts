@@ -2,14 +2,10 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { UUID_RE } from '@mantle/std';
 import { ownerCaller } from '@/lib/auth';
-import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
   adminCloseShare,
-  adminSetContactShareCanWrite,
   assertMayLink,
   checkServeList,
-  getContactShare,
-  setContactShareCanWrite,
   TeamLinkRetiredError,
 } from '@mantle/content';
 import { applyShareMode, getLiveShare, revokeShare, SERVE_MAX, setShareServed } from '@/lib/shares';
@@ -34,15 +30,13 @@ export const policy = routePolicy({
   },
 });
 
-/** DELETE /api/shares/[id] → `{ ok }`: revoke the link or the contact share
- *  (owner-scoped; `ok` false when it was already gone). Who may: an Admin
+/** DELETE /api/shares/[id] → `{ ok }`: revoke the link (owner-scoped; `ok` false when it was already gone). Who may: an Admin
  *  user with the 'users' area, who may revoke any link of the brain
  *  (closing a link only narrows; mantle_share_close_admin); else a user who may edit the item (an app or a
  *  Present canvas: a Moderator of its home, linkNeedsModerator), the Grant Access panel's `mayLink`, asked in the login's
  *  scope; else 404 `not found` or 403 `forbidden`, the item gate's answers.
  *  A link never changes a level or a grant, so removing one changes none
- *  either (the item's share dialog Remove and the contact's "Shared" tab
- *  Revoke both call this). */
+ *  either (the item's share dialog Remove calls this). */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
@@ -60,7 +54,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
 const PatchBody = z.union([
   z.object({ mode: z.string() }),
-  z.object({ canWrite: z.boolean() }),
   z.object({ serve: z.array(z.string().uuid()).max(SERVE_MAX) }),
 ]);
 
@@ -71,51 +64,23 @@ const PatchBody = z.union([
  *  the caller. 404 `not_found` (no such live open link, or an item or id
  *  the caller cannot read), 403 `forbidden`.
  *
- *  PATCH /api/shares/[id] { canWrite } → "Can write" on a contact share of
- *  an app (contact shares, 0214); 400 `write-not-app` on another kind.
- *  An Admin user's, its home not checked, as making one is
- *  (mantle_share_contact_write_set). Audited
- *  (`contact.share_can_write`).
- *
  *  PATCH /api/shares/[id] { mode } → set the link's admission (owner-scoped).
  *  'public' is the only mode (a live link already is: this confirms it).
  *  'team' is refused with 400 `team-links-retired`: team links are retired,
  *  members use their own logins.
  *
- *  Any change but a contact share's "Can write" is the link's: asked first
- *  in the login's scope (shareItemRefusal), the item gate's 404 and 403. */
+ *  Every change is the link's: asked first in the login's scope (shareItemRefusal), the item gate's 404 and 403. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
   if (!UUID_RE.test(id)) return itemNotFound();
   const parsed = PatchBody.safeParse(await readJson(req));
-  if (parsed.success && 'canWrite' in parsed.data) {
-    const canWrite = parsed.data.canWrite;
-    const set = await adminSetContactShareCanWrite(user.actor.id, id, canWrite);
-    if (set.outcome === 'not-found') {
-      return NextResponse.json({ error: 'not found' }, { status: 404 });
-    }
-    if (set.outcome === 'write-not-app') return writeNotApp();
-    if (set.outcome === 'ok') {
-      auditFireAndForget({
-        actorId: user.actor.id,
-        actorEmail: user.actor.email,
-        action: 'contact.share_can_write',
-        method: 'PATCH',
-        path: '/api/shares/:id',
-        detail: { shareId: id, contactId: set.contactId, value: canWrite },
-        ...requestMetaFrom(req),
-      });
-      return NextResponse.json({ ok: true, canWrite });
-    }
-    // 'not-contact': the link's rule, below.
-  }
   const refused = await shareItemRefusal(id);
   if (refused) return refused;
   if (!parsed.success) return NextResponse.json({ error: 'invalid mode' }, { status: 400 });
   if ('serve' in parsed.data) {
     const share = await getLiveShare(user.id, id);
-    if (!share || share.contactId) {
+    if (!share) {
       return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
     }
     const item = await assertMayLink(user.id, user.actor.id, share.nodeId);
@@ -132,25 +97,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     return NextResponse.json({ ok: true, served: updated.served });
   }
-  // { canWrite } by the link's rule, in the login's scope: a share that
-  // names no contact (none is live here).
-  if ('canWrite' in parsed.data) {
-    const share = await getContactShare(user.id, id);
-    if (!share) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    if (share.nodeType !== 'app') return writeNotApp();
-    const ok = await setContactShareCanWrite(user.id, id, parsed.data.canWrite);
-    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    auditFireAndForget({
-      actorId: user.actor.id,
-      actorEmail: user.actor.email,
-      action: 'contact.share_can_write',
-      method: 'PATCH',
-      path: '/api/shares/:id',
-      detail: { shareId: id, contactId: share.contactId, value: parsed.data.canWrite },
-      ...requestMetaFrom(req),
-    });
-    return NextResponse.json({ ok: true, canWrite: parsed.data.canWrite });
-  }
   const { mode } = parsed.data;
   if (mode === 'team') {
     const err = new TeamLinkRetiredError();
@@ -160,12 +106,4 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const ok = await applyShareMode(user.id, id, mode);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
-}
-
-/** A contact share of a kind other than an app: no contact writes it. */
-function writeNotApp() {
-  return NextResponse.json(
-    { error: 'Only an app can let a contact write.', reason: 'write-not-app' },
-    { status: 400 },
-  );
 }

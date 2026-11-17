@@ -11,8 +11,7 @@
  * login write gateway runs it: on a login of the write role
  * (mantle_write_user), with its scope, its actor and its write mode set in
  * the transaction, the heads taken first. A read-only actor (a read key, an
- * assistant with no user, a public link, a peer, a contact share without
- * Can write) runs the same way with write mode ro. System work runs on the
+ * assistant with no user, a public link, a peer) runs the same way with write mode ro. System work runs on the
  * system pool (the superuser), as system(test).
  *
  * Each cell is ONE transaction, rolled back. A cell passes only on the
@@ -63,8 +62,6 @@ function roActor(actor: OracleActor, login: string): string {
       return 'link';
     case 'peer':
       return 'peer:none';
-    case 'contact-ro':
-      return 'contact:ro';
     default:
       throw new Error(`not a read-only actor: ${actor}`);
   }
@@ -363,7 +360,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
           await tx`
           with retired as (
             update shares set revoked_at = now()
-             where node_id = ${id} and revoked_at is null and contact_id is null returning 1)
+             where node_id = ${id} and revoked_at is null returning 1)
           insert into shares (token, owner_id, node_id, node_type)
           select ${`${tag}-${randomUUID()}`}, ${login.owner}, ${id}, ${kind}
             from (select count(*) from retired) r`,
@@ -449,14 +446,13 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       ...(action === 'appCreate' ? [item.bare!] : []),
     ].concat(item.folder ? [item.folder] : []);
     let got: Got | null = null;
-    // The brain's work and a contact's app data (named system work) run on
-    // the system pool.
-    const onSystemPool = actor === 'system' || actor === 'contact-rw';
+    // The brain's work runs on the system pool.
+    const onSystemPool = actor === 'system';
     const pool = onSystemPool ? sql : w;
     try {
       await pool.begin(async (tx) => {
         if (onSystemPool) {
-          await tx`select set_config('mantle.actor', ${actor === 'system' ? 'system:test' : 'contact:rw'}, true),
+          await tx`select set_config('mantle.actor', 'system:test', true),
                           set_config('mantle.write_mode', 'rw', true),
                           set_config('mantle.actor_check', 'on', true)`;
         } else {

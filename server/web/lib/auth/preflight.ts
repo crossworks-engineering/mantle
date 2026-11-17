@@ -65,8 +65,7 @@ function isJsonContentType(req: Request): boolean {
 /**
  * Login-CSRF guard for the public /api/auth POSTs that take a JSON body and
  * set or use the session cookie: login, signup,
- * invite/accept, change-password, the contact code (/s/:token/code), and
- * sign-out by its origin. The gate calls it for the rows that name it
+ * invite/accept, change-password, and sign-out by its origin. The gate calls it for the rows that name it
  * (a declaration's `limits.crossSite`), first, before any limiter
  * or lookup.
  *

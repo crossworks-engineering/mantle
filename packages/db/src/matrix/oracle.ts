@@ -214,17 +214,7 @@ export const ORACLE_WRITE_ROLES: readonly OracleWriteRole[] = [
 ];
 
 /** Who a statement runs as (docs/actors.md, the actor kinds). */
-export type OracleActor =
-  | 'login'
-  | 'login-ro'
-  | 'assistant'
-  | 'link'
-  | 'peer'
-  | 'contact-ro'
-  /** A contact share with Can write: its app's data, as named system work
-   *  after the app's own check (the /s broker). */
-  | 'contact-rw'
-  | 'system';
+export type OracleActor = 'login' | 'login-ro' | 'assistant' | 'link' | 'peer' | 'system';
 
 export const ORACLE_ACTORS: readonly OracleActor[] = [
   'login',
@@ -232,8 +222,6 @@ export const ORACLE_ACTORS: readonly OracleActor[] = [
   'assistant',
   'link',
   'peer',
-  'contact-ro',
-  'contact-rw',
   'system',
 ];
 
@@ -355,9 +343,8 @@ function adminForWrite(role: OracleWriteRole): boolean {
  * What the guide (docs/workspaces.md, "Items and grants" and "Apps";
  * docs/actors.md, the actor kinds; the owner's decisions D4 to D6) says a
  * write may do, at SQL level, in the fixture of expectedReadCreate:
- *  - a read key, an assistant with no user, a public link, a peer and a
- *    contact share without Can write write nothing; system work writes
- *    what its reason needs;
+ *  - a read key, an assistant with no user, a public link and a peer write
+ *    nothing; system work writes what its reason needs;
  *  - a login changes only an item it reads ("An item the caller may not
  *    read answers not found");
  *  - edit its content, its board rank: Moderator of its home, or a grant
@@ -386,15 +373,10 @@ export function expectedWrite(
   switch (context.actor) {
     case 'system':
       return { allow: true };
-    case 'contact-rw':
-      return action === 'appData'
-        ? { allow: true }
-        : { na: 'a contact writes only its app’s data, as named system work' };
     case 'login-ro':
     case 'assistant':
     case 'link':
     case 'peer':
-    case 'contact-ro':
       return { allow: false, why: 'this caller only reads' };
     default:
       break;
@@ -461,7 +443,7 @@ export function expectedRefusalDetail(
   role: OracleWriteRole,
   action: OracleWriteAction,
 ): 'ro_actor' | 'read_only' | null {
-  if (['login-ro', 'assistant', 'link', 'peer', 'contact-ro'].includes(actor)) return 'ro_actor';
+  if (['login-ro', 'assistant', 'link', 'peer'].includes(actor)) return 'ro_actor';
   if (
     actor === 'login' &&
     action === 'appDataInformational' &&

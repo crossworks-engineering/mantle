@@ -73,12 +73,11 @@ describe('the kind registry', () => {
     expect(kindSpecOf('toString')).toBeNull();
   });
 
-  it('an Admin-only kind is never linked, shared with a contact or a folder share', () => {
+  it('an Admin-only kind is never linked or a folder share', () => {
     for (const t of ITEM_KIND_NAMES) {
       const s = ITEM_KINDS[t];
       if (s.class !== 'admin_only') continue;
       expect(s.publicLink, t).toBe(false);
-      expect(s.contactShare, t).toBe(false);
       expect(s.tree?.shareable ?? false, t).toBe(false);
       expect(s.library, t).toBe(false);
     }

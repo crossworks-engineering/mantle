@@ -1,16 +1,15 @@
 /**
  * The one app tool broker (docs/request-plumbing.md, "App tool broker"):
- * a running app's host.tools.call(), for every way an app runs. Three
- * routes take a call, and each is a config of runAppToolBroker:
+ * a running app's host.tools.call(), for every way an app runs. Two
+ * callers take a call, and each is a config of runAppToolBroker:
  *
  *  - owner:   POST /api/apps/:id/tool-broker, an Admin user;
  *  - member:  the same route, a member login (lib/app-runner.ts
- *             memberToolBroker);
- *  - contact: POST /s/:token/tool-broker, a contact share past its code
- *             gate (an open link gets no tools: the route refuses it first).
+ *             memberToolBroker).
  *
+ * An open link gets no tools (POST /s/:token/tool-broker refuses it).
  * The route says who runs the app, how its body is read and how the app is
- * found; the broker does the rest, the same way for all three:
+ * found; the broker does the rest, the same way for both:
  *
  *  1. parse the body (one schema: the slug, the input and, for the owner's
  *     confirmation only, the host's ticket), read through the route's
@@ -18,27 +17,24 @@
  *  2. find the app (the config's lookup): 404 `app not found`;
  *  3. the verdict (packages/tools app-tool-level.ts, external-access.ts):
  *     the owner's run at the level the app's holders and author allow
- *     (appToolLevel 'admin'), a member's at the team rules, a contact's by
- *     contactAppToolVerdict. A refused call answers the one gate's refusal
+ *     (appToolLevel 'admin'), a member's at the team rules. A refused call answers the one gate's refusal
  *     (appToolRefusal);
  *  4. the owner's confirmation, at admin rules only: a tool that needs the
  *     owner's Yes answers 409 `reason: 'confirm'` with a ticket for that
  *     exact call, and runs once the host sends it back. The
- *     member's and the contact's verdicts refuse such a tool outright;
+ *     member's verdict refuses such a tool outright;
  *  5. the dispatch, through the one gate as the app's broker
  *     (appBrokerCaller), in the run's scope: the owner's web as system work
  *     for an app the Admin workspace alone holds, else the runner's own
- *     rights, as by hand (appToolScope), a link's served items for a
- *     contact;
+ *     rights, as by hand (appToolScope);
  *  6. the answer: the tool's result as it is, `{ ok, output }` or
  *     `{ ok: false, error }`.
  *
- * What every call leaves, whoever runs it (the strongest of the three
+ * What every call leaves, whoever runs it (the strongest of the callers
  * before the fold): one Activity row per call that reached a verdict
  * (recordAppAccess, kind 'tool': the slug, an outside call's kind and a
  * write's input, or why it was refused), and an error row for every
- * refusal and every failed tool (recordAppError); a contact's call also
- * lands on the share's trail (recordShareAccess). Before the fold the
+ * refusal and every failed tool (recordAppError). Before the fold the
  * owner logged no refusal (and no call at admin rules) and the link logged
  * no error.
  *
@@ -56,12 +52,7 @@ import {
   withViewer,
   type AppAuthorLevel,
 } from '@mantle/db';
-import {
-  recordAppAccess,
-  recordAppError,
-  recordShareAccess,
-  type AppToolRules,
-} from '@mantle/content';
+import { recordAppAccess, recordAppError, type AppToolRules } from '@mantle/content';
 import {
   APP_FILE_WRITE_MAX_BYTES,
   APP_TABLE_WRITE_MAX_BYTES,
@@ -121,13 +112,6 @@ export type AppToolBrokerConfig =
       /** The bookkeeping the login's own scope cannot do, the verdict and
        *  the run around the app run's scope: system work ('app-data'). */
       system: <T>(fn: () => Promise<T>) => Promise<T>;
-    })
-  | (AppToolBrokerCommon & {
-      /** A contact on a share link, past its code gate. */
-      via: 'contact';
-      share: { id: string; contactId: string };
-      /** The items the link serves: all a call of it reads. */
-      served: () => Promise<readonly string[]>;
     });
 
 type AppToolBrokerCommon = {
@@ -157,22 +141,11 @@ function runOf(
   input: Readonly<Record<string, unknown>>,
 ): AppToolRunPlan {
   return appToolRunPlan(
-    config.via === 'contact'
-      ? { via: 'contact', ownerId: config.ownerId, share: config.share, served: config.served }
-      : { via: config.via, ownerId: config.ownerId, runner: config.runner, adminScope: 'caller' },
+    { via: config.via, ownerId: config.ownerId, runner: config.runner, adminScope: 'caller' },
     app,
     slug,
     input,
   );
-}
-
-/** The log rows' caller columns: the login, or the share and its contact. */
-function whoOf(
-  config: AppToolBrokerConfig,
-): { actorId: string } | { shareId: string; contactId: string } {
-  return config.via === 'contact'
-    ? { shareId: config.share.id, contactId: config.share.contactId }
-    : { actorId: config.runner.loginId };
 }
 
 /** The confirmation ticket's claims: this owner, login, app, tool, input. */
@@ -221,26 +194,16 @@ export async function runAppToolBroker(
   // Who a team app's Table or file write would run as: read here, in the request,
   // before `system` masks its scope and actor (a mutating request of this
   // login, never a read-only login; withViewer checks it again).
-  const writer = config.via === 'contact' ? null : appRunWriter();
+  const writer = appRunWriter();
 
   const run = runOf(config, app, slug, input);
   const verdict = await system(run.verdict);
-  const who = whoOf(config);
+  const who = { actorId: config.runner.loginId };
   const via = config.via;
-  const tagged = { via, ...('contactId' in who ? { contactId: who.contactId } : {}), slug };
-  // The call's Activity row, and a contact's on the share's own trail
-  // (refused calls included).
-  const logCall = (detail: Record<string, unknown>, allowed: boolean) => {
+  const tagged = { via, slug };
+  // The call's Activity row (refused calls included).
+  const logCall = (detail: Record<string, unknown>) => {
     recordAppAccess({ ownerId: config.ownerId, appNodeId: app.id, ...who, kind: 'tool', detail });
-    if ('shareId' in who) {
-      recordShareAccess({
-        ownerId: config.ownerId,
-        shareId: who.shareId,
-        contactId: who.contactId,
-        kind: allowed ? 'tool' : 'refused',
-        detail: allowed ? { slug } : { slug, refused: 'tools' },
-      });
-    }
   };
   const logError = (message: string, status: number) =>
     recordAppError({
@@ -255,7 +218,7 @@ export async function runAppToolBroker(
     });
 
   if (!verdict.ok) {
-    logCall({ ...tagged, refused: verdict.reason }, false);
+    logCall({ ...tagged, refused: verdict.reason });
     logError(verdict.reason, verdict.status);
     // A missing tool 404; every other refusal the gate's 403, in the
     // verdict's words.
@@ -285,7 +248,7 @@ export async function runAppToolBroker(
     }
     if (!verifyAppToolConfirmToken(confirmToken, claims)) {
       const why = 'the confirmation expired or did not match the call';
-      logCall({ ...tagged, refused: why }, false);
+      logCall({ ...tagged, refused: why });
       logError(why, 403);
       return NextResponse.json(
         {
@@ -322,7 +285,7 @@ export async function runAppToolBroker(
           ? `The call is larger than ${APP_TABLE_WRITE_MAX_BYTES / (1024 * 1024)} MB, the most a team app's Table write takes. Split the rows into smaller calls.`
           : null;
   if (writeRefusal) {
-    logCall({ ...tagged, refused: writeRefusal }, false);
+    logCall({ ...tagged, refused: writeRefusal });
     logError(writeRefusal, 403);
     return NextResponse.json({ ok: false, error: writeRefusal }, { status: 403 });
   }
@@ -337,7 +300,7 @@ export async function runAppToolBroker(
       ? await createHomeIntent(writer.loginId, null, { ownWork: 'auto', makePrivate: true })
       : null;
   if (saveHome && 'refused' in saveHome) {
-    logCall({ ...tagged, refused: saveHome.message }, false);
+    logCall({ ...tagged, refused: saveHome.message });
     logError(saveHome.message, 403);
     return NextResponse.json({ ok: false, error: saveHome.message }, { status: 403 });
   }
@@ -346,15 +309,12 @@ export async function runAppToolBroker(
   // Table write names its Table and its row count. A file write's row is
   // written once it ran (below), with what it did.
   if (!fileWrite) {
-    logCall(
-      {
-        ...tagged,
-        ...outsideCallLogDetail(verdict, input, tableArg),
-        // Asked for: the tool itself refuses a save it may not make.
-        ...(fileSave && scope.actsFor ? { write: true, save_asked: 'file' } : {}),
-      },
-      true,
-    );
+    logCall({
+      ...tagged,
+      ...outsideCallLogDetail(verdict, input, tableArg),
+      // Asked for: the tool itself refuses a save it may not make.
+      ...(fileSave && scope.actsFor ? { write: true, save_asked: 'file' } : {}),
+    });
   }
   // Through the one gate as the app's broker.
   const dispatch = () =>
@@ -375,7 +335,7 @@ export async function runAppToolBroker(
   } finally {
     // A file write's row names its folder and its file, and whether it
     // landed (a refusal where it ran, or a throw, is no write).
-    if (fileWrite) logCall({ ...tagged, ...fileWriteLogDetail(input, result) }, true);
+    if (fileWrite) logCall({ ...tagged, ...fileWriteLogDetail(input, result) });
   }
   if (!result.ok) {
     logError(result.error, 200);

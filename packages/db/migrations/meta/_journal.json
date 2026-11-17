@@ -2640,6 +2640,13 @@
       "when": 1792060000000,
       "tag": "0377_agent_text_key",
       "breakpoints": true
+    },
+    {
+      "idx": 378,
+      "version": "7",
+      "when": 1792070000000,
+      "tag": "0378_contact_shares_gone",
+      "breakpoints": true
     }
   ]
 }

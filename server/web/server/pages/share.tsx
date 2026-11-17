@@ -1,19 +1,11 @@
 import type { Context } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
-import {
-  CONTACT_MENU_LIMIT,
-  isRetiredClientLinkToken,
-  isRetiredTeamLinkToken,
-  listContactShares,
-  loadProfilePreferences,
-  recordShareAccess,
-} from '@mantle/content';
+import { isRetiredClientLinkToken, isRetiredTeamLinkToken } from '@mantle/content';
 import { loadShareAppearance } from './appearance';
 import { recordShareView, loadShareView, sharePresentsShown } from '@/lib/shares';
 import { referencedPresentIds } from '@mantle/content';
 import { markdownToDoc } from '@mantle/content-core/markdown';
-import { gateShareCookie } from '@/lib/contact-share-gate';
-import { ContactSharesMenu } from '@/components/share/contact-shares-menu';
+import { openShareLink } from '@/lib/share-gate';
 import { PagePresenter } from '@/components/share/page-presenter';
 import { NotePresenter } from '@mantle/share-ui/note-presenter';
 import { FilePresenter } from '@mantle/share-ui/file-presenter';
@@ -40,12 +32,8 @@ import { requestOrigin } from '../../lib/auth-constants';
  * them). An old team link answers a plain "sign in as a member" page
  * instead of the not-found, pointing at /login. Client links are retired
  * too (migration 0192): one answers a plain 410 "this link has ended" (there
- * is no client sign-in page, so it points nowhere).
- *
- * A CONTACT share (migration 0214) runs behind the contact gate: without a
- * cookie that admits the share's contact, the page is the code prompt (401,
- * no item title, no contact name, no menu). With one, the item renders with
- * the "Shared with you" menu of that contact's live shares.
+ * is no client sign-in page, so it points nowhere). Contact shares are
+ * gone too (migration 0378 deleted them): their tokens answer the plain 404.
  */
 
 const SHARE_ORIGIN_RE = /^https?:\/\/[A-Za-z0-9.:[\]-]+$/;
@@ -102,33 +90,6 @@ function retiredClientLinkPage(): string {
   );
 }
 
-/** The code prompt of a contact share (401): an island, nothing about the
- *  item or the contact. The owner's appearance only. */
-async function contactCodePage(ownerId: string, token: string): Promise<string> {
-  const { attrs: appearance, defaultMode } = await loadShareAppearance(ownerId);
-  return htmlPage(
-    {
-      title: 'Shared',
-      noindex: true,
-      og: { title: 'Shared', description: 'Shared via Mantle' },
-      appearance,
-      islands: true,
-      share: { defaultMode, readerChrome: false },
-    },
-    `${islandDiv('contact-code', { shareToken: token }, 'h-dvh bg-background text-foreground')}
-<noscript><p class="p-6 text-center text-sm">Turn on JavaScript to enter your code.</p></noscript>`,
-  );
-}
-
-/** The brain's site name for the contact menu strip (null on a read error). */
-async function siteNameOf(ownerId: string): Promise<string | null> {
-  try {
-    return (await loadProfilePreferences(ownerId)).siteName ?? null;
-  } catch {
-    return null;
-  }
-}
-
 async function renderShare(c: Context): Promise<Response> {
   const token = c.req.param('token') ?? '';
   const url = new URL(c.req.url);
@@ -138,17 +99,12 @@ async function renderShare(c: Context): Promise<Response> {
   // The exceptions are retired team and client links: a team link's visitor
   // is told where to go now, a client link's that it has ended (no item
   // title either way).
-  const gate = await gateShareCookie(c.req.raw.headers.get('cookie'), token);
-  if (gate.kind === 'missing') {
+  const share = await openShareLink(token);
+  if (!share) {
     if (await isRetiredTeamLinkToken(token)) return c.html(retiredTeamLinkPage(), 410);
     if (await isRetiredClientLinkToken(token)) return c.html(retiredClientLinkPage(), 410);
     return c.notFound();
   }
-  if (gate.kind === 'code') {
-    c.header('Cache-Control', CACHE_CONTROL.none);
-    return c.html(await contactCodePage(gate.share.ownerId, token), 401);
-  }
-  const { share, contact } = gate;
   const view = await loadShareView(share);
   if (!view) return c.notFound();
 
@@ -177,32 +133,6 @@ async function renderShare(c: Context): Promise<Response> {
   };
 
   void recordShareView(share.id); // fire-and-forget view counter
-
-  // A contact share: its contact's other live shares, one bounded read, for
-  // the contact named by THIS share (never one taken from the request).
-  let menu = '';
-  if (contact) {
-    recordShareAccess({
-      ownerId: share.ownerId,
-      shareId: share.id,
-      contactId: contact.contactId,
-      kind: 'open',
-    });
-    const [listed, siteName] = await Promise.all([
-      listContactShares(share.ownerId, contact.contactId, { limit: CONTACT_MENU_LIMIT }),
-      siteNameOf(share.ownerId),
-    ]);
-    menu = renderToStaticMarkup(
-      <ContactSharesMenu
-        items={listed.items}
-        more={listed.more}
-        currentToken={token}
-        siteName={siteName}
-        shape={view.kind === 'app' ? 'pill' : 'strip'}
-      />,
-    );
-    c.header('Cache-Control', CACHE_CONTROL.none);
-  }
 
   // Encoded, as drawUrl is: a note's `media:` id is free text from its
   // markdown, and a `/` or `?` in it must not reshape the path.
@@ -323,10 +253,10 @@ async function renderShare(c: Context): Promise<Response> {
   const fullViewport = view.kind === 'app' || view.kind === 'present';
   return c.html(
     fullViewport
-      ? htmlPage({ ...meta, islands, share: { defaultMode, readerChrome: false } }, body + menu)
+      ? htmlPage({ ...meta, islands, share: { defaultMode, readerChrome: false } }, body)
       : htmlPage(
           { ...meta, islands, share: shareMeta },
-          shareShell(menu + body, { neat: neatBackground !== null }),
+          shareShell(body, { neat: neatBackground !== null }),
         ),
   );
 }
@@ -335,7 +265,7 @@ async function renderShare(c: Context): Promise<Response> {
  * The /s page, registered by the route loader with its ROUTE_POLICY rows
  * (class 'link', registerPages). The gate runs it through
  * enterCall as system(http:share-page) (the row's startsAs); the share gate
- * (gateShareCookie) names the link or the contact once it admits one.
+ * (openShareLink) names the link once it resolves it.
  * Registered after the manifest's routes.
  */
 export const SHARE_PAGES: readonly PageRoute[] = [

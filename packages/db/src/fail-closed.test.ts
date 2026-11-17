@@ -142,12 +142,8 @@ describe('a scoped typed write to a table the write role does not hold', () => {
     });
   });
 
-  it("the reason covers a login only: an assistant's, a link's or a contact's write is refused", async () => {
-    const others: Actor[] = [
-      { kind: 'assistant', agentId: null },
-      { kind: 'link' },
-      { kind: 'contact', canWrite: true },
-    ];
+  it("the reason covers a login only: an assistant's or a link's write is refused", async () => {
+    const others: Actor[] = [{ kind: 'assistant', agentId: null }, { kind: 'link' }];
     for (const actor of others) {
       await inWriteRequest(() =>
         runAsActor(actor, async () => {

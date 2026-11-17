@@ -12,10 +12,10 @@
 import type { LoginRole } from './role-names';
 
 /** The kind of viewer: a login (its role: the owner or an admin login, a
- *  member login), a Contact share's contact, or an open /s link (no person).
- *  `client` stays for the wire contract (additive only): a client login was
- *  a viewer kind before the role was removed, and an app may still test
- *  `:host_me_kind` for it. No brain answers it now. */
+ *  member login) or an open /s link (no person). `client` and `contact`
+ *  stay for the wire contract (additive only): a client login and a contact
+ *  share's contact (gone since migration 0378) were viewer kinds, and an
+ *  app may still test `:host_me_kind` for them. No brain answers them now. */
 export type AppViewerKind = LoginRole | 'client' | 'contact' | 'public';
 
 export type AppViewer = {

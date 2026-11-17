@@ -13,8 +13,7 @@
  * login's write run as system work ('app-data') around the whole call; the
  * owner's and a link's run in their own context. The
  * export bookkeeping itself (the dirty stamp and the debounced sync) runs
- * as system(app-export) whoever wrote: a contact share's own actor writes
- * its app's data only (migration 0294). Debounced and hash-gated
+ * as system(app-export) whoever wrote. Debounced and hash-gated
  * (app-table-exports.ts), so a chatty app costs no extra commits.
  *
  * Server-only (opens the app SQLite): imported as

@@ -162,15 +162,6 @@ export type ToolHandlerContext = {
         uiWindowId?: string;
       }
     | {
-        /** A CONTACT on a contact-share link (/s, past the code gate) runs a
-         *  shared app that calls an outside tool with External access
-         *  (external-access.ts). Only such tools are ever dispatched here:
-         *  no built-in runs on a link. Never the owner. */
-        kind: 'contact';
-        contactId: string;
-        shareId: string;
-      }
-    | {
         /** The OWNER, on a path that is not a chat channel: MCP, a run, a
          *  delegated child, an approved pending call, the dev tool console, an
          *  owner app. A missing surface is NOT the owner (see surface.ts):

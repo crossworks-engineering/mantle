@@ -290,69 +290,11 @@ export function verifyAssetToken(token: string): { uid: string; act?: string; ep
 // accepts kind 'c'; the kind stays reserved so an old value can never be read
 // as something else.
 
-// ── Contact visitor values (`k:'v'`) ─────────────────────────────────────────
-// Set after a contact types their code at a contact share's prompt (contact
-// shares, migration 0214; POST /s/<token>/code). The value names the CONTACT
-// (`cid`), the brain (`oid`, its owner id) and the contact's code epoch
-// (`ce`) when it was minted. It opens nothing by itself: the gate
-// (lib/contact-share-gate.ts) admits it only on a live share for THAT
-// contact, while the contact's sharing is on, not locked, and still at that
-// epoch. Regenerate and switch off move the epoch, so every value of the
-// contact dies on its next request. The cookie (`mantle_contact`, path
-// /s/) may carry values for several contacts, joined by '~'; the gate tries
-// each. Every other verifier rejects kind 'v'.
-
-export const CONTACT_VISITOR_COOKIE = 'mantle_contact';
-export const CONTACT_VISITOR_TTL_SECONDS = 30 * 24 * 60 * 60;
-
-export type ContactVisitorClaims = {
-  contactId: string;
-  ownerId: string;
-  codeEpoch: number;
-  /** Seconds since the epoch at mint time. */
-  issuedAt: number;
-};
-
-/** Mint a contact visitor value. */
-export function buildContactVisitorValue(opts: {
-  contactId: string;
-  ownerId: string;
-  codeEpoch: number;
-}): { value: string; maxAgeSec: number } {
-  const { value } = signClaims(
-    {
-      cid: opts.contactId,
-      oid: opts.ownerId,
-      ce: opts.codeEpoch,
-      iat: Math.floor(Date.now() / 1000),
-      k: 'v',
-    },
-    CONTACT_VISITOR_TTL_SECONDS,
-  );
-  return { value, maxAgeSec: CONTACT_VISITOR_TTL_SECONDS };
-}
-
-/** Verify a contact visitor value: signature, expiry, kind. No DB: the gate
- *  still checks the share, the contact's sharing and the epoch. */
-export function verifyContactVisitorValue(value: string): ContactVisitorClaims | null {
-  const claims = verifySigned(value, 'v');
-  if (
-    !claims ||
-    typeof claims.cid !== 'string' ||
-    typeof claims.oid !== 'string' ||
-    typeof claims.ce !== 'number' ||
-    !Number.isSafeInteger(claims.ce) ||
-    claims.ce < 1
-  ) {
-    return null;
-  }
-  return {
-    contactId: claims.cid,
-    ownerId: claims.oid,
-    codeEpoch: claims.ce,
-    issuedAt: typeof claims.iat === 'number' ? claims.iat : 0,
-  };
-}
+// ── Contact visitor values (`k:'v'`): retired ────────────────────────────────
+// The contact share visitor value (the `mantle_contact` cookie) of the
+// retired contact shares (gone since migration 0378). Nothing mints or
+// accepts kind 'v'; the kind stays reserved so an old value can never be
+// read as something else.
 
 // ── App-frame tickets (`k:'f'`) ──────────────────────────────────────────────
 // The mini-app sandbox iframe navigates to a real URL (/api/apps/[id]/frame or
@@ -393,9 +335,6 @@ export function buildAppFrameTicket(opts: {
   shareId?: string;
   loginId?: string;
   clientEpoch?: number;
-  /** A contact share's contact and code epoch (contact shares): the share
-   *  frame re-checks both, since the frame navigation carries no cookie. */
-  contact?: { contactId: string; codeEpoch: number };
   /** An admin's TEST run of a member's app (workspace review pattern): only
    *  /api/apps/members/:id/test/frame accepts it, and every other frame
    *  route refuses it. Owner surface only (needs `actorId`). */
@@ -408,10 +347,6 @@ export function buildAppFrameTicket(opts: {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.canvas) claims.cv = 1;
   if (opts.shareId) claims.sh = opts.shareId;
-  if (opts.shareId && opts.contact) {
-    claims.cid = opts.contact.contactId;
-    claims.ce = opts.contact.codeEpoch;
-  }
   if (opts.loginId) claims.mem = opts.loginId;
   if (opts.loginId && opts.clientEpoch !== undefined) claims.cep = opts.clientEpoch;
   // Only an owner ticket names an admin actor: a share, member or client
@@ -427,9 +362,8 @@ export function buildAppFrameTicket(opts: {
 /** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
  *  callers must still confirm the app (and share, when `shareId` is set)
  *  matches the route being served, and re-check a member login's liveness
- *  via `loginId`. A `cid` claim counts only on a share ticket, with its `ce`
- *  (a contact share's contact and code epoch); the share frame re-checks
- *  both. A `cid` alone (a retired team visitor's) is ignored. */
+ *  via `loginId`. A `cid` or `ce` claim (a retired team visitor's or
+ *  contact share's) is ignored. */
 export type AppFrameTicket = {
   ownerId: string;
   appId: string;
@@ -441,10 +375,6 @@ export type AppFrameTicket = {
    *  at mint time. Only the client frame route accepts it; the member frame
    *  refuses a ticket that carries it. */
   clientEpoch?: number;
-  /** A contact share's ticket: the contact and its code epoch at mint time
-   *  (only with `shareId`). */
-  contactId?: string;
-  codeEpoch?: number;
   /** An owner ticket's admin login (app identity: host.me()). */
   actorId?: string;
   /** An admin's test run of a member's app: only the test frame accepts it. */
@@ -472,17 +402,6 @@ export function verifyAppFrameTicket(
     // Only an admin's ticket with no share or login may be a test ticket.
     if (claims.rv !== 1 || !out.actorId) return null;
     out.reviewTest = true;
-  }
-  // A contact share's ticket carries both `cid` and `ce`. A `cid` alone (a
-  // team visitor's, retired with team links) is ignored.
-  if (
-    out.shareId &&
-    typeof claims.cid === 'string' &&
-    typeof claims.ce === 'number' &&
-    Number.isSafeInteger(claims.ce)
-  ) {
-    out.contactId = claims.cid;
-    out.codeEpoch = claims.ce;
   }
   if (
     typeof claims.cep === 'number' &&

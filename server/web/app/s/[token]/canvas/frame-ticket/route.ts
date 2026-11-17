@@ -3,11 +3,10 @@
  * canvas iframe of an open link presents to GET /s/[token]/canvas/frame
  * (docs/proposals/canvas-files.md 5.3 and 7.2). The visitor needs the active
  * link and nothing else; the ticket binds the frame to THIS link and canvas.
- * Only an open link: a Present canvas carries no contact share, so a link
- * with a contact is not one this route serves. 404 when the canvas is gone.
+ * 404 when the canvas is gone.
  */
 import { NextResponse } from '@/server/http-compat';
-import { gateShare } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { buildCanvasFrameTicket, canvasFrameNonce } from '@/lib/auth';
 import { getPresentFrame } from '@/lib/presents';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -28,10 +27,8 @@ function notFound() {
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
-  const gate = await gateShare(req, token);
-  if (gate.kind !== 'ok') return notFound();
-  const share = gate.share;
-  if (share.nodeType !== 'present' || share.contactId) return notFound();
+  const share = await openShareLink(token);
+  if (!share || share.nodeType !== 'present') return notFound();
   const canvas = await getPresentFrame(share.ownerId, share.nodeId);
   if (!canvas) return notFound();
   const ticket = buildCanvasFrameTicket({

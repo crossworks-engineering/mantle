@@ -68,7 +68,7 @@ export function serveInput(v: unknown): string[] | undefined | string {
  * owner's own pending approval (never a delegated child, whose parent chat
  * may name none). Anything else is refused, never read as the owner: a
  * missing surface (the rule in surface.ts), a chat that names no login, a
- * team or contact surface with no login of its own, an MCP connection that
+ * team surface with no login of its own, an MCP connection that
  * names none (a peer bound to an Admin login).
  */
 /** The owner paths that may link as the brain owner when they name no

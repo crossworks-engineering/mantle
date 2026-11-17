@@ -1,4 +1,4 @@
-import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
@@ -44,9 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   // The gate took the row's per-address limit (lib/route-limits.ts shareAggregate).
 
-  const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired(gate.share);
-  const share = gate.kind === 'ok' ? gate.share : null;
+  const share = await openShareLink(token);
   if (!share || share.nodeType !== 'table') return notFound();
 
   const url = new URL(req.url);

@@ -1,7 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
-import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { isAssetAllowed } from '@/lib/shares';
-import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { CACHE_CONTROL } from '@/lib/cache-control';
@@ -38,20 +37,9 @@ export async function GET(
 
   // The gate took the row's per-address limit (lib/route-limits.ts shareAsset).
 
-  const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired(gate.share);
-  const share = gate.kind === 'ok' ? gate.share : null;
+  const share = await openShareLink(token);
   if (!share) return notFound();
   if (!(await isAssetAllowed(share, fileId))) return notFound();
-  if (share.contactId) {
-    recordShareAccess({
-      ownerId: share.ownerId,
-      shareId: share.id,
-      contactId: share.contactId,
-      kind: 'asset',
-      detail: { fileId },
-    });
-  }
 
   const res = await readFileById({ ownerId: share.ownerId, fileId });
   if (!res) return notFound();

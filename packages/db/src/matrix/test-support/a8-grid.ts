@@ -9,8 +9,8 @@
  *  - a read (read, list, search) on the workspace role (mantle_view_user)
  *    with the caller's scope (mantle.ws, mantle.mod_ws, mantle.login_id), as
  *    a request or turn scope reads; system work on the system pool;
- *  - a login's, a turn's, an assistant's, a link's, a peer's and a contact
- *    share's write on a login of the write role (mantle_write_user), its
+ *  - a login's, a turn's, an assistant's, a link's and a peer's write on
+ *    a login of the write role (mantle_write_user), its
  *    scope, actor, write mode and create home set in the transaction by the
  *    gateway's own statement (writeRoleSettingsSql), the heads taken first,
  *    as the login write gateway sends a scoped write (docs/actors.md, "The
@@ -28,8 +28,7 @@
  *    calls the same definers on the system pool with no scope today, its
  *    rights checked in TypeScript (server/web/lib/grants.ts); the grid checks
  *    the database's rule, the surface cells the panel's;
- *  - system work, and a contact share's app data (named system work after
- *    the share's own check), on the system pool.
+ *  - system work on the system pool.
  *
  * A cell passes only on the right row effect, read back through a probe
  * (a8_probe, a definer this scratch database gets): allowed is the change
@@ -172,8 +171,7 @@ export async function installProbe(sql: Sql): Promise<void> {
           'cards', (select string_agg(r.body_md, '|' order by r.slug)
                       from recall_nodes r where r.map_id = n.id),
           'links', (select string_agg(s.token, '|' order by s.token)
-                      from shares s where s.node_id = n.id and s.revoked_at is null
-                                      and s.contact_id is null),
+                      from shares s where s.node_id = n.id and s.revoked_at is null),
           'appdata', (select ad.size_bytes from app_databases ad where ad.app_node_id = n.id),
           'appwritten', (select ad.client_written_at is not null
                            from app_databases ad where ad.app_node_id = n.id),
@@ -513,16 +511,13 @@ function settingsOf(fx: A8Fixture, c: A8Cell): Settings {
         ...none,
       };
     case 'link':
-    case 'peer':
-    case 'contact-ro': {
+    case 'peer': {
       // In the scope of a login that may write (the Write grant): the actor
       // alone decides (as the A3a write grid).
       const s = fx.scope.writeGrant;
-      const actor = c.actor === 'link' ? 'link' : c.actor === 'peer' ? 'peer:none' : 'contact:ro';
+      const actor = c.actor === 'link' ? 'link' : 'peer:none';
       return { ws: s.ws, mod: s.mod, login: fx.logins.writeGrant, actor, mode: 'ro', ...none };
     }
-    case 'contact-rw':
-      return { ws: [], mod: [], login: '', actor: 'contact:rw', mode: 'rw', ...none };
     case 'system':
       return { ws: [], mod: [], login: '', actor: 'system:test', mode: 'rw', ...none };
     default:
@@ -571,7 +566,7 @@ type Got =
   | { failure: string };
 
 /** A caller the grid runs as named system work, on the system pool. */
-const onSystemPool = (c: A8Cell) => c.actor === 'system' || c.actor === 'contact-rw';
+const onSystemPool = (c: A8Cell) => c.actor === 'system';
 
 /** Run one cell; null when it matches the oracle, else why not. */
 export async function runA8Cell(conns: A8Conns, fx: A8Fixture, c: A8Cell): Promise<string | null> {
@@ -815,7 +810,7 @@ async function act(
       await tx`
         with retired as (
           update shares set revoked_at = now()
-           where node_id = ${id} and revoked_at is null and contact_id is null returning 1)
+           where node_id = ${id} and revoked_at is null returning 1)
         insert into shares (token, owner_id, node_id, node_type)
         select ${`${fx.tag}-${randomUUID()}`}, ${fx.owner}, ${id}, ${c.kind}
           from (select count(*) from retired) r`;

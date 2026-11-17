@@ -24,8 +24,6 @@ export default defineConfig({
       'server/web/server/a3b2-store-brokers.db.test.ts',
       // The A8 findings' cells with both checks on.
       'server/web/server/a8-findings.db.test.ts',
-      // A contact share's write and its export sync (0294).
-      'server/web/server/f9-contact-export.db.test.ts',
       // The runs worker, the stdio MCP server and the Telegram poller on the
       // write role.
       'server/web/server/worker-write-role.db.test.ts',

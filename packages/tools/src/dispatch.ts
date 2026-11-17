@@ -20,12 +20,7 @@ import {
   type ToolHandler,
 } from '@mantle/db';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
-import {
-  connectorGroupRow,
-  connectorToolPolicy,
-  LINK_NO_CONNECTORS,
-  loginConnectorRefused,
-} from './external-access';
+import { connectorGroupRow, connectorToolPolicy, loginConnectorRefused } from './external-access';
 import {
   CONNECTOR_STALE_MARK_ERROR,
   connectorScopeFacts,
@@ -505,13 +500,13 @@ const MCP_RESULT_TEXT_CAP = 80_000;
 
 /** Who a non-owner call outside a workspace scope runs for (its callers
  *  return first inside one): `login` for a login's surface (a member's) in
- *  system work, `link` for a contact link or any scope that is not system
- *  work (fails closed), null for the owner's own paths (system work on no
+ *  system work, `link` for any scope that is not system work (fails
+ *  closed), null for the owner's own paths (system work on no
  *  such surface). */
 function nonOwnerRun(ctx: ToolHandlerContext): 'login' | 'link' | null {
   const s = ctx.surface;
   if (currentScope().kind !== 'system') return 'link';
-  return s?.kind === 'team' ? 'login' : s?.kind === 'contact' ? 'link' : null;
+  return s?.kind === 'team' ? 'login' : null;
 }
 
 /**
@@ -592,8 +587,7 @@ async function connectorScopeRefused(
  * scope, or null. The connector's level decides nothing (it only
  * says which agents may hold the group): the workspaces that hold the
  * connector do. A call on a login's surface (a member's)
- * takes the login's workspace rule (loginConnectorRefused); a contact link
- * holds no workspace, so it reaches no connector; any other non-owner run
+ * takes the login's workspace rule (loginConnectorRefused); any other non-owner run
  * names no login to check, so it is refused too (fails closed).
  */
 async function connectorCallRefused(
@@ -614,7 +608,6 @@ async function connectorCallRefused(
   const marked = connectorMarkRefusal(mark, tool, input);
   if (marked !== null) return marked;
   const s = ctx.surface;
-  if (s?.kind === 'contact') return LINK_NO_CONNECTORS;
   if (s?.kind === 'team' && s.loginId) {
     return loginConnectorRefused(ctx.ownerId, s.loginId, groupSlug, mark === 'write');
   }

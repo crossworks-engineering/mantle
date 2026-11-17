@@ -11,7 +11,6 @@
  */
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
 import {
   bestEffortWrite,
   db,
@@ -195,13 +194,8 @@ export type ShareSummary = {
   createdAt: string;
   expiresAt: string | null;
   viewCount: number;
-  /** The contact a contact share is for (migration 0214); null on an open
-   *  link. */
-  contactId: string | null;
-  /** A contact share of an app whose contact may write the app's data. */
-  canWrite: boolean;
   /** What an open link serves besides its item: node ids, lower
-   *  case. Empty on a contact share (it serves what its item names). */
+   *  case. */
   served: string[];
 };
 
@@ -216,9 +210,7 @@ function toSummary(s: Share): ShareSummary {
     createdAt: s.createdAt.toISOString(),
     expiresAt: s.expiresAt ? s.expiresAt.toISOString() : null,
     viewCount: s.viewCount,
-    contactId: s.contactId ?? null,
-    canWrite: s.canWrite === true,
-    served: s.contactId ? [] : shareServedIds(s.settings),
+    served: shareServedIds(s.settings),
   };
 }
 
@@ -293,14 +285,7 @@ function activePredicate() {
   );
 }
 
-/** SQL predicate: an active OPEN link (no contact). A contact share
- *  (migration 0214) is managed in contact-shares.ts. */
-function openPredicate() {
-  return and(activePredicate(), isNull(shares.contactId));
-}
-
-/** The owner's active OPEN link for a node, or null. Contact shares are
- *  never returned here (see contact-shares.ts). */
+/** The owner's active link for a node, or null. */
 export async function getActiveShareForNode(
   ownerId: string,
   nodeId: string,
@@ -309,12 +294,12 @@ export async function getActiveShareForNode(
   const [row] = await q
     .select()
     .from(shares)
-    .where(and(eq(shares.ownerId, ownerId), eq(shares.nodeId, nodeId), openPredicate()))
+    .where(and(eq(shares.ownerId, ownerId), eq(shares.nodeId, nodeId), activePredicate()))
     .limit(1);
   return row ? toSummary(row) : null;
 }
 
-/** The owner's live share by id (an open link or a contact share), or null.
+/** The owner's live share by id, or null.
  *  Revoked shares are not returned; an expired one is (it can still be
  *  revoked). */
 export async function getLiveShare(
@@ -370,9 +355,8 @@ export async function createShare(
   }
 
   // An expired link (or a team link, retired) is not active but still holds
-  // the one-link slot (shares_node_open_uq is WHERE revoked_at IS NULL AND
-  // contact_id IS NULL): retire it first, or the insert below violates the
-  // index. Contact shares hold slots of their own and are left alone.
+  // the one-link slot (shares_node_active_uq is WHERE revoked_at IS NULL):
+  // retire it first, or the insert below violates the index.
   await q
     .update(shares)
     .set({ revokedAt: new Date() })
@@ -381,7 +365,6 @@ export async function createShare(
         eq(shares.ownerId, ownerId),
         eq(shares.nodeId, nodeId),
         isNull(shares.revokedAt),
-        isNull(shares.contactId),
         or(lte(shares.expiresAt, new Date()), sql`${shares.settings}->>'mode' = 'team'`),
       ),
     );
@@ -415,12 +398,12 @@ export async function setShareServed(
     .set({
       settings: sql`${shares.settings} || jsonb_build_object('served', ${JSON.stringify(served)}::jsonb)`,
     })
-    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), openPredicate()))
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), activePredicate()))
     .returning();
   return row ? toSummary(row) : null;
 }
 
-/** Revoke a share by id (owner-scoped): an open link or a contact share.
+/** Revoke a share by id (owner-scoped).
  *  Returns true if a row was revoked. Changes no level and no grant. */
 export async function revokeShare(
   ownerId: string,
@@ -435,25 +418,10 @@ export async function revokeShare(
   return rows.length > 0;
 }
 
-/** Resolve an active OPEN link by its public token. NOT owner-scoped: this
+/** Resolve an active link by its public token. NOT owner-scoped: this
  *  is the public read path. Returns the full row (caller decides what to
- *  expose). A contact share's token never resolves here: a caller that
- *  forgets the contact gate cannot serve one. The /s layer uses
- *  {@link resolveActiveShareRowByToken} behind the gate. */
+ *  expose). */
 export async function resolveActiveShareByToken(token: string): Promise<Share | null> {
-  if (!token) return null;
-  const [row] = await db
-    .select()
-    .from(shares)
-    .where(and(eq(shares.token, token), openPredicate()))
-    .limit(1);
-  return row ?? null;
-}
-
-/** Resolve an active share by its token, an open link or a CONTACT share
- *  (migration 0214). Only the contact share gate (server/web/lib/
- *  contact-share-gate.ts) may serve what this returns for a contact share. */
-export async function resolveActiveShareRowByToken(token: string): Promise<Share | null> {
   if (!token) return null;
   const [row] = await db
     .select()
@@ -473,13 +441,7 @@ export async function isRetiredClientLinkToken(token: string): Promise<boolean> 
   const [row] = await db
     .select({ id: shares.id })
     .from(shares)
-    .where(
-      and(
-        eq(shares.token, token),
-        isNull(shares.contactId),
-        sql`${shares.settings}->>'retired' = 'client'`,
-      ),
-    )
+    .where(and(eq(shares.token, token), sql`${shares.settings}->>'retired' = 'client'`))
     .limit(1);
   return !!row;
 }
@@ -517,32 +479,25 @@ export async function recordShareView(shareId: string): Promise<void> {
 export type ActiveShareListing = ShareSummary & {
   /** Display fields joined off the shared node. */
   title: string;
-  /** A contact share's contact, by name (migration 0214); null on an open
-   *  link. */
-  contactName: string | null;
   nodeIcon: string | null;
   nodePath: string | null;
   lastViewedAt: string | null;
 };
 
-/** Every ACTIVE share the owner has, newest first — the "what is exposed right
- *  now" registry behind the owner's shared-links overview: open links and
- *  contact shares (0214, with the contact's name). One query. Inner join:
- *  shares.node_id is ON DELETE CASCADE, so a share never outlives its node
- *  (nor its contact: shares.contact_id cascades too). */
+/** Every ACTIVE share the owner has, newest first: the "what is exposed
+ *  right now" registry behind the owner's shared-links overview. One query.
+ *  Inner join: shares.node_id is ON DELETE CASCADE, so a share never
+ *  outlives its node. */
 export async function listActiveShares(ownerId: string): Promise<ActiveShareListing[]> {
-  const contact = alias(nodes, 'share_contact');
   const rows = await db
     .select({
       share: shares,
       title: nodes.title,
       data: nodes.data,
       path: nodes.path,
-      contactName: contact.title,
     })
     .from(shares)
     .innerJoin(nodes, eq(nodes.id, shares.nodeId))
-    .leftJoin(contact, eq(contact.id, shares.contactId))
     .where(and(eq(shares.ownerId, ownerId), activePredicate()))
     .orderBy(sql`${shares.createdAt} DESC`);
   return rows.map((r) => {
@@ -550,7 +505,6 @@ export async function listActiveShares(ownerId: string): Promise<ActiveShareList
     return {
       ...toSummary(r.share),
       title: r.title,
-      contactName: r.share.contactId ? (r.contactName ?? '') : null,
       nodeIcon: typeof d.icon === 'string' ? d.icon : null,
       nodePath: r.path ?? null,
       lastViewedAt: r.share.lastViewedAt ? r.share.lastViewedAt.toISOString() : null,
@@ -615,7 +569,7 @@ export async function applyShareMode(
   const [row] = await q
     .select({ id: shares.id })
     .from(shares)
-    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), openPredicate()))
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), activePredicate()))
     .limit(1);
   return !!row;
 }

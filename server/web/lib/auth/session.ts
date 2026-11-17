@@ -1973,9 +1973,8 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
  * for them too. Returns the refusal, or null to go on.
  *
  * No write is kept on the system pool: the Admin acts
- * (a contact's sharing, sharing with contacts, Revoke all of a contact's
- * shares, an entity merge; the share close by the users area, a contact
- * share's "Can write", the deleted apps' trash) run in the login's scope,
+ * (an entity merge; the share close by the users area, the deleted apps'
+ * trash) run in the login's scope,
  * each asking its definer, which checks the Admin user inside (0308, 0310).
  */
 async function enterLoginWrite(

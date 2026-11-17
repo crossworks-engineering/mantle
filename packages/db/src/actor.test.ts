@@ -43,8 +43,6 @@ describe('the actor kinds (plan 4.1, 20.3 item 15)', () => {
       [loginActor(L, 'owner'), `login:owner:${L}`, 'rw'],
       [{ kind: 'assistant', agentId: null }, 'assistant:none', 'ro'],
       [{ kind: 'link' }, 'link', 'ro'],
-      [{ kind: 'contact', canWrite: true }, 'contact:rw', 'rw'],
-      [{ kind: 'contact', canWrite: false }, 'contact:ro', 'ro'],
       [systemActor('worker:extract'), 'system:worker:extract', 'rw'],
       [{ kind: 'peer', peerId: null }, 'peer:none', 'ro'],
     ];
@@ -175,16 +173,14 @@ describe('binding the actor', () => {
     );
   });
 
-  it('system work narrows to read only under login(ro), a link and a read contact only (A2b)', () => {
+  it('system work narrows to read only under login(ro) and a link only (A2b)', () => {
     const under = (outer: Actor | null) => writeModeOf(systemUnder('x', outer));
     expect(under(loginActor(L, 'ro'))).toBe('ro');
     expect(under({ kind: 'link' })).toBe('ro');
-    expect(under({ kind: 'contact', canWrite: false })).toBe('ro');
     expect(under(systemUnder('outer', loginActor(L, 'ro')))).toBe('ro');
     // An assistant with no user and a peer(share) do their own system work.
     expect(under({ kind: 'assistant', agentId: null })).toBe('rw');
     expect(under({ kind: 'peer', peerId: null })).toBe('rw');
-    expect(under({ kind: 'contact', canWrite: true })).toBe('rw');
     expect(under(loginActor(L, 'rw'))).toBe('rw');
     expect(under(loginActor(L, 'owner'))).toBe('rw');
     expect(under(null)).toBe('rw');

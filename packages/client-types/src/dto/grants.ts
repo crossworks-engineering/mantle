@@ -42,19 +42,6 @@ export type GrantEmbed = { nodeId: string; title: string; kind: string };
  *  when the caller cannot read that item (or it is gone). */
 export type GrantServedRef = { nodeId: string; title: string | null };
 
-/** A contact the item is shared with (the same shape as the Access
- *  control's AccessContactShare). */
-export type GrantContactShare = {
-  shareId: string;
-  contactId: string;
-  name: string;
-  canWrite: boolean;
-  sharingOn: boolean;
-  lastOpenedAt: string | null;
-  /** Server-relative: `/s/<token>`. */
-  path: string;
-};
-
 /** GET /api/grants/:nodeId (an item or a folder). */
 export type GrantsResponse = {
   item: { id: string; title: string; type: string };
@@ -86,9 +73,6 @@ export type GrantsResponse = {
    *  served among them. Empty unless `mayLink`. The same rule POST
    *  /api/shares and PATCH /api/shares/:id { serve } check. */
   serveCandidates: GrantEmbed[];
-  /** The contacts it is shared with: only for an Admin user who `mayLink`,
-   *  on a kind that takes contact shares; else null. */
-  contactShares: GrantContactShare[] | null;
   /** Pages, drawings and notes: what they embed that is not granted to
    *  every workspace the item is (only embeds the caller may open). */
   embedsNotGranted: GrantEmbed[];

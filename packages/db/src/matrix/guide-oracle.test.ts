@@ -5,7 +5,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  CONTACT_WRITES_APP_DATA_ONLY,
   GUIDE_ACTIONS,
   GUIDE_ROLES,
   GUIDE_SILENT_PINNED,
@@ -125,12 +124,11 @@ describe('the A8 oracle', () => {
       denied,
     );
     expect(expectedAccess(at('root', 'login-ro'), 'homeModerator', 'note', 'read')).toEqual(allow);
-    for (const actor of ['assistant', 'link', 'peer', 'contact-ro'] as const) {
+    for (const actor of ['assistant', 'link', 'peer'] as const) {
       expect(expectedAccess(at('root', actor), null, 'note', 'edit')).toMatchObject(denied);
     }
     // "With no user ... an assistant only reads": W's assistant reads W's.
     expect(expectedAccess(at('root', 'assistant'), null, 'note', 'read')).toEqual(allow);
-    expect(expectedAccess(at('root', 'contact-rw'), null, 'app', 'appData')).toEqual(allow);
   });
 
   it('an app: its home Moderator, Admin users and the owner delete it (owner decision 2026-10-15, plan s34: an archive)', () => {
@@ -213,15 +211,5 @@ describe('the A8 oracle', () => {
     expect(othersRead('folder')).toBe(true);
     expect(othersRead('admin')).toBe(true);
     expect(othersRead('snapshot')).toBe(false);
-  });
-
-  it("a contact share with Can write writes its app's data, and nothing else", () => {
-    expect(expectedAccess(at('root', 'contact-rw'), null, 'app', 'appData')).toEqual(allow);
-    for (const action of ['edit', 'delete', 'move', 'grantAdd', 'link', 'create'] as const) {
-      expect(expectedAccess(at('root', 'contact-rw'), null, 'note', action)).toEqual({
-        allow: false,
-        why: CONTACT_WRITES_APP_DATA_ONLY,
-      });
-    }
   });
 });

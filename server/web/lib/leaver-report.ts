@@ -14,8 +14,8 @@
  *    anything else is a problem to look at).
  *  - `privateItems`: the items whose home is the login's private workspace,
  *    by type.
- *  - `shares`: the live share links (open links and contact shares) of
- *    those items. A share link of an item homed elsewhere belongs to that
+ *  - `shares`: the live share links of those items (`kind` is always
+ *    'open' since contact shares went, 0378). A share link of an item homed elsewhere belongs to that
  *    workspace, not to the person, and is not listed.
  *  - `moderates`: the workspaces (other than its private one) the login
  *    moderates, and whether it is the only Moderator there.
@@ -60,7 +60,7 @@ export type LeaverReport = {
     nodeId: string;
     title: string;
     type: string;
-    kind: 'open' | 'contact';
+    kind: 'open';
     createdAt: string;
     expiresAt: string | null;
     viewCount: number;
@@ -159,7 +159,6 @@ export async function leaverReport(loginId: string): Promise<LeaverReport | 'not
         nodeId: shares.nodeId,
         title: nodes.title,
         type: nodes.type,
-        contactId: shares.contactId,
         createdAt: shares.createdAt,
         expiresAt: shares.expiresAt,
         viewCount: shares.viewCount,
@@ -182,7 +181,7 @@ export async function leaverReport(loginId: string): Promise<LeaverReport | 'not
       nodeId: s.nodeId,
       title: s.title,
       type: s.type,
-      kind: s.contactId ? 'contact' : 'open',
+      kind: 'open' as const,
       createdAt: s.createdAt.toISOString(),
       expiresAt: iso(s.expiresAt),
       viewCount: s.viewCount,

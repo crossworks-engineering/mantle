@@ -198,14 +198,6 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'gateway/check-mode.ts EDIT_CHECK_DRIFT_SQL and check-floor.ts CHECK_FLOOR_SQL: the boot warnings and the integrity rows',
   'public.mantle_check_lowered()':
     'check-floor.ts CHECK_FLOOR_SQL: the record of a check lowered below on (0301), logged loudly',
-  'public.mantle_contact_sharing_set(uuid,text,text)':
-    "admin-acts.ts: an Admin user's switch of a contact's sharing (0308)",
-  'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
-    'contact-share-codes.ts: the same rows for an owner, system work (0308)',
-  'public.mantle_contact_shares_revoke_all(uuid)':
-    "admin-acts.ts: an Admin user's Revoke all of a contact's shares (0308)",
-  'public.mantle_contact_shares_revoke_rows(uuid,uuid)':
-    'contact-shares.ts: the same rows for an owner, system work (0308)',
   'public.mantle_embed_host(uuid,public.node_type)':
     'maintenance/refold-embeds.ts: the host text of an embedded item (0248)',
   'public.mantle_entity_merge(uuid,uuid)': "admin-acts.ts: an Admin user's entity merge (0308)",
@@ -213,14 +205,8 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     'entity-dedup.ts mergeEntities: the entities-dedupe sweep and CLI, system work (0308)',
   'public.mantle_share_close_admin(uuid)':
     'admin-acts.ts: a share closed by an Admin user with the users area (0310)',
-  'public.mantle_share_contact_write_set(uuid,boolean)':
-    "admin-acts.ts: an Admin user's Can write on a contact share (0310)",
   'public.mantle_app_trash_act(uuid,text)':
     "admin-acts.ts: an Admin user's purge or restore check of a deleted app (0310)",
-  'public.mantle_share_with_contacts(uuid,uuid[],text[],boolean,text[])':
-    "admin-acts.ts: an Admin user's share of an item with contacts (0308)",
-  'public.mantle_share_with_contacts_rows(uuid,uuid,uuid[],text[],boolean,text[])':
-    'contact-shares.ts: the same rows for an owner, system work (0308)',
   'public.mantle_area_rule(uuid,text)':
     'gateway/scope-answers.ts loginHasArea: the area rule about another login (0304, S2a a0)',
   'public.mantle_login_areas(uuid)': 'the areas the area rule gives a login (0304, S2a a0)',
@@ -309,8 +295,6 @@ export const NARROW_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
     "an assistant's level counts (the assistants area's GET /api/agents: agents.ts listAgents withExperience): a read definer of counts only, no content; on the narrow role the identity readers answer no scope, so it counts the owner's assistants as on the system pool (0293). Round 14b: refused on the narrow exit before (dev's narrow-denied miss of 2026-10-22)",
   'public.mantle_access_log_names(uuid,uuid[])':
     "the display names of an app's access log actors (the users area's GET /api/apps/:id/access-log: app-access-log.ts actorNames): a read definer; on the narrow role no scope, so the names of the actors the app's log holds, as on the system pool (0293)",
-  'public.mantle_contact_sharing(uuid,uuid[])':
-    "the share code dates of contacts (the users area's POST /api/team-admin/invites from a contact: contacts.ts getContact): a read definer, dates only, never a code; on the narrow role no scope, the listed contacts' (0293)",
   'public.mantle_check_box_mode(text)':
     "the box's actor or edit check mode (the settings area's GET /api/debug/integrity/audit: its check rows): a read of the database's settings, no identity (0280)",
   'public.mantle_check_lowered()':
@@ -371,12 +355,6 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     "a member chat turn's slot given back (0326): the same rule as the claim; a narrow session may not clear any login's daily cap",
   'public.mantle_member_turn_settle(text,bigint)':
     "a member chat turn's tokens stamped on its slot (0327): the same rule as the claim; a narrow session may not lower its own count or raise another login's",
-  'public.mantle_contact_sharing_rows(uuid,uuid,text,text)':
-    "an owner's sharing switch with no Admin check: tests only, never a narrow reason",
-  'public.mantle_contact_shares_revoke_rows(uuid,uuid)':
-    "an owner's Revoke all with no Admin check: tests only, never a narrow reason",
-  'public.mantle_share_with_contacts_rows(uuid,uuid,uuid[],text[],boolean,text[])':
-    "an owner's contact share with no Admin check: tests only, never a narrow reason",
   'public.mantle_entity_merge_rows(uuid,uuid,uuid)':
     'the entities-dedupe sweep and CLI with no Admin check: full system work',
   'public.mantle_embed_host(uuid,public.node_type)':
@@ -418,8 +396,6 @@ export const NARROW_DENIED_FUNCTIONS: Readonly<Record<string, string>> = {
     'workspace_events: written by the workspace definers, never a narrow statement',
   'public.mantle_lock_heads(uuid[],text)': "an item write's heads: never a narrow statement",
   'public.mantle_share_close_admin(uuid)': 'shares (content): never a narrow statement',
-  'public.mantle_share_contact_write_set(uuid,boolean)':
-    'shares (content): never a narrow statement',
   'public.mantle_file_restamp_home(uuid,uuid)':
     "item_grants (content): the snapshot copies' system work only, never a narrow statement",
 };

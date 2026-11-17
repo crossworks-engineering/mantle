@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { isEmbeddedDrawAllowed } from '@/lib/shares';
 import { getDrawSvg } from '@mantle/content';
 import { CACHE_CONTROL } from '@/lib/cache-control';
@@ -41,9 +41,7 @@ export async function GET(
 
   // The gate took the row's per-address limit (lib/route-limits.ts shareDrawEmbed).
 
-  const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired(gate.share);
-  const share = gate.kind === 'ok' ? gate.share : null;
+  const share = await openShareLink(token);
   if (!share || !(await isEmbeddedDrawAllowed(share, drawId))) return notFound();
 
   const svg = await getDrawSvg(share.ownerId, drawId);

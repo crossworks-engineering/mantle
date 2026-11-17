@@ -25,7 +25,6 @@ export {
   shareServedIds,
   revokeShare,
   resolveActiveShareByToken,
-  resolveActiveShareRowByToken,
   isRetiredTeamLinkToken,
   isRetiredClientLinkToken,
   listRetiredClientLinks,
@@ -61,61 +60,12 @@ export {
 } from './link-serve';
 
 export {
-  CONTACT_CODE_LENGTH,
-  CONTACT_CODE_DAILY_FAILURES,
-  CONTACT_CODE_LOCK_MS,
-  CONTACT_CODE_SHARE_HOURLY_FAILURES,
-  generateContactCode,
-  normalizeContactCode,
-  hashContactCode,
-  contactSharingByContact,
-  contactSharingFor,
-  contactShareGateRow,
-  checkContactShareCode,
-  lockedContactSharing,
-  type ContactSharingStatus,
-  type ContactShareGateRow,
-  type EnableContactSharingResult,
-} from './contact-share-codes';
-
-export {
-  ContactShareRefusedError,
-  CONTACT_SHAREABLE_TYPES,
-  CONTACT_MENU_LIMIT,
-  CONTACT_SHARES_PAGE,
-  setContactShareCanWrite,
-  listContactShares,
-  listContactSharesForAdmin,
-  contactSharesForNode,
-  getContactShare,
-  type ContactMenuItem,
-} from './contact-shares';
-
-export {
   AdminActRefusedError,
-  adminContactSharing,
-  adminRevokeAllContactShares,
-  adminCreateContactShares,
   adminMergeEntities,
   adminCloseShare,
-  adminSetContactShareCanWrite,
   adminAppTrashAct,
 } from './admin-acts';
-export type { AppTrashOutcome, ContactShareWriteOutcome } from './admin-acts';
-export type {
-  ContactSharingAction,
-  ContactSharingActResult,
-  ContactSharingOutcome,
-} from './contact-share-codes';
-
-export {
-  recordShareAccess,
-  listShareAccess,
-  reapShareAccessLog,
-  SHARE_ACCESS_LOG_RETENTION_DAYS,
-  type ShareAccessEntry,
-  type ShareAccessRow,
-} from './share-access-log';
+export type { AppTrashOutcome } from './admin-acts';
 
 export {
   appendThreadMessage,

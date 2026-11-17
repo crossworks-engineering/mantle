@@ -83,10 +83,9 @@ export type ToolCaller = Readonly<{
    *  too, by its via (mcpVia). */
   masks?: boolean;
   /** An app broker's call (entry `app`): the rules its verdict judged it
-   *  at (app-tool-level.ts AppCallRules: a run's level, or a contact
-   *  share's). Dispatch runs the allowed call on its `app-tool` ref with
+   *  at (app-tool-level.ts AppCallRules: a run's level). Dispatch runs the allowed call on its `app-tool` ref with
    *  them, as appToolRefusal asks a refused one. */
-  appRules?: 'admin' | 'team' | 'contact';
+  appRules?: 'admin' | 'team';
   /** An app broker's call (entry `app`): the verdict the broker judged it
    *  by, carried whole onto the call's
    *  `app-tool` ref, so the gate refuses a call its verdict refused even
@@ -123,8 +122,7 @@ export type PendingApproval = Readonly<{
 }>;
 
 /** The verdict an app broker judged a call by (app-tool-level.ts
- *  AppToolVerdict, the share broker's contactAppToolVerdict): the tool it
- *  allowed, or the refusal. */
+ *  AppToolVerdict): the tool it allowed, or the refusal. */
 export type AppBrokerVerdict = Readonly<
   { ok: true; tool: Tool } | { ok: false; status: 403 | 404; reason: string }
 >;
@@ -174,12 +172,11 @@ const API_V1_NESTED: ToolCaller = Object.freeze({
   masks: true,
 });
 
-/** The surface an app broker passes (appToolScope, the share broker's). */
+/** The surface an app broker passes (appToolScope). */
 type AppBrokerSurface = Readonly<{ kind: string }>;
 
 /**
- * An app's tool call through a broker: via `contact` on a contact share's
- * surface, else `app`, with the rules its verdict judged it at
+ * An app's tool call through a broker: via `app`, with the rules its verdict judged it at
  * (`appRules`) and the verdict itself (`appVerdict`). The broker answers
  * the result to a browser as it is, so a database error's text is masked
  * for every surface but the owner's own web (an app the Admin workspace
@@ -189,11 +186,11 @@ export function appBrokerCaller(surface: AppBrokerSurface, verdict: AppBrokerVer
   return Object.freeze({
     appVerdict: verdict,
     entry: 'app',
-    via: surface.kind === 'contact' ? 'contact' : 'app',
+    via: 'app',
     masks: surface.kind !== 'web',
     // The rules the broker judged at, by the surface appToolScope gave it:
-    // the owner's web for admin rules, a contact share's, else team rules.
-    appRules: surface.kind === 'web' ? 'admin' : surface.kind === 'contact' ? 'contact' : 'team',
+    // the owner's web for admin rules, else team rules.
+    appRules: surface.kind === 'web' ? 'admin' : 'team',
   });
 }
 

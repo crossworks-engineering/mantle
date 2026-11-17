@@ -160,9 +160,8 @@ export async function appToolVerdict(
   }
 }
 
-/** The rules a broker judged an app's call at: a run's level, or a
- *  contact share's (contactAppToolVerdict). */
-export type AppCallRules = AppToolLevel | 'contact';
+/** The rules a broker judged an app's call at: a run's level. */
+export type AppCallRules = AppToolLevel;
 
 /**
  * What a broker answers for an app's call its verdict refused:
@@ -171,8 +170,8 @@ export type AppCallRules = AppToolLevel | 'contact';
  * run) on the call's `app-tool` ref, which carries the verdict: the
  * member-app narrower refuses it in the verdict's words, a 403
  * (member-app-tools.ts appToolGatePolicy, gate-narrowers.ts). The caller is
- * the broker's: the actor bound at its entry (currentActor()), via `app` or
- * `contact`, and the rules it judged at. The same status and body as the
+ * the broker's: the actor bound at its entry (currentActor()), via `app`,
+ * and the rules it judged at. The same status and body as the
  * verdict's, for every refusal (app-broker-parity.test.ts in server/web).
  *
  * It can throw, and a broker does not catch it, so the request answers
@@ -191,7 +190,7 @@ export async function appToolRefusal(
   if (verdict.status === 404) return { status: 404, error: verdict.reason };
   const caller: GateCaller = {
     actor: currentActor(),
-    via: rules === 'contact' ? 'contact' : 'app',
+    via: 'app',
     admin: null,
     facts: { appRules: rules },
   };

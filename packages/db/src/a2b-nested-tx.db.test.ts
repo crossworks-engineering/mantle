@@ -319,21 +319,17 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
       m.loginActor(owner, 'owner'),
       { kind: 'assistant', agentId: null },
       { kind: 'link' },
-      { kind: 'contact', canWrite: true },
-      { kind: 'contact', canWrite: false },
       { kind: 'peer', peerId: null },
       m.systemActor('worker:test'),
     ];
     const before = await misses();
     // With the edit check on (pnpm test:edit-on, arch A3a) a read-only
     // actor writes nothing: its heads still lock, its write is refused (in
-    // warn it is reported: no write here, so no miss). A contact share with
-    // Can write writes its app's data only, no item (0294, A8 F9): the same.
+    // warn it is reported: no write here, so no miss).
     const edit = (process.env.MANTLE_TEST_EDIT_CHECK ?? '').trim();
     const editOn = edit === 'on';
     const writes = (actor: Actor) =>
-      (edit !== 'on' && edit !== 'warn') ||
-      (m.writeModeOf(actor) === 'rw' && actor.kind !== 'contact');
+      (edit !== 'on' && edit !== 'warn') || m.writeModeOf(actor) === 'rw';
     for (const actor of actors) {
       const r = await m.runAsActor(actor, () =>
         m.withHeads([a], 'update', async (tx) => {

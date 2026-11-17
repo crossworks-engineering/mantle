@@ -49,8 +49,7 @@
     "./presents": "./src/presents.ts",
     "./canvas-data": "./src/canvas-data.ts",
     "./calculate": "./src/calculate.ts",
-    "./tree": "./src/tree/index.ts",
-    "./test-support": "./src/test-support.ts"
+    "./tree": "./src/tree/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -87,19 +87,6 @@ export type AuditEntry = {
     // The same for an emailed code; an admin chose the sign-in sender.
     | 'auth.client_code_signin'
     | 'auth.client_code_failed'
-    // A contact typed their code at a contact share's prompt (contact
-    // shares, 0214), or a failed try; 30 failures in a day locked the
-    // contact; an admin switched a contact's sharing or revoked its shares.
-    | 'auth.contact_code_signin'
-    | 'auth.contact_code_failed'
-    | 'contact.sharing_locked'
-    | 'contact.sharing_enabled'
-    | 'contact.sharing_regenerated'
-    | 'contact.sharing_disabled'
-    | 'contact.shares_revoked_all'
-    // An admin shared an item with contacts, or set "Can write" on one.
-    | 'contact.share_created'
-    | 'contact.share_can_write'
     | 'client.signin_sender_set'
     | 'client.signin_link_issued'
     | 'client.signin_link_revoked'

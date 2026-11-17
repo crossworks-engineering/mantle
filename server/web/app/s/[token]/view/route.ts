@@ -1,11 +1,10 @@
-import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { buildPageToc } from '@mantle/content-core/page-toc';
 import type { ShareViewPayload } from '@mantle/share-ui/view-payload';
 import { loadShareView, recordShareView, sharePresentsShown } from '@/lib/shares';
 import { referencedPresentIds } from '@mantle/content';
 import { renderPageDoc } from '@/lib/render-page-doc';
-import { recordShareAccess } from '@mantle/content';
 import { loadFolderListing } from '@/components/share/folder-presenter';
 import { CACHE_CONTROL } from '@/lib/cache-control';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -41,24 +40,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   // The gate took the row's per-address limit (lib/route-limits.ts shareView).
 
-  const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired(gate.share);
-  const share = gate.kind === 'ok' ? gate.share : null;
+  const share = await openShareLink(token);
   if (!share) return notFound();
 
   const view = await loadShareView(share);
   if (!view) return notFound();
 
   void recordShareView(share.id); // fire-and-forget, same as the HTML page
-  if (share.contactId) {
-    recordShareAccess({
-      ownerId: share.ownerId,
-      shareId: share.id,
-      contactId: share.contactId,
-      kind: 'open',
-      detail: { via: 'view' },
-    });
-  }
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
   const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;

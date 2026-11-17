@@ -140,7 +140,7 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  (withViewer `writes`), so the database's own checks (the item's Write
  *  switch, a Moderator, the actor and edit checks) decide whether that user
  *  may (memberAppToolVerdict asks that the call names its Table, file and
- *  folder). A shared link runs no built-in at all (contactAppToolVerdict).
+ *  folder). A shared link runs no tool at all.
  *
  *  A documents tool (policy memberApp 'documents', builtins-documents.ts)
  *  is let through too: it reads its inputs with the running user's own
