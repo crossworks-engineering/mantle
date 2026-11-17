@@ -235,7 +235,6 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'contact_get',
   'contact_update',
   'email_get',
-  'email_send',
   'entity_facts',
   'entity_mentions',
   'entity_neighbors',
