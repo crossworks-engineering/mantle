@@ -181,8 +181,6 @@ export async function afterSheetsOf(
 /** A real read: the router's run is counted for this box and file. */
 type RouterCount = { ownerId: string; fileId: string };
 
-/** The facts of a PDF's stored File tab a read again keeps: its kind and
- *  the decider's answer. */
 /** A PDF read again: its stored kind and decision. `reroute`: the kind came
  *  from older rules, so the router names it again with no ask, and the
  *  stored decision (a shadow or weak answer) stays in the File tab. */
@@ -214,7 +212,9 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
  * and does not read the file again. A read again of a file with a
  * database (`pdfStored`) keeps the stored kind and decision: the router
  * does not run, so it is one job (the reader reads the file) and asks no
- * model.
+ * model. A stored kind from older rules (`reroute`) is named again by the
+ * router with no ask, as an upload's is, and its run counts; the stored
+ * decision stays.
  *
  * A kind no reader claims (a document) gets no database and no name (the
  * next extract of the same bytes reads it again, which costs no model).
@@ -222,7 +222,7 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
  * (decidedKind), so an unsure file keeps its database.
  *
  * `count`: a real read counts the router's run when it named the kind, a
- * document too. Left out (a test): no count. A read again counts none: the
+ * document too. Left out (a test): no count. A read again with no reroute counts none: the
  * router did not run.
  */
 async function readRouted(

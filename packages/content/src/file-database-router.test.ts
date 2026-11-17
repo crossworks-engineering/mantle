@@ -318,19 +318,24 @@ describe('the PDF router in a real read', () => {
   it('a read again of a kind from older rules runs the router with no ask, and keeps the stored answer', async () => {
     const ids = inProcess();
     const shadow = { ...decision('pid'), mode: 'shadow' as const, used: false };
-    const parsed = await parseFileSheets(pdf('stroke-isometric.pdf'), 'pdf', {
+    const decide = vi.fn(async () => decision('pfd'));
+    // A file the rules leave unsure: on an upload the router would ask.
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
       pipelines,
       count,
+      pdfKind: decide,
       pdfStored: { kind: 'other_drawing', decision: shadow, reroute: true },
     });
+    // No model is asked on a read again, a decider passed or not.
+    expect(decide).not.toHaveBeenCalled();
     if (parsed.kind !== 'sheets') throw new Error('no sheets');
     const file = parsed.sheets.find((s) => s.name === 'File')!;
     const row = Object.fromEntries(file.columns.map((c, i) => [c.name, file.rows[0]![i]]));
     // The rules of now name it; the shadow answer stays beside it.
     expect(row).toMatchObject({
-      Kind: 'isometric',
+      Kind: 'unsure',
       'Kind source': 'rules',
-      'Rules kind': 'isometric',
+      'Rules kind': 'unsure',
       'Decider answer': 'pid',
       'Decider mode': 'shadow',
     });

@@ -1720,9 +1720,10 @@ rules ask no model.
 
 **Old files.** A re-read (`pipeline_reread`, no model, cost 0) takes every
 older PDF database: the new version makes them older. A stored kind from
-older rules, in a File tab with no decider answer, is named again by the
-router with no ask (`reroute` of `pdfReadAgainOf`); a file the decider was
-asked about keeps its kind and its answer, a shadow one too. The rule of a
+older rules, and not from a used decider answer, is named again by the
+router with no ask (`reroute` of `pdfReadAgainOf`); a stored answer that was
+not used (a shadow or weak one) stays in the File tab beside the new kind.
+A kind from a used decider answer is kept. The rule of a
 poorer read (`pdfReadPoorer`) lets a read again name a new kind when its
 File tab states newer rules. The sketch read states no version, so for it
 another kind is always poorer: a paid read never runs on a database whose
