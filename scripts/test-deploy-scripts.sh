@@ -2610,7 +2610,7 @@ write_services_info"
 SJ="$CS/sig/services.json"
 check "containers: services.json is still valid JSON" node -e "JSON.parse(require('fs').readFileSync('$SJ','utf8'))"
 CS_WANT=$(node -e '
-const names = "postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy".split(" ");
+const names = "postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway sync worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy".split(" ");
 const out = {};
 for (const n of names) out[n] = { container: "absent", health: "none", restarts: 0, started_at: "" };
 out.postgres = { container: "running", health: "healthy", restarts: 0, started_at: "2026-11-04T05:01:02Z" };

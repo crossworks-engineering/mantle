@@ -42,7 +42,6 @@ export function createSyncServer(state: SyncState): Server {
     res.writeHead(reply.status, {
       'content-type': 'application/json',
       'content-length': Buffer.byteLength(body),
-      'cache-control': 'no-store',
     });
     res.end(body);
   });

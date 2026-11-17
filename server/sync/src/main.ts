@@ -21,11 +21,13 @@ async function main(): Promise<void> {
 
   const port = envNum('SYNC_PORT');
   const rclone = await rcloneVersion();
-  if (!rclone) console.error('[sync] rclone did not run: /health answers 503');
 
   const server = createSyncServer({ rclone });
   await new Promise<void>((resolve) => server.listen(port, '0.0.0.0', resolve));
-  console.log(`[sync] listening on :${port} (rclone ${rclone ?? 'missing'})`);
+  // Its own process with no @mantle/tracing, as the gateway: one line at
+  // start says where it listens and whether rclone ran (/health is 503
+  // without it).
+  console.log(`[sync] listening on :${port} (rclone ${rclone ?? 'did not run: /health is 503'})`);
 
   onShutdown({
     name: 'sync',
