@@ -61,7 +61,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       {
         ok: false,
         reason: 'read-only',
-        error: 'Shared apps are read-only: database writes are disabled on public links.',
+        error: 'Shared apps are read-only — database writes are disabled on public links.',
       },
       { status: 403 },
     );

@@ -1081,7 +1081,6 @@
     "POST /s/:token/canvas/frame-ticket": {
       "none": "outside: a public share link reader, no login"
     },
-    "POST /s/:token/code": { "none": "outside: a public share link reader, no login" },
     "POST /s/:token/db-broker": { "none": "outside: a public share link reader, no login" },
     "POST /s/:token/evaluate": { "none": "outside: a public share link reader, no login" },
     "POST /s/:token/frame-ticket": { "none": "outside: a public share link reader, no login" },
