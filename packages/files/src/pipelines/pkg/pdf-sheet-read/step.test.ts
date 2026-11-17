@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { assemblePdf } from '../../../pdf-fixtures.test-helper';
-import { renderPdfWindows } from '../../../rasterize';
+import { renderPdfWindows, type PageWindow } from '../../../rasterize';
 import { BUILTIN_PIPELINES, asksMaxOf } from '../../builtin';
 import {
   PIPELINE_API,
@@ -311,7 +311,7 @@ describe('the step of pdf-sheet-read', () => {
   });
 
   /** A job whose child draws no picture for the windows `lose` picks. */
-  function lossyJob(bytes: Buffer, lose: (w: { pageNumber: number; box?: unknown }) => boolean) {
+  function lossyJob(bytes: Buffer, lose: (w: PageWindow) => boolean) {
     const { job } = jobOf(bytes);
     return {
       ...job,
