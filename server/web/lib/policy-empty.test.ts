@@ -104,9 +104,11 @@ describe('every MANTLE_POLICY_* empty: the box as before', () => {
     const slugs = ['email_send', 'email_page', 'email_list', 'email_get'];
     expect(effectiveToolSlugs(slugs)).toEqual(slugs);
     expect(slugs.every(toolPolicyAllows)).toBe(true);
-    // The manifest's email group keeps every tool it ships.
+    // The manifest's email group keeps every tool it ships: the reads, since
+    // email_send and email_page left with the old sync (Sync M4); the switch
+    // above still lets their names through for when send returns.
     const email = MANIFEST_TOOL_GROUPS.find((g) => g.slug === 'email');
-    expect(email?.toolSlugs).toEqual(['email_send', 'email_page', 'email_list', 'email_get']);
+    expect(email?.toolSlugs).toEqual(['email_list', 'email_get']);
     expect(effectiveToolSlugs([...email!.toolSlugs])).toEqual(email!.toolSlugs);
   });
 

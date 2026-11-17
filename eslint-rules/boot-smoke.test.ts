@@ -137,7 +137,9 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
     ];
     expect(services.map((s) => s.name).sort()).toEqual(onImage.map((m) => m[1]).sort());
     const workers = services.filter((s) => s.name.startsWith('worker_'));
-    expect(workers.length).toBeGreaterThanOrEqual(10);
+    // 8 since worker_email, worker_microsoft and worker_calendar left with
+    // the old sync (Sync M4).
+    expect(workers.length).toBeGreaterThanOrEqual(8);
     for (const w of workers)
       expect(w.command?.slice(0, 2), w.name).toEqual(['scripts/run-service.sh', 'server/web']);
   });
@@ -147,7 +149,8 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
     // boot would wait out the grace period for the SIGKILL.
     const blocks = compose.split(/^ {2}(?=[a-z0-9_]+:\n)/m);
     const running = services.filter((s) => s.name !== 'migrate');
-    expect(running.length).toBeGreaterThanOrEqual(13);
+    // 12 since the three old sync workers left (Sync M4).
+    expect(running.length).toBeGreaterThanOrEqual(12);
     for (const s of running) {
       const block = blocks.find((b) => b.startsWith(`${s.name}:\n`));
       expect(block, s.name).toMatch(/^ {4}init: true$/m);

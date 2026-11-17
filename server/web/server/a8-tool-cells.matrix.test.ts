@@ -133,7 +133,6 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   app_table_export_set: () => ({ table: 'a8' }),
   table_rows_add: () => ({ rows: [{}] }),
   table_column_add: (c) => ({ name: `${c.tag}`, type: 'text' }),
-  email_page: () => ({ to: 'a8@example.invalid' }),
   peer_file_copy: () => ({ peer: 'a8-none' }),
   file_set_indexing: () => ({ mode: 'metadata' }),
 };

@@ -46,14 +46,15 @@ describe.skipIf(!hasManifest)('route scope (W6a), over the rows', () => {
         expect(auditsAsWrite(row.method, row.effect), row.key).toBe(true);
       }
     }
-    // The two OAuth callbacks and company sign-in's (GET and HEAD each);
+    // The connector OAuth callback and company sign-in's (GET and HEAD
+    // each; the Microsoft one left with the old sync, Sync M4);
     // the formula calculator,
     // a Present canvas's frame ticket, the three call token mints (a fresh
     // token for an open call, the assistant room and its refresh: they write
     // no row), the two documents reads (metadata and bookmarks of the PDFs
     // they are handed), a file database's read (its SQL in the body) and
     // the test of a pipeline (in memory, it writes nothing).
-    expect([writeGets, readPosts]).toEqual([6, 9]);
+    expect([writeGets, readPosts]).toEqual([4, 9]);
     expect(auditsAsWrite('GET', 'read')).toBe(false);
     expect(auditsAsWrite('OPTIONS', null)).toBe(false);
     expect(auditsAsWrite('patch', null)).toBe(true);

@@ -576,13 +576,15 @@ describe('Postgres connection ceiling', () => {
     const per = sizeOf(narrowCall!);
     const box = per * DB_PROCESSES.length;
     const headroom = per * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);
-    // The sum runtime-role.ts writes beside NARROW_CONNECTION_LIMIT.
+    // The sum runtime-role.ts writes beside NARROW_CONNECTION_LIMIT. 13
+    // processes to 10: worker_email, worker_microsoft and worker_calendar
+    // left with the old sync (Sync M4); the limit keeps its 38.
     expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
       per: 2,
-      processes: 13,
-      box: 26,
+      processes: 10,
+      box: 20,
       headroom: 12,
-      sum: 38,
+      sum: 32,
     });
     expect(box + headroom).toBeLessThanOrEqual(NARROW_LIMIT);
     const stdioWrite = writePoolSizeOf('server/mcp/src/server.ts') * STDIO_MCP_PROCESSES;
@@ -598,13 +600,15 @@ describe('Postgres connection ceiling', () => {
     const per = VIEWER_POOL_MAX;
     const box = per * DB_PROCESSES.length;
     const headroom = per * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);
-    // The sum viewer-roles.ts writes beside ROLE_CONNECTION_LIMIT.
+    // The sum viewer-roles.ts writes beside ROLE_CONNECTION_LIMIT. 13
+    // processes to 10 with the old sync's three workers gone (Sync M4); the
+    // limit keeps its 57.
     expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
       per: 3,
-      processes: 13,
-      box: 39,
+      processes: 10,
+      box: 30,
       headroom: 18,
-      sum: 57,
+      sum: 48,
     });
     const user = ROLE_LIMITS.find((r) => r.role === 'user');
     expect(user?.limit).toBe(57);
