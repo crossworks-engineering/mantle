@@ -1,7 +1,8 @@
 /**
  * A5 step 6d (gateway survey finding 14): the client-sourced guard's answer
  * for every builtin and input shape equals main's. The oracle is main's
- * WRITE_RULES (v0.300.42, copied below as it was, with the dispatch main's
+ * WRITE_RULES (v0.300.42, copied below as it was, less email_send and
+ * email_page, which left the brain with the old sync (Sync M4), with the dispatch main's
  * decide ran on it); the rules now live on each tool's policy
  * (`clientSourced`, the lowering and `createsIn` derived). A write rule is
  * judged by the same evaluator (writeVerdict, unchanged), against a stub
@@ -121,7 +122,6 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   access_set: lowering,
   node_share: lowering,
   page_share: lowering,
-  email_page: lowering,
   node_unshare: free('takes a link away'),
   page_unshare: free('takes a link away'),
 
@@ -358,7 +358,6 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   invoke_agent: free("the child shares this turn's mark, so its own calls are checked"),
 
   // ── Outward and chat ─────────────────────────────────────────────────────
-  email_send: always(OUTWARD),
   telegram_send: always(OUTWARD),
   telegram_edit: always(OUTWARD),
   telegram_pair: always('it names a chat outside the brain (MCP only)'),

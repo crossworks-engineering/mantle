@@ -281,7 +281,7 @@ const LISTS: Record<string, readonly string[]> = {
     'task_create',
     'tree_folder_create',
   ],
-  LOWERING_TOOL_SLUGS: ['access_set', 'email_page', 'node_share', 'page_share'],
+  LOWERING_TOOL_SLUGS: ['access_set', 'node_share', 'page_share'],
   RECIPE_FORBIDDEN_SLUGS: [
     'agent_grant_tool_group',
     'agent_list',
@@ -370,9 +370,8 @@ const LISTS: Record<string, readonly string[]> = {
   APP_DATA_WRITE_TOOL_SLUGS: ['app_data_write'],
   // A5 step 5 (plan section 25) added email_page, peer_call, telegram_send,
   // web_crawl and web_search_pro; fix round 1 (owner decision 1a) web_map.
+  // email_send and email_page left with the old sync (Sync M4).
   HEARTBEAT_EGRESS_SLUGS: [
-    'email_page',
-    'email_send',
     'peer_call',
     'telegram_send',
     'web_crawl',
@@ -406,8 +405,6 @@ const AREAS: Record<string, string> = {
   brain_capacity: 'settings',
   email_get: 'connectors',
   email_list: 'connectors',
-  email_page: 'connectors',
-  email_send: 'connectors',
   gateway_service_list: 'connectors',
   gateway_service_set: 'connectors',
   heartbeat_fire: 'assistants',
@@ -546,10 +543,6 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     expect(isLoweringCall('access_set', {})).toBe(false);
     expect(isLoweringCall('node_share', {})).toBe(true);
     expect(isLoweringCall('page_share', {})).toBe(true);
-    expect(isLoweringCall('email_page', { includeLink: true })).toBe(true);
-    expect(isLoweringCall('email_page', { includeLink: 'true' })).toBe(true);
-    expect(isLoweringCall('email_page', { includeLink: false })).toBe(false);
-    expect(isLoweringCall('email_page', {})).toBe(false);
     expect(isLoweringCall('page_update', { level: 'public' })).toBe(false);
     expect(isLoweringCall('no_such_tool', {})).toBe(false);
   });

@@ -128,8 +128,6 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
  * recalled once it has.
  */
 const CONFIRM_WITHOUT_DESTRUCTIVE_SLUG: Record<string, string> = {
-  email_send: 'mail leaves the brain',
-  email_page: 'mail leaves the brain',
   telegram_send: 'message leaves the brain',
   node_share: 'publishes brain content outward',
   page_share: 'publishes brain content outward',
