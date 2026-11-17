@@ -892,6 +892,13 @@ with no model. So a file the step cannot read costs nothing.
 There is no parser job after a paid call. No code of the pipeline runs after
 a paid call: the step cannot see an answer, change it, or ask again.
 
+**A rule for a step: fewer asks replace rows.** The core writes the rows of
+the asks a step returns, and the tab gets no others. So a step that leaves
+out an ask it meant to make (a picture it could not draw) loses the paid
+row of that ask. Such a step ends `failed` instead: nothing is asked or
+written. `pdf-sheet-read` does. `iso-title-block` does not yet: a picture
+its helper did not write is left out (an open point).
+
 **The ask.** A step asks with a call of this shape:
 
 ```
@@ -1074,7 +1081,8 @@ the 10 MB of an ask. A picture still past 5 MB is left out, with a warning.
 file does not open, the step ends `failed`: nothing is asked and nothing is
 written, so the paid rows of a run before stay as they are. The trace says
 which page. A page pdfjs can never draw keeps the Agent off that file until
-a person lowers the option `pages`.
+an Admin lowers the option `pages`. That option is on the box: it cuts the
+later pages of every file on their next run, so it is a last remedy.
 
 Why the whole page and no tiles: in the P0 score of 20 site PDFs, the old
 whole-page read (144 DPI; about 110 on an A0 under its pixel cap) found 24 of
@@ -1168,6 +1176,10 @@ from the tabs. This holds for every Agent, `iso-title-block` too.
   writes only while the node holds the bytes the tabs were read from.
 - An OCR rescan keeps the key: the bytes and their tabs do not change, and
   the re-extract queues no Agent run.
+- A switch to the name-only mode strips the key, and a switch back does not
+  write it again (the database is there, so no Agent run is queued). A
+  `pipeline_run` of the Agent on the file or the folder writes it again,
+  and pays nothing: every ask is a hit of its hash.
 - `agent_text` is a byte key of the extractor's (migration 0377,
   `BYTE_DERIVED_DATA_KEYS`): new bytes drop it, the name-only mode strips it
   with `text`, and a file in that mode gets none. A person's write cannot set
