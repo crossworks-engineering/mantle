@@ -3095,12 +3095,14 @@ check "the updater advertises the service verb" grep -q '"verbs":\["roll","servi
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "docker-compose.yml: the parser starts on every box, one job with the whole memory"
-# The parser is core: a default a 1-vCPU box cannot grant (cpus: 2) keeps it
-# from starting there, and with it every file read.
+# The parser is core: a default a box cannot grant (cpus past the box's
+# cores) keeps it from starting there, and with it every file read. The
+# smallest box shape has 2 vCPU (install.sh --core); a 1-vCPU box sets
+# PARSER_CPUS=1.
 PARSER_SVC=$(sed -n '/^  parser:$/,/^  [a-z_]*:$/p' "$ROOT/docker-compose.yml")
 pcpus=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    cpus: \${PARSER_CPUS:-\([0-9.]*\)}$/\1/p')
 check "parser: the default cpus is set" test -n "$pcpus"
-check "parser: the default cpus is at most 1 (a 1-vCPU box starts it)" awk -v v="$pcpus" 'BEGIN { exit !(v + 0 > 0 && v + 0 <= 1) }'
+check "parser: the default cpus is at most 2 (a 2-vCPU box starts it)" awk -v v="$pcpus" 'BEGIN { exit !(v + 0 > 0 && v + 0 <= 2) }'
 # A long read gives way to the web, the api and Postgres on a box short of
 # CPU: the parser's weight is below Docker's default of 1024.
 pshares=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    cpu_shares: \${PARSER_CPU_SHARES:-\([0-9]*\)}$/\1/p')

@@ -1157,7 +1157,7 @@ so the image is decoded one time for the page, not for each half. Bench
 (2026-11-17, the parser image of this build under a 2 GB limit, the whole
 job through the parser service): such a sheet gave its 4 pictures with a
 peak of 1,486 MB for the container, in 18.4 s, none blank. That bench had
-no CPU limit. A box gives the parser one CPU, and there the garbage
+no CPU limit. A box gave the parser one CPU, and there the garbage
 collector, which ran beside the job, fell behind the decode: the child
 passed 2 GB and the kernel killed it, every time (dev, v0.702.1: "Page 1
 could not be drawn."). Each job now runs its collector in step

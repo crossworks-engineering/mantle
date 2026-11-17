@@ -25,18 +25,19 @@ gigabytes, a spreadsheet that declares a billion cells, a PDF with a
 inside a process cannot reliably stop that, so the guarantee is the
 operating system's:
 
-- **Memory, one job at a time.** `mem_limit` (default `2g`,
+- **Memory, one job at a time.** `mem_limit` (default `3g`,
   `PARSER_MEM_LIMIT`) with `memswap_limit` equal to it (no swap past it),
   and always one job at a time (there is no setting to raise it), so a job
   has the whole memory and a healthy file is never killed for its
   neighbour. A document that blows the limit is killed by the kernel
   inside the parser, never in a brain process.
-- **CPU.** `cpus` (default `1`, `PARSER_CPUS`): every box can grant it, a
-  1-vCPU box included. Raise it on a box with cores to spare. `cpu_shares`
+- **CPU.** `cpus` (default `2`, `PARSER_CPUS`): every box shape can grant
+  it (the smallest has 2 vCPU). A 1-vCPU box sets `PARSER_CPUS=1`; raise it
+  on a box with cores to spare. `cpu_shares`
   (default `512`, `PARSER_CPU_SHARES`) is the parser's weight when the box
   is short of CPU: the other services have Docker's 1024, so a long read
   gives way to the web, the api and Postgres. On an idle box it changes
-  nothing: the parser still gets its whole core.
+  nothing: the parser still gets its whole share.
 - **Disk.** The root filesystem is read-only (`read_only: true`). The job
   user can write only to tmpfs mounts: the scratch space (`/tmp`, where a
   job's files live, `PARSER_TMP_SIZE`, default `1g`), `/dev/shm` and
@@ -54,10 +55,10 @@ operating system's:
   the image), so the server itself writes nothing to `/tmp` but the empty
   job root.
 - **Memory of a job.** A job's garbage collector runs in step with it
-  (`BUN_JSC_useConcurrentGC=0`, `jobEnv`). With the one CPU of `cpus`, a
-  collector beside the job falls behind a large decode: the pictures of a
-  page that is one image of 99.8 M pixels passed 2 GB and the kernel killed
-  the child. In step they peak at about 1.4 GB, in the same time; the
+  (`BUN_JSC_useConcurrentGC=0`, `jobEnv`). With one CPU (`cpus` was `1`
+  until v0.702.x), a collector beside the job fell behind a large decode:
+  the pictures of a page that is one image of 99.8 M pixels passed 2 GB and
+  the kernel killed the child. In step they peak at about 1.4 GB, in the same time; the
   pictures of 19 other drawings took 3 percent more in all (bench, one
   CPU). Other job types were not timed.
   `scripts/probe-parser-large-image.sh` checks it on a built image.
@@ -179,8 +180,8 @@ checked: the host's processes and its `/tmp` are not the parser's.
 
 | Setting                     | Default | What it bounds                                                           |
 | --------------------------- | ------- | ------------------------------------------------------------------------ |
-| `PARSER_MEM_LIMIT`          | `2g`    | the container's memory, no swap past it (compose)                        |
-| `PARSER_CPUS`               | `1`     | the container's CPU share (compose)                                      |
+| `PARSER_MEM_LIMIT`          | `3g`    | the container's memory, no swap past it (compose)                        |
+| `PARSER_CPUS`               | `2`     | the container's CPU share (compose)                                      |
 | `PARSER_CPU_SHARES`         | `512`   | its weight when the box is short of CPU; other services 1024 (compose)   |
 | `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)            |
 | (jobs)                      | 1       | jobs at once, always; each its own process                               |
