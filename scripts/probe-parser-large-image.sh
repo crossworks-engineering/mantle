@@ -4,9 +4,11 @@
 # built parser image with the limits compose gives the parser on a box
 # (2 GB, no swap, 1 CPU). A made-up PDF (scripts/probe-parser-large-image.ts:
 # one image of 99.8 M pixels, RGB and a soft mask) and two pdf-sheet-read
-# jobs sent at once. Both must end ok with their pictures drawn, none blank,
-# and the container must count no memory kill. It prints the container's
-# memory peak and the time of each job, numbers only.
+# jobs sent at once (the parser runs one, the other waits its turn in the
+# queue). Both must end ok with their pictures drawn, none blank, and the
+# container must count no memory kill. It prints the container's memory
+# peak and the time of each job from its send, numbers only. The host needs
+# cgroup v2 with memory.peak (kernel 5.19 or later).
 #
 #   scripts/probe-parser-large-image.sh <parser image> [name prefix]
 #
@@ -44,8 +46,7 @@ docker exec "$C" bun --no-env-file -e "
   const b = fs.readFileSync('/w/large.pdf');
   const request = { api: 1, step: 1, options: {}, asks: true, kind: 'isometric', state: { readerOptions: {} }, file: { name: 'large.pdf', ext: 'pdf', size: b.length, sha256: '0'.repeat(64) } };
   const opts = Buffer.from(JSON.stringify({ id: 'pdf-sheet-read', request }));
-  const t0 = Date.now();
-  const one = () => fetch('http://127.0.0.1:8095/pipeline/run', { method: 'POST', body: Buffer.concat([opts, b]), headers: { 'x-parser-opts-length': String(opts.length) } })
+  const one = (t0 = Date.now()) => fetch('http://127.0.0.1:8095/pipeline/run', { method: 'POST', body: Buffer.concat([opts, b]), headers: { 'x-parser-opts-length': String(opts.length) } })
     .then((r) => r.json())
     .then((j) => ({ ok: j.ok === true, status: (j.result || {}).status, asks: ((j.result || {}).calls || []).length, pictures: (j.pictures || []).length, ms: Date.now() - t0, error: j.ok ? undefined : (j.error || {}).code }), (e) => ({ ok: false, error: String(e).slice(0, 80) }));
   Promise.all([one(), one()]).then((out) => {
@@ -53,8 +54,9 @@ docker exec "$C" bun --no-env-file -e "
     process.exit(out.every((o) => o.ok && o.status === 'ok' && o.pictures === 4 && o.asks === 4) ? 0 : 1);
   });
 " || { echo "a job did not end ok with its 4 pictures"; docker logs "$C"; exit 1; }
-peak=$(docker exec "$C" cat /sys/fs/cgroup/memory.peak)
-kills=$(docker exec "$C" sh -c "grep '^oom_kill ' /sys/fs/cgroup/memory.events | cut -d' ' -f2")
+peak=$(docker exec "$C" cat /sys/fs/cgroup/memory.peak 2>/dev/null)
+kills=$(docker exec "$C" sh -c "grep '^oom_kill ' /sys/fs/cgroup/memory.events 2>/dev/null | cut -d' ' -f2")
+[ -n "$peak" ] && [ -n "$kills" ] || { echo "cannot measure on this host: no cgroup v2 memory.peak or memory.events"; exit 1; }
 echo "peak MB: $((peak / 1048576)); memory kills: $kills"
 [ "$kills" = 0 ] || { echo "the container counted a memory kill"; exit 1; }
 state=$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$C")

@@ -57,7 +57,9 @@ operating system's:
   (`BUN_JSC_useConcurrentGC=0`, `jobEnv`). With the one CPU of `cpus`, a
   collector beside the job falls behind a large decode: the pictures of a
   page that is one image of 99.8 M pixels passed 2 GB and the kernel killed
-  the child. In step they peak at about 1.4 GB, in the same time.
+  the child. In step they peak at about 1.4 GB, in the same time; the
+  pictures of 19 other drawings took 3 percent more in all (bench, one
+  CPU). Other job types were not timed.
   `scripts/probe-parser-large-image.sh` checks it on a built image.
 - **Network.** The parser sits only on the compose network `parser`
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
