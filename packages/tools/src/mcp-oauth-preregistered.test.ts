@@ -277,10 +277,13 @@ describe('a manual app at an Entra authority', () => {
     expect(u.searchParams.get('code_challenge_method')).toBe('S256');
     expect(as.genericHits).toBe(genericBefore);
     expect(as.registerHits).toBe(0);
+    // The sealed app, with the SDK's issuer stamp (SEP-2352) of the tenant
+    // authority it was used at.
     expect(JSON.parse(store.secrets.get('oauth-client')!)).toEqual({
       client_id: 'ms-app',
       client_secret: 'ms-secret',
       token_endpoint_auth_method: 'client_secret_post',
+      issuer: `${origin}/tenant-1/v2.0`,
     });
     expect(binding.oauth?.pending?.state).toBe(flow.state);
   });

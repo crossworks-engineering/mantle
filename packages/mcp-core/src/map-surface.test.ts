@@ -153,19 +153,19 @@ describe('the tool map on the full surface', () => {
     client = await surface(true);
     const { tools } = await client.listTools();
     const desc = (n: string) => tools.find((t) => t.name === n)?.description ?? '';
-    expect(desc('tool_send')).toContain('email');
+    expect(desc('tool_send')).toMatch(/^telegram \(.*\): .*\bsend$/m);
     expect(desc('tool_delete')).toContain('contact_delete');
-    expect(desc('tool_read')).not.toContain('email_send');
+    expect(desc('tool_read')).not.toMatch(/^telegram /m);
   });
 
   it('refuses a call through the wrong call tool, naming the right one', async () => {
     client = await surface(true);
     const r = await client.callTool({
       name: 'tool_read',
-      arguments: { name: 'email_send', arguments: {} },
+      arguments: { name: 'telegram_send', arguments: {} },
     });
     expect((r as Reply).isError).toBe(true);
-    expect(text(r)).toContain("'email_send' is a send tool, not read: call it with tool_send");
+    expect(text(r)).toContain("'telegram_send' is a send tool, not read: call it with tool_send");
     const d = await client.callTool({
       name: 'tool_write',
       arguments: { name: 'contact_delete', arguments: {} },
@@ -177,10 +177,10 @@ describe('the tool map on the full surface', () => {
     client = await surface(true);
     const r = await client.callTool({
       name: 'tool_send',
-      arguments: { name: 'email_sned', arguments: {} },
+      arguments: { name: 'telegram_sned', arguments: {} },
     });
     expect((r as Reply).isError).toBe(true);
-    expect(text(r)).toContain('email_send (tool_send)');
+    expect(text(r)).toContain('telegram_send (tool_send)');
   });
 
   it('answers wrong arguments with the schema, before the tool runs', async () => {
