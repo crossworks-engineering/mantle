@@ -2141,7 +2141,8 @@ holds to the contract) and in Python (`python/`), with `sample.lx9`.
 in a built parser image from a read-only mount, as a box does: run it on
 every round that builds the image, with
 `scripts/probe-parser-large-image.sh <parser image>` (the pictures of a
-page that is one very large image, under the box's memory and CPU).
+page that is one very large image, under 2 GB and one CPU, stricter than
+the defaults).
 
 **A Bun step** exports `step(request, job)`, as a built-in's: it gets the
 job handle (`bytes()`, `dir`, `deadline`, and the parser's native helpers).

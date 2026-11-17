@@ -558,7 +558,7 @@ image of both wheel stages is pinned by its multi-arch index digest.
     measured on made-up drawings, the whole parser child on one CPU, for
     every kind at its usual element size: circles and arcs cost the most a
     unit (at 125,100, 48 s and 0.77 GB; at 400,320, 156 s and 2.2 GB,
-    past the parser's 2 GB); lines, ellipses, polylines, splines, texts,
+    past 2 GB, the parser's limit then, the default until v0.702.1); lines, ellipses, polylines, splines, texts,
     attributes and nested inserts cost less. One element far larger than
     usual costs more than its weight says, in ezdxf, with this reader or
     without it: a text of 16,000 characters takes 54 s, one polyline of

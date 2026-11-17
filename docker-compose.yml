@@ -643,8 +643,8 @@ services:
   #     second time for the same bytes (counted on the node).
   #   - cpus 2 by default: the smallest box shape has 2 vCPU, and every box
   #     of the fleet has 2 or more cores. A 1-vCPU box sets PARSER_CPUS=1.
-  #   - mem_limit 3g by default: it fits a box of 8 GB; a larger box may
-  #     set more in its .env.
+  #   - mem_limit 3g by default: it fits a box of 8 GB; a 4 GB box sets
+  #     PARSER_MEM_LIMIT=2g (docs/deploy.md), a larger box may set more.
   #   - a read-only root filesystem: the job user can write only to the
   #     scratch space, a tmpfs on /tmp of PARSER_TMP_SIZE (default 1g), and
   #     to /dev/shm and /dev/mqueue. A job cannot fill the host's disk or
