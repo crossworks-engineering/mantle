@@ -56,10 +56,10 @@ export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
 /**
  * The largest embedded image a picture of a page for the PDF Agent decodes
  * (`renderPdfWindows` with `largeImages`), in pixels. A CAD sheet exported
- * as one picture at 40 dots a millimetre (1016 DPI) is about 100 M on A4
- * (11880 x 8400): past the cap above, pdfjs drops it, and the page draws
- * white. Such a picture is drawn in a process the job can kill (the
- * parser's pictures child).
+ * as one picture at 40 dots a millimetre (1016 DPI) is about 100 M on
+ * an A4 sheet (11880 x 8400): past the cap above, pdfjs drops it, and the
+ * page draws white. Such a picture is drawn in a process the job can kill
+ * (the parser's pictures child).
  *
  * Measured in the parser image under a 2 GB limit (bench, 2026-11-17): such
  * an A4 sheet (RGB with a soft mask of the same size) drawn at 200 DPI rose
