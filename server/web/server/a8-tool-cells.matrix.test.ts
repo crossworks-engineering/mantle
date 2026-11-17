@@ -748,11 +748,13 @@ const NOT_APPLICABLE: Readonly<Record<string, number>> = {
 /** The narrowed tool cells (a deny the oracle cannot see), by reason.
  *  The MCP Admin tool cells are 120 since Pipelines phase 2 M4, 2026-11-14:
  *  pipeline_test is a settings area tool, so its 5 allowed read cells of a
- *  login outside Admin are refused there, over both modes. */
+ *  login outside Admin are refused there, over both modes. 110 and 60 (from
+ *  120 and 70) since Sync M4, 2026-11-17: email_send and email_page, two
+ *  connectors area tools, left with the old sync (5 cells each, a surface). */
 const NARROWED: Readonly<Record<string, number>> = {
   'web-turn: the app data tools act for a login’s own MCP connection only': 44,
-  'web-turn: an Admin tool: the scope holds no Admin': 70,
-  'mcp-oauth: an Admin tool: the scope holds no Admin': 120,
+  'web-turn: an Admin tool: the scope holds no Admin': 60,
+  'mcp-oauth: an Admin tool: the scope holds no Admin': 110,
   'web-turn: a new app needs manage of its create home: the turn’s workspace': 6,
   'mcp-oauth: not on the MCP surface of a login outside Admin': 14,
 };
