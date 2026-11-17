@@ -71,16 +71,21 @@ async function run(kind: string, pages: number) {
 }
 
 describe('pdf-sheet-read in a parser job', () => {
-  it('a two-page drawing: three asks, and the job sends the three pictures', async () => {
+  it('a two-page drawing: seven asks, and the job sends the seven pictures', async () => {
     const { result, dir } = await run('isometric', 2);
     const calls = result.calls ?? [];
-    expect(calls.map((c) => (c as { key: string }).key)).toEqual([
+    const keys = [
       'page-1-title-block',
       'page-1',
+      'page-1-half-1',
+      'page-1-half-2',
       'page-2',
-    ]);
+      'page-2-half-1',
+      'page-2-half-2',
+    ];
+    expect(calls.map((c) => (c as { key: string }).key)).toEqual(keys);
     const sent = await picturesOf(dir, calls);
-    expect(sent.map((s) => s.file)).toEqual(['page-1-title-block.png', 'page-1.png', 'page-2.png']);
+    expect(sent.map((s) => s.file)).toEqual(keys.map((k) => `${k}.png`));
     const png = Buffer.from(sent[1]!.bytes_base64, 'base64');
     expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
     // 420 mm at 200 DPI.
@@ -100,6 +105,22 @@ describe('pdf-sheet-read in a parser job', () => {
     );
     expect(small!.widthPx).toBe(500);
     expect([...jpeg!.png.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+  }, 120_000);
+
+  it('a blank picture says so through the child', async () => {
+    const p = jobPaths(mkdtempSync(path.join(root, 'job-')));
+    writeFileSync(p.input, drawing(1));
+    const job = jobHandle(p, Date.now() + PICTURES_RESERVE_MS + 120_000);
+    // A window of the empty top left corner, and the whole page.
+    const [empty, whole] = await job.pdfPictures(
+      [
+        { pageNumber: 1, scale: 1, box: [0, 0, 0.05, 0.05] },
+        { pageNumber: 1, scale: 1 },
+      ],
+      Date.now() + 60_000,
+    );
+    expect(empty!.blank).toBe(true);
+    expect(whole!.blank).toBeUndefined();
   }, 120_000);
 
   it('a kind that is not the Agent’s: not_mine, and nothing drawn', async () => {

@@ -303,17 +303,18 @@ describe('the roles', () => {
     expect(ids.indexOf('pdf-sheet-read')).toBeGreaterThan(ids.indexOf('drawing-pdf'));
   });
 
-  it('the PDF Agent: two tabs, the vision worker 11 times at most, two options', () => {
+  it('the PDF Agent: two tabs, the vision worker 31 times at most, two options', () => {
     const agent = AGENTS.find((p) => p.id === 'pdf-sheet-read')! as PipelineManifest;
     expect(agent.match).toEqual({ ext: ['pdf'] });
     expect(agent.produces).toEqual({ tabs: ['Title block', 'Sheet list'] });
-    expect(agent.needs).toEqual({ weight: 'heavy', timeMs: 240_000, workers: { vision: 11 } });
-    expect(asksMaxOf(agent)).toBe(11);
+    expect(agent.needs).toEqual({ weight: 'heavy', timeMs: 240_000, workers: { vision: 31 } });
+    expect(asksMaxOf(agent)).toBe(31);
     expect(Object.keys(agent.options ?? {})).toEqual(['more_fields', 'pages']);
-    // The page cap and the ask cap agree: page 1 has two asks.
+    // The page cap and the ask cap agree: three asks a page (the whole page
+    // and its two halves), page 1 one more (its title block corner).
     const pages = agent.options!.pages!;
-    expect(pages.type === 'number' && pages.max + 1).toBe(11);
-    expect(agent.version).toBe('1.0.0');
+    expect(pages.type === 'number' && 3 * pages.max + 1).toBe(31);
+    expect(agent.version).toBe('1.1.0');
   });
 
   it('the first Agent: the title block of a raster or plot isometric, two vision asks at most', () => {

@@ -6,6 +6,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ extract: vi.fn() }));
+/** A provider that does not answer in time, as a call that throws. */
+const timeout = async () => {
+  throw new Error('timeout');
+};
 
 vi.mock('@mantle/db', () => ({ bumpWorkerUsage: vi.fn(), getDefaultWorker: vi.fn() }));
 vi.mock('@mantle/api-keys', () => ({
@@ -39,21 +43,21 @@ describe('runVisionWorker tries', () => {
   beforeEach(() => h.extract.mockReset());
 
   it('with tries 2, a failed call is asked one time more, and its answer is kept', async () => {
-    h.extract.mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce({ text: 'read' });
+    h.extract.mockImplementationOnce(timeout).mockResolvedValueOnce({ text: 'read' });
     const out = await ask(2);
     expect(h.extract).toHaveBeenCalledTimes(2);
     expect(out).toMatchObject({ ran: true, text: 'read' });
   });
 
   it('with tries 2, two failed calls: ran false, and no third call', async () => {
-    h.extract.mockRejectedValue(new Error('timeout'));
+    h.extract.mockImplementation(timeout);
     const out = await ask(2);
     expect(h.extract).toHaveBeenCalledTimes(2);
     expect(out.ran).toBe(false);
   });
 
   it('with no tries, one call only', async () => {
-    h.extract.mockRejectedValue(new Error('timeout'));
+    h.extract.mockImplementation(timeout);
     expect((await ask()).ran).toBe(false);
     expect(h.extract).toHaveBeenCalledTimes(1);
   });
