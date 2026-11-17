@@ -1041,8 +1041,8 @@ select left(check_name, 40) as what, count(*) from actor_check_misses
 ```
 
 Expect, until each is decided: a member with a Write grant who changes an
-app's code (owner decision D4: a Moderator of the app's home does), a
-contact share made by a login that is not an Admin user. `on` refuses with
+app's code (owner decision D4: a Moderator of the app's home does).
+(Contact shares, the other case, are gone since migration 0378.) `on` refuses with
 a 403. Do not set `on` on any box before its `edit:` misses are zero, and
 never on the Pinnacle showcase box before 2026-10-16 (D4 lands after it).
 Going back (an emergency only since 0301, with a reason: "The checks'
@@ -1800,6 +1800,28 @@ request when it has a mode on and no `.env` hash.
   (`packages/db/rollback/0361_sso_setup.revert.sql`) is optional. It takes 0361
   off the ledger and keeps the table.
 
+## Going up to 0378 (contact shares gone)
+
+Migration 0378 removes contact shares ([sharing.md](sharing.md), section
+4b). It **deletes every contact share row** (`shares` rows with a
+`contact_id`, live or revoked) and drops `contact_share_codes`,
+`share_access_log`, `shares.contact_id` and `shares.can_write`, with the
+contact definers and the contact edit check. Open links stay as they were.
+Contacts stay.
+
+- **Before the roll:** a contact who had a link loses it. Tell the people
+  who shared with contacts, if any. To count them first (numbers only):
+  `select count(*) from shares where contact_id is not null and revoked_at is null`.
+- **Rolling back below it:** run its revert first, or the older image fails
+  on every `/s` link (it reads `shares.contact_id`). While the newer image
+  is still up, as the superuser, in one transaction:
+  `docker exec mantle_web cat /app/packages/db/rollback/0378_contact_shares_gone.revert.sql | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1`,
+  then pin the older tag straight away (or stop mantle_web first): a
+  restart in between applies 0378 again. The revert restores **only the
+  empty shapes** (the tables, columns, checks, indexes and functions) and
+  takes 0378 off the ledger. The deleted shares, codes and trail rows do
+  not come back: only the pre-roll backup has them.
+
 ## Rollback
 
 Roll back with `scripts/roll.sh`. It refreshes the compose to the old
@@ -1951,6 +1973,10 @@ count(*) from tables where draft_path is not null` must be 0), and expect
   image reads `MANTLE_NARROW_SYSTEM` again: an `.env` line that went inert
   at the S7c roll is live again after the pin. The content tables are
   readable by the narrow role on both images (S7c revokes nothing).
+
+- **Below the contact shares removal (migration 0378):** the revert is
+  **mandatory** ("Going up to 0378" above). It puts back only the empty
+  tables and columns: the contact shares 0378 deleted stay gone.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

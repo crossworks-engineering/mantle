@@ -23,7 +23,6 @@ const LINK = {
   ownerId: OWNER,
   nodeId: CANVAS,
   nodeType: 'present',
-  contactId: null,
 };
 const h = vi.hoisted(() => ({
   byToken: {} as Record<string, unknown>,
@@ -31,19 +30,9 @@ const h = vi.hoisted(() => ({
   rendered: [] as Array<{ owner: string; nonce: string }>,
 }));
 
-vi.mock('@/lib/contact-share-gate', () => {
-  const gate = async (token: string) => {
-    const share = h.byToken[token] as { contactId: string | null } | undefined;
-    if (!share) return { kind: 'missing' };
-    // A contact share without its cookie: the code prompt.
-    if (share.contactId) return { kind: 'code', share };
-    return { kind: 'ok', share, contact: null };
-  };
-  return {
-    gateShare: vi.fn(async (_req: Request, token: string) => gate(token)),
-    gateShareCookie: vi.fn(async (_cookie: string | null, token: string) => gate(token)),
-  };
-});
+vi.mock('@/lib/share-gate', () => ({
+  openShareLink: vi.fn(async (token: string) => h.byToken[token] ?? null),
+}));
 vi.mock('@/lib/presents', () => ({
   getPresentFrame: vi.fn(async (_owner: string, id: string) =>
     id === CANVAS && !h.canvasGone
@@ -79,7 +68,6 @@ beforeEach(() => {
     live: LINK,
     other: { ...LINK, id: 'share-2' },
     app: { ...LINK, id: 'share-3', nodeType: 'app' },
-    contact: { ...LINK, id: 'share-4', contactId: 'contact-1' },
   };
   h.canvasGone = false;
   h.rendered.length = 0;
@@ -122,10 +110,9 @@ describe('POST /s/:token/canvas/frame-ticket', () => {
     expect(tokens.verifyAppFrameTicket(r.body!.ticket!)).toBeNull();
   });
 
-  it('is a 404 for a closed link, a link of another kind, a contact share and a deleted canvas', async () => {
+  it('is a 404 for a closed link, a link of another kind and a deleted canvas', async () => {
     expect((await mint('gone')).status).toBe(404);
     expect((await mint('app')).status).toBe(404);
-    expect((await mint('contact')).status).toBe(404);
     h.canvasGone = true;
     expect((await mint('live')).status).toBe(404);
   });
@@ -216,10 +203,9 @@ describe('GET /s/:token/canvas/frame', () => {
     expect((await open('live', await ticket())).status).toBe(200);
   });
 
-  it('is a 404 on a link of another kind and on a contact share', async () => {
+  it('is a 404 on a link of another kind', async () => {
     const { body } = await mint('live');
     expect((await open('app', body!.ticket!)).status).toBe(404);
-    expect((await open('contact', body!.ticket!)).status).toBe(404);
   });
 });
 

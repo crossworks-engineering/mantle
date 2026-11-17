@@ -3,15 +3,8 @@
  * stage 6), without a database. A link has no identified visitor any more:
  * the tool broker refuses every call (403, pointing members at their own
  * login), the db broker takes queries only, and a frame ticket needs only the
- * active share and carries no contact.
- *
- * A CONTACT share (migration 0214) without the contact's cookie gets 401 on
- * every broker and the frame ticket; with it, the tool broker runs only a
- * declared outside tool with External access (in the link's own viewer
- * scope: no workspace, only the items the link serves, settings.served; a
- * contact surface, logged with the contact), the db broker writes only with Can write, and the frame
- * ticket names the contact and its code epoch. (On Postgres:
- * contact-share-gate.db.test.ts.)
+ * active share and carries no contact. (Contact shares are gone since
+ * migration 0378: every live share is an open link.)
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,57 +13,13 @@ const h = vi.hoisted(() => ({
   execs: 0,
   callers: [] as unknown[],
   frameViewers: [] as unknown[],
-  dispatched: [] as Array<{ scope: unknown; ctx: Record<string, unknown> }>,
   appLog: [] as Array<Record<string, unknown>>,
-  shareLog: [] as Array<Record<string, unknown>>,
-  viewers: [] as Array<{ actsFor: unknown }>,
-  /** Whom the withViewer scope the code runs in acts for, if any. */
-  inViewer: null as unknown,
-}));
-
-// The viewer scope without a database (W5b2, plan R6): who it acts for is
-// recorded, and the dispatch below sees the scope it runs in (W8c: no level).
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  withViewer: vi.fn(async (actsFor: unknown, fn: () => Promise<unknown>) => {
-    h.viewers.push({ actsFor });
-    const prev = h.inViewer;
-    h.inViewer = actsFor;
-    try {
-      return await fn();
-    } finally {
-      h.inViewer = prev;
-    }
-  }),
 }));
 
 const SHARE = { id: 'share-1', ownerId: 'owner-1', nodeId: 'app-1', nodeType: 'app', settings: {} };
-const CONTACT = 'contact-7';
-const CONTACT_SHARE = {
-  ...SHARE,
-  id: 'share-2',
-  contactId: CONTACT,
-  canWrite: false,
-  // The items the link serves next to its own (plan 8.1).
-  settings: { served: ['page-9'] },
-};
-const WRITER_SHARE = { ...SHARE, id: 'share-3', contactId: CONTACT, canWrite: true };
-const byToken: Record<string, unknown> = {
-  live: SHARE,
-  contact: CONTACT_SHARE,
-  writer: WRITER_SHARE,
-};
-
 vi.mock('@/lib/shares', () => ({
+  // The /s gate (lib/share-gate.ts openShareLink) resolves through this one.
   resolveActiveShareByToken: vi.fn(async (token: string) => (token === 'live' ? SHARE : null)),
-  // The /s gate (contact shares, 0214) resolves through this one.
-  resolveActiveShareRowByToken: vi.fn(async (token: string) => byToken[token] ?? null),
-  // What the link serves now (its item and list; snapshot copies dropped,
-  // w6b-fix3.db.test.ts): the list as it is here.
-  liveServedIds: vi.fn(
-    async (s: { nodeId: string; settings?: { served?: string[] } }) =>
-      new Set([s.nodeId, ...(s.settings?.served ?? [])]),
-  ),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
@@ -81,44 +30,8 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     manifest: { toolSlugs: ['search_chunks', 'site_query'] },
   })),
   recordAppAccess: vi.fn((e: Record<string, unknown>) => h.appLog.push(e)),
-  recordShareAccess: vi.fn((e: Record<string, unknown>) => h.shareLog.push(e)),
-  contactShareGateRow: vi.fn(async (contactId: string) =>
-    contactId === CONTACT ? { ownerId: 'owner-1', codeEpoch: 3, open: true } : null,
-  ),
 }));
 vi.mock('@mantle/content/app-table-exports', () => ({ scheduleAppTableExportSync: vi.fn() }));
-
-// 'site_query' stands for an outside tool an admin switched External access on
-// for; every other slug gets the real rule (an undeclared slug is refused
-// before any lookup).
-// The verdict steps run inside @mantle/tools (app-tool-run.ts
-// appToolRunPlan, which the broker plans every call with), so they are
-// stood in for at their own module.
-vi.mock('../../../../packages/tools/src/external-access', async (importOriginal) => {
-  const real =
-    await importOriginal<typeof import('../../../../packages/tools/src/external-access')>();
-  return {
-    ...real,
-    contactAppToolVerdict: vi.fn(async (owner: string, declared: string[], slug: string) =>
-      slug === 'site_query' && declared.includes(slug)
-        ? {
-            ok: true,
-            tool: { slug, handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' } },
-          }
-        : real.contactAppToolVerdict(owner, declared, slug),
-    ),
-  };
-});
-vi.mock('@mantle/tools', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@mantle/tools')>();
-  return {
-    ...real,
-    dispatchTool: vi.fn(async (_t: unknown, _i: unknown, ctx: Record<string, unknown>) => {
-      h.dispatched.push({ scope: h.inViewer ?? 'system', ctx });
-      return { ok: true, output: { rows: [] } };
-    }),
-  };
-});
 
 vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   AppSqlError: (await importOriginal<typeof import('@mantle/content/app-broker')>()).AppSqlError,
@@ -153,11 +66,7 @@ beforeEach(() => {
   h.execs = 0;
   h.callers.length = 0;
   h.frameViewers.length = 0;
-  h.dispatched.length = 0;
   h.appLog.length = 0;
-  h.shareLog.length = 0;
-  h.viewers.length = 0;
-  h.inViewer = null;
 });
 
 const post = (path: string, body: unknown) =>
@@ -176,7 +85,7 @@ describe('/s/:token/tool-broker', () => {
       expect(res.status, slug).toBe(403);
       expect(((await res.json()) as { error: string }).error).toMatch(/own login/);
     }
-    expect(h.dispatched).toHaveLength(0);
+    expect(h.queries + h.execs).toBe(0);
   });
 
   it('is a 404 for a dead token', async () => {
@@ -228,129 +137,6 @@ describe('/s/:token/frame-ticket', () => {
   });
 });
 
-describe('a contact share (0214)', () => {
-  const cookieFor = async (codeEpoch: number) => {
-    const { buildContactVisitorValue, CONTACT_VISITOR_COOKIE } = await import('@/lib/auth');
-    const { value } = buildContactVisitorValue({
-      contactId: CONTACT,
-      ownerId: 'owner-1',
-      codeEpoch,
-    });
-    return `${CONTACT_VISITOR_COOKIE}=${value}`;
-  };
-  const withCookie = (path: string, body: unknown, cookie: string) => {
-    const r = post(path, body);
-    r.headers.set('cookie', cookie);
-    return r;
-  };
-
-  it('answers 401 on every broker and the ticket without the contact cookie, or with a stale one', async () => {
-    const tool = (await import('./[token]/tool-broker/route')).POST;
-    const db = (await import('./[token]/db-broker/route')).POST;
-    const ticket = (await import('./[token]/frame-ticket/route')).POST;
-    const stale = await cookieFor(2);
-    for (const cookie of ['', stale]) {
-      const at = (path: string, body: unknown) =>
-        cookie ? withCookie(path, body, cookie) : post(path, body);
-      expect(
-        (await tool(at('/s/contact/tool-broker', { slug: 'x' }), params('contact'))).status,
-      ).toBe(401);
-      expect(
-        (await db(at('/s/contact/db-broker', { op: 'query', sql: 'select 1' }), params('contact')))
-          .status,
-      ).toBe(401);
-      expect((await ticket(at('/s/contact/frame-ticket', {}), params('contact'))).status).toBe(401);
-    }
-    expect(h.queries + h.execs).toBe(0);
-  });
-
-  it('with the cookie: a declared External access tool runs in the link scope and is logged with the contact', async () => {
-    const cookie = await cookieFor(3);
-    const tool = (await import('./[token]/tool-broker/route')).POST;
-    const res = await tool(
-      withCookie('/s/contact/tool-broker', { slug: 'site_query', input: { q: 'x' } }, cookie),
-      params('contact'),
-    );
-    expect(res.status).toBe(200);
-    expect(h.dispatched).toEqual([
-      {
-        scope: { link: { served: ['app-1', 'page-9'] } },
-        ctx: {
-          ownerId: 'owner-1',
-          surface: { kind: 'contact', contactId: CONTACT, shareId: 'share-2' },
-          // Through the one gate as the share's broker (A5 step 3b): via
-          // the contact, a database error's text masked, judged at contact
-          // rules (its app-tool ref first, A5 step 6a), carrying the
-          // broker's own verdict (fix round 1, M2).
-          caller: {
-            entry: 'app',
-            via: 'contact',
-            masks: true,
-            appRules: 'contact',
-            appVerdict: {
-              ok: true,
-              tool: {
-                slug: 'site_query',
-                handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' },
-              },
-            },
-          },
-        },
-      },
-    ]);
-    // The link reads no workspace: only its own item and its served list.
-    expect(h.viewers).toEqual([{ actsFor: { link: { served: ['app-1', 'page-9'] } } }]);
-    expect(h.appLog[0]).toMatchObject({
-      contactId: CONTACT,
-      shareId: 'share-2',
-      kind: 'tool',
-      detail: { via: 'contact', contactId: CONTACT, slug: 'site_query', handler: 'mcp' },
-    });
-    expect(h.shareLog[0]).toMatchObject({ contactId: CONTACT, kind: 'tool' });
-  });
-
-  it('with the cookie: an undeclared tool is refused and logged; a write only with Can write; a ticket that names the contact', async () => {
-    const cookie = await cookieFor(3);
-    const tool = (await import('./[token]/tool-broker/route')).POST;
-    const db = (await import('./[token]/db-broker/route')).POST;
-    const ticket = (await import('./[token]/frame-ticket/route')).POST;
-    for (const token of ['contact', 'writer']) {
-      const res = await tool(
-        withCookie(`/s/${token}/tool-broker`, { slug: 'x' }, cookie),
-        params(token),
-      );
-      expect(res.status, token).toBe(403);
-    }
-    const ro = await db(
-      withCookie('/s/contact/db-broker', { op: 'exec', sql: 'delete from t' }, cookie),
-      params('contact'),
-    );
-    expect(ro.status).toBe(403);
-    expect(await ro.json()).toMatchObject({ reason: 'read-only' });
-    const rw = await db(
-      withCookie('/s/writer/db-broker', { op: 'exec', sql: 'delete from t' }, cookie),
-      params('writer'),
-    );
-    expect(rw.status).toBe(200);
-    expect(h.execs).toBe(1);
-    // App identity: the share's contact fills :host_me_* (never the body).
-    expect(h.callers).toEqual([
-      {
-        callerKey: 'share:share-3',
-        viewer: { kind: 'contact', contactId: CONTACT },
-        dataOnly: true,
-      },
-    ]);
-    const t = await ticket(withCookie('/s/contact/frame-ticket', {}, cookie), params('contact'));
-    const { verifyAppFrameTicket } = await import('@/lib/auth');
-    expect(verifyAppFrameTicket(((await t.json()) as { ticket: string }).ticket)).toMatchObject({
-      shareId: 'share-2',
-      contactId: CONTACT,
-      codeEpoch: 3,
-    });
-  });
-});
-
 describe('/s/:token/frame: host.me() (app identity)', () => {
   const frameReq = (token: string, ticket: string) =>
     new Request(`https://brain.example.invalid/s/${token}/frame?t=${encodeURIComponent(ticket)}`);
@@ -362,21 +148,6 @@ describe('/s/:token/frame: host.me() (app identity)', () => {
     expect((await GET(frameReq('live', t), params('live'))).status).toBe(200);
     expect(h.frameViewers).toEqual([
       { ownerId: 'owner-1', appId: 'app-1', subject: { kind: 'public' } },
-    ]);
-  });
-
-  it("a contact share bakes the share's contact, whatever the request says", async () => {
-    const { GET } = await import('./[token]/frame/route');
-    const { buildAppFrameTicket } = await import('@/lib/auth');
-    const t = buildAppFrameTicket({
-      ownerId: 'owner-1',
-      appId: 'app-1',
-      shareId: 'share-2',
-      contact: { contactId: CONTACT, codeEpoch: 3 },
-    });
-    expect((await GET(frameReq('contact', t), params('contact'))).status).toBe(200);
-    expect(h.frameViewers).toEqual([
-      { ownerId: 'owner-1', appId: 'app-1', subject: { kind: 'contact', contactId: CONTACT } },
     ]);
   });
 });

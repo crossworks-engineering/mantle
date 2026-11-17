@@ -8,8 +8,8 @@
  *  - M-2: app_delete holds the app for the owner unless the caller is the
  *    brain's anchor login: the assistant tool (the web turn's login), MCP
  *    (an OAuth login) and an API key (its login);
- *  - L-1: a snapshot copy carries no link and no contact share (the
- *    libraries and the database);
+ *  - L-1: a snapshot copy carries no link (the libraries and the
+ *    database);
  *  - L-3: the files watcher skips a disk file that takes a folded member
  *    file's name (any case);
  *  - L-4: a snapshot copy's file row made first by the watcher is stamped
@@ -36,7 +36,6 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
   let m: typeof import('@mantle/db');
   let f: typeof import('@mantle/files');
   let c: typeof import('@mantle/content');
-  let support: typeof import('@mantle/content/test-support');
   let app: import('hono').Hono;
   let cookieOf: (id: string) => string;
   let dir = '';
@@ -154,7 +153,6 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     m = await import('@mantle/db');
     f = await import('@mantle/files');
     c = await import('@mantle/content');
-    support = await import('@mantle/content/test-support');
     await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Ada Admin'),
@@ -338,7 +336,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     for (const id of [t2, t3, m2, k2]) expect(await left(id)).toBeGreaterThan(0);
   });
 
-  it('L-1: a snapshot copy carries no link and no contact share; the database refuses it too', async () => {
+  it('L-1: a snapshot copy carries no link; the database refuses it too', async () => {
     const priv = await privateFor(mem);
     const copy = await makeCopy(priv, randomUUID(), () =>
       c.createPage(owner, { title: `${tag} copy for links` }),
@@ -354,9 +352,6 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     await expect(sys(() => c.createShare(owner, copy.id))).rejects.toBeInstanceOf(
       c.ShareInputError,
     );
-    await expect(
-      sys(() => support.createContactShares(owner, copy.id, [randomUUID()])),
-    ).rejects.toBeInstanceOf(c.ContactShareRefusedError);
     // The database floor: no share row on a copy, made or moved onto it.
     const refused = async (q: ReturnType<typeof sql>) => {
       let err: unknown;

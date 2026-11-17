@@ -137,8 +137,8 @@ exception to explain a simple idea, or when audit rounds keep finding the same
 class of hole. Bring the simpler option to the owner, with what it costs.
 
 This does not remove the audits, the cost caps, or the strict rules for those
-outside the team: public share links, contact shares, read-only logins, API
-keys and peers. The one owner-ruled limit: a person who may share may share any
+outside the team: public share links, read-only logins, API keys and
+peers. The one owner-ruled limit: a person who may share may share any
 item they can reach, another login's own item included.
 
 ## An agent may tighten a gate, never loosen one

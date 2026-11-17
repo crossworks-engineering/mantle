@@ -2,9 +2,9 @@
  * App identity on Postgres (migration 0217): the per-app viewer salt is
  * created once and kept in app_databases.viewer_salt, so a person's id is
  * stable in one app across restarts and different in another app; names come
- * from the login row and the contact node, never an email; and a write
- * through the broker records the server-filled values. Seeds its own owner,
- * login, contact and two apps on random ids; removes them.
+ * from the login row, never an email; and a write through the broker records
+ * the server-filled values. Seeds its own owner, login and two apps on random
+ * ids; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -25,7 +25,6 @@ describe.skipIf(!URL)('app identity on Postgres', () => {
   let dir = '';
   const owner = randomUUID();
   const login = randomUUID();
-  const contact = randomUUID();
   const appA = randomUUID();
   const appB = randomUUID();
   const tag = owner.slice(0, 8);
@@ -46,8 +45,7 @@ describe.skipIf(!URL)('app identity on Postgres', () => {
       (${login}, ${`av-m-${tag}@example.invalid`}, 'x', 'member', ${`${tag} Pat`})`;
     await admin`insert into nodes (id, owner_id, type, title, path) values
       (${appA}, ${owner}, 'app', 'review log', 'apps'),
-      (${appB}, ${owner}, 'app', 'other app', 'apps'),
-      (${contact}, ${owner}, 'contact', ${`${tag} Ann`}, 'contacts')`;
+      (${appB}, ${owner}, 'app', 'other app', 'apps')`;
   }, 60_000);
 
   afterAll(async () => {
@@ -84,16 +82,6 @@ describe.skipIf(!URL)('app identity on Postgres', () => {
     const other = await broker.appViewerFor(owner, appB, { kind: 'member', loginId: login });
     expect(other.id).not.toBe(first.id);
     expect(await salt(appB)).not.toBe(stored);
-  });
-
-  it('names a contact from the contact node', async () => {
-    expect(await broker.appViewerFor(owner, appA, { kind: 'contact', contactId: contact })).toEqual(
-      {
-        id: viewer.appViewerPseudonym((await salt(appA))!, `contact:${contact}`),
-        name: `${tag} Ann`,
-        kind: 'contact',
-      },
-    );
   });
 
   it('a broker write records the server-filled values', async () => {

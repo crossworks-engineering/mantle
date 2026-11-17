@@ -44,12 +44,7 @@ type PgSql = ReturnType<typeof postgres>;
 
 /** The actors whose scoped writes go to the write role:
  *  everything but system work and a peer(share), which writes nothing. */
-const WRITE_ROLE_ACTORS: ReadonlySet<Actor['kind']> = new Set([
-  'login',
-  'assistant',
-  'link',
-  'contact',
-]);
+const WRITE_ROLE_ACTORS: ReadonlySet<Actor['kind']> = new Set(['login', 'assistant', 'link']);
 
 /** The tables the write role writes, as `schema.table` (WRITE_ROLE_TABLES). */
 const WRITE_ROLE_TABLE_SET: ReadonlySet<string> = new Set(WRITE_ROLE_TABLES);
@@ -75,7 +70,7 @@ function isWriteRoleTable(table: unknown): boolean {
  * never refused. A login's write to a table whose matrix row names
  * scopedSystemWrite (SCOPED_SYSTEM_WRITE, its reason) still goes there:
  * every reason names the caller's login as whose row it is, so an
- * assistant's, a link's or a contact's write to it is refused too.
+ * assistant's or a link's write to it is refused too.
  */
 function refuseScopedSystemWrite(table: unknown): void {
   const actor = currentActor();
@@ -108,7 +103,7 @@ export function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolea
  *  - this process opened it (openLoginWritePool: web, api, the runs
  *    worker, the Telegram poller and the stdio MCP server; every process
  *    entry that binds a login opens it, eslint-rules/process-entries.test.ts);
- *  - the actor is a login, an assistant, a link or a contact;
+ *  - the actor is a login, an assistant or a link;
  *  - the write carries a scope its reads use too (requestWriteScope: a
  *    login's mutating request scope, an Admin user's too, an Admin
  *    turn). asSystem masks it, and a named repair or an Admin area
@@ -121,7 +116,7 @@ function loginWriteRoute(): LoginWriteRoute | null {
   const scope = requestWriteScope();
   if (!scope) return null;
   // The actor's settings in every mode, off too: the write role's checks
-  // read the actor (a contact's app-data rule, 0294) and the mode.
+  // read the actor and the mode.
   const params: [string, string, string] = [
     actorSetting(actor),
     writeModeOf(actor),

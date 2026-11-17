@@ -622,12 +622,12 @@ export function inScopeTransaction(): boolean {
  * that login kept, so a read-only key stays read-only); an assistant turn
  * that answers a login is that login; one that answers none is the
  * assistant, or login(owner) when its entry named that (the Admin assistant
- * with no user); a link scope is the link, or the contact share around it.
+ * with no user); a link scope is the link.
  */
 function scopeActor(ws: WorkspaceScope): Actor {
   const outer = currentActor();
   if (ws.kind === 'link') {
-    return outer?.kind === 'contact' || outer?.kind === 'link' ? outer : { kind: 'link' };
+    return { kind: 'link' };
   }
   if (ws.loginId && UUID_RE.test(ws.loginId)) {
     const id = ws.loginId.toLowerCase();
@@ -1546,7 +1546,6 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
   'packages/embeddings/src/index.ts',
   'packages/content/src/team-messages.ts',
   'packages/content/src/app-access-log.ts',
-  'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
   'packages/content/src/member-turn-ledger.ts',
   // The messenger: its own system tables, written and checked in

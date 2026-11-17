@@ -239,10 +239,7 @@ describe('the share tools act as the CALLING login (audit 2026-10-12)', () => {
   });
 
   it('a surface that names no login of its own never links as the owner', async () => {
-    for (const surface of [
-      { kind: 'team' as const, contactId: 'c-1' },
-      { kind: 'contact' as const, contactId: 'c-1', shareId: 's-1' },
-    ]) {
+    for (const surface of [{ kind: 'team' as const, contactId: 'c-1' }]) {
       const res = await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface });
       expect(errorOf(res)).toMatch(/signed-in login/);
     }

@@ -27,7 +27,8 @@
  *  5. an admin who runs the team app (team rules, not in the holder): the
  *     file lands where an admin's export lands (Auto-filed / Exports);
  *  6. a read-only login: the save is refused;
- *  7. a shared link's run: refused (a link runs no built-in);
+ *  7. (a shared link's run: gone with contact shares, the link's tool
+ *     broker is a fixed 403);
  *  8. an app the Admin workspace alone holds, run by the owner: lands where
  *     an admin's export lands, as before.
  *
@@ -46,7 +47,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   recordAppAccess: vi.fn(),
   recordAppError: vi.fn(),
-  recordShareAccess: vi.fn(),
 }));
 
 type Answer = { status: number; body: { ok: boolean; error?: string; output?: unknown } };
@@ -144,22 +144,6 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
           app: async () => (await import('@mantle/content')).getAppRuntime(owner, appId),
         }),
       ),
-    );
-
-  /** A shared link's run (POST /s/:token/tool-broker, past its code gate). */
-  const linkCall = (slug: string, input: Record<string, unknown>) =>
-    m.asSystem(
-      async () =>
-        answer(
-          await broker.runAppToolBroker(request(slug, input), {
-            via: 'contact',
-            ownerId: owner,
-            share: { id: randomUUID(), contactId: randomUUID() },
-            served: async () => [teamApp],
-            app: async () => ({ id: teamApp, manifest: { toolSlugs: SLUGS } }),
-          }),
-        ),
-      'test',
     );
 
   /** The files the engine made: their home, folder and indexing. */
@@ -371,14 +355,6 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
     expect(res.body.ok).toBe(false);
     expect(res.body.error).toContain("can't save a file");
     expect((await made()).length).toBe(before);
-  });
-
-  it("7. a shared link's run: refused, a link runs no built-in", async () => {
-    const calls = engineCalls;
-    const res = await linkCall('pdf_render', { html: '<h1>x</h1>', bytes: true });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain('a shared link runs no built-in tools');
-    expect(engineCalls).toBe(calls);
   });
 
   it("8. an app the Admin workspace alone holds: lands where an admin's export lands", async () => {

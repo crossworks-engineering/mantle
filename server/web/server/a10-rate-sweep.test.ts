@@ -112,7 +112,6 @@ vi.mock('../lib/pair-code', async (importOriginal) => ({
 vi.mock('../lib/shares', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   resolveActiveShareByToken: async () => null,
-  resolveActiveShareRowByToken: async () => null,
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -782,13 +781,6 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   ...getHead('/s/:token/aggregate', { cred: 'none', limits: [ip('share-aggregate', 120)] }),
   ...getHead('/s/:token/bundle', { cred: 'none', limits: [ip('share-bundle', 30)] }),
   {
-    row: 'POST /s/:token/code',
-    cred: 'none',
-    body: JSON_BODY,
-    limits: [ip('contact-code:ip', 10), ip('contact-code:ip-hour', 30, HOUR)],
-    crossSite: true,
-  },
-  {
     row: 'POST /s/:token/db-broker',
     cred: 'none',
     body: JSON_BODY,
@@ -842,6 +834,17 @@ if (!hasManifest && process.env.CI) {
 }
 const RECORD = process.env.A10_RATE_SWEEP_RECORD === '1';
 const BASELINE = join(here, '__snapshots__/a10-rate-sweep.txt');
+
+/**
+ * Rows gone since the record was taken, each with why: their recorded
+ * probes are left out of the compare (as a10-flags.test.ts RETIRED).
+ */
+const RETIRED_ROWS: Readonly<Record<string, string>> = {
+  'POST /s/:token/code':
+    'contact shares and their codes are gone (migration 0378): the code route and its two limits went with them',
+};
+const retiredProbe = (probe: string) =>
+  Object.keys(RETIRED_ROWS).some((row) => probe.startsWith(`${row} `));
 const NOW = new Date('2026-10-01T00:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
 const ADDRESS = '198.51.100.7';
@@ -1126,6 +1129,7 @@ describe.skipIf(!hasManifest)('A10 #8: every route limit answers as recorded on 
     for (const line of readFileSync(BASELINE, 'utf8').split('\n')) {
       if (!line || line.startsWith('#')) continue;
       const at = line.indexOf(' => ');
+      if (retiredProbe(line.slice(0, at))) continue;
       out.set(line.slice(0, at), line.slice(at + 4));
     }
     return out;

@@ -4,14 +4,8 @@
  * write role. Each cell sends a real request through the full HTTP pipeline
  * (runRoute) on a migrated scratch database, as the owner, in warn and in on:
  *
- *  - H1: a contact's sharing switched on, its code made again, an item the
- *    owner's scope does not read shared with the contact (sharing with a
- *    contact needs only an Admin user, its home is not checked), sharing
- *    switched off (every share revoked). Before: permission denied on
- *    contact_share_codes, a 500.
- *  - "Can write" on a contact share of an app outside the owner's scope.
- *  - M2: Revoke all of a contact's shares revokes every one, an item the
- *    scope does not read included.
+ *  - (H1, "Can write" and M2, the contact share flows, went with contact
+ *    shares, migration 0378.)
  *  - H2: an entity merge moves every fact of the duplicate, one from an
  *    item the scope does not read included (before: left behind, then its
  *    entity set to null by the duplicate's delete, in warn).
@@ -23,7 +17,7 @@
  *    ticks one who is not.
  *  - L1: a missing share, a hidden share and a missing or hidden deleted
  *    app are the same 404 for an Admin user.
- *  - A member never reaches a contact-sharing route.
+ *  - A member never reaches the entity merge.
  *
  * `pnpm test:edit-on` runs this file too.
  *
@@ -183,12 +177,6 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     return { id: ((r.json.contact ?? {}) as { id?: string }).id ?? '', status: r.status };
   };
 
-  const liveShares = async (contact: string) =>
-    (
-      await raw<{ n: number }[]>`select count(*)::int as n from shares
-        where contact_id = ${contact} and revoked_at is null`
-    )[0]!.n;
-
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(DB_URL!);
@@ -284,106 +272,6 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       ]);
     }, 120_000);
 
-    it(`${mode}: H1, the owner switches sharing on, makes the code again, shares, switches it off`, async () => {
-      await setMode(mode);
-      const c = await makeContact(`${mode} h1`);
-      const on = await call(`${mode} enable`, L.owner, 'POST', `/api/contacts/${c.id}/sharing`, {
-        action: 'enable',
-      });
-      expect(on.status, on.text).toBe(200);
-      expect(typeof on.json.code).toBe('string');
-      const again = await call(
-        `${mode} regenerate`,
-        L.owner,
-        'POST',
-        `/api/contacts/${c.id}/sharing`,
-        { action: 'regenerate' },
-      );
-      expect(again.status, again.text).toBe(200);
-      expect(again.json.code).not.toBe(on.json.code);
-      // An item the owner's scope does not read: its home is not checked.
-      const hidden = await makeItem('note');
-      const seen = await makeItem('note', true);
-      for (const item of [hidden, seen]) {
-        const shared = await call(
-          `${mode} share ${item === hidden ? 'hidden' : 'seen'}`,
-          L.owner,
-          'POST',
-          '/api/shares/contacts',
-          {
-            nodeId: item,
-            contactIds: [c.id],
-          },
-        );
-        expect(shared.status, shared.text).toBe(200);
-        expect((shared.json.shares as unknown[]).length).toBe(1);
-      }
-      expect(await liveShares(c.id)).toBe(2);
-      const off = await call(`${mode} disable`, L.owner, 'POST', `/api/contacts/${c.id}/sharing`, {
-        action: 'disable',
-      });
-      expect(off.status, off.text).toBe(200);
-      expect(off.json).toEqual({ sharing: null, revoked: 2 });
-      expect(await liveShares(c.id)).toBe(0);
-      const [code] = await raw<{ hash: string | null }[]>`
-        select code_hash as hash from contact_share_codes where contact_id = ${c.id}`;
-      expect(code?.hash).toBeNull();
-    }, 180_000);
-
-    it(`${mode}: M2, Revoke all revokes every share of the contact; Can write on an app outside the scope`, async () => {
-      await setMode(mode);
-      const c = await makeContact(`${mode} m2`);
-      const on = await call(`${mode} m2 enable`, L.owner, 'POST', `/api/contacts/${c.id}/sharing`, {
-        action: 'enable',
-      });
-      expect(on.status, on.text).toBe(200);
-      const app = await makeItem('app');
-      for (const item of [await makeItem('note'), await makeItem('note', true), app]) {
-        const shared = await call(`${mode} m2 share`, L.owner, 'POST', '/api/shares/contacts', {
-          nodeId: item,
-          contactIds: [c.id],
-        });
-        expect(shared.status, shared.text).toBe(200);
-      }
-      const [share] = await raw<{ id: string }[]>`
-        select id::text as id from shares where contact_id = ${c.id} and node_id = ${app}
-           and revoked_at is null`;
-      const write = await call(`${mode} can write`, L.owner, 'PATCH', `/api/shares/${share!.id}`, {
-        canWrite: true,
-      });
-      expect(write.status, write.text).toBe(200);
-      expect(write.json).toEqual({ ok: true, canWrite: true });
-      const [row] = await raw<
-        { w: boolean }[]
-      >`select can_write as w from shares where id = ${share!.id}`;
-      expect(row?.w).toBe(true);
-      // F4 fix round 3, L2: only the "Can write" change is the Admin act; a
-      // contact share's other change (its mode) is the link's, checked
-      // against its item, which the owner's scope does not read. Before:
-      // the Admin act on the system pool, for any body.
-      const mode2 = await call(
-        `${mode} contact share mode`,
-        L.owner,
-        'PATCH',
-        `/api/shares/${share!.id}`,
-        {
-          mode: 'public',
-        },
-      );
-      expect(mode2.status, mode2.text).toBe(404);
-      expect(mode2.json).toEqual(NOT_FOUND);
-      expect(await liveShares(c.id)).toBe(3);
-      const all = await call(
-        `${mode} revoke all`,
-        L.owner,
-        'DELETE',
-        `/api/contacts/${c.id}/shares`,
-      );
-      expect(all.status, all.text).toBe(200);
-      expect(all.json).toEqual({ revoked: 3 });
-      expect(await liveShares(c.id)).toBe(0);
-    }, 180_000);
-
     it(`${mode}: H2, an entity merge moves a fact of an item the scope does not read`, async () => {
       await setMode(mode);
       const hidden = await makeItem('note');
@@ -413,20 +301,15 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
     }, 120_000);
   }
 
-  it('a member never reaches the contact-sharing routes', async () => {
+  it('a member never reaches the entity merge', async () => {
     await setMode('on');
     const c = await makeContact('member probe');
     for (const [method, url, body] of [
-      ['POST', `/api/contacts/${c.id}/sharing`, { action: 'enable' }],
-      ['DELETE', `/api/contacts/${c.id}/shares`, undefined],
-      ['POST', '/api/shares/contacts', { nodeId: c.id, contactIds: [c.id] }],
       ['POST', '/api/entities/merge', { canonicalId: c.id, dupId: L.owner }],
     ] as const) {
       const r = await call(`member ${method} ${url}`, L.member, method, url, body);
       expect(r.status, r.text).toBe(403);
     }
-    const [code] = await raw`select 1 from contact_share_codes where contact_id = ${c.id}`;
-    expect(code).toBeUndefined();
   }, 120_000);
 
   it('the mail accounts definer answers a scope that holds Admin only', async () => {

@@ -48,8 +48,6 @@ import {
   type UpdateContactInput,
 } from '@mantle/content-core/contacts-format';
 
-import { contactSharingByContact } from './contact-share-codes';
-
 export const CONTACTS_ROOT_LABEL = 'contacts';
 
 // Re-export the pure module's surface so existing importers of `@mantle/content`
@@ -140,17 +138,6 @@ function rowOf(n: Node): ContactRow {
   };
 }
 
-/** Rows with their contact-share status (migration 0214): one batched read
- *  for the whole list. */
-async function withSharing(ownerId: string, list: ContactRow[]): Promise<ContactRow[]> {
-  if (list.length === 0) return list;
-  const sharing = await contactSharingByContact(
-    ownerId,
-    list.map((c) => c.id),
-  );
-  return list.map((c) => ({ ...c, sharing: sharing.get(c.id) ?? null }));
-}
-
 /** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
   await asKindRootRepair(() => ensureRootNow(ownerId));
@@ -213,10 +200,7 @@ export async function listContacts(
     .orderBy(desc(nodes.updatedAt))
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
-  return withSharing(
-    ownerId,
-    rows.map((r) => rowOf(r)),
-  );
+  return rows.map((r) => rowOf(r));
 }
 
 export async function countContacts(ownerId: string, opts: ListContactsOpts = {}): Promise<number> {
@@ -233,7 +217,7 @@ export async function getContact(ownerId: string, id: string): Promise<ContactRo
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
     .limit(1);
-  return row ? ((await withSharing(ownerId, [rowOf(row)]))[0] ?? null) : null;
+  return row ? rowOf(row) : null;
 }
 
 /**
@@ -474,7 +458,7 @@ export async function createContact(
     }),
   );
   if (!row) throw new Error('createContact: insert returned no row');
-  return { contact: { ...rowOf(row), sharing: null }, addedEmails: fields.emails };
+  return { contact: rowOf(row), addedEmails: fields.emails };
 }
 
 export async function updateContact(
@@ -565,8 +549,7 @@ export async function updateContact(
     return (await markContentChanged(tx, { id, type: 'contact' }, changed)) ?? row;
   });
   if (!updated) throw new Error('updateContact: update returned no row');
-  const [contact] = await withSharing(ownerId, [rowOf(updated)]);
-  return { contact: contact!, addedEmails };
+  return { contact: rowOf(updated), addedEmails };
 }
 
 export async function deleteContact(ownerId: string, id: string): Promise<boolean> {

@@ -7,14 +7,13 @@
  * which rules reaches both (app-tool-run.test.ts holds the table).
  *
  *  - who runs it: `owner` (an Admin user: the rules the app's holders and
- *    author allow, appToolLevel 'admin'), `member` (the team rules,
- *    whatever the author), or `contact` (a contact share, past its code
- *    gate: contactAppToolVerdict);
+ *    author allow, appToolLevel 'admin') or `member` (the team rules,
+ *    whatever the author);
  *  - the verdict on the app's declared tools (appToolVerdict, with the
  *    login and the call's input where the rules ask for them);
  *  - the surface and the scope the dispatch runs in (appToolScope): at
  *    team rules the runner's own rights (the login's union of workspaces,
- *    as by hand), for a contact the link's served items, at admin rules
+ *    as by hand), at admin rules
  *    `adminScope` decides: 'caller' runs in the scope the caller is in
  *    (the broker: the Admin user's own request, as before), 'login' in the
  *    login's own scope (a timer: no request, so the login's union of
@@ -32,7 +31,6 @@ import {
   type AppCallRules,
   type AppToolVerdict,
 } from './app-tool-level';
-import { contactAppToolVerdict } from './external-access';
 import type { ToolHandlerContext } from './types';
 
 /** The app as a run reads it. */
@@ -47,22 +45,14 @@ export type AppToolRunApp = {
 export type AppToolRunLogin = { loginId: string; name: string };
 
 /** Who runs the app, and how. */
-export type AppToolRunConfig =
-  | {
-      via: 'owner' | 'member';
-      ownerId: string;
-      runner: AppToolRunLogin;
-      /** Where a run at admin rules dispatches: the caller's own scope as
-       *  it is ('caller', default), or the login's own ('login'). */
-      adminScope?: 'caller' | 'login';
-    }
-  | {
-      via: 'contact';
-      ownerId: string;
-      share: { id: string; contactId: string };
-      /** The items the link serves: all a call of it reads. */
-      served: () => Promise<readonly string[]>;
-    };
+export type AppToolRunConfig = {
+  via: 'owner' | 'member';
+  ownerId: string;
+  runner: AppToolRunLogin;
+  /** Where a run at admin rules dispatches: the caller's own scope as
+   *  it is ('caller', default), or the login's own ('login'). */
+  adminScope?: 'caller' | 'login';
+};
 
 type Surface = NonNullable<ToolHandlerContext['surface']>;
 
@@ -87,18 +77,6 @@ export function appToolRunPlan(
   input: Readonly<Record<string, unknown>>,
 ): AppToolRunPlan {
   const declared = app.manifest.toolSlugs ?? [];
-  if (config.via === 'contact') {
-    const { share, served } = config;
-    return {
-      rules: 'contact',
-      verdict: () => contactAppToolVerdict(config.ownerId, declared, slug),
-      confirm: false,
-      surface: { kind: 'contact', contactId: share.contactId, shareId: share.id },
-      // A link reads no workspace, only what it serves, never a
-      // snapshot copy.
-      actsFor: async () => ({ link: { served: [...(await served())] } }),
-    };
-  }
   // The owner's run: the rules the app's holders and its author allow (a
   // member-built app, or one a workspace other than Admin holds, runs the
   // team rules for an admin too). A member's run: the team rules, whatever

@@ -66,7 +66,6 @@ const SURFACES = Object.keys({
   pending: 1,
   'app-broker': 1,
   'share-link': 1,
-  'contact-share': 1,
 } satisfies Record<GuideSurface, 1>) as GuideSurface[];
 
 const line = (input: string, answer: () => unknown): string => {

@@ -3,7 +3,7 @@
  * carries the workspaces that hold it (its read_ws) as chips, named only
  * where the caller is a user of the workspace (all of them for an Admin
  * user), sorted by name, and `hasLink` for a live open link (not revoked,
- * not expired, not a contact share). `?ws=<id>` keeps the apps that
+ * not expired). `?ws=<id>` keeps the apps that
  * workspace holds and echoes it; a workspace the caller may not see is 404
  * `code: 'not_found'`. Only the owner check is stubbed.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/app/api/apps/apps-list-chips.db.test.ts
@@ -61,11 +61,10 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
       tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, is_home)
         values (${node}, ${wsId}, ${home})`),
     );
-  const link = (node: string, state: 'live' | 'revoked' | 'expired' | 'contact') =>
+  const link = (node: string, state: 'live' | 'revoked' | 'expired') =>
     exec(sqlTag`
-      insert into shares (owner_id, node_id, node_type, token, contact_id, revoked_at, expires_at)
+      insert into shares (owner_id, node_id, node_type, token, revoked_at, expires_at)
       values (${owner}, ${node}, 'app', ${`${tag}-${randomUUID()}`},
-        ${state === 'contact' ? ids.contact! : null},
         ${state === 'revoked' ? sqlTag`now()` : null},
         ${state === 'expired' ? sqlTag`now() - interval '1 day'` : null})`);
   const list = async (as: string, query = '') => {
@@ -104,11 +103,7 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
       insert into workspace_users (workspace_id, login_id, moderator) values
         (${ws.admin}, ${owner}, true), (${ws.quay}, ${owner}, false),
         (${ws.proj}, ${plain}, false)`);
-    ids.contact = randomUUID();
-    await exec(sqlTag`
-      insert into nodes (id, owner_id, type, title, path)
-      values (${ids.contact}, ${owner}, 'contact', ${`${tag} contact`}, 'contacts')`);
-    for (const key of ['held', 'live', 'revoked', 'expired', 'contact link', 'none']) {
+    for (const key of ['held', 'live', 'revoked', 'expired', 'none']) {
       ids[key] = (await content.createApp(owner, { title: `${tag} ${key}` })).id;
       await grant(ids[key]!, ws.admin, true);
     }
@@ -118,7 +113,6 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     await link(ids.live!, 'live');
     await link(ids.revoked!, 'revoked');
     await link(ids.expired!, 'expired');
-    await link(ids['contact link']!, 'contact');
   }, 60_000);
 
   afterAll(async () => {
@@ -159,7 +153,7 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
   it('hasLink: a live open link only', async () => {
     const { body } = await list(owner);
     expect(row(body, 'live')?.hasLink).toBe(true);
-    for (const key of ['held', 'revoked', 'expired', 'contact link', 'none']) {
+    for (const key of ['held', 'revoked', 'expired', 'none']) {
       expect(row(body, key)?.hasLink, key).toBe(false);
     }
   });

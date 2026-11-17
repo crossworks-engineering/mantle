@@ -7,14 +7,14 @@
  * confirmation, then needs the app's declaration and nothing else. A
  * CONNECTOR tool (team apps Phase 2; W5b2) is allowed by the workspaces that
  * hold its connector (the connector the handler names), never its level: a
- * member's run without a login by Team, a login's run by the login's
- * workspaces, and a contact link never (a link holds no workspace); the
+ * member's run without a login by Team, and a login's run by the login's
+ * workspaces; the
  * switch is its READ-ONLY MARK (on = a read, off = a write, which needs the
  * connector's Write tick and a Moderator). An app run reads in the app's
  * workspace scope, as the broker runs it; a non-owner call outside a
- * workspace scope takes its rule from its surface (a member's login, a
- * link); a disabled connector refuses; confirm-gated, shell and recipe tools never
- * pass, nor any built-in on a link; a changed handler or a moved connector
+ * workspace scope takes its rule from its surface (a member's login); a
+ * disabled connector refuses; confirm-gated, shell and recipe tools never
+ * pass; a changed handler or a moved connector
  * voids the mark; the author warnings follow the workspaces;
  * only a person may switch it on through `api_tool_update`;
  * each switch writes an audit row with the actor.
@@ -344,47 +344,6 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     }
   });
 
-  it('a contact link: no connector tool (a link holds no workspace), an http tool with the switch on, never a built-in', async () => {
-    // Whatever the connector's level, marked or not.
-    await setConnectorLevel('public');
-    try {
-      expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query')).toMatchObject({
-        ok: false,
-        status: 403,
-        reason: expect.stringMatching(/holds no workspace/),
-      });
-      fake.calls.length = 0;
-      // The dispatch holds it too (M2 audit, low 6).
-      const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
-      const out = await dispatch.dispatchTool(
-        fresh!,
-        { q: 'l' },
-        {
-          ownerId: anchor,
-          surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
-        },
-      );
-      expect(out).toMatchObject({ ok: false, error: expect.stringMatching(/holds no workspace/) });
-      expect(fake.calls).toEqual([]);
-    } finally {
-      await setConnectorLevel('team');
-    }
-    expect(await ta.contactAppToolVerdict(anchor, ['site_http'], 'site_query')).toMatchObject({
-      ok: false,
-      status: 403,
-    });
-    expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'quick_sum')).toMatchObject({
-      ok: false,
-      status: 403,
-      reason: expect.stringMatching(/built in/),
-    });
-    expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'site_http')).toMatchObject({
-      ok: false,
-      status: 403,
-      reason: expect.stringMatching(/shared link/),
-    });
-  });
-
   it('a confirm-gated tool cannot be switched on, and a gate added later refuses the call', async () => {
     expect(await switchOn('site_confirm')).toMatchObject({
       ok: false,
@@ -440,7 +399,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('quick_sum')).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('dispatch itself holds the workspace rule and the link read-only rule on every non-owner call', async () => {
+  it('dispatch itself holds the workspace rule on every non-owner call', async () => {
     const [row] = (await exec(
       sqlTag`select id from tools where id = ${ids.site_query!}`,
     )) as unknown as { id: string }[];
@@ -485,27 +444,6 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       expect(owner.ok).toBe(true);
     } finally {
       await setConnectorLevel('team');
-    }
-    // A link's call only reads, whatever else holds (the public agent and
-    // its level scope went in W8c; a link is what is left below a member).
-    await switchOff('site_query');
-    try {
-      const unmarked = await crud.getToolById(anchor, ids.site_query!);
-      expect(unmarked).toBeTruthy();
-      const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
-      fake.calls.length = 0;
-      const pub = await dispatch.dispatchTool(
-        fresh!,
-        {},
-        {
-          ownerId: anchor,
-          surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
-        },
-      );
-      expect(pub).toMatchObject({ ok: false, error: expect.stringMatching(/marked read-only/) });
-      expect(fake.calls).toEqual([]);
-    } finally {
-      await switchOn('site_query');
     }
   });
 

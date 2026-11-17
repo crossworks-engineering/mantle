@@ -236,9 +236,6 @@ describe.skipIf(!URL)('open links serve their served list on Postgres', () => {
       // A single-item link is the item: a file link serves its file.
       const fileLink = { ...p, nodeId: id.hidden, nodeType: 'file', settings: {} } as Share;
       expect(await shares.isAssetAllowed(fileLink, id.hidden)).toBe(true);
-      // A contact share holds no list: it serves what its item names.
-      const contact = { ...p, contactId: randomUUID(), settings: {} } as Share;
-      expect(await shares.isAssetAllowed(contact, id.hidden)).toBe(true);
     });
 
     it('a drawing image taken off the list keeps the snapshot off the link', async () => {

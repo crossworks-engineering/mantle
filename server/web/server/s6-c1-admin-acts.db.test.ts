@@ -1,8 +1,10 @@
 /**
- * Admin acts become definers, part c1 (plan v3.2; migration 0308): four Admin acts
+ * Admin acts become definers, part c1 (plan v3.2; migration 0308): Admin acts
  * as SECURITY DEFINER functions that check the Admin user inside
  * (mantle_admin_act_brain), on a migrated scratch database, in warn and in
- * on (the actor and the edit check together, as on the fleet):
+ * on (the actor and the edit check together, as on the fleet). Of the four,
+ * the entity merge is left: the three contact share acts went with contact
+ * shares (migration 0378).
  *
  *  - each definer, called in a scope: an Admin user's scope yes; a
  *    member's scope, no scope, a scope without the Admin workspace and a
@@ -12,8 +14,8 @@
  *    names these acts): the answers the owner gets (f4-owner-flows covers
  *    the owner);
  *  - member-negative per route: the guard's 403, nothing written;
- *  - the system door (the content functions with an owner, the
- *    entities-dedupe sweep's mergeEntities) writes what the definer
+ *  - the system door (the entities-dedupe sweep's mergeEntities) writes
+ *    what the definer
  *    writes: one SQL body, byte-equal rows.
  *
  * `pnpm test:edit-on` runs this file too.
@@ -49,7 +51,7 @@ const RAW =
 
 type Mode = 'warn' | 'on';
 
-describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
+describe.skipIf(!DB_URL)('S6 c1: the entity merge as a definer', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let raw: ReturnType<typeof postgres>;
@@ -69,20 +71,14 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
     drift: randomUUID(),
   };
   const ws = { admin: '', other: '' };
-  const root: Record<'note' | 'app' | 'contact', { id: string; path: string }> = {
+  const root: Record<'note', { id: string; path: string }> = {
     note: { id: '', path: 'notes' },
-    app: { id: '', path: 'apps' },
-    contact: { id: '', path: 'contacts' },
   };
   const recorded: string[] = [];
 
   /** An item of `kind` homed in the other workspace: no Admin user's scope
-   *  reads it (sharing with a contact does not check the home). A contact
-   *  stays in Admin. */
-  const makeItem = async (
-    kind: 'note' | 'app' | 'contact',
-    title: string = kind,
-  ): Promise<string> => {
+   *  reads it. */
+  const makeItem = async (kind: 'note', title: string = kind): Promise<string> => {
     const id = randomUUID();
     await raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
@@ -91,8 +87,6 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
                values (${id}, ${L.owner}, ${kind}, ${`${tag} ${title} ${id.slice(0, 8)}`},
                        ${root[kind].path}::ltree, ${raw.json({ rank: 'a0' })})`;
     });
-    // A contact keeps its home (Admin: a contact is granted nowhere else).
-    if (kind === 'contact') return id;
     await raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
       await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
@@ -153,19 +147,6 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
       return { code: (err as { code?: string }).code ?? 'none', rows: null };
     }
   };
-
-  const liveShares = async (contact: string) =>
-    (
-      await raw<{ n: number }[]>`select count(*)::int as n from shares
-        where contact_id = ${contact} and revoked_at is null`
-    )[0]!.n;
-
-  const codeRow = async (contact: string) =>
-    (
-      await raw<{ hash: string | null; epoch: number }[]>`
-        select code_hash as hash, code_epoch as epoch from contact_share_codes
-         where contact_id = ${contact}`
-    )[0] ?? null;
 
   const entityPair = async (who: string) =>
     raw.begin(async (tx) => {
@@ -234,7 +215,7 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
     }
     // The role drift login holds no seat anywhere (whatever the migrate gave).
     await raw`delete from workspace_users where login_id = ${L.drift}`;
-    for (const kind of ['note', 'app', 'contact'] as const) {
+    for (const kind of ['note'] as const) {
       const p = root[kind].path;
       await raw`insert into nodes (owner_id, type, title, path)
         select ${L.owner}, 'branch', ${p}, ${p}::ltree
@@ -260,187 +241,10 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
 
   for (const mode of ['warn', 'on'] as const) {
     for (const who of ['admin', 'limited'] as const) {
-      it(`${mode}: an Admin user (${who}) does the four acts through the routes`, async () => {
+      it(`${mode}: an Admin user (${who}) merges entities through the route`, async () => {
         await setMode(mode);
         const login = L[who];
-        const c = await makeItem('contact', `${mode} ${who}`);
-        const on = await call(
-          `${mode} ${who} enable`,
-          login,
-          'POST',
-          `/api/contacts/${c}/sharing`,
-          {
-            action: 'enable',
-          },
-        );
-        expect(on.status, on.text).toBe(200);
-        expect(typeof on.json.code).toBe('string');
-        const twice = await call(
-          `${mode} ${who} enable again`,
-          login,
-          'POST',
-          `/api/contacts/${c}/sharing`,
-          {
-            action: 'enable',
-          },
-        );
-        expect(twice.status, twice.text).toBe(409);
-        expect(twice.json).toEqual({
-          error: 'Sharing is already on. Regenerate the code instead.',
-          reason: 'already-on',
-        });
-        const again = await call(
-          `${mode} ${who} regenerate`,
-          login,
-          'POST',
-          `/api/contacts/${c}/sharing`,
-          {
-            action: 'regenerate',
-          },
-        );
-        expect(again.status, again.text).toBe(200);
-        expect(again.json.code).not.toBe(on.json.code);
-        expect((await codeRow(c))?.epoch).toBe(2);
-
         const note = await makeItem('note');
-        const app = await makeItem('app');
-        const shared = await call(`${mode} ${who} share`, login, 'POST', '/api/shares/contacts', {
-          nodeId: note,
-          contactIds: [c, c.toUpperCase()],
-        });
-        expect(shared.status, shared.text).toBe(200);
-        const [one] = shared.json.shares as { shareId: string; contactId: string; path: string }[];
-        expect(one).toMatchObject({ contactId: c });
-        const same = await call(
-          `${mode} ${who} share again`,
-          login,
-          'POST',
-          '/api/shares/contacts',
-          {
-            nodeId: note,
-            contactIds: [c],
-          },
-        );
-        expect((same.json.shares as unknown[])[0]).toEqual(one);
-        const refusedWrite = await call(
-          `${mode} ${who} write on a note`,
-          login,
-          'POST',
-          '/api/shares/contacts',
-          {
-            nodeId: note,
-            contactIds: [c],
-            canWrite: true,
-          },
-        );
-        expect(refusedWrite.status).toBe(400);
-        expect(refusedWrite.json).toEqual({
-          error: 'Only an app can let a contact write.',
-          reason: 'write-not-app',
-        });
-        const folder = await call(
-          `${mode} ${who} share a folder`,
-          login,
-          'POST',
-          '/api/shares/contacts',
-          {
-            nodeId: root.note.id,
-            contactIds: [c],
-          },
-        );
-        expect(folder.status).toBe(400);
-        expect(folder.json.reason).toBe('folder');
-        const notContact = await call(
-          `${mode} ${who} share with a note`,
-          login,
-          'POST',
-          '/api/shares/contacts',
-          {
-            nodeId: app,
-            contactIds: [note],
-          },
-        );
-        expect(notContact.json).toEqual({
-          error: 'Not a contact of this brain.',
-          reason: 'not-a-contact',
-        });
-        const appShare = await call(
-          `${mode} ${who} share an app`,
-          login,
-          'POST',
-          '/api/shares/contacts',
-          {
-            nodeId: app,
-            contactIds: [c],
-            canWrite: true,
-          },
-        );
-        expect(appShare.status, appShare.text).toBe(200);
-        expect(await liveShares(c)).toBe(2);
-
-        const all = await call(
-          `${mode} ${who} revoke all`,
-          login,
-          'DELETE',
-          `/api/contacts/${c}/shares`,
-        );
-        expect(all.status, all.text).toBe(200);
-        expect(all.json).toEqual({ revoked: 2 });
-        const none = await call(
-          `${mode} ${who} revoke all, not a contact`,
-          login,
-          'DELETE',
-          `/api/contacts/${note}/shares`,
-        );
-        expect(none.status).toBe(404);
-        expect(none.json).toEqual({ error: 'not found' });
-
-        const off = await call(
-          `${mode} ${who} disable`,
-          login,
-          'POST',
-          `/api/contacts/${c}/sharing`,
-          {
-            action: 'disable',
-          },
-        );
-        expect(off.json).toEqual({ sharing: null, revoked: 0 });
-        const offAgain = await call(
-          `${mode} ${who} disable again`,
-          login,
-          'POST',
-          `/api/contacts/${c}/sharing`,
-          {
-            action: 'disable',
-          },
-        );
-        expect(offAgain.json).toEqual({ sharing: null, revoked: 0 });
-        const regenOff = await call(
-          `${mode} ${who} regenerate off`,
-          login,
-          'POST',
-          `/api/contacts/${c}/sharing`,
-          {
-            action: 'regenerate',
-          },
-        );
-        expect(regenOff.status).toBe(409);
-        expect(regenOff.json).toEqual({
-          error: 'Sharing is off for this contact.',
-          reason: 'sharing-off',
-        });
-        const missing = await call(
-          `${mode} ${who} sharing, not a contact`,
-          login,
-          'POST',
-          `/api/contacts/${note}/sharing`,
-          {
-            action: 'enable',
-          },
-        );
-        expect(missing.status).toBe(404);
-        expect(missing.json).toEqual({ error: 'not found' });
-
         const pair = await entityPair(`${mode} ${who}`);
         // A fact and an edge of the duplicate, from the note homed in the
         // other workspace (no Admin user's scope reads it): both move.
@@ -480,10 +284,8 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
       }, 180_000);
     }
 
-    it(`${mode}: a member, and a login with role admin outside Admin, reach none of the four acts`, async () => {
+    it(`${mode}: a member, and a login with role admin outside Admin, may not merge`, async () => {
       await setMode(mode);
-      const c = await makeItem('contact', `${mode} member`);
-      const note = await makeItem('note');
       const pair = await entityPair(`${mode} member`);
       // The guard's own refusal of a login that is no Admin user; a role
       // drift login (role admin, no seat in Admin) got 200 on main and now
@@ -495,9 +297,6 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
       };
       for (const who of ['member', 'drift'] as const) {
         for (const [method, url, body] of [
-          ['POST', `/api/contacts/${c}/sharing`, { action: 'enable' }],
-          ['DELETE', `/api/contacts/${c}/shares`, undefined],
-          ['POST', '/api/shares/contacts', { nodeId: note, contactIds: [c] }],
           ['POST', '/api/entities/merge', { canonicalId: pair.canon, dupId: pair.dup }],
         ] as const) {
           const r = await call(`${mode} ${who} ${method} ${url}`, L[who], method, url, body);
@@ -505,25 +304,13 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
           expect(r.json, r.text).toEqual(refused);
         }
       }
-      expect(await codeRow(c)).toBeNull();
-      expect(await liveShares(c)).toBe(0);
       expect((await raw`select 1 from entities where id = ${pair.dup}`).length).toBe(1);
     }, 120_000);
 
-    it(`${mode}: each definer checks the Admin user inside`, async () => {
+    it(`${mode}: the definer checks the Admin user inside`, async () => {
       await setMode(mode);
-      const c = await makeItem('contact', `${mode} definer`);
-      const note = await makeItem('note');
       const pair = await entityPair(`${mode} definer`);
-      const hash = 'a'.repeat(64);
       const acts: Array<[string, (tx: postgres.TransactionSql) => Promise<unknown>]> = [
-        ['sharing', (tx) => tx`select * from mantle_contact_sharing_set(${c}, 'enable', ${hash})`],
-        ['revoke all', (tx) => tx`select mantle_contact_shares_revoke_all(${c}) as n`],
-        [
-          'share',
-          (tx) => tx`select * from mantle_share_with_contacts(${note}, ${`{${c}}`}::uuid[],
-                       ${'{tok' + randomUUID().slice(0, 8) + '}'}::text[], false, ${'{note,page}'}::text[])`,
-        ],
         ['merge', (tx) => tx`select mantle_entity_merge(${pair.canon}, ${pair.dup}) as ok`],
       ];
       for (const [name, q] of acts) {
@@ -535,27 +322,27 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
         expect((await inScope(null, `{${ws.admin}}`, q)).code, `${name} no login`).toBe('42501');
       }
       // Nothing was written by a refusal.
-      expect(await codeRow(c)).toBeNull();
-      // An Admin user's scope: yes, in order (sharing on before the share).
+      expect((await raw`select 1 from entities where id = ${pair.dup}`).length).toBe(1);
+      // An Admin user's scope: yes.
       for (const [name, q] of acts) {
         expect((await inScope(L.admin, null, q)).code, `${name} admin`).toBeNull();
       }
-      expect((await codeRow(c))?.hash).toBe(hash);
       expect((await raw`select 1 from entities where id = ${pair.dup}`).length).toBe(0);
     }, 120_000);
   }
 
   it('a disabled Admin user is refused inside the definer', async () => {
     await setMode('on');
-    const c = await makeItem('contact', 'disabled');
+    const pair = await entityPair('disabled');
     const scope = await scopeOf(L.gone);
     await raw`update auth.users set disabled_at = now() where id = ${L.gone}`;
     const r = await inScope(
       L.gone,
       scope.ws,
-      (tx) => tx`select mantle_contact_shares_revoke_all(${c}) as n`,
+      (tx) => tx`select mantle_entity_merge(${pair.canon}, ${pair.dup}) as ok`,
     );
     expect(r.code).toBe('42501');
+    expect((await raw`select 1 from entities where id = ${pair.dup}`).length).toBe(1);
   }, 60_000);
 
   it('the system door writes what the definer writes (one SQL body)', async () => {

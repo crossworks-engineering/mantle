@@ -1,32 +1,22 @@
 /**
- * POST /s/[token]/db-broker — a SHARED app's host.db calls, brokered for a
+ * POST /s/[token]/db-broker: a SHARED app's host.db calls, brokered for a
  * link visitor. An open link is `query` only: `exec` and `batch` (writes) are
  * refused so a link can't mutate the owner's app database. (Team links, whose members
  * could write, are retired: a member runs the app from their own login,
- * /api/member/apps/:id/db-broker.)
- *
- * A CONTACT share (migration 0214) runs behind the contact gate (401
- * without the contact's cookie). It writes only when the share has
- * `can_write` and names an app: the write schedules the app-table export
- * sync and stamps `app_databases.client_written_at`, so rows exported from
- * the app count as written from outside for the lowering guard
- * (docs/client-logins.md section 8). Anything else: 403 `read-only`, and
- * so is any write to an app an admin marked Informational (`dataReadOnly`),
- * "Can write" or not.
+ * /api/member/apps/:id/db-broker. Contact shares, which could write with
+ * Can write, are gone since migration 0378.)
  *
  * Runs against the app's own SQLite under the share owner's scope, one
  * statement at a time per share (caller key `share:<id>`).
  *
- * App identity: on a contact share the contact fills the reserved
- * `:host_me_*` parameters (kind 'contact', the contact's name, a per-app
- * id); on an open link they are the anonymous value (id and name NULL, kind
- * 'public'). A value the browser sends for one is refused.
+ * App identity: the reserved `:host_me_*` parameters are the anonymous
+ * value (id and name NULL, kind 'public'). A value the browser sends for
+ * one is refused.
  */
 import { NextResponse } from '@/server/http-compat';
-import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
-import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
+import { openShareLink } from '@/lib/share-gate';
+import { getAppRuntime, recordAppAccess } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
-import { appDbBatchWrite, appDbWrite } from '@mantle/content/app-db-write';
 
 import {
   AppDbBody,
@@ -48,17 +38,14 @@ export const policy = routePolicy({
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  // Generous — a running app is query-chatty — but bounded, like the other
+  // Generous (a running app is query-chatty) but bounded, like the other
   // /s/[token] surfaces: this endpoint executes SQL for strangers.
   // The gate took the row's per-address limit (lib/route-limits.ts shareDbBroker).
 
-  const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired(gate.share);
-  const share = gate.kind === 'ok' ? gate.share : null;
+  const share = await openShareLink(token);
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   }
-  const contactId = share.contactId ?? null;
 
   // Capped: a chunked body declares no length for the gate
   // to refuse, so the read itself stops at the ceiling (413).
@@ -67,27 +54,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
   const body = parsed.data;
   const { op } = body;
-  const writes = op !== 'query';
 
-  // Writes: only a contact share with "Can write", on an app.
-  const mayWrite = !!contactId && share.canWrite === true && share.nodeType === 'app';
-  if (writes && !mayWrite) {
-    if (contactId) {
-      recordShareAccess({
-        ownerId: share.ownerId,
-        shareId: share.id,
-        contactId,
-        kind: 'refused',
-        detail: { op, refused: 'read-only' },
-      });
-    }
+  // An open link only reads.
+  if (body.op !== 'query') {
     return NextResponse.json(
       {
         ok: false,
         reason: 'read-only',
-        error: contactId
-          ? 'This app is shared with you read only.'
-          : 'Shared apps are read-only — database writes are disabled on public links.',
+        error: 'Shared apps are read-only — database writes are disabled on public links.',
       },
       { status: 403 },
     );
@@ -97,73 +71,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   if (!app || !app.publishedBuild?.ok) {
     return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   }
-  // Informational wins over a share's "Can write" (access matrix L23): an
-  // admin who marks an app Informational means read only for everyone, as
-  // the member and client brokers already answer.
-  if (writes && app.dataReadOnly) {
-    if (contactId) {
-      recordShareAccess({
-        ownerId: share.ownerId,
-        shareId: share.id,
-        contactId,
-        kind: 'refused',
-        detail: { op, refused: 'informational' },
-      });
-    }
-    return NextResponse.json(
-      { ok: false, reason: 'read-only', error: 'This app is read-only.' },
-      { status: 403 },
-    );
-  }
 
-  // The app's Activity tab names the contact (app_access_log.contact_id).
   recordAppAccess({
     ownerId: share.ownerId,
     appNodeId: share.nodeId,
     shareId: share.id,
-    contactId,
+    contactId: null,
     kind: 'db',
-    detail: { op, ...(contactId ? { via: 'contact', contactId } : {}) },
+    detail: { op },
   });
-  if (contactId) {
-    recordShareAccess({
-      ownerId: share.ownerId,
-      shareId: share.id,
-      contactId,
-      kind: writes ? 'write' : 'query',
-    });
-  }
 
   // One statement at a time per link.
   const caller = {
     callerKey: `share:${share.id}`,
-    viewer: contactId ? { kind: 'contact' as const, contactId } : { kind: 'public' as const },
-    // Rows only: below admin a write changes rows,
-    // never the schema, a trigger or a view; the schema is the author's
-    // (app_db_schema_set). The same authorizer as the MCP app_data_write.
+    viewer: { kind: 'public' as const },
+    // Rows only, as the MCP app_data_write (the link reads, so this only
+    // keeps the authorizer the same everywhere).
     dataOnly: true,
   };
   try {
-    if (body.op !== 'query') {
-      // Rows a contact wrote are written from outside: an export of them
-      // must not be lowered as if the brain wrote them. The one write path
-      // marks them and schedules the export sync.
-      const output =
-        body.op === 'batch'
-          ? await appDbBatchWrite(share.ownerId, share.nodeId, body, app.manifest.sqlite, caller, {
-              outside: true,
-            })
-          : await appDbWrite(
-              share.ownerId,
-              share.nodeId,
-              body.sql,
-              body.params,
-              app.manifest.sqlite,
-              caller,
-              { outside: true },
-            );
-      return NextResponse.json({ ok: true, output });
-    }
     const output = await appDbQuery(
       share.ownerId,
       share.nodeId,
@@ -178,8 +104,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       ownerId: share.ownerId,
       appNodeId: share.nodeId,
       shareId: share.id,
-      contactId,
-      via: contactId ? 'contact' : 'public',
+      contactId: null,
+      via: 'public',
       op,
       sql: appDbFailedSql(body, err),
     });

@@ -10,9 +10,7 @@ import { db, nodes } from '@mantle/db';
 /**
  * Whether anyone but an admin can read this item now (from the grants): a
  * workspace other than Admin holds it (its read_ws), or it
- * has a live link (an open one, or a CONTACT share: a contact share serves
- * what the item embeds too, lib/shares.ts, so a change to the item's content
- * is a change to what the contact reads). A missing item, or one the
+ * has a live link. A missing item, or one the
  * caller's scope does not read, is false: the tool answers its own "not
  * found".
  *

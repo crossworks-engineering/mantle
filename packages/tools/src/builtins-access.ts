@@ -9,7 +9,6 @@
 import { alias } from 'drizzle-orm/pg-core';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { db, itemGrants, nodes, workspaces } from '@mantle/db';
-import { contactSharesForNode } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { strOpt } from './coerce';
@@ -90,7 +89,7 @@ export const access_get: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Get who can read an item, or an access level',
   description:
-    "For a brain item: its grants, the workspaces that read it (`home`: the workspace it lives in; `grants`: one row per workspace with `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not)), and the contacts it is shared with. Items have no level any more; grants are changed in the item's Grant Access panel.",
+    "For a brain item: its grants, the workspaces that read it (`home`: the workspace it lives in; `grants`: one row per workspace with `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not)). Items have no level any more; grants are changed in the item's Grant Access panel.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -113,30 +112,8 @@ export const access_get: BuiltinToolDef = {
           .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
           .limit(1);
         if (!row) return { ok: false, error: 'item not found: find its id with search_nodes' };
-        const [{ home, grants }, contactShares] = await Promise.all([
-          itemGrantsOf(nodeId),
-          contactSharesForNode(ctx.ownerId, nodeId),
-        ]);
-        return {
-          ok: true,
-          output: {
-            item: row,
-            home,
-            grants,
-            // Contact shares, read only: who it is shared with, by name and
-            // right. No tool makes one.
-            ...(contactShares.length
-              ? {
-                  contactShares: contactShares.map((c) => ({
-                    contactId: c.contactId,
-                    name: c.name,
-                    canWrite: c.canWrite,
-                    lastOpenedAt: c.lastOpenedAt,
-                  })),
-                }
-              : {}),
-          },
-        };
+        const { home, grants } = await itemGrantsOf(nodeId);
+        return { ok: true, output: { item: row, home, grants } };
       }
       return { ok: false, error: 'node_id is required: find the item with search_nodes' };
     } catch (err) {

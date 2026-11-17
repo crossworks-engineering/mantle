@@ -17,15 +17,11 @@ const share = () => ({
   ownerId: 'owner-1',
   nodeId: CANVAS,
   nodeType: h.kind,
-  contactId: null,
   settings: {},
 });
 
 vi.mock('@/lib/shares', () => ({
   resolveActiveShareByToken: vi.fn(async (token: string) =>
-    token === 'live-tok' ? share() : null,
-  ),
-  resolveActiveShareRowByToken: vi.fn(async (token: string) =>
     token === 'live-tok' ? share() : null,
   ),
   loadShareView: vi.fn(async () =>

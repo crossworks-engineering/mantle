@@ -11,9 +11,9 @@
  * login write gateway runs it: on a login of the write role
  * (mantle_write_user), with its scope, its actor and its write mode set in
  * the transaction, the heads taken first. A read-only actor (a read key, an
- * assistant with no user, a public link, a peer, a contact share without
- * Can write) runs the same way with write mode ro. System work runs on the
- * system pool (the superuser), as system(test).
+ * assistant with no user, a public link, a peer) runs the same way with
+ * write mode ro. System work runs on the system pool (the superuser), as
+ * system(test).
  *
  * Each cell is ONE transaction, rolled back. A cell passes only on the
  * right row effect: allowed is exactly one row changed; refused is 42501
@@ -63,8 +63,6 @@ function roActor(actor: OracleActor, login: string): string {
       return 'link';
     case 'peer':
       return 'peer:none';
-    case 'contact-ro':
-      return 'contact:ro';
     default:
       throw new Error(`not a read-only actor: ${actor}`);
   }
@@ -363,7 +361,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
           await tx`
           with retired as (
             update shares set revoked_at = now()
-             where node_id = ${id} and revoked_at is null and contact_id is null returning 1)
+             where node_id = ${id} and revoked_at is null returning 1)
           insert into shares (token, owner_id, node_id, node_type)
           select ${`${tag}-${randomUUID()}`}, ${login.owner}, ${id}, ${kind}
             from (select count(*) from retired) r`,
@@ -449,14 +447,13 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       ...(action === 'appCreate' ? [item.bare!] : []),
     ].concat(item.folder ? [item.folder] : []);
     let got: Got | null = null;
-    // The brain's work and a contact's app data (named system work) run on
-    // the system pool.
-    const onSystemPool = actor === 'system' || actor === 'contact-rw';
+    // The brain's work runs on the system pool.
+    const onSystemPool = actor === 'system';
     const pool = onSystemPool ? sql : w;
     try {
       await pool.begin(async (tx) => {
         if (onSystemPool) {
-          await tx`select set_config('mantle.actor', ${actor === 'system' ? 'system:test' : 'contact:rw'}, true),
+          await tx`select set_config('mantle.actor', 'system:test', true),
                           set_config('mantle.write_mode', 'rw', true),
                           set_config('mantle.actor_check', 'on', true)`;
         } else {
@@ -550,16 +547,17 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     const perKind = ORACLE_WRITE_ROLES.length + ORACLE_ACTORS.length - 1;
     expect(tally.cells).toBe(kinds.length * 2 * ORACLE_WRITE_ACTIONS.length * perKind);
     // Both answers exercised, and every applicable cell counted.
-    // 12 kinds x 2 placements x 23 writes x 15 actors and logins: 8280
-    // cells, 3226 the oracle covers (5054 not applicable: a write a kind
-    // has no row for, a login's create, a contact's write that is not app
-    // data, a create with forged values at the root). Present added 690
-    // cells: 60 allowed, 190 denied.
+    // 12 kinds x 2 placements x 23 writes x 13 actors and logins: 7176
+    // cells, 2980 the oracle covers (4196 not applicable: a write a kind
+    // has no row for, a login's create, a create with forged values at the
+    // root). Present added 690 cells (at 15 actors): 60 allowed, 190 denied.
     // A canvas's link is its home Moderators' (0352): 8 cells moved from
     // allowed to denied (a writeGrant login's open, close and delete of a
     // canvas's link, an adminWriteGrant login's open; at the root and in a folder).
-    expect(tally.allowed).toBe(782);
-    expect(tally.denied).toBe(2444);
+    // The contact actors left (0378): 1104 cells, 2 allowed (a contact's
+    // app data), 244 denied.
+    expect(tally.allowed).toBe(780);
+    expect(tally.denied).toBe(2200);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });

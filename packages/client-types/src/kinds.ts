@@ -7,8 +7,8 @@
  *  - TREE_KINDS and TREE_KIND_SPECS (./tree), TREE_LIVE_KINDS and
  *    READER_TREE_KINDS (@mantle/content/tree), TREE_TOOL_KINDS
  *    (@mantle/tools), the tree entry;
- *  - SHAREABLE_TYPES and canShareNode, CONTACT_SHAREABLE_TYPES and
- *    PEER_SHAREABLE_TYPES (@mantle/content), the share fields;
+ *  - SHAREABLE_TYPES, canShareNode and PEER_SHAREABLE_TYPES
+ *    (@mantle/content), the share fields;
  *  - SEARCH_NODE_TYPES (./search-query), searchable;
  *  - TEAM_PRIVATE_CORPUS_TYPES and TEAM_NEVER_TYPES
  *    (@mantle/content-core/profile-projections), teamHidden;
@@ -68,8 +68,6 @@ export type KindSpec = {
    *  Moderator of its home opens, changes or closes it (linkNeedsModerator);
    *  `true`: whoever may edit the item. */
   readonly publicLink: boolean | 'files-folder' | 'moderator';
-  /** May be shared with one contact (CONTACT_SHAREABLE_TYPES). */
-  readonly contactShare: boolean;
   /** May be granted to a linked brain by category (PEER_SHAREABLE_TYPES). */
   readonly peerShare: boolean;
   /** A `type` filter of GET /api/search (SEARCH_NODE_TYPES). */
@@ -155,7 +153,6 @@ export const ITEM_KINDS = {
     class: 'workspace',
     tree: null,
     publicLink: 'files-folder',
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: { content: '/api/files/folders', v1: null },
@@ -178,7 +175,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: { content: '/api/email/messages', v1: null },
@@ -201,7 +197,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: none,
@@ -231,7 +226,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: true,
-    contactShare: true,
     peerShare: true,
     searchable: true,
     route: { content: '/api/files/files', v1: '/api/v1/files' },
@@ -261,7 +255,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: true,
-    contactShare: true,
     peerShare: true,
     searchable: true,
     route: { content: '/api/notes', v1: '/api/v1/notes' },
@@ -284,7 +277,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: none,
@@ -314,7 +306,6 @@ export const ITEM_KINDS = {
       shareable: false,
     },
     publicLink: false,
-    contactShare: false,
     peerShare: true,
     searchable: true,
     route: { content: '/api/contacts', v1: '/api/v1/contacts' },
@@ -353,7 +344,6 @@ export const ITEM_KINDS = {
       shareable: false,
     },
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: false,
     route: { content: '/api/secrets', v1: null },
@@ -389,7 +379,6 @@ export const ITEM_KINDS = {
       shareable: false,
     },
     publicLink: true,
-    contactShare: false,
     peerShare: true,
     searchable: true,
     route: { content: '/api/tasks', v1: '/api/v1/tasks' },
@@ -430,7 +419,6 @@ export const ITEM_KINDS = {
       shareable: false,
     },
     publicLink: true,
-    contactShare: false,
     peerShare: true,
     searchable: true,
     route: { content: '/api/events', v1: '/api/v1/events' },
@@ -463,7 +451,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: none,
@@ -486,7 +473,6 @@ export const ITEM_KINDS = {
     class: 'conversation',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: none,
@@ -516,7 +502,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: true,
-    contactShare: true,
     peerShare: true,
     searchable: true,
     route: { content: '/api/pages', v1: '/api/v1/pages' },
@@ -546,7 +531,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: true,
-    contactShare: true,
     peerShare: true,
     searchable: false,
     route: { content: '/api/tables', v1: '/api/v1/tables' },
@@ -569,7 +553,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: false,
     route: none,
@@ -592,7 +575,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: { content: '/api/docs/reader', v1: null },
@@ -615,7 +597,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: { content: '/api/journal', v1: '/api/v1/journal' },
@@ -638,7 +619,6 @@ export const ITEM_KINDS = {
     class: 'admin_only',
     tree: null,
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: false,
     route: none,
@@ -675,7 +655,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: 'moderator',
-    contactShare: true,
     peerShare: false,
     searchable: false,
     route: { content: '/api/apps', v1: null },
@@ -705,7 +684,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: true,
-    contactShare: true,
     peerShare: false,
     searchable: true,
     route: { content: '/api/formulas', v1: null },
@@ -735,7 +713,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: true,
-    contactShare: true,
     peerShare: true,
     searchable: true,
     route: { content: '/api/draws', v1: null },
@@ -767,7 +744,6 @@ export const ITEM_KINDS = {
       shareable: false,
     },
     publicLink: false,
-    contactShare: false,
     peerShare: false,
     searchable: false,
     // A native map's id is its node's id (createRecallMap).
@@ -805,7 +781,6 @@ export const ITEM_KINDS = {
       shareable: true,
     },
     publicLink: 'moderator',
-    contactShare: false,
     peerShare: false,
     searchable: true,
     route: { content: '/api/presents', v1: null },
@@ -876,7 +851,6 @@ export function kindClassOf(type: string): KindClass {
 
 export type WorkspaceKind = KindsWhere<{ class: 'workspace' }>;
 export type PublicLinkKind = KindsWhere<{ publicLink: true | 'files-folder' | 'moderator' }>;
-export type ContactShareKind = KindsWhere<{ contactShare: true }>;
 export type PeerShareKind = KindsWhere<{ peerShare: true }>;
 export type SearchableKind = KindsWhere<{ searchable: true }>;
 export type MemberLibraryKind = KindsWhere<{ library: { order: number } }>;

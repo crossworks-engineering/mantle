@@ -251,8 +251,6 @@ export const RATE_LIMITS = {
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),
-  contactCode: perIp('contact-code:ip', 10),
-  contactCodeHour: perIp('contact-code:ip-hour', 30, HOUR),
   shareDbBroker: perIp('share-db-broker', 300),
   shareDraw: perIp('share-draw', 240),
   shareDrawEmbed: perIp('share-draw-embed', 240),

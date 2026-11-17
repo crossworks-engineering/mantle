@@ -28,7 +28,6 @@ describe('scopeLacksAdmin with no scope seen', () => {
       loginActor(L, 'ro'),
       { kind: 'assistant', agentId: null },
       { kind: 'link' },
-      { kind: 'contact', canWrite: true },
       { kind: 'peer', peerId: null },
     ];
     for (const a of others) {

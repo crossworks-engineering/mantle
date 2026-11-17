@@ -550,8 +550,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // the settings area). An own pipeline's install, package and remove
     // (+4 with a caller): POST /api/pipelines, GET (+HEAD)
     // /api/pipelines/:id/package and DELETE /api/pipelines/:id (owner, the
-    // settings area).
-    expect(rows.filter((r) => r.caller).length).toBe(925);
+    // settings area). Contact shares gone (0378: -5 with a caller): GET
+    // (+HEAD) and DELETE /api/contacts/:id/shares, POST
+    // /api/contacts/:id/sharing and POST /api/shares/contacts.
+    expect(rows.filter((r) => r.caller).length).toBe(920);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -592,7 +594,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the pipeline re-read row (POST /api/pipelines/:id/reread).
     // + the 4 own pipeline rows (POST /api/pipelines, GET and HEAD
     //   /api/pipelines/:id/package, DELETE /api/pipelines/:id).
-    expect(rows.length).toBe(1014);
+    // - the 6 contact share rows (0378): the 5 above and POST /s/:token/code.
+    expect(rows.length).toBe(1008);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

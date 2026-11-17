@@ -62,7 +62,7 @@ links AS (
   SELECT count(*) FILTER (WHERE NOT (s."settings" ? 'served')) AS without_served,
          count(*) FILTER (WHERE s."settings" ? 'served') AS with_served
     FROM "public"."shares" s
-   WHERE s."revoked_at" IS NULL AND s."contact_id" IS NULL
+   WHERE s."revoked_at" IS NULL
      AND (s."expires_at" IS NULL OR s."expires_at" > now())
 )
 SELECT

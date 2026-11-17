@@ -162,7 +162,6 @@ complete list of ways that surface can change the brain.
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
 | `/s/<token>` shared page/note/task/event/file | link token                                                                                                            | that one item + its own embedded assets only                                                                                                  | none                                                                                                                                                                                       | view count                                                          |
 | `/s/<token>` **public app**                   | link token                                                                                                            | the app's own SQLite, read-only                                                                                                               | none (no brain tools, no DB writes)                                                                                                                                                        | app access log                                                      |
-| `/s/<token>` **contact share** (0214)         | link token + the contact's code (an HMAC-stored 8-character code; a signed cookie per contact, re-checked every call) | that one item + what it embeds, for the one contact the share names; a "Shared with you" list of that contact's live shares                   | an app with "Can write": the app's own SQLite; nothing else (no brain tools, no other writes)                                                                                              | share access log + app access log by contact + audit rows for codes |
 | **A login** (web, phone, `/api/*`)           | any login (cookie or device token)                                                                                    | what its workspaces hold (row security on the workspace role); its own threads with each workspace assistant                                 | what it may edit there: items whose home it moderates or whose grant has Write on, app data on the same rule                                                                               | access log + full per-turn traces                                   |
 | **Client routes** (`/api/client/*`)           | none: client logins are gone (W8a)                                                                                    | nothing: every route answers any login 410 code gone                                                                                          | nothing                                                                                                                                                                                    | none                                                                |
 | Telegram                                      | the user pairs their own chat with a code, then confirms                                                              | the paired user, in the workspace of the bot's assistant                                                                                      | what that user may change there, through the assistant's tools                                                                                                                             | traces                                                              |
@@ -179,13 +178,9 @@ Two structural points:
   login, and every action is logged against that name. (Team-mode
   shares, where a team token named the visitor, are retired: a shared app's
   tool broker refuses every call, and members use an app's tools from their
-  own login.) A contact share is the one identified outsider: one item, one
-  contact, the contact's code, never tools; only an app with "Can write"
-  takes a write, into its own SQLite (docs/sharing.md section 4b). Its
-  honest limit: the code proves "holds the code", not "owns the mailbox".
-  If the link and the code travel in the same message, whoever has that
-  message gets in, so they are sent apart; revoke and regenerate are one
-  click.
+  own login.) Contact shares, which let one identified outsider read one
+  item with a personal code, were removed in migration 0378
+  (docs/sharing.md section 4b).
 
 ## 4. The assistant's guard rails
 
@@ -366,7 +361,7 @@ The nets that catch drift and breakage before they become incidents:
 2. People are **named, audited, and instantly revocable**; each reads only
    what is granted to their workspaces and changes only what they may edit
    there. Outsiders without a login reach one item at a time, through a
-   link or a contact share.
+   link.
 3. The AI's capability is **declared, drift-tested, and gated**: not
    emergent.
 4. The honest limits are the workspace model (§1: a user reads everything

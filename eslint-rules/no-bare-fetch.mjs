@@ -181,10 +181,6 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'same-origin internal',
     why: "the box's own public MCP connector URL (a loopback handshake through the proxy)",
   },
-  'server/web/components/share/contact-code-prompt.tsx': {
-    kind: 'same-origin internal',
-    why: 'a browser call to the share page own /s route',
-  },
   'server/web/server/islands/draw-render.ts': {
     kind: 'same-origin internal',
     why: 'a browser call to the box own /api/files route',

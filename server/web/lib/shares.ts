@@ -7,8 +7,7 @@
  *
  * What an open link serves (workspaces plan 8.1, decision 12): its item, and
  * the items on its served list (`settings.served`) that the item still
- * names or embeds (a folder link: that still sit under the folder). A
- * contact share holds no list: it serves what its item names. A canvas's
+ * names or embeds (a folder link: that still sit under the folder). A canvas's
  * open link serves the media its last save listed for the link
  * (`meta.linkAssets`, canvasMediaServable): media goes with its canvas, with
  * no switch. No level is read: the rule is the list, checked here on the
@@ -57,7 +56,6 @@ export {
   getLiveShare,
   setShareServed,
   resolveActiveShareByToken,
-  resolveActiveShareRowByToken,
   recordShareView,
   isShareable,
   type ShareSummary,
@@ -198,9 +196,7 @@ export async function liveServedIds(share: Share): Promise<Set<string>> {
 /**
  * Does this share serve `nodeId` (plan 8.1)? Its own item, always. An open
  * link: an id on its served list, and for a folder link one that still sits
- * under the folder (moved out, it is not served on its next fetch). A
- * CONTACT share (migration 0214) holds no list: it serves what its item
- * names, read only and only while the share lives. Every caller also checks
+ * under the folder (moved out, it is not served on its next fetch). Every caller also checks
  * that the item names or embeds the id (its own content), so a share never
  * becomes a way to read arbitrary items by id.
  */
@@ -208,10 +204,9 @@ export async function isServed(share: Share, nodeId: string): Promise<boolean> {
   if (!isUuid(nodeId)) return false;
   const id = nodeId.toLowerCase();
   if (id === share.nodeId.toLowerCase()) return true;
-  // A read-only snapshot copy stays in its private workspace: no link and
-  // no contact share serves it.
+  // A read-only snapshot copy stays in its private workspace: no link
+  // serves it.
   const notCopy = async () => !(await snapshotCopyIds(share.ownerId, [id])).has(id);
-  if (share.contactId) return notCopy();
   if (!servedIds(share).has(id)) return false;
   if (share.nodeType !== 'branch') return notCopy();
   const root = alias(nodes, 'share_root');
@@ -256,7 +251,6 @@ export async function isDrawServable(
     .limit(1);
   if (!row) return false;
   if (opts.self && !(await isServed(share, drawId))) return false;
-  if (share.contactId) return true;
   const served = await liveServedIds(share);
   return drawPlacedFileIds(row.scene, row.fileRefs).every((f) => served.has(f.toLowerCase()));
 }
@@ -309,14 +303,11 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
     // item not served says "Private item", and an embed not served is left
     // out (the asset routes refuse those bytes too). A task's or an event's
     // body and a task's checklist are markdown that can name items too, so
-    // they take the note rule (T18). A contact share serves what its item
-    // names, so it reads the item as it is.
+    // they take the note rule (T18).
     case 'page': {
       const page = await getPage(ownerId, nodeId);
       if (!page) return null;
-      const doc = share.contactId
-        ? page.doc
-        : ((await servedFilteredDoc(ownerId, served, page.doc)) as typeof page.doc);
+      const doc = (await servedFilteredDoc(ownerId, served, page.doc)) as typeof page.doc;
       return { kind: 'page', title: page.title, icon: page.icon, width: page.width, doc };
     }
     case 'note': {
@@ -327,15 +318,14 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       return {
         kind: 'note',
         title: n.title,
-        content: share.contactId ? content : await servedFilteredNote(ownerId, served, content),
+        content: await servedFilteredNote(ownerId, served, content),
       };
     }
     case 'task': {
       const n = await loadNode(ownerId, nodeId);
       if (!n) return null;
       const d = (n.data ?? {}) as Record<string, unknown>;
-      const shown = (md: string) =>
-        share.contactId ? md : servedFilteredNote(ownerId, served, md);
+      const shown = (md: string) => servedFilteredNote(ownerId, served, md);
       const todos = Array.isArray(d.todos)
         ? (d.todos as Array<Record<string, unknown>>).filter(
             (t) => typeof t?.text === 'string' && t.text,
@@ -361,7 +351,7 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       return {
         kind: 'event',
         title: n.title,
-        body: share.contactId ? body : await servedFilteredNote(ownerId, served, body),
+        body: await servedFilteredNote(ownerId, served, body),
         startsAt: typeof d.starts_at === 'string' ? d.starts_at : null,
         endsAt: typeof d.ends_at === 'string' ? d.ends_at : null,
         location: typeof d.location === 'string' ? d.location : null,
@@ -552,7 +542,7 @@ async function shareEmbeddedPresents(share: Share): Promise<Set<string>> {
 
 /** May this share show the snapshot of the canvas `id` (lower-case), one
  *  its content embeds (`embedded`)? Only one the link serves (isServed: the
- *  owner put it on the served list, or a contact share names it), and only
+ *  owner put it on the served list), and only
  *  when the canvas has a snapshot. */
 async function presentShown(share: Share, embedded: Set<string>, id: string): Promise<boolean> {
   if (!embedded.has(id) || !(await isServed(share, id))) return false;
@@ -619,7 +609,7 @@ export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promi
  *  that are served; an open folder link only a file under the folder's
  *  subtree that is on its list (evaluated per request: a file moved out is
  *  denied on its next fetch; one uploaded later is not on the list). A
- *  contact share serves what its item names. A Present canvas's open link
+ *  Present canvas's open link
  *  serves only what canvasMediaServable allows. Anything else is denied.
  *  This is the asset route's authorization. */
 export async function isAssetAllowed(share: Share, fileId: string): Promise<boolean> {
@@ -638,13 +628,11 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
     if (!(await isFile(share.ownerId, id))) return false;
     return isServed(share, id);
   }
-  // A folder is never a contact share (v1, decision 2): refuse outright.
-  if (share.nodeType === 'branch' && !share.contactId) {
+  if (share.nodeType === 'branch') {
     if (!(await isFile(share.ownerId, id))) return false;
     return isServed(share, id);
   }
-  // A canvas runs on an open link only: a contact share never serves one.
-  if (share.nodeType === 'present' && !share.contactId) {
+  if (share.nodeType === 'present') {
     return canvasMediaServable(share, id);
   }
   return false;

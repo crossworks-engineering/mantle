@@ -18,8 +18,8 @@
  * role changes (every login role hashes `login:`).
  */
 import { createHmac, randomBytes } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
-import { appDatabases, authUsers, db, nodes } from '@mantle/db';
+import { eq, sql } from 'drizzle-orm';
+import { appDatabases, authUsers, db } from '@mantle/db';
 import { stripLiterals } from '@mantle/tabledb';
 import {
   APP_VIEWER_PARAMS,
@@ -40,12 +40,10 @@ export { PUBLIC_APP_VIEWER } from '@mantle/client-types/app-viewer';
  * costs no extra read.
  *
  * `name` undefined means "look it up" (the frame routes hold only the login
- * or contact id); null means "this person has no display name".
+ * id); null means "this person has no display name".
  */
 export type AppViewerSubject =
-  | { kind: LoginRole; loginId: string; name?: string | null }
-  | { kind: 'contact'; contactId: string; name?: string | null }
-  | { kind: 'public' };
+  { kind: LoginRole; loginId: string; name?: string | null } | { kind: 'public' };
 
 /** The id prefix: a pseudonym, never a raw login or contact id. */
 const ID_PREFIX = 'u_';
@@ -96,15 +94,6 @@ async function loginDisplayName(loginId: string): Promise<string | null> {
   return cleanName(row?.displayName);
 }
 
-async function contactName(ownerId: string, contactId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ title: nodes.title })
-    .from(nodes)
-    .where(and(eq(nodes.id, contactId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
-    .limit(1);
-  return cleanName(row?.title);
-}
-
 /** A display name, or null. Never derived from an email. */
 function cleanName(name: string | null | undefined): string | null {
   const t = name?.trim();
@@ -121,17 +110,6 @@ export async function resolveAppViewer(
   salt: () => Promise<string>,
 ): Promise<AppViewer> {
   if (subject.kind === 'public') return PUBLIC_APP_VIEWER;
-  if (subject.kind === 'contact') {
-    const name =
-      subject.name !== undefined
-        ? cleanName(subject.name)
-        : await contactName(ownerId, subject.contactId);
-    return {
-      id: appViewerPseudonym(await salt(), `contact:${subject.contactId}`),
-      name,
-      kind: 'contact',
-    };
-  }
   const name =
     subject.name !== undefined ? cleanName(subject.name) : await loginDisplayName(subject.loginId);
   return {

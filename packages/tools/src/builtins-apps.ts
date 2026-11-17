@@ -131,8 +131,7 @@ function appTrashSystem<T>(fn: () => Promise<T>): Promise<T> {
  * surface naming the login its turn scope answers: its chat with a
  * workspace assistant, its run, a delegated Appsmith), where the turn's
  * scope and the database decide, as on its MCP connection (`loginTurns`).
- * Marked `ownerOnly` + `loginTurns` so the gate refuses a client, a
- * contact, a team surface with no login (a heartbeat) or a missing one
+ * Marked `ownerOnly` + `loginTurns` so the gate refuses a client, a team surface with no login (a heartbeat) or a missing one
  * first; this is the handler's own check, for the MCP path that calls
  * handlers directly.
  */
@@ -170,7 +169,7 @@ const SOURCE_HINT =
  *  the full text is docs/app-authoring-guide.md (app_authoring_guide on MCP,
  *  the app_authoring skill in the app). */
 const RUNTIME_HINT =
-  "Who runs it: `await host.me()` gives `{ id, name, kind }` (kind admin, member, client, contact or public; per-app id, no email), for display. To RECORD who did something, write `:host_me_id`, `:host_me_name`, `:host_me_kind` in the SQL; the server fills them: `host.db.exec('INSERT INTO log (what, by_id, by_name) VALUES (?, :host_me_id, :host_me_name)', [what])`. Never send host.me() values as params. `host.db.query/exec` = the app's own SQLite, and `host.db.batch(statements, { guard })` when one action writes more than one row: all or nothing; `host.tools.call(slug, input)` = only slugs declared with app_tools_set. Levels: team = members also run it and write its one shared database; client = clients too; the level limits the tools (see app_tools_set); an open share link gets no tools and only reads. Full guide: app_authoring_guide (MCP) or the app_authoring skill. ";
+  "Who runs it: `await host.me()` gives `{ id, name, kind }` (kind admin, member, client or public; per-app id, no email), for display. To RECORD who did something, write `:host_me_id`, `:host_me_name`, `:host_me_kind` in the SQL; the server fills them: `host.db.exec('INSERT INTO log (what, by_id, by_name) VALUES (?, :host_me_id, :host_me_name)', [what])`. Never send host.me() values as params. `host.db.query/exec` = the app's own SQLite, and `host.db.batch(statements, { guard })` when one action writes more than one row: all or nothing; `host.tools.call(slug, input)` = only slugs declared with app_tools_set. Levels: team = members also run it and write its one shared database; client = clients too; the level limits the tools (see app_tools_set); an open share link gets no tools and only reads. Full guide: app_authoring_guide (MCP) or the app_authoring skill. ";
 
 /** The short form for the source write tools. */
 export const WHO_HINT =
@@ -2564,7 +2563,7 @@ const app_errors: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: "Read a mini app's errors",
   description:
-    "List the errors a running app got back from the brain, newest first: failed SQL (with the statement), refused or failed tool calls, who ran it (owner, member, client, contact or public) and when. Use it when someone says an app is broken, or after a change, to see what fails for real users. Errors in the app's own JavaScript (a render crash) are not logged here: preview the app to see those. For who used the app, read its Activity tab.",
+    "List the errors a running app got back from the brain, newest first: failed SQL (with the statement), refused or failed tool calls, who ran it (owner, member, client or public) and when. Use it when someone says an app is broken, or after a change, to see what fails for real users. Errors in the app's own JavaScript (a render crash) are not logged here: preview the app to see those. For who used the app, read its Activity tab.",
   inputSchema: {
     type: 'object',
     properties: {

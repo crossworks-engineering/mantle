@@ -90,15 +90,14 @@ what such a tool does, so an admin decides per tool with the switch
   included, may switch it off, never on. On a connector tool an agent's off
   leaves the read-only mark for a person to mark again.
 - **Who may call it.** The app's sharing decides: a user who runs an app
-  granted to one of their workspaces, and a contact on a contact-share link
-  who passed the code. Never an open link. The app must declare the tool.
+  granted to one of their workspaces. Never an open link. The app must declare the tool.
   Everyone the app reaches can call the tool by hand with any input, not
   only what the app's screens send; for a tool that takes free SQL, they
   can read anything the connector can read.
 - **Off.** Switching off refuses the next call. A changed handler, or a
   connector moved to another server or credential, voids the switch.
 - **Audit.** Every call, allowed or refused, lands in the app's access log
-  with the login, or the contact and the share.
+  with the login.
 
 An MCP connector's own tools reach users through the workspaces it is a
 resource of, with the connector's read-only mark per tool

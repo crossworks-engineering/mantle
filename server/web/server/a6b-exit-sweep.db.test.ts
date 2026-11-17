@@ -86,17 +86,6 @@ const scopeLoginOf = (ctx: string): string | null => {
 const asksAnotherLogin = (k: string, asked: string | null) =>
   ctxOf(k) !== 'system' && asked !== scopeLoginOf(ctxOf(k));
 
-/** What each context's scope reads, as the definers see it (filled by the
- *  narrow-reads section before its cells): whether a scope is set and the
- *  fixture items it reads, by name. */
-const SCOPE_FACTS = new Map<string, { active: boolean; reads: Set<string> }>();
-
-/** Main's answer `was` ({ok: rows}) with only the rows `keep` holds. */
-const keptOf = (was: string, keep: (row: any) => boolean) => {
-  const v = JSON.parse(was) as { ok?: unknown[] };
-  return Array.isArray(v.ok) ? JSON.stringify({ ok: v.ok.filter(keep) }) : null;
-};
-
 /** The login a queued call of the telegram section was asked by. */
 const PEND_ASKER: Record<string, string | null> = {
   adminAll: 'adminAll',
@@ -364,6 +353,16 @@ const F4_CHANGES: ReadonlyArray<{
   },
 ];
 
+/** Recorded cells gone since, each with why: not asked any more, and not
+ *  missed (as a10-flags.test.ts RETIRED). */
+const RETIRED_CELLS: ReadonlyArray<{ cells: RegExp; reason: string }> = [
+  {
+    cells: /^contactSharingByContact /,
+    reason:
+      'contact shares and their codes are gone (migration 0378): contactSharingByContact and mantle_contact_sharing went with them',
+  },
+];
+
 /** Cells F4 takes away in on: the cells that follow a create it refuses
  *  there (an app the Admin user who is not a Moderator of Admin could not
  *  make has no switch to change and no row). */
@@ -479,18 +478,6 @@ const NAMED_CHANGES: Record<
               'You are not a user of any workspace on this brain, so connector tools do not run for you.',
             ),
           }),
-    },
-    {
-      cells: /^contactSharingByContact (read|write|turn):\S+$/,
-      reason:
-        "a contact's sharing dates asked in a scope answer only the contacts the scope reads " +
-        '(mantle_contact_sharing, A6b fix round). Every product caller passes contacts it read ' +
-        'in the scope first, so their answers are unchanged. Stricter, never looser: exactly ' +
-        "main's entries, less those of contacts the scope does not read.",
-      nowTest: (now, k, was) => {
-        const f = SCOPE_FACTS.get(ctxOf(k));
-        return !!f?.active && now === keptOf(was, (e) => f.reads.has(e[0]));
-      },
     },
   ],
   telegram: [
@@ -624,9 +611,6 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
    *  pools only read them. */
   const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
-  /** A statement in the context it is called in (the caller's scope). */
-  const x2 = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
-    (await m.db.execute(q)) as unknown as T[];
 
   /** A value with every known id named, unknown ids, times and secrets
    *  blanked (so a cell reads the same on every run). */
@@ -799,6 +783,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     for (const [k, line] of was) {
       const cur = now.get(k);
       if (cur === undefined) {
+        if (RETIRED_CELLS.some((r) => r.cells.test(k))) continue;
         if (!(MODE === 'on' && F4_MISSING_ON.test(k))) problems.push(`missing: ${k}`);
         continue;
       }
@@ -1276,7 +1261,7 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
     // Its own budget (the S9 part 1 audit, L6): the full-role app routes
     // take longer than the default under a loaded box.
   }, 60_000);
-  // ── narrow reads: connectors, contact sharing, file names, export links,
+  // ── narrow reads: connectors, file names, export links,
   //    access log names, runs, keyword statistics, the app trash ─────────
   it('narrow-reads', async () => {
     const ea = await import('../../../packages/tools/src/external-access');
@@ -1292,16 +1277,14 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
                        (${L.owner}, 'a6b-off', 'A6b off', 'd', false, null)`);
     await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write) values
                 (${W.P}, 'connector', 'a6b-conn', true), (${W.Q}, 'connector', 'a6b-conn', false)`);
-    // Contacts with sharing on (one locked), one without.
+    // Three contacts (the record was taken with them; their sharing codes
+    // are gone with migration 0378).
     const C = [id(601), id(602), id(603)];
     C.forEach((c, i) => names.set(c, `contact:${i}`));
     for (const [i, c] of C.entries()) {
       await x(sql`insert into nodes (id, owner_id, type, title, path)
                   values (${c}, ${L.owner}, 'contact', ${`contact ${i}`}, 'contacts')`);
     }
-    await x(sql`insert into contact_share_codes (contact_id, owner_id, code_hash, created_at, last_used_at, locked_until)
-                values (${C[0]!}, ${L.owner}, 'h0', '2026-01-01', '2026-01-02', null),
-                       (${C[1]!}, ${L.owner}, 'h1', '2026-01-03', null, '2999-01-01')`);
     // Files: one in the root, one homed in P, in a P folder.
     await files.ensureFilesRootBranch(L.owner);
     const FN = [id(611), id(612)];
@@ -1359,26 +1342,6 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
                   values (${L.owner}, ${g}, 'app', 1, 'pre_delete', 'owner', ${JSON.stringify({ meta })}::jsonb,
                           now() - make_interval(mins => ${i}))`);
     }
-    // What each context's scope reads, as the definers see it (SCOPE_FACTS:
-    // the named changes held to the scope check against it).
-    const nameOf = (u: string) => names.get(u.toLowerCase()) ?? u;
-    for (const [ctx, run] of CONTEXTS) {
-      SCOPE_FACTS.set(
-        ctx,
-        await run(async () => {
-          const [s] = await x2<{ active: boolean }>(
-            sql`select "public"."mantle_scope_active"() as active`,
-          );
-          const seen = await x2<{ id: string }>(
-            sql`select id::text as id from nodes where id = any(${m.wsArraySql([APP, ...C])})`,
-          );
-          return {
-            active: s!.active === true,
-            reads: new Set(seen.map((r) => nameOf(r.id))),
-          };
-        }),
-      );
-    }
     await section('narrow-reads', async (cell) => {
       for (const [ctx, run] of CONTEXTS) {
         const a = (k: string, fn: () => Promise<unknown>) =>
@@ -1408,9 +1371,6 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
             return [rule('a6b-conn', false), rule('a6b-conn', true), rule('a6b-lone', false)];
           });
         }
-        await a('contactSharingByContact', async () => [
-          ...(await content.contactSharingByContact(L.owner, C, new Date('2026-06-01'))),
-        ]);
         await a('fileNameTaken taken.txt', () =>
           files.fileNameTaken(L.owner, 'files', 'taken.txt'),
         );

@@ -243,7 +243,7 @@ export async function applyLoginChange(
     // login may not (a role change is an add to or a removal from Admin by
     // its membership definer, which writes auth.users role and asks the
     // exit's acting login, the caller, with no scope; auth.users
-    // contact_id: a contact's shares reach the login linked to it): the
+    // contact_id: the contact the login is linked to): the
     // whole transaction then runs at the full-route spot login-credential
     // (docs/runtime-role.md); any other change stays on the exit's own
     // route. The role change is keyed on what membership gives the target

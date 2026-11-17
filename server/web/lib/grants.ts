@@ -49,7 +49,6 @@ import {
   wsArraySql,
 } from '@mantle/db';
 import type {
-  GrantContactShare,
   GrantEmbed,
   GrantEmbedSkip,
   GrantErrorCode,
@@ -67,7 +66,6 @@ import { TREE_KIND_SPECS, type TreeKind } from '@mantle/client-types/tree';
 import {
   canShareNode,
   linkNeedsModerator,
-  contactSharesForNode,
   EMBEDDING_KINDS,
   getActiveShareForNode,
   listServeCandidates,
@@ -535,10 +533,6 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   const canLink = canShareNode({ type: item.type, path: item.path });
   const mayLink = canLink && (linkNeedsModerator(item.type) ? manage : mayEdit(ctx, item));
   const share = canLink ? await getActiveShareForNode(anchor, item.id) : null;
-  let contactShares: GrantContactShare[] | null = null;
-  if (mayLink && ctx.adminUser && item.type !== 'branch') {
-    contactShares = await contactSharesForNode(anchor, item.id);
-  }
 
   let embedsNotGranted: GrantEmbed[] = [];
   if (EMBEDDING_KINDS.includes(item.type) && item.holders.length) {
@@ -562,7 +556,6 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
           }
         : null,
     serveCandidates: mayLink ? await listServeCandidates(anchor, ctx.caller.loginId, item) : [],
-    contactShares,
     embedsNotGranted,
   };
   if (item.type === 'branch' && mayEdit(ctx, item)) {

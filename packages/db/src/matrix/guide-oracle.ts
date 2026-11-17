@@ -44,9 +44,8 @@
  *               login with Write off), turn (an assistant turn for the login,
  *               in the assistant's workspace: the role's own, see
  *               TURN_WORKSPACE), assistant (an assistant of W with no user:
- *               a heartbeat), link (an open public link), contact-ro and
- *               contact-rw (a contact share without and with Can write),
- *               peer (a peer without Acts as) and system.
+ *               a heartbeat), link (an open public link), peer (a peer
+ *               without Acts as) and system.
  */
 
 /** Who asks, relative to the fixture. */
@@ -119,16 +118,7 @@ export const GUIDE_ACTIONS = Object.keys({
   appData: 1,
 } satisfies Record<GuideAction, 1>) as readonly GuideAction[];
 
-export type GuideActor =
-  | 'login'
-  | 'login-ro'
-  | 'turn'
-  | 'assistant'
-  | 'link'
-  | 'contact-ro'
-  | 'contact-rw'
-  | 'peer'
-  | 'system';
+export type GuideActor = 'login' | 'login-ro' | 'turn' | 'assistant' | 'link' | 'peer' | 'system';
 
 /** Every actor kind, each in its class, checked whole by the type: one
  *  that asks for a login, or one that answers none. */
@@ -138,8 +128,6 @@ const GUIDE_ACTOR_CLASS = {
   turn: 'login',
   assistant: 'other',
   link: 'other',
-  'contact-ro': 'other',
-  'contact-rw': 'other',
   peer: 'other',
   system: 'other',
 } satisfies Record<GuideActor, 'login' | 'other'>;
@@ -168,8 +156,7 @@ export type GuideSurface =
   | 'recipe'
   | 'pending'
   | 'app-broker'
-  | 'share-link'
-  | 'contact-share';
+  | 'share-link';
 
 export type GuideContext = {
   surface: GuideSurface;
@@ -383,15 +370,10 @@ export const GUIDE_RULES = {
   appData: (s: GuideStanding) => s.edits,
 } as const;
 
-/** The why of a contact share's write of anything but its app's data
- *  (docs/actors.md, the actor kinds: "its app's data, when the share
- *  allows it"). */
-export const CONTACT_WRITES_APP_DATA_ONLY = 'a contact share writes only its app’s data';
-
 /** The why of a key's or a linked brain's change to a page or a note others
  *  read ("MCP, API keys and linked brains": "A key may not change the
  *  content of a page or a note others read: one granted to a workspace
- *  other than Admin, or with a public link or a contact share", and "Like a
+ *  other than Admin, or with a public link", and "Like a
  *  key, a peer with Write on may not ..."). */
 export const KEY_SHARED_CONTENT = 'a key or a peer may not change a page or a note others read';
 
@@ -464,26 +446,19 @@ export function expectedAccess(
     case 'system':
       return systemAnswer(placement, action);
     case 'link':
-    case 'contact-ro':
-    case 'contact-rw':
     case 'peer': {
       if (reads) {
         // At SQL level these read through their share's own gate (the
-        // served list, the contact share, the peer's shares), not the
+        // served list, the peer's shares), not the
         // workspace role: the surface cells check them.
         if (surface === 'sql') return { na: `${actor} reads through its share, not a scope` };
         if (action !== 'read') return { na: `${actor} has no ${action}` };
-        // A public link serves its item ("Public links and contact shares
-        // stay per item"); a snapshot copy carries none (update-prod.md).
+        // A public link serves its item ("Public links stay per item");
+        // a snapshot copy carries none (update-prod.md).
         if (placement === 'snapshot') return { na: 'a snapshot copy carries no link or share' };
         return { allow: true };
       }
-      // docs/actors.md: a link, a peer(share) and a contact without Can
-      // write write nothing; a contact with Can write writes its app's
-      // data only (as named system work after the share's own check).
-      if (actor === 'contact-rw') {
-        return action === 'appData' ? { allow: true } : deny(CONTACT_WRITES_APP_DATA_ONLY);
-      }
+      // docs/actors.md: a link and a peer(share) write nothing.
       return deny('this caller only reads');
     }
     case 'assistant': {

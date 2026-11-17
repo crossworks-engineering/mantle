@@ -21,7 +21,6 @@ import {
   findDuplicateCandidates,
   mergeEntities,
   reapAppAccessLog,
-  reapShareAccessLog,
   type MergeCandidate,
 } from '@mantle/content';
 
@@ -145,12 +144,10 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} device token row(s)`;
   },
   // App access log rows older than 90 days.
-  // Contact shares (0214): the contact share trail, same 90 days.
   'app-access-log-reap': async () => {
     const r = await reapAppAccessLog();
-    const s = await reapShareAccessLog();
-    if (r.deleted === 0 && s.deleted === 0) return 'nothing to reap';
-    return `deleted ${r.deleted} access log row(s), ${s.deleted} contact share row(s)`;
+    if (r.deleted === 0) return 'nothing to reap';
+    return `deleted ${r.deleted} access log row(s)`;
   },
   // Deleted apps past their 30 days, and the history of deleted tables.
   'app-trash-purge': async () => {

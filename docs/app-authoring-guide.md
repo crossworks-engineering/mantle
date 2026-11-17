@@ -448,25 +448,26 @@ const me = await host.me();
 // { id: 'u_3qK…', name: 'Pat', kind: 'member' }
 ```
 
-| Field  | What it is                                                                                                                   |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `id`   | Stable for this person **in this app only**. `null` on an open link.                                                         |
-| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link.                               |
-| `kind` | `'admin'` (the owner or an admin login), `'member'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
+| Field  | What it is                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------- |
+| `id`   | Stable for this person **in this app only**. `null` on an open link.                          |
+| `name` | The login's display name. `null` when none is set, and on an open link.                       |
+| `kind` | `'admin'` (the owner or an admin login), `'member'`, or `'public'` (an open /s link: nobody). |
 
 A row an app wrote before workspaces W8a may hold `'client'`: the client
 logins are gone ([client-logins.md](./client-logins.md)), so no run gets
-that kind now.
+that kind now. A row written before migration 0378 may hold `'contact'`:
+contact shares are gone too.
 
 There is **no email**: an app is code the admin may not have written.
 `host.me()` works on every surface (the editor preview, the member
-shell, a Contact share, an open link) with no round trip: the
+shell, an open link) with no round trip: the
 server bakes the answer into the app's frame. Use it to greet, to show
 "you", or to filter a view. Do not build permission logic on it: the app
 can change its own copy.
 
-**Why a per-app id.** The id is a pseudonym (an HMAC of the login or
-contact id, keyed per app), so the same person has a different id in every
+**Why a per-app id.** The id is a pseudonym (an HMAC of the login id,
+keyed per app), so the same person has a different id in every
 app and an app cannot follow a person to another app. It does not change
 when a login's role changes. An app copied by export and import gets new
 ids.
@@ -535,9 +536,8 @@ any `SELECT` to its database (`SELECT * FROM review_log` from the browser's
 console works as well as the app's own query). That includes an anonymous
 visitor on an **open link** (the id is `NULL` for them, but they read every
 row). So an app that has an open link serves every row of its database to
-anyone who holds the link, rows a contact wrote through their own Contact
-share included. Keep what a contact or member writes out of an app you also
-share by open link.
+anyone who holds the link. Keep what a member writes out of an app you
+also share by open link.
 
 ## Binding to data: the important part
 
@@ -1292,8 +1292,9 @@ whose database file was already lost keeps a code-only snapshot.
 When a broker answers a running app with an error, it logs one row: a
 failed statement (the message the app got, the SQL), a tool call that was
 refused or failed (the slug and the message), who ran the app (owner,
-member, contact or public; a row from before workspaces W8a may say
-client) and when. `app_errors` reads them for an
+member or public; a row from before workspaces W8a may say client, and
+one from before migration 0378 may say contact) and when. `app_errors`
+reads them for an
 agent (`since_hours` narrows it); `GET /api/apps/:id/access-log?kind=error`
 for the Activity tab. A server fault is logged with the generic text the app
 got, never the server's own. A busy wait (429) is not an error. The log is
@@ -1345,8 +1346,8 @@ the database's checks decide which apps (`OWNER_ONLY_IN_SCOPE` in
 `packages/tools/src/admin-gate.ts`). The turn of an assistant of a
 workspace other than Admin (a team surface) does not get them.
 
-None of the three carries the original's grants, public link or contact
-shares, history or table exports (an export has one master): the new app
+None of the three carries the original's grants, public link, history or
+table exports (an export has one master): the new app
 is a new item, homed where it is made (the home rule in
 [workspaces.md](./workspaces.md)) with no other grant. Share it again by
 hand.
@@ -1372,9 +1373,10 @@ column change or a missing summary runs the full model pass, which costs
 money. A sync that fails leaves the Table as it was, and unless it only met a busy
 server, it shows in the app's errors (`app_errors`). The Table of an app
 written from outside the team is indexed at retrieval depth only (no facts
-or entities from that text). A Contact share with Can write marks the app
-as written from outside on its first write, or first batch of any outcome; so did a client login before
-workspaces W8a. The mark is never cleared. A sync a restart interrupted is
+or entities from that text). A client login (before workspaces W8a) and a
+contact share with write on (before migration 0378) marked the app as
+written from outside on its first write; neither exists now. The mark is
+never cleared. A sync a restart interrupted is
 not lost: the write marks the export dirty in Postgres, and the server
 resumes it at boot. Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
@@ -1521,22 +1523,10 @@ An open link adds no grant: the app shows in a member's launcher and on
 a landing page only when a workspace of theirs holds it. Anyone who has
 the link, a member too, runs it there read only.
 
-### Shared with a contact (one outsider)
+### Shared with a contact (removed)
 
-Share, "Share with contact": pick one or more contacts whose sharing is on
-(docs/contacts.md section 2b). Each gets their own link, opened with their
-own code. The share adds no grant: the workspaces that hold the app do not
-change, and nobody else gains it. The contact reads the app's SQLite
-(`host.db.query`). With **Can write** on (per contact, off by default) the
-contact also writes it (`host.db.exec`, `host.db.batch`): the write schedules the app-table
-export sync like a member's. **Informational** wins over Can write: on an app
-an admin marked informational a contact only reads, as members do. Never
-brain tools: `host.tools.call` is refused, except for an http tool the app
-declares that an admin switched "External access" on for
-(docs/member-logins.md). A contact share holds no workspace, so it never
-runs a connector tool (connectors are attached to workspaces). An open
-link never calls a tool. The app's Activity tab names the contact. See
-docs/sharing.md section 4b.
+Contact shares were removed in migration 0378 (docs/sharing.md section
+4b). Logins with workspaces and password shares replace them.
 
 ### Team links (retired)
 
@@ -1644,7 +1634,7 @@ run the green PUBLISHED build only and never edit it from there.
   declare every table and index with `app_db_schema_set`. A
   `CREATE TABLE IF NOT EXISTS` (or `CREATE INDEX IF NOT EXISTS`) on an object
   that already exists is answered as a no-op, but a new table, `ALTER`,
-  `DROP`, `PRAGMA` or a transaction from a member or contact is
+  `DROP`, `PRAGMA` or a transaction from a member is
   refused with an error the app can catch. `host.db.batch` takes the same
   rights as `host.db.exec`. The database is shared by
   everyone who runs the app (not one per member): design for that. To

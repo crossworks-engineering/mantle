@@ -1,7 +1,7 @@
 # A10 #8: the probes that answer otherwise than on main, each with its named
 # kind (changeKind, a10-rate-sweep.test.ts), its answer on main and now. Every
 # other probe of a10-rate-sweep.txt answers byte for byte as recorded.
-# one-429: 86 probes
+# one-429: 82 probes
 # machine-429: 8 probes
 # machine-429 (Retry-After added): 4 probes
 # one-429 (explained): 6 probes
@@ -338,18 +338,6 @@ HEAD /s/:token/bundle none share-bundle count (ip 30/60s) [one-429]
 HEAD /s/:token/bundle none share-bundle window [one-429]
   main 59s: 429 text/plain retry-after=1 cache-control=- ; 60s: 404
   now  59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
-POST /s/:token/code none contact-code:ip count (ip 10/60s) [one-429]
-  main first 429 at 11; #10 500; over 429 application/json retry-after=3600 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}
-  now  first 429 at 11; #10 500; over 429 application/json retry-after=3600 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":3600}
-POST /s/:token/code none contact-code:ip window [one-429]
-  main 59s: 429 application/json retry-after=3541 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}; 60s: 500
-  now  59s: 429 application/json retry-after=3541 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":3541}; 60s: 500
-POST /s/:token/code none contact-code:ip-hour count (ip 30/3600s) [one-429]
-  main first 429 at 31; #30 500; over 429 application/json retry-after=3390 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}
-  now  first 429 at 31; #30 500; over 429 application/json retry-after=3390 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":3390}
-POST /s/:token/code none contact-code:ip-hour window [one-429]
-  main 3599s: 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many attempts — try again shortly"}; 3600s: 500
-  now  3599s: 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}; 3600s: 500
 POST /s/:token/db-broker none share-db-broker count (ip 300/60s) [one-429]
   main first 429 at 301; #300 404; over 429 application/json retry-after=60 cache-control=- {"ok":false,"error":"too many requests"}
   now  first 429 at 301; #300 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}

@@ -110,13 +110,13 @@ export type TableAccess = {
    */
   narrow?: NarrowAccess;
   /**
-   * Why a scoped typed write (a login's, an assistant's, a link's or a
-   * contact's db.insert, update or delete in a write scope) to this table
+   * Why a scoped typed write (a login's, an assistant's or a link's
+   * db.insert, update or delete in a write scope) to this table
    * may stay on the system pool though the write role holds no right on it
    * (gateway/write-route.ts typedWrite). Such a write to any table that
    * names no reason is refused. It covers a login
    * actor's write only (the reason names the caller's login): an
-   * assistant's, a link's or a contact's write is refused.
+   * assistant's or a link's write is refused.
    * Keep it small: the reason says whose row it is and what was checked
    * first (access-matrix.test.ts; the pin `scopedSystemWriteTables`).
    */
@@ -246,10 +246,6 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
   'public.gateway_calls': {
     narrow: 'read',
     why: "the service gateway's call log (0358): written and reaped by the gateway process outside every scope, never by narrow work",
-  },
-  'public.contact_share_codes': {
-    narrow: 'read',
-    why: 'written by the public /s/:token/code route and mantle_contact_sharing_set (a definer), never by narrow work',
   },
   'public.private_workspaces': {
     narrow: 'read',
@@ -1074,10 +1070,6 @@ export type EditCheck = {
   /** nodes: the keys of mantle_node_derived_keys() in data are the brain's:
    *  a write may clear one, never set or change one. */
   derivedKeys?: true;
-  /** shares: a row with a contact_id (a contact share) needs admin instead
-   *  of the operation's or column's need (the guide: "Share it with one
-   *  contact: to be an Admin user, its home is not checked"). */
-  contactAdmin?: true;
 };
 
 /** The draft columns of the item tables. The workspace role reads them: an
@@ -1481,15 +1473,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       insert: 'link',
       delete: 'link_close',
       columns: { link_close: ['revoked_at'], link: 'rest' },
-      contactAdmin: true,
     },
   },
-  // Contact shares (0214): the /s layer reads and writes these on the admin
-  // pool, for the brain. No viewer role ever does.
-  // Narrow work only reads it: the code is written by the public route
-  // and by mantle_contact_sharing_set (NARROW_CREDENTIAL_TABLES).
-  { ...none('public.contact_share_codes', 'system'), narrow: 'read' },
-  none('public.share_access_log', 'system'),
 
   // ── Admin only: the private corpus, credentials, the owner's own memory ───
   none('public.api_keys'),
@@ -1996,19 +1981,11 @@ export type EditCheckTrigger = { name: string; ddl: string };
  *  never by editCheckTriggers. */
 export const EDIT_CHECK_RO_TRIGGER = 'mantle_edit_check_ro';
 
-/** A contact share writes its app's data only (0294): one per
- *  item table but app_databases and node_acl_head, made by its migration,
- *  never by editCheckTriggers. */
-export const EDIT_CHECK_CONTACT_TRIGGER = 'mantle_edit_check_contact';
-
 /** The edit check's triggers its migrations make (of the family's name, so
  *  mantle_set_edit_check switches them with the rest): migrate's sync of
  *  the matrix-made ones leaves them alone, and the matrix may not use the
  *  names. */
-export const EDIT_CHECK_MIGRATION_TRIGGERS: readonly string[] = [
-  EDIT_CHECK_RO_TRIGGER,
-  EDIT_CHECK_CONTACT_TRIGGER,
-];
+export const EDIT_CHECK_MIGRATION_TRIGGERS: readonly string[] = [EDIT_CHECK_RO_TRIGGER];
 
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 const EDIT_NEEDS: ReadonlySet<string> = new Set([
@@ -2061,8 +2038,7 @@ export function editCheckTriggers(
   if (e.item !== 'self') ident(e.item, where);
   const table = quoteTable(t.table);
   const when = `current_user = 'mantle_write_user'`;
-  const rowMode = e.contactAdmin ? 'contact' : '';
-  const fn = (need: string, mode = rowMode) => {
+  const fn = (need: string, mode = '') => {
     if (!EDIT_NEEDS.has(need)) throw new Error(`${where}: unknown need ${need}`);
     return `EXECUTE FUNCTION "public"."mantle_edit_check_trg"('${need}', '${e.item}', '${e.via ?? ''}', '${mode}')`;
   };

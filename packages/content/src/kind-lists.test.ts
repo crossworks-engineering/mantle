@@ -2,9 +2,7 @@
  * The kind lists of @mantle/content and the packages below it, derived from
  * the kind registry (@mantle/client-types/kinds, workspaces arch A1). Each is
  * pinned to its value before the registry (v0.300.2): widening one is a
- * reviewed edit here. The trap this guards: CONTACT_SHAREABLE_TYPES used to
- * derive from WORKSPACE_NODE_TYPES, so the workspace class gaining task,
- * event and recall (D1) would have opened them to contact shares silently.
+ * reviewed edit here.
  *
  * Order: the tree lists keep theirs (the shell's `treeKinds`, a tool enum);
  * the others are pinned as sets (the code asks membership only).
@@ -16,7 +14,6 @@ import {
   TEAM_PRIVATE_CORPUS_TYPES,
 } from '@mantle/content-core/profile-projections';
 import { SHAREABLE_TYPES, canShareNode } from './shares';
-import { CONTACT_SHAREABLE_TYPES } from './contact-shares';
 import { PEER_SHAREABLE_TYPES } from './peers';
 import { READER_TREE_KINDS, TREE_LIVE_KINDS } from './tree/kinds';
 import { isWorkspaceKind } from './access';
@@ -46,12 +43,6 @@ describe('kind lists derived from the registry', () => {
     );
     expect(isWorkspaceKind('task')).toBe(true);
     expect(isWorkspaceKind('journal')).toBe(false);
-  });
-
-  it('CONTACT_SHAREABLE_TYPES did not follow the class: no task, event or recall', () => {
-    expect(set(CONTACT_SHAREABLE_TYPES)).toEqual(
-      set(['page', 'note', 'draw', 'table', 'file', 'app', 'formula']),
-    );
   });
 
   it('SHAREABLE_TYPES and canShareNode', () => {

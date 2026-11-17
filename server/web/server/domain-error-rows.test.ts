@@ -13,7 +13,6 @@ import {
   AppSourceLimitError,
   NoGreenBuildError,
   AppBoundTableError,
-  ContactShareRefusedError,
 } from '@mantle/content';
 import { AppDbMissingError } from '@mantle/content/app-broker';
 import { AppSnapshotBudgetError, AppSnapshotRefusedError } from '@mantle/content/app-snapshots';
@@ -110,11 +109,7 @@ describe('the later tranches of fold 2: each class answers as its route did', ()
     expect(answer(bound)).toEqual({ status: 409, body: { error: bound.message } });
   });
 
-  it('shares, telegram, heartbeats, export, the assistant clone and uploads', () => {
-    expect(answer(new ContactShareRefusedError('not-a-contact', 'Not a contact.'))).toEqual({
-      status: 400,
-      body: { error: 'Not a contact.', reason: 'not-a-contact' },
-    });
+  it('telegram, heartbeats, export, the assistant clone and uploads', () => {
     expect(answer(new TelegramTokenError('Paste a bot token.'))).toEqual({
       status: 400,
       body: { error: 'Paste a bot token.' },

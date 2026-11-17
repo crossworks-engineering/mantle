@@ -329,10 +329,9 @@ function dirtyAfterRead(readAt: Date) {
 }
 
 /** Who the export bookkeeping runs as: the dirty stamp and the debounced
- *  sync are the brain's own work, never the writer's. A
- *  contact share's request runs as contact:rw, which writes its app's data
- *  only (migration 0294); a timer would otherwise carry the request's actor
- *  to the sync's Table writes 15 s later. */
+ *  sync are the brain's own work, never the writer's: a timer would
+ *  otherwise carry the request's actor to the sync's Table writes 15 s
+ *  later. */
 const EXPORT_ACTOR = 'app-export';
 
 /** Stamp an app's exports with a write: dirty since the burst's first

@@ -131,7 +131,7 @@ export async function workspaceChips(
                      or w.id in (select me.id from me))), '[]'::jsonb) as workspaces,
            exists (
              select 1 from shares s
-              where s.node_id = n.id and s.revoked_at is null and s.contact_id is null
+              where s.node_id = n.id and s.revoked_at is null
                 and (s.expires_at is null or s.expires_at > now())
                 and coalesce(s.settings->>'mode', 'public') <> 'team') as has_link,
            ${capsColumns()}

@@ -23,9 +23,8 @@
  *    in-brain turn) may switch it off, never on (person-only-acts.ts).
  *
  * WHO may then call it is the app's sharing, nothing else: a member running
- * a team or public app, anyone running a client app (the client rules), and
- * a contact on a contact-share link who passed the code. Never an open link
- * (no contact). Each still needs the app to declare the tool, and the call
+ * a team or public app and anyone running a client app (the client rules).
+ * Never an open link. Each still needs the app to declare the tool, and the call
  * may come by hand with any input, not only from the app's screens.
  *
  * CONNECTOR tools (mcp) follow another rule (connectorToolVerdict below):
@@ -43,7 +42,7 @@
  * such a change, and a connector moved to another server or credential
  * clears it on every tool of that connector, so the UI shows it off.
  * Deleting the tool deletes the row and the switch with it. Every call,
- * allowed or refused, is logged with the member, client or contact.
+ * allowed or refused, is logged with the member or client.
  */
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -61,7 +60,6 @@ import {
   onFullSystemRoute,
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
-import { resolveTool } from './resolve';
 import type { RuntimeToolPolicy } from './runtime-policy';
 
 /**
@@ -264,15 +262,15 @@ export type ConnectorToolPolicy = RuntimeToolPolicy & {
 };
 
 /** Who runs a shared app, for the refusal's words. */
-export type ExternalAccessRunner = 'member' | 'client' | 'contact';
+export type ExternalAccessRunner = 'member' | 'client';
 
 export type ExternalToolVerdict =
   { ok: true; tool: Tool } | { ok: false; status: 403; reason: string };
 
 /**
  * The ONE rule for an outside (non-built-in) tool in an app run below admin:
- * a member's (member-app-tools.ts), a client app's (client-app-tools.ts) and a
- * contact link's (the /s tool broker). The caller has checked that the app
+ * a member's (member-app-tools.ts) and a client app's (client-app-tools.ts).
+ * The caller has checked that the app
  * declares the tool and resolved the enabled row. Nothing else gates it: the
  * app's sharing decided who runs the app.
  */
@@ -282,8 +280,7 @@ export function externalToolVerdict(
   runner: ExternalAccessRunner,
 ): ExternalToolVerdict {
   if (externalAccessActive(tool)) return { ok: true, tool };
-  const who =
-    runner === 'member' ? 'a team app' : runner === 'client' ? 'a client app' : 'a shared link';
+  const who = runner === 'member' ? 'a team app' : 'a client app';
   return {
     ok: false,
     status: 403,
@@ -494,10 +491,8 @@ export async function connectorToolVerdict(
   loginId?: string,
   check?: OutsideToolCheck,
 ): Promise<OutsideToolVerdict> {
-  const who =
-    runner === 'member' ? 'a team app' : runner === 'client' ? 'a client app' : 'a shared link';
+  const who = runner === 'member' ? 'a team app' : 'a client app';
   const refuse = (reason: string): OutsideToolVerdict => ({ ok: false, status: 403, reason });
-  if (runner === 'contact') return refuse(`The tool '${slug}' can't run: ${LINK_NO_CONNECTORS}`);
   if (tool.requiresConfirm) {
     return refuse(
       `The tool '${slug}' needs an admin's confirmation on every call, so ${who} can't use it.`,
@@ -658,41 +653,6 @@ export function outsideCallLogDetail(
     text = '[input not serialisable]';
   }
   return { handler: kind, write: true, input: text.slice(0, OUTSIDE_WRITE_LOG_INPUT_MAX) };
-}
-
-/**
- * May a CONTACT on a contact-share link call `slug` from the shared app that
- * declares `declared`? Only an outside tool that is not a connector's, with
- * External access. No built-in ever runs on a link (a link has no login,
- * and a brain read tool would reach the owner's content), and no connector
- * tool (a link holds no workspace, LINK_NO_CONNECTORS). The /s broker
- * has already refused an open link (no contact) and checked the contact's
- * code gate.
- */
-export async function contactAppToolVerdict(
-  ownerId: string,
-  declared: readonly string[],
-  slug: string,
-): Promise<
-  { ok: true; tool: Tool; write: boolean } | { ok: false; status: 403 | 404; reason: string }
-> {
-  if (!declared.includes(slug)) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `This app isn't allowed to use the tool '${slug}'. It must be declared in the app's tools.`,
-    };
-  }
-  const tool = await resolveTool(ownerId, slug);
-  if (!tool) return { ok: false, status: 404, reason: `tool '${slug}' not found` };
-  if (tool.handler.kind === 'builtin') {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' is built in, and a shared link runs no built-in tools (only an outside tool with External access).`,
-    };
-  }
-  return outsideToolVerdict(ownerId, tool, slug, 'contact');
 }
 
 /** The switch as the wire shows it (`ToolDTO.externalAccess`). */

@@ -67,7 +67,6 @@ vi.mock('@mantle/db', async () => {
 
 const admin: AppViewerSubject = { kind: 'admin', loginId: 'login-admin', name: 'Robin' };
 const member: AppViewerSubject = { kind: 'member', loginId: 'login-member', name: 'Pat' };
-const contact: AppViewerSubject = { kind: 'contact', contactId: 'contact-7', name: 'Ann' };
 const pub: AppViewerSubject = { kind: 'public' };
 
 const WHO = 'SELECT :host_me_id AS id, :host_me_name AS name, :host_me_kind AS kind';
@@ -88,7 +87,6 @@ describe('the server fills :host_me_* on every kind of viewer', () => {
   const cases: [AppViewerSubject, Record<string, unknown>][] = [
     [admin, { id: appViewerPseudonym(SALT, 'login:login-admin'), name: 'Robin', kind: 'admin' }],
     [member, { id: appViewerPseudonym(SALT, 'login:login-member'), name: 'Pat', kind: 'member' }],
-    [contact, { id: appViewerPseudonym(SALT, 'contact:contact-7'), name: 'Ann', kind: 'contact' }],
     [pub, { id: null, name: null, kind: 'public' }],
   ];
 
@@ -250,15 +248,6 @@ describe('appViewerFor (what host.me() answers in the frame)', () => {
       id: appViewerPseudonym(SALT, 'login:login-admin'),
       name: null,
       kind: 'admin',
-    });
-  });
-
-  it("looks up a contact's name", async () => {
-    h.nameRows = [{ title: 'Ann' }];
-    expect(await appViewerFor(OWNER, APP, { kind: 'contact', contactId: 'contact-7' })).toEqual({
-      id: appViewerPseudonym(SALT, 'contact:contact-7'),
-      name: 'Ann',
-      kind: 'contact',
     });
   });
 

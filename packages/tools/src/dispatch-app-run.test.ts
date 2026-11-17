@@ -67,7 +67,6 @@ beforeEach(() => {
 const SURFACES: Array<[string, NonNullable<ToolHandlerContext['surface']>, string]> = [
   ['a member run (team rules)', { kind: 'team', loginId: 'l1', privateReads: false }, 'team'],
   ['an admin run (admin rules)', { kind: 'web', loginId: 'l1' }, 'admin'],
-  ['a shared link (contact rules)', { kind: 'contact', contactId: 'c1', shareId: 's1' }, 'contact'],
 ];
 
 describe("an app broker's allowed call is judged on its app-tool ref (carried LOW-2)", () => {

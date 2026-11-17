@@ -12,7 +12,7 @@
  * no network, no bridge but `ready`, `error` and `leaving`. The latest save
  * is served (latest is latest). Never a render: no sidecar work here.
  */
-import { gateShareCookie } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { canvasFrameNonce, verifyCanvasFrameTicket } from '@/lib/auth';
 import { getPresentFrame } from '@/lib/presents';
 import { canvasFrameRefusal, renderCanvasFrame } from '@/lib/canvas-frame';
@@ -24,11 +24,9 @@ export const policy = routePolicy({
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
-  // No cookie is read: the navigation of a sandboxed frame carries none, and
-  // only an open link serves a canvas (no contact share).
-  const gate = await gateShareCookie(null, token);
-  const share = gate.kind === 'ok' ? gate.share : null;
-  if (!share || share.nodeType !== 'present' || share.contactId) {
+  // No cookie is read: the navigation of a sandboxed frame carries none.
+  const share = await openShareLink(token);
+  if (!share || share.nodeType !== 'present') {
     return canvasFrameRefusal(404, 'not found');
   }
   // Only as the frame of the link's own page: the request of an iframe the
@@ -50,8 +48,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     ticket.appId !== share.nodeId ||
     ticket.ownerId !== share.ownerId ||
     ticket.loginId ||
-    ticket.actorId ||
-    ticket.contactId
+    ticket.actorId
   ) {
     return canvasFrameRefusal(401, 'frame ticket required');
   }

@@ -187,7 +187,7 @@ describe.skipIf(!URL)("a canvas's link is its home Moderators'", () => {
   });
 
   it('a link made before stays live and still serves the canvas', async () => {
-    const row = await shares.resolveActiveShareRowByToken(share.token);
+    const row = await shares.resolveActiveShareByToken(share.token);
     expect(row?.nodeId).toBe(I.cv);
     expect(await shares.loadShareView(row!)).toEqual({
       kind: 'present',

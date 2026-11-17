@@ -48,10 +48,7 @@ describe('loginDefinerCall statement shape', () => {
       'select ok, fresh, reason, used from mantle_member_turn_claim($1::text,\n        $2::uuid, $3::timestamptz, $4::integer,\n        $5::bigint)',
       'select mantle_member_turn_release($1::text)',
       'select mantle_member_turn_settle($1::text, $2::bigint) as hit',
-      'select outcome, revoked from mantle_contact_sharing_set($1::uuid, $2::text)',
-      'select share_id::text, contact_id::text, token, refused\n            from mantle_share_with_contacts($1::uuid, $2::uuid[],\n                   $3::text[], $4, $5::text[])',
       'select mantle_entity_merge($1::uuid, $2::uuid) as ok',
-      'select outcome, contact::text as contact\n          from mantle_share_contact_write_set($1::uuid, $2)',
       'select outcome, seq, code, db_path, schema_version, member_era\n          from mantle_app_trash_act($1::uuid, $2)',
       'select "public"."mantle_share_close_admin"($1::uuid) as outcome',
     ]) {

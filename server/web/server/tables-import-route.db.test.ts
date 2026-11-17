@@ -8,7 +8,7 @@
  *  1. whoever may press New table gets a Table from xlsx, xls and csv, with every
  *     sheet with rows as a tab, where New table would put it, committed, and no
  *     file in Files;
- *  2. a read key, a write key and a contact are refused, and nothing is made;
+ *  2. a read key and a write key are refused, and nothing is made;
  *  3. a body over the cap is refused before any parse, declared or chunked, and
  *     a bad type is refused;
  *  4. a file that cannot be read gets fixed words, never the parser's, and so does
@@ -342,21 +342,6 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
         expect([401, 403]).toContain(res.status);
       },
     );
-
-    it('a contact has no login: its visitor cookie is refused', async () => {
-      const { CONTACT_VISITOR_COOKIE, buildContactVisitorValue } = await import('../lib/auth');
-      const { value } = buildContactVisitorValue({
-        contactId: randomUUID(),
-        ownerId: L.owner,
-        codeEpoch: 0,
-      });
-      const res = await refusedNothingMade(() =>
-        send(null, form(`${tag} c.csv`, 'A\n1\n'), '', {
-          cookie: `${CONTACT_VISITOR_COOKIE}=${value}`,
-        }),
-      );
-      expect(res.status).toBe(401);
-    });
 
     it('no credential is refused', async () => {
       const res = await refusedNothingMade(() => send(null, form(`${tag} n.csv`, 'A\n1\n')));

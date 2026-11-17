@@ -12,8 +12,6 @@ Share an item and MantleOS makes a link anyone can open without a login. Turn sh
 
 A link shows its item and the items you tick for it in the item's **Access** panel. An image or embed you add to a page that already has a link is not shown on the link until you tick it there.
 
-To show one item to one outsider without a public link, share it with a contact. The contact opens it with a code you give them.
-
 ## Federation
 
 Federation links your brain with someone else's. Each brain stays its own; they answer each other only within what each side granted.

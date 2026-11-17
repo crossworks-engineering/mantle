@@ -4,7 +4,7 @@
  * steps, always in this order, through enterCall:
  *
  *   1. Resolve the caller: a login (cookie, mobile bearer, API key, a peer
- *      acting as a login), a link or contact token, or a process.
+ *      acting as a login), a link token, or a process.
  *   2. Bind the caller (currentCaller()).
  *   3. Look up the declared policy (a route row, a tool's policy, a runtime
  *      tool row's, a job's system reason); no entry: refused. Then bind the
@@ -67,7 +67,6 @@ export type CallerVia =
   | 'key'
   | 'peer'
   | 'link'
-  | 'contact'
   | 'turn'
   | 'app'
   | 'process'
@@ -80,7 +79,7 @@ export type CallerVia =
 /** The caller, resolved once at step 1. */
 export type GateCaller = Readonly<{
   /** Who the caller runs as (actor.ts): a login's login(rw | ro | owner),
-   *  the link, the contact share, an assistant, system(reason). Null: no
+   *  the link, an assistant, system(reason). Null: no
    *  actor was bound where the call came in (a bug: a tool call through
    *  dispatch); the call runs with none, so the actor check refuses its
    *  item writes. */
@@ -449,8 +448,6 @@ function readOnlyActor(actor: Actor): Actor {
       return actor.mode === 'ro' ? actor : Object.freeze({ ...actor, mode: 'ro' as const });
     case 'system':
       return actor.mode === 'ro' ? actor : Object.freeze({ ...actor, mode: 'ro' as const });
-    case 'contact':
-      return actor.canWrite ? Object.freeze({ ...actor, canWrite: false }) : actor;
     default:
       return actor;
   }

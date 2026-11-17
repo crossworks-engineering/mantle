@@ -122,7 +122,6 @@ vi.mock('../lib/pair-code', async (importOriginal) => ({
 vi.mock('../lib/shares', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   resolveActiveShareByToken: async () => null,
-  resolveActiveShareRowByToken: async () => null,
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -225,14 +224,30 @@ const DAY = 24 * 60 * 60 * 1000;
 const SAMPLE_ID = '11111111-1111-4111-8111-111111111111';
 
 /**
+ * Route files gone since the baseline was recorded, each with why: they
+ * leave the list, and their recorded cells leave the compare (as
+ * a10-flags.test.ts RETIRED).
+ */
+const RETIRED_FILES: Readonly<Record<string, { row: string; why: string }>> = {
+  'server/web/app/api/shares/contacts/route.ts': {
+    row: 'POST /api/shares/contacts',
+    why: 'contact shares are gone (migration 0378)',
+  },
+};
+const retiredCell = (cell: string) =>
+  Object.values(RETIRED_FILES).some(({ row }) => cell.startsWith(`${row} `));
+
+/**
  * The route files fold 2 moves, fixed when the baseline was recorded: the
  * files whose catch put a caught error's text in a reply
  * (errorTextReplies, eslint-rules/route-plumbing.mjs), and the files with
  * an isScopeWriteRefusal re-throw or a treeErrorResponse catch.
  */
-const ERROR_FILES: readonly string[] = JSON.parse(
-  readFileSync(join(here, '__snapshots__/a10-error-sweep.files.json'), 'utf8'),
-) as string[];
+const ERROR_FILES: readonly string[] = (
+  JSON.parse(
+    readFileSync(join(here, '__snapshots__/a10-error-sweep.files.json'), 'utf8'),
+  ) as string[]
+).filter((f) => !RETIRED_FILES[f]);
 
 const FAULTS = [
   'plain',
@@ -437,6 +452,7 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 2: every moved route answers a fa
     for (const line of readFileSync(BASELINE, 'utf8').split('\n')) {
       if (!line || line.startsWith('#')) continue;
       const at = line.indexOf(' => ');
+      if (retiredCell(line.slice(0, at))) continue;
       out.set(line.slice(0, at), line.slice(at + 4));
     }
     return out;

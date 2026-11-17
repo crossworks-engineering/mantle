@@ -118,10 +118,12 @@ describe('takeRouteLimits', () => {
   });
 
   it('answers the longest Retry-After when a row has two limits', () => {
-    const o = { req: req('192.0.2.3'), login: null, scopes: ALL };
-    for (let i = 0; i < 10; i++)
-      expect(takeRouteLimits(['contactCode', 'contactCodeHour'], o)).toBeNull();
-    const res = takeRouteLimits(['contactCode', 'contactCodeHour'], o);
+    // A minute limit per address beside an hour limit per login: the minute
+    // one refuses first, and the answer waits out the hour.
+    const o = { req: req('192.0.2.3'), login: { loginId: 'login-9', member: false }, scopes: ALL };
+    const names = ['authLogin', 'tablesImport'] as const;
+    for (let i = 0; i < 10; i++) expect(takeRouteLimits(names, o)).toBeNull();
+    const res = takeRouteLimits(names, o);
     expect(res?.headers.get('retry-after')).toBe('3600');
   });
 

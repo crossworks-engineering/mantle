@@ -1,17 +1,18 @@
 /**
  * Admin acts become definers, part c2 (plan v3.2; migration 0310): the item
- * gate's three Admin acts as SECURITY DEFINER functions that check inside,
- * their requests in the login's scope, on a migrated scratch database, in
- * warn and in on (the actor and the edit check together, as on the fleet):
+ * gate's Admin acts as SECURITY DEFINER functions that check inside, their
+ * requests in the login's scope, on a migrated scratch database, in warn and
+ * in on (the actor and the edit check together, as on the fleet). Two are
+ * left: the share close and the app trash (a contact share's Can write went
+ * with contact shares, migration 0378).
  *
  *  - each definer in a hand-set scope: an Admin user yes as today (with and
  *    without the users area where it matters); a member, role drift and no
  *    scope: refused (42501) or told to go the link's way, nothing written;
  *  - each route through the full HTTP pipeline (runRoute): an Admin user
  *    with the users area closes a link of an item it does not read; one
- *    without hears the gate's 404; Can write needs only an Admin user;
- *  - member-negative per Admin act (the 403), and role drift on Can
- *    write (the guard's 403 body, from inside the definer);
+ *    without hears the gate's 404;
+ *  - member-negative per Admin act (the 403);
  *  - the trash: the purge rule stays owner-only for a held app, a non-owner
  *    purge is refused with nothing removed, and no app database file is
  *    touched by any refused path;
@@ -49,11 +50,6 @@ const RAW =
   /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|drizzle-orm|permission denied for|violates|duplicate key|does not exist|\n\s+at \S/i;
 
 const NOT_FOUND = { ok: false, error: 'not found' };
-const MEMBER_LOGIN = {
-  error: 'forbidden',
-  reason: 'member-login',
-  message: 'Not available to member logins.',
-};
 const HELD = {
   error: 'forbidden',
   reason: 'item-workspace',
@@ -63,7 +59,7 @@ const HELD = {
 
 type Mode = 'warn' | 'on';
 
-describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers', () => {
+describe.skipIf(!DB_URL)('S6 c2: the item gate’s Admin acts as definers', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let raw: ReturnType<typeof postgres>;
@@ -147,30 +143,21 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
     return id;
   };
 
-  /** A share row of `node`, raw: an open link, or one naming a contact. */
-  const makeShare = async (node: string, type: string, contact = false): Promise<string> => {
+  /** An open link of `node`, raw. */
+  const makeShare = async (node: string, type: string): Promise<string> => {
     const id = randomUUID();
-    let c: string | null = null;
-    if (contact) {
-      c = randomUUID();
-      await raw.begin(async (tx) => {
-        await tx`select set_config('mantle.actor', 'system:test', true)`;
-        await tx`insert into nodes (id, owner_id, type, title, path)
-                 values (${c}, ${L.owner}, 'contact', ${`${tag} contact`}, 'contacts'::ltree)`;
-      });
-    }
     await raw.begin(async (tx) => {
       await tx`select set_config('mantle.actor', 'system:test', true)`;
-      await tx`insert into shares (id, owner_id, node_id, node_type, token, contact_id)
-               values (${id}, ${L.owner}, ${node}, ${type}, ${randomUUID()}, ${c})`;
+      await tx`insert into shares (id, owner_id, node_id, node_type, token)
+               values (${id}, ${L.owner}, ${node}, ${type}, ${randomUUID()})`;
     });
     return id;
   };
 
   const shareRow = async (id: string) =>
     (
-      await raw<{ live: boolean; can_write: boolean }[]>`
-        select revoked_at is null as live, can_write from shares where id = ${id}`
+      await raw<{ live: boolean }[]>`
+        select revoked_at is null as live from shares where id = ${id}`
     )[0]!;
 
   /** A deleted app in the trash: its pre_delete snapshot, homed in `home`
@@ -330,28 +317,6 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       expect((await close(L.admin, randomUUID())).rows?.[0]?.o).toBe('gone');
     });
 
-    it(`${mode}: mantle_share_contact_write_set needs an Admin user, no area`, async () => {
-      await setMode(mode);
-      const app = await makeItem('app', ws.other);
-      const s = await makeShare(app, 'app', true);
-      const set = (as: string | null, share: string, v: boolean) =>
-        inScope(
-          as,
-          (tx) => tx<{ outcome: string }[]>`select outcome
-          from mantle_share_contact_write_set(${share}, ${v})`,
-        );
-      for (const as of [L.member, L.drift, null]) {
-        expect((await set(as, s, true)).code, String(as)).toBe('42501');
-        expect((await shareRow(s)).can_write).toBe(false);
-      }
-      expect((await set(L.limited, s, true)).rows?.[0]?.outcome).toBe('ok');
-      expect((await shareRow(s)).can_write).toBe(true);
-      const link = await makeShare(app, 'app');
-      expect((await set(L.member, link, true)).rows?.[0]?.outcome).toBe('not-contact');
-      const noteShare = await makeShare(await makeItem('note', ws.other), 'note', true);
-      expect((await set(L.admin, noteShare, true)).rows?.[0]?.outcome).toBe('write-not-app');
-    });
-
     it(`${mode}: mantle_app_trash_act keeps the owner-only purge`, async () => {
       await setMode(mode);
       const before = await appFiles();
@@ -408,29 +373,16 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       const again = await call(`${mode} admin close again`, L.admin, 'DELETE', `/api/shares/${s2}`);
       expect(again.json).toEqual({ ok: false });
 
-      // Can write: an Admin user, its home not checked.
-      const app = await makeItem('app', ws.other);
-      const cs = await makeShare(app, 'app', true);
-      const member = await call(`${mode} member write`, L.member, 'PATCH', `/api/shares/${cs}`, {
-        canWrite: true,
-      });
-      expect(member.status).toBe(403);
-      const drift = await call(`${mode} drift write`, L.drift, 'PATCH', `/api/shares/${cs}`, {
-        canWrite: true,
-      });
-      expect(drift.status, drift.text).toBe(403);
-      expect(drift.json).toEqual(MEMBER_LOGIN);
-      expect((await shareRow(cs)).can_write).toBe(false);
-      const ok = await call(`${mode} limited write`, L.limited, 'PATCH', `/api/shares/${cs}`, {
-        canWrite: true,
-      });
-      expect(ok.status, ok.text).toBe(200);
-      expect(ok.json).toEqual({ ok: true, canWrite: true });
-      expect((await shareRow(cs)).can_write).toBe(true);
       // A link's mode change is the link's: hidden item, the gate's 404.
-      const mode404 = await call(`${mode} limited mode`, L.limited, 'PATCH', `/api/shares/${cs}`, {
-        mode: 'public',
-      });
+      const app = await makeItem('app', ws.other);
+      const appLink = await makeShare(app, 'app');
+      const mode404 = await call(
+        `${mode} limited mode`,
+        L.limited,
+        'PATCH',
+        `/api/shares/${appLink}`,
+        { mode: 'public' },
+      );
       expect(mode404.status).toBe(404);
       expect(mode404.json).toEqual(NOT_FOUND);
 

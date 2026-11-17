@@ -279,15 +279,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
 
 exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /s request as before 1`] = `
 {
-  "aggregate: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "application/json",
-    },
-    "status": 401,
-  },
   "aggregate: no such token": {
     "actors": [],
     "body": "{"error":"not found"}",
@@ -296,15 +287,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
       "content-type": "application/json",
     },
     "status": 404,
-  },
-  "asset: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "application/json",
-    },
-    "status": 401,
   },
   "asset: no such token": {
     "actors": [],
@@ -395,21 +377,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     },
     "status": 404,
   },
-  "bundle: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": "https://client.example",
-      "access-control-expose-headers": "Date",
-      "access-control-max-age": "86400",
-      "cache-control": "no-store",
-      "content-type": "application/json",
-      "vary": "Origin",
-    },
-    "status": 401,
-  },
   "bundle: no such token": {
     "actors": [],
     "body": "not found",
@@ -451,40 +418,13 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     },
     "status": 204,
   },
-  "code: GET": {
+  "code: the route is gone": {
     "actors": [],
-    "body": "{"error":"method not allowed"}",
+    "body": "Not found",
     "headers": {
-      "allow": "POST, OPTIONS",
-      "content-type": "application/json",
+      "content-type": "text/plain; charset=UTF-8",
     },
-    "status": 405,
-  },
-  "code: no such token": {
-    "actors": [],
-    "body": "{"ok":false,"error":"That code was not recognised."}",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "application/json",
-    },
-    "status": 401,
-  },
-  "code: preflight": {
-    "actors": [],
-    "body": "",
-    "headers": {
-      "allow": "POST, OPTIONS",
-    },
-    "status": 204,
-  },
-  "code: wrong code": {
-    "actors": [],
-    "body": "{"ok":false,"error":"That code was not recognised."}",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "application/json",
-    },
-    "status": 401,
+    "status": 404,
   },
   "db broker: GET": {
     "actors": [],
@@ -516,21 +456,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     },
     "status": 413,
   },
-  "db broker: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": "https://client.example",
-      "access-control-expose-headers": "Date",
-      "access-control-max-age": "86400",
-      "cache-control": "no-store",
-      "content-type": "application/json",
-      "vary": "Origin",
-    },
-    "status": 401,
-  },
   "db broker: no such token": {
     "actors": [],
     "body": "{"ok":false,"error":"not found"}",
@@ -557,15 +482,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
       "vary": "Origin",
     },
     "status": 204,
-  },
-  "draw: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "application/json",
-    },
-    "status": 401,
   },
   "draw: no such token": {
     "actors": [],
@@ -653,15 +569,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     },
     "status": 200,
   },
-  "evaluate: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "application/json",
-    },
-    "status": 401,
-  },
   "evaluate: no such token": {
     "actors": [],
     "body": "{"error":"not found"}",
@@ -709,21 +616,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
       "vary": "Origin",
     },
     "status": 200,
-  },
-  "frame ticket: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": "https://client.example",
-      "access-control-expose-headers": "Date",
-      "access-control-max-age": "86400",
-      "cache-control": "no-store",
-      "content-type": "application/json",
-      "vary": "Origin",
-    },
-    "status": 401,
   },
   "frame ticket: no such token": {
     "actors": [],
@@ -775,14 +667,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "status": 401,
   },
   "frame: app link, no ticket": {
-    "actors": [],
-    "body": "frame ticket required",
-    "headers": {
-      "content-type": "text/plain;charset=UTF-8",
-    },
-    "status": 401,
-  },
-  "frame: contact, no ticket": {
     "actors": [],
     "body": "frame ticket required",
     "headers": {
@@ -863,35 +747,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
       "content-type": "text/html; charset=UTF-8",
     },
     "status": 200,
-  },
-  "page: contact share, bad cookie": {
-    "actors": [],
-    "body": "html 5771 sha256:2a6881a503045768",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "text/html; charset=UTF-8",
-    },
-    "status": 401,
-  },
-  "page: contact share, cookie": {
-    "actors": [
-      "view share-contact: contact:ro",
-    ],
-    "body": "html 6769 sha256:19d39dd44e0c4a58",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "text/html; charset=UTF-8",
-    },
-    "status": 200,
-  },
-  "page: contact share, no cookie": {
-    "actors": [],
-    "body": "html 5771 sha256:2a6881a503045768",
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "text/html; charset=UTF-8",
-    },
-    "status": 401,
   },
   "page: expired (not active)": {
     "actors": [],
@@ -991,21 +846,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     },
     "status": 410,
   },
-  "rows: contact share, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": "https://client.example",
-      "access-control-expose-headers": "Date",
-      "access-control-max-age": "86400",
-      "cache-control": "no-store",
-      "content-type": "application/json",
-      "vary": "Origin",
-    },
-    "status": 401,
-  },
   "rows: no such token": {
     "actors": [],
     "body": "{"error":"not found"}",
@@ -1033,21 +873,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
       "vary": "Origin",
     },
     "status": 204,
-  },
-  "tool broker: contact, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": "https://client.example",
-      "access-control-expose-headers": "Date",
-      "access-control-max-age": "86400",
-      "cache-control": "no-store",
-      "content-type": "application/json",
-      "vary": "Origin",
-    },
-    "status": 401,
   },
   "tool broker: no such token": {
     "actors": [],
@@ -1134,38 +959,6 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
       "vary": "Origin",
     },
     "status": 405,
-  },
-  "view: contact share, cookie": {
-    "actors": [
-      "view share-contact: contact:ro",
-    ],
-    "body": "{"mode":"public","view":{"kind":"note","title":"A note","content":"Some **text**."}}",
-    "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": "https://client.example",
-      "access-control-expose-headers": "Date",
-      "access-control-max-age": "86400",
-      "cache-control": "no-store",
-      "content-type": "application/json",
-      "vary": "Origin",
-    },
-    "status": 200,
-  },
-  "view: contact share, no cookie": {
-    "actors": [],
-    "body": "{"ok":false,"error":"code required"}",
-    "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": "https://client.example",
-      "access-control-expose-headers": "Date",
-      "access-control-max-age": "86400",
-      "cache-control": "no-store",
-      "content-type": "application/json",
-      "vary": "Origin",
-    },
-    "status": 401,
   },
   "view: item gone": {
     "actors": [

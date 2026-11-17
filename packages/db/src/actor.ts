@@ -11,8 +11,7 @@
  *    login(owner): the owner cases the guide names (the Admin assistant with
  *    no user, a run with no login, the owner's Telegram bot).
  *  - assistant: a workspace assistant with no user asking. Writes nothing.
- *  - link: an open public link. contact: a contact share (writes its app's
- *    data when the share allows it).
+ *  - link: an open public link.
  *  - system(reason): a process, an Admin area route, a named repair.
  *  - peer(share): a peer without "Acts as", read-only.
  *
@@ -32,7 +31,6 @@ export type Actor =
   | { kind: 'login'; mode: 'rw' | 'ro' | 'owner'; loginId: string }
   | { kind: 'assistant'; agentId: string | null }
   | { kind: 'link' }
-  | { kind: 'contact'; canWrite: boolean }
   /** `mode: 'ro'`: system work done inside a read-only caller (a read key's
    *  area route, an asSystem in its request) stays read only (systemUnder). */
   | { kind: 'system'; reason: string; mode?: 'ro' }
@@ -60,8 +58,7 @@ export function systemActor(reason: string): Actor {
  * system(reason) for work done on behalf of `outer` (the caller's actor):
  * read only when the caller is a read-only caller from outside, so leaving
  * the caller's scope never turns one into a writer. Those callers are
- * login(ro) (a read key, a peer with Write off), a public link and a
- * contact share without can_write. An assistant with no user still does
+ * login(ro) (a read key, a peer with Write off) and a public link. An assistant with no user still does
  * its own system work (its traces, its turn's rows), as a peer(share) does
  * its audit row: they keep write mode rw here. A named repair or backfill
  * does not use this: it writes for any caller (runReadPathWrite).
@@ -79,8 +76,6 @@ function narrowsSystemWork(outer: Actor): boolean {
       return outer.mode === 'ro';
     case 'link':
       return true;
-    case 'contact':
-      return !outer.canWrite;
     case 'system':
       return outer.mode === 'ro';
     default:
@@ -88,14 +83,11 @@ function narrowsSystemWork(outer: Actor): boolean {
   }
 }
 
-/** What the actor may write: login(ro), assistant, link, peer and a contact
- *  share without can_write read only. */
+/** What the actor may write: login(ro), assistant, link and peer read only. */
 export function writeModeOf(actor: Actor): WriteMode {
   switch (actor.kind) {
     case 'login':
       return actor.mode === 'ro' ? 'ro' : 'rw';
-    case 'contact':
-      return actor.canWrite ? 'rw' : 'ro';
     case 'system':
       return actor.mode === 'ro' ? 'ro' : 'rw';
     default:
@@ -112,8 +104,6 @@ export function actorSetting(actor: Actor): string {
       return `assistant:${actor.agentId ?? 'none'}`;
     case 'link':
       return 'link';
-    case 'contact':
-      return `contact:${actor.canWrite ? 'rw' : 'ro'}`;
     case 'system':
       return `system:${actor.reason}`;
     case 'peer':

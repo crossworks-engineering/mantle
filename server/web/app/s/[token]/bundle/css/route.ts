@@ -3,7 +3,7 @@
  * build only. Mirrors /s/[token]/bundle (same auth: the share token); 404 when the published build carries no CSS (pre-CSS
  * builds) — the sandbox then renders on the host stylesheet alone.
  */
-import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -18,9 +18,7 @@ export const policy = routePolicy({
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
-  const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired(gate.share);
-  const share = gate.kind === 'ok' ? gate.share : null;
+  const share = await openShareLink(token);
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
 
   const app = await getApp(share.ownerId, share.nodeId);

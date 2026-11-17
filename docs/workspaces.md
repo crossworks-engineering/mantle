@@ -192,7 +192,6 @@ every workspace it is granted to, each with a Write switch.
 | Switch Write off for T           | Moderator of its home, or Moderator of T                                  |
 | Open, change or close its link   | to be able to edit it (an app or a Present canvas: Moderator of its home) |
 | Close any public link            | to be an Admin user with the users area                                   |
-| Share it with one contact        | to be an Admin user (its home is not checked)                             |
 | Delete it                        | Moderator of its home (an app: Admin users too, see Apps)                 |
 | Delete an entry of its history   | Moderator of its home                                                     |
 | Move it to another home (H to T) | Moderator of H and Moderator of T                                         |
@@ -217,7 +216,7 @@ every workspace it is granted to, each with a Write switch.
   lives in the Admin workspace only.
 - **Embeds.** Granting a page does not grant what it embeds. The panel
   offers to grant the embeds too, as a step you tick.
-- **Public links and contact shares** stay per item. A public link serves
+- **Public links** stay per item. A public link serves
   its item and its served list: a new embed is not served until someone
   ticks it ([sharing.md](./sharing.md)).
 - **Memory follows the item.** Passages and facts of an item are read only
@@ -451,7 +450,7 @@ A key acts as the login that made it, as that login is now. Its access
   for Admin only (contacts, the journal, table row writes) refuse it.
 - **Shared content.** A key may not change the content of a page or a
   note others read: one granted to a workspace other than Admin, or with
-  a public link or a contact share. What it embeds would become readable
+  a public link. What it embeds would become readable
   to them, and a key cannot confirm that. Its login changes it in the
   app. A linked brain acting as a login is held the same way.
 - **API only.** A member key made before every login had MCP was made for
@@ -466,7 +465,7 @@ own **Write** switch (default off) and its list of allowed risky tools
 narrow it further. Changing **Acts as** turns Write off again. Like a
 key, a peer with Write on may not change the content of a page or a note
 others read (one granted to a workspace other than Admin, or with a
-public link or a contact share): the login changes it in the app.
+public link): the login changes it in the app.
 
 **Vault keys and destinations.** Pairing a vault key with a host it is
 sent to needs the keys area (or the owner). This covers tools that use

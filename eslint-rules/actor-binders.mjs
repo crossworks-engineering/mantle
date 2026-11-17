@@ -31,8 +31,7 @@ export function binderSites(text) {
 /** @type {Record<string, number>} file -> binder calls */
 export const ACTOR_BINDER_PINS = {
   // The export bookkeeping: the dirty stamp and the debounced sync's timer
-  // run as system(app-export), never the writer's actor (a contact share
-  // writes its app's data only). One binder: both go through
+  // run as system(app-export), never the writer's actor. One binder: both go through
   // exportSyncStep (the named system step).
   'packages/content/src/app-table-exports.ts': 1,
   'packages/content/src/kind-root.ts': 1,
@@ -99,7 +98,7 @@ export const ACTOR_BINDER_PINS = {
   'server/mcp/src/server.ts': 2,
   'server/mcp/src/stdio-actor.ts': 2,
   'server/web/lib/auth/session.ts': 2,
-  'server/web/lib/contact-share-gate.ts': 2,
+  'server/web/lib/share-gate.ts': 1,
   // The Control Center's admin channel (docs/control-center.md): a signed
   // `tool` call runs its tool as system(control:tool), once per call.
   'server/web/lib/control/tool-channel.ts': 1,

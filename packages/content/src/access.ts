@@ -26,13 +26,12 @@ export class AccessError extends Error {
 }
 
 export type UnshareItemResult = {
-  /** Whether a live link or contact share was revoked (false: already gone
-   *  or not found). */
+  /** Whether a live link was revoked (false: already gone or not found). */
   revoked: boolean;
 };
 
 /**
- * Turn an item's link or contact share off (the share DELETE route,
+ * Turn an item's link off (the share DELETE route,
  * `node_unshare`, `page_unshare`): a plain revoke. Who reads the item is its
  * grants, which a link never changes. Revokes by share
  * id, so an expired link is retired too.

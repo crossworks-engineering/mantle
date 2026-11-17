@@ -3,8 +3,7 @@
  * and the dev console answer, recorded BEFORE they moved onto the one gate
  * (enterCall) and held equal after it. Step 3b changes no behaviour, so
  * every record stays as it is: the status and body each route answers, the
- * audit rows it writes (the app's Activity, the share's trail, the app's
- * error log), and what the call touched: which handler ran, with what
+ * audit rows it writes (the app's Activity and the app's error log), and what the call touched: which handler ran, with what
  * input, as which actor, in which scope, under which create home, whole on
  * the system pool or not, and each remote call (a connector's server, an
  * http tool's fetch).
@@ -19,9 +18,8 @@
  *
  * A10 #9 (one runAppToolBroker, lib/app-tool-broker.ts) added audit rows
  * and changed nothing else: every call the owner's run judged lands its
- * Activity row (main logged none at admin rules, and no refusal at any),
- * and a contact link's refused or failed call lands its error row (main
- * logged none). Each added row comes after the rows main wrote, in the
+ * Activity row (main logged none at admin rules, and no refusal at any).
+ * Each added row comes after the rows main wrote, in the
  * same order (server/web/server/a10-app-broker-sweep.test.ts names them
  * cell by cell).
  *
@@ -32,8 +30,7 @@
  * pre-check's first test), and the database refuses that write where a scope
  * is.
  *
- * The entries: the shared link broker (a contact share), a member's run of
- * an app (the owner route with a member login, lib/app-runner.ts), an
+ * The entries: a member's run of an app (the owner route with a member login, lib/app-runner.ts), an
  * admin's run of an app the Admin workspace alone holds (admin rules), an
  * admin's run of an app another workspace holds (team rules), and the dev
  * console (/api/dev-tools/execute-tool). The tools: a read, a write, an item
@@ -149,7 +146,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
   /** The scope withViewer enters, and the actor it binds (scopeActor). */
   const viewerScope = (actsFor: Record<string, unknown>) => {
-    if ('link' in actsFor) return { kind: 'link', loginId: null, ws: [], modWs: [] };
     const login = String(actsFor.login).toLowerCase();
     // An app run reads through the app: its holders beyond Admin met with
     // the runner's workspaces (here Team).
@@ -164,13 +160,9 @@ vi.mock('@mantle/db', async (importOriginal) => {
       const next = viewerScope(actsFor);
       const outer = real.currentActor();
       const actor =
-        next.kind === 'link'
-          ? outer?.kind === 'contact' || outer?.kind === 'link'
-            ? outer
-            : ({ kind: 'link' } as const)
-          : outer?.kind === 'login' && outer.loginId === next.loginId
-            ? outer
-            : real.loginActor(next.loginId!, 'rw');
+        outer?.kind === 'login' && outer.loginId === next.loginId
+          ? outer
+          : real.loginActor(next.loginId, 'rw');
       h.scope = next;
       try {
         return await real.runAsActor(actor, fn);
@@ -308,7 +300,7 @@ vi.mock('../../../packages/tools/src/registry', async (importOriginal) => {
 /** Who an actor is (its kind and id or reason), its write mode apart. */
 function who(actor: unknown): unknown {
   if (!actor || typeof actor !== 'object') return null;
-  const { mode: _mode, canWrite: _canWrite, ...rest } = actor as Record<string, unknown>;
+  const { mode: _mode, ...rest } = actor as Record<string, unknown>;
   return rest;
 }
 
@@ -357,23 +349,6 @@ vi.mock('@/lib/rate-limit', () => ({
   clientIpKey: () => 'ip',
 }));
 
-const SHARE = {
-  id: 'share-2',
-  ownerId: ANCHOR,
-  nodeId: APP,
-  nodeType: 'app',
-  contactId: 'contact-7',
-  canWrite: true,
-  settings: { served: ['page-9'] },
-};
-vi.mock('@/lib/contact-share-gate', () => ({
-  gateShare: async () => ({ kind: 'ok', share: SHARE }),
-  contactCodeRequired: () => new Response('code', { status: 401 }),
-}));
-vi.mock('@/lib/shares', () => ({
-  liveServedIds: async (s: { nodeId: string; settings?: { served?: string[] } }) =>
-    new Set([s.nodeId, ...(s.settings?.served ?? [])]),
-}));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getAppRuntime: async (_owner: string, id: string) =>
@@ -398,7 +373,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
         }
       : null,
   recordAppAccess: (e: unknown) => h.audit.push(['app-access', e]),
-  recordShareAccess: (e: unknown) => h.audit.push(['share-access', e]),
   recordAppError: (e: unknown) => h.audit.push(['app-error', e]),
 }));
 
@@ -515,14 +489,12 @@ const CASES: readonly ToolCase[] = [
 ];
 
 type Entry =
-  | 'shared link (contact)'
   | 'member app'
   | 'owner app, Admin only (admin rules)'
   | 'owner app, another workspace holds it (team rules)'
   | 'dev console';
 
 const ENTRIES: readonly Entry[] = [
-  'shared link (contact)',
   'member app',
   'owner app, Admin only (admin rules)',
   'owner app, another workspace holds it (team rules)',
@@ -530,13 +502,11 @@ const ENTRIES: readonly Entry[] = [
 ];
 
 type Route = (req: Request, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
-let shareBroker: Route;
 let appBroker: Route;
 let devConsole: (req: Request) => Promise<Response>;
 
 beforeAll(async () => {
   process.env.SESSION_SECRET ??= 'x'.repeat(48);
-  shareBroker = (await import('@/app/s/[token]/tool-broker/route')).POST as unknown as Route;
   appBroker = (await import('@/app/api/apps/[id]/tool-broker/route')).POST as unknown as Route;
   devConsole = (await import('@/app/api/dev-tools/execute-tool/route')).POST;
 }, 60_000);
@@ -571,11 +541,6 @@ async function call(entry: Entry, c: ToolCase): Promise<unknown> {
   let actor: Actor;
   let run: () => Promise<Response>;
   switch (entry) {
-    case 'shared link (contact)':
-      h.scope = null;
-      actor = { kind: 'contact', canWrite: true };
-      run = () => shareBroker(post(body), { params: Promise.resolve({ token: 'contact' }) });
-      break;
     case 'member app':
       h.login = 'member';
       h.toolRules = 'team';
@@ -651,7 +616,7 @@ describe('app broker parity (A5 step 3b)', () => {
     // there): the stubbed refusal is not reached now.
     const item = JSON.stringify(await call('dev console', CASES[3]!));
     expect(item).toContain('"ran":"page_update"');
-    const remote = JSON.stringify(await call('shared link (contact)', CASES[11]!));
+    const remote = JSON.stringify(await call('member app', CASES[11]!));
     expect(remote).toContain('"remote":"http"');
     const conn = JSON.stringify(await call('member app', CASES[10]!));
     expect(conn).toContain('"remote":"mcp"');
@@ -669,7 +634,6 @@ describe('app broker parity (A5 step 3b)', () => {
 
   it('every run is bound to the gate, as its entry names it (A5 step 3b)', async () => {
     const expected: Record<Entry, string> = {
-      'shared link (contact)': 'contact',
       'member app': 'app',
       'owner app, Admin only (admin rules)': 'app',
       'owner app, another workspace holds it (team rules)': 'app',

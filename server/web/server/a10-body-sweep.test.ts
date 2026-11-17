@@ -106,7 +106,6 @@ vi.mock('../lib/pair-code', async (importOriginal) => ({
 vi.mock('../lib/shares', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   resolveActiveShareByToken: async () => null,
-  resolveActiveShareRowByToken: async () => null,
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -198,25 +197,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
     loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
     createHomeIntent: async () => ({ createWs: null, privateWs: null }),
     // An Admin act's definer (migration 0308) finds no row here, as the
-    // reads above: no such contact or entity to revoke or merge. The share
-    // act wrote in a transaction on main, which wants a database: it throws
-    // as that did. Only the statement's text chunks are read.
-    loginDefinerCall: (async (
-      _login: string,
-      _scope: string,
-      stmt: { queryChunks?: unknown[] },
-    ) => {
-      const text = (stmt?.queryChunks ?? [])
-        .map((c) => {
-          const v = (c as { value?: unknown } | null)?.value;
-          return Array.isArray(v) ? v.join('') : '';
-        })
-        .join(' ');
-      if (text.includes('mantle_share_with_contacts')) {
-        throw new Error('DATABASE_URL must be set');
-      }
-      return [];
-    }) as unknown as typeof real.loginDefinerCall,
+    // reads above: no such entity to merge.
+    loginDefinerCall: (async () => []) as unknown as typeof real.loginDefinerCall,
   };
 });
 // The library's item check (assertItemRight, @mantle/db item-rights.ts)
@@ -269,6 +251,19 @@ if (!hasManifest && process.env.CI) {
 const RECORD = process.env.A10_BODY_SWEEP_RECORD === '1';
 const BASELINE = join(here, '__snapshots__/a10-body-sweep.txt');
 const BODIES = join(here, '__snapshots__/a10-body-sweep.bodies.json');
+
+/**
+ * Rows gone since the record was taken, each with why: their recorded
+ * cells are left out of the compare (as a10-flags.test.ts RETIRED).
+ */
+const RETIRED_ROWS: Readonly<Record<string, string>> = {
+  'DELETE /api/contacts/:id/shares': 'contact shares are gone (migration 0378)',
+  'POST /api/contacts/:id/sharing': 'contact shares and their codes are gone (migration 0378)',
+  'POST /api/shares/contacts': 'contact shares are gone (migration 0378)',
+  'POST /s/:token/code': 'contact shares and their codes are gone (migration 0378)',
+};
+const retiredCell = (cell: string) =>
+  Object.keys(RETIRED_ROWS).some((row) => cell.startsWith(`${row} `));
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const MB = 1024 * 1024;
 /** The clock the sweep starts at (a cookie's age, a timestamp in a body). */
@@ -458,18 +453,6 @@ function changeKind(cell: string, main: string, now: string): string | null {
   // main read no row through the stand-in and answered on.
   if (now === OPAQUE && cell.startsWith('DELETE /api/files/files ')) {
     return 'item-check-first (F4 fix round 2: asked of the database, the stand-in has none)';
-  }
-  // The contact sharing act is a definer (migration 0308): the new code is
-  // made, keyed by MANTLE_MASTER_KEY (cleared in this sweep), before the
-  // definer answers "not a contact", where main read no contact through
-  // the stand-in first. On a box the key is always set; the real answers:
-  // s6-c1-admin-acts.db.test.ts.
-  if (
-    now === OPAQUE &&
-    cell.startsWith('POST /api/contacts/:id/sharing ') &&
-    /"not found"/.test(main)
-  ) {
-    return 'code-first (Admin act definer, 0308: the code is made before the contact is asked)';
   }
   // An Admin user's share close is a definer (migration 0310): the close
   // with the users area is asked of the database first (loginDefinerCall), which
@@ -756,6 +739,7 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
     for (const line of readFileSync(BASELINE, 'utf8').split('\n')) {
       if (!line || line.startsWith('#')) continue;
       const at = line.indexOf(' => ');
+      if (retiredCell(line.slice(0, at))) continue;
       out.set(line.slice(0, at), line.slice(at + 4));
     }
     return out;

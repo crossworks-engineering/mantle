@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { openShareLink } from '@/lib/share-gate';
 import { isEmbeddedPresentAllowed } from '@/lib/shares';
 import { getPresentPoster } from '@/lib/presents';
 import { CACHE_CONTROL } from '@/lib/cache-control';
@@ -38,9 +38,7 @@ export async function GET(
 
   // The gate took the row's per-address limit (lib/route-limits.ts sharePresentEmbed).
 
-  const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired(gate.share);
-  const share = gate.kind === 'ok' ? gate.share : null;
+  const share = await openShareLink(token);
   if (!share || !(await isEmbeddedPresentAllowed(share, presentId))) return notFound();
 
   const poster = await getPresentPoster(share.ownerId, presentId);

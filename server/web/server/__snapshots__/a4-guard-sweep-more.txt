@@ -42,8 +42,7 @@ a40 200 content-type=text/html; charset=utf-8 cache-control=no-store
 a41 307 location=/login [requireOwnerForRender threw RedirectError /login actor=system:http:render out=-]
 a42 404 content-type=text/plain; charset=UTF-8
 a43 404 content-type=text/plain;charset=UTF-8
-a44 500 content-type=text/plain; charset=UTF-8
-a45 404 content-type=application/json {"ok":false,"error":"not found"}
+a44 404 content-type=application/json {"ok":false,"error":"not found"}
 
 # cells that wanted a database: 0 in the first sweep; 0 still do with the reads stood in
 
@@ -235,10 +234,6 @@ GET /api/contacts/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotate
 PATCH /api/contacts/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 DELETE /api/contacts/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/contacts/:id: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-GET /api/contacts/:id/shares: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
-DELETE /api/contacts/:id/shares: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
-HEAD /api/contacts/:id/shares: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-POST /api/contacts/:id/sharing: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/control/call: disabled-cookie=a28 bumped-cookie=a28 gone-cookie=a28 rotated-bearer=a28 expired-bearer=a28 key-unknown=a28 key-revoked=a28
 GET /api/dashboard: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/dashboard: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
@@ -791,7 +786,6 @@ PATCH /api/shares/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotate
 DELETE /api/shares/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 GET /api/shares/all: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/shares/all: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
-POST /api/shares/contacts: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 GET /api/shell: disabled-cookie=a2 bumped-cookie=a2 gone-cookie=a2 rotated-bearer=a2 expired-bearer=a2 key-unknown=a3 key-revoked=a3
 HEAD /api/shell: disabled-cookie=a4 bumped-cookie=a4 gone-cookie=a4 rotated-bearer=a4 expired-bearer=a4 key-unknown=a5 key-revoked=a5
 GET /api/skills: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
@@ -1039,8 +1033,7 @@ HEAD /s/:token/bundle/css: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43
 GET /s/:token/canvas/frame: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 HEAD /s/:token/canvas/frame: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 POST /s/:token/canvas/frame-ticket: disabled-cookie=a43 bumped-cookie=a43 gone-cookie=a43 rotated-bearer=a43 expired-bearer=a43 key-unknown=a43 key-revoked=a43
-POST /s/:token/code: disabled-cookie=a44 bumped-cookie=a44 gone-cookie=a44 rotated-bearer=a44 expired-bearer=a44 key-unknown=a44 key-revoked=a44
-POST /s/:token/db-broker: disabled-cookie=a45 bumped-cookie=a45 gone-cookie=a45 rotated-bearer=a45 expired-bearer=a45 key-unknown=a45 key-revoked=a45
+POST /s/:token/db-broker: disabled-cookie=a44 bumped-cookie=a44 gone-cookie=a44 rotated-bearer=a44 expired-bearer=a44 key-unknown=a44 key-revoked=a44
 GET /s/:token/draw: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 HEAD /s/:token/draw: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 GET /s/:token/draw/:drawId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
@@ -1053,7 +1046,7 @@ GET /s/:token/present/:presentId: disabled-cookie=a9 bumped-cookie=a9 gone-cooki
 HEAD /s/:token/present/:presentId: disabled-cookie=a9 bumped-cookie=a9 gone-cookie=a9 rotated-bearer=a9 expired-bearer=a9 key-unknown=a9 key-revoked=a9
 GET /s/:token/rows: disabled-cookie=a28 bumped-cookie=a28 gone-cookie=a28 rotated-bearer=a28 expired-bearer=a28 key-unknown=a28 key-revoked=a28
 HEAD /s/:token/rows: disabled-cookie=a21 bumped-cookie=a21 gone-cookie=a21 rotated-bearer=a21 expired-bearer=a21 key-unknown=a21 key-revoked=a21
-POST /s/:token/tool-broker: disabled-cookie=a45 bumped-cookie=a45 gone-cookie=a45 rotated-bearer=a45 expired-bearer=a45 key-unknown=a45 key-revoked=a45
+POST /s/:token/tool-broker: disabled-cookie=a44 bumped-cookie=a44 gone-cookie=a44 rotated-bearer=a44 expired-bearer=a44 key-unknown=a44 key-revoked=a44
 GET /s/:token/view: disabled-cookie=a28 bumped-cookie=a28 gone-cookie=a28 rotated-bearer=a28 expired-bearer=a28 key-unknown=a28 key-revoked=a28
 HEAD /s/:token/view: disabled-cookie=a21 bumped-cookie=a21 gone-cookie=a21 rotated-bearer=a21 expired-bearer=a21 key-unknown=a21 key-revoked=a21
 GET /scim/v2/ResourceTypes: disabled-cookie=a28 bumped-cookie=a28 gone-cookie=a28 rotated-bearer=a28 expired-bearer=a28 key-unknown=a28 key-revoked=a28

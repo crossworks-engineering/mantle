@@ -71,23 +71,6 @@ export const NARROW_SCAN_OPEN: Readonly<
     tag: 'covered-across-files',
     why: "saveAppPins: only PUT /api/app-nav/pins, a content route: the login's own request scope (the login write gateway)",
   },
-  'packages/content/src/contact-share-codes.ts insert public.share_access_log': {
-    n: 1,
-    tag: 'covered-across-files',
-    why: 'checkContactShareCode: only POST /s/:token/code, a public route with no login (no exit: the system pool, full route)',
-  },
-  'packages/content/src/contact-share-codes.ts update public.contact_share_codes [failed_attempts,failed_since,last_used_at]':
-    {
-      n: 1,
-      tag: 'covered-across-files',
-      why: 'checkContactShareCode: only POST /s/:token/code, a public route with no login (no exit: the system pool, full route)',
-    },
-  'packages/content/src/contact-share-codes.ts update public.contact_share_codes [failed_attempts,failed_since,locked_until]':
-    {
-      n: 1,
-      tag: 'covered-across-files',
-      why: 'checkContactShareCode: only POST /s/:token/code, a public route with no login (no exit: the system pool, full route)',
-    },
   'packages/content/src/entity-dedup.ts insert public.entity_merge_dismissals': {
     n: 1,
     tag: 'covered-across-files',
@@ -123,16 +106,6 @@ export const NARROW_SCAN_OPEN: Readonly<
     n: 1,
     tag: 'covered-across-files',
     why: 'verifyInboundToken: the inbound peer bearer check (federation routes, the /api/mcp bearer) runs before any login or exit: full route',
-  },
-  'packages/content/src/share-access-log.ts delete public.share_access_log': {
-    n: 1,
-    tag: 'covered-across-files',
-    why: "reapShareAccessLog: only the maintenance sweep app-access-log-reap (nightly cron, or the runner's spawned script): system work",
-  },
-  'packages/content/src/share-access-log.ts insert public.share_access_log': {
-    n: 1,
-    tag: 'covered-across-files',
-    why: "recordShareAccess: only the public /s/:token routes, the share page, the contact gate and the link's app broker: a public route with no login (no exit: the system pool, full route)",
   },
   'packages/content/src/tree/apps-nav.ts insert public.item_marks [open_count,opened_at]': {
     n: 1,
@@ -524,14 +497,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_client_sourced_any:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
-  mantle_contact_shares_revoke_all:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
-  mantle_contact_shares_revoke_rows:
-    'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_contact_sharing_rows:
-    'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_contact_sharing_set:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
   mantle_conversation_taint:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_conversation_taint_keep:
@@ -628,12 +593,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'denied to the runtime role too (RUNTIME_DENIED_FUNCTIONS): migrate, the operator check switch or tests only',
   mantle_share_close_admin:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_share_contact_write_set:
-    'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
-  mantle_share_with_contacts:
-    "the runtime role's (RUNTIME_SYSTEM_FUNCTIONS): full system work on the system pool, or a login scope",
-  mantle_share_with_contacts_rows:
-    'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_snapshot_bytes:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_space_settle_promotion:
@@ -723,19 +682,12 @@ export const NARROW_SCAN_FN_SYSTEM_FILES: Readonly<Record<string, string>> = Obj
  *  exact (a new call, in any file, fails; so does one gone: shrink it). */
 export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.freeze({
   'packages/content/src/admin-acts.ts mantle_app_trash_act': 1,
-  'packages/content/src/admin-acts.ts mantle_contact_shares_revoke_all': 1,
-  'packages/content/src/admin-acts.ts mantle_contact_sharing_set': 1,
   'packages/content/src/admin-acts.ts mantle_entity_merge': 1,
   'packages/content/src/admin-acts.ts mantle_share_close_admin': 1,
-  'packages/content/src/admin-acts.ts mantle_share_contact_write_set': 1,
-  'packages/content/src/admin-acts.ts mantle_share_with_contacts': 1,
   'packages/content/src/app-table-exports.ts mantle_mark_export_client_sourced': 1,
   'packages/content/src/app-trash.ts mantle_deleted_apps': 1,
   'packages/content/src/canvas-data.ts mantle_canvas_data_delete': 1,
   'packages/content/src/canvas-data.ts mantle_canvas_data_put': 1,
-  'packages/content/src/contact-share-codes.ts mantle_contact_sharing_rows': 1,
-  'packages/content/src/contact-shares.ts mantle_contact_shares_revoke_rows': 1,
-  'packages/content/src/contact-shares.ts mantle_share_with_contacts_rows': 1,
   'packages/content/src/entity-dedup.ts mantle_entity_merge_rows': 1,
   'packages/content/src/link-serve.ts mantle_item_embeds': 1,
   'packages/content/src/link-serve.ts mantle_ws_admin_id': 1,

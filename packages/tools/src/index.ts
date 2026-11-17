@@ -362,7 +362,6 @@ export {
   outsideCallLogDetail,
   OUTSIDE_WRITE_LOG_INPUT_MAX,
   type OutsideToolVerdict,
-  contactAppToolVerdict,
   loginConnectorRefused,
   loginConnectorRule,
   type LoginConnectorRule,

@@ -19,8 +19,6 @@ export const SYSTEM_DB_ALLOWLIST = [
   'packages/embeddings/src/index.ts',
   'packages/content/src/team-messages.ts',
   'packages/content/src/app-access-log.ts',
-  // The contact share trail (0214): written for any visitor, like the above.
-  'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
   // The member chat traces' token sums; the ledger itself is
   // written through its definers (0326, login-definer.ts).
@@ -109,7 +107,6 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The state of a pipeline: read and set in the Admin's request or MCP
   // call, read by an extract outside every scope.
   'packages/content/src/pipeline-state.ts': 'narrow',
-  'packages/content/src/share-access-log.ts': 'narrow',
   'packages/content/src/team-access-log.ts': 'narrow',
   'packages/content/src/team-messages.ts': 'narrow',
   // An assistant's and an AI worker's use counters (last_used_at,

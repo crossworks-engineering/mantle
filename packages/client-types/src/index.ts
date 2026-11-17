@@ -33,7 +33,6 @@ export * from './dto/turns';
 export * from './dto/rows';
 export * from './dto/views';
 export * from './dto/recall';
-export * from './dto/contact-shares';
 export * from './dto/services';
 export * from './dto/box-status';
 export * from './dto/update-notice';
@@ -303,7 +302,6 @@ export type { NavFavoriteItem, Shell, ShellFeatures, ShellRole } from './dto/she
 export type { HomeDesk, HomeDeskItem, HomeDeskPutBody, HomeDeskState } from './dto/home-desk';
 export type {
   GrantAddBody,
-  GrantContactShare,
   GrantEmbed,
   GrantEmbedSkip,
   GrantEmbedsBody,
