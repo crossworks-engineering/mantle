@@ -364,14 +364,20 @@ export function askAnswerOf(
   text: string,
   fields: readonly PipelineAskField[],
   list: boolean,
-): { values: Record<string, string | null>; list?: PipelineAskListItem[] } | null {
-  const parsed = answerObjectOf(text) ?? (list ? cutAnswerOf(text) : null);
+): { values: Record<string, string | null>; list?: PipelineAskListItem[]; cut?: true } | null {
+  const whole = answerObjectOf(text);
+  const parsed = whole ?? (list ? cutAnswerOf(text) : null);
   if (!parsed) return null;
   if (!list) return { values: valuesIn(parsed, fields) };
   // A model that wrote the fields at the top, with no "fields" key: read
   // them there.
   const named = isObject(parsed.fields) ? parsed.fields : parsed;
-  return { values: valuesIn(named, fields), list: askListOf(parsed.list) };
+  return {
+    values: valuesIn(named, fields),
+    list: askListOf(parsed.list),
+    // The cap cut the answer: the list may be short. The trace step says so.
+    ...(whole ? {} : { cut: true as const }),
+  };
 }
 
 /**
@@ -535,7 +541,7 @@ export async function agentRows(
     const old = byKey.get(a.key);
     if (old) {
       rows.push(rowOf(a.key, old));
-      keepList(text(old[AGENT_HASH_COLUMN]));
+      keepList(text(old[AGENT_HASH_COLUMN]), a);
     }
   }
   return {

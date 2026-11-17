@@ -403,7 +403,10 @@ describe('the list part of an ask', () => {
     expect(askAnswerOf(cut, FIELDS, true)).toEqual({
       values: { 'Line number': '6-P-101', Revision: 'B' },
       list: [{ text: 'P-101', class: 'tag' }],
+      cut: true,
     });
+    // A whole answer is not marked.
+    expect(askAnswerOf(whole, FIELDS, true)).not.toHaveProperty('cut');
     // An ask with no list part reads no cut answer.
     expect(askAnswerOf('{"Line number":"6-P', FIELDS, false)).toBeNull();
     expect(askAnswerOf('{"fields":{"Line', FIELDS, true)).toBeNull();
@@ -567,6 +570,35 @@ describe('the list part of an ask', () => {
       }
       expect(rows.listSheet!.rows).toEqual(first.listSheet!.rows);
       expect(rows.sheet!.rows).toEqual(first.sheet!.rows);
+    });
+
+    it('a stop keeps the older rows of two equal pages, each under its own key and page', async () => {
+      const equal = (picture: string) =>
+        checkAsks(
+          LISTER,
+          [
+            listCall('page-1', 'b.png', 1),
+            listCall('page-2', picture, 2),
+            listCall('page-3', picture, 3),
+          ],
+          new Map([...pictures, ['c.png', PNG('c')]]),
+        );
+      const first = await agentRows('Title block', equal('a.png'), [], paid().fn, LIST);
+      // Every picture is new now (c.png), and the day cap stops at page 2.
+      let rows = first;
+      for (let run = 0; run < 3; run += 1) {
+        rows = await agentRows(
+          'Title block',
+          equal('c.png'),
+          storedOf(rows.sheet),
+          paid(() => ({ ok: false, error: 'not_available', reason: 'day_cap' })).fn,
+          { tab: 'Sheet list', stored: storedOf(rows.listSheet) },
+        );
+        expect(rows.stopped).toBe('day_cap');
+      }
+      expect(rows.listSheet!.rows.map((r) => [r[0], r[1], r[2]])).toEqual(
+        first.listSheet!.rows.map((r) => [r[0], r[1], r[2]]),
+      );
     });
 
     it('an Agent with no list tab gives no list sheet', async () => {

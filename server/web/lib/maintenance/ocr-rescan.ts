@@ -227,7 +227,9 @@ export async function clearForRescan(
   id: string,
   opts: { stamp?: Record<string, string>; onlyIf?: SQL } = {},
 ): Promise<boolean> {
-  const keys = [...BYTE_DERIVED_DATA_KEYS, 'extract_skipped'];
+  // The text of the Agents' tabs stays: the bytes and their tabs do not
+  // change, and the re-extract queues no Agent run to write it again.
+  const keys = [...BYTE_DERIVED_DATA_KEYS.filter((k) => k !== 'agent_text'), 'extract_skipped'];
   // The node's head first (workspaces plan U1).
   return withDeadlockRetry(() =>
     withHeads([id], 'update', async (tx) => {

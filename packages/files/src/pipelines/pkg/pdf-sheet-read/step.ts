@@ -97,9 +97,6 @@ export const PAGE_DPI = 200;
 export const CORNER_DPI = 300;
 export const MAX_SIDE = 4800;
 export const PICTURE_MAX_BYTES = 5 * 1024 * 1024;
-/** A picture missing this close to the job's deadline is one the time ran
- *  out for (the parser starts no child under 3 s). */
-export const TIME_MARGIN_MS = 5_000;
 
 const isPng = (b: Buffer) => b.length >= 4 && b[0] === 0x89 && b[1] === 0x50;
 /** The file name of a picture, by its type. */
@@ -131,7 +128,13 @@ export const step: PipelineStep = async (req, job) => {
   const count = await withPdf(await job.bytes(), {}, async ({ doc }) => doc.numPages).catch(
     () => null,
   );
-  if (!count) return { status: 'ok', calls: [], warnings: ['The file could not be opened.'] };
+  // A run that cannot draw a page that is there ends `failed`: nothing is
+  // asked or written, so the paid rows of a run before stay as they are
+  // (the time ran out, the child was stopped, pdfjs cannot draw the page).
+  // The trace says why. A page pdfjs can never draw keeps this Agent off
+  // the file until a person lowers the option `pages`.
+  const failed = (why: string) => ({ status: 'failed' as const, warnings: [why] });
+  if (!count) return failed('The file could not be opened.');
   const pages = Math.min(pagesOf(req.options), count);
   const readerOptions =
     isObject(req.state) && isObject(req.state.readerOptions) ? req.state.readerOptions : {};
@@ -142,22 +145,11 @@ export const step: PipelineStep = async (req, job) => {
     maxSide: MAX_SIDE,
     maxBytes: PICTURE_MAX_BYTES,
   });
-  // A picture the time ran out for (the child stopped at the job's
-  // deadline) fails the run: nothing is asked or written, so the paid rows
-  // of a run before stay as they are. A picture that cannot be drawn with
-  // time left (a page pdfjs cannot draw) is left out, with a warning: a
-  // run again would draw it no better.
-  const timeUp = () => Date.now() >= job.deadline - TIME_MARGIN_MS;
-  const ranOut = { status: 'failed' as const, warnings: ['The time ran out before the pictures.'] };
   const warnings: string[] = [];
 
   // Page 1 first: its size on paper places the corner.
   const [first] = await job.pdfPictures([whole(1)], job.deadline);
-  if (!first) {
-    return timeUp()
-      ? ranOut
-      : { status: 'ok', calls: [], warnings: ['Page 1 could not be drawn.'] };
-  }
+  if (!first) return failed('Page 1 could not be drawn.');
   const later = Array.from({ length: pages - 1 }, (_, i) => whole(i + 2));
   const [corner, ...rest] = await job.pdfPictures(
     [
@@ -172,7 +164,14 @@ export const step: PipelineStep = async (req, job) => {
     ],
     job.deadline,
   );
-  if ([corner, ...rest].some((p) => !p) && timeUp()) return ranOut;
+  const lost = [corner, ...rest].findIndex((p) => !p);
+  if (lost >= 0) {
+    return failed(
+      lost === 0
+        ? 'The title block of page 1 could not be drawn.'
+        : `Page ${lost + 1} could not be drawn.`,
+    );
+  }
 
   const calls: PipelineCall[] = [];
   const add = async (
@@ -181,10 +180,7 @@ export const step: PipelineStep = async (req, job) => {
     picture: { png: Buffer } | null | undefined,
     list: boolean,
   ) => {
-    if (!picture) {
-      warnings.push(`The picture ${key} could not be drawn.`);
-      return;
-    }
+    if (!picture) return;
     if (picture.png.length > PICTURE_MAX_BYTES) {
       warnings.push(`The picture ${key} is over 5 MB, and is not read.`);
       return;

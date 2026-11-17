@@ -1069,12 +1069,12 @@ PNG is past 5 MB (`PageWindow.maxBytes`, `packages/files/src/rasterize.ts`):
 11 pictures stay under the parser's answer budget of 64 MB, and each under
 the 10 MB of an ask. A picture still past 5 MB is left out, with a warning.
 
-**A picture that is not drawn.** When the time of the job ran out before a
-picture (the child is stopped at the job's deadline), the step ends
-`failed`: nothing is asked and nothing is written, so the paid rows of a
-run before stay as they are. A picture that pdfjs cannot draw with time
-left is left out, with a warning: a run again would draw it no better. A
-file pdfjs cannot open gives no ask and a warning.
+**A picture that is not drawn.** When a page that is there gives no picture
+(the time ran out, the child was stopped, pdfjs cannot draw it), or the
+file does not open, the step ends `failed`: nothing is asked and nothing is
+written, so the paid rows of a run before stay as they are. The trace says
+which page. A page pdfjs can never draw keeps the Agent off that file until
+a person lowers the option `pages`.
 
 Why the whole page and no tiles: in the P0 score of 20 site PDFs, the old
 whole-page read (144 DPI; about 110 on an A0 under its pixel cap) found 24 of
@@ -1132,8 +1132,8 @@ name the page of the picture:
   question asks for one line of JSON, `fields` first. An answer the cap
   cut is not lost: the `fields` object when it is whole, and each whole
   item before the cut, are read (`cutAnswerOf`), each part as JSON on its
-  own. A model that wrote the fields at the top, with no `fields` key, is
-  read there.
+  own; the trace step of the ask says `cut`. A model that wrote the fields
+  at the top, with no `fields` key, is read there.
 - **The tab.** An Agent with a list part has a second tab in
   `produces.tabs`; a list part from an Agent with one tab is refused before
   any call (`checkAsks`). One row for each item: `Key` (the ask),
@@ -1166,6 +1166,8 @@ from the tabs. This holds for every Agent, `iso-title-block` too.
 - One write, with no model and no announcement: an UPDATE of a node's data
   starts no extract, and `updated_at` stays (`mantle.keep_updated_at`). It
   writes only while the node holds the bytes the tabs were read from.
+- An OCR rescan keeps the key: the bytes and their tabs do not change, and
+  the re-extract queues no Agent run.
 - `agent_text` is a byte key of the extractor's (migration 0377,
   `BYTE_DERIVED_DATA_KEYS`): new bytes drop it, the name-only mode strips it
   with `text`, and a file in that mode gets none. A person's write cannot set

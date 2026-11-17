@@ -144,8 +144,9 @@ export function pipelineAskOf(
           h.setError('the answer is no JSON object');
           return { ok: false, error: 'failed', reason: 'no_json' };
         }
-        if (answer.list) h.setMeta({ listItems: answer.list.length });
-        return { ok: true, output: { ...answer, model: out.model ?? '' } };
+        const { cut, ...got } = answer;
+        if (got.list) h.setMeta({ listItems: got.list.length, ...(cut ? { cut: true } : {}) });
+        return { ok: true, output: { ...got, model: out.model ?? '' } };
       },
     );
   };

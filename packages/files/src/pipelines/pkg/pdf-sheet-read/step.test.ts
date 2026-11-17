@@ -221,52 +221,48 @@ describe('the step of pdf-sheet-read', () => {
     expect(inputs(only.calls).map((c) => c.key)).toEqual(['page-1-title-block', 'page-1']);
   });
 
-  it('a file that cannot be opened: no ask, a warning', async () => {
+  it('a file that cannot be opened fails: nothing is asked or written', async () => {
     const result = await step(request('scan'), jobOf(Buffer.from('not a pdf')).job);
-    expect(result).toEqual({
-      status: 'ok',
-      calls: [],
-      warnings: ['The file could not be opened.'],
-    });
+    expect(result).toEqual({ status: 'failed', warnings: ['The file could not be opened.'] });
   });
 
-  /** A job whose child draws no picture for the pages in `lost`, and whose
-   *  deadline is `left` ms away. */
-  function lossyJob(bytes: Buffer, lost: number[], left: number, corner = true) {
+  /** A job whose child draws no picture for the windows `lose` picks. */
+  function lossyJob(bytes: Buffer, lose: (w: { pageNumber: number; box?: unknown }) => boolean) {
     const { job } = jobOf(bytes);
     return {
       ...job,
-      deadline: Date.now() + left,
       pdfPictures: async (windows: Parameters<typeof job.pdfPictures>[0]) => {
         const out = await renderPdfWindows(bytes, windows);
-        return out.map((p, i) =>
-          lost.includes(windows[i]!.pageNumber) && (corner || !windows[i]!.box) ? null : p,
-        );
+        return out.map((p, i) => (lose(windows[i]!) ? null : p));
       },
     };
   }
 
-  it('a picture the time ran out for fails the run: nothing is asked or written', async () => {
-    const result = await step(request('scan'), lossyJob(drawingPdf(3), [3], 1_000));
-    expect(result).toEqual({
+  it('a page that is there and gives no picture fails the run: nothing is asked or written', async () => {
+    // The time ran out, the child was stopped, or pdfjs cannot draw it: a
+    // run that wrote fewer asks would replace the paid rows of the others.
+    const three = drawingPdf(3);
+    expect(
+      await step(
+        request('scan'),
+        lossyJob(three, (w) => w.pageNumber === 3),
+      ),
+    ).toEqual({
       status: 'failed',
-      warnings: ['The time ran out before the pictures.'],
+      warnings: ['Page 3 could not be drawn.'],
     });
-    const first = await step(request('scan'), lossyJob(drawingPdf(1), [1], 1_000));
-    expect(first.status).toBe('failed');
-  });
-
-  it('a page that cannot be drawn with time left is left out, with a warning', async () => {
-    const result = await step(request('scan'), lossyJob(drawingPdf(3), [2], 120_000));
-    expect(result.status).toBe('ok');
-    expect(inputs(result.calls).map((c) => c.key)).toEqual([
-      'page-1-title-block',
-      'page-1',
-      'page-3',
-    ]);
-    expect(result.warnings).toEqual(['The picture page-2 could not be drawn.']);
-    const none = await step(request('scan'), lossyJob(drawingPdf(1), [1], 120_000));
-    expect(none).toEqual({ status: 'ok', calls: [], warnings: ['Page 1 could not be drawn.'] });
+    expect(
+      await step(
+        request('scan'),
+        lossyJob(three, (w) => w.pageNumber === 1 && !w.box),
+      ),
+    ).toEqual({ status: 'failed', warnings: ['Page 1 could not be drawn.'] });
+    expect(
+      await step(
+        request('scan'),
+        lossyJob(three, (w) => w.box !== undefined),
+      ),
+    ).toEqual({ status: 'failed', warnings: ['The title block of page 1 could not be drawn.'] });
   });
 
   it('the asks of a file stay under its cap: page 1 two, each page after it one', () => {
