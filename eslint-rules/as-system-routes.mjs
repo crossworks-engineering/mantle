@@ -222,7 +222,6 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // tags, tailnet or fields change (no narrow UPDATE on them, 0346).
   'packages/api-keys/src/vault.ts': ['model-route'],
   'packages/tools/src/builtins-persona.ts': ['skill-text'],
-  'packages/email/src/accounts.ts': ['mail-account'],
   'packages/content/src/sandboxes.ts': ['sandbox-make'],
   'server/web/lib/agent-telegram.ts': ['telegram-connect'],
   'server/web/app/api/model-pools/[id]/route.ts': ['model-route'],
