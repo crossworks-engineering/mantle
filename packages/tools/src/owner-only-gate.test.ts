@@ -302,7 +302,7 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // login or a link; the level helpers went in arch A7); a member's call by
   // the login's workspace rule (W5b2).
   'dispatch.ts': [
-    "return s?.kind === 'team' ? 'login' : s?.kind === 'contact' ? 'link' : null;",
+    "return s?.kind === 'team' ? 'login' : null;",
     "if (s?.kind === 'team' && s.loginId) {",
   ],
   // read_result binds a member's turn to its own spills.

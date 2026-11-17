@@ -105,20 +105,23 @@ ALTER TABLE "public"."shares" DROP COLUMN IF EXISTS "can_write";
 ALTER TABLE "public"."shares" DROP COLUMN IF EXISTS "contact_id";
 --> statement-breakpoint
 
--- 4. The contact act definers, by name (every signature).
-DO $$
-DECLARE
-  f regprocedure;
-BEGIN
-  FOR f IN SELECT p.oid::regprocedure FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-            WHERE n.nspname = 'public'
-              AND p.proname IN ('mantle_contact_sharing_set', 'mantle_contact_sharing_rows',
-                                'mantle_contact_shares_revoke_all', 'mantle_contact_shares_revoke_rows',
-                                'mantle_share_with_contacts', 'mantle_share_with_contacts_rows',
-                                'mantle_share_contact_write_set', 'mantle_contact_sharing') LOOP
-    EXECUTE format('DROP FUNCTION %s', f);
-  END LOOP;
-END $$;
+-- 4. The contact act definers (0293, 0308, 0310), one plain DROP each: the
+-- rights scoreboard reads them from this text (eslint-rules/rights-counts.mjs).
+DROP FUNCTION IF EXISTS "public"."mantle_contact_sharing_set"(uuid, text, text);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_contact_sharing_rows"(uuid, uuid, text, text);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_contact_shares_revoke_all"(uuid);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_contact_shares_revoke_rows"(uuid, uuid);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_share_with_contacts"(uuid, uuid[], text[], boolean, text[]);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_share_with_contacts_rows"(uuid, uuid, uuid[], text[], boolean, text[]);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_share_contact_write_set"(uuid, boolean);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_contact_sharing"(uuid, uuid[]);
 --> statement-breakpoint
 
 -- 5. The contact edit check. The maker keeps 0294's read-only part only.

@@ -25,13 +25,16 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // 2026-11-02): 16 inputs moved, each allow to deny, a canvas's openLink,
   // closeLink or deleteLink by a writeGrant or adminWriteGrant login. No
   // other answer moved (checked with --against).
+  // Contact shares gone (0378): the contact-ro and contact-rw actors and
+  // the contact-share surface went, with their inputs; every other answer
+  // the same (checked with --against on the base's lines without them).
   a3a: {
-    inputs: 44_160,
-    sha256: '637fa64438df2a921c976d5039c5cbd466cc7661b58b4557a3c41104fa18f074',
+    inputs: 33_120,
+    sha256: '28017690574b261b7b5792530870b99d552e75f946a7cb89f7ed52e8f8c72918',
   },
   'a3a-detail': {
-    inputs: 1_472,
-    sha256: 'ee4fd0febe04698dcb17b4fdcefccfb356382de6d1d8d51725ebc4c7235fa764',
+    inputs: 1_104,
+    sha256: 'c071744094f49e02381d612ea5ee0de5549c70845fe5a87147504067684ea912',
   },
   // F6 (the guide names the rule now): 54 inputs moved, each allow to deny
   // "a key or a peer may not change a page or a note others read": the
@@ -48,9 +51,11 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // Only an app and a table have that history, and a snapshot copy has none:
   // 15,120 inputs moved, all that action's, each to not applicable. No earlier
   // action's answer moved (checked with --against).
+  // Contact shares gone (0378): 48,720 inputs went with the two contact
+  // actors and the contact-share surface; no other answer moved.
   a8: {
-    inputs: 362_880,
-    sha256: '373ab3bff380c4ae3d99ac6d9f92ebe47f57945439fad2f1e99b5431635fcba7',
+    inputs: 314_160,
+    sha256: '13a5385d71cec9f5fcbb0b0552236d7b4aab30c5119c2cb197889f255865be84',
   },
 };
 
