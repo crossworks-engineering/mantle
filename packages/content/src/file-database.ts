@@ -696,9 +696,7 @@ export async function buildFileDatabase(args: {
   // PDF set"): it works from the stored state of these bytes, read once and
   // fail closed (pdfReadAgainOf), and writes only when that state did not
   // change and the new read is not poorer.
-  let again:
-    | { stored: StoredPdf | null; since: FileStamp | null; reroute: boolean }
-    | undefined;
+  let again: { stored: StoredPdf | null; since: FileStamp | null; reroute: boolean } | undefined;
   if (!args.parsed && pipelines.routerFor(ext)) {
     const state = await pdfReadAgainOf(names);
     if (state.skip) return { status: 'skipped', reason: state.skip };

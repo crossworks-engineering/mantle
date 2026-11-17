@@ -156,7 +156,9 @@ describe('axes', () => {
         d: false,
       };
     };
-    const pipes = Array.from({ length: 8 }, (_, i) => at(0.1 + i * 0.1, 0.8, 100, i % 2 ? 30 : 150));
+    const pipes = Array.from({ length: 8 }, (_, i) =>
+      at(0.1 + i * 0.1, 0.8, 100, i % 2 ? 30 : 150),
+    );
     const hatch = Array.from({ length: 40 }, () => at(0.9, 0.1, 6, 45));
     const a = axisShares([...pipes, ...hatch], 1000, 500);
     expect(a.iso).toBe(1);

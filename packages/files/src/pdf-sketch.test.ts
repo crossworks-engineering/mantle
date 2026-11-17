@@ -217,7 +217,12 @@ describe('the rows of a read', () => {
   it('a piece in a column of a table gives no tag; a lone piece does; a line number always', () => {
     // Made-up: four pieces stacked close at one left edge (a material list
     // read part by part), and one piece away from them.
-    const at = (x: number, y: number): [number, number, number, number] => [x, y, x + 0.3, y + 0.03];
+    const at = (x: number, y: number): [number, number, number, number] => [
+      x,
+      y,
+      x + 0.3,
+      y + 0.03,
+    ];
     const column = sketchPageRead(
       {
         ...pieces(),
@@ -237,6 +242,21 @@ describe('the rows of a read', () => {
       new Set(['table']),
     );
     expect(rows.words.find((w) => w.text === 'FIC-101')!.region).toBe('body');
+  });
+
+  it('Vision text says where the vision text of the file is', () => {
+    const d = drawing([page(1)]);
+    const cellOf = (sheets: ReturnType<typeof pdfDrawingSheets>) => {
+      const file = sheets.sheets.find((t) => t.name === 'File')!;
+      return file.rows[0]![file.columns.findIndex((c) => c.name === 'Vision text')];
+    };
+    const sketch: SketchRead = { model: 'm', pages: [], pagesPastCap: [] };
+    expect(cellOf(pdfDrawingSheets(d, null))).toBeNull();
+    expect(cellOf(pdfDrawingSheets(d, null, null, undefined, true))).toBe('node text only');
+    expect(cellOf(pdfDrawingSheets(d, null, sketch, undefined, true))).toBe('sketch read');
+    expect(pdfDrawingSheets(d, null, null, undefined, true).description).toContain(
+      'node text only',
+    );
   });
 
   it('a read again is poorer with another kind by the same rules, not by newer rules', () => {

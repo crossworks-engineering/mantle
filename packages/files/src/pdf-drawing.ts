@@ -194,11 +194,7 @@ export async function readPdfDrawing(
       if (rows && rows.words.length + rows.markups.length + segments > 0) {
         // Every row counts: one word can give many tags (a slash list).
         const count =
-          rows.words.length +
-          rows.tags.length +
-          rows.lines.length +
-          rows.markups.length +
-          segments;
+          rows.words.length + rows.tags.length + rows.lines.length + rows.markups.length + segments;
         const chars =
           rows.words.reduce((n, w) => n + w.text.length, 0) +
           rows.markups.reduce((n, m) => n + m.text.length + m.author.length, 0);

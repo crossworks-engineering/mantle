@@ -381,70 +381,10 @@
       ],
       "name": "Texts",
       "rows": [
-        [
-          1,
-          1,
-          "P-101",
-          0.1,
-          0.1,
-          0.3,
-          0.15,
-          null,
-          null,
-          false,
-          false,
-          "body",
-          "ocr",
-          0.6
-        ],
-        [
-          1,
-          1,
-          "MADE",
-          0.1,
-          0.1,
-          0.3,
-          0.15,
-          null,
-          null,
-          false,
-          false,
-          "body",
-          "ocr",
-          0.6
-        ],
-        [
-          1,
-          1,
-          "UP",
-          0.1,
-          0.1,
-          0.3,
-          0.15,
-          null,
-          null,
-          false,
-          false,
-          "body",
-          "ocr",
-          0.6
-        ],
-        [
-          1,
-          2,
-          "3\"-P-2001-A1A",
-          0.5,
-          0.5,
-          0.7,
-          0.55,
-          null,
-          null,
-          false,
-          false,
-          "body",
-          "ocr",
-          0.6
-        ]
+        [1, 1, "P-101", 0.1, 0.1, 0.3, 0.15, null, null, false, false, "body", "ocr", 0.6],
+        [1, 1, "MADE", 0.1, 0.1, 0.3, 0.15, null, null, false, false, "body", "ocr", 0.6],
+        [1, 1, "UP", 0.1, 0.1, 0.3, 0.15, null, null, false, false, "body", "ocr", 0.6],
+        [1, 2, "3\"-P-2001-A1A", 0.5, 0.5, 0.7, 0.55, null, null, false, false, "body", "ocr", 0.6]
       ]
     },
     {
@@ -639,22 +579,8 @@
       ],
       "name": "Gaps",
       "rows": [
-        [
-          1,
-          0.2,
-          0.8,
-          0.4,
-          0.85,
-          "not_read"
-        ],
-        [
-          1,
-          0.9,
-          0.9,
-          0.95,
-          0.95,
-          "not_sent"
-        ]
+        [1, 0.2, 0.8, 0.4, 0.85, "not_read"],
+        [1, 0.9, 0.9, 0.95, 0.95, "not_sent"]
       ]
     }
   ]
