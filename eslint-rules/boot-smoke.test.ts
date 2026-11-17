@@ -106,6 +106,17 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
     expect(entry).toContain("await bootSmokeExit('parser'");
   });
 
+  it('runs the Sync entry with its own image CMD, and the entry has a checkpoint', () => {
+    const extra = EXTRA as { name: string; command: string[] }[];
+    const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
+    const stage = dockerfile.split(/^FROM /m).find((s) => /^\S+ AS sync\s/.test(s));
+    const cmd = [...(stage ?? '').matchAll(/^CMD (\[.*\])\s*$/gm)].at(-1)?.[1];
+    expect(cmd, 'the Dockerfile has a sync stage with an exec-form CMD').toBeDefined();
+    expect(extra.find((e) => e.name === 'sync')?.command).toEqual(JSON.parse(cmd!));
+    const entry = readFileSync(join(ROOT, 'server/sync/src/main.ts'), 'utf8');
+    expect(entry).toContain("await bootSmokeExit('sync')");
+  });
+
   it('reads every server-image service of compose, web through the image CMD', () => {
     expect(byName.get('web')?.command).toBeNull();
     expect(serverImageCmd(readFileSync(join(ROOT, 'Dockerfile'), 'utf8'))).toEqual([

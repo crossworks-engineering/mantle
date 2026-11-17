@@ -19,6 +19,7 @@ import { and, eq } from 'drizzle-orm';
 import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';
 import { maskEmail } from './mask-email';
+import { serviceEnabled } from '@mantle/config';
 import { runQueueWorker } from './_runner';
 
 const SYNC_QUEUE = 'mantle.email.sync';
@@ -56,6 +57,8 @@ runQueueWorker('email-sync', async ({ boss }) => {
   // Fan-out: every 2 minutes, enqueue a sync job for each enabled account.
   await boss.schedule(SCHEDULER_QUEUE, '*/2 * * * *');
   await boss.work(SCHEDULER_QUEUE, async () => {
+    // Sync off (Settings > Services): nothing syncs; the accounts stay.
+    if (!serviceEnabled('sync')) return;
     // IMAP only — `provider='microsoft'` companion accounts are synced by the
     // microsoft-sync worker via Graph (see workers/microsoft-sync.ts).
     const accounts = await db

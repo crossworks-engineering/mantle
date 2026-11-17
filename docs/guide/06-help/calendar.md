@@ -1,6 +1,7 @@
 ---
 title: Calendars
 toolGroups: [events]
+service: sync
 ---
 
 ## Calendars

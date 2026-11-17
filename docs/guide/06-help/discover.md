@@ -1,6 +1,7 @@
 ---
 title: Discover senders
 toolGroups: [contacts, email]
+service: sync
 ---
 
 ## Discover senders

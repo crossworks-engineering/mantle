@@ -46,13 +46,17 @@ import { env, type KnownEnvName } from './index';
 /** Every service Settings > Services can switch. Each name is also its
  *  compose profile. `documents` is the documents engine (Gotenberg,
  *  packages/documents): on by default on every box, its switch carries a
- *  URL and a basic-auth password the way sandboxes carry a token. */
+ *  URL and a basic-auth password the way sandboxes carry a token. `sync` is
+ *  the Sync sidecar (server/sync): everything that syncs with an outside
+ *  account (mail, contacts, calendar feeds, Microsoft); off by default, and
+ *  off hides those screens and tools. It has no token: on is its profile. */
 export const OPTIONAL_SERVICES = [
   'sandboxes',
   'local-embedder',
   'helpers',
   'calls',
   'documents',
+  'sync',
 ] as const;
 export type OptionalService = (typeof OPTIONAL_SERVICES)[number];
 
@@ -112,6 +116,7 @@ export const BOX_CONTAINERS = [
   'autoheal',
   'api',
   'gateway',
+  'sync',
   'worker_email',
   'worker_telegram',
   'worker_microsoft',
@@ -351,6 +356,16 @@ export function serviceSwitchable(name: OptionalService): boolean {
 export function toolService(slug: string): OptionalService | null {
   if (slug.startsWith('sandbox_')) return 'sandboxes';
   return toolServices.get(slug) ?? null;
+}
+
+/** True when the tool needs a service whose switch is known to be off on
+ *  this box (services.json or the compose env says its profile is not
+ *  active). The MCP surface leaves such a tool out of its list; a box where
+ *  the switch cannot be read (a dev process, a test) lists it, and its
+ *  handler answers for the service. */
+export function toolServiceSwitchedOff(slug: string): boolean {
+  const svc = toolService(slug);
+  return svc !== null && serviceProfileOn(svc) === false;
 }
 
 /** False when the tool needs a service that is off on this box: the agent's

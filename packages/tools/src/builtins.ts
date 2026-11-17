@@ -60,10 +60,12 @@ import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 import { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
+import { SERVICE_TOOLS } from './builtins-services';
 import { PIPELINE_TOOLS } from './pipelines';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
 import { DOCUMENT_TOOLS, registerDocumentToolServices } from './builtins-documents';
+import { registerToolService } from '@mantle/config';
 import { ACCESS_TOOLS } from './builtins-access';
 import { SHEET_TOOLS } from './builtins-sheets';
 import { read_section, search_chunks, search_nodes, tree_list } from './builtins-search';
@@ -304,6 +306,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // client puts a secret in; no agent is ever granted a vault write.
   ...VAULT_KEY_TOOLS,
   ...GATEWAY_SERVICE_TOOLS,
+  ...SERVICE_TOOLS,
   // The pipelines list (docs/pipelines.md): an Admin user's client reads it.
   ...PIPELINE_TOOLS,
   ...FILE_OPERATOR_TOOLS,
@@ -317,6 +320,11 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
 // The documents tools need the documents service: say so to the config's
 // gate here, where every process that lists builtins passes.
 registerDocumentToolServices();
+
+// The email and contact tools need the Sync service (outside accounts: mail,
+// contacts, calendar feeds, Microsoft). Off, an agent's list and MCP leave
+// them out (docs/services.md, "Sync").
+for (const t of [...EMAIL_TOOLS, ...CONTACT_TOOLS]) registerToolService(t.slug, 'sync');
 
 // Each definition's `readOnly` and `spends` read its policy.
 for (const def of BUILTIN_TOOLS) withPolicyFlags(def);

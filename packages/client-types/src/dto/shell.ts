@@ -19,6 +19,10 @@ export type ShellFeatures = {
   /** The tree's custom order: the `custom` sort, `ordered` and `mayOrder` on
    *  a folder page, POST /api/tree/:kind/place. Absent from a brain before it. */
   treeCustomOrder?: boolean;
+  /** The Sync service is on. False: hide Email, Contacts and the account
+   *  screens (Settings > Accounts, Microsoft, Calendars). Absent from a brain
+   *  before it: hide nothing. */
+  sync?: boolean;
 };
 
 export type Shell = {

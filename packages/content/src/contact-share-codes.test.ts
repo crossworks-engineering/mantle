@@ -17,6 +17,7 @@
  */
 import { createHmac, hkdfSync } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetServicesFileCache } from '@mantle/config';
 
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -84,7 +85,7 @@ describe('checkContactShareCode takes one path for every failure', () => {
     ...over,
   });
 
-  it('a wrong code, sharing off, a lock, an open link and no share run the same steps', async () => {
+  it('a wrong code, sharing off, a lock, an open link, no share and Sync off run the same steps', async () => {
     const FAIL = ['findRow', 'shareFailures', 'checkCode', 'countFailure'];
     const cases: Array<[string, () => Promise<unknown>]> = [
       [
@@ -128,6 +129,26 @@ describe('checkContactShareCode takes one path for every failure', () => {
         async () => {
           row = null;
           return c.checkContactShareCode(null, 'ABCDEFGH');
+        },
+      ],
+      [
+        'Sync off',
+        async () => {
+          row = liveRow('ABCDEFGH');
+          const prev = process.env.MANTLE_COMPOSE_PROFILES;
+          const prevDir = process.env.MANTLE_UPDATE_SIGNAL_DIR;
+          process.env.MANTLE_COMPOSE_PROFILES = 'documents';
+          process.env.MANTLE_UPDATE_SIGNAL_DIR = '/nonexistent-signal-dir';
+          resetServicesFileCache();
+          try {
+            return await c.checkContactShareCode(SHARE, 'ABCDEFGH');
+          } finally {
+            if (prev === undefined) delete process.env.MANTLE_COMPOSE_PROFILES;
+            else process.env.MANTLE_COMPOSE_PROFILES = prev;
+            if (prevDir === undefined) delete process.env.MANTLE_UPDATE_SIGNAL_DIR;
+            else process.env.MANTLE_UPDATE_SIGNAL_DIR = prevDir;
+            resetServicesFileCache();
+          }
         },
       ],
       [

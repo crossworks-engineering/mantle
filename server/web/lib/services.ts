@@ -38,6 +38,7 @@ import { sandboxdHealth } from './sandboxd';
 import { readUpdaterStatus, updaterAvailable } from './updates';
 import { NET_TIMEOUTS } from '@mantle/std';
 import { providerHealth } from '@mantle/voice';
+import { registerServicesProvider } from '@mantle/tools';
 
 export function isOptionalService(v: unknown): v is OptionalService {
   return typeof v === 'string' && (OPTIONAL_SERVICES as readonly string[]).includes(v);
@@ -113,6 +114,22 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
     memoryMaxMb: 2048,
     note: "Documents it renders can fetch nothing from the network: the engine reaches only this brain's own print pages.",
     offWarning: 'Office to PDF and the PDF tools stop until you switch it on again.',
+  },
+  sync: {
+    title: 'Sync',
+    what: 'Everything that syncs with an outside account: mail (IMAP and SMTP), contacts, calendar feeds and Microsoft 365, later Google, Dropbox and Box. It runs in its own container, so a box that never links an outside account carries none of it.',
+    usedBy:
+      'Email, Contacts, Settings > Accounts, Settings > Microsoft and calendar feeds, and the email and contact tools of agents and MCP.',
+    whenOff:
+      'Email, Contacts and the account screens are hidden, with their help pages. Agents and MCP get no email or contact tools. Mail, calendar feed and Microsoft sync pause.',
+    keeps:
+      'Every mail, contact, event and synced file already in the brain, still found by search, and every linked account. Sync goes on where it stopped when you switch it on again.',
+    downloadMb: 150,
+    memory: 'up to 512 MB (a file job runs one short rclone command, about 85 MB while it runs)',
+    memoryMaxMb: 512,
+    note: null,
+    offWarning:
+      'Email, Contacts and the account screens hide, and sync pauses. Nothing is deleted.',
   },
 };
 
@@ -282,6 +299,8 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
     helpers: browser?.up === true,
     calls: livekit?.up === true,
     documents: documents?.up === true,
+    // No call from the brain yet (M1): the updater's view of the container.
+    sync: f?.services.sync?.health === 'healthy',
   };
   const embedderInUse = embedCfg !== null && usesBundledEmbedder(embedCfg.primary);
   const services: ServiceInfo[] = names.map((name) => {
@@ -313,6 +332,13 @@ export async function getServicesView(ownerId: string): Promise<ServicesView> {
     },
     run,
   };
+}
+
+/** Install the view and the switch into the services bridge (@mantle/tools),
+ *  for service_list and service_set over MCP. Boot calls it once; again is
+ *  a no-op change. */
+export function installServicesProvider(): void {
+  registerServicesProvider({ view: getServicesView, set: requestServiceSwitch });
 }
 
 /** Ask the updater to switch one service. Refuses (with the reason) when the

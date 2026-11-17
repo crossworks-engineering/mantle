@@ -9,9 +9,10 @@
 
 /** Each name is also the service's compose profile. `calls` is LiveKit
  *  (calls between people in the messenger); `documents` is the documents
- *  engine (Gotenberg). */
+ *  engine (Gotenberg); `sync` is the Sync sidecar (outside accounts: mail,
+ *  contacts, calendar feeds, Microsoft). */
 export type OptionalServiceName =
-  'sandboxes' | 'local-embedder' | 'helpers' | 'calls' | 'documents';
+  'sandboxes' | 'local-embedder' | 'helpers' | 'calls' | 'documents' | 'sync';
 
 /**
  * - `off`: the compose profile is not active (the resting state).

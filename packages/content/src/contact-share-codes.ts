@@ -29,7 +29,7 @@
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, count, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { contactShareCodes, db, nodes, shareAccessLog, shares, wsArraySql } from '@mantle/db';
-import { env } from '@mantle/config';
+import { env, serviceEnabled } from '@mantle/config';
 
 export const CONTACT_CODE_LENGTH = 8;
 /** Failures a contact takes in its day window before it is locked. */
@@ -314,7 +314,12 @@ export async function contactShareGateRow(
   return {
     ownerId: row.ownerId,
     codeEpoch: row.codeEpoch,
-    open: row.codeHash !== null && !(row.lockedUntil && row.lockedUntil > now),
+    // Contacts belong to the Sync service: while it is off no contact share
+    // admits anyone (nobody can manage one without the Contacts screen).
+    open:
+      serviceEnabled('sync') &&
+      row.codeHash !== null &&
+      !(row.lockedUntil && row.lockedUntil > now),
   };
 }
 
@@ -453,6 +458,7 @@ export async function checkContactShareCode(
     const failures = await steps.shareFailures(tx, share?.id ?? null, now);
     const match = steps.checkCode(contactId, code, row?.codeHash ?? null);
     const usable =
+      serviceEnabled('sync') &&
       !!share &&
       !!row &&
       row.ownerId === share.ownerId &&

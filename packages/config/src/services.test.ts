@@ -15,6 +15,7 @@ import {
   serviceSwitchable,
   toolService,
   toolServiceAvailable,
+  toolServiceSwitchedOff,
 } from './services';
 
 const KEYS = [
@@ -202,6 +203,44 @@ describe('serviceEnabled', () => {
   it('with no way to know the profile, the token alone decides (pre-switch behaviour)', () => {
     wire();
     expect(serviceEnabled('sandboxes')).toBe(true);
+  });
+});
+
+describe('sync: no token, on is its profile', () => {
+  it('follows the live file, then the compose env', () => {
+    servicesJson('sandboxes');
+    expect(serviceEnabled('sync')).toBe(false);
+    servicesJson('sandboxes,sync');
+    resetServicesFileCache();
+    expect(serviceEnabled('sync')).toBe(true);
+  });
+
+  it('the compose env decides when there is no file', () => {
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents';
+    expect(serviceEnabled('sync')).toBe(false);
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents,sync';
+    expect(serviceEnabled('sync')).toBe(true);
+  });
+
+  it('MCP leaves a tool out only when its switch is known to be off', () => {
+    registerToolService('email_list', 'sync');
+    expect(toolServiceSwitchedOff('email_list')).toBe(false); // unknown: listed
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents';
+    expect(toolServiceSwitchedOff('email_list')).toBe(true);
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents,sync';
+    expect(toolServiceSwitchedOff('email_list')).toBe(false);
+    expect(toolServiceSwitchedOff('page_get')).toBe(false); // needs no service
+    resetToolServicesForTests();
+  });
+
+  it('a tool that needs it is unavailable while it is off', () => {
+    registerToolService('email_list', 'sync');
+    process.env.MANTLE_COMPOSE_PROFILES = '';
+    expect(toolService('email_list')).toBe('sync');
+    expect(toolServiceAvailable('email_list')).toBe(false);
+    process.env.MANTLE_COMPOSE_PROFILES = 'sync';
+    expect(toolServiceAvailable('email_list')).toBe(true);
+    resetToolServicesForTests();
   });
 });
 

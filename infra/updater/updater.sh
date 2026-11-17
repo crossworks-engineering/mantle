@@ -1197,8 +1197,9 @@ s8b_seat_refusal() {
 # Nothing pruned images before this: each roll left a server + client pair
 # (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
 # on 2026-09-01). After an OK roll the updater removes old images of exactly
-# four repositories, <ns>/mantle-server, <ns>/mantle-client, <ns>/mantle-parser
-# and <ns>/mantle-media, and keeps:
+# five repositories, <ns>/mantle-server, <ns>/mantle-client, <ns>/mantle-parser,
+# <ns>/mantle-sync (only while its container exists) and <ns>/mantle-media,
+# and keeps:
 #   - the image each container ran BEFORE the roll (the rollback set),
 #   - the image each runs NOW,
 #   - the two newest images of the repository (a pre-pulled next release, or
@@ -1256,7 +1257,7 @@ prune_repo() {
   prune_rmi "$pr_repo" "$(printf '%s\n%s\n%s\n' "$pr_prev" "$pr_cur" "$pr_newest")"
 }
 
-# prune_images <prev-server-id> <prev-client-id> <prev-parser-id> <prev-media-id>:
+# prune_images <prev-server-id> <prev-client-id> <prev-parser-id> <prev-media-id> <prev-sync-id>:
 # after an OK roll.
 prune_images() {
   if [ "$(env_val MANTLE_IMAGE_PRUNE)" = 0 ]; then
@@ -1267,6 +1268,11 @@ prune_images() {
   prune_repo "${pi_ns:-titanwest}/mantle-server" "$1" "$(container_image mantle_web)" | tee -a "$SIG/update.log"
   prune_repo "${pi_ns:-titanwest}/mantle-client" "$2" "$(container_image mantle_client_web)" | tee -a "$SIG/update.log"
   prune_repo "${pi_ns:-titanwest}/mantle-parser" "$3" "$(container_image mantle_parser)" | tee -a "$SIG/update.log"
+  # The Sync sidecar runs only while Sync is on; with Sync off there is no
+  # container and its images are left alone (off never removes anything).
+  if [ -n "$(container_image mantle_sync)" ]; then
+    prune_repo "${pi_ns:-titanwest}/mantle-sync" "$5" "$(container_image mantle_sync)" | tee -a "$SIG/update.log"
+  fi
   prune_media "$4" | tee -a "$SIG/update.log"
 }
 
@@ -1474,7 +1480,7 @@ topup_scripts() {
 # /signal read-only) on boot, every ~5 min, after a roll and after a switch.
 # @mantle/config services is the reader. The file carries key NAMES' presence
 # only, never a value.
-SERVICE_PROFILES="sandboxes local-embedder helpers calls documents"
+SERVICE_PROFILES="sandboxes local-embedder helpers calls documents sync"
 # Request kinds this updater understands; the UI offers a switch only when
 # 'service' is listed.
 UPDATER_VERBS='"roll","service"'
@@ -1487,6 +1493,7 @@ service_container() {
     helpers) echo mantle_browser ;;
     calls) echo mantle_livekit ;;
     documents) echo mantle_gotenberg ;;
+    sync) echo mantle_sync ;;
   esac
 }
 # service_containers <name>: every container an "on" waits on to be healthy.
@@ -1563,7 +1570,7 @@ profile_active() { printf ',%s,' "$(profiles_csv)" | grep -q ",$1,"; }
 # since exited is their normal end. The client stack's two (client_web and,
 # on a standalone client box, client_caddy) are here too. A container the box
 # does not run reads `absent`.
-BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy"
+BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway sync worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy"
 
 # box_container_name <service>: its container_name in the compose files.
 box_container_name() {
@@ -1876,7 +1883,8 @@ ensure_parser_token() {
 # of its OWN: an updater older than this never reads it, where the same body
 # in request.json would read as "roll to latest". One fixed operation per
 # request, inputs whitelisted: the service is `sandboxes`, `local-embedder`,
-# `documents` or `helpers` (a core box only), the switch true or false.
+# `calls`, `documents`, `sync` or `helpers` (a core box only), the switch
+# true or false.
 # Nothing else in the request reaches a command.
 #
 # On:  free-disk check; back up .env; give the service its token (and, for
@@ -1912,6 +1920,7 @@ compose_service() {
     helpers) echo browser ;;
     calls) echo livekit ;;
     documents) echo gotenberg ;;
+    sync) echo sync ;;
   esac
 }
 
@@ -2181,7 +2190,7 @@ handle_service_request() {
   SVC_STARTED=$(now)
   # The whitelist: the only request input that reaches a command.
   case "$hs_svc" in
-    sandboxes | local-embedder | helpers | calls | documents) : ;;
+    sandboxes | local-embedder | helpers | calls | documents | sync) : ;;
     *) write_service_status error "" null "$SVC_STARTED" "$(now)" false "unknown service"; return 0 ;;
   esac
   case "$hs_en" in
@@ -2381,6 +2390,7 @@ while true; do
     PREV_SERVER_IMG=$(container_image mantle_web)
     PREV_CLIENT_IMG=$(container_image mantle_client_web)
     PREV_PARSER_IMG=$(container_image mantle_parser)
+    PREV_SYNC_IMG=$(container_image mantle_sync)
     PREV_MEDIA_IMG=$(container_image mantle_media)
     PREV_SBX_PIN=$(sandbox_base_image) || PREV_SBX_PIN=""
 
@@ -2520,7 +2530,7 @@ while true; do
         echo "[updater] done → $TARGET" | tee -a "$SIG/update.log"
         # Old images of this product only, after the status is terminal: a
         # prune problem must never turn an OK roll into a failed one.
-        prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG" "$PREV_PARSER_IMG" "$PREV_MEDIA_IMG"
+        prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG" "$PREV_PARSER_IMG" "$PREV_MEDIA_IMG" "$PREV_SYNC_IMG"
         sandbox_image_sync "$PREV_SBX_PIN" roll | tee -a "$SIG/update.log"
         # Self-refresh LAST, on the success path only: a failed roll should
         # change as little as possible, and the status the UI polls is already

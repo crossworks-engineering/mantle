@@ -3025,6 +3025,20 @@ printf 'GOTENBERG_PASSWORD=keep\nMANTLE_DOCUMENTS_OFF=1\n' >> "$T/stack/.env"
 svc_run
 check "documents on again: the off-on-purpose line is dropped" sh -c "
   grep -q '\"ok\":true' '$T/sig/service-status.json' && ! grep -q '^MANTLE_DOCUMENTS_OFF=' '$T/stack/.env'"
+# ── Sync (server/sync): no token, one container, on is the profile ──
+svc_case syncon '{"service":"sync","enable":true}'
+svc_run
+check "sync on: status done" grep -q '"phase":"done","service":"sync","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "sync on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedder,sync' "$T/stack/.env"
+check "sync on: no token written" sh -c "! grep -q '^SYNC' '$T/stack/.env'"
+check "sync on: pulls and starts the sync container alone (--no-deps)" sh -c "
+  grep -qE 'profile sync pull sync$' '$T/calls' && grep -qE 'profile sync up -d --no-deps sync$' '$T/calls'"
+check "sync on: waits on mantle_sync" grep -q 'inspect .*mantle_sync$' "$T/calls"
+svc_case syncoff '{"service":"sync","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes,sync/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "sync off: profile dropped, the sync container stopped and removed" sh -c "
+  grep -qx 'COMPOSE_PROFILES=sandboxes' '$T/stack/.env' && grep -qE 'profile sync stop sync$' '$T/calls' && grep -qE 'profile sync rm -f sync$' '$T/calls'"
 svc_case helpoff '{"service":"helpers","enable":false}'
 printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"

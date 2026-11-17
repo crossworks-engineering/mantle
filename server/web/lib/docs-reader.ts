@@ -10,7 +10,28 @@ import {
 } from '@mantle/files';
 import type { DocCollection } from '@mantle/db';
 import { docLabelFromRelPath } from '@mantle/client-types/docs-labels';
+import { serviceEnabled } from '@mantle/config';
 import { isDetachedDev } from '@/lib/auth-constants';
+
+/** The User Guide pages about the screens of the Sync service (Email,
+ *  Contacts, the account screens), by their path in the guide: the reader
+ *  leaves them out while Sync is off, as the help rail does (the help
+ *  topics carry `service: sync`, lib/help.ts). */
+export const SYNC_GUIDE_PAGES: ReadonlySet<string> = new Set([
+  '02-first-steps/04-connect-email.md',
+  '03-using-jackdaw/03-email-and-contacts.md',
+  '06-help/accounts.md',
+  '06-help/calendar.md',
+  '06-help/contacts.md',
+  '06-help/discover.md',
+  '06-help/inbox.md',
+  '06-help/microsoft.md',
+]);
+
+/** A page the reader leaves out now: a Sync page while Sync is off. */
+export function docHiddenNow(relPath: string, syncOn = serviceEnabled('sync')): boolean {
+  return !syncOn && SYNC_GUIDE_PAGES.has(relPath);
+}
 
 /** Collections for the disk reader. Detached dev (`pnpm dev:fe`) has no local
  *  Postgres, so it reads the built-ins straight off disk (the User Guide +
@@ -76,9 +97,10 @@ async function filesForCollection(
       nestedPrefixes.push(path.relative(root, otherRoot).split(path.sep).join('/') + '/');
     }
   }
-  const filtered = nestedPrefixes.length
-    ? files.filter((rel) => !nestedPrefixes.some((p) => rel.startsWith(p)))
-    : files;
+  const syncOn = serviceEnabled('sync');
+  const filtered = files.filter(
+    (rel) => !nestedPrefixes.some((p) => rel.startsWith(p)) && !docHiddenNow(rel, syncOn),
+  );
   filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (col.key === CHANGELOG_COLLECTION_KEY) filtered.reverse();
   return filtered;
@@ -120,6 +142,7 @@ export async function getReaderDoc(
   relPath: string,
 ): Promise<ReaderDoc | null> {
   if (isHiddenDocRelPath(relPath)) return null; // hidden (_archive/…) — not browsable
+  if (docHiddenNow(relPath)) return null; // a Sync page while Sync is off
 
   const cols = await readerCollections(ownerId);
   const col = cols.find((c) => c.key === collectionKey);

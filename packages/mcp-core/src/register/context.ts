@@ -16,7 +16,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import type { BuiltinToolDef, LoginMcpChannel, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
-import { feature, toolPolicyAllows } from '@mantle/config';
+import { feature, toolPolicyAllows, toolServiceSwitchedOff } from '@mantle/config';
 import { mcpDefinition } from '../mcp-defs';
 import {
   builtinCallerOn,
@@ -111,6 +111,11 @@ export function makeRegisterContext(
       // MANTLE_POLICY_EMAIL_SEND=off, the Telegram tools while Telegram is
       // off; docs/policy.md) leaves the list, as it leaves the agent's.
       if (!toolPolicyAllows(def.slug)) continue;
+      // A tool whose optional service is switched off on this box (Settings
+      // > Services: the sandbox and documents tools, the email and contact
+      // tools while Sync is off) is not listed either, as it is not in the
+      // agent's list. A session sees a switch at its next connect.
+      if (toolServiceSwitchedOff(def.slug)) continue;
       // A builtin the surface defines itself under its name (a hand-written
       // MCP tool, mcp-defs.ts: its own schema and reply) is that definition's.
       if (mcpDefinition(def.slug)) continue;

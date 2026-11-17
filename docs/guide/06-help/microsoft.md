@@ -1,6 +1,7 @@
 ---
 title: Microsoft
 toolGroups: [files]
+service: sync
 ---
 
 ## Microsoft

@@ -763,6 +763,48 @@ services:
       retries: 3
       start_period: 30s
 
+  # The Sync sidecar (server/sync; docs/services.md, "Sync"): the optional
+  # service for everything that syncs with an outside account (mail,
+  # contacts, calendar feeds, Microsoft; later Google, Dropbox, Box). Off by
+  # default (profile `sync`, Settings > Services). While it is off the brain
+  # hides those screens and tools and their sync pauses; nothing is deleted.
+  # Its own image (Dockerfile target `sync`) carries the rclone binary for
+  # short file jobs; no rclone daemon runs. M1 is the skeleton: a health check
+  # and a status answer, no secret, no database. On the default network: the
+  # outside accounts it will reach need a road out.
+  sync:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-sync:${MANTLE_IMAGE_TAG:-latest}
+    command: ['scripts/run-service.sh', 'server/sync', 'src/main.ts']
+    container_name: mantle_sync
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    profiles: ['sync']
+    mem_limit: 512m
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      NODE_ENV: production
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0'
+      SYNC_PORT: ${SYNC_PORT:-8099}
+    labels: ['autoheal=true']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '--no-env-file',
+          '-e',
+          "fetch('http://127.0.0.1:8099/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   # Browser sidecar (browserless/chromium), the PDF-export render engine: a
   # stateless, self-hosted service with its own memory
   # space, session queue, and per-session hard timeout. server/web connects with

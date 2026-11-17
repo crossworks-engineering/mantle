@@ -410,8 +410,8 @@
     "GET /api/search": ["search", "search_chunks"],
     "GET /api/secrets": { "planned": "secret_list" },
     "GET /api/secrets/:id": { "planned": "secret_get" },
-    "GET /api/services": { "planned": "service_list", "note": "box_status only says up or down" },
-    "GET /api/services/status": { "planned": "service_list", "note": "the switch run and its log" },
+    "GET /api/services": "service_list",
+    "GET /api/services/status": "service_list",
     "GET /api/settings/worker-groups": "worker_group_list",
     "GET /api/shares": { "planned": "link_list" },
     "GET /api/shares/all": { "planned": "link_list" },
@@ -974,10 +974,7 @@
       "gap": "one value and label only, no fields or note; the value is plain until secret_request"
     },
     "POST /api/secrets/:id/reveal": { "people": "the secret value would enter the model" },
-    "POST /api/services/:name": {
-      "planned": "service_set",
-      "note": "an on/off switch for an optional service, not a restart"
-    },
+    "POST /api/services/:name": "service_set",
     "POST /api/settings/worker-groups": "worker_group_ensure",
     "POST /api/shares": "node_share",
     "POST /api/shares/contacts": { "planned": "contact_share_set" },

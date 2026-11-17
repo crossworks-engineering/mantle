@@ -10,6 +10,7 @@
 import { eq } from 'drizzle-orm';
 import { calendarAccounts, db } from '@mantle/db';
 import { syncCalendarAccount } from '@mantle/calendar';
+import { serviceEnabled } from '@mantle/config';
 import { runQueueWorker } from './_runner';
 
 const SYNC_QUEUE = 'mantle.calendar.sync';
@@ -26,6 +27,8 @@ runQueueWorker('calendar-sync', async ({ boss }) => {
   // ── scheduler ────────────────────────────────────────────────────────
   await boss.schedule(SCHEDULER_QUEUE, '*/2 * * * *');
   await boss.work(SCHEDULER_QUEUE, async () => {
+    // Sync off (Settings > Services): nothing syncs; the accounts stay.
+    if (!serviceEnabled('sync')) return;
     const accounts = await db
       .select({ id: calendarAccounts.id })
       .from(calendarAccounts)

@@ -1,7 +1,8 @@
 # Optional services: start and stop from Settings
 
-Five parts of a box are optional, and an admin can switch each one on or off
-from **Settings > Services** (`/settings/services`, admins only). The System
+Six parts of a box are optional, and an admin can switch each one on or off
+from **Settings > Services** (`/settings/services`, admins only), or over MCP
+with `service_list` and `service_set` (an Admin login's own client). The System
 vitals pills on the dashboard show each one's state and link there:
 
 | service            | what it does                                                                                                                                             | download                                                                                        | memory                                                         |
@@ -11,9 +12,10 @@ vitals pills on the dashboard show each one's state and link there:
 | **Helpers**        | Core boxes only: the headless browser (PDF export, drawing pictures in exports).                                                                         | about 1 GB                                                                                      | up to 1.5 GB                                                   |
 | **Documents**      | The documents engine (Gotenberg): Office files to PDF, page and HTML prints with headers and page numbers, the PDF tools ([documents.md](documents.md)). | about 700 MB (2.4 GB on disk)                                                                   | up to 2 GB (about 300 MB resident after the first job)         |
 | **Calls**          | LiveKit, the media server for voice calls between people in Messages ([messenger.md](messenger.md), "Calls"; `infra/livekit/README.md`). Off by default. | about 45 MB                                                                                     | up to 512 MB                                                   |
+| **Sync**           | Everything that syncs with an outside account: mail, contacts, calendar feeds, Microsoft (later Google, Dropbox, Box). Off by default. See "Sync" below. | about 150 MB (the rest of its image is the server image's layers)                               | up to 512 MB                                                   |
 
-All five are compose **profiles**, and each service name is its profile
-(`sandboxes`, `local-embedder`, `helpers`, `calls`, `documents`). A switch changes the box's `.env`
+All six are compose **profiles**, and each service name is its profile
+(`sandboxes`, `local-embedder`, `helpers`, `calls`, `documents`, `sync`). A switch changes the box's `.env`
 and starts or stops that service's container; the rest of the brain keeps
 running.
 
@@ -54,6 +56,27 @@ ignored.
   switch there; nor on a core box with the `full` profile active, which runs
   them whatever their own profile says. This replaces
   `scripts/install.sh --helpers` for a running box.
+
+- **Sync** (the `sync` service, `server/sync`, image `mantle-sync`) has no
+  token: "on" is its profile. It is the one place for everything that syncs
+  with an outside account (the standing rule: anything that syncs goes
+  there). **Off by default.** While it is off:
+  - the client hides Email, Contacts, Settings > Accounts, Microsoft,
+    Calendars and Discover (`/api/shell` `features.sync`), with their help
+    topics (`service: sync` in the topic's frontmatter) and User Guide pages;
+  - agents and MCP get no email or contact tools (`registerToolService`);
+  - the email, calendar-feed and Microsoft sync pause (each scheduler checks
+    the switch);
+  - contact share codes admit nobody.
+
+  Nothing is deleted: mail, contacts, events and synced files stay in the
+  brain and in search, and every linked account stays linked. On again,
+  sync goes on where it stopped. The sidecar itself (M1) answers `/health`
+  and `/status` only; the account code moves into it from M2 on (Sync
+  service plan). Its image carries the rclone binary: a file job runs one
+  short rclone command, no rclone daemon runs. A box that uses mail,
+  calendar feeds, Microsoft or contacts switches it on once after the roll
+  that brings it.
 
 **Off never removes anything.** Switching sandboxes off stops the running
 sandbox containers (stop, not remove) and the supervisor. Every sandbox, its

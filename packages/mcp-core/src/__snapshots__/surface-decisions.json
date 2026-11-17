@@ -5200,6 +5200,46 @@
    "peerRisky": true
   }
  },
+ "service_list": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": false
+  }
+ },
+ "service_set": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "set_timezone": {
   "readOnly": false,
   "peerRisky": false,

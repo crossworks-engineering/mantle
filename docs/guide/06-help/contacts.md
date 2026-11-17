@@ -1,6 +1,7 @@
 ---
 title: Contacts
 toolGroups: [contacts, email]
+service: sync
 ---
 
 ## Contacts

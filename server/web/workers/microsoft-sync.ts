@@ -18,6 +18,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { db, emailAccounts, msAccounts, msDrives } from '@mantle/db';
 import { graphMailProvider, syncDrive } from '@mantle/microsoft';
 import { MS_BACKFILL_QUEUE, backfillMatch, syncAccount } from '@mantle/email';
+import { serviceEnabled } from '@mantle/config';
 import { runQueueWorker } from './_runner';
 
 const SYNC_QUEUE = 'mantle.microsoft.drive-sync';
@@ -49,6 +50,8 @@ runQueueWorker('microsoft-sync', async ({ boss }) => {
   // Fans out both drive syncs and mail syncs every 2 minutes.
   await boss.schedule(SCHEDULER_QUEUE, '*/2 * * * *');
   await boss.work(SCHEDULER_QUEUE, async () => {
+    // Sync off (Settings > Services): nothing syncs; the accounts stay.
+    if (!serviceEnabled('sync')) return;
     const drives = await db
       .select({ id: msDrives.id })
       .from(msDrives)

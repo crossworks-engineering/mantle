@@ -5803,6 +5803,43 @@
   }
  },
  {
+  "name": "service_set",
+  "description": "Ask the updater to switch one optional service on or off (Settings > Services). It returns at once: the updater pulls and starts the service, or stops it, within a few minutes; follow it in `service_list`'s `run`. Off never deletes anything: data, tokens and images stay. Turning `sync` off hides Email, Contacts and the account screens and their tools, and pauses their sync. Refused while an update or another switch runs, or when this box cannot switch services.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "enum": [
+      "sandboxes",
+      "local-embedder",
+      "helpers",
+      "calls",
+      "documents",
+      "sync"
+     ],
+     "description": "The service, e.g. 'sync'."
+    },
+    "enable": {
+     "type": "boolean",
+     "description": "true switches it on, false off."
+    }
+   },
+   "required": [
+    "name",
+    "enable"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "service_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "set_timezone",
   "description": "Change the user's profile timezone. Use when the user is in — or travelling to — a different timezone and the 'Current time:' context line is wrong for where they actually are, or when they ask. If you know their location (the Current location line / a reverse-geocoded city), derive the correct IANA zone yourself and set it. PERSISTENT — all times, event scheduling, reminders, and quiet hours follow it until it's changed back — so say what you changed and offer to switch it back when they head home. Returns the new timezone and the current local time in it so you can confirm.",
   "inputSchema": {
@@ -13321,6 +13358,22 @@
   },
   "annotations": {
    "title": "search_chunks",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "service_list",
+  "description": "List this box's optional services (Settings > Services): each one's state (`off`, `up` or `down`), its container and health, what stops while it is off and its memory; whether this box can switch them now, and the latest switch run with its outcome. Read-only. To switch one use `service_set`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "service_list",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

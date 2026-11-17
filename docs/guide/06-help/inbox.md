@@ -1,6 +1,7 @@
 ---
 title: Email
 toolGroups: [email, memory-core]
+service: sync
 ---
 
 ## Email

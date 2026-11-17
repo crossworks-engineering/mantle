@@ -186,6 +186,7 @@ describe('MCP tool hints on the surface', () => {
       'run_cancel',
       'sandbox_autostart',
       'sandbox_stop',
+      'service_set',
       'set_timezone',
       'table_cell_set',
       'table_rows_upsert',

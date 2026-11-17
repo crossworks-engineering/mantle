@@ -1,6 +1,7 @@
 ---
 title: Email accounts
 toolGroups: [email]
+service: sync
 ---
 
 ## Email accounts

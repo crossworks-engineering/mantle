@@ -331,6 +331,25 @@ EXPOSE 8095
 # it. --no-env-file: compose gives the environment.
 CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
 
+# ── 1d. sync: the Sync sidecar (server/sync; docs/services.md, "Sync") ──────
+# The optional service for everything that syncs with an outside account. It
+# carries the workspace (`deps`, the same layers as the server image's base,
+# so a box that has the server image pulls little more) plus the rclone binary, copied
+# from the pinned official image (MIT). No rclone daemon runs: a file job runs
+# one short rclone command and ends (Sync plan, M0).
+FROM rclone/rclone:1.76.0 AS rclone-binary
+FROM deps AS sync
+COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=rclone-binary /usr/local/bin/rclone /usr/local/bin/rclone
+ENV NODE_ENV=production
+RUN rclone version >/dev/null
+# Node leaves the run image, as in the server image.
+RUN sh scripts/drop-node.sh
+ENTRYPOINT []
+USER node
+EXPOSE 8099
+CMD ["scripts/run-service.sh", "server/sync", "src/main.ts"]
+
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,
 # share-runtime, route manifest), so the SAME image can run the Hono web

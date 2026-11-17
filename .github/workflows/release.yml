@@ -238,7 +238,9 @@ jobs:
         # that reads every untrusted file, versioned with the release so
         # compose + images stay one bundle. Published as
         # <namespace>/mantle-parser. It replaced mantle-media (2026-10).
-        target: [server, parser]
+        # `sync` is the optional Sync sidecar (server/sync), published as
+        # <namespace>/mantle-sync; a box pulls it only when Sync is on.
+        target: [server, parser, sync]
         platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
@@ -302,7 +304,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [server, parser]
+        target: [server, parser, sync]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -364,7 +366,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [server, parser]
+        target: [server, parser, sync]
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -402,6 +404,7 @@ jobs:
           [ "$v" = error ] || { echo "verify-deps-before-run is '$v', expected error"; exit 1; }
           cmd="pnpm -C server/web maintain list"
           [ "${{ matrix.target }}" = parser ] && cmd="pnpm -C server/parser exec true"
+          [ "${{ matrix.target }}" = sync ] && cmd="pnpm -C server/sync exec true"
           docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" $cmd > /dev/null \
             || { echo "$cmd refused the image's own dependencies"; exit 1; }
 
@@ -424,6 +427,12 @@ jobs:
       # `dwg-reindex --dgn-data` stops on every box this release reaches.
       # ezdwg must be our reader build (dwg_read.py's `reads_dwg`), or every
       # DWG is refused. The retired dwg2dxf binary must not be in the image.
+      # The Sync image carries the rclone binary its file jobs run.
+      - name: Probe rclone on the sync image
+        if: matrix.target == 'sync'
+        run: |
+          docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" rclone version | head -1 | grep -q '^rclone v'
+
       - name: Probe the readers on the parser image
         if: matrix.target == 'parser'
         run: |
@@ -577,9 +586,9 @@ jobs:
       # The parser first: a box that pulls `:latest` between the two moves
       # gets the new parser beside the old server (which reads through the
       # same wire), never a new server beside an old parser.
-      - name: Point latest at the probed release, both images
+      - name: Point latest at the probed release, every image
         run: |
-          for target in parser server; do
+          for target in parser sync server; do
             image="${IMAGE_BASE}-${target}"
             docker buildx imagetools create -t "${image}:latest" "${image}:${{ github.ref_name }}"
           done

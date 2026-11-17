@@ -39,9 +39,13 @@ docker compose build web
 echo "▶ Building ${MANTLE_IMAGE_NAMESPACE}/mantle-parser:${TAG}"
 docker build --target parser -t "${MANTLE_IMAGE_NAMESPACE}/mantle-parser:${TAG}" .
 
+echo "▶ Building ${MANTLE_IMAGE_NAMESPACE}/mantle-sync:${TAG}"
+docker build --target sync -t "${MANTLE_IMAGE_NAMESPACE}/mantle-sync:${TAG}" .
+
 echo "▶ Pushing to Docker Hub"
 docker compose push web
 docker push "${MANTLE_IMAGE_NAMESPACE}/mantle-parser:${TAG}"
+docker push "${MANTLE_IMAGE_NAMESPACE}/mantle-sync:${TAG}"
 
-echo "✔ Pushed ${MANTLE_IMAGE_NAMESPACE}/mantle-server:${TAG} + mantle-parser:${TAG}"
+echo "✔ Pushed ${MANTLE_IMAGE_NAMESPACE}/mantle-server:${TAG} + mantle-parser:${TAG} + mantle-sync:${TAG}"
 echo "  On the VPS:  MANTLE_IMAGE_NAMESPACE=${MANTLE_IMAGE_NAMESPACE} MANTLE_IMAGE_TAG=${TAG} docker compose pull && docker compose up -d --wait --remove-orphans"
