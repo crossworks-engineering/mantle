@@ -45,6 +45,12 @@ export const PIPELINE_ASK_HINT_MAX = 300;
 /** The largest picture of one ask, in bytes. */
 export const PIPELINE_ASK_PICTURE_MAX_BYTES = 10 * 1024 * 1024;
 
+/** The raw bytes of all the pictures of one step's answer: the parser's
+ *  budget (`PARSER_PICTURES_BUDGET_BYTES`, ../parser-wire.ts; a test holds
+ *  them equal). A picture past it is left out of the answer, and its ask is
+ *  refused, so a step keeps its pictures under it. */
+export const PIPELINE_PICTURES_MAX_BYTES = 64 * 1024 * 1024;
+
 /** The list part of an ask (docs/pipelines.md, "The list part of an
  *  ask"): the classes of an item, the most items of one answer, and the
  *  longest text of one item, in characters. An item of another class is

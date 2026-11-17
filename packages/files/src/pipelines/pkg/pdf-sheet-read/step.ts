@@ -23,12 +23,12 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { PARSER_PICTURES_BUDGET_BYTES } from '../../../parser-wire';
 import { withPdf } from '../../../pdf-open';
 import { titleBlockOf } from '../../../pdf-rows';
-import type { RenderedWindow } from '../../../rasterize';
+import type { RenderFn } from '../../../pdf-drawing';
 import {
   PIPELINE_ASK_FIELDS_MAX,
+  PIPELINE_PICTURES_MAX_BYTES,
   VISION_WORKER,
   type PipelineAskField,
   type PipelineCall,
@@ -119,7 +119,7 @@ export function pagesOf(options: Readonly<Record<string, unknown>>): number {
  *  sheet (28 of the 29 pages of that set) is under the cap at 200. A
  *  picture is a PNG, or a JPEG when the PNG is past 5 MB, each under the 10
  *  MB of an ask. All the pictures of a run stay in the parser's budget of
- *  an answer (PARSER_PICTURES_BUDGET_BYTES): a picture past what is left
+ *  an answer (PIPELINE_PICTURES_MAX_BYTES): a picture past what is left
  *  of it is not asked, with a warning. */
 export const PAGE_DPI = 200;
 export const CORNER_DPI = 300;
@@ -141,6 +141,9 @@ export function cornerOf(
   const y0 = Math.max(0, 1 - box.height / heightMm);
   return [x0, y0, 1, 1];
 }
+
+/** A picture the parser's child drew. */
+type Picture = NonNullable<Awaited<ReturnType<RenderFn>>[number]>;
 
 /** A window of a page: x0, y0, x1, y1 as fractions of the shown page. */
 type Window = [number, number, number, number];
@@ -227,8 +230,8 @@ export const step: PipelineStep = async (req, job) => {
 
   const calls: PipelineCall[] = [];
   /** The bytes of pictures the run may still send (the parser's budget). */
-  let left = PARSER_PICTURES_BUDGET_BYTES;
-  const add = async (ask: Ask, p: RenderedWindow) => {
+  let left = PIPELINE_PICTURES_MAX_BYTES;
+  const add = async (ask: Ask, p: Picture) => {
     // A picture with nothing drawn on it is never read: the model would
     // answer for a white page.
     if (p.blank) {

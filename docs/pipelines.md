@@ -1133,7 +1133,7 @@ The core gives the step the Reader's options as its state
 no option of the Agent. A picture is a PNG, or a JPEG (quality 90) when the
 PNG is past 5 MB (`PageWindow.maxBytes`, `packages/files/src/rasterize.ts`),
 each under the 10 MB of an ask. The pictures of a run stay in the parser's
-budget of an answer (`PARSER_PICTURES_BUDGET_BYTES`, 64 MB): a picture still
+budget of an answer (`PIPELINE_PICTURES_MAX_BYTES` in the contract, the same as the parser's `PARSER_PICTURES_BUDGET_BYTES`, 64 MB): a picture still
 past 5 MB, or past what is left of the budget, is left out, with a warning.
 A site drawing gives pictures of less than 1 MB, so the budget is a bound,
 not a cut.

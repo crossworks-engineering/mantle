@@ -15,10 +15,12 @@ import { BUILTIN_PIPELINES, asksMaxOf } from '../../builtin';
 import {
   PIPELINE_API,
   PIPELINE_ASK_FIELDS_MAX,
+  PIPELINE_PICTURES_MAX_BYTES,
   VISION_WORKER,
   type PictureAskInput,
   type PipelineStepRequest,
 } from '../../contract';
+import { PARSER_PICTURES_BUDGET_BYTES } from '../../../parser-wire';
 import { checkStepResult } from '../../step-check';
 import { inProcessStepJob } from '../../test-job';
 import {
@@ -220,6 +222,8 @@ describe('the step of pdf-sheet-read', () => {
     expect(sent).toBe(Math.floor((64 * 1024 * 1024) / big.length));
     expect(sent * big.length).toBeLessThanOrEqual(64 * 1024 * 1024);
     expect(sent).toBe(12);
+    // The contract's budget is the parser's.
+    expect(PIPELINE_PICTURES_MAX_BYTES).toBe(PARSER_PICTURES_BUDGET_BYTES);
     // The budget is spent in the order of the asks: the corner, each page
     // whole, then the halves.
     expect(inputs(result.calls).map((c) => c.key)).toEqual([
