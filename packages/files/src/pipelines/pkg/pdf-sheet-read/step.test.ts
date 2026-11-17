@@ -220,6 +220,16 @@ describe('the step of pdf-sheet-read', () => {
     expect(sent).toBe(Math.floor((64 * 1024 * 1024) / big.length));
     expect(sent * big.length).toBeLessThanOrEqual(64 * 1024 * 1024);
     expect(sent).toBe(12);
+    // The budget is spent in the order of the asks: the corner, each page
+    // whole, then the halves.
+    expect(inputs(result.calls).map((c) => c.key)).toEqual([
+      'page-1-title-block',
+      ...Array.from({ length: 7 }, (_, i) => `page-${i + 1}`),
+      'page-1-half-1',
+      'page-1-half-2',
+      'page-2-half-1',
+      'page-2-half-2',
+    ]);
     expect(result.warnings).toHaveLength(22 - sent);
     expect(result.warnings![0]).toContain('past the budget of the run');
   });
@@ -334,9 +344,16 @@ describe('the step of pdf-sheet-read', () => {
     expect(
       await step(
         request('scan'),
-        lossyJob(three, (w) => w.box !== undefined),
+        lossyJob(three, (w) => w.scale === CORNER_DPI / 72),
       ),
     ).toEqual({ status: 'failed', warnings: ['The title block of page 1 could not be drawn.'] });
+    // A lost half of page 1, with its corner drawn: page 1's.
+    expect(
+      await step(
+        request('scan'),
+        lossyJob(three, (w) => w.pageNumber === 1 && w.box?.[0] === 1 - HALF),
+      ),
+    ).toEqual({ status: 'failed', warnings: ['Page 1 could not be drawn.'] });
     // A half that is lost is its page's.
     expect(
       await step(

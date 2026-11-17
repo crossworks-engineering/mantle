@@ -1159,8 +1159,11 @@ job through the parser service): such a sheet gave its 4 pictures with a
 peak of 1,486 MB for the container, in 18.4 s, none blank. The other 19 PDFs
 of the set (1 to 6 pages, 3 to 19 asks): at most 512 MB and 4.6 s a file;
 a dense flow diagram 2.1 s. So a run of 10 such large-image pages would be
-about 180 s, under the job's 240 s; past it the run fails and says which
-page (the remedy is the option `pages`). The model then read 7 of the 7
+about 180 s; the child has about 215 s (the job's 240 s, less the 20 s kept
+for the answer and the job's start). Its memory was measured on one such
+page only: a page lets go of its images before the next is drawn. Past the
+time or the memory the run fails and says which page; the remedy is the
+option `pages`, on the box, so a last remedy. The model then read 7 of the 7
 values of that sheet.
 An image past 100 M still draws white, and its picture is blank: never
 asked. A kill of the child for memory loses its picture and those after it:
