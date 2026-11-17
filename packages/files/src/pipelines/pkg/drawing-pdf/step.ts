@@ -7,9 +7,11 @@
  * The kind is the router's (`request.kind`), or on a read again the stored
  * one: the step does not name it again. The core's `state` of step 1 holds
  * the decider's answer as the core heard it (the File tab's decider
- * columns), and `facts: true` when the body is the router's page facts
- * (docs/pipelines.md, "The router"): the file is then read one time. The
- * state is data from the core: it is used for those two, nothing else.
+ * columns), `facts: true` when the body is the router's page facts
+ * (docs/pipelines.md, "The router"): the file is then read one time, and
+ * `nodeVision: true` when the file's node holds the text of an older
+ * whole-page vision read (the File tab's `Vision text`). The state is data
+ * from the core: it is used for those three, nothing else.
  *
  * One step: the page facts, the tabs, one write call. It asks no model. The
  * sketch read of a scan is not a step of this pipeline: it is a core path
@@ -30,6 +32,7 @@ export const step: PipelineStep = async (req, job) => {
   const state = (req.state && typeof req.state === 'object' ? req.state : {}) as {
     decision?: unknown;
     facts?: unknown;
+    nodeVision?: unknown;
   };
   // The router's page facts, when the core sent them as the body: the
   // file is not read again. Else the body is the file.
@@ -43,6 +46,7 @@ export const step: PipelineStep = async (req, job) => {
     pdfKindDecisionOf(state.decision),
     null,
     kind,
+    state.nodeVision === true,
   );
   return {
     status: 'ok',

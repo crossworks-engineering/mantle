@@ -27,8 +27,11 @@ import { SHAPES } from './pipelines/shapes';
 const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
 
 /** The version of the rules in ./pdf-kind.ts. Raise it when a threshold or
- *  a rule changes, so a database says which rules made it. */
-export const PDF_KIND_RULES_VERSION = 1;
+ *  a rule changes, so a database says which rules made it. 2 (2026-11-17):
+ *  a fill's slanted lines are left out of the axes, a file of typed pages
+ *  but for a few is a document, a file of blank pages that holds an image
+ *  too large to open is a scan. */
+export const PDF_KIND_RULES_VERSION = 2;
 
 /** The clock columns of a reader's tabs, by tab name: a time a read took,
  *  another number on every read of the same bytes. `Read ms` of `Pages` is
@@ -255,6 +258,21 @@ function rowSheets(drawing: PdfDrawing, sketch: SketchRead | null): ParsedSheet[
     columns: [{ name: 'Page', type: 'number' }, ...BOX_COLUMNS(), { name: 'Why', type: 'text' }],
     rows: [],
   };
+  const segments: ParsedSheet = {
+    name: 'Segments',
+    columns: [
+      { name: 'Page', type: 'number' },
+      { name: 'Kind', type: 'text' },
+      { name: 'X1', type: 'number' },
+      { name: 'Y1', type: 'number' },
+      { name: 'X2', type: 'number' },
+      { name: 'Y2', type: 'number' },
+      { name: 'Width mm', type: 'number' },
+      { name: 'Colour', type: 'text' },
+      { name: 'Dashed', type: 'checkbox' },
+    ],
+    rows: [],
+  };
   /** The tags and line numbers of one page, read in `words`. A tag's
    *  region and hidden flag are those of the word it was read in. */
   const tagRows = (
@@ -339,6 +357,19 @@ function rowSheets(drawing: PdfDrawing, sketch: SketchRead | null): ParsedSheet[
       ]);
     }
     tagRows(p.page, rows.words, rows);
+    for (const g of rows.segments ?? []) {
+      segments.rows.push([
+        p.page,
+        g.kind === 'L' ? 'line' : 'curve',
+        cell(g.a[0]),
+        cell(g.a[1]),
+        cell(g.b[0]),
+        cell(g.b[1]),
+        cell(g.w),
+        g.c || null,
+        g.d,
+      ]);
+    }
     for (const m of rows.markups) {
       markups.rows.push([
         p.page,
@@ -351,7 +382,7 @@ function rowSheets(drawing: PdfDrawing, sketch: SketchRead | null): ParsedSheet[
       ]);
     }
   }
-  return [texts, tags, lines, markups, gaps].filter((s) => s.rows.length > 0);
+  return [texts, tags, lines, markups, gaps, segments].filter((s) => s.rows.length > 0);
 }
 
 /** Pages with no whole read: those stated so, and those past the reader's
@@ -367,12 +398,21 @@ export function pagesNotReadWhole(drawing: PdfDrawing): number {
  * pages not read whole (a page over its time on a busy parser). The first
  * read stands, so nothing is written (and in the sketch read nothing is
  * asked). The one rule, for the sketch read and for a read again.
+ *
+ * Only a read again of the File tab it wrote (`now.rulesVersion` stated)
+ * may name another kind when the stored one came from older rules: that is
+ * the point of newer rules. The sketch read states no version, so for it
+ * another kind is always poorer: a paid read never runs on a database of
+ * older rules that name another kind (a read again comes first).
  */
 export function pdfReadPoorer(
-  now: { rulesKind: string; notReadWhole: number },
-  first: { rulesKind: string; notReadWhole: number },
+  now: { rulesKind: string; rulesVersion?: number; notReadWhole: number },
+  first: { rulesKind: string; rulesVersion?: number; notReadWhole: number },
 ): boolean {
-  return now.rulesKind !== first.rulesKind || now.notReadWhole > first.notReadWhole;
+  const newerRules = now.rulesVersion !== undefined && now.rulesVersion > (first.rulesVersion ?? 0);
+  return (
+    (!newerRules && now.rulesKind !== first.rulesKind) || now.notReadWhole > first.notReadWhole
+  );
 }
 
 /**
@@ -388,6 +428,8 @@ export function pdfFileTabOf(
 ): {
   kind: string;
   rulesKind: string;
+  /** The version of the rules that named `rulesKind`; 0 when not stated. */
+  rulesVersion: number;
   decision: PdfKindDecision | null;
   visionRead: boolean;
   notReadWhole: number;
@@ -401,6 +443,7 @@ export function pdfFileTabOf(
   return {
     kind,
     rulesKind,
+    rulesVersion: Number(cell('Rules version') ?? 0) || 0,
     visionRead: cell('Vision read') === 1 || cell('Vision read') === true,
     notReadWhole: Number(cell('Pages not read whole') ?? 0),
     decision:
@@ -416,8 +459,8 @@ export function pdfFileTabOf(
   };
 }
 
-/** What each kind's database holds beyond the two tabs here. Phase 1 states
- *  it, so a reader does not look for rows that are not built yet. */
+/** What each kind is, in one sentence: the description of a database
+ *  states it, and the summary of a file gets it as a fact (pdfKindNote). */
 const KIND_NOTE: Record<PdfKind, string> = {
   pid: 'A piping and instrument diagram.',
   pfd: 'A process flow diagram.',
@@ -431,6 +474,17 @@ const KIND_NOTE: Record<PdfKind, string> = {
   unsure: 'A drawing-like PDF whose kind the rules could not decide.',
 };
 
+/** The one sentence of a kind (`A piping isometric.`), or null for a word
+ *  that is no kind. */
+export function pdfKindNote(kind: string): string | null {
+  return isPdfKind(kind) ? KIND_NOTE[kind] : null;
+}
+
+/** What `Vision text` of the File tab says: `sketch read` (the read part by
+ *  part ran, its rows are here), `node text only` (an older whole-page
+ *  vision read wrote the file's text, and no row here holds it), or null. */
+export const VISION_TEXT = { sketch: 'sketch read', nodeOnly: 'node text only' } as const;
+
 export function pdfDrawingSheets(
   drawing: PdfDrawing,
   decision: PdfKindDecision | null,
@@ -443,6 +497,10 @@ export function pdfDrawingSheets(
    * this kind. Left out: the rules of this read and the decider's answer.
    */
   named?: PdfKind,
+  /** The core's word that the file's node holds text of an older whole-page
+   *  vision read (`vision_model`): with no sketch read, `Vision text` says
+   *  `node text only`. */
+  nodeVision = false,
 ): PdfDrawingSheets {
   const decided =
     named === undefined
@@ -472,8 +530,10 @@ export function pdfDrawingSheets(
       // nothing out.
       { name: 'All read', type: 'checkbox' },
       // The sketch read (./pdf-sketch.ts). `Vision read` is the record that
-      // it ran for these bytes: it is not run again.
+      // it ran for these bytes: it is not run again. `Vision text`: where
+      // the vision text of the file is (VISION_TEXT).
       { name: 'Vision read', type: 'checkbox' },
+      { name: 'Vision text', type: 'text' },
       { name: 'Vision model', type: 'text' },
       { name: 'Scan pages read', type: 'number' },
       { name: 'Scan pages past the cap', type: 'number' },
@@ -494,6 +554,7 @@ export function pdfDrawingSheets(
         drawing.largeImageNotRead === true,
         drawing.allRead === true,
         sketch !== null,
+        sketch ? VISION_TEXT.sketch : nodeVision ? VISION_TEXT.nodeOnly : null,
         sketch?.model ?? null,
         sketch ? sketch.pages.filter((r) => r.status === 'ok').length : null,
         sketch ? sketch.pagesPastCap.length : null,
@@ -539,6 +600,7 @@ export function pdfDrawingSheets(
       { name: 'As equipment', type: 'number' },
       { name: 'As line number', type: 'number' },
       { name: 'Rejected tag-like', type: 'number' },
+      { name: 'In a table', type: 'number' },
       { name: 'Other tag tokens', type: 'number' },
       { name: 'Tags from lists', type: 'number' },
       { name: 'Bubble tags', type: 'number' },
@@ -590,6 +652,7 @@ export function pdfDrawingSheets(
         p.rows?.account.asEquipment ?? null,
         p.rows?.account.asLine ?? null,
         p.rows?.account.rejected ?? null,
+        p.rows?.account.inTable ?? null,
         p.rows?.account.otherTagTokens ?? null,
         p.rows?.account.fromLists ?? null,
         p.rows?.account.bubbles ?? null,
@@ -617,16 +680,22 @@ export function pdfDrawingSheets(
       ? ` The file declares ${drawing.numPages} pages and only the first ${drawing.pages.length} have a row.`
       : '') +
     (drawing.largeImageNotRead === true
-      ? ` The file holds an image too large to read: its page may count as blank or as text alone.`
+      ? ` The file holds an image too large to read: its page may count as blank or as text alone;` +
+        ` when every page counts as blank, the file is taken as a scan.`
+      : '') +
+    (sketch === null && nodeVision
+      ? ` Vision text node text only: an older vision read of the whole page wrote the file's` +
+        ` text (file_read gives it); no tab here holds it.`
       : '') +
     (drawing.pages.some((p) => p.notes?.length)
       ? ` Notes states what a page's counts or rows leave out (rows_not_listed: the page's words,` +
         ` tags, line numbers and markups are not in the tabs, the file holds more rows or more` +
-        ` text than one database lists).`
+        ` text than one database lists; segments_not_listed: the page's segments are not in` +
+        ` Segments, the file holds more than one database lists).`
       : '') +
     (rows.length > 0
       ? ` The other tabs hold what the text layer and the markups say, read with no model,` +
-        ` for every page that is not a typed document page; a tab with no row is left out.` +
+        ` for every page; a tab with no row is left out.` +
         ` Texts: a word a row, with its line, its box (X0 Y0 X1 Y1: fractions of the shown page,` +
         ` origin top left), Hidden (drawn invisible, such as an old OCR layer) and Spaced (put` +
         ` together from letter-spaced glyphs: check it).` +
@@ -644,8 +713,15 @@ export function pdfDrawingSheets(
         ` not named, they are parts of Raw.` +
         ` Markups: each annotation with its text and author, and for a text markup the drawn` +
         ` markup beside it (a line, a cloud).` +
-        ` Region flags words in the lower right corner (title_block, by position) and words that` +
-        ` repeat at one place on 3 or more pages (template); they are flagged, never left out.` +
+        ` Region flags words in the lower right corner (title_block, by position), words that` +
+        ` repeat at one place on 3 or more pages (template), and codes in a column of codes, as in` +
+        ` a table or a list (table: a code whose left edge lines up with 3 or more codes close` +
+        ` under or over it; a code is a token with a letter and a digit); they are flagged, never` +
+        ` left out. A code in a table (an item code of a material list)` +
+        ` is not listed as a tag; Pages counts it (In a table). A line number in a table is listed.` +
+        ` Segments: the lines and curves of a drawn page with no text layer (its text is drawn` +
+        ` as strokes), with their end points in the frame of the boxes; Kind curve gives the end` +
+        ` points of a curve only.` +
         ` Confidence is from a fixed table by how a row was read: under 0.8 is a value to check.` +
         (sketch
           ? ` Source ocr: a vision model (${sketch.model}) read the scan pages part by part` +
@@ -655,7 +731,7 @@ export function pdfDrawingSheets(
             ` read: the model gave no text for it (no_text_read), the model's call for its picture` +
             ` did not run (not_read), or it did not fit in the pictures sent (not_sent).`
           : '') +
-        ` Not here yet: symbols, tables and cells, and what a line connects.`
+        ` Not here yet: symbols, the cells of a table, and what a line connects.`
       : ` No tab here holds the words of the drawing.`);
   return { kind, sheets: [file, pages, ...rows], description };
 }

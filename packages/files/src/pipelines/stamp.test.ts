@@ -13,7 +13,9 @@ import {
 } from './stamp';
 
 const cad = readerFor(BUILTIN_PIPELINES, 'dxf')!;
-const site = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
+/** The built-in at a fixed version, so the entries below do not follow
+ *  each raise of its version. */
+const site = { ...BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!, version: '1.0.0' };
 const FOUR = {
   pipeline_id: 'drawing-cad',
   pipeline_version: '1.0.0',

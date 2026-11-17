@@ -70,7 +70,8 @@ const FUNCTIONS = new Set('AEGILOPRWCSTVYZUX');
 /**
  * Letters that parse as a code by the table and are something else on a
  * drawing: month names in a date (`APR-2026`), standards bodies
- * (`ISO-9001`, `API-650`) and plain words (`TAG-01`). Never a code.
+ * (`ISO-9001`, `API-650`), plain words (`TAG-01`) and the pipe schedule
+ * (`SCH160`, on every material list and line class sheet). Never a code.
  */
 const MONTHS = new Set([
   ...['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'SEPT', 'OCT', 'NOV', 'DEC'],
@@ -91,6 +92,7 @@ const NOT_CODES = new Set([
     'AREA',
     'SIZE',
     'TYPE',
+    'SCH',
   ],
 ]);
 /** Valve and device codes in wide use that the letter table does not make. */

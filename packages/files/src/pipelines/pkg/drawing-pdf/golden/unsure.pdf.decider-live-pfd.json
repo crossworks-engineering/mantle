@@ -61,6 +61,10 @@
           "type": "checkbox"
         },
         {
+          "name": "Vision text",
+          "type": "text"
+        },
+        {
           "name": "Vision model",
           "type": "text"
         },
@@ -79,7 +83,7 @@
           "pfd",
           "decider",
           "unsure",
-          1,
+          2,
           "pfd",
           0.912,
           "live",
@@ -90,6 +94,7 @@
           false,
           false,
           false,
+          null,
           null,
           null,
           null
@@ -231,6 +236,10 @@
           "type": "number"
         },
         {
+          "name": "In a table",
+          "type": "number"
+        },
+        {
           "name": "Other tag tokens",
           "type": "number"
         },
@@ -292,6 +301,7 @@
           0,
           0,
           0,
+          null,
           null,
           null,
           null,

@@ -317,7 +317,7 @@ describe.skipIf(!URL)('the after chain', () => {
         pipeline_version: '1.0.0',
         pipeline_api: '1',
         shapes: '',
-        pipelines_after: 'site-tags@1.0.0',
+        pipelines_after: `site-tags@${site().version}`,
       });
     }
     const csv = Buffer.from('tag,size\nP-101,50\n');
@@ -332,7 +332,7 @@ describe.skipIf(!URL)('the after chain', () => {
     const no = await built(other, 'dxf', dxf());
 
     expect(await tabNames(yes.abs)).toEqual([...(await tabNames(no.abs)), 'Site tags']);
-    expect(metaOf(yes.abs).pipelines_after).toBe('site-tags@1.0.0');
+    expect(metaOf(yes.abs).pipelines_after).toBe(`site-tags@${site().version}`);
     expect(Object.keys(metaOf(no.abs))).toEqual(PHASE1_KEYS);
     const { pipelines_after: _after, node_id: _a, ...yesMeta } = metaOf(yes.abs);
     const { node_id: _b, ...noMeta } = metaOf(no.abs);
@@ -340,7 +340,7 @@ describe.skipIf(!URL)('the after chain', () => {
     // The four phase 1 keys are the reader's, unchanged by the patch.
     expect(await fd.readFileDbStamp(yes.id, yes.sha)).toMatchObject({
       pipeline_id: 'drawing-cad',
-      pipelines_after: 'site-tags@1.0.0',
+      pipelines_after: `site-tags@${site().version}`,
     });
     expect(await valuesOf(yes.abs, ['Site tags'])).toEqual(await valuesOf(no.abs));
     const tags = (await valuesOf(yes.abs))['Site tags'] as Record<string, unknown>[];
@@ -520,7 +520,9 @@ describe.skipIf(!URL)('the after chain', () => {
       ['EA-101', 'equipment'],
       ['P-1001-A1A', 'line'],
     ]);
-    expect(metaOf(file.abs).pipelines_after).toBe(`site-tags@1.0.0#${state.optionsHash}`);
+    expect(metaOf(file.abs).pipelines_after).toBe(
+      `site-tags@${site().version}#${state.optionsHash}`,
+    );
     await patch();
     expect(await valuesOf(file.abs)).toEqual(once);
     expect(await valuesOf(file.abs, ['Site tags'])).toEqual(reader);

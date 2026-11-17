@@ -1,5 +1,5 @@
 {
-  "pipelines_after": "site-tags@1.0.0",
+  "pipelines_after": "site-tags@1.0.1",
   "tabs": {
     "kind": "sheets",
     "sha256": "4dcca43bf4ba8291334f71935de1cd9be013402b352a505688239bfb49644719",

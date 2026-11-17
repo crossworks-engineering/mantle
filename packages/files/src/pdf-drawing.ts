@@ -56,6 +56,14 @@ export const DRAWING_MAX_PAGES = 5000;
  */
 export const DRAWING_MAX_ROWS = 300_000;
 /**
+ * The most segments one read lists (the tab `Segments`), all pages
+ * together, apart from the row cap: a drawing with its text as strokes
+ * holds about 83,000 a sheet, so three sheets fit. A page whose segments
+ * would pass it lists none, and says so (`segments_not_listed`); its words,
+ * if any, are listed as before.
+ */
+export const DRAWING_MAX_SEGMENTS = 250_000;
+/**
  * The most characters of word and markup text (with a markup's author) one
  * read lists, all pages together. A word has no length bound of its own,
  * so the row count alone does not bound the answer's size. A real file at
@@ -109,9 +117,11 @@ export type PdfDrawingPage = PageFacts & {
   eye: PageEye | null;
   /**
    * The page's words, tags, line numbers and markups (./pdf-rows.ts), for a
-   * page with text or markups that is not a document page. Left out for a
-   * document page, a page with no text read, and a page past the file's
-   * word cap (its `notes` say so).
+   * page with text or markups, and the segments of a drawn page with no
+   * text layer. Every page of a file that gets a database has them, a typed
+   * page too, so the Texts tab holds the whole file. Left out for every
+   * page of a `document` (its words are the file's text), a page with no
+   * text read, and a page past the file's row cap (its `notes` say so).
    */
   rows?: PageRows;
 };
@@ -154,6 +164,8 @@ export async function readPdfDrawing(
     maxRows?: number;
     /** The most characters of text to list (`DRAWING_MAX_CHARS`). */
     maxChars?: number;
+    /** The most segments to list (`DRAWING_MAX_SEGMENTS`). */
+    maxSegments?: number;
     /** The title block box of the rows (the reader's options). Left out:
      *  `TITLE_BLOCK_MM` (./pdf-rows.ts). */
     titleBlock?: TitleBlockMm;
@@ -170,6 +182,8 @@ export async function readPdfDrawing(
   let listedChars = 0;
   const maxRows = opts.maxRows ?? DRAWING_MAX_ROWS;
   const maxChars = opts.maxChars ?? DRAWING_MAX_CHARS;
+  let listedSegments = 0;
+  const maxSegments = opts.maxSegments ?? DRAWING_MAX_SEGMENTS;
   const read = await readPdfPages(
     new Uint8Array(bytes),
     {
@@ -179,12 +193,22 @@ export async function readPdfDrawing(
     },
     (p) => {
       const facts = pageFacts(p);
-      // A typed page of a document gives no rows: its words are the file's
-      // text already. Every other page with text or markups gives its rows,
-      // inside the file's word cap.
-      const rows =
-        pageKindOf(facts) === 'document' ? null : pageRows(p, undefined, opts.titleBlock);
-      if (rows && rows.words.length + rows.markups.length > 0) {
+      // Every page with text, markups or (a drawn page with no text layer)
+      // segments gives its rows, inside the file's row cap. A typed page
+      // too: when the file is not a document, its database holds the whole
+      // file. A document's rows are dropped below.
+      const rows = pageRows(p, undefined, opts.titleBlock);
+      // The segments of a drawn page with no text layer, inside a cap of
+      // their own, so they never push the words of a later page out.
+      if (rows && facts.class === 'vector_no_text' && p.status === 'ok') {
+        if (listedSegments + p.segments.length <= maxSegments) {
+          rows.segments = p.segments;
+        } else {
+          facts.notes = [...(facts.notes ?? []), 'segments_not_listed'];
+        }
+      }
+      const segments = rows?.segments?.length ?? 0;
+      if (rows && rows.words.length + rows.markups.length + segments > 0) {
         // Every row counts: one word can give many tags (a slash list).
         const count =
           rows.words.length + rows.tags.length + rows.lines.length + rows.markups.length;
@@ -194,6 +218,7 @@ export async function readPdfDrawing(
         if (listed + count <= maxRows && listedChars + chars <= maxChars) {
           listed += count;
           listedChars += chars;
+          listedSegments += segments;
           rowsOf.set(facts.page, rows);
           if (rows.markupsNotPaired) {
             facts.notes = [...(facts.notes ?? []), 'markups_not_paired'];
@@ -253,24 +278,27 @@ export async function readPdfDrawing(
         ? 'document'
         : null;
 
+  // A file whose pages all read as blank while it holds an image too large
+  // to open is a picture of a sheet (or of sheets): its pages are scans.
+  const oneLargePicture =
+    largeImageNotRead && read.pages.length > 0 && read.pages.every((f) => f.class === 'blank');
   const pages: PdfDrawingPage[] = read.pages.map((f) => {
     const eye = eyes.get(f.page) ?? null;
     // What the other pictures say is for a page that was never looked at.
     // A page that was asked about and got no answer (its picture could not
     // be drawn, or showed nothing) is not known: it stays unsure.
-    const kind = pageKindOf(f, eye, asked.has(f.page) ? null : rasterDefault);
+    const kindOf = (e: PageEye | null, others: PageKind | null): PageKind =>
+      oneLargePicture ? 'scan' : pageKindOf(f, e, others);
+    const kind = kindOf(eye, asked.has(f.page) ? null : rasterDefault);
     // `other_pages` only when they changed the answer: a large sheet is a
     // scan by its own size, and a page nothing could name stays unsure.
     const kindFrom: KindFrom = eye
       ? 'picture'
-      : kind !== pageKindOf(f, null, null)
+      : kind !== kindOf(null, null)
         ? 'other_pages'
         : 'rules';
-    // A raster page the pictures named a typed page gives no rows either.
-    const rows = kind === 'document' ? undefined : rowsOf.get(f.page);
-    return { ...f, kind, kindFrom, eye, ...(rows ? { rows } : {}) };
+    return { ...f, kind, kindFrom, eye };
   });
-  markTemplates(pages.map((p) => p.rows));
   // Whether the reader left nothing out: every page has a row, every row
   // was read whole, no image was too large to open (its page then counts as
   // blank, or as its text alone), no page reads as empty while it draws
@@ -292,6 +320,15 @@ export async function readPdfDrawing(
     pages.map((p) => p.kind),
     allRead,
   );
+  // A document gets no database: its words are the file's text. Every
+  // other file keeps the rows of all its pages.
+  if (kind !== 'document') {
+    for (const p of pages) {
+      const rows = rowsOf.get(p.page);
+      if (rows) p.rows = rows;
+    }
+    markTemplates(pages.map((p) => p.rows));
+  }
   return {
     numPages: read.numPages,
     pageCountMayBeShort: read.pageCountMayBeShort,

@@ -137,12 +137,13 @@ export const SHAPES: Readonly<Record<ShapeId, Shape>> = {
       ),
     ],
   },
-  // Site tags reads Text, and Page, Layer, X and Y when they are there. A
+  // Site tags reads Text, and Page, Layer, X, Y and Region when they are
+  // there (Region: a PDF drawing's; a word in a `table` gives no tag). A
   // CAD drawing's Texts tab and a PDF drawing's both carry it. No reader
   // promises it, so no reader's stamp names it.
   'texts-v1': {
     id: 'texts-v1',
-    tabs: [tab('Texts', true, ['Text', 'Page', 'Layer', 'X', 'Y'], ['Text'])],
+    tabs: [tab('Texts', true, ['Text', 'Page', 'Layer', 'X', 'Y', 'Region'], ['Text'])],
   },
 };
 

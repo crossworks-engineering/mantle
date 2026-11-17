@@ -22,12 +22,15 @@ import { readFile } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import {
   fileDbWordOf,
+  PDF_KIND_RULES_VERSION,
   pdfFileTabOf,
   pdfKindAskOf,
   type PdfKindAsk,
   type PdfKindDecision,
   type PipelineManifest,
 } from '@mantle/files';
+import { sql } from 'drizzle-orm';
+import { db } from '@mantle/db';
 import { runTableSql } from '@mantle/tabledb';
 import { runPackaged, stepFileOf, PipelineRunError, type PipelineAsk } from './pipeline-runner';
 
@@ -68,14 +71,18 @@ export type FileStamp = { ino: number; size: number; mtimeMs: number };
  * - A database whose File tab cannot be read, or a stat or a word that
  *   cannot be read: `kept`.
  * - Else the stored File tab (null: no database) and the stat of the
- *   database (null: none) the write is conditional on.
+ *   database (null: none) the write is conditional on, and `reroute`: the
+ *   stored kind came from older rules (`Rules version`), not from a used
+ *   decider answer, so the router names it again with the rules of now (no
+ *   ask). The stored answer, a shadow or weak one too, stays in the File
+ *   tab (readRouted, ./file-database.ts).
  */
 export async function pdfReadAgainOf(names: {
   sqlite: string;
   none: string;
 }): Promise<
   | { skip: 'sketch' | 'not-drawing' | 'kept' }
-  | { skip: null; stored: StoredPdf | null; since: FileStamp | null }
+  | { skip: null; stored: StoredPdf | null; since: FileStamp | null; reroute: boolean }
 > {
   try {
     const at = statSync(names.sqlite, { throwIfNoEntry: false });
@@ -85,25 +92,54 @@ export async function pdfReadAgainOf(names: {
         throw err;
       });
       if (fileDbWordOf(word) === 'no-rows') return { skip: 'not-drawing' };
-      return { skip: null, stored: null, since: null };
+      return { skip: null, stored: null, since: null, reroute: false };
     }
     const r = await runTableSql(names.sqlite, 'SELECT * FROM "File"', { cap: 1 });
     const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
     if (!stored) return { skip: 'kept' };
     if (stored.visionRead) return { skip: 'sketch' };
-    return { skip: null, stored, since: { ino: at.ino, size: at.size, mtimeMs: at.mtimeMs } };
+    return {
+      skip: null,
+      stored,
+      since: { ino: at.ino, size: at.size, mtimeMs: at.mtimeMs },
+      reroute: stored.rulesVersion < PDF_KIND_RULES_VERSION && !stored.decision?.used,
+    };
   } catch {
     return { skip: 'kept' };
   }
 }
 
-/** The state the reader's first step gets from the core: the decision, and
- *  `facts: true` when its body is the router's page facts, not the file. */
+/**
+ * Whether a file's node holds the text of an older whole-page vision read:
+ * `data.vision_model` is set (the extract writes it with the text). A read
+ * again tells the reader (readerStateOf), so the File tab can say where the
+ * vision text is. A failed read says no: it only names where text is.
+ */
+export async function pdfNodeVisionOf(fileId: string): Promise<boolean> {
+  try {
+    const rows = (await db.execute(
+      sql`select coalesce(data->>'vision_model', '') <> '' as v from nodes where id = ${fileId}`,
+    )) as unknown as { v?: boolean }[];
+    return rows[0]?.v === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The state the reader's first step gets from the core: the decision,
+ *  `facts: true` when its body is the router's page facts, not the file,
+ *  and `nodeVision: true` when the file's node holds the text of an older
+ *  whole-page vision read (the File tab's `Vision text`). */
 export function readerStateOf(
   decision: PdfKindDecision | null,
   facts = false,
+  nodeVision = false,
 ): Record<string, unknown> {
-  return facts ? { decision, facts: true } : { decision };
+  return {
+    decision,
+    ...(facts ? { facts: true } : {}),
+    ...(nodeVision ? { nodeVision: true } : {}),
+  };
 }
 
 /**

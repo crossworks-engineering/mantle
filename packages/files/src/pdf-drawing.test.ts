@@ -471,13 +471,37 @@ describe('a page whose picture is too large to read', () => {
     ]);
   };
 
-  it('the file is never a document: the page was not read, and the File tab says so', async () => {
+  it('the file is never a document: the page that reads as blank is a scan, and the File tab says so', async () => {
     // 12,000 by 10,000 pixels: over what the reader opens. The page then
-    // reads as empty, on an office sheet.
+    // reads as empty, on an office sheet: it is the picture (rules 2).
     const d = await readPdfDrawing(imagePage(12_000, 10_000));
     expect(d).toMatchObject({ largeImageNotRead: true, allRead: false });
-    expect(d.pages.map((p) => p.kind)).not.toContain('none');
-    expect(d.kind).toBe('unsure');
+    expect(d.pages.map((p) => [p.class, p.kind, p.kindFrom])).toEqual([['blank', 'scan', 'rules']]);
+    expect(d.kind).toBe('scan');
+    // With a typed page beside it, the image may be anywhere: the file is
+    // not one large picture, and stays unsure.
+    const px = deflateSync(Buffer.alloc(30, 230));
+    const image = fullImage(...A4);
+    const words = 'BT /F1 10 Tf 50 300 Td (Dear reader, this page is running text only.) Tj ET';
+    const two = assemblePdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>',
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4[0]} ${A4[1]}] ` +
+        '/Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>',
+      `<< /Length ${image.length} >>\nstream\n${image}\nendstream`,
+      [
+        '<< /Type /XObject /Subtype /Image /Width 12000 /Height 10000 /ColorSpace /DeviceGray ' +
+          `/BitsPerComponent 1 /Filter /FlateDecode /Length ${px.length} >>`,
+        px,
+      ],
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4[0]} ${A4[1]}] ` +
+        '/Resources << /Font << /F1 8 0 R >> >> /Contents 7 0 R >>',
+      `<< /Length ${words.length} >>\nstream\n${words}\nendstream`,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ]);
+    const mixed = await readPdfDrawing(two);
+    expect(mixed.pages.map((p) => p.kind)).toEqual(['document', 'document']);
+    expect(mixed.kind).toBe('unsure');
     // The same page with a small image is read, and nothing is flagged.
     const small = await readPdfDrawing(imagePage(3, 10));
     expect(small.largeImageNotRead).toBe(false);
@@ -625,13 +649,15 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
     ['FIC-101', 400, 900], // an instrument tag in one token
     ['PT', 600, 900], // a bubble: the code ...
     ['202', 600, 888], // ... and its loop number under it
+    // Spread out, as tags on a drawing are: a close stack at one left edge
+    // is a column of a table, whose codes are not tags (tableCells).
     ['U2-E-12A', 800, 900], // equipment with a unit
-    ['TK-7', 800, 880], // equipment with no unit
-    ['U2-P-1A/B', 800, 860], // a list: two tags
-    ['U2-C-1A-E1', 800, 840], // a fourth part
-    ['12-AB-CD', 800, 820], // the tag shape, and no pattern fits
-    ['NOTE-3', 800, 800], // the tag shape, a word of the frame
-    ['plain words here', 800, 780],
+    ['TK-7', 800, 840], // equipment with no unit
+    ['U2-P-1A/B', 800, 780], // a list: two tags
+    ['U2-C-1A-E1', 800, 720], // a fourth part
+    ['12-AB-CD', 800, 660], // the tag shape, and no pattern fits
+    ['NOTE-3', 800, 600], // the tag shape, a word of the frame
+    ['plain words here', 800, 540],
     ['U2-V-9', A1[0] - 100, 40], // in the title block corner
   );
 
@@ -639,8 +665,9 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
     const d = await readPdfDrawing(pdf([busy]));
     const { rows } = d.pages[0]!;
     const a = rows!.account;
-    expect(a.tagLike).toBe(a.asInstrument + a.asEquipment + a.asLine + a.rejected);
+    expect(a.tagLike).toBe(a.asInstrument + a.asEquipment + a.asLine + a.rejected + a.inTable);
     expect(a).toMatchObject({
+      inTable: 0,
       asInstrument: 1,
       asEquipment: 4, // U2-E-12A, TK-7, U2-C-1A-E1, U2-V-9
       asLine: 0, // an inch mark is not in the wide shape
@@ -733,6 +760,7 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
         asEquipment: 0,
         asLine: 0,
         rejected: 0,
+        inTable: 0,
         otherTagTokens: 0,
         fromLists: 0,
         bubbles: 0,
@@ -765,18 +793,117 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
     expect(two.map((p) => p.words[0]!.region)).toEqual(['body', 'body']);
   });
 
-  it('a typed page of a document gives no rows; the drawing page of the same file does', async () => {
+  it('every page of a drawing gives its rows, a typed page too; a document none', async () => {
     const d = await readPdfDrawing(pdf([letterPage(), busy]));
     expect(d.pages.map((p) => [p.kind, p.rows !== undefined])).toEqual([
-      ['document', false],
+      ['document', true],
       ['pid', true],
     ]);
     const out = pdfDrawingSheets(d, null);
     expect(out.sheets.map((s) => s.name)).toEqual(['File', 'Pages', 'Texts', 'Tags', 'Lines']);
     const texts = out.sheets[2]!;
-    // Every word row is of page 2.
-    expect(new Set(texts.rows.map((r) => r[0]))).toEqual(new Set([2]));
+    // The Texts tab holds the whole file: the words of both pages.
+    expect(new Set(texts.rows.map((r) => r[0]))).toEqual(new Set([1, 2]));
     expect(out.description).toContain('Texts: a word a row');
+    // A document: no page keeps rows, so its facts carry no words.
+    const letter = await readPdfDrawing(pdf([letterPage(), letterPage()]));
+    expect(letter.kind).toBe('document');
+    expect(letter.pages.every((p) => p.rows === undefined)).toBe(true);
+  });
+
+  it('a code in a column of a table is no tag; a line number there still is; a lone tag is', async () => {
+    // Made-up material list: item codes of the tag shape, stacked close at
+    // one left edge (10 pt text, 15 pt apart), and a line number among them.
+    const list = sheet(
+      ['FIC-101', 400, 900],
+      // A call-out: a tag with lines of words under it, at one left edge.
+      // Words are no codes, so the tag stays a tag.
+      ['P-101A/B', 400, 700],
+      ['CRUDE CHARGE PUMP', 400, 685],
+      ['CAP 120 M3/H', 400, 670],
+      ['DIFF 10 BAR', 400, 655],
+      ['MOTOR 75 KW', 400, 640],
+      ['LG-41', 1500, 500],
+      ['PI-42', 1500, 485],
+      ['TW-43', 1500, 470],
+      ['FE-44', 1500, 455],
+      ['2"-P-4501-A1A', 1500, 440],
+    );
+    const { rows } = (await readPdfDrawing(pdf([list]))).pages[0]!;
+    expect(rows!.tags.map((t) => t.tag)).toEqual(['FIC-101', 'P-101A', 'P-101B']);
+    expect(rows!.lines.map((l) => l.line)).toEqual(['2"-P-4501-A1A']);
+    const region = (w: string) => rows!.words.find((r) => r.text === w)!.region;
+    expect(['LG-41', 'PI-42', 'TW-43', 'FE-44', '2"-P-4501-A1A'].map(region)).toEqual(
+      Array(5).fill('table'),
+    );
+    expect(region('FIC-101')).toBe('body');
+    expect(region('P-101A/B')).toBe('body');
+    // A column of codes in the title block corner keeps its region and its tags.
+    const corner = sheet(
+      ['TT-51', A1[0] - 300, 150],
+      ['TT-52', A1[0] - 300, 135],
+      ['TT-53', A1[0] - 300, 120],
+      ['TT-54', A1[0] - 300, 105],
+    );
+    const cornerRows = (await readPdfDrawing(pdf([corner]))).pages[0]!.rows!;
+    expect(cornerRows.tags.map((t) => t.tag)).toEqual(['TT-51', 'TT-52', 'TT-53', 'TT-54']);
+    expect(new Set(cornerRows.words.map((w) => w.region))).toEqual(new Set(['title_block']));
+    expect(rows!.account).toMatchObject({ inTable: 4, asInstrument: 1, rejected: 0 });
+    expect(rows!.account.tagLike).toBe(
+      rows!.account.asInstrument +
+        rows!.account.asEquipment +
+        rows!.account.asLine +
+        rows!.account.rejected +
+        rows!.account.inTable,
+    );
+    // The Pages tab counts them.
+    const pages = pdfDrawingSheets(await readPdfDrawing(pdf([list])), null).sheets[1]!;
+    expect(pages.rows[0]![pages.columns.findIndex((c) => c.name === 'In a table')]).toBe(4);
+  });
+
+  it('a drawn page with no text layer gives its segments as the tab Segments', async () => {
+    const strokes: Page = { w: A1[0], h: A1[1], content: ruled(1200, A1[0]) };
+    const d = await readPdfDrawing(pdf([strokes]));
+    expect(d.pages[0]!.class).toBe('vector_no_text');
+    expect(d.pages[0]!.rows?.segments).toHaveLength(1200);
+    const tab = pdfDrawingSheets(d, null).sheets.find((t) => t.name === 'Segments')!;
+    expect(tab.columns.map((c) => c.name)).toEqual([
+      'Page',
+      'Kind',
+      'X1',
+      'Y1',
+      'X2',
+      'Y2',
+      'Width mm',
+      'Colour',
+      'Dashed',
+    ]);
+    expect(tab.rows).toHaveLength(1200);
+    expect(tab.rows[0]!.slice(0, 2)).toEqual([1, 'line']);
+    // A page with a text layer gives no segments.
+    expect((await readPdfDrawing(pdf([busy]))).pages[0]!.rows?.segments).toBeUndefined();
+    // The cap of segments is the file's: the second sheet's are not listed,
+    // and its Pages row says so.
+    const capped = await readPdfDrawing(pdf([strokes, strokes]), { maxSegments: 1500 });
+    expect(capped.pages.map((p) => p.rows?.segments?.length ?? 0)).toEqual([1200, 0]);
+    expect(capped.pages[1]!.notes).toContain('segments_not_listed');
+    expect(capped.pages[0]!.notes ?? []).not.toContain('segments_not_listed');
+  });
+
+  it('typed pages but for a few unsure ones are a document; else Texts holds every page', async () => {
+    // An office page drawn with a few words and no tag: unsure by the rules.
+    const chart: Page = {
+      w: A4[0],
+      h: A4[1],
+      content: `${ruled(1200, A4[0])} ${text('quarterly chart of the work', 50, 300)}`,
+    };
+    const doc = await readPdfDrawing(pdf([letterPage(), letterPage(), letterPage(), chart]));
+    expect(doc.pages.map((p) => p.kind)).toEqual(['document', 'document', 'document', 'unsure']);
+    expect(doc.kind).toBe('document');
+    const mixed = await readPdfDrawing(pdf([letterPage(), chart]));
+    expect(mixed.kind).toBe('unsure');
+    const texts = pdfDrawingSheets(mixed, null).sheets.find((t) => t.name === 'Texts')!;
+    expect(new Set(texts.rows.map((r) => r[0]))).toEqual(new Set([1, 2]));
   });
 
   it('a markup with text is a row, with the drawn markup beside it and the tags in its text', async () => {
@@ -968,8 +1095,10 @@ describe('the title block box (an option of the reader)', () => {
   it('with the defaults the rows are those of before the option, row for row', async () => {
     const reads = await Promise.all(files().map((b) => readPdfDrawing(b)));
     // The hash of these rows as the reader gave them before the option
-    // (f647e38d2). A change here is a change of the rows of every box.
-    expect(hashOf(reads.map(rowsOf))).toBe('4fda418b8b3b4aff');
+    // (f647e38d2), made again for drawing-pdf 1.1.0 (2026-11-17: the typed
+    // page of a drawing has rows, the account counts `inTable`). A change
+    // here is a change of the rows of every box.
+    expect(hashOf(reads.map(rowsOf))).toBe('86423f987b2111f0');
     const passed = await Promise.all(
       files().map((b) => readPdfDrawing(b, { titleBlock: { ...TITLE_BLOCK_MM } })),
     );

@@ -26,8 +26,10 @@ import { readPdfDrawingInJob, type PdfDrawing } from '../../../pdf-drawing';
 import { decidedKind, pdfKindAskFrom, pdfKindDecisionOf } from '../../../pdf-drawing-sheets';
 import { titleBlockOf } from '../../../pdf-rows';
 
-/** The facts as the reader takes them, or none when they are past the cap. */
+/** The facts as the reader takes them, or none: past the cap, or for a
+ *  document, which no reader takes. */
 function factsOf(drawing: PdfDrawing): { facts?: Record<string, unknown> } {
+  if (drawing.kind === 'document') return {};
   const json = JSON.stringify(drawing);
   return Buffer.byteLength(json, 'utf8') <= PIPELINE_FACTS_MAX_BYTES
     ? { facts: drawing as unknown as Record<string, unknown> }

@@ -33,15 +33,21 @@ export const SITE_TAGS_ROWS_MAX = 100_000;
 /** The most characters one run reads, all texts together. */
 export const SITE_TAGS_CHARS_MAX = 16_000_000;
 
-/** One row of the `Texts` tab: Text, and Page, Layer, X and Y when the tab
- *  has columns of these names. */
+/** One row of the `Texts` tab: Text, and Page, Layer, X, Y and Region when
+ *  the tab has columns of these names. */
 export type TextRow = {
   Text: unknown;
   Page?: unknown;
   Layer?: unknown;
   X?: unknown;
   Y?: unknown;
+  /** A PDF drawing's region of the word (`table`: a code in a column of
+   *  codes, which is not a tag; a line number there is; ../../../pdf-rows.ts). */
+  Region?: unknown;
 };
+
+/** The region of a word whose codes are not tags: a cell of a table. */
+export const TABLE_REGION = 'table';
 
 const COLUMNS: ParsedSheet['columns'] = [
   { name: 'Tag', type: 'text' },
@@ -116,8 +122,12 @@ export function siteTagsBuilder(profile: SiteProfile): {
         );
         return false;
       }
+      // A code in a table is an item code, not a tag (the reader's rule);
+      // a line number there is still one.
+      const table = row.Region === TABLE_REGION;
       for (const token of tokensOf(value)) {
         const { kind, rows: found } = rowsOfToken(token, profile);
+        if (table && kind !== 'line') continue;
         for (const [tag, unit, letters, number] of found) {
           if (rows.length >= SITE_TAGS_ROWS_MAX) {
             cut = true;

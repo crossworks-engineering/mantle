@@ -415,7 +415,9 @@ describe('rereadPipeline', () => {
   });
 
   it('an after pipeline takes only the files with its entry that is not current', async () => {
-    file(1, 'a.dwg', { id: 'drawing-cad', version: '1.0.0', after: 'site-tags@1.0.0' });
+    const { BUILTIN_PIPELINES } = await import('@mantle/files');
+    const now = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!.version;
+    file(1, 'a.dwg', { id: 'drawing-cad', version: '1.0.0', after: `site-tags@${now}` });
     file(2, 'b.dwg', { id: 'drawing-cad', version: '1.0.0', after: 'site-tags@0.9.0' });
     file(3, 'c.dwg', { id: 'drawing-cad', version: '1.0.0' });
     file(4, 'd.dxf', undefined, 'other@1.0.0,site-tags@0.9.0');

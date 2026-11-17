@@ -150,7 +150,8 @@ export const BUILTIN_PIPELINES = [
     name: 'PDF router',
     description:
       'Names the kind of a PDF from its pages: a P&ID, an isometric, a scan, another drawing or a document. When its rules are unsure it asks the decider once, at most. The reader that claims the kind reads the file. It writes no tabs.',
-    version: '1.0.0',
+    // 1.0.1 (2026-11-17): the kind rules of PDF_KIND_RULES_VERSION 2.
+    version: '1.0.1',
     match: { ext: ['pdf'] },
     // The ten kinds of PDF_KINDS (../pdf-kind.ts). The rules name six; the
     // decider may also answer the four marked, for an unsure file.
@@ -175,8 +176,11 @@ export const BUILTIN_PIPELINES = [
     id: 'drawing-pdf',
     name: 'PDF drawing',
     description:
-      'Reads the words of a PDF drawing with their place on each page, and writes them with their region (such as the title block), its pages, and a File tab with the kind of the file.',
-    version: '1.0.0',
+      'Reads the words of a PDF drawing with their place on each page, and writes them with their region (such as the title block or a table), its pages, the lines of a page whose text is drawn as strokes, and a File tab with the kind of the file.',
+    // 1.1.0 (2026-11-17): a code in a table is no tag (column In a table),
+    // the words of every page, the tab Segments, the column Vision text,
+    // and the kind rules of PDF_KIND_RULES_VERSION 2.
+    version: '1.1.0',
     // Every kind the router names but `document`: a document gets no
     // database. An unsure PDF gets one, as before the router. A new claim
     // changes the pin and no row, so the version stays (docs/pipelines.md,
@@ -291,7 +295,8 @@ export const BUILTIN_PIPELINES = [
     name: 'Site tags',
     description:
       "Reads the Texts tab of a drawing's database and adds the tab Site tags: one row for each instrument tag, line number or equipment tag it finds. It never reads the file again and asks no model.",
-    version: '1.0.0',
+    // 1.0.1 (2026-11-17): a word of a PDF in a table (Region table) gives no tag.
+    version: '1.0.1',
     match: { ext: [...CAD_EXTS, 'pdf'], after: 'texts-v1' },
     produces: { tabs: ['Site tags'] },
     // The time of the light parser jobs (text, grid). One run on the

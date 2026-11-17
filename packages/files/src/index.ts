@@ -454,6 +454,7 @@ export {
   pdfFileTabOf,
   pdfKindAskFrom,
   pdfKindAskOf,
+  pdfKindNote,
   pdfReadPoorer,
   pagesNotReadWhole,
   type PdfDrawingSheets,

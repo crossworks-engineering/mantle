@@ -9,6 +9,18 @@
  * and it must give the same golden text, the same kind and the same router
  * count. A golden file is never changed to make this pass.
  *
+ * Written again ONCE, on purpose, for drawing-pdf 1.1.0 and the kind rules
+ * 2 (P3, 2026-11-17), in their own commit, by the reader of that version:
+ * the rows changed by design, not to pass a test. What changed in the nine
+ * files of before: the File tab has the column `Vision text` and `Rules
+ * version` 2; the Pages tab has `In a table`; a typed page of a drawing
+ * file now has its rows. No kind of the nine changed (their .kind.json
+ * files are as before). Four fixtures are new, one for each fix: a sheet
+ * that is one image too large to open (a scan), a P&ID with a material list
+ * (its codes are no tags), a report of three typed pages and one chart page
+ * (a document), and an isometric drawn as strokes with a hatched logo (an
+ * isometric, with the tab Segments).
+ *
  * One column is masked, on both sides (CLOCK_COLUMNS of @mantle/files):
  * `Read ms` of the Pages tab is the time the read of a page took, a clock
  * value, another number on every read of the same bytes. The golden files hold null in its place. It is
@@ -180,15 +192,23 @@ afterEach(() => {
 });
 
 describe('drawing-pdf and pdf-router: the packages give what the old path gave', () => {
-  it('the fixed set is the nine made-up PDF files, and the manifests are packages', () => {
+  it('the fixed set is the thirteen made-up PDF files, and the manifests are packages', () => {
     expect(FIXTURES).toEqual([
       'damaged.pdf',
       'document.pdf',
       'isometric.pdf',
+      // P3 (2026-11-17): a sheet that is one image too large to open (a scan).
+      'large-image.pdf',
       'odd-values.pdf',
       'other-drawing.pdf',
+      // P3: a P&ID with a material list, whose codes are no tags.
+      'pid-material-list.pdf',
       'pid.pdf',
+      // P3: three typed pages and one chart page (a document).
+      'report-with-chart.pdf',
       'scan.pdf',
+      // P3: an isometric drawn as strokes, with a hatched logo (Segments).
+      'stroke-isometric.pdf',
       'unsure-vector.pdf',
       'unsure.pdf',
     ]);
@@ -278,7 +298,7 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
       ),
     ).toMatchObject({
       pipeline_id: 'drawing-pdf',
-      pipeline_version: '1.0.0',
+      pipeline_version: '1.1.0',
       pipeline_api: '1',
       shapes: 'pdf-file-v1',
       pipeline_options: hash,
