@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "660d8d7e326e29495f0293d4b081d6363e6e072dda4cb9f448f1e3eb10c9141d",
+  "sha256": "01ff51f383ba99de3ad749f41a92cd27d29c73f9c60ffeb7330a73033c56c94c",
   "names": [
    "app_build",
    "app_create",
@@ -238,7 +238,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1c3b814d73c53b56beb041988841eec11d5757786461a2c145eeee4ddf9f8ab9",
+  "sha256": "1725e347a20528afe84f80cdb84487f25dfa58f0c72a4a4eec25e2aff585a76c",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -438,8 +438,6 @@
    "tree_folder_delete",
    "api_key_test",
    "api_tool_test",
-   "email_page",
-   "email_send",
    "mcp_crm_contacts_list",
    "mcp_crm_contacts_update",
    "node_share",
@@ -598,7 +596,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "92eba5ccd66c1e0ffc50cd70caad9128acb00d7d3b8a15454a5e16ee079503aa",
+  "sha256": "b6dcc3990124230ac2f791a740614ba32362f897cc6ea8fbdad648fd063a3b72",
   "names": [
    "access_set",
    "app_build",
@@ -908,7 +906,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "24b8462bbc18f98bd577e46a88866ab75b8d22e4af721be46cff514adbad7f2e",
+  "sha256": "ad2151465f33fc0a7d563bc4f67bc9f30286287394930481400c6b6a243d4eca",
   "names": [
    "access_set",
    "app_build",
@@ -3307,7 +3305,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "f15ef2e25fa7e8c423e9b2cd46c32dacd191fa8ca2aaf1fda881897578e5434f",
+  "sha256": "2f315696bb08b3eb9c527d831d2255fa1cda1429a7014f4f3a93b2db46d1dcbf",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3423,7 +3421,6 @@
    "task_delete",
    "task_file_remove",
    "tree_folder_delete",
-   "email_send",
    "mcp_crm_contacts_list",
    "mcp_crm_contacts_update",
    "openrouter_benchmarks",
@@ -5817,7 +5814,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "660d8d7e326e29495f0293d4b081d6363e6e072dda4cb9f448f1e3eb10c9141d",
+  "sha256": "01ff51f383ba99de3ad749f41a92cd27d29c73f9c60ffeb7330a73033c56c94c",
   "names": [
    "app_build",
    "app_create",
@@ -6055,7 +6052,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1c3b814d73c53b56beb041988841eec11d5757786461a2c145eeee4ddf9f8ab9",
+  "sha256": "1725e347a20528afe84f80cdb84487f25dfa58f0c72a4a4eec25e2aff585a76c",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6255,8 +6252,6 @@
    "tree_folder_delete",
    "api_key_test",
    "api_tool_test",
-   "email_page",
-   "email_send",
    "mcp_crm_contacts_list",
    "mcp_crm_contacts_update",
    "node_share",
@@ -6415,7 +6410,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "92eba5ccd66c1e0ffc50cd70caad9128acb00d7d3b8a15454a5e16ee079503aa",
+  "sha256": "b6dcc3990124230ac2f791a740614ba32362f897cc6ea8fbdad648fd063a3b72",
   "names": [
    "access_set",
    "app_build",
@@ -6725,7 +6720,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "24b8462bbc18f98bd577e46a88866ab75b8d22e4af721be46cff514adbad7f2e",
+  "sha256": "ad2151465f33fc0a7d563bc4f67bc9f30286287394930481400c6b6a243d4eca",
   "names": [
    "access_set",
    "app_build",
@@ -9124,7 +9119,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "f15ef2e25fa7e8c423e9b2cd46c32dacd191fa8ca2aaf1fda881897578e5434f",
+  "sha256": "2f315696bb08b3eb9c527d831d2255fa1cda1429a7014f4f3a93b2db46d1dcbf",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9240,7 +9235,6 @@
    "task_delete",
    "task_file_remove",
    "tree_folder_delete",
-   "email_send",
    "mcp_crm_contacts_list",
    "mcp_crm_contacts_update",
    "openrouter_benchmarks",

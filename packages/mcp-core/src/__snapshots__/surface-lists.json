@@ -87,8 +87,6 @@
   "ask_responder",
   "contact_create",
   "contact_update",
-  "email_page",
-  "email_send",
   "invoke_agent",
   "model_pool_remove",
   "model_pool_set",
