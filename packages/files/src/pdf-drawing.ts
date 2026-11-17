@@ -59,8 +59,8 @@ export const DRAWING_MAX_ROWS = 300_000;
  * The most segments one read lists (the tab `Segments`), all pages
  * together, apart from the row cap: a drawing with its text as strokes
  * holds about 83,000 a sheet, so three sheets fit. A page whose segments
- * would pass it lists none, and says so (`rows_not_listed`); its words, if
- * any, are listed as before.
+ * would pass it lists none, and says so (`segments_not_listed`); its words,
+ * if any, are listed as before.
  */
 export const DRAWING_MAX_SEGMENTS = 250_000;
 /**
@@ -203,9 +203,8 @@ export async function readPdfDrawing(
       if (rows && facts.class === 'vector_no_text' && p.status === 'ok') {
         if (listedSegments + p.segments.length <= maxSegments) {
           rows.segments = p.segments;
-          listedSegments += p.segments.length;
         } else {
-          facts.notes = [...(facts.notes ?? []), 'rows_not_listed'];
+          facts.notes = [...(facts.notes ?? []), 'segments_not_listed'];
         }
       }
       const segments = rows?.segments?.length ?? 0;
@@ -219,6 +218,7 @@ export async function readPdfDrawing(
         if (listed + count <= maxRows && listedChars + chars <= maxChars) {
           listed += count;
           listedChars += chars;
+          listedSegments += segments;
           rowsOf.set(facts.page, rows);
           if (rows.markupsNotPaired) {
             facts.notes = [...(facts.notes ?? []), 'markups_not_paired'];

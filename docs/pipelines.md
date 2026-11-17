@@ -1681,8 +1681,8 @@ rules ask no model.
   schedule or a line class sheet were read as instrument and equipment tags
   (P0: 72 false rows in Tags and 72 in Site tags on a fresh upload). The
   rule (`codeColumns` and `tableCells`, `packages/files/src/pdf-rows.ts`)
-  looks only at codes (a word with a token of the tag shape, or one the
-  grammar reads), two checks: a code whose left edge lines up with those of
+  looks only at codes (a word with a token that has a letter and a digit,
+  such as `LG-41` or `F22`, or one the grammar reads), two checks: a code whose left edge lines up with those of
   other codes (1 mm buckets, so edges up to 2 mm apart join), stacked on 4
   lines or more, each gap at most 1.5 times the taller box. Tags on a
   drawing are spread out; a list of codes is close; a call-out or a note is
@@ -1703,7 +1703,8 @@ rules ask no model.
   if any, is strokes) has its lines and curves as the tab `Segments` (Page,
   Kind `line` or `curve`, X1 Y1 X2 Y2 in the frame of the boxes, Width mm,
   Colour, Dashed). They have a cap of their own (`DRAWING_MAX_SEGMENTS`,
-  250,000 a file), so they never push the words of a later page out.
+  250,000 a file, note `segments_not_listed` past it), so they never push
+  the words of a later page out.
 - **Vision text** in the File tab: `sketch read` when the sketch read ran;
   `node text only` when the file's node holds the text of an older
   whole-page vision read (`data.vision_model`) and no tab holds it; else

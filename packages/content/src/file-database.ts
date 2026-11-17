@@ -183,7 +183,10 @@ type RouterCount = { ownerId: string; fileId: string };
 
 /** The facts of a PDF's stored File tab a read again keeps: its kind and
  *  the decider's answer. */
-type PdfStored = Pick<StoredPdf, 'kind' | 'decision'>;
+/** A PDF read again: its stored kind and decision. `reroute`: the kind came
+ *  from older rules, so the router names it again with no ask, and the
+ *  stored decision (a shadow or weak answer) stays in the File tab. */
+type PdfStored = Pick<StoredPdf, 'kind' | 'decision'> & { reroute?: boolean };
 
 /** The one read of a file's database: the box's reader for its extension
  *  (the registry). A file type with a router (a PDF) has its kind named
@@ -229,9 +232,17 @@ async function readRouted(
   options: Readonly<Record<string, unknown>>,
   opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'pdfNodeVision' | 'count' | 'pipelines'>,
 ): Promise<ParsedFile> {
-  const named: PdfStored & { facts?: Record<string, unknown> } =
-    opts.pdfStored ?? (await routePdf(router, bytes, options, opts.pdfKind));
-  if (!opts.pdfStored && opts.count) {
+  const stored = opts.pdfStored;
+  // A read again keeps its stored kind; one of older rules is routed again,
+  // with no ask, and keeps its stored decision.
+  const routed =
+    !stored || stored.reroute
+      ? await routePdf(router, bytes, options, stored ? undefined : opts.pdfKind)
+      : null;
+  const named: PdfStored & { facts?: Record<string, unknown> } = routed
+    ? { ...routed, decision: stored ? stored.decision : routed.decision }
+    : stored!;
+  if (routed && opts.count) {
     await countRun(opts.count.ownerId, router.id, opts.count.fileId);
   }
   const { kind, decision } = named;
@@ -703,10 +714,13 @@ export async function buildFileDatabase(args: {
     again = state;
   }
   // A kind from older rules is named again by the router (no ask).
-  const pdfStored: PdfStored | undefined =
-    again?.stored && !again.reroute
-      ? { kind: again.stored.kind, decision: again.stored.decision }
-      : undefined;
+  const pdfStored: PdfStored | undefined = again?.stored
+    ? {
+        kind: again.stored.kind,
+        decision: again.stored.decision,
+        ...(again.reroute ? { reroute: true } : {}),
+      }
+    : undefined;
   const pdfNodeVision = again ? await pdfNodeVisionOf(fileId) : false;
   // A read here takes the box's options of the reader.
   const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext, pipelines);

@@ -690,7 +690,8 @@ export function pdfDrawingSheets(
     (drawing.pages.some((p) => p.notes?.length)
       ? ` Notes states what a page's counts or rows leave out (rows_not_listed: the page's words,` +
         ` tags, line numbers and markups are not in the tabs, the file holds more rows or more` +
-        ` text than one database lists).`
+        ` text than one database lists; segments_not_listed: the page's segments are not in` +
+        ` Segments, the file holds more than one database lists).`
       : '') +
     (rows.length > 0
       ? ` The other tabs hold what the text layer and the markups say, read with no model,` +
@@ -713,9 +714,10 @@ export function pdfDrawingSheets(
         ` Markups: each annotation with its text and author, and for a text markup the drawn` +
         ` markup beside it (a line, a cloud).` +
         ` Region flags words in the lower right corner (title_block, by position), words that` +
-        ` repeat at one place on 3 or more pages (template), and words in a column of a table or` +
-        ` a list (table: the left edge lines up with 3 or more words close under or over it);` +
-        ` they are flagged, never left out. A code in a table (an item code of a material list)` +
+        ` repeat at one place on 3 or more pages (template), and codes in a column of codes, as in` +
+        ` a table or a list (table: a code whose left edge lines up with 3 or more codes close` +
+        ` under or over it; a code is a token with a letter and a digit); they are flagged, never` +
+        ` left out. A code in a table (an item code of a material list)` +
         ` is not listed as a tag; Pages counts it (In a table). A line number in a table is listed.` +
         ` Segments: the lines and curves of a drawn page with no text layer (its text is drawn` +
         ` as strokes), with their end points in the frame of the boxes; Kind curve gives the end` +

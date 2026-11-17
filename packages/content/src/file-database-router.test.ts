@@ -314,4 +314,27 @@ describe('the PDF router in a real read', () => {
     expect(reads.n).toBe(1);
     expect(counted).toEqual([]);
   });
+
+  it('a read again of a kind from older rules runs the router with no ask, and keeps the stored answer', async () => {
+    const ids = inProcess();
+    const shadow = { ...decision('pid'), mode: 'shadow' as const, used: false };
+    const parsed = await parseFileSheets(pdf('stroke-isometric.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfStored: { kind: 'other_drawing', decision: shadow, reroute: true },
+    });
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    const file = parsed.sheets.find((s) => s.name === 'File')!;
+    const row = Object.fromEntries(file.columns.map((c, i) => [c.name, file.rows[0]![i]]));
+    // The rules of now name it; the shadow answer stays beside it.
+    expect(row).toMatchObject({
+      Kind: 'isometric',
+      'Kind source': 'rules',
+      'Rules kind': 'isometric',
+      'Decider answer': 'pid',
+      'Decider mode': 'shadow',
+    });
+    expect(ids).toEqual(['pdf-router', 'drawing-pdf']);
+    expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
+  });
 });

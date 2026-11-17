@@ -111,6 +111,8 @@ export type PageFacts = {
  * markups and drawn markups than the pairing looks at, so no markup of it
  * names the drawn markup beside it. `text_outside_page`: the page holds
  * text that lies wholly outside the shown page; it is not in the rows.
+ * `segments_not_listed`: the file holds more segments of pages with no
+ * text layer than one database lists, and this page's are past the cap.
  */
 export const PAGE_NOTES = [
   'bubbles_not_paired',
@@ -119,6 +121,7 @@ export const PAGE_NOTES = [
   'rows_not_listed',
   'markups_not_paired',
   'text_outside_page',
+  'segments_not_listed',
 ] as const;
 /** The two text readers agree when their character counts are within this
  *  share of each other (and within 5 characters). Bench measure,

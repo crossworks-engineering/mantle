@@ -838,6 +838,16 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
     );
     expect(region('FIC-101')).toBe('body');
     expect(region('P-101A/B')).toBe('body');
+    // A column of codes in the title block corner keeps its region and its tags.
+    const corner = sheet(
+      ['TT-51', A1[0] - 300, 150],
+      ['TT-52', A1[0] - 300, 135],
+      ['TT-53', A1[0] - 300, 120],
+      ['TT-54', A1[0] - 300, 105],
+    );
+    const cornerRows = (await readPdfDrawing(pdf([corner]))).pages[0]!.rows!;
+    expect(cornerRows.tags.map((t) => t.tag)).toEqual(['TT-51', 'TT-52', 'TT-53', 'TT-54']);
+    expect(new Set(cornerRows.words.map((w) => w.region))).toEqual(new Set(['title_block']));
     expect(rows!.account).toMatchObject({ inTable: 4, asInstrument: 1, rejected: 0 });
     expect(rows!.account.tagLike).toBe(
       rows!.account.asInstrument +
@@ -872,6 +882,12 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
     expect(tab.rows[0]!.slice(0, 2)).toEqual([1, 'line']);
     // A page with a text layer gives no segments.
     expect((await readPdfDrawing(pdf([busy]))).pages[0]!.rows?.segments).toBeUndefined();
+    // The cap of segments is the file's: the second sheet's are not listed,
+    // and its Pages row says so.
+    const capped = await readPdfDrawing(pdf([strokes, strokes]), { maxSegments: 1500 });
+    expect(capped.pages.map((p) => p.rows?.segments?.length ?? 0)).toEqual([1200, 0]);
+    expect(capped.pages[1]!.notes).toContain('segments_not_listed');
+    expect(capped.pages[0]!.notes ?? []).not.toContain('segments_not_listed');
   });
 
   it('typed pages but for a few unsure ones are a document; else Texts holds every page', async () => {

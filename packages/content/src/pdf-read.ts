@@ -72,10 +72,10 @@ export type FileStamp = { ino: number; size: number; mtimeMs: number };
  *   cannot be read: `kept`.
  * - Else the stored File tab (null: no database) and the stat of the
  *   database (null: none) the write is conditional on, and `reroute`: the
- *   stored kind came from older rules (`Rules version`) and the File tab
- *   holds no decider answer, so the router names it again with the rules of
- *   now (no ask). A file the decider was asked about keeps its kind and its
- *   answer, a shadow one too.
+ *   stored kind came from older rules (`Rules version`), not from a used
+ *   decider answer, so the router names it again with the rules of now (no
+ *   ask). The stored answer, a shadow or weak one too, stays in the File
+ *   tab (readRouted, ./file-database.ts).
  */
 export async function pdfReadAgainOf(names: {
   sqlite: string;
@@ -102,7 +102,7 @@ export async function pdfReadAgainOf(names: {
       skip: null,
       stored,
       since: { ino: at.ino, size: at.size, mtimeMs: at.mtimeMs },
-      reroute: stored.rulesVersion < PDF_KIND_RULES_VERSION && stored.decision === null,
+      reroute: stored.rulesVersion < PDF_KIND_RULES_VERSION && !stored.decision?.used,
     };
   } catch {
     return { skip: 'kept' };
