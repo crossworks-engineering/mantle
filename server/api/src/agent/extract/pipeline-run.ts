@@ -17,7 +17,9 @@
  *    job a person or an agent queued starts it, and so does the build of
  *    an upload, which queues one run of it. A Reader's run on demand or
  *    read again queues none. The job has no retry
- *    (extract-queue.ts), so a failure never pays again by itself.
+ *    (extract-queue.ts), so a failure never pays again by itself. When it
+ *    wrote its tabs, their text goes on the file node for a plain search
+ *    (./agent-text.ts), with no model.
  *
  * Nothing else of the file changes: no summary, no passage, no embedding,
  * no extract. One trace step, `file_database`, holds the result, as the
@@ -50,6 +52,7 @@ import {
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
+import { writeAgentText } from './agent-text.js';
 import { pipelineAskOf } from './pipeline-ask.js';
 
 export type PipelineRunResult =
@@ -85,7 +88,7 @@ async function runOnce(
   if (isAgent(pipeline)) {
     const loaded = await readFileNodeBytes(row);
     if (!loaded) return { status: 'skipped', reason: 'bytes-gone' };
-    return runAgentOnFile({
+    const out = await runAgentOnFile({
       fileId: nodeId,
       ownerId,
       sha256: fileSha256Of(row),
@@ -95,6 +98,16 @@ async function runOnce(
       pipelines,
       ask: pipelineAskOf(ownerId, nodeId, pipeline),
     });
+    if (out.status !== 'asked') return out;
+    // The text of the tabs as written, on the file node; it is not in the
+    // trace step's meta. A failed write is a warning: the tabs stand.
+    const { text, ...done } = out;
+    if (text !== undefined) {
+      await writeAgentText(ownerId, nodeId, pipeline.id, text).catch((err: unknown) => {
+        done.warnings.push(`the text for search was not written: ${errorMessage(err)}`);
+      });
+    }
+    return done;
   }
   if (isAfterPipeline(pipeline)) {
     return patchFileDatabase({

@@ -32,7 +32,7 @@
  * withViewer; the tool runs in it). Not a person-only act: it writes
  * nothing and asks no model.
  */
-import { afterSheetsOf, parseFileSheets } from '@mantle/content/file-database';
+import { afterSheetsOf, agentInputOf, parseFileSheets } from '@mantle/content/file-database';
 import { AgentAskError, checkAsks } from '@mantle/content/pipeline-agent';
 import { agentStep, stepFileOf } from '@mantle/content/pipeline-runner';
 import {
@@ -256,15 +256,16 @@ async function testWith(
 
   if (isAgent(p)) {
     // As a real run: the Agent's tab lives in the database a Reader made.
-    if (!(await fileDbSqlitePath(row.id, fileSha256Of(row)))) {
-      return result('not_mine', { word: 'no-database' });
-    }
+    const sqlite = await fileDbSqlitePath(row.id, fileSha256Of(row));
+    if (!sqlite) return result('not_mine', { word: 'no-database' });
     const loaded = await readFileNodeBytes(row);
     if (!loaded) return result('failed', { word: 'unreadable' });
     try {
+      // The kind and the Reader's options, as a real run gives them.
+      const from = await agentInputOf(ownerId, ext, pipelines, sqlite);
       // The one step, in one parser job. No ask is sent, so nothing is paid.
       const step = await withParserScope({ interactive: true, failures: NO_LEDGER }, () =>
-        agentStep(p, loaded.bytes, stepFileOf(loaded.bytes, ext), options),
+        agentStep(p, loaded.bytes, stepFileOf(loaded.bytes, ext), options, from),
       );
       if (step.status === 'not_mine') return result('not_mine', { word: 'no-match' });
       const asks = checkAsks(p, step.asks, step.pictures).map((a) => ({
@@ -273,6 +274,8 @@ async function testWith(
         fields: a.fields.map((f) => f.name),
         bytes: a.picture.length,
         mime: a.mime,
+        ...(a.list ? { list: true as const } : {}),
+        ...(a.page !== null ? { page: a.page } : {}),
       }));
       return result('ok', { warnings: step.warnings, asks });
     } catch (err) {

@@ -232,6 +232,7 @@ describe('the roles', () => {
       'drawing-raster': 'reader',
       'site-tags': 'after',
       'iso-title-block': 'agent',
+      'pdf-sheet-read': 'agent',
     });
   });
 
@@ -243,11 +244,12 @@ describe('the roles', () => {
     }
   });
 
-  it('an Agent gets the file, writes one tab, and reads no other database', () => {
-    expect(AGENTS.map((p) => p.id)).toEqual(['iso-title-block']);
+  it('an Agent gets the file, writes one tab and at most a list tab, and reads no other database', () => {
+    expect(AGENTS.map((p) => p.id)).toEqual(['iso-title-block', 'pdf-sheet-read']);
     for (const p of AGENTS as readonly PipelineManifest[]) {
       expect(p.input, p.id).toBe('file');
-      expect(p.produces.tabs, p.id).toHaveLength(1);
+      expect(p.produces.tabs?.length, p.id).toBeGreaterThanOrEqual(1);
+      expect(p.produces.tabs?.length, p.id).toBeLessThanOrEqual(2);
       expect(p.match.after, p.id).toBeUndefined();
       expect(p.router, p.id).toBeUndefined();
     }
@@ -257,25 +259,37 @@ describe('the roles', () => {
     }
   });
 
-  it('no two pipelines declare the same tab', () => {
-    const tabs = (BUILTIN_PIPELINES as readonly PipelineManifest[]).flatMap(
-      (p) => p.produces.tabs ?? [],
-    );
-    expect(tabs.length).toBeGreaterThan(1);
-    expect(new Set(tabs).size).toBe(tabs.length);
+  it('no two pipelines of one file type declare the same tab', () => {
+    // The Agents' tabs and the Transformers' tabs go into the database of
+    // one file type: two of them with one tab name there would write over
+    // each other. Two file types may each have a `Title block`.
+    const all = BUILTIN_PIPELINES as readonly PipelineManifest[];
+    const exts = new Set(all.flatMap((p) => p.match.ext));
+    for (const ext of exts) {
+      const tabs = all
+        .filter((p) => p.match.ext.includes(ext))
+        .flatMap((p) => p.produces.tabs ?? []);
+      expect(new Set(tabs).size, ext).toBe(tabs.length);
+    }
+    expect(all.flatMap((p) => p.produces.tabs ?? []).length).toBeGreaterThan(1);
   });
 
-  it('an Agent is no Reader: the reader of its extensions is drawing-raster, never the Agent', () => {
+  it('an Agent is no Reader: the reader of its extensions is a built-in Reader, never the Agent', () => {
     const byExt = readersByExt(BUILTIN_PIPELINES);
+    const readerOf: Record<string, string> = {
+      'iso-title-block': 'drawing-raster',
+      'pdf-sheet-read': 'drawing-pdf',
+    };
     for (const p of AGENTS) {
       expect(isReader(p)).toBe(false);
       for (const ext of p.match.ext) {
         expect(dbExtsOf(BUILTIN_PIPELINES).has(ext), ext).toBe(true);
-        expect(byExt.get(ext)?.id, ext).toBe('drawing-raster');
-        expect(readerFor(BUILTIN_PIPELINES, ext)?.id, ext).toBe('drawing-raster');
-        expect(routerFor(BUILTIN_PIPELINES, ext), ext).toBeNull();
+        expect(byExt.get(ext)?.id, ext).toBe(readerOf[p.id]);
+        expect(readerFor(BUILTIN_PIPELINES, ext)?.id, ext).toBe(readerOf[p.id]);
       }
     }
+    expect(routerFor(BUILTIN_PIPELINES, 'tif')).toBeNull();
+    expect(routerFor(BUILTIN_PIPELINES, 'pdf')?.id).toBe('pdf-router');
     // The database comes from the Reader alone: in a list with no reader of
     // these extensions, the Agent gives them none.
     const noReader = BUILTIN_PIPELINES.filter((p) => p.id !== 'drawing-raster');
@@ -286,6 +300,20 @@ describe('the roles', () => {
     // The Agent stands after its Reader in the list.
     const ids: string[] = BUILTIN_PIPELINES.map((p) => p.id);
     expect(ids.indexOf('iso-title-block')).toBeGreaterThan(ids.indexOf('drawing-raster'));
+    expect(ids.indexOf('pdf-sheet-read')).toBeGreaterThan(ids.indexOf('drawing-pdf'));
+  });
+
+  it('the PDF Agent: two tabs, the vision worker 11 times at most, two options', () => {
+    const agent = AGENTS.find((p) => p.id === 'pdf-sheet-read')! as PipelineManifest;
+    expect(agent.match).toEqual({ ext: ['pdf'] });
+    expect(agent.produces).toEqual({ tabs: ['Title block', 'Sheet list'] });
+    expect(agent.needs).toEqual({ weight: 'heavy', timeMs: 240_000, workers: { vision: 11 } });
+    expect(asksMaxOf(agent)).toBe(11);
+    expect(Object.keys(agent.options ?? {})).toEqual(['more_fields', 'pages']);
+    // The page cap and the ask cap agree: page 1 has two asks.
+    const pages = agent.options!.pages!;
+    expect(pages.type === 'number' && pages.max + 1).toBe(11);
+    expect(agent.version).toBe('1.0.0');
   });
 
   it('the first Agent: the title block of a raster or plot isometric, two vision asks at most', () => {

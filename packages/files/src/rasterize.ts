@@ -241,9 +241,19 @@ export type PageWindow = {
   box?: [number, number, number, number];
   /** Pixels a point (1/72 inch) wanted: 2 is 144 DPI, 300 / 72 is 300 DPI. */
   scale: number;
+  /** The longest side of the picture in pixels, at most: the scale is
+   *  lower when the window at `scale` is longer. Left out: no cap but
+   *  `MAX_RENDER_PIXELS`. */
+  maxSide?: number;
+  /** The most bytes of the picture as a PNG: a PNG past it is given as a
+   *  JPEG (quality 90) of the same pixels, so a scan of grey noise fits a
+   *  model's limit. Left out: always a PNG. */
+  maxBytes?: number;
 };
 
 export type RenderedWindow = {
+  /** The picture: a PNG, or a JPEG when the window's `maxBytes` said so
+   *  (read its type from its first bytes). */
   png: Buffer;
   widthPx: number;
   heightPx: number;
@@ -302,7 +312,11 @@ export async function renderPdfWindows(
         const [x0, y0, x1, y1] = w.box ?? [0, 0, 1, 1];
         const wPt = (Math.min(1, x1) - Math.max(0, x0)) * base.width;
         const hPt = (Math.min(1, y1) - Math.max(0, y0)) * base.height;
-        const scale = wPt > 0 && hPt > 0 ? pageRenderScale(wPt, hPt, w.scale) : null;
+        const wanted =
+          w.maxSide !== undefined && w.maxSide > 0
+            ? Math.min(w.scale, w.maxSide / Math.max(wPt, hPt, 1e-9))
+            : w.scale;
+        const scale = wPt > 0 && hPt > 0 ? pageRenderScale(wPt, hPt, wanted) : null;
         if (scale === null) {
           out.push(null);
           continue;
@@ -324,6 +338,9 @@ export async function renderPdfWindows(
             viewport,
           }).promise;
           png = await canvas.encode('png');
+          if (w.maxBytes !== undefined && png.length > w.maxBytes) {
+            png = await canvas.encode('jpeg', 90);
+          }
         } finally {
           // Let go of the pixels now, on every path.
           canvas.width = 0;

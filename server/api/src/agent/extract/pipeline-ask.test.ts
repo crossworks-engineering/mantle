@@ -7,11 +7,17 @@
  *    count's one source), and a box with no vision worker leaves no such step;
  *  - the model gets the fixed system text and the core's question, never a
  *    text of the step;
- *  - an answer that is no JSON is `failed`.
+ *  - an answer that is no JSON is `failed`;
+ *  - an ask with the list part has its own system text and a larger answer
+ *    cap, and its list is checked as data.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PipelineManifest } from '@mantle/files';
-import { ASK_SYSTEM_TEXT, type AgentAsk } from '@mantle/content/pipeline-agent';
+import { PIPELINE_ASK_LIST_MAX, type PipelineManifest } from '@mantle/files';
+import {
+  ASK_LIST_SYSTEM_TEXT,
+  ASK_SYSTEM_TEXT,
+  type AgentAsk,
+} from '@mantle/content/pipeline-agent';
 import { PIPELINE_ASK_USE } from '@mantle/content/pipeline-asks';
 
 const h = vi.hoisted(() => ({
@@ -48,6 +54,8 @@ const ASK: AgentAsk = {
   key: 'sheet',
   worker: 'vision',
   fields: [{ name: 'Line number' }, { name: 'Revision', hint: 'a letter or a number' }],
+  list: false,
+  page: null,
   picture: Buffer.from('89504e470d0a1a0a', 'hex'),
   mime: 'image/png',
   hash: 'a'.repeat(64),
@@ -198,5 +206,64 @@ describe('the paid ask of an Agent', () => {
         'systemPrompt',
       ].sort(),
     );
+  });
+
+  it('an ask with the list part: its system text, its question, the larger cap, and the list as data', async () => {
+    answer = {
+      ...answer,
+      text: JSON.stringify({
+        fields: { 'Line number': '6-P-101', Revision: 'B' },
+        list: [
+          { text: ' P-101A ', class: 'tag' },
+          { text: '6-P-101', class: 'line number' },
+          { text: 'P-101A', class: 'tag' },
+          { text: 'W-12', class: 'weld' },
+          { text: '', class: 'tag' },
+          'not an item',
+        ],
+      }),
+    };
+    const out = await mod.pipelineAskOf(
+      'owner',
+      'node',
+      AGENT,
+      deps(),
+    )({ ...ASK, list: true, page: 1 });
+    expect(out).toEqual({
+      ok: true,
+      output: {
+        values: { 'Line number': '6-P-101', Revision: 'B' },
+        list: [
+          { text: 'P-101A', class: 'tag' },
+          { text: '6-P-101', class: 'line number' },
+          { text: 'W-12', class: 'other' },
+        ],
+        model: 'made-up-vision',
+      },
+    });
+    expect(calls[0]!.systemPrompt).toBe(ASK_LIST_SYSTEM_TEXT);
+    expect(calls[0]!.prompt).toContain('"list"');
+    expect(calls[0]!.maxTokens).toBe(mod.LIST_ANSWER_MAX_TOKENS);
+    expect(paidSteps()).toHaveLength(1);
+    expect(h.steps[0]!.meta).toMatchObject({ use: 'pipeline_ask', listItems: 3 });
+    expect(h.steps[0]!.init).toMatchObject({ input: { list: true } });
+  });
+
+  it('an ask with no list part keeps the small cap and gives no list', async () => {
+    const out = await mod.pipelineAskOf('owner', 'node', AGENT, deps())(ASK);
+    expect(calls[0]!.maxTokens).toBe(mod.ANSWER_MAX_TOKENS);
+    expect(out.ok && 'list' in (out.output as object)).toBe(false);
+  });
+
+  it('a list past its cap is cut, and a long text is cut to a cell', async () => {
+    const items = Array.from({ length: PIPELINE_ASK_LIST_MAX + 50 }, (_, i) => ({
+      text: `T-${i}${i === 0 ? 'x'.repeat(500) : ''}`,
+      class: 'tag',
+    }));
+    answer = { ...answer, text: JSON.stringify({ fields: {}, list: items }) };
+    const out = await mod.pipelineAskOf('owner', 'node', AGENT, deps())({ ...ASK, list: true });
+    const list = (out as { output: { list: { text: string }[] } }).output.list;
+    expect(list).toHaveLength(PIPELINE_ASK_LIST_MAX);
+    expect(list[0]!.text.length).toBe(120);
   });
 });

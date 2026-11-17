@@ -77,11 +77,18 @@ import {
   pdfReadAgainOf,
   readerStateOf,
   routePdf,
+  storedPdfOf,
   type FileStamp,
   type PdfDecide,
   type StoredPdf,
 } from './pdf-read';
-import { AGENT_HASH_COLUMN, agentRows, checkAsks, type AgentAskFn } from './pipeline-agent';
+import {
+  AGENT_HASH_COLUMN,
+  agentRows,
+  agentTextOf,
+  checkAsks,
+  type AgentAskFn,
+} from './pipeline-agent';
 import {
   afterBodyOf,
   agentStep,
@@ -577,30 +584,41 @@ async function writeRowsOrWord(
 }
 
 /** The most rows of an Agent's tab that are read back: an Agent writes one
- *  row for each ask, and a step has 64 calls at most. */
-const AGENT_ROWS_MAX = 1_000;
+ *  row for each ask, and a step has 64 calls at most; its list tab one row
+ *  for each item, PIPELINE_ASK_LIST_MAX (400) items an ask at most. */
+const AGENT_ROWS_MAX = 64 * 400;
 
-/** One tab of the database at `abs`, whole, every cell as text: an Agent's
- *  rows. Null: no database, no such tab, or it cannot be read. */
+/** One tab of the database at `abs`, whole, every cell as text but in a
+ *  number column (the Page of a list tab): an Agent's rows. Null: no
+ *  database, no such tab, or it cannot be read. */
 function textTabAt(abs: string, name: string): ParsedSheet | null {
   try {
     const tab = describeWorkbook(abs).find((t) => t.name === name);
     if (!tab) return null;
     const columns = tab.columns.map((c) => c.name);
-    const rows: (string | null)[][] = [];
+    const numbers = new Set(tab.columns.filter((c) => c.type === 'number').map((c) => c.name));
+    const cell = (c: string, v: unknown) =>
+      v === null || v === undefined
+        ? null
+        : numbers.has(c) && typeof v === 'number'
+          ? v
+          : String(v);
+    const rows: (string | number | null)[][] = [];
     scanTabColumns(
       abs,
       name,
       columns,
       { maxRows: AGENT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
       (row) => {
-        rows.push(
-          columns.map((c) => (row[c] === null || row[c] === undefined ? null : String(row[c]))),
-        );
+        rows.push(columns.map((c) => cell(c, row[c])));
         return true;
       },
     );
-    return { name, columns: columns.map((c) => ({ name: c, type: 'text' })), rows };
+    return {
+      name,
+      columns: columns.map((c) => ({ name: c, type: numbers.has(c) ? 'number' : 'text' })),
+      rows,
+    };
   } catch {
     return null;
   }
@@ -888,6 +906,25 @@ export async function patchFileDatabase(args: {
   });
 }
 
+/**
+ * What the core gives an Agent's step of a file beside the file
+ * (agentStep's `from`): the kind stored in the file's database at `sqlite`
+ * (a PDF's File tab), for a file type with a router, and the options in
+ * force of the file's Reader as the step's state (`readerOptions`: the
+ * title block box of a PDF). The one place for a run and a test
+ * (`pipeline_test`), so a test shows what a run would ask.
+ */
+export async function agentInputOf(
+  ownerId: string,
+  ext: string,
+  pipelines: BoxPipelines,
+  sqlite: string,
+): Promise<{ kind?: string; state: { readerOptions: Readonly<Record<string, unknown>> } }> {
+  const kind = pipelines.routerFor(ext) ? (await storedPdfOf(sqlite))?.kind : undefined;
+  const readerOptions = (await readerOptionsOf(ownerId, ext, pipelines)) ?? {};
+  return { ...(kind !== undefined ? { kind } : {}), state: { readerOptions } };
+}
+
 export type FileAgentRun =
   /** The asks are answered, as far as they were. `made`: paid calls of this
    *  run. `reused`: asks answered from the tab, with no call. `stopped`: why
@@ -895,10 +932,15 @@ export type FileAgentRun =
   | {
       status: 'asked';
       rows: number;
+      /** Rows of the Agent's list tab, when it has one. */
+      listRows?: number;
       made: number;
       reused: number;
       stopped?: string;
       warnings: string[];
+      /** The text of the Agent's tabs as written, for the file's text
+       *  (agentTextOf). Left out: the tabs were not written. */
+      text?: string;
     }
   | {
       status: 'skipped';
@@ -926,6 +968,12 @@ export type FileAgentRun =
  *
  * It does not read the off list and makes no cost check: `ask` holds every
  * guard of a paid call (server/api/src/agent/extract/pipeline-ask.ts).
+ *
+ * An Agent has one tab (`produces.tabs[0]`) and may have a second, its list
+ * tab (`produces.tabs[1]`, "The list part of an ask"). Both are written in
+ * the one patch. The step gets the kind stored in the file's database, for
+ * a file type with a router (a PDF), and the options in force of the file's
+ * Reader as its state.
  */
 export async function runAgentOnFile(args: {
   fileId: string;
@@ -941,6 +989,7 @@ export async function runAgentOnFile(args: {
   const pipelines = args.pipelines ?? (await boxPipelines(ownerId));
   const pipeline = pipelines.agents.find((p) => p.id === args.pipeline.id);
   const tab = pipeline?.produces.tabs?.[0];
+  const listTab = pipeline?.produces.tabs?.[1];
   if (!pipeline || !tab) return { status: 'skipped', reason: 'not-agent' };
   const ext = extOf(args.filename);
   if (!pipeline.match.ext.includes(ext)) return { status: 'skipped', reason: 'no-match' };
@@ -956,17 +1005,32 @@ export async function runAgentOnFile(args: {
   if (!readDocMeta(names.sqlite, [])) return { status: 'skipped', reason: 'no-database' };
 
   const state = await pipelineStateOf(ownerId, pipeline);
-  const step = await agentStep(pipeline, bytes, stepFileOf(bytes, ext), state.options);
+  const step = await agentStep(
+    pipeline,
+    bytes,
+    stepFileOf(bytes, ext),
+    state.options,
+    await agentInputOf(ownerId, ext, pipelines, names.sqlite),
+  );
   if (step.status === 'not_mine') return { status: 'skipped', reason: 'no-match' };
   const asks = checkAsks(pipeline, step.asks, step.pictures);
-  const stored = textTabAt(names.sqlite, tab);
-  const storedRows = (stored?.rows ?? []).map((r) =>
-    Object.fromEntries(stored!.columns.map((c, i) => [c.name, r[i] ?? null])),
+  const storedOf = (name: string) => {
+    const t = textTabAt(names.sqlite, name);
+    return (t?.rows ?? []).map((r) =>
+      Object.fromEntries(t!.columns.map((c, i) => [c.name, r[i] ?? null])),
+    );
+  };
+  const out = await agentRows(
+    tab,
+    asks,
+    storedOf(tab),
+    args.ask,
+    listTab ? { tab: listTab, stored: storedOf(listTab) } : undefined,
   );
-  const out = await agentRows(tab, asks, storedRows, args.ask);
   const done = {
     status: 'asked' as const,
     rows: out.sheet?.rows.length ?? 0,
+    ...(listTab ? { listRows: out.listSheet?.rows.length ?? 0 } : {}),
     made: out.made,
     reused: out.reused,
     ...(out.stopped !== undefined ? { stopped: out.stopped } : {}),
@@ -990,9 +1054,10 @@ export async function runAgentOnFile(args: {
       }
       return done;
     }
+    const sheets = [out.sheet, out.listSheet].filter((t): t is ParsedSheet => t !== null);
     patchFileDatabaseDoc(names.sqlite, {
-      replaceTabs: [tab],
-      tabs: out.sheet ? tabsOfSheets([out.sheet]) : [],
+      replaceTabs: listTab ? [tab, listTab] : [tab],
+      tabs: tabsOfSheets(sheets),
       // A hash is no word to search for.
       ftsSkipColumns: [AGENT_HASH_COLUMN],
       // The entry says "every ask has its answer": a stop takes it out.
@@ -1003,7 +1068,7 @@ export async function runAgentOnFile(args: {
       },
     });
     if (!stopped) await countRun(ownerId, pipeline.id, fileId);
-    return done;
+    return { ...done, text: agentTextOf(sheets) };
   });
 }
 

@@ -285,7 +285,18 @@ export type PipelineTestResult = {
    *  not asked. For each ask its key, the worker, the field names, and the
    *  picture's size in bytes and its type. Missing for any other pipeline,
    *  and from a server before this field. */
-  asks?: { key: string; worker: string; fields: string[]; bytes: number; mime: string }[];
+  asks?: {
+    key: string;
+    worker: string;
+    fields: string[];
+    bytes: number;
+    mime: string;
+    /** The ask wants the list part too (docs/pipelines.md, "The list part
+     *  of an ask"), and the page of its picture. Missing: no list part, no
+     *  page, or a server before them. */
+    list?: true;
+    page?: number;
+  }[];
   /** A Reader that gives a file's text (an own Reader with `produces.text`,
    *  for a format the core has no text reader for): the length of the text
    *  its run gave, in characters. Missing for any other pipeline, and from

@@ -18,7 +18,8 @@
  *
  * The call: the box's vision worker, with a fixed system text and the
  * core's question (the step gives fields, never free text). The model has
- * no tool. One trace step for each call, with `meta.use` = PIPELINE_ASK_USE:
+ * no tool. An ask with the list part has its own fixed system text and a
+ * larger answer cap; its list is checked as data (askAnswerOf). One trace step for each call, with `meta.use` = PIPELINE_ASK_USE:
  * the adapter writes the spend on it (docs/spend-recording.md), and the day
  * count reads it. An answer that is no JSON object is `failed`.
  */
@@ -26,9 +27,10 @@ import { llmWorkAllowed } from '@mantle/db';
 import type { PipelineCallAnswer, PipelineManifest } from '@mantle/files';
 import { readFileRowNow } from '@mantle/content/file-database';
 import {
+  ASK_LIST_SYSTEM_TEXT,
   ASK_SYSTEM_TEXT,
+  askAnswerOf,
   askQuestionOf,
-  askValuesOf,
   type AgentAsk,
   type AgentAskFn,
 } from '@mantle/content/pipeline-agent';
@@ -41,8 +43,11 @@ import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state
 import { runVisionWorker } from '@mantle/runtime/agent';
 import { step } from '@mantle/tracing';
 
-/** The longest answer of one ask, in tokens. */
-const ANSWER_MAX_TOKENS = 1500;
+/** The longest answer of one ask, in tokens: the fields alone, and the
+ *  fields with the list part (PIPELINE_ASK_LIST_MAX items of a short text
+ *  and a class each). */
+export const ANSWER_MAX_TOKENS = 1500;
+export const LIST_ANSWER_MAX_TOKENS = 12_000;
 
 const no = (reason: string): PipelineCallAnswer => ({
   ok: false,
@@ -98,16 +103,22 @@ export function pipelineAskOf(
       {
         name: 'pipeline_ask',
         kind: 'llm_call',
-        input: { pipeline: pipeline.id, key: ask.key, mime: ask.mime, bytes: ask.picture.length },
+        input: {
+          pipeline: pipeline.id,
+          key: ask.key,
+          mime: ask.mime,
+          bytes: ask.picture.length,
+          ...(ask.list ? { list: true } : {}),
+        },
       },
       async (h): Promise<PipelineCallAnswer> => {
         const out = await d.vision({
           ownerId,
           bytes: ask.picture,
           mimeType: ask.mime,
-          systemPrompt: ASK_SYSTEM_TEXT,
-          prompt: askQuestionOf(ask.fields),
-          maxTokens: ANSWER_MAX_TOKENS,
+          systemPrompt: ask.list ? ASK_LIST_SYSTEM_TEXT : ASK_SYSTEM_TEXT,
+          prompt: askQuestionOf(ask.fields, ask.list),
+          maxTokens: ask.list ? LIST_ANSWER_MAX_TOKENS : ANSWER_MAX_TOKENS,
           leastThinking: true,
         });
         // No model: the box has no vision worker, so no call was made, and
@@ -128,12 +139,13 @@ export function pipelineAskOf(
           h.setError(out.note ?? 'no text');
           return { ok: false, error: 'failed', reason: 'no_text' };
         }
-        const values = askValuesOf(out.text, ask.fields);
-        if (!values) {
+        const answer = askAnswerOf(out.text, ask.fields, ask.list);
+        if (!answer) {
           h.setError('the answer is no JSON object');
           return { ok: false, error: 'failed', reason: 'no_json' };
         }
-        return { ok: true, output: { values, model: out.model ?? '' } };
+        if (answer.list) h.setMeta({ listItems: answer.list.length });
+        return { ok: true, output: { ...answer, model: out.model ?? '' } };
       },
     );
   };

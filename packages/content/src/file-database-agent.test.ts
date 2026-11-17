@@ -15,7 +15,11 @@
  *  - the Reader's tabs are the same rows after a run;
  *  - a Reader's new read of the same bytes keeps the paid tab, and the run
  *    after it pays nothing;
- *  - a step that asks more than its manifest allows pays nothing.
+ *  - a step that asks more than its manifest allows pays nothing;
+ *  - an Agent with a list tab writes both tabs in the one patch, a second
+ *    run pays nothing for either, and a Reader's new read keeps both;
+ *  - the step gets the kind stored in the database and the Reader's options;
+ *  - the run gives the text of its tabs for the file's text.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -36,6 +40,8 @@ const h = vi.hoisted(() => ({
   pictures: new Map<string, Buffer>(),
   /** The calls the step returns. */
   calls: [] as unknown[],
+  /** The requests the step got, in order. */
+  requests: [] as Record<string, unknown>[],
   row: { sha256: '', indexing: 'full', home: null as string | null, filename: 'sheet.csv' },
   /** The runs a build queued (notifyPipelineRun), `<pipeline>:<file>`. */
   notified: [] as string[],
@@ -47,10 +53,13 @@ const h = vi.hoisted(() => ({
 vi.mock('@mantle/files', async (orig) => ({
   ...(await orig<typeof import('@mantle/files')>()),
   // The Agent's one step, as the parser would answer it.
-  parserPipelineRun: vi.fn(async () => {
-    h.events.push('step');
-    return { result: { status: 'ok', calls: h.calls }, pictures: h.pictures };
-  }),
+  parserPipelineRun: vi.fn(
+    async (_body: unknown, _p: unknown, request: Record<string, unknown>) => {
+      h.events.push('step');
+      h.requests.push(request);
+      return { result: { status: 'ok', calls: h.calls }, pictures: h.pictures };
+    },
+  ),
 }));
 
 // The file's row, as the row checks read it.
@@ -443,5 +452,174 @@ describe('an Agent run on a file database', () => {
     h.row = { ...h.row, indexing: 'full', sha256: 'c'.repeat(64) };
     expect(await run()).toEqual({ status: 'skipped', reason: 'stale' });
     expect(h.events).toEqual([]);
+  });
+
+  describe('an Agent with a list tab (pdf-sheet-read is one)', () => {
+    const LISTER: BoxPipeline = {
+      ...AGENT,
+      id: 'made-up-lister',
+      produces: { tabs: ['Title block', 'Sheet list'] },
+      needs: { weight: 'light', workers: { vision: 3 } },
+    };
+    const ROUTER = { id: 'made-up-router', router: true } as unknown as BoxPipeline;
+    const listers = (router: boolean) =>
+      ({
+        ...pipelines,
+        all: [LISTER],
+        byId: (id: string) => (id === LISTER.id ? LISTER : null),
+        routerFor: () => (router ? ROUTER : null),
+        agents: [LISTER],
+        acted: [LISTER],
+      }) as unknown as BoxPipelines;
+    const listAsk = (key: string, picture: string, page: number) => ({
+      call: 'worker',
+      worker: 'vision',
+      key,
+      input: { picture, fields: FIELDS, list: true, page },
+    });
+    const runList = (router = false) =>
+      fd.runAgentOnFile({
+        fileId,
+        ownerId,
+        sha256,
+        bytes,
+        filename: 'sheet.csv',
+        pipeline: LISTER,
+        pipelines: listers(router),
+        ask: async (a) => {
+          h.events.push(`ask:${a.key}`);
+          const no = fail?.(a);
+          if (no) return no;
+          return {
+            ok: true,
+            output: {
+              values: { 'Line number': `L-${a.key}`, Revision: 'A' },
+              ...(a.list
+                ? {
+                    list: [
+                      { text: `P-${a.page}01`, class: 'tag' },
+                      { text: '6-P-1001', class: 'line number' },
+                    ],
+                  }
+                : {}),
+              model: 'made-up-model',
+            },
+          };
+        },
+      });
+
+    beforeEach(() => {
+      h.calls = [listAsk('page-1', 'sheet.png', 1), ask('corner', 'side.png')];
+      h.requests.length = 0;
+    });
+
+    it('one run writes both tabs in one patch, with the list rows of each list ask', async () => {
+      const out = await runList();
+      expect(out).toMatchObject({ status: 'asked', rows: 2, listRows: 2, made: 2 });
+      expect(rowsOf('Sheet list').map((r) => r.slice(0, 4))).toEqual([
+        ['page-1', 1, 'P-101', 'tag'],
+        ['page-1', 1, '6-P-1001', 'line number'],
+      ]);
+      expect(rowsOf('Title block')).toHaveLength(2);
+      expect(entry()).toBe('made-up-lister@1.0.0');
+      // The text of the tabs, for the file's text.
+      expect(out.status === 'asked' && out.text).toBe(
+        'Title block\nLine number: L-page-1; Revision: A\nLine number: L-corner; Revision: A' +
+          '\n\nSheet list\nText: P-101; Class: tag\nText: 6-P-1001; Class: line number',
+      );
+    });
+
+    it('a second run pays nothing and leaves both tabs equal', async () => {
+      await runList();
+      const first = [rowsOf('Title block'), rowsOf('Sheet list')];
+      h.events.length = 0;
+      expect(await runList()).toMatchObject({ made: 0, reused: 2, listRows: 2 });
+      expect(asksMade()).toEqual([]);
+      expect([rowsOf('Title block'), rowsOf('Sheet list')]).toEqual(first);
+    });
+
+    it("a Reader's new read keeps both tabs, and the run after it pays nothing", async () => {
+      await runList();
+      const first = [rowsOf('Title block'), rowsOf('Sheet list')];
+      // The build of the Reader keeps the tabs of the box's Agents of the type.
+      expect(
+        await fd.buildFileDatabase({
+          fileId,
+          ownerId,
+          sha256,
+          bytes,
+          filename: 'sheet.csv',
+          pipelines: listers(false),
+          parsed: {
+            kind: 'sheets',
+            sheets: [
+              {
+                name: 'Drawing',
+                columns: [
+                  { name: 'Key', type: 'text' },
+                  { name: 'Value', type: 'text' },
+                ],
+                rows: [['Format', 'read again']],
+              },
+            ],
+          },
+        }),
+      ).toMatchObject({ status: 'built' });
+      expect([rowsOf('Title block'), rowsOf('Sheet list')]).toEqual(first);
+      h.events.length = 0;
+      expect(await runList()).toMatchObject({ made: 0, reused: 2 });
+      expect(asksMade()).toEqual([]);
+    });
+
+    it('a list ask from an Agent with one tab pays nothing', async () => {
+      h.calls = [listAsk('page-1', 'sheet.png', 1)];
+      await expect(run()).rejects.toThrow(/second tab/);
+      expect(asksMade()).toEqual([]);
+    });
+
+    it('the step gets the kind stored in the File tab, where the file type has a router, and the options of the Reader', async () => {
+      // A database with a File tab, as the PDF Reader writes it.
+      await fd.buildFileDatabase({
+        fileId,
+        ownerId,
+        sha256,
+        bytes,
+        filename: 'sheet.csv',
+        pipelines: listers(true),
+        parsed: {
+          kind: 'sheets',
+          sheets: [
+            {
+              name: 'File',
+              columns: [
+                { name: 'Kind', type: 'text' },
+                { name: 'Rules kind', type: 'text' },
+              ],
+              rows: [['isometric', 'isometric']],
+            },
+          ],
+        },
+      });
+      await runList(true);
+      expect(h.requests.at(-1)).toMatchObject({
+        kind: 'isometric',
+        state: { readerOptions: {} },
+      });
+      // With no router of the file type, the step gets no kind.
+      await runList(false);
+      expect(h.requests.at(-1)!.kind).toBeUndefined();
+    });
+
+    it('a step that says not_mine: no call, nothing written', async () => {
+      const files = await import('@mantle/files');
+      vi.mocked(files.parserPipelineRun).mockImplementationOnce(async () => {
+        h.events.push('step');
+        return { result: { status: 'not_mine' }, pictures: new Map() } as never;
+      });
+      const before = createHash('sha256').update(readFileSync(sqlite())).digest('hex');
+      expect(await runList()).toEqual({ status: 'skipped', reason: 'no-match' });
+      expect(asksMade()).toEqual([]);
+      expect(createHash('sha256').update(readFileSync(sqlite())).digest('hex')).toBe(before);
+    });
   });
 });
