@@ -4,12 +4,12 @@
 -- item's link plus the contact's code (0214). Contacts stay: they are the
 -- email gate. Open links stay as they are.
 --
--- 1. Every contact share row is DELETED, live or revoked. Kept, a row with its
---    contact_id dropped would read as an open link, and a live one would open
---    with no code. Deleting a share cascades nothing else (only the dropped
---    share_access_log named it).
--- 2. contact_share_codes and share_access_log (only contact shares wrote it;
+-- 1. contact_share_codes and share_access_log (only contact shares wrote it;
 --    reaped at 90 days) are dropped with their triggers and indexes.
+-- 2. Then every contact share row is DELETED, live or revoked. Kept, a row
+--    with its contact_id dropped would read as an open link, and a live one
+--    would open with no code. After the drop of the code rows, so an old
+--    image's share made while this runs is deleted too, or fails.
 -- 3. shares: the contact check trigger, the contact indexes, can_write and
 --    contact_id go; the one live link per item index is 0214's
 --    shares_node_open_uq without its contact clause, under its old name
@@ -30,7 +30,18 @@
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 
--- 1. The contact share rows.
+-- 1. The two tables (their triggers and indexes go with them).
+DROP TABLE IF EXISTS "public"."share_access_log";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "public"."contact_share_codes";
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_contact_share_code_check"();
+--> statement-breakpoint
+
+-- 2. The contact share rows, after the code rows are gone: an old image's
+-- share of an item with contacts holds contact_share_codes FOR SHARE until
+-- it commits, so the DROP above waits for it and this DELETE sees its row;
+-- one that comes later fails on the dropped table.
 DO $$
 DECLARE
   n bigint := 0;
@@ -42,14 +53,6 @@ BEGIN
   END IF;
   RAISE NOTICE '0378: % contact share rows deleted', n;
 END $$;
---> statement-breakpoint
-
--- 2. The two tables (their triggers and indexes go with them).
-DROP TABLE IF EXISTS "public"."share_access_log";
---> statement-breakpoint
-DROP TABLE IF EXISTS "public"."contact_share_codes";
---> statement-breakpoint
-DROP FUNCTION IF EXISTS "public"."mantle_contact_share_code_check"();
 --> statement-breakpoint
 
 -- 3. shares.
