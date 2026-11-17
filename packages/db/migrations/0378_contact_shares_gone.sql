@@ -67,6 +67,34 @@ DROP INDEX IF EXISTS "public"."shares_node_contact_uq";
 --> statement-breakpoint
 DROP INDEX IF EXISTS "public"."shares_contact_idx";
 --> statement-breakpoint
+-- The triggers migrate's sync made from the access matrix (the write and
+-- edit checks, mantle_write_check_* and mantle_edit_check_*) name every
+-- column of shares in their UPDATE OF list or WHEN, so the two columns
+-- cannot go while they stand. Drop each trigger that depends on either
+-- column; the sync after the migrations makes them again from the shape
+-- left. A trigger of any other name that depends on them stops the
+-- migration here (nothing is changed).
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT DISTINCT t.tgname
+      FROM pg_trigger t
+      JOIN pg_depend d ON d.classid = 'pg_trigger'::regclass AND d.objid = t.oid
+      JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+     WHERE t.tgrelid = 'public.shares'::regclass AND NOT t.tgisinternal
+       AND d.refobjid = 'public.shares'::regclass
+       AND a.attname IN ('contact_id', 'can_write')
+  LOOP
+    IF r.tgname NOT LIKE 'mantle\_edit\_check%' AND r.tgname NOT LIKE 'mantle\_write\_check%' THEN
+      RAISE EXCEPTION '0378: trigger % on shares names a dropped column', r.tgname;
+    END IF;
+    EXECUTE format('DROP TRIGGER %I ON "public"."shares"', r.tgname);
+    RAISE NOTICE '0378: dropped trigger % (the sync makes it again)', r.tgname;
+  END LOOP;
+END $$;
+--> statement-breakpoint
 ALTER TABLE "public"."shares" DROP CONSTRAINT IF EXISTS "shares_can_write_ck";
 --> statement-breakpoint
 ALTER TABLE "public"."shares" DROP COLUMN IF EXISTS "can_write";

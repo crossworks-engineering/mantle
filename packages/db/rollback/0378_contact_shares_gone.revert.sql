@@ -209,6 +209,7 @@ BEGIN
   END IF;
   RETURN new;
 END
+$function$;
 --> statement-breakpoint
 ALTER FUNCTION "public"."mantle_contact_share_check"() SECURITY DEFINER;
 --> statement-breakpoint

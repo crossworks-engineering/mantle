@@ -18,8 +18,8 @@
  * role changes (every login role hashes `login:`).
  */
 import { createHmac, randomBytes } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
-import { appDatabases, authUsers, db, nodes } from '@mantle/db';
+import { eq, sql } from 'drizzle-orm';
+import { appDatabases, authUsers, db } from '@mantle/db';
 import { stripLiterals } from '@mantle/tabledb';
 import {
   APP_VIEWER_PARAMS,

@@ -60,7 +60,6 @@ import {
   onFullSystemRoute,
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
-import { resolveTool } from './resolve';
 import type { RuntimeToolPolicy } from './runtime-policy';
 
 /**
