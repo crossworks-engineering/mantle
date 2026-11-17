@@ -20,6 +20,7 @@ import {
   type ToolHandler,
 } from '@mantle/db';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
+import { toolService, toolServiceSwitchedOff } from '@mantle/config';
 import {
   connectorGroupRow,
   connectorToolPolicy,
@@ -378,6 +379,15 @@ async function dispatchGated(
     // A builtin row named with another builtin's slug runs nothing.
     const clash = builtinRowSlugError(tool.slug, h.ref);
     if (clash) return { ok: false, error: clash };
+    // A builtin whose optional service is switched off on this box runs
+    // nothing (an MCP session listed before the switch, a row that aliases
+    // it): the rule the lists apply, here for the call.
+    if (toolServiceSwitchedOff(h.ref)) {
+      return {
+        ok: false,
+        error: `this tool needs the '${toolService(h.ref)}' service, which is switched off on this box: an admin switches it on in Settings > Services (or with service_set)`,
+      };
+    }
     // Owner-only tools refuse anyone but the owner before any other work: a
     // team or MISSING surface is not the owner. The gate's first narrower
     // (owner-only), from the call's surface (`ownerSurface`), so a listing

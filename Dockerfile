@@ -83,6 +83,7 @@ COPY server/gateway/package.json server/gateway/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/parser/package.json server/parser/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
+COPY server/sync/package.json server/sync/package.json
 COPY server/web/package.json server/web/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
@@ -337,7 +338,9 @@ CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
 # so a box that has the server image pulls little more) plus the rclone binary, copied
 # from the pinned official image (MIT). No rclone daemon runs: a file job runs
 # one short rclone command and ends (Sync plan, M0).
-FROM rclone/rclone:1.76.0 AS rclone-binary
+# rclone v1.76.0, pinned by its multi-arch index digest (amd64 and arm64):
+# a moved tag cannot change the build.
+FROM rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466 AS rclone-binary
 FROM deps AS sync
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=rclone-binary /usr/local/bin/rclone /usr/local/bin/rclone

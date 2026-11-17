@@ -789,7 +789,6 @@ services:
     environment:
       NODE_ENV: production
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0'
-      SYNC_PORT: ${SYNC_PORT:-8099}
     labels: ['autoheal=true']
     healthcheck:
       test:
