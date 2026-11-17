@@ -296,4 +296,3 @@ export function lowersAccessSet(input: Record<string, unknown>): boolean {
   const level = normalLevel(input.level);
   return level === 'client' || level === 'public';
 }
-

@@ -108,11 +108,7 @@ describe('bridging the content groups changed the implementation, not the surfac
     // of build-server.ts), so they ship. (email_send and email_page were two
     // of them; they left with the old sync, Sync M4.)
     const registered = surface();
-    const nowInvited = [
-      'note_from_file',
-      'note_from_page',
-      'peer_search_chunks',
-    ];
+    const nowInvited = ['note_from_file', 'note_from_page', 'peer_search_chunks'];
     expect(nowInvited.filter((slug) => !registered.has(slug))).toEqual([]);
   });
 });
