@@ -29,8 +29,8 @@ const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
 /** The version of the rules in ./pdf-kind.ts. Raise it when a threshold or
  *  a rule changes, so a database says which rules made it. 2 (2026-11-17):
  *  a fill's slanted lines are left out of the axes, a file of typed pages
- *  but for a few is a document, a blank page in a file with an image too
- *  large to open is a scan. */
+ *  but for a few is a document, a file of blank pages that holds an image
+ *  too large to open is a scan. */
 export const PDF_KIND_RULES_VERSION = 2;
 
 /** The clock columns of a reader's tabs, by tab name: a time a read took,
@@ -394,21 +394,25 @@ export function pagesNotReadWhole(drawing: PdfDrawing): number {
 }
 
 /**
- * A read of a PDF poorer than the stored one: another rules kind by the
- * same rules (`rulesVersion`), or more pages not read whole (a page over
- * its time on a busy parser). The first read stands, so nothing is written
- * (and in the sketch read nothing is asked). Newer rules may name another
- * kind: that is the point of them. The one rule, for the sketch read and
- * for a read again.
+ * A read of a PDF poorer than the stored one: another rules kind, or more
+ * pages not read whole (a page over its time on a busy parser). The first
+ * read stands, so nothing is written (and in the sketch read nothing is
+ * asked). The one rule, for the sketch read and for a read again.
+ *
+ * Only a read again of the File tab it wrote (`now.rulesVersion` stated)
+ * may name another kind when the stored one came from older rules: that is
+ * the point of newer rules. The sketch read states no version, so for it
+ * another kind is always poorer: a paid read never runs on a database of
+ * older rules that name another kind (a read again comes first).
  */
 export function pdfReadPoorer(
   now: { rulesKind: string; rulesVersion?: number; notReadWhole: number },
   first: { rulesKind: string; rulesVersion?: number; notReadWhole: number },
 ): boolean {
-  // A read that does not state its rules is a read of this code's rules.
-  const sameRules =
-    (now.rulesVersion ?? PDF_KIND_RULES_VERSION) === (first.rulesVersion ?? PDF_KIND_RULES_VERSION);
-  return (sameRules && now.rulesKind !== first.rulesKind) || now.notReadWhole > first.notReadWhole;
+  const newerRules = now.rulesVersion !== undefined && now.rulesVersion > (first.rulesVersion ?? 0);
+  return (
+    (!newerRules && now.rulesKind !== first.rulesKind) || now.notReadWhole > first.notReadWhole
+  );
 }
 
 /**
@@ -677,7 +681,7 @@ export function pdfDrawingSheets(
       : '') +
     (drawing.largeImageNotRead === true
       ? ` The file holds an image too large to read: its page may count as blank or as text alone;` +
-        ` a page that counts as blank is taken as a scan.`
+        ` when every page counts as blank, the file is taken as a scan.`
       : '') +
     (sketch === null && nodeVision
       ? ` Vision text node text only: an older vision read of the whole page wrote the file's` +

@@ -268,9 +268,11 @@ describe('the rows of a read', () => {
     });
     expect(pdfReadPoorer(at('scan', v), at('unsure', v))).toBe(true);
     expect(pdfReadPoorer(at('scan', v), at('unsure', v - 1))).toBe(false);
-    // A read that states no version is of this code's rules.
+    // The sketch read states no version: another kind is always poorer, so
+    // a paid read never runs on a database of older rules with another kind.
     expect(pdfReadPoorer(at('scan', undefined), at('unsure', v))).toBe(true);
-    expect(pdfReadPoorer(at('scan', undefined), at('unsure', v - 1))).toBe(false);
+    expect(pdfReadPoorer(at('scan', undefined), at('unsure', v - 1))).toBe(true);
+    expect(pdfReadPoorer(at('scan', undefined), at('scan', v - 1))).toBe(false);
     // More pages not read whole is poorer by any rules.
     expect(pdfReadPoorer(at('scan', v, 1), at('scan', v - 1))).toBe(true);
   });

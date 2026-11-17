@@ -18,13 +18,13 @@ describe('the kind of a PDF drawing as a fact of its summary', () => {
     const withKind = buildExtractorInput(null, node, 'P&ID word in the body', FENCE, fact);
     const before = buildExtractorInput(null, node, 'P&ID word in the body', FENCE);
     expect(withKind.user).toContain(
-      'This is a PDF drawing. Its read with no model names its kind: A piping isometric.',
+      'This is a PDF file. Its read with no model names its kind: A piping isometric.',
     );
     // The fact stands before the fenced text, which is the body's.
     expect(withKind.user.indexOf('A piping isometric.')).toBeLessThan(
       withKind.user.indexOf(FENCE.open),
     );
-    expect(before.user).not.toContain('PDF drawing');
+    expect(before.user).not.toContain('PDF file');
     expect(withKind.system).toBe(before.system);
     expect(pdfKindNote('no-such-kind')).toBeNull();
   });

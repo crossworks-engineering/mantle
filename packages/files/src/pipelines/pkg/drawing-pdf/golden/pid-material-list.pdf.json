@@ -473,7 +473,7 @@
           3.528,
           false,
           false,
-          "table",
+          "body",
           "text",
           1
         ],
@@ -585,7 +585,7 @@
           3.528,
           false,
           false,
-          "table",
+          "body",
           "text",
           1
         ],
@@ -621,7 +621,7 @@
           "text",
           1
         ],
-        [1, 13, "TEE", 0.67114, 0.70606, 0.6793, 0.712, 0, 3.528, false, false, "table", "text", 1],
+        [1, 13, "TEE", 0.67114, 0.70606, 0.6793, 0.712, 0, 3.528, false, false, "body", "text", 1],
         [
           1,
           13,
@@ -650,7 +650,7 @@
           3.528,
           false,
           false,
-          "table",
+          "body",
           "text",
           1
         ],
@@ -666,7 +666,7 @@
           3.528,
           false,
           false,
-          "table",
+          "body",
           "text",
           1
         ],
@@ -682,7 +682,7 @@
           3.528,
           false,
           false,
-          "table",
+          "body",
           "text",
           1
         ]

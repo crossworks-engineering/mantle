@@ -21,7 +21,8 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 function stored(file: {
   kind: string;
   rulesVersion: number;
-  source?: 'rules' | 'decider';
+  /** `shadow`: a decider answer is stored and not used. */
+  source?: 'rules' | 'decider' | 'shadow';
   visionRead?: boolean;
 }) {
   const sqlite = path.join(dir, `${randomUUID()}.sqlite`);
@@ -47,10 +48,10 @@ function stored(file: {
     rows: [
       [
         file.kind,
-        file.source ?? 'rules',
+        file.source === 'decider' ? 'decider' : 'rules',
         file.source === 'decider' ? 'unsure' : file.kind,
         file.rulesVersion,
-        file.source === 'decider' ? file.kind : null,
+        file.source === 'decider' ? file.kind : file.source === 'shadow' ? 'pid' : null,
         file.visionRead ?? false,
       ],
     ],
@@ -63,7 +64,7 @@ function stored(file: {
 }
 
 describe('a read again of a PDF', () => {
-  it('a kind from older rules is named again by the router; one of these rules, or the decider, is kept', async () => {
+  it('a kind from older rules is named again by the router; one of these rules, or with a decider answer, is kept', async () => {
     const old = await pdfReadAgainOf(stored({ kind: 'unsure', rulesVersion: 1 }));
     expect(old).toMatchObject({ skip: null, reroute: true });
     const now = await pdfReadAgainOf(
@@ -74,6 +75,11 @@ describe('a read again of a PDF', () => {
       stored({ kind: 'pfd', rulesVersion: 1, source: 'decider' }),
     );
     expect(decided).toMatchObject({ skip: null, reroute: false });
+    // A shadow answer is kept too: the file is not routed again.
+    const shadow = await pdfReadAgainOf(
+      stored({ kind: 'unsure', rulesVersion: 1, source: 'shadow' }),
+    );
+    expect(shadow).toMatchObject({ skip: null, reroute: false });
     // A database with a sketch read is skipped, as before.
     expect(
       await pdfReadAgainOf(stored({ kind: 'scan', rulesVersion: 1, visionRead: true })),

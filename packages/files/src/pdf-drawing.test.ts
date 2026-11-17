@@ -478,6 +478,30 @@ describe('a page whose picture is too large to read', () => {
     expect(d).toMatchObject({ largeImageNotRead: true, allRead: false });
     expect(d.pages.map((p) => [p.class, p.kind, p.kindFrom])).toEqual([['blank', 'scan', 'rules']]);
     expect(d.kind).toBe('scan');
+    // With a typed page beside it, the image may be anywhere: the file is
+    // not one large picture, and stays unsure.
+    const px = deflateSync(Buffer.alloc(30, 230));
+    const image = fullImage(...A4);
+    const words = 'BT /F1 10 Tf 50 300 Td (Dear reader, this page is running text only.) Tj ET';
+    const two = assemblePdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>',
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4[0]} ${A4[1]}] ` +
+        '/Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>',
+      `<< /Length ${image.length} >>\nstream\n${image}\nendstream`,
+      [
+        '<< /Type /XObject /Subtype /Image /Width 12000 /Height 10000 /ColorSpace /DeviceGray ' +
+          `/BitsPerComponent 1 /Filter /FlateDecode /Length ${px.length} >>`,
+        px,
+      ],
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4[0]} ${A4[1]}] ` +
+        '/Resources << /Font << /F1 8 0 R >> >> /Contents 7 0 R >>',
+      `<< /Length ${words.length} >>\nstream\n${words}\nendstream`,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ]);
+    const mixed = await readPdfDrawing(two);
+    expect(mixed.pages.map((p) => p.kind)).toEqual(['document', 'document']);
+    expect(mixed.kind).toBe('unsure');
     // The same page with a small image is read, and nothing is flagged.
     const small = await readPdfDrawing(imagePage(3, 10));
     expect(small.largeImageNotRead).toBe(false);
@@ -792,6 +816,13 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
     // one left edge (10 pt text, 15 pt apart), and a line number among them.
     const list = sheet(
       ['FIC-101', 400, 900],
+      // A call-out: a tag with lines of words under it, at one left edge.
+      // Words are no codes, so the tag stays a tag.
+      ['P-101A/B', 400, 700],
+      ['CRUDE CHARGE PUMP', 400, 685],
+      ['CAP 120 M3/H', 400, 670],
+      ['DIFF 10 BAR', 400, 655],
+      ['MOTOR 75 KW', 400, 640],
       ['LG-41', 1500, 500],
       ['PI-42', 1500, 485],
       ['TW-43', 1500, 470],
@@ -799,13 +830,14 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
       ['2"-P-4501-A1A', 1500, 440],
     );
     const { rows } = (await readPdfDrawing(pdf([list]))).pages[0]!;
-    expect(rows!.tags.map((t) => t.tag)).toEqual(['FIC-101']);
+    expect(rows!.tags.map((t) => t.tag)).toEqual(['FIC-101', 'P-101A', 'P-101B']);
     expect(rows!.lines.map((l) => l.line)).toEqual(['2"-P-4501-A1A']);
     const region = (w: string) => rows!.words.find((r) => r.text === w)!.region;
     expect(['LG-41', 'PI-42', 'TW-43', 'FE-44', '2"-P-4501-A1A'].map(region)).toEqual(
       Array(5).fill('table'),
     );
     expect(region('FIC-101')).toBe('body');
+    expect(region('P-101A/B')).toBe('body');
     expect(rows!.account).toMatchObject({ inTable: 4, asInstrument: 1, rejected: 0 });
     expect(rows!.account.tagLike).toBe(
       rows!.account.asInstrument +

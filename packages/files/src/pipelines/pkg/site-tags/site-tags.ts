@@ -41,8 +41,8 @@ export type TextRow = {
   Layer?: unknown;
   X?: unknown;
   Y?: unknown;
-  /** A PDF drawing's region of the word (`table`: a cell of a column of a
-   *  table, whose code is not a tag; ../../../pdf-rows.ts). */
+  /** A PDF drawing's region of the word (`table`: a code in a column of
+   *  codes, which is not a tag; a line number there is; ../../../pdf-rows.ts). */
   Region?: unknown;
 };
 
@@ -113,8 +113,6 @@ export function siteTagsBuilder(profile: SiteProfile): {
       if (cut) return false;
       const raw = text(row.Text);
       if (raw === null || raw === '') return true;
-      // A code in a table is an item code, not a tag (the reader's rule).
-      if (row.Region === TABLE_REGION) return true;
       const value = raw.length > AFTER_CELL_MAX_CHARS ? raw.slice(0, AFTER_CELL_MAX_CHARS) : raw;
       chars += value.length;
       if (chars > SITE_TAGS_CHARS_MAX) {
@@ -124,8 +122,12 @@ export function siteTagsBuilder(profile: SiteProfile): {
         );
         return false;
       }
+      // A code in a table is an item code, not a tag (the reader's rule);
+      // a line number there is still one.
+      const table = row.Region === TABLE_REGION;
       for (const token of tokensOf(value)) {
         const { kind, rows: found } = rowsOfToken(token, profile);
+        if (table && kind !== 'line') continue;
         for (const [tag, unit, letters, number] of found) {
           if (rows.length >= SITE_TAGS_ROWS_MAX) {
             cut = true;

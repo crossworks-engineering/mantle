@@ -33,12 +33,12 @@ import {
  * where a drawing's title block is (the box in force, {@link TITLE_BLOCK_MM}
  * by default); by position only, not by the block's own frame. `template`:
  * the same text at the same place on three or more pages of the file
- * ({@link markTemplates}). `table`: a cell of a column of a table or a list
- * ({@link tableCells}). A flag for a reader to filter on; a tag in the title
- * block or in template text is still listed. A code in a table is not a tag
- * (an item code of a material list, a schedule, a grade): it stays a word,
- * and the page's account counts it (`inTable`); a line number in a table is
- * still listed.
+ * ({@link markTemplates}). `table`: a code in a column of codes, as in a
+ * table or a list ({@link codeColumns}). A flag for a reader to filter on; a
+ * tag in the title block or in template text is still listed. A code in a
+ * table is not a tag (an item code of a material list, a schedule, a
+ * grade): it stays a word, and the page's account counts it (`inTable`); a
+ * line number in a table is still listed.
  */
 export type Region = 'body' | 'title_block' | 'template' | 'table';
 
@@ -143,8 +143,8 @@ export type PageAccount = {
   asLine: number;
   /** Of the tag shape, and no pattern fits. */
   rejected: number;
-  /** Read as an instrument or an equipment tag, in a cell of a table
-   *  ({@link tableCells}): not a tag. */
+  /** Of the tag shape, read as an instrument or an equipment tag, in a
+   *  column of codes ({@link codeColumns}): not a tag. */
   inTable: number;
   /** Tokens that gave a tag or a line number and are not of the wide
    *  shape: a line number with an inch mark, a tag with a list after it, an
@@ -325,7 +325,8 @@ export function tokenRows(
 
 /** Cells one column of a table needs, at least: the box and three more. */
 export const TABLE_MIN_CELLS = 4;
-/** Left edges this close, in millimetres on paper, line up. */
+/** Left edges this close, in millimetres on paper, line up (the column
+ *  takes two buckets of this width, so edges up to twice it apart join). */
 export const TABLE_ALIGN_MM = 1;
 /** The most gap between two cells one under the other, in times the
  *  height of the taller one. A table's rows are close; tags on a drawing
@@ -333,15 +334,14 @@ export const TABLE_ALIGN_MM = 1;
 export const TABLE_GAP_HEIGHTS = 1.5;
 
 /**
- * Which boxes are cells of a column of a table or a list: a box whose left
- * edge lines up ({@link TABLE_ALIGN_MM}) with the left edges of others, one
- * under the other on {@link TABLE_MIN_CELLS} lines or more, each gap at most
+ * Which boxes are cells of a column: a box whose left edge lines up
+ * ({@link TABLE_ALIGN_MM}) with the left edges of others, one under the
+ * other on {@link TABLE_MIN_CELLS} lines or more, each gap at most
  * {@link TABLE_GAP_HEIGHTS} times the taller box. Two checks: the edge, and
- * the close stack. A material list, a schedule and a line class sheet have
- * such columns; tags on a drawing are spread out. Boxes in the page frame
- * (fractions of the shown page); a box on the same line as the one before
- * it in a column (a word drawn twice) adds no line. Each box is sorted in two
- * columns at most, so the cost is that of a sort.
+ * the close stack. Boxes in the page frame (fractions of the shown page); a
+ * box on the same line as the one before it in a column (a word drawn
+ * twice) adds no line. Each box is sorted in two columns at most, so the
+ * cost is that of a sort. The rows pass only codes ({@link codeColumns}).
  */
 export function tableCells(boxes: readonly Box[], widthMm: number, heightMm: number): boolean[] {
   const out = boxes.map(() => false);
@@ -390,6 +390,39 @@ export function tableCells(boxes: readonly Box[], widthMm: number, heightMm: num
     }
     close();
   }
+  return out;
+}
+
+/** True for a text that holds a code: a token with a letter and a digit
+ *  (`LG-41`, `F22`, `SCH160`), or one the grammar reads as a tag or a line
+ *  number. A word (`PUMP`) or a bare number (`120`) is no code. */
+export function holdsCode(text: string): boolean {
+  return tokensOf(text).some((t) => (/[A-Z]/.test(t) && /\d/.test(t)) || tokenItems(t) !== null);
+}
+
+/**
+ * Which texts are codes in a column of codes: the texts that hold a code
+ * ({@link holdsCode}), and of those the cells of a column
+ * ({@link tableCells}). A material list, a schedule and a line class sheet
+ * have such columns; tags on a drawing are spread out, and a call-out or a
+ * note is words under a tag, not codes. The one rule for a text layer's
+ * words and the pieces of the sketch read.
+ */
+export function codeColumns(
+  items: readonly { text: string; box: Box }[],
+  widthMm: number,
+  heightMm: number,
+): boolean[] {
+  const codes = items.flatMap((item, i) => (holdsCode(item.text) ? [i] : []));
+  const cells = tableCells(
+    codes.map((i) => items[i]!.box),
+    widthMm,
+    heightMm,
+  );
+  const out = items.map(() => false);
+  codes.forEach((i, k) => {
+    if (cells[k]) out[i] = true;
+  });
   return out;
 }
 
@@ -443,7 +476,7 @@ export function pageRows(
       return;
     }
     if (found.as === 'inTable') {
-      account.inTable++;
+      if (shaped) account.inTable++;
       return;
     }
     if (shaped) account[found.as]++;
@@ -468,16 +501,14 @@ export function pageRows(
       });
     }
   });
-  // The words in a column of a table, then each word's tokens in place.
-  const inTable = tableCells(
-    words.map((w) => w.box),
-    widthMm,
-    heightMm,
-  );
+  // The codes in a column of codes, then each word's tokens in place. A
+  // word in the title block keeps its region, and its tags.
+  const inColumn = codeColumns(words, widthMm, heightMm);
   words.forEach((w, at) => {
-    if (inTable[at] && w.region === 'body') w.region = 'table';
+    if (inColumn[at] && w.region === 'body') w.region = 'table';
     const less = w.spaced ? CONFIDENCE.spacedLess : 0;
-    for (const token of tokensOf(w.text)) place(token, w.box, 'text', at, less, inTable[at]);
+    const table = w.region === 'table';
+    for (const token of tokensOf(w.text)) place(token, w.box, 'text', at, less, table);
   });
   account.words = words.length;
 

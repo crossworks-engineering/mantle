@@ -288,13 +288,15 @@ changed, each with no model, each with a made-up fixture:
 - A file read whole, with no drawing page, whose pages are typed pages but
   for a few (`DOCUMENT_MIN_SHARE`, 3 of 4) is a `document`: a report or a
   slide deck with a chart page was `unsure`.
-- A page that reads as blank, in a file with an image too large to open, is
-  a `scan` (the sheet is one large picture); it was `unsure`. No renderer
-  of the box draws that image either (`PDF_MAX_IMAGE_PIXELS`), so neither
-  the sketch read nor a picture Agent sees it.
+- A file whose pages all read as blank, and that holds an image too large
+  to open, is a `scan` (the sheet is one large picture); it was `unsure`. A
+  file with a typed page beside it stays as before: the image may be on any
+  page. No renderer of the box draws that image either
+  (`PDF_MAX_IMAGE_PIXELS`), so neither the sketch read nor a picture Agent
+  sees it.
 
-On the 20 PDFs of the NATREF score (P0): kind right 14 of 20 before, 16 of
-20 after. Still wrong, by cause: a born-digital chart with a full-page
+On the 20 PDFs of the P0 score of one site: kind right 14 of 20 before, 16
+of 20 after. Still wrong, by cause: a born-digital chart with a full-page
 picture behind it reads as a scan (a scan with a drawn overlay looks the
 same, so the rule stays); two pages of business diagrams on a tabloid sheet
 stay `unsure` (an equipment drawing has the same counts; the decider's
@@ -844,12 +846,13 @@ reader calls it with no profile, so its rows do not change.
 
 **A code in a table is not a tag (`site-tags` 1.0.1, 2026-11-17).** The
 shape `texts-v1` has one more column it reads when it is there: `Region`.
-A PDF word whose region is `table` (a cell of a column of a table or a list,
-by the PDF reader's rule below) gives no row. A CAD drawing has no such
-column, so its rows do not change. The grammar also has one more word that
-is never an instrument code: `SCH`, the pipe schedule (`SCH160`), on every
-material list. The options stay the second lever: `not_tags` for a site's
-own words.
+A PDF word whose region is `table` (a code in a column of codes, by the PDF
+reader's rule in "The PDF set as packages") gives no tag row; a line number
+in it still gives its row. A CAD drawing has no such column, so its rows do
+not change. The grammar also has one more word that is never an
+instrument code: `SCH`, the pipe schedule (`SCH160`), on every material
+list. The options stay the second lever: `not_tags` for a site's own
+words.
 
 **Bounds.** A drawing's texts are outside input. The brain reads at most
 500,000 rows of `Texts` from the database, one page of rows at a time, into
@@ -1670,21 +1673,26 @@ read's jobs are as before the move.
 
 ### P3: the Reader fixes of 2026-11-17 (`drawing-pdf` 1.1.0)
 
-A spot check of NATREF PDFs and the P0 score (20 PDFs, 151 values by eye)
-found faults of the Reader and the Router. All of these rules ask no model.
+A spot check of the PDFs of one site and the P0 score (20 PDFs, 151
+values by eye) found faults of the Reader and the Router. All of these
+rules ask no model.
 
 - **A code in a table is not a tag.** Item codes of a material list, a
   schedule or a line class sheet were read as instrument and equipment tags
   (P0: 72 false rows in Tags and 72 in Site tags on a fresh upload). The
-  rule (`tableCells`, `packages/files/src/pdf-rows.ts`), two checks: a word
-  whose left edge lines up within 1 mm with others, stacked on 4 lines or
-  more, each gap at most 1.5 times the taller box. Tags on a drawing are
-  spread out; a list is close. Such a word has `Region` `table` in Texts; a
-  tag's shape there gives no Tags row and is counted in Pages (`In a
-table`, beside `Rejected tag-like`). A line number in a table is still a
-  row. The same rule runs on the pieces of the sketch read (Source `ocr`),
-  on their boxes, so the rows of that read gain it with no change of its
-  calls or prompt. A bubble (a code with its number under it) is not
+  rule (`codeColumns` and `tableCells`, `packages/files/src/pdf-rows.ts`)
+  looks only at codes (a word with a token of the tag shape, or one the
+  grammar reads), two checks: a code whose left edge lines up with those of
+  other codes (1 mm buckets, so edges up to 2 mm apart join), stacked on 4
+  lines or more, each gap at most 1.5 times the taller box. Tags on a
+  drawing are spread out; a list of codes is close; a call-out or a note is
+  words under a tag, not codes, so its tag stays. Such a word has `Region`
+  `table` in Texts; a tag's shape there gives no Tags row and is counted in
+  Pages (`In a table`, beside `Rejected tag-like`). A line number in a
+  table is still a row. A word in the title block corner keeps its region
+  and its tags. The same rule runs on the pieces of the sketch read (Source
+  `ocr`), on their boxes, so the rows of that read gain it with no change
+  of its calls or prompt. A bubble (a code with its number under it) is not
   checked: a column of bubbles is common on a P&ID.
 - **Every page of a drawing has its rows.** A typed page gave no rows, so
   a 44-page document left `unsure` had Texts on 4 pages. Now every page of
@@ -1694,7 +1702,8 @@ table`, beside `Rejected tag-like`). A line number in a table is still a
 - **Segments.** A drawn page with no text layer (`vector_no_text`: its text,
   if any, is strokes) has its lines and curves as the tab `Segments` (Page,
   Kind `line` or `curve`, X1 Y1 X2 Y2 in the frame of the boxes, Width mm,
-  Colour, Dashed). They count in the row cap.
+  Colour, Dashed). They have a cap of their own (`DRAWING_MAX_SEGMENTS`,
+  250,000 a file), so they never push the words of a later page out.
 - **Vision text** in the File tab: `sketch read` when the sketch read ran;
   `node text only` when the file's node holds the text of an older
   whole-page vision read (`data.vision_model`) and no tab holds it; else
@@ -1702,30 +1711,33 @@ table`, beside `Rejected tag-like`). A line number in a table is still a
   the reader on a read again (`nodeVision` in the reader's state,
   `pdfNodeVisionOf`).
 - **The kind rules 2**: see "The router".
-- **The summary.** The extract gives the extractor the kind of a PDF
-  drawing as a fact, outside the fence (`pdfKindFactOf`,
+- **The summary.** The extract gives the extractor the kind of a PDF file
+  as a fact, outside the fence (`pdfKindFactOf`,
   `server/api/src/agent/extract/model.ts`): one sentence of the kind, such
   as "A piping isometric.", and not for `unsure`. A summary had called an
   isometric a P&ID.
 
 **Old files.** A re-read (`pipeline_reread`, no model, cost 0) takes every
 older PDF database: the new version makes them older. A stored kind from
-older rules, not the decider's, is named again by the router with no ask
-(`reroute` of `pdfReadAgainOf`); a kind from the decider is kept. The rule
-of a poorer read compares the kinds only by the same rules
-(`pdfReadPoorer`), so a new rules kind is written. What a re-read does NOT
-do: a file whose new kind is `document` keeps its older database (a read
-again never removes one; the answer is `not-drawing`); a file with a
-sketch read is skipped, as before (`sketch`), so its `ocr` rows keep their
-false tags until a new upload. The summary is made again only by a new
-extract.
+older rules, in a File tab with no decider answer, is named again by the
+router with no ask (`reroute` of `pdfReadAgainOf`); a file the decider was
+asked about keeps its kind and its answer, a shadow one too. The rule of a
+poorer read (`pdfReadPoorer`) lets a read again name a new kind when its
+File tab states newer rules. The sketch read states no version, so for it
+another kind is always poorer: a paid read never runs on a database whose
+older rules name another kind; a re-read comes first. What a re-read does
+NOT do: a file whose new kind is `document` keeps its older database (a
+read again never removes one; the answer is `not-drawing`, and each
+re-read routes it again, at cost 0); a file with a sketch read is skipped,
+as before (`sketch`), so its `ocr` rows keep their false tags until a new
+upload. The summary is made again only by a new extract.
 
 **The score, the kit run on the 20 P0 PDFs** (the router and the reader of
 the build, the sketch pieces of the fresh upload replayed with no model;
 numbers only): kind right 14 → 16 of 20; values found in the file
-database 50 → 50 of 151; Tags rows 251 → 183, false 72 → 7; Site tags rows
-239 → 171, false 72 → 7; Tags rows on the list 11 → 11. The flow diagram
-with a sample list (not counted as false) went 168 → 165 rows: two
+database 50 → 50 of 151; Tags rows 251 → 186, false 72 → 10; Site tags
+rows 239 → 174, false 72 → 10; Tags rows on the list 11 → 11. The flow
+diagram with a sample list (not counted as false) went 168 → 165 rows: two
 stainless steel grades and one code not on its sample. The score on a box
 needs a roll.
 

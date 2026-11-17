@@ -147,7 +147,7 @@ export function buildExtractorInput(
       : node.type === 'present'
         ? 'This is a Present canvas (a deck, a diagram or a dashboard; its visible text follows). In the summary say what it is, who it is for and what it shows.\n\n'
         : pdfKind
-          ? `This is a PDF drawing. Its read with no model names its kind: ${pdfKind} In the summary name it by this kind, and do not call it another kind of drawing.\n\n`
+          ? `This is a PDF file. Its read with no model names its kind: ${pdfKind} In the summary name it by this kind, and do not call it another kind of drawing.\n\n`
           : '';
   // The node's title and text came from outside (an email subject and body,
   // a fetched page, an upload's filename, other people's words): both are

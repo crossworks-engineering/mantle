@@ -50,12 +50,19 @@ const SAMPLE_MAX_PAGES = 3;
 export const DRAWING_MAX_PAGES = 5000;
 /**
  * The most rows one read lists, all pages together: words, tags, line
- * numbers, markups and segments. The answer and the database hold each as a
- * row; the fullest P&ID sheet measured holds about 1,500 words and 200 tags,
- * and a drawing with its text as strokes about 83,000 segments. A page
+ * numbers and markups. The answer and the database hold each as a row; the
+ * fullest P&ID sheet measured holds about 1,500 words and 200 tags. A page
  * whose rows would pass it has no rows, and says so (`rows_not_listed`).
  */
 export const DRAWING_MAX_ROWS = 300_000;
+/**
+ * The most segments one read lists (the tab `Segments`), all pages
+ * together, apart from the row cap: a drawing with its text as strokes
+ * holds about 83,000 a sheet, so three sheets fit. A page whose segments
+ * would pass it lists none, and says so (`rows_not_listed`); its words, if
+ * any, are listed as before.
+ */
+export const DRAWING_MAX_SEGMENTS = 250_000;
 /**
  * The most characters of word and markup text (with a markup's author) one
  * read lists, all pages together. A word has no length bound of its own,
@@ -157,6 +164,8 @@ export async function readPdfDrawing(
     maxRows?: number;
     /** The most characters of text to list (`DRAWING_MAX_CHARS`). */
     maxChars?: number;
+    /** The most segments to list (`DRAWING_MAX_SEGMENTS`). */
+    maxSegments?: number;
     /** The title block box of the rows (the reader's options). Left out:
      *  `TITLE_BLOCK_MM` (./pdf-rows.ts). */
     titleBlock?: TitleBlockMm;
@@ -173,6 +182,8 @@ export async function readPdfDrawing(
   let listedChars = 0;
   const maxRows = opts.maxRows ?? DRAWING_MAX_ROWS;
   const maxChars = opts.maxChars ?? DRAWING_MAX_CHARS;
+  let listedSegments = 0;
+  const maxSegments = opts.maxSegments ?? DRAWING_MAX_SEGMENTS;
   const read = await readPdfPages(
     new Uint8Array(bytes),
     {
@@ -187,14 +198,21 @@ export async function readPdfDrawing(
       // too: when the file is not a document, its database holds the whole
       // file. A document's rows are dropped below.
       const rows = pageRows(p, undefined, opts.titleBlock);
+      // The segments of a drawn page with no text layer, inside a cap of
+      // their own, so they never push the words of a later page out.
       if (rows && facts.class === 'vector_no_text' && p.status === 'ok') {
-        rows.segments = p.segments;
+        if (listedSegments + p.segments.length <= maxSegments) {
+          rows.segments = p.segments;
+          listedSegments += p.segments.length;
+        } else {
+          facts.notes = [...(facts.notes ?? []), 'rows_not_listed'];
+        }
       }
       const segments = rows?.segments?.length ?? 0;
       if (rows && rows.words.length + rows.markups.length + segments > 0) {
         // Every row counts: one word can give many tags (a slash list).
         const count =
-          rows.words.length + rows.tags.length + rows.lines.length + rows.markups.length + segments;
+          rows.words.length + rows.tags.length + rows.lines.length + rows.markups.length;
         const chars =
           rows.words.reduce((n, w) => n + w.text.length, 0) +
           rows.markups.reduce((n, m) => n + m.text.length + m.author.length, 0);
@@ -260,16 +278,17 @@ export async function readPdfDrawing(
         ? 'document'
         : null;
 
+  // A file whose pages all read as blank while it holds an image too large
+  // to open is a picture of a sheet (or of sheets): its pages are scans.
+  const oneLargePicture =
+    largeImageNotRead && read.pages.length > 0 && read.pages.every((f) => f.class === 'blank');
   const pages: PdfDrawingPage[] = read.pages.map((f) => {
     const eye = eyes.get(f.page) ?? null;
     // What the other pictures say is for a page that was never looked at.
     // A page that was asked about and got no answer (its picture could not
-    // be drawn, or showed nothing) is not known: it stays unsure. A page
-    // that reads as blank in a file with an image too large to open is a
-    // picture of a page: the image is most likely on it (a sheet that is
-    // one large picture).
+    // be drawn, or showed nothing) is not known: it stays unsure.
     const kindOf = (e: PageEye | null, others: PageKind | null): PageKind =>
-      largeImageNotRead && f.class === 'blank' ? 'scan' : pageKindOf(f, e, others);
+      oneLargePicture ? 'scan' : pageKindOf(f, e, others);
     const kind = kindOf(eye, asked.has(f.page) ? null : rasterDefault);
     // `other_pages` only when they changed the answer: a large sheet is a
     // scan by its own size, and a page nothing could name stays unsure.
