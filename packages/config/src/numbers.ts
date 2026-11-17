@@ -103,7 +103,7 @@ export const ENV_NUMBERS = {
   MANTLE_FILE_DB_CSV_MAX_MB: {
     default: 32,
     positive: true,
-    doc: "largest delimited text made into a file database or a Table on upload, MB: a file the sheet reader reads as text (bytes that are no workbook), whatever its name; past it the file records too-large with no parser job and gets no Table. The cap is for the parser job's memory (a 55 MB CSV took about 2 GB, all the parser container has) and the synchronous SQLite write in the api. Of the by-hand imports, only the import to a new Table (the Tables screen) refuses a .csv past it; the import into an existing Table and `table_from_file` do not check it (trusted logins, accepted risk)",
+    doc: "largest delimited text made into a file database or a Table on upload, MB: a file the sheet reader reads as text (bytes that are no workbook), whatever its name; past it the file records too-large with no parser job and gets no Table. The cap is for the parser job's memory (a 55 MB CSV took about 2 GB, all the parser container had until v0.702.1) and the synchronous SQLite write in the api. Of the by-hand imports, only the import to a new Table (the Tables screen) refuses a .csv past it; the import into an existing Table and `table_from_file` do not check it (trusted logins, accepted risk)",
   },
   DWF_RENDER_DPI: {
     default: 300,

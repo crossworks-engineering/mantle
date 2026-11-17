@@ -56,7 +56,7 @@ operating system's:
   job root.
 - **Memory of a job.** A job's garbage collector runs in step with it
   (`BUN_JSC_useConcurrentGC=0`, `jobEnv`). With one CPU (`cpus` was `1`
-  until v0.702.x), a collector beside the job fell behind a large decode:
+  until v0.702.1), a collector beside the job fell behind a large decode:
   the pictures of a page that is one image of 99.8 M pixels passed 2 GB and
   the kernel killed the child. In step they peak at about 1.4 GB, in the same time; the
   pictures of 19 other drawings took 3 percent more in all (bench, one
@@ -363,7 +363,7 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   work is linear in what the reader returns). The picture and the bones are
   not linear: they draw nested blocks and a MINSERT's grid in full, so a
   crafted file can cost far more than its size. The real bound is the
-  parser's: one job slot, 240 s, one retry, 2 GB. Each saved picture is
+  parser's: one job slot, 240 s, one retry, its memory limit. Each saved picture is
   bounded by its own record; records can overlap, so the pictures of a
   file together are not bounded by the file's size. No budget of its own.
 

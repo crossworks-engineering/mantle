@@ -1165,7 +1165,8 @@ could not be drawn."). Each job now runs its collector in step
 with one CPU the child alone peaks at about 1.4 GB, in the same time.
 `scripts/probe-parser-large-image.sh <parser image>` holds it: a made-up
 sheet of one 99.8 M pixel image, two jobs sent at once to the image under
-the box's limits (2 GB, one CPU), both ok, no memory kill. The other 19 PDFs
+the old limits (2 GB, one CPU; the defaults are 3 GB and 2 CPUs since),
+both ok, no memory kill. The other 19 PDFs
 of the set (1 to 6 pages, 3 to 19 asks): at most 512 MB and 4.6 s a file;
 a dense flow diagram 2.1 s. So a run of 10 such large-image pages would be
 about 180 s; the child has about 215 s (the job's 240 s, less the 20 s kept

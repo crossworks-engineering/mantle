@@ -343,7 +343,8 @@ export async function pdfPagePieces(
         picture,
         String(widthMm),
         dir,
-        // One thread: the parser has one CPU by default (docs/parser.md).
+        // One thread: a box may give the parser one CPU (docs/parser.md), and one
+        // thread holds the least memory.
         '--threads',
         '1',
       ],
@@ -497,7 +498,8 @@ export function pdfEye(workdir: string, deadline: number): EyeFn {
           String(widthMm),
           '--out',
           `${base}.json`,
-          // One thread: the parser has one CPU by default (docs/parser.md).
+          // One thread: a box may give the parser one CPU (docs/parser.md), and one
+          // thread holds the least memory.
           '--threads',
           '1',
         ],

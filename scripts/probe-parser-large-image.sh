@@ -1,8 +1,8 @@
 #!/bin/bash
 # runs-on: box. A Linux host with Docker (never the Mac), where a round builds the parser image.
 # The PDF Agent's pictures of a page that is one very large image, in a
-# built parser image with the limits compose gives the parser on a box
-# (2 GB, no swap, 1 CPU). A made-up PDF (scripts/probe-parser-large-image.ts:
+# built parser image under limits stricter than the defaults (2 GB, no
+# swap, 1 CPU: the limits until v0.702.1, and a 1-vCPU box). A made-up PDF (scripts/probe-parser-large-image.ts:
 # one image of 99.8 M pixels, RGB and a soft mask) and two pdf-sheet-read
 # jobs sent at once (the parser runs one, the other waits its turn in the
 # queue). Both must end ok with their pictures drawn, none blank, and the

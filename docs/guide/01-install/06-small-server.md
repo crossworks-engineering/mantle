@@ -32,11 +32,12 @@ To switch a box that is already installed, run `bash scripts/install.sh --core` 
 
 ## Lower the memory caps
 
-The two largest services are capped at 3 GB each, which is too much for a 4 GB box. Add these lines to `mantle/.env`:
+The three largest services are capped at 3 GB each, which is too much for a 4 GB box. Add these lines to `mantle/.env`:
 
 ```bash
 WEB_MEM_LIMIT=1.5g
 API_MEM_LIMIT=1.5g
+PARSER_MEM_LIMIT=2g
 ```
 
 Then apply them:

@@ -80,7 +80,7 @@ matter are per-box settings in the stack's `.env`:
 Until 2026-09-24 the web cap was a fixed 1.5g: four maintenance runs at once
 OOM-restarted a pilot's web tier. On a 4 GB box the higher defaults move a
 runaway from a container OOM to the host's, so set them back down there
-(`WEB_MEM_LIMIT=1.5g`, `API_MEM_LIMIT=1.5g`). A change takes effect when
+(`WEB_MEM_LIMIT=1.5g`, `API_MEM_LIMIT=1.5g`, `PARSER_MEM_LIMIT=2g`). A change takes effect when
 compose recreates the container (the next roll, or `docker compose up -d`).
 
 **Postgres connections.** Every app process opens its own pools (the system
