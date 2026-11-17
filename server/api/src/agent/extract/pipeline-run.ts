@@ -19,10 +19,10 @@
  *    read again queues none. The job has no retry
  *    (extract-queue.ts), so a failure never pays again by itself. When it
  *    wrote its tabs, their text goes on the file node for a plain search
- *    (./agent-text.ts), with no model.
+ *    (./agent-text.ts), with no model, and the file's passages are built
+ *    again from its stored text with that text (the embedder only).
  *
- * Nothing else of the file changes: no summary, no passage, no embedding,
- * no extract. One trace step, `file_database`, holds the result, as the
+ * Nothing else of the file changes: no summary, no extract. One trace step, `file_database`, holds the result, as the
  * upload's. A failure (a throw of the build or the patch, the parser down)
  * is that step's error and changes nothing; the job ends there, with no
  * retry of its own and none by the queue: a person runs it again, and the
@@ -52,7 +52,10 @@ import {
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
+import { db, nodes } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
 import { writeAgentText } from './agent-text.js';
+import { writeRetrievalChunks } from './index-writes.js';
 import { pipelineAskOf } from './pipeline-ask.js';
 
 export type PipelineRunResult =
@@ -104,9 +107,19 @@ async function runOnce(
     const { text, ...done } = out;
     if (text !== undefined) {
       const sha = String(fileSha256Of(row));
-      await writeAgentText(ownerId, nodeId, sha, pipeline.id, text).catch((err: unknown) => {
-        done.warnings.push(`the text for search was not written: ${errorMessage(err)}`);
-      });
+      const changed = await writeAgentText(ownerId, nodeId, sha, pipeline.id, text).catch(
+        (err: unknown) => {
+          done.warnings.push(`the text for search was not written: ${errorMessage(err)}`);
+          return false;
+        },
+      );
+      // The passages again, from the file's stored text and the new Agent
+      // text: the old passages' vectors come from the embed cache.
+      if (changed) {
+        await passagesAgain(ownerId, nodeId).catch((err: unknown) => {
+          done.warnings.push(`the passages were not written again: ${errorMessage(err)}`);
+        });
+      }
     }
     return done;
   }
@@ -171,4 +184,18 @@ export async function runPipelineJob(
         },
       ),
   ).catch(() => ({ status: 'failed' as const }));
+}
+
+/** The passages of a file node again, from its stored text (`data.text`,
+ *  the extract's) and its Agents' text now (writeRetrievalChunks adds it).
+ *  A file with no stored text yet is left: its extract adds the Agent text
+ *  when it writes the passages. */
+async function passagesAgain(ownerId: string, nodeId: string): Promise<void> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
+  const text = (node?.data as Record<string, unknown> | undefined)?.text;
+  if (!node || node.type !== 'file' || typeof text !== 'string' || text.trim() === '') return;
+  await writeRetrievalChunks(node, ownerId, text, null);
 }

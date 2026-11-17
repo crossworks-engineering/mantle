@@ -25,21 +25,24 @@ import {
   ASKS_MAX,
   CORNER_DPI,
   FIELDS,
+  HALF,
   KINDS,
   MAX_SIDE,
   PAGES_MAX,
   PAGE_DPI,
   cornerOf,
   fieldsOf,
+  halvesOf,
   pagesOf,
   step,
 } from './step';
 
 /** An A3 landscape sheet in points, and a made-up drawing of `n` pages:
- *  a line number on the sheet and a title block line in its lower right. */
+ *  a line number on the sheet and a title block line in its lower right.
+ *  A page in `empty` has no content at all. */
 const A3 = { w: 1190.55, h: 841.89 };
 const A1 = { w: 2383.94, h: 1683.78 };
-function drawingPdf(n: number, size = A3): Buffer {
+function drawingPdf(n: number, size = A3, empty: readonly number[] = []): Buffer {
   const pageObj = (p: number) => 4 + p * 2;
   const objs: string[] = [
     '<< /Type /Catalog /Pages 2 0 R >>',
@@ -47,10 +50,11 @@ function drawingPdf(n: number, size = A3): Buffer {
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
   ];
   for (let p = 0; p < n; p++) {
-    const content =
-      `BT /F1 14 Tf 100 600 Td (6-P-10${p}1-A1A) Tj ET ` +
-      `BT /F1 10 Tf 1000 60 Td (MADE-UP-DWG-00${p + 1} SHEET ${p + 1} OF ${n}) Tj ET ` +
-      `0 0 0 RG 2 w 100 500 m 900 500 l S`;
+    const content = empty.includes(p + 1)
+      ? ' '
+      : `BT /F1 14 Tf 100 600 Td (6-P-10${p}1-A1A) Tj ET ` +
+        `BT /F1 10 Tf 1000 60 Td (MADE-UP-DWG-00${p + 1} SHEET ${p + 1} OF ${n}) Tj ET ` +
+        `0 0 0 RG 2 w 100 500 m 900 500 l S`;
     objs.push(
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${size.w} ${size.h}] ` +
         `/Resources << /Font << /F1 3 0 R >> >> /Contents ${pageObj(p) + 1} 0 R >>`,
@@ -106,10 +110,18 @@ const inputs = (calls: readonly unknown[] | undefined) =>
   });
 
 describe('the step of pdf-sheet-read', () => {
-  it('a three-page drawing: the corner of page 1 first, then each page whole, with the list on the whole pages', async () => {
+  it('a three-page drawing: the corner of page 1 first, then each page whole and its two halves, with the list', async () => {
     const { job, dir, drawn } = jobOf(drawingPdf(3));
     const result = await step(request('isometric'), job);
     expect(result.status).toBe('ok');
+    const page = (n: number, key: string) => ({
+      key,
+      worker: VISION_WORKER,
+      picture: `${key}.png`,
+      fields: 10,
+      page: n,
+      list: true,
+    });
     expect(inputs(result.calls)).toEqual([
       {
         key: 'page-1-title-block',
@@ -118,36 +130,32 @@ describe('the step of pdf-sheet-read', () => {
         fields: 10,
         page: 1,
       },
-      {
-        key: 'page-1',
-        worker: VISION_WORKER,
-        picture: 'page-1.png',
-        fields: 10,
-        page: 1,
-        list: true,
-      },
-      {
-        key: 'page-2',
-        worker: VISION_WORKER,
-        picture: 'page-2.png',
-        fields: 10,
-        page: 2,
-        list: true,
-      },
-      {
-        key: 'page-3',
-        worker: VISION_WORKER,
-        picture: 'page-3.png',
-        fields: 10,
-        page: 3,
-        list: true,
-      },
+      page(1, 'page-1'),
+      page(1, 'page-1-half-1'),
+      page(1, 'page-1-half-2'),
+      page(2, 'page-2'),
+      page(2, 'page-2-half-1'),
+      page(2, 'page-2-half-2'),
+      page(3, 'page-3'),
+      page(3, 'page-3-half-1'),
+      page(3, 'page-3-half-2'),
     ]);
     // Two draws: page 1 alone (its size places the corner), then the
-    // corner and the pages after it that are there, up to the cap.
-    expect(drawn.map((w) => w.map((x) => x.pageNumber))).toEqual([[1], [1, 2, 3]]);
+    // corner, page 1's halves, and the whole and the halves of each page
+    // after it that is there, up to the cap.
+    expect(drawn.map((w) => w.map((x) => x.pageNumber))).toEqual([
+      [1],
+      [1, 1, 1, 2, 2, 2, 3, 3, 3],
+    ]);
     expect(drawn[0]![0]).toMatchObject({ scale: PAGE_DPI / 72, maxSide: MAX_SIDE });
     expect(drawn[1]![0]).toMatchObject({ scale: CORNER_DPI / 72, maxSide: MAX_SIDE });
+    // The halves of a wide sheet: left and right, a tenth of it in both.
+    expect(drawn[1]!.slice(1, 4).map((w) => w.box ?? null)).toEqual([
+      [0, 0, HALF, 1],
+      [1 - HALF, 0, 1, 1],
+      null,
+    ]);
+    expect(drawn[1]![1]).toMatchObject({ scale: PAGE_DPI / 72, maxSide: MAX_SIDE });
     // The corner is the default box of drawing-pdf (190 x 70 mm) on an A3.
     const [x0, y0, x1, y1] = drawn[1]![0]!.box!;
     expect([x0, y0, x1, y1].map((v) => Math.round(v * 1000))).toEqual([548, 764, 1000, 1000]);
@@ -156,6 +164,8 @@ describe('the step of pdf-sheet-read', () => {
     const page1 = readFileSync(path.join(dir, 'page-1.png'));
     expect(page1.subarray(1, 4).toString('latin1')).toBe('PNG');
     expect(page1.readUInt32BE(16)).toBe(Math.floor((A3.w * PAGE_DPI) / 72));
+    const half = readFileSync(path.join(dir, 'page-1-half-1.png'));
+    expect(half.readUInt32BE(16)).toBe(Math.floor((A3.w * HALF * PAGE_DPI) / 72));
     const corner = readFileSync(path.join(dir, 'page-1-title-block.png'));
     // 190 mm at 300 DPI.
     expect(Math.abs(corner.readUInt32BE(16) - Math.round((190 / 25.4) * 300))).toBeLessThan(3);
@@ -164,10 +174,67 @@ describe('the step of pdf-sheet-read', () => {
     expect(result.calls!.length).toBeLessThanOrEqual(ASKS_MAX);
   });
 
-  it('a one-page drawing: two asks', async () => {
+  it('the halves of a tall page are its top and its bottom', async () => {
+    const tall = { w: A3.h, h: A3.w };
+    const { job, drawn } = jobOf(drawingPdf(1, tall));
+    await step(request('scan'), job);
+    expect(drawn[1]!.slice(1).map((w) => w.box)).toEqual([
+      [0, 0, 1, HALF],
+      [0, 1 - HALF, 1, 1],
+    ]);
+    expect(halvesOf(false)).toEqual([
+      [0, 0, 1, HALF],
+      [0, 1 - HALF, 1, 1],
+    ]);
+  });
+
+  it('a blank picture is never asked: an empty page gives no ask, with a warning', async () => {
+    const { job } = jobOf(drawingPdf(2, A3, [2]));
+    const result = await step(request('scan'), job);
+    expect(result.status).toBe('ok');
+    expect(inputs(result.calls).map((c) => c.key)).toEqual([
+      'page-1-title-block',
+      'page-1',
+      'page-1-half-1',
+      'page-1-half-2',
+    ]);
+    expect(result.warnings).toEqual([
+      'The picture page-2 is blank, and is not read.',
+      'The picture page-2-half-1 is blank, and is not read.',
+      'The picture page-2-half-2 is blank, and is not read.',
+    ]);
+  });
+
+  it("the pictures of a run stay in the budget of the parser's answer", async () => {
+    const bytes = drawingPdf(7);
+    const { job } = jobOf(bytes);
+    // Each picture just under the cap of one picture: 22 pictures, and 12
+    // of them fill the budget of an answer (64 MB).
+    const big = Buffer.alloc(5 * 1024 * 1024 - 1, 1);
+    const result = await step(request('scan'), {
+      ...job,
+      pdfPictures: async (windows: Parameters<typeof job.pdfPictures>[0]) => {
+        const out = await renderPdfWindows(bytes, windows);
+        return out.map((p) => (p ? { ...p, png: big } : p));
+      },
+    });
+    const sent = result.calls!.length;
+    expect(sent).toBe(Math.floor((64 * 1024 * 1024) / big.length));
+    expect(sent * big.length).toBeLessThanOrEqual(64 * 1024 * 1024);
+    expect(sent).toBe(12);
+    expect(result.warnings).toHaveLength(22 - sent);
+    expect(result.warnings![0]).toContain('past the budget of the run');
+  });
+
+  it('a one-page drawing: four asks', async () => {
     const { job } = jobOf(drawingPdf(1));
     const result = await step(request('scan'), job);
-    expect(inputs(result.calls).map((c) => c.key)).toEqual(['page-1-title-block', 'page-1']);
+    expect(inputs(result.calls).map((c) => c.key)).toEqual([
+      'page-1-title-block',
+      'page-1',
+      'page-1-half-1',
+      'page-1-half-2',
+    ]);
   });
 
   it('the corner follows the box of the Reader that the core hands over', async () => {
@@ -210,15 +277,24 @@ describe('the step of pdf-sheet-read', () => {
   it('the option pages caps the pages drawn', async () => {
     const { job, drawn } = jobOf(drawingPdf(3));
     const result = await step(request('scan', { pages: 2 }), job);
-    expect(drawn[1]!.map((w) => w.pageNumber)).toEqual([1, 2]);
+    expect(drawn[1]!.map((w) => w.pageNumber)).toEqual([1, 1, 1, 2, 2, 2]);
     expect(inputs(result.calls).map((c) => c.key)).toEqual([
       'page-1-title-block',
       'page-1',
+      'page-1-half-1',
+      'page-1-half-2',
       'page-2',
+      'page-2-half-1',
+      'page-2-half-2',
     ]);
     const one = jobOf(drawingPdf(3));
     const only = await step(request('scan', { pages: 1 }), one.job);
-    expect(inputs(only.calls).map((c) => c.key)).toEqual(['page-1-title-block', 'page-1']);
+    expect(inputs(only.calls).map((c) => c.key)).toEqual([
+      'page-1-title-block',
+      'page-1',
+      'page-1-half-1',
+      'page-1-half-2',
+    ]);
   });
 
   it('a file that cannot be opened fails: nothing is asked or written', async () => {
@@ -263,12 +339,22 @@ describe('the step of pdf-sheet-read', () => {
         lossyJob(three, (w) => w.box !== undefined),
       ),
     ).toEqual({ status: 'failed', warnings: ['The title block of page 1 could not be drawn.'] });
+    // A half that is lost is its page's.
+    expect(
+      await step(
+        request('scan'),
+        lossyJob(three, (w) => w.pageNumber === 2 && w.box !== undefined),
+      ),
+    ).toEqual({ status: 'failed', warnings: ['Page 2 could not be drawn.'] });
   });
 
-  it('the asks of a file stay under its cap: page 1 two, each page after it one', () => {
+  it('the asks of a file stay under its cap: three a page, page 1 one more', async () => {
     const agent = BUILTIN_PIPELINES.find((p) => p.id === 'pdf-sheet-read')!;
     expect(asksMaxOf(agent)).toBe(ASKS_MAX);
-    expect(ASKS_MAX).toBe(PAGES_MAX + 1);
+    expect(ASKS_MAX).toBe(3 * PAGES_MAX + 1);
+    const { job } = jobOf(drawingPdf(PAGES_MAX + 2));
+    const result = await step(request('scan'), job);
+    expect(result.calls).toHaveLength(ASKS_MAX);
   });
 });
 

@@ -83,6 +83,12 @@ export async function runVisionWorker(opts: {
   maxTokens?: number;
   /** Ask for the least thinking (a reading task under a tight answer cap). */
   leastThinking?: boolean;
+  /** Calls at most: 2 asks one time more when the provider failed (a
+   *  timeout, a stall). A read of many pictures in a row stops at its
+   *  first failed call, so one slow answer lost the rest of a sheet (dev
+   *  2026-11-17: 23 of 112 pieces of a flow diagram). At most one paid call
+   *  more. Default 1. */
+  tries?: 1 | 2;
 }): Promise<VisionResult> {
   // The one resolution (@mantle/api-keys): the worker, its key reference,
   // a wired adapter (checked before the key is opened), the key.
@@ -112,8 +118,8 @@ export async function runVisionWorker(opts: {
   const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
   // Vision providers can't read HEIC (iPhone default) — transcode to JPEG.
   const forVision = await transcodeImageForVision(opts.bytes, opts.mimeType, opts.filename);
-  try {
-    const r = await adapter.extract(forVision.bytes, {
+  const call = () =>
+    adapter.extract(forVision.bytes, {
       ...credential,
       mimeType: forVision.mimeType,
       prompt,
@@ -122,6 +128,8 @@ export async function runVisionWorker(opts: {
       maxTokens: opts.maxTokens ?? params.max_tokens ?? 2000,
       ...(opts.leastThinking ? { leastThinking: true } : {}),
     });
+  try {
+    const r = await (opts.tries === 2 ? call().catch(() => call()) : call());
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';
     // The call's spend (tokens, cost from the price table) was recorded by the

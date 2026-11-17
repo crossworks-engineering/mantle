@@ -6,8 +6,12 @@
  * line numbers, sheet numbers), into the tabs `Title block` and `Sheet list`.
  *
  * Its one step draws the pictures with no model, in the parser's pdfjs
- * child (`job.pdfPictures`): the whole of each page up to the page cap, and
- * on page 1 the title block corner, at a sharper scale. The corner is the
+ * child (`job.pdfPictures`): the whole of each page up to the page cap and
+ * its two halves, and on page 1 the title block corner, at a sharper
+ * scale. A model reads a picture at a fixed budget of its own, so a half
+ * gives it the marks of a dense sheet at twice the area each (bench
+ * 2026-11-17: the tags read on 10 drawings went up on 5, on a dense flow
+ * diagram from 0 to 18 of 38). The corner is the
  * box of the Reader `drawing-pdf` (its options in force reach the step as
  * `state.readerOptions`), so a site that set its box gets the same crop.
  * The kind is the one stored in the file's database (`request.kind`): a
@@ -18,8 +22,10 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { PARSER_PICTURES_BUDGET_BYTES } from '../../../parser-wire';
 import { withPdf } from '../../../pdf-open';
 import { titleBlockOf } from '../../../pdf-rows';
+import type { RenderedWindow } from '../../../rasterize';
 import {
   PIPELINE_ASK_FIELDS_MAX,
   VISION_WORKER,
@@ -32,10 +38,30 @@ import {
  *  useful text layer, and the files the rules left unsure. */
 export const KINDS: readonly string[] = ['scan', 'isometric', 'unsure', 'other_drawing'];
 
-/** The page cap of the option `pages`, and the most asks of a file: page 1
- *  has two (the whole page and its corner), each page after it one. */
+/** The page cap of the option `pages`, and the most asks of a file: each
+ *  page has three (the whole page and its two halves), page 1 one more
+ *  (its title block corner). */
 export const PAGES_MAX = 10;
-export const ASKS_MAX = PAGES_MAX + 1;
+export const ASKS_MAX = 3 * PAGES_MAX + 1;
+
+/** A half is this part of the page across its long side: the two halves
+ *  overlap by a tenth of the page, so a mark on the cut is whole in one. */
+export const HALF = 0.55;
+
+/** The two halves of a page, as windows of the shown page (fractions from
+ *  the top left): left and right of a wide page, top and bottom of a tall
+ *  one. */
+export function halvesOf(wide: boolean): [number, number, number, number][] {
+  return wide
+    ? [
+        [0, 0, HALF, 1],
+        [1 - HALF, 0, 1, 1],
+      ]
+    : [
+        [0, 0, 1, HALF],
+        [0, 1 - HALF, 1, 1],
+      ];
+}
 
 /** The fields of the tab `Title block`, the same on every site. A site adds
  *  its own with the option `more_fields`. */
@@ -90,9 +116,10 @@ export function pagesOf(options: Readonly<Record<string, unknown>>): number {
  *  the most line numbers in the P0 score, drew at 144, and an A0 sheet at
  *  about 110 under its pixel cap: 4800 gives an A0 108, and an A4 or A3
  *  sheet (28 of the 29 pages of that set) is under the cap at 200. A
- *  picture is a PNG, or a JPEG when the PNG is past 5 MB: 11 pictures stay
- *  under the parser's answer budget (64 MB), and each under the 10 MB of an
- *  ask. */
+ *  picture is a PNG, or a JPEG when the PNG is past 5 MB, each under the 10
+ *  MB of an ask. All the pictures of a run stay in the parser's budget of
+ *  an answer (PARSER_PICTURES_BUDGET_BYTES): a picture past what is left
+ *  of it is not asked, with a warning. */
 export const PAGE_DPI = 200;
 export const CORNER_DPI = 300;
 export const MAX_SIDE = 4800;
@@ -114,6 +141,9 @@ export function cornerOf(
   return [x0, y0, 1, 1];
 }
 
+/** A window of a page: x0, y0, x1, y1 as fractions of the shown page. */
+type Window = [number, number, number, number];
+
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -123,81 +153,97 @@ export const step: PipelineStep = async (req, job) => {
     return { status: 'not_mine' };
   }
   const fields = fieldsOf(req.options);
-  // The pages there are, up to the cap: a page that is there and gives no
-  // picture is told apart from one past the end.
-  const count = await withPdf(await job.bytes(), {}, async ({ doc }) => doc.numPages).catch(
-    () => null,
-  );
+  // The pages there are, up to the cap, and the shape of each (its halves
+  // follow it): a page that is there and gives no picture is told apart
+  // from one past the end. No page is drawn here.
+  const wide = await withPdf(await job.bytes(), {}, async ({ doc }) => {
+    const out: boolean[] = [];
+    for (let n = 1; n <= Math.min(pagesOf(req.options), doc.numPages); n++) {
+      const page = await doc.getPage(n);
+      const shown = page.getViewport({ scale: 1 });
+      out.push(shown.width >= shown.height);
+      page.cleanup();
+    }
+    return out;
+  }).catch(() => null);
   // A run that cannot draw a page that is there ends `failed`: nothing is
   // asked or written, so the paid rows of a run before stay as they are
   // (the time ran out, the child was stopped, pdfjs cannot draw the page).
   // The trace says why. A page pdfjs can never draw keeps this Agent off
   // the file until a person lowers the option `pages`.
   const failed = (why: string) => ({ status: 'failed' as const, warnings: [why] });
-  if (!count) return failed('The file could not be opened.');
-  const pages = Math.min(pagesOf(req.options), count);
+  if (!wide || wide.length === 0) return failed('The file could not be opened.');
   const readerOptions =
     isObject(req.state) && isObject(req.state.readerOptions) ? req.state.readerOptions : {};
   const box = titleBlockOf(readerOptions);
-  const whole = (pageNumber: number) => ({
+  const picture = (pageNumber: number, scale: number, window?: Window) => ({
     pageNumber,
-    scale: PAGE_DPI / 72,
+    ...(window ? { box: window } : {}),
+    scale,
     maxSide: MAX_SIDE,
     maxBytes: PICTURE_MAX_BYTES,
   });
   const warnings: string[] = [];
 
   // Page 1 first: its size on paper places the corner.
-  const [first] = await job.pdfPictures([whole(1)], job.deadline);
+  const [first] = await job.pdfPictures([picture(1, PAGE_DPI / 72)], job.deadline);
   if (!first) return failed('Page 1 could not be drawn.');
-  const later = Array.from({ length: pages - 1 }, (_, i) => whole(i + 2));
-  const [corner, ...rest] = await job.pdfPictures(
-    [
-      {
-        pageNumber: 1,
-        box: cornerOf(first.widthMm, first.heightMm, box),
-        scale: CORNER_DPI / 72,
-        maxSide: MAX_SIDE,
-        maxBytes: PICTURE_MAX_BYTES,
-      },
-      ...later,
-    ],
-    job.deadline,
-  );
-  const lost = [corner, ...rest].findIndex((p) => !p);
+  // Then the corner, and each page's pictures in its order: page 1's
+  // halves, then the whole and the halves of each page after it.
+  type Ask = { key: string; page: number; list: boolean };
+  const asks: Ask[] = [{ key: 'page-1-title-block', page: 1, list: false }];
+  const windows = [picture(1, CORNER_DPI / 72, cornerOf(first.widthMm, first.heightMm, box))];
+  for (const [i, isWide] of wide.entries()) {
+    const n = i + 1;
+    if (n > 1) {
+      asks.push({ key: `page-${n}`, page: n, list: true });
+      windows.push(picture(n, PAGE_DPI / 72));
+    }
+    for (const [h, half] of halvesOf(isWide).entries()) {
+      asks.push({ key: `page-${n}-half-${h + 1}`, page: n, list: true });
+      windows.push(picture(n, PAGE_DPI / 72, half));
+    }
+  }
+  const drawn = await job.pdfPictures(windows, job.deadline);
+  const lost = asks.findIndex((_, i) => !drawn[i]);
   if (lost >= 0) {
     return failed(
       lost === 0
         ? 'The title block of page 1 could not be drawn.'
-        : `Page ${lost + 1} could not be drawn.`,
+        : `Page ${asks[lost]!.page} could not be drawn.`,
     );
   }
 
   const calls: PipelineCall[] = [];
-  const add = async (
-    key: string,
-    page: number,
-    picture: { png: Buffer } | null | undefined,
-    list: boolean,
-  ) => {
-    if (!picture) return;
-    if (picture.png.length > PICTURE_MAX_BYTES) {
-      warnings.push(`The picture ${key} is over 5 MB, and is not read.`);
+  /** The bytes of pictures the run may still send (the parser's budget). */
+  let left = PARSER_PICTURES_BUDGET_BYTES;
+  const add = async (ask: Ask, p: RenderedWindow) => {
+    // A picture with nothing drawn on it is never read: the model would
+    // answer for a white page.
+    if (p.blank) {
+      warnings.push(`The picture ${ask.key} is blank, and is not read.`);
       return;
     }
-    const file = fileOf(key, picture.png);
-    await fs.writeFile(path.join(job.dir, file), picture.png);
+    if (p.png.length > Math.min(PICTURE_MAX_BYTES, left)) {
+      warnings.push(
+        `The picture ${ask.key} is over 5 MB or past the budget of the run, and is not read.`,
+      );
+      return;
+    }
+    left -= p.png.length;
+    const file = fileOf(ask.key, p.png);
+    await fs.writeFile(path.join(job.dir, file), p.png);
     calls.push({
       call: 'worker',
       worker: VISION_WORKER,
-      key,
-      input: { picture: file, fields, page, ...(list ? { list: true } : {}) },
+      key: ask.key,
+      input: { picture: file, fields, page: ask.page, ...(ask.list ? { list: true } : {}) },
     });
   };
   // The title block first: a dense page's list may fail its ask, and a
   // failed ask stops the asks after it.
-  await add('page-1-title-block', 1, corner, false);
-  await add('page-1', 1, first, true);
-  for (const [i, picture] of rest.entries()) await add(`page-${i + 2}`, i + 2, picture, true);
+  await add(asks[0]!, drawn[0]!);
+  await add({ key: 'page-1', page: 1, list: true }, first);
+  for (const [i, ask] of asks.entries()) if (i > 0) await add(ask, drawn[i]!);
   return { status: 'ok', calls, ...(warnings.length > 0 ? { warnings } : {}) };
 };

@@ -25,13 +25,22 @@ import {
   type FixtureImage,
 } from './pdf-fixtures.test-helper';
 import { extractPdfImages, parsePdf, pdfPageCount } from './pdf';
-import { countOversizeImages, PDF_MAX_BYTES, PDF_MAX_IMAGE_PIXELS, withPdf } from './pdf-open';
+import {
+  countOversizeImages,
+  imageCapOf,
+  PDF_MAX_BYTES,
+  PDF_MAX_IMAGE_PIXELS,
+  PDF_WINDOW_MAX_IMAGE_PIXELS,
+  withPdf,
+} from './pdf-open';
 import {
   declaresOversizeImage,
   isPdfLimitError,
   MAX_RENDER_PIXELS,
+  isBlank,
   pageRenderScale,
   rasterizePdfToPngs,
+  renderPdfWindows,
 } from './rasterize';
 
 /** An all-zero RGB image, compressed a megabyte at a time so the raw samples
@@ -411,5 +420,49 @@ describe('the text layer is read exactly as pdf-parse reads it', () => {
     ).doc.loadingTask.destroy();
     expect(direct).toContain('Third (and last) page');
     expect(await parsePdf(pdf)).toBe(direct);
+  });
+});
+
+describe('the pictures of pages: a larger image cap, and a blank picture says so', () => {
+  it('an open may ask for less, or up to the window cap, and no more', () => {
+    expect(imageCapOf(undefined)).toBe(PDF_MAX_IMAGE_PIXELS);
+    expect(imageCapOf(0)).toBe(PDF_MAX_IMAGE_PIXELS);
+    expect(imageCapOf(-1)).toBe(PDF_MAX_IMAGE_PIXELS);
+    expect(imageCapOf(30_000_000)).toBe(30_000_000);
+    // An A4 sheet at 40 dots a millimetre (11880 x 8400) is in the window cap.
+    expect(11_880 * 8_400).toBeGreaterThan(PDF_MAX_IMAGE_PIXELS);
+    expect(imageCapOf(PDF_WINDOW_MAX_IMAGE_PIXELS)).toBeGreaterThanOrEqual(11_880 * 8_400);
+    expect(imageCapOf(1e12)).toBe(PDF_WINDOW_MAX_IMAGE_PIXELS);
+  });
+
+  it('a page whose only content is an image past the window cap draws blank, and says so', async () => {
+    const huge = await zeroImage(16_000);
+    expect(huge.width * huge.height).toBeGreaterThan(PDF_WINDOW_MAX_IMAGE_PIXELS);
+    // A caption of one space: text with no ink, so the image is all.
+    const pdf = imagePagePdf({ caption: ' ', images: [huge] });
+    const [whole, half] = await renderPdfWindows(pdf, [
+      { pageNumber: 1, scale: 1 },
+      { pageNumber: 1, scale: 1, box: [0, 0, 0.55, 1] },
+    ]);
+    expect(whole?.blank).toBe(true);
+    expect(half?.blank).toBe(true);
+  }, 60_000);
+
+  it('a page with something drawn is not blank', async () => {
+    const pdf = imagePagePdf({ caption: 'Figure 1: drawn', images: [gradient(320, 240)] });
+    const [picture] = await renderPdfWindows(pdf, [{ pageNumber: 1, scale: 1 }]);
+    expect(picture).not.toBeNull();
+    expect(picture!.blank).toBeUndefined();
+  });
+
+  it('isBlank: only opaque white everywhere is blank', () => {
+    const white = new Uint8ClampedArray(4 * 9).fill(255);
+    expect(isBlank(white)).toBe(true);
+    const grey = white.slice();
+    grey[20] = 254;
+    expect(isBlank(grey)).toBe(false);
+    const clear = white.slice();
+    clear[35] = 0;
+    expect(isBlank(clear)).toBe(false);
   });
 });

@@ -4,7 +4,10 @@
  * `data.agent_text`, one text for each Agent by its id. `search_tsv` is
  * generated over the whole data blob, so a plain search finds a drawing by
  * its line number, its tags or its title block. `file_sql` reads the same
- * values from the tabs.
+ * values from the tabs. The same text goes into the file's passages
+ * (`content_chunks`, ./index-writes.ts writeRetrievalChunks), so a search
+ * of the passages finds them too: the extract adds it, and a run that
+ * changed it builds the passages again from the stored text.
  *
  * One write, with no model and no announcement: an UPDATE of a node's data
  * fires no extract (node_ingested is an INSERT notify), and `updated_at`
@@ -51,4 +54,21 @@ export async function writeAgentText(
       .returning({ id: nodes.id });
     return rows.length > 0;
   });
+}
+
+/** The text of every Agent on the file node now, by Agent id, for the
+ *  file's passages: '' when it has none. Read at the write of the
+ *  passages, so a run that ended during an extract is in them. */
+export async function agentTextNow(nodeId: string): Promise<string> {
+  const [row] = await db
+    .select({ text: sql<unknown>`${nodes.data}->'agent_text'` })
+    .from(nodes)
+    .where(eq(nodes.id, nodeId));
+  const all = row?.text;
+  if (typeof all !== 'object' || all === null || Array.isArray(all)) return '';
+  return Object.keys(all)
+    .sort()
+    .map((id) => (all as Record<string, unknown>)[id])
+    .filter((t): t is string => typeof t === 'string' && t !== '')
+    .join('\n\n');
 }

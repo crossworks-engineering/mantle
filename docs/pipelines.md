@@ -1025,7 +1025,8 @@ over their write and start no model work. A new version of a file is new
 bytes: one run, and it pays.
 
 A bulk upload is bounded by the day cap. With the default cap of 20,000 and
-two asks a file, the first 10,000 files of a day get their fields. Each file after them
+two asks a file (`iso-title-block`), the first 10,000 files of a day get their fields
+(the sheet read asks four times for a one-page drawing: 5,000). Each file after them
 is ingested as every file is, its run stops at `day_cap` (one parser job,
 no call), and it has no tab. Nothing tries again by itself: `pipeline_run`
 on the folder fills the tab later. A failed ask is the same: the file stays
@@ -1095,24 +1096,61 @@ is skipped `no-database`, as for every Agent.
 (`job.pdfPictures`, the same child as the Reader's pictures; no PyMuPDF), with
 no model:
 
-| Ask                  | Picture                                   | Fields | List |
-| -------------------- | ----------------------------------------- | ------ | ---- |
-| `page-1-title-block` | the title block corner of page 1, 300 DPI | yes    | no   |
-| `page-1`             | page 1, whole, 200 DPI, 4800 px at most   | yes    | yes  |
-| `page-2` and on      | each page after it, whole, as page 1      | yes    | yes  |
+| Ask                       | Picture                                        | Fields | List |
+| ------------------------- | ---------------------------------------------- | ------ | ---- |
+| `page-1-title-block`      | the title block corner of page 1, 300 DPI      | yes    | no   |
+| `page-1`                  | page 1, whole, 200 DPI, 4800 px at most        | yes    | yes  |
+| `page-1-half-1`, `half-2` | the two halves of page 1, as the whole page    | yes    | yes  |
+| `page-2` and on           | each page after it: whole, then its two halves | yes    | yes  |
 
 The corner goes first: a failed ask stops the asks after it, and the list
 of a dense page is the ask most likely to fail. The step counts the pages
-of the file (pdfjs, in the job), so it draws only pages that are there.
+of the file and reads the shape of each (pdfjs, in the job, nothing
+drawn), so it draws only pages that are there.
+
+**The halves.** A half is 55 percent of the page across its long side
+(`HALF`): left and right of a wide page, top and bottom of a tall one. The
+two overlap by a tenth of the page, so a mark on the cut is whole in one of
+them. Why: a vision model reads a picture at a fixed budget of its own (the
+box's model on dev reads each picture for about 1,100 tokens, whatever its
+size), so a half gives it each mark at about twice the area. A bench run on
+10 site drawings (2026-11-17, the same question as the Agent's) read with
+the halves 8 of 9 values on one hand-drawn scan (5 alone), 15 of 15 on
+another (12), 7 of 9 on a CAD isometric (5), and 20 of 40 on a dense flow
+diagram (1); no file read fewer. A page gives the same identifier up to
+three times in the Sheet list, one row for each picture (its `Key` says
+which); the text for search has each line one time.
 
 The corner is the box of the Reader's options in force
 (`title_block_width_mm`, `title_block_height_mm`, "The title block box").
 The core gives the step the Reader's options as its state
 (`state.readerOptions`), so a site that set its box gets the same crop with
 no option of the Agent. A picture is a PNG, or a JPEG (quality 90) when the
-PNG is past 5 MB (`PageWindow.maxBytes`, `packages/files/src/rasterize.ts`):
-11 pictures stay under the parser's answer budget of 64 MB, and each under
-the 10 MB of an ask. A picture still past 5 MB is left out, with a warning.
+PNG is past 5 MB (`PageWindow.maxBytes`, `packages/files/src/rasterize.ts`),
+each under the 10 MB of an ask. The pictures of a run stay in the parser's
+budget of an answer (`PARSER_PICTURES_BUDGET_BYTES`, 64 MB): a picture still
+past 5 MB, or past what is left of the budget, is left out, with a warning.
+A site drawing gives pictures of less than 1 MB, so the budget is a bound,
+not a cut.
+
+**A blank picture is never asked.** A picture with nothing drawn on it
+(every pixel white: `RenderedWindow.blank`) is left out, with a warning: the
+model would answer for a white page. An empty page gives no ask; a run of
+blank pictures only asks nothing and writes no row.
+
+**A sheet that is one large image.** A CAD sheet exported as one picture at
+40 dots a millimetre is about 100 M pixels on A4 (11880 x 8400), past the
+75 M that pdfjs decodes elsewhere in the box (`PDF_MAX_IMAGE_PIXELS`): there
+the image is dropped, and the page draws white. Before this, the Agent sent
+that white page to the model, and its list came back empty. The pictures of
+pages now decode an image up to `PDF_WINDOW_MAX_IMAGE_PIXELS` (100 M,
+`packages/files/src/pdf-open.ts`): they are drawn in the parser's pictures
+child, a process the job can kill. Bench (2026-11-17, the parser image under
+a 2 GB limit): such a sheet drew at 200 DPI with a peak of 1.49 GB, in 5.8 s,
+and the whole page and its halves in one process stayed under the limit
+(pdfjs keeps the decoded image for the windows of one page). The model then
+read 7 of its 7 values. An image past 100 M still draws white, and its
+picture is blank: never asked.
 
 **A picture that is not drawn.** When a page that is there gives no picture
 (the time ran out, the child was stopped, pdfjs cannot draw it), or the
@@ -1122,13 +1160,15 @@ which page. A page pdfjs can never draw keeps the Agent off that file until
 an Admin lowers the option `pages`. That option is on the box: it cuts the
 later pages of every file on their next run, so it is a last remedy.
 
-Why the whole page and no tiles: in the P0 score of 20 site PDFs, the old
-whole-page read (144 DPI; about 110 on an A0 under its pixel cap) found 24 of
-28 line numbers, and the sketch read in pieces found 6 of 28. 28 of the 29
-pages of that set (pages 1 to 10) are A4 or A3: at 200 DPI they are 2,370 to
-3,402 pixels long, under the cap of 4,800. The one A0 page gets 108 DPI, as
-the old read. Tiles stay out until a score after this build says the whole
-page is too coarse.
+Why the whole page and its halves, and no more tiles: in the P0 score of 20
+site PDFs, the old whole-page read (144 DPI; about 110 on an A0 under its
+pixel cap) found 24 of 28 line numbers, and the sketch read in pieces found
+6 of 28. 28 of the 29 pages of that set (pages 1 to 10) are A4 or A3: at 200
+DPI they are 2,370 to 3,402 pixels long, under the cap of 4,800. The one A0
+page gets 108 DPI whole, as the old read, and about 145 in a half. The two
+hand-drawn scans of the set are 200 DPI scans: a sharper picture of them
+holds nothing more; a half holds the same pixels for a model that reads
+each picture at a fixed budget.
 
 **The fields.** Drawing number, Title, Revision, Date, Sheet, Line number,
 Unit or area, Project, Drawn by, Checked by: the same on every site.
@@ -1143,14 +1183,24 @@ Unit or area, Project, Drawn by, Checked by: the same on every site.
 A new value changes the question or the pictures, so the next run asks
 again for each file it runs on.
 
-**The cap.** `needs.workers` is `vision: 11`: page 1 has two asks, each page
-after it one, 10 pages at most. The day cap of the box holds all the asks,
+**The cap.** `needs.workers` is `vision: 31`: each page has three asks (the
+whole page and its two halves), page 1 one more (its corner), 10 pages at
+most. Cost on dev (v0.702.0): about 600 to 1,000 micro USD an ask, so about
+3,500 a one-page drawing. The day cap of the box holds all the asks,
 as for every Agent. It runs at upload and on demand, as every Agent
 ("How it starts" above).
 
 **The sketch read stays.** The sketch read of a scan PDF
-(`server/api/src/agent/extract/pdf-sketch.ts`) is not changed: it writes
-its rows in the Reader's tabs, the sheet read writes its own two tabs.
+(`server/api/src/agent/extract/pdf-sketch.ts`) writes its rows in the
+Reader's tabs, the sheet read writes its own two tabs.
+
+**One call more when the provider fails.** The sketch read and the ask of an
+Agent call the vision worker with `tries: 2` (`runVisionWorker`,
+`packages/runtime/src/agent/attachments.ts`): a call that failed (a timeout,
+a stall) is made one time more. Both stop at their first failed call, so on
+dev one slow answer (60 s, no answer) lost 23 of the 112 pieces of a flow
+diagram, and four of its tags. A second failure stops the read as before.
+At most one paid call more for each picture.
 
 ## The list part of an ask
 
@@ -1206,6 +1256,18 @@ generated over the whole data blob, so a plain search finds a drawing by a
 line number, a tag or a title block value. `file_sql` reads the same values
 from the tabs. This holds for every Agent, `iso-title-block` too.
 
+The same text is in the file's passages (`content_chunks`), so a search of
+the passages finds it too: `writeRetrievalChunks`
+(`server/api/src/agent/extract/index-writes.ts`) adds the text of the
+file's Agents after its own text, read from the node at the write
+(`agentTextNow`, by Agent id). An extract writes them so. A run that
+changed the text builds the file's passages again from its stored text
+(`data.text`); the passages that did not change take their vectors from the
+embed cache, so only the new text is embedded. A file with no stored text
+yet gets them at its extract. Two writes at the same time (an extract and
+a run that ends during it) can leave the passages without the newest text
+until the next run or extract: accepted, the node's text has it.
+
 - The text (`agentTextOf`): the name of each tab, then one line a row,
   `column: value` for each cell with a value; no key, model, hash or page;
   no line two times; 64,000 characters at most.
@@ -1224,7 +1286,8 @@ from the tabs. This holds for every Agent, `iso-title-block` too.
   it.
 - A failed write is a warning of the run: the tabs stand.
 - A run that wrote no tab (a stop before any paid call) does not change the
-  text. A run whose tabs have no row takes that Agent's text out.
+  text. A run whose tabs have no row takes that Agent's text out, from the
+  passages too.
 
 ## Run on demand
 
@@ -1241,8 +1304,9 @@ bytes with `buildFileDatabase`, with no parse result and no decider, so no
 model is asked; the `after` chain then runs as at upload. For a
 Transformer, the run is the patch (`patchFileDatabase`). For an Agent, the
 run is the one that asks a model (`runAgentOnFile`; see "Agents" above).
-Nothing else of the file
-changes: no summary, no passage, no embedding, no extract.
+Nothing else of the file changes: no summary, no extract. An Agent run that
+changed the text of its tabs builds the file's passages again ("The fields
+in the file's text"); no other run touches a passage or an embedding.
 
 **The dry run comes first.** With no `apply` the answer lists `choices`: each
 pipeline that can run on the files, with the count it would take, and

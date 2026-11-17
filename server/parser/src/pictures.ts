@@ -88,6 +88,7 @@ async function pictureOf(dir: string, i: number): Promise<RenderedWindow | null>
       scale: scale as number,
       widthMm: widthMm as number,
       heightMm: heightMm as number,
+      ...(size.blank === true ? { blank: true as const } : {}),
     };
   } catch {
     return null;

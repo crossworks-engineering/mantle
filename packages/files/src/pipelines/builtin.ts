@@ -365,8 +365,8 @@ export const BUILTIN_PIPELINES = [
     id: 'pdf-sheet-read',
     name: 'PDF sheet read',
     description:
-      'Reads the title block and the tags, line numbers and sheet numbers of a PDF drawing that is a scan, an isometric, another drawing or unsure, into the tabs Title block and Sheet list. It runs after an upload and on demand, and asks a vision model at most 11 times for a file.',
-    version: '1.0.0',
+      'Reads the title block and the tags, line numbers and sheet numbers of a PDF drawing that is a scan, an isometric, another drawing or unsure, into the tabs Title block and Sheet list. It runs after an upload and on demand, and asks a vision model at most 31 times for a file.',
+    version: '1.1.0',
     match: { ext: ['pdf'] },
     options: {
       more_fields: {
@@ -380,16 +380,17 @@ export const BUILTIN_PIPELINES = [
       pages: {
         type: 'number',
         label: 'Pages to read',
-        help: 'The pages of a file to read, from page 1. Page 1 has two asks, each page after it one.',
+        help: 'The pages of a file to read, from page 1. Each page has three asks (the whole page and its two halves), page 1 one more for its title block.',
         default: 10,
         min: 1,
         max: 10,
       },
     },
     produces: { tabs: ['Title block', 'Sheet list'] },
-    // One step and no model in it: the pictures of up to 10 pages, drawn
-    // in the parser's pdfjs child. The 11 asks are the cap of a file.
-    needs: { weight: 'heavy', timeMs: 240_000, workers: { vision: 11 } },
+    // One step and no model in it: the pictures of up to 10 pages and
+    // their halves, drawn in the parser's pdfjs child. The 31 asks are the
+    // cap of a file.
+    needs: { weight: 'heavy', timeMs: 240_000, workers: { vision: 31 } },
   }),
 ] as const;
 

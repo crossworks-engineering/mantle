@@ -53,6 +53,22 @@ import path from 'node:path';
  */
 export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
 
+/**
+ * The largest embedded image a picture of a page decodes
+ * (`renderPdfWindows`), in pixels. A CAD sheet exported as one picture at
+ * 40 dots a millimetre (1016 DPI) is about 100 M on A4 (11880 x 8400): past
+ * the cap above, pdfjs drops it, and the page draws white. A picture is
+ * drawn in a process the job can kill (the parser's pictures child), so an
+ * image too large for the memory there costs that picture only.
+ *
+ * Measured in the parser image under a 2 GB limit (bench, 2026-11-17): such
+ * an A4 sheet (RGB with a soft mask of the same size) drawn at 200 DPI rose
+ * from 69 MB to 1.49 GB at the peak, in 5.8 s; the whole page and its two
+ * halves in one process stayed under the limit (pdfjs keeps the decoded
+ * image for the windows of the same page).
+ */
+export const PDF_WINDOW_MAX_IMAGE_PIXELS = 100_000_000;
+
 /** The largest PDF any open accepts, in bytes. The old renderer
  *  (pdf-to-png-converter) refused past the same size. */
 export const PDF_MAX_BYTES = 256 * 1024 * 1024;
@@ -225,9 +241,18 @@ export type OpenPdfOptions = Omit<
 >;
 
 export type WithPdfOptions = OpenPdfOptions & {
-  /** A lower image cap for this open (never above `PDF_MAX_IMAGE_PIXELS`). */
+  /** Another image cap for this open: lower, or up to
+   *  `PDF_WINDOW_MAX_IMAGE_PIXELS` for the pictures of pages
+   *  (`renderPdfWindows`, the one caller above the default). */
   maxImagePixels?: number;
 };
+
+/** The image cap of an open that asked for `asked` pixels: the asked
+ *  number, never past `PDF_WINDOW_MAX_IMAGE_PIXELS`. pdfjs reads -1 as "no
+ *  limit", so anything not a positive number keeps the package cap. */
+export function imageCapOf(asked: number | undefined): number {
+  return asked && asked > 0 ? Math.min(asked, PDF_WINDOW_MAX_IMAGE_PIXELS) : PDF_MAX_IMAGE_PIXELS;
+}
 
 /**
  * Open a PDF with the safe parameters, run `fn` on the loaded document, and
@@ -258,12 +283,7 @@ export async function withPdf<T>(
     data,
     ...SAFE_PDF_PARAMS,
     wasmUrl: pdfjsAssetDir('wasm'),
-    // Only ever lower: pdfjs reads -1 as "no limit", so anything not a
-    // positive number keeps the package cap.
-    maxImageSize:
-      maxImagePixels && maxImagePixels > 0
-        ? Math.min(maxImagePixels, PDF_MAX_IMAGE_PIXELS)
-        : PDF_MAX_IMAGE_PIXELS,
+    maxImageSize: imageCapOf(maxImagePixels),
   });
   try {
     return await task.promise.then((doc) => fn({ pdfjs, doc }));

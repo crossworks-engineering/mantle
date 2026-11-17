@@ -9,13 +9,21 @@
  *  - a second Agent's text sits beside the first; '' takes one out;
  *  - `updated_at` stays;
  *  - a file in the name-only mode gets none, nor a file whose bytes changed;
- *  - a person's write may not set the key (the edit check, 0377).
+ *  - a person's write may not set the key (the edit check, 0377);
+ *  - the file's passages (`content_chunks`) hold the text of its Agents,
+ *    read at the write (a made-up embedder: no provider).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/agent-text.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@mantle/embeddings', async (orig) => ({
+  ...(await orig<typeof import('@mantle/embeddings')>()),
+  embedBatch: async (_owner: string, texts: string[]) => texts.map(() => new Array(768).fill(0)),
+  chunkWindowsEnabled: async () => false,
+}));
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -24,6 +32,8 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let writeAgentText: typeof import('./agent-text').writeAgentText;
+  let agentTextNow: typeof import('./agent-text').agentTextNow;
+  let writeRetrievalChunks: typeof import('./index-writes').writeRetrievalChunks;
   const owner = randomUUID();
   const SHA = 'a'.repeat(64);
   const tag = `atx${randomUUID().slice(0, 6)}`;
@@ -63,7 +73,8 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
-    ({ writeAgentText } = await import('./agent-text'));
+    ({ writeAgentText, agentTextNow } = await import('./agent-text'));
+    ({ writeRetrievalChunks } = await import('./index-writes'));
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
@@ -101,6 +112,38 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
       'iso-title-block': 'Title block\nSheet: 1 of 2',
     });
     expect(await found(id, 'FV-1001')).toBe(false);
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+
+  it('the passages of a file hold its text and the text of its Agents, read at the write', async () => {
+    const id = await fileNode({ text: 'The made-up body of the drawing.' });
+    expect(await extract(() => agentTextNow(id))).toBe('');
+    await extract(() =>
+      writeAgentText(owner, id, SHA, 'pdf-sheet-read', 'Sheet list\nText: FV-1001'),
+    );
+    await extract(() =>
+      writeAgentText(owner, id, SHA, 'iso-title-block', 'Title block\nSheet: 1 of 2'),
+    );
+    // By Agent id, so the passages do not move between runs.
+    expect(await extract(() => agentTextNow(id))).toBe(
+      'Title block\nSheet: 1 of 2\n\nSheet list\nText: FV-1001',
+    );
+    const node = (await x<Record<string, unknown>>(sql`select * from nodes where id = ${id}`))[0]!;
+    const row = {
+      ...node,
+      ownerId: node.owner_id,
+      type: node.type,
+      title: node.title,
+    } as unknown as Parameters<typeof writeRetrievalChunks>[0];
+    await extract(() => writeRetrievalChunks(row, owner, 'The made-up body of the drawing.', null));
+    const text = (
+      await x<{ t: string }>(
+        sql`select string_agg(text, ' ' order by ordinal) as t from content_chunks where node_id = ${id}`,
+      )
+    )[0]!.t;
+    expect(text).toContain('made-up body');
+    expect(text).toContain('FV-1001');
+    expect(text).toContain('1 of 2');
     expect(m.takeActorMisses()).toEqual([]);
   });
 

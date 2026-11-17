@@ -27,6 +27,7 @@ import {
   declaresOversizeImage,
   isPdfLimitError,
   PDF_MAX_IMAGE_PIXELS,
+  PDF_WINDOW_MAX_IMAGE_PIXELS,
   pdfjsAssetDir,
   PdfLimitError,
   withPdf,
@@ -263,10 +264,25 @@ export type RenderedWindow = {
   /** The window's size on paper, millimetres. */
   widthMm: number;
   heightMm: number;
+  /** Every pixel of the picture is white: the page drew nothing there (an
+   *  empty page, or an image pdfjs dropped as too large). A model must
+   *  never get such a picture for a read. */
+  blank?: true;
 };
 
+/** Whether every pixel of a canvas's RGBA pixels is opaque white: what
+ *  pdfjs gives for a window it drew nothing in (it fills white first). */
+export function isBlank(rgba: Uint8ClampedArray): boolean {
+  const words = new Uint32Array(rgba.buffer, rgba.byteOffset, rgba.byteLength >>> 2);
+  for (let i = 0; i < words.length; i++) if (words[i] !== 0xffffffff) return false;
+  return true;
+}
+
 /**
- * Render windows of pages to PNG, one open for all of them, in order. Each
+ * Render windows of pages to PNG, one open for all of them, in order. The
+ * open takes an embedded image up to `PDF_WINDOW_MAX_IMAGE_PIXELS` (a CAD
+ * sheet exported as one large picture), and a picture with nothing drawn
+ * on it says so (`blank`). Each
  * window is its own picture under `MAX_RENDER_PIXELS`, so a large sheet is
  * read tile by tile at a resolution one whole-page picture cannot hold. A
  * window that cannot be rendered (a page out of range, an empty or
@@ -293,7 +309,8 @@ export async function renderPdfWindows(
   } = {},
 ): Promise<(RenderedWindow | null)[]> {
   const { createCanvas } = await import('@napi-rs/canvas');
-  return withPdf(bytes, renderParams(), async ({ doc }) => {
+  const params = { ...renderParams(), maxImagePixels: PDF_WINDOW_MAX_IMAGE_PIXELS };
+  return withPdf(bytes, params, async ({ doc }) => {
     const out: (RenderedWindow | null)[] = [];
     for (const [index, w] of windows.entries()) {
       if (
@@ -331,12 +348,14 @@ export async function renderPdfWindows(
         const canvas = createCanvas(widthPx, heightPx);
         const context = canvas.getContext('2d');
         let png: Buffer;
+        let blank: boolean;
         try {
           await page.render({
             canvas: canvas as unknown as HTMLCanvasElement,
             canvasContext: context as unknown as CanvasRenderingContext2D,
             viewport,
           }).promise;
+          blank = isBlank(context.getImageData(0, 0, widthPx, heightPx).data);
           png = await canvas.encode('png');
           if (w.maxBytes !== undefined && png.length > w.maxBytes) {
             png = await canvas.encode('jpeg', 90);
@@ -355,6 +374,7 @@ export async function renderPdfWindows(
           scale,
           widthMm: wPt * mmPerPt,
           heightMm: hPt * mmPerPt,
+          ...(blank ? { blank: true as const } : {}),
         };
         if (opts.each) await opts.each(picture, index);
         out.push(opts.each ? null : picture);

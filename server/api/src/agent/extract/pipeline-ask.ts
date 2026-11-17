@@ -120,6 +120,9 @@ export function pipelineAskOf(
           prompt: askQuestionOf(ask.fields, ask.list),
           maxTokens: ask.list ? LIST_ANSWER_MAX_TOKENS : ANSWER_MAX_TOKENS,
           leastThinking: true,
+          // One time more when the provider failed: a failed ask stops the
+          // asks after it in the run.
+          tries: 2,
         });
         // No model: the box has no vision worker, so no call was made, and
         // the step is not one of the day count.

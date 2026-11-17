@@ -173,6 +173,9 @@ export async function sketchIngestPdfNode(
                 // thinking would fill it and cut the answer off (bench
                 // 2026-11-11: 16 of 508 pieces read without this, 431 with it).
                 leastThinking: true,
+                // A provider that failed (a timeout) is asked one time more
+                // before the read stops: the pictures after a stop are lost.
+                tries: 2,
                 maxTokens: Math.min(
                   SKETCH_MAX_TOKENS,
                   200 + SKETCH_TOKENS_A_PIECE * page.pieces.filter((x) => x.picture === k).length,
