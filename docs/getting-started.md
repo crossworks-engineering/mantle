@@ -180,7 +180,7 @@ For each account:
 **The contacts list is the ingest gate**: a message is only ingested when its
 sender matches a contact (exact address or `@domain` wildcard) or one of your
 own addresses; everyone else is silently rejected. Discover new senders at
-`/settings/discover`. See [`email-ingest.md`](./email-ingest.md).
+`/settings/discover`. See [`email-ingest.md`](./_archive/email-ingest.md).
 
 **Microsoft 365 corporate caveat**: some tenants have basic-auth IMAP
 disabled by admin policy. If you can't get IMAP working from a paid

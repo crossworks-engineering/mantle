@@ -229,19 +229,6 @@ const SITES: Site[] = [
     why: 'the run-actions send boss: run tools and pending approvals (web MCP, api turns), the runs worker',
   },
   {
-    file: 'packages/email/src/backfill-queue.ts',
-    kind: 'pgboss',
-    processes: ['web', 'api', 'worker_email', 'worker_microsoft'],
-    runs: ['worker_runs'],
-    why: 'contact backfills: contact routes (web), the contact tools (api turns, web MCP, run tool items), the email and microsoft workers',
-  },
-  {
-    file: 'packages/email/src/accounts.ts',
-    kind: 'pgboss',
-    processes: ['web'],
-    why: 'setIncludedFolders: the email folders route',
-  },
-  {
     file: 'server/api/src/agent/extract-queue.ts',
     kind: 'pgboss',
     processes: ['api'],
@@ -277,7 +264,6 @@ const ONE_SHOT: Record<string, string> = {
   'packages/db/src/migrator-connection.ts':
     'the workspaces switch as the migrator (arch A9): one connection at boot or the first owner, closed after',
   'server/api/src/provision.ts': 'the migrate gate (provision)',
-  'packages/email/src/backfill-rfc-message-id.ts': 'operator script (maintain)',
 };
 /** Whole directories of operator scripts (pgboss:init of the migrate gate
  *  among them) and benchmarks. */
@@ -534,7 +520,7 @@ describe('Postgres connection ceiling', () => {
   it('finds the box processes and the core shape', () => {
     expect(DB_PROCESSES).toEqual(expect.arrayContaining(['web', 'api', 'worker_files']));
     expect(DB_PROCESSES).not.toContain('migrate');
-    expect(CORE_OFF).toEqual(expect.arrayContaining(['worker_email', 'worker_runs']));
+    expect(CORE_OFF).toEqual(expect.arrayContaining(['worker_telegram', 'worker_runs']));
     expect(compose).toMatch(/x-app-env: &app-env[\s\S]*?\n {2}DATABASE_URL:/);
   });
 

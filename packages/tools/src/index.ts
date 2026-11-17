@@ -599,7 +599,6 @@ export {
   abandonMcpOAuth,
   type McpOAuthStore,
   type McpOAuthClientInput,
-  type MicrosoftOAuthApp,
   type StartMcpOAuthResult,
 } from './mcp-oauth';
 export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';

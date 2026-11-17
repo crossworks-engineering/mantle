@@ -1,5 +1,7 @@
 # Microsoft Graph ingestion: design
 
+> **Archived 2026-11-17 (Sync plan, M4):** this code left the brain. Mail, calendar feeds and Microsoft sync are rebuilt inside the Sync sidecar (docs/services.md, "Sync"). Kept as the reference for that work.
+
 **Status:** M0 (OAuth) + M1 (SharePoint/OneDrive) + M2 (Outlook mail) built, migrations `0100`–`0103` pending apply. **M3 (calendar) HELD**: superseded by the provider-agnostic calendar pipeline (`docs/calendar-ingest.md`); M3 becomes "implement `CalendarProvider` for Graph `/me/calendarView/delta`", reusing `ms_accounts` tokens, exactly as Outlook mail reused the email pipeline.
 **Author:** drafted 2026-06-24
 

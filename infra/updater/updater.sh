@@ -1570,7 +1570,7 @@ profile_active() { printf ',%s,' "$(profiles_csv)" | grep -q ",$1,"; }
 # since exited is their normal end. The client stack's two (client_web and,
 # on a standalone client box, client_caddy) are here too. A container the box
 # does not run reads `absent`.
-BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway sync worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy"
+BOX_CONTAINERS="postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway sync worker_telegram worker_files worker_docs worker_events worker_maintenance worker_runs worker_push client_web client_caddy"
 
 # box_container_name <service>: its container_name in the compose files.
 box_container_name() {

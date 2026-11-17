@@ -166,13 +166,10 @@ describe('brain-core override ↔ main compose', () => {
       'updater',
       'autoheal',
       'api',
-      'worker_email',
       'worker_telegram',
-      'worker_microsoft',
       'worker_files',
       'worker_docs',
       'worker_events',
-      'worker_calendar',
       'worker_maintenance',
       'worker_runs',
       'worker_push',
@@ -233,23 +230,15 @@ describe('brain-core override ↔ main compose', () => {
     expect(body).toContain(`\${MANTLE_DATA_DIR:-./data}/files:/data/files`);
   });
 
-  it(`${COMPOSE_CORE} gates exactly the doc helper + the six channel workers`, () => {
+  it(`${COMPOSE_CORE} gates exactly the doc helper + the three channel workers`, () => {
     // The core shape's OFF list is as load-bearing as the main file's ON list:
     // gating a data-spine service (postgres, web, migrate…) here would brick
     // every core box, and quietly UN-gating a channel worker would put LLM-
     // spending workers back on 4 GB boxes.
-    const GATED = [
-      'browser',
-      'worker_email',
-      'worker_telegram',
-      'worker_microsoft',
-      'worker_calendar',
-      'worker_push',
-      'worker_runs',
-    ];
+    const GATED = ['browser', 'worker_telegram', 'worker_push', 'worker_runs'];
     expect(
       composeServices(COMPOSE_CORE).sort(),
-      `${COMPOSE_CORE} must gate exactly the doc helper (browser) and the six ` +
+      `${COMPOSE_CORE} must gate exactly the doc helper (browser) and the three ` +
         `channel workers — nothing from the data spine, nothing more, nothing less. ` +
         `Changing the core shape is a deliberate decision; update this pin with it.`,
     ).toEqual([...GATED].sort());

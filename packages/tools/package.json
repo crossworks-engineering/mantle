@@ -43,7 +43,6 @@
     "@mantle/email": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
-    "@mantle/microsoft": "workspace:*",
     "@mantle/runs": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/share-ui": "workspace:*",

@@ -57,10 +57,7 @@ process-on server/api/src/main.ts none: a rejection handler that logs; its signa
 process-on server/web/server/main.ts none: error handlers that log; its signal handlers (@mantle/std/shutdown onShutdown) close the server
 process-on server/web/workers/_runner.ts none: a rejection handler that logs; its signal handlers (@mantle/std/shutdown onShutdown) run the worker's teardown
 queue-work server/api/src/agent/extract-queue.ts system(queue:extract) per job
-queue-work server/web/workers/calendar-sync.ts system(worker:calendar-sync)
-queue-work server/web/workers/email-sync.ts system(worker:email-sync)
 queue-work server/web/workers/maintenance.ts system(worker:maintenance); each app timer's call the account that set it, as it is now, in a read-only scope (no write pool: nothing a timer runs writes; packages/tools/src/app-timers/run.ts)
-queue-work server/web/workers/microsoft-sync.ts system(worker:microsoft-sync)
 queue-work server/web/workers/runs.ts the run's login as it is now, else login(owner)
 request-slot packages/db/src/viewer.ts defines the helper: runInRequestSlot starts a request as system(http:no-login)
 request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token); a routed request's slot, opened by enterCall: system(http:no-login), then what the guard names; a page's own slot (A4 step 2): the /s page as system(http:share-page), then the link or the contact the share gate names; a render page as system(http:render), then the render cookie's login
@@ -81,14 +78,11 @@ timeout-loop server/web/lib/control/worker-model.ts the caller's actor (the cont
 timeout-loop server/web/lib/push/login-notice-handler.ts system(worker:push-notify), carried by the batching timer
 timeout-loop server/web/workers/telegram-poll.ts system(worker:channel-poll): a settle sleep at shutdown
 worker-shell server/web/workers/_runner.ts system(worker:<name>) around each worker's setup (startWorkerAs)
-worker-shell server/web/workers/calendar-sync.ts system(worker:calendar-sync)
 worker-shell server/web/workers/control.ts system(worker:control)
 worker-shell server/web/workers/docs-sync.ts system(worker:docs-sync)
-worker-shell server/web/workers/email-sync.ts system(worker:email-sync)
 worker-shell server/web/workers/events-reminders.ts system(worker:events-reminders)
 worker-shell server/web/workers/files-watch.ts system(worker:files-watch)
 worker-shell server/web/workers/maintenance.ts system(worker:maintenance)
-worker-shell server/web/workers/microsoft-sync.ts system(worker:microsoft-sync)
 worker-shell server/web/workers/push-notify.ts system(worker:push-notify)
 worker-shell server/web/workers/runs.ts system(worker:runs); each item as its run's login
 worker-shell server/web/workers/telegram-poll.ts system(worker:channel-poll)
@@ -115,6 +109,5 @@ worker-shell server/web/workers/telegram-poll.ts system(worker:channel-poll)
 | Hand psql                                                                                                        | the box                                                                    | `mantle_operator_actor('reason')` first                                                                                                                                                            |
 | Migrations                                                                                                       | `packages/db/src/migrate.ts`                                               | `system(migration)`, set on each migration's transaction                                                                                                                                           |
 
-The pg-boss senders (`packages/email/src/backfill-queue.ts`,
-`packages/runs/src/boss.ts`) only queue jobs; the consumer that runs each
+The pg-boss senders (`packages/runs/src/boss.ts`) only queue jobs; the consumer that runs each
 job binds its actor.

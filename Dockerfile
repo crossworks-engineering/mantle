@@ -87,7 +87,6 @@ COPY server/sync/package.json server/sync/package.json
 COPY server/web/package.json server/web/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
-COPY packages/calendar/package.json packages/calendar/package.json
 COPY packages/client-types/package.json packages/client-types/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/content/package.json packages/content/package.json
@@ -101,7 +100,6 @@ COPY packages/email/package.json packages/email/package.json
 COPY packages/embeddings/package.json packages/embeddings/package.json
 COPY packages/files/package.json packages/files/package.json
 COPY packages/mcp-core/package.json packages/mcp-core/package.json
-COPY packages/microsoft/package.json packages/microsoft/package.json
 COPY packages/rules/package.json packages/rules/package.json
 COPY packages/runs/package.json packages/runs/package.json
 COPY packages/runtime/package.json packages/runtime/package.json

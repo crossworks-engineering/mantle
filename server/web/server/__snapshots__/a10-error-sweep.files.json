@@ -56,7 +56,6 @@
   "server/web/app/api/mcp-connectors/[slug]/sync/route.ts",
   "server/web/app/api/mcp-connectors/route.ts",
   "server/web/app/api/mcp-status/route.ts",
-  "server/web/app/api/microsoft/oauth/callback/route.ts",
   "server/web/app/api/model-pools/route.ts",
   "server/web/app/api/openapi-connectors/[slug]/sync/route.ts",
   "server/web/app/api/openapi-connectors/preview/route.ts",

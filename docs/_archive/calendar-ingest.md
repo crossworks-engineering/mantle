@@ -1,5 +1,7 @@
 # Calendar ingestion: design
 
+> **Archived 2026-11-17 (Sync plan, M4):** this code left the brain. Mail, calendar feeds and Microsoft sync are rebuilt inside the Sync sidecar (docs/services.md, "Sync"). Kept as the reference for that work.
+
 **Status:** Built, migration `0104_calendar_accounts` pending apply. ICS provider shipped; Google/Microsoft OAuth providers are future work.
 **Author:** drafted 2026-06-24
 

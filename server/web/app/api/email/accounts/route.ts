@@ -1,21 +1,16 @@
 import { NextResponse } from '@/server/http-compat';
-import { z } from 'zod';
-import { connectImapAccount, latestSyncRuns, listAccounts, redactAccount } from '@mantle/email';
+import { latestSyncRuns, listAccounts, redactAccount } from '@mantle/email';
 import { ownerCaller } from '@/lib/auth';
-import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
   GET: { class: 'area', area: 'connectors' },
-  POST: {
-    class: 'area',
-    area: 'connectors',
-    item: { none: 'manages the connectors area: the Admin step checks it' },
-  },
 });
 
-/** List the owner's email accounts plus the latest sync run per account. The
- *  sealed IMAP credential is stripped before it leaves the process. */
+/** List the owner's email accounts plus the latest sync run per account, for
+ *  the Email reader's account list. The sealed IMAP credential is stripped
+ *  before it leaves the process. Linking an account is gone from the brain:
+ *  mail sync is rebuilt in the Sync service (docs/services.md, "Sync"). */
 export async function GET() {
   const user = ownerCaller();
   const [accounts, runs] = await Promise.all([listAccounts(user.id), latestSyncRuns(user.id)]);
@@ -23,28 +18,4 @@ export async function GET() {
     accounts: accounts.map(redactAccount),
     latestRuns: Object.fromEntries(runs),
   });
-}
-
-const ConnectBody = z.object({
-  intent: z.enum(['test', 'save']).default('save'),
-  address: z.string().email(),
-  displayName: z.string().nullish(),
-  host: z.string().min(1),
-  port: z.number().int().min(1).max(65535).default(993),
-  secure: z.boolean().default(true),
-  password: z.string().optional(),
-  firstScanDays: z.number().int().min(1).max(3650).default(365),
-  smtpHost: z.string().min(1).nullish(),
-  smtpPort: z.number().int().min(1).max(65535).nullish(),
-  smtpSecure: z.boolean().default(true),
-});
-
-/** Connect a new IMAP account. `intent: 'test'` probes only; `'save'` persists. */
-export async function POST(req: Request) {
-  const user = ownerCaller();
-  const body = await readBody(req, ConnectBody);
-  const { intent, ...input } = body;
-  const result = await connectImapAccount(user.id, intent, input);
-  if (!result.ok) return NextResponse.json(result, { status: 400 });
-  return NextResponse.json(result);
 }

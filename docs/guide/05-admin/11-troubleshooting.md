@@ -22,7 +22,7 @@ docker compose logs -f api                # follow live
 docker logs --tail 200 mantle_client_web  # the web app
 ```
 
-Other service names: `caddy`, `postgres`, `objectstore`, `parser`, `worker_files`, `worker_email`, `worker_events`, `updater`.
+Other service names: `caddy`, `postgres`, `objectstore`, `parser`, `worker_files`, `worker_events`, `updater`.
 
 ## Common problems
 

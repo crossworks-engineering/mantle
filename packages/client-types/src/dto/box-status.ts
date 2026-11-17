@@ -93,7 +93,7 @@ export type BoxContainerState = {
 /**
  * GET /api/box-status (settings area, read-only): the box status, and every
  * long-running container of the stack by its compose service name
- * (`postgres`, `objectstore`, `gotenberg`, `worker_email`, `client_web`,
+ * (`postgres`, `objectstore`, `gotenberg`, `worker_telegram`, `client_web`,
  * ...: @mantle/config BOX_CONTAINERS). `containers` is null where the brain
  * cannot read the updater's services.json (no updater, an updater before the
  * field, a dev process).

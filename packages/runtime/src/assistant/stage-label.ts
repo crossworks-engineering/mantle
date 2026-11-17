@@ -93,7 +93,6 @@ const ACTION_LABELS: Record<string, string> = {
   page_discard_draft: 'Discarding the draft…',
   table_commit: 'Publishing the table…',
   telegram_send: 'Sending a message…',
-  email_send: 'Sending an email…',
   email_get: 'Reading an email…',
   email_list: 'Checking your email…',
 };

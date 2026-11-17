@@ -182,31 +182,6 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     expect((await x(docs)).length).toBeGreaterThan(0);
   });
 
-  it('email discover: POST contacts (sender-contact)', async () => {
-    const r = await call('/api/email/discover/contacts', 'POST', {
-      address: `${tag}.sender@example.test`,
-      displayName: 'Sam Sender',
-    });
-    clean(r);
-    expect(r.status).toBe(200);
-    expect(
-      await x(sql`select 1 from nodes where owner_id = ${owner} and type = 'contact'
-                    and data::text like ${`%${tag}.sender@example.test%`}`),
-    ).toHaveLength(1);
-  });
-
-  it('calendar: DELETE a calendar with synced events (calendar-events)', async () => {
-    const [cal] = await x<{ id: string }>(sql`insert into calendar_accounts
-        (owner_id, provider, display_name) values (${owner}, 'ics', ${`${tag} cal`})
-        returning id::text as id`);
-    await x(sql`insert into nodes (owner_id, type, title, path, data) values
-      (${owner}, 'event', ${`${tag} event`}, 'events',
-       ${JSON.stringify({ external_account_id: cal!.id })}::jsonb)`);
-    clean(await call(`/api/calendar/${cal!.id}`, 'DELETE'));
-    expect(await x(sql`select 1 from nodes where title = ${`${tag} event`}`)).toHaveLength(0);
-    expect(await x(sql`select 1 from calendar_accounts where id = ${cal!.id}`)).toHaveLength(0);
-  });
-
   it('assistants: DELETE without its conversation (its definer, 0317: the heads were refused before)', async () => {
     const id = randomUUID();
     const slug = `${tag}-keep`;

@@ -103,7 +103,12 @@ describe('parseServicesFile', () => {
             restarts: 0,
             started_at: '2026-11-04T05:01:02Z',
           },
-          worker_email: { container: 'running', health: 'unhealthy', restarts: 3, started_at: '' },
+          worker_telegram: {
+            container: 'running',
+            health: 'unhealthy',
+            restarts: 3,
+            started_at: '',
+          },
           gotenberg: {
             container: 'Running <b>',
             health: 42,
@@ -124,7 +129,7 @@ describe('parseServicesFile', () => {
         restarts: 0,
         startedAt: '2026-11-04T05:01:02Z',
       },
-      worker_email: { container: 'running', health: 'unhealthy', restarts: 3, startedAt: null },
+      worker_telegram: { container: 'running', health: 'unhealthy', restarts: 3, startedAt: null },
       gotenberg: { container: 'unknown', health: 'unknown', restarts: 0, startedAt: null },
       caddy: { container: 'unknown', health: 'unknown', restarts: 0, startedAt: null },
       api: { container: 'exited', health: 'none', restarts: 0, startedAt: null },

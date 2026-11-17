@@ -16,7 +16,6 @@
     "DELETE /api/auth/oidc/link": {
       "people": "it removes the company sign-in guard from the login the agent runs as"
     },
-    "DELETE /api/calendar/:id": { "planned": "calendar_feed_remove" },
     "DELETE /api/contacts/:id": "contact_delete",
     "DELETE /api/contacts/:id/shares": { "planned": "contact_share_remove" },
     "DELETE /api/draws/:id": { "planned": "draw_delete" },
@@ -53,8 +52,6 @@
     "DELETE /api/messenger/favourites/:kind/:id": {
       "none": "Own chat favourites: only sorts the person's own list"
     },
-    "DELETE /api/microsoft/accounts/:id": { "planned": "ms_account_remove" },
-    "DELETE /api/microsoft/config": { "planned": "ms_config_set" },
     "DELETE /api/model-pools/:id": "model_pool_remove",
     "DELETE /api/network/key": { "planned": "network_activate" },
     "DELETE /api/notes/:id": "note_delete",
@@ -182,7 +179,6 @@
     "GET /api/auth/whoami": { "planned": "whoami" },
     "GET /api/backups": { "planned": "backup_status" },
     "GET /api/box-status": { "tool": "box_status", "gap": "no containers block" },
-    "GET /api/calendar": { "planned": "calendar_feed_list" },
     "GET /api/changelog": { "planned": "help_read" },
     "GET /api/config": { "planned": "config_report" },
     "GET /api/contacts": { "tool": "contact_list", "gap": "no tag filter" },
@@ -225,10 +221,7 @@
     "GET /api/draws/:id": "draw_get",
     "GET /api/draws/:id/svg": "export_node",
     "GET /api/email/accounts": { "planned": "email_account_list" },
-    "GET /api/email/accounts/:id": { "planned": "email_account_list" },
-    "GET /api/email/accounts/:id/folders": { "planned": "email_folder_list" },
     "GET /api/email/contact-gate": { "planned": "email_gate_status" },
-    "GET /api/email/discover": { "planned": "email_discover" },
     "GET /api/email/folders": { "planned": "email_folder_list" },
     "GET /api/email/messages": { "tool": "email_list", "gap": "no folder or unread filter" },
     "GET /api/email/messages/:id": { "tool": "email_get", "gap": "no attachment list" },
@@ -312,16 +305,6 @@
     "GET /api/messenger/stream": { "none": "machinery: a live stream for an open window" },
     "GET /api/messenger/unread": "messenger_list",
     "GET /api/metrics/usage": { "planned": "usage_report" },
-    "GET /api/microsoft/accounts": { "planned": "ms_status" },
-    "GET /api/microsoft/accounts/:id/drives": { "planned": "ms_drive_list" },
-    "GET /api/microsoft/accounts/:id/mail": { "planned": "ms_status" },
-    "GET /api/microsoft/config": { "planned": "ms_status" },
-    "GET /api/microsoft/drives/:id/browse": { "planned": "ms_drive_list" },
-    "GET /api/microsoft/drives/:id/scopes": { "planned": "ms_drive_list" },
-    "GET /api/microsoft/oauth/callback": {
-      "none": "machinery: a provider calls this back in a browser"
-    },
-    "GET /api/microsoft/oauth/start": { "planned": "ms_connect_link" },
     "GET /api/model-combos": { "planned": "model_combo_list" },
     "GET /api/model-context": {
       "none": "Screen data: it only draws a screen, and other tools hold the facts"
@@ -524,16 +507,11 @@
       "gap": "on purpose: dataReadOnly, mcpAccess and trustTools stay with a person, because they lift the author ceiling"
     },
     "PATCH /api/apps/:id/snapshots/:sid": { "none": "Small extras with no agent job" },
-    "PATCH /api/calendar/:id": { "planned": "calendar_feed_update" },
     "PATCH /api/contacts/:id": "contact_update",
     "PATCH /api/docs/collections/:id": {
       "none": "a person picks which folders on the box get indexed: it reaches the disk and spends on indexing"
     },
     "PATCH /api/draws/:id": { "planned": "draw_update" },
-    "PATCH /api/email/accounts/:id": {
-      "planned": "email_account_update",
-      "note": "a password goes by vault name"
-    },
     "PATCH /api/email/messages/:id": { "planned": "email_mark" },
     "PATCH /api/embedding/extraction": { "planned": "embedding_set" },
     "PATCH /api/events/:id": "event_update",
@@ -555,8 +533,6 @@
     "PATCH /api/mcp-settings": { "none": "MCP box switch: over MCP it can only turn itself off" },
     "PATCH /api/messenger/c/:id": { "planned": "messenger_update" },
     "PATCH /api/messenger/c/:id/messages/:seq": { "planned": "messenger_message_edit" },
-    "PATCH /api/microsoft/accounts/:id/mail": { "planned": "ms_mail_set" },
-    "PATCH /api/microsoft/drives/:id": { "planned": "ms_drive_set" },
     "PATCH /api/model-pools/:id": {
       "tool": "model_pool_set",
       "gap": "cannot rename an entry or move it to another pool"
@@ -742,7 +718,6 @@
     },
     "POST /api/backups": { "planned": "backup_settings_set" },
     "POST /api/backups/run": { "planned": "backup_run" },
-    "POST /api/calendar": { "planned": "calendar_feed_add" },
     "POST /api/config/adopt": { "planned": "config_adopt" },
     "POST /api/config/adopt-all": { "planned": "config_adopt" },
     "POST /api/contacts": "contact_create",
@@ -781,14 +756,6 @@
     "POST /api/draws": { "planned": "draw_create" },
     "POST /api/draws/:id/commit": { "planned": "draw_commit" },
     "POST /api/draws/:id/discard-draft": { "planned": "draw_discard_draft" },
-    "POST /api/email/accounts": {
-      "planned": "email_account_connect",
-      "note": "a password goes by vault name"
-    },
-    "POST /api/email/discover/contacts": {
-      "planned": "email_discover_add",
-      "note": "asks each time: it starts a 90-day backfill"
-    },
     "POST /api/embedding": { "planned": "embedding_set" },
     "POST /api/embedding/rebuild": { "planned": "embedding_rebuild" },
     "POST /api/embedding/recover": { "planned": "embedding_recover" },
@@ -900,10 +867,6 @@
     "POST /api/messenger/conversations": {
       "tool": "messenger_create",
       "gap": "no group icon or colour"
-    },
-    "POST /api/microsoft/accounts/:id/drives": {
-      "planned": "ms_drive_list",
-      "note": "a refresh from Graph; it sets nothing"
     },
     "POST /api/model-combos/apply": { "planned": "model_combo_apply" },
     "POST /api/model-pools": "model_pool_set",
@@ -1096,7 +1059,6 @@
     },
     "PUT /api/apps/:id/draft": "app_source_set",
     "PUT /api/draws/:id/draft": { "planned": "draw_update" },
-    "PUT /api/email/accounts/:id/folders": { "planned": "email_folder_set" },
     "PUT /api/fleet/default-model": {
       "planned": "control_default_model_set",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
@@ -1107,8 +1069,6 @@
     "PUT /api/messenger/favourites/:kind/:id": {
       "none": "Own chat favourites: only sorts the person's own list"
     },
-    "PUT /api/microsoft/config": { "planned": "ms_config_set" },
-    "PUT /api/microsoft/drives/:id/scopes": { "planned": "ms_drive_set" },
     "PUT /api/pages/:id/draft": "page_update_draft",
     "PUT /api/presents/:id/data": { "planned": "present_data_set" },
     "PUT /api/profile": {

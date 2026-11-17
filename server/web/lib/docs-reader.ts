@@ -13,19 +13,14 @@ import { docLabelFromRelPath } from '@mantle/client-types/docs-labels';
 import { serviceEnabled } from '@mantle/config';
 import { isDetachedDev } from '@/lib/auth-constants';
 
-/** The User Guide pages about the screens of the Sync service (Email,
- *  Contacts, the account screens), by their path in the guide: the reader
+/** The User Guide pages about the screens of the Sync service (Email and
+ *  Contacts), by their path in the guide: the reader
  *  leaves them out while Sync is off, as the help rail does (the help
  *  topics carry `service: sync`, lib/help.ts). */
 export const SYNC_GUIDE_PAGES: ReadonlySet<string> = new Set([
-  '02-first-steps/04-connect-email.md',
   '03-using-jackdaw/03-email-and-contacts.md',
-  '06-help/accounts.md',
-  '06-help/calendar.md',
   '06-help/contacts.md',
-  '06-help/discover.md',
   '06-help/inbox.md',
-  '06-help/microsoft.md',
 ]);
 
 /** A page the reader leaves out now: a Sync page while Sync is off. */

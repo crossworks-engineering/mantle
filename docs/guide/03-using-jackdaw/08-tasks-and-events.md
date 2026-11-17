@@ -52,4 +52,4 @@ Calendars you subscribe to in **Settings > Calendars** show here too. They are r
 ## Next
 
 - [Secrets](09-secrets.md)
-- Screen help: [Tasks](../06-help/tasks.md), [Events](../06-help/events.md), [Calendars](../06-help/calendar.md)
+- Screen help: [Tasks](../06-help/tasks.md), [Events](../06-help/events.md)

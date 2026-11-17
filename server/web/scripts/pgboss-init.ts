@@ -32,6 +32,20 @@ if (!url) {
   process.exit(1);
 }
 
+/** The queues of the old sync workers (email-sync, microsoft-sync,
+ *  calendar-sync), removed in Sync plan M4. */
+const RETIRED_QUEUES = [
+  'mantle.email.sync',
+  'mantle.email.backfill',
+  'mantle.email.scheduler',
+  'mantle.microsoft.drive-sync',
+  'mantle.microsoft.mail-sync',
+  'mantle.microsoft.backfill',
+  'mantle.microsoft.scheduler',
+  'mantle.calendar.sync',
+  'mantle.calendar.scheduler',
+];
+
 const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
 boss.on('error', (e) => console.error('[pgboss-init] pg-boss error:', e.message));
 
@@ -41,6 +55,13 @@ try {
   // box's migrate on a fresh database or an upgrade: take it back now
   // (job_table_run runs its text as SQL). As the migrator, their owner.
   await revokePgBossRoutines({ unsafe: (text) => boss.getDb().executeSql(text) });
+  // The old mail, calendar-feed and Microsoft sync left the brain (Sync plan,
+  // M4): their schedules would keep queueing a job every 2 minutes that no
+  // worker takes. Gone once; a no-op after.
+  for (const q of RETIRED_QUEUES) {
+    await boss.unschedule(q).catch(() => undefined);
+    await boss.deleteQueue(q).catch(() => undefined);
+  }
   await boss.stop({ graceful: false });
   console.log('[pgboss-init] pgboss schema ready.');
   process.exit(0);

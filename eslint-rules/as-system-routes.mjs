@@ -185,7 +185,6 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // A service gateway row: where the gateway sends a service's calls (0358).
   'packages/db/src/service-gateway.ts': ['tool-config'],
   'packages/tools/src/mcp-oauth.ts': ['tool-config'],
-  'packages/microsoft/src/config-store.ts': ['tool-config'],
   'server/web/lib/heartbeats.ts': ['heartbeat-maker'],
   'packages/runtime/src/heartbeats/tools.ts': ['heartbeat-maker'],
   'packages/tools/src/heartbeat-maker.ts': ['heartbeat-maker'],
@@ -200,8 +199,6 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // An own pipeline's package installed or removed (0376).
   'packages/content/src/pipeline-state.ts': ['pipeline-package'],
   // A content feed switched on (0324: enabled only off on the narrow login).
-  'packages/calendar/src/manage.ts': ['feed-enable'],
-  'packages/microsoft/src/drives/manage.ts': ['feed-enable'],
   'server/web/lib/worker-groups.ts': ['agent-group-grant'],
   'packages/tools/src/builtins-pending.ts': ['agent-group-grant'],
   'server/web/lib/agents.ts': ['assistant-grant', 'model-route', 'skill-text'],
@@ -226,11 +223,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/api-keys/src/vault.ts': ['model-route'],
   'packages/tools/src/builtins-persona.ts': ['skill-text'],
   'packages/email/src/accounts.ts': ['mail-account'],
-  'packages/microsoft/src/outlook/manage.ts': ['mail-account'],
   'packages/content/src/sandboxes.ts': ['sandbox-make'],
   'server/web/lib/agent-telegram.ts': ['telegram-connect'],
-  'packages/microsoft/src/token-store.ts': ['ms-account'],
-  'packages/microsoft/src/drives/discover.ts': ['ms-account'],
   'server/web/app/api/model-pools/[id]/route.ts': ['model-route'],
   // (the destination and cost class): a pool entry added or
   // removed, a turn's thinking effort, the extraction concurrency.

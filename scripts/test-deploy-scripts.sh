@@ -2596,7 +2596,7 @@ CONTAINERS_STUB='docker() {
       printf "%s\n" \
         "/mantle_pg running healthy 0 2026-11-04T05:01:02.123456789Z" \
         "/mantle_web Running<x> healthy 2abc 2026-11-04T05:01:02.123Z" \
-        "/mantle_worker_email running unhealthy 3 2026-11-04T06:00:00.5Z" \
+        "/mantle_worker_telegram running unhealthy 3 2026-11-04T06:00:00.5Z" \
         "/mantle_api running he\"al 1 2026-11-04T06:00:00Z" \
         "/mantle_updater running none 0 0001-01-01T00:00:00Z" \
         "/mantle_caddy exited none 1 yesterday" \
@@ -2610,12 +2610,12 @@ write_services_info"
 SJ="$CS/sig/services.json"
 check "containers: services.json is still valid JSON" node -e "JSON.parse(require('fs').readFileSync('$SJ','utf8'))"
 CS_WANT=$(node -e '
-const names = "postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway sync worker_email worker_telegram worker_microsoft worker_files worker_docs worker_events worker_calendar worker_maintenance worker_runs worker_push client_web client_caddy".split(" ");
+const names = "postgres objectstore parser browser gotenberg ollama tailscale web caddy updater livekit sandboxd autoheal api gateway sync worker_telegram worker_files worker_docs worker_events worker_maintenance worker_runs worker_push client_web client_caddy".split(" ");
 const out = {};
 for (const n of names) out[n] = { container: "absent", health: "none", restarts: 0, started_at: "" };
 out.postgres = { container: "running", health: "healthy", restarts: 0, started_at: "2026-11-04T05:01:02Z" };
 out.web = { container: "unknown", health: "healthy", restarts: 0, started_at: "2026-11-04T05:01:02Z" };
-out.worker_email = { container: "running", health: "unhealthy", restarts: 3, started_at: "2026-11-04T06:00:00Z" };
+out.worker_telegram = { container: "running", health: "unhealthy", restarts: 3, started_at: "2026-11-04T06:00:00Z" };
 out.api = { container: "running", health: "unknown", restarts: 1, started_at: "2026-11-04T06:00:00Z" };
 out.updater = { container: "running", health: "none", restarts: 0, started_at: "" };
 out.caddy = { container: "exited", health: "none", restarts: 1, started_at: "" };

@@ -98,7 +98,7 @@ again in the account's folder settings.
   its Message-ID (and an `X-Mantle-Client-Code` header); the mail sync skips
   a message with it, or a reply or forward of one, before anything is
   fetched or stored (`packages/email/src/client-code-mail.ts`, `ingestOne`
-  in `packages/email/src/sync.ts`). Sign-in codes in links are blanked in
+  in the old mail sync, removed in Sync plan M4). Sign-in codes in links are blanked in
   everything stored.
 - The client-sourced write hold and its marks (`client_sourced_nodes`), the
   client comment ledger and the client level columns: those are W8c and W10

@@ -185,7 +185,7 @@ What the Microsoft app changes, and why (engine:
 - **No RFC 8707 `resource` parameter** (`validateResourceURL()` returns
   nothing): Entra v2 takes the audience from the scope.
 - **The secret goes in the body** (`client_secret_post`), like the Graph
-  sign-in in `packages/microsoft/src/oauth.ts`.
+  old Graph sign-in (removed, Sync plan M4).
 
 Failures are recorded, never silent. A failed start, a refused consent on the
 callback, or a failed code exchange clears the in-flight marker and stores the

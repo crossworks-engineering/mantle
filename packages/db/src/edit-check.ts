@@ -40,16 +40,17 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
     'server/api/src/agent/extract/gates.ts',
     'server/web/lib/maintenance/refold-embeds.ts',
   ],
-  // Markers of system work: email sync, the app-nav backfills, the folds of
-  // the personal spaces, a backfill script.
-  emailAttachment: ['packages/email/src/sync.ts'],
+  // Markers of system work: the old mail sync's (it left the brain, Sync plan
+  // M4; its marks stay on the rows, written last by these migrations), the
+  // app-nav backfills, the folds of the personal spaces.
+  emailAttachment: ['packages/db/migrations/0239_email_attachment_mark.sql'],
   appNavMigratingAt: ['packages/content/src/tree/apps-nav.ts'],
   appNavMigratedAt: ['packages/content/src/tree/apps-nav.ts'],
   appMarksMigrated: ['packages/content/src/tree/apps-nav.ts'],
   trashedBeforeFold: ['packages/db/migrations/0267_workspaces_spaces_fold.sql'],
   trashedAt: ['packages/db/migrations/0267_workspaces_spaces_fold.sql'],
   space_file: ['packages/db/migrations/0267_workspaces_spaces_fold.sql'],
-  salience_reason: ['server/web/scripts/backfill-email-salience.ts'],
+  salience_reason: ['packages/db/migrations/0281_edit_check_tables.sql'],
 };
 
 /** The derived keys, as mantle_node_derived_keys() lists them. */

@@ -33,9 +33,10 @@ export type KnownMcpServer = {
   /** Selection guidance folded into the generated group description. */
   whenToUse: string;
   /** The server's sign-in needs a pre-registered app, because its
-   *  authorization server offers no dynamic registration. 'microsoft': the
-   *  Settings → Microsoft app works (Entra ID fronts the server). */
-  oauthClient?: 'microsoft';
+   *  authorization server offers no dynamic registration: a manual app
+   *  (client id, secret, and for Entra ID the tenant authority
+   *  https://login.microsoftonline.com/<tenant>/v2.0). */
+  oauthClient?: 'manual';
   /** Steps outside Mantle that the owner, or their IT admin, must do first. */
   setup?: string[];
 };
@@ -70,7 +71,7 @@ export const KNOWN_MCP_SERVERS: readonly KnownMcpServer[] = [
       'Microsoft’s remote Power BI MCP server (preview): ask questions of Power BI semantic models. It reads a model’s schema and runs DAX as the signed-in user, so row-level security applies.',
     url: 'https://api.fabric.microsoft.com/v1/mcp/powerbi',
     oauthUrl: 'https://api.fabric.microsoft.com/v1/mcp/powerbi',
-    oauthClient: 'microsoft',
+    oauthClient: 'manual',
     docsUrl:
       'https://learn.microsoft.com/en-us/power-bi/developer/mcp/remote-mcp-server-external-clients',
     whenToUse:

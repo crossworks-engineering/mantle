@@ -1167,7 +1167,7 @@ structure or the brain wrote the bytes itself:
   first bytes of an `.xml` to route it.
 - **Image header sniffs** (`packages/files/src/image-probe.ts`): format and
   dimensions from a handful of header bytes, no decode.
-- **Email MIME** (`mailparser` in `packages/email/src/providers/imap.ts`):
+- **Email MIME** (`mailparser` in the old IMAP sync, removed in Sync plan M4; see `docs/_archive/email-ingest.md`):
   the mail itself, at most 64 MB a message (the size is read before the
   source is fetched; a larger one lands with its headers and a note), with
   `skipHtmlToText`. An attachment's contents go to the parser like any

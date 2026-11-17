@@ -75,8 +75,6 @@ export const ERROR_IDIOM_ALLOWED = {
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/db/src/viewer.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
-  'packages/email/src/backfill-rfc-message-id.ts':
-    'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/embeddings/src/index.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/embeddings/src/provider-outage.ts':
@@ -155,7 +153,6 @@ export const ERROR_IDIOM_ALLOWED = {
   'server/web/lib/workspaces-migrate.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'server/web/scripts/chunk-windows.ts': 'a repo script, run on its own',
-  'server/web/scripts/classify-backfill.ts': 'a repo script, run on its own',
   'server/web/scripts/doc-reindex.ts': 'a repo script, run on its own',
   'server/web/scripts/eval-recall.ts': 'a repo script, run on its own',
   'server/web/scripts/eval-route.ts': 'a repo script, run on its own',

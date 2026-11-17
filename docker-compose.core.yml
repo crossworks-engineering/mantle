@@ -55,10 +55,7 @@
 #
 # Full-shape only (channel workers; `full` is not meant to be enabled as a
 # profile — want these back, run `scripts/install.sh --no-core`):
-#   worker_email       IMAP ingest channel
 #   worker_telegram    Telegram channel poller
-#   worker_microsoft   OneDrive/SharePoint sync
-#   worker_calendar    external calendar (ICS) sync
 #   worker_push        push-notification relay for companion devices
 #   worker_runs        runner-queue engine (MANTLE_RUNS is off by default)
 #
@@ -69,13 +66,7 @@
 services:
   browser:
     profiles: ["full", "helpers"]
-  worker_email:
-    profiles: ["full"]
   worker_telegram:
-    profiles: ["full"]
-  worker_microsoft:
-    profiles: ["full"]
-  worker_calendar:
     profiles: ["full"]
   worker_push:
     profiles: ["full"]

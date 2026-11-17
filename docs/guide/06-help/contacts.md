@@ -6,25 +6,24 @@ service: sync
 
 ## Contacts
 
-Contacts are the people and companies you deal with. They are also the email gate: MantleOS only takes in mail from contacts, and the assistant only sends mail to contacts.
+Contacts are the people and companies you deal with. They are also the email gate: when mail sync runs (the Sync service), the brain keeps mail from contacts only.
 
 - Click **+** (Add a contact) and fill in a **First name**, **Last name** or **Company**, then **Email addresses**, a **Cell number** and **Tags**.
 - Each email line is a full address (`orders@example.com`) or a whole domain (`@example.com`).
 - Use the **Description** field to tell the assistant who this is, for example "our electrician, only works Tuesdays".
-- Adding an address pulls in the last 90 days of mail from it. Removing it stops new mail.
+- Removing an address stops its new mail from being kept.
 - Turn on **Sharing** on the **Details** tab to give the contact a code that opens the items you share with them. The **Shared** tab lists those items, each with a revoke button, and **Revoke all** takes them all back.
 
 ## Assistant
 
 - "Add Sam at Example Ltd, sam@example.com."
 - "What's the number for the electrician?"
-- "Email Sam the quote."
 
-The assistant cannot email someone who is not a contact, or a domain wildcard. It cannot delete contacts.
+The assistant cannot delete contacts.
 
 ## Technical
 
-- A contact is a `contact` node. Its email list is checked by both mail sync and `email_send`.
+- A contact is a `contact` node. Its email list is the gate mail sync checks.
 - Mail from addresses that are not contacts is never stored.
 - The sharing code is shown once. Only a keyed hash of it is stored.
 - Tools: `contact_find`, `contact_list`, `contact_get`, `contact_create`, `contact_update`. `contact_delete` is in a separate admin group.

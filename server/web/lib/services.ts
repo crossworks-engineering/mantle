@@ -117,19 +117,17 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
   },
   sync: {
     title: 'Sync',
-    what: 'Everything that syncs with an outside account: mail (IMAP and SMTP), contacts, calendar feeds and Microsoft 365, later Google, Dropbox and Box. It runs in its own container, so a box that never links an outside account carries none of it.',
-    usedBy:
-      'Email, Contacts, Settings > Accounts, Settings > Microsoft and calendar feeds, and the email and contact tools of agents and MCP.',
+    what: 'The home of everything that syncs with an outside account: mail, calendar feeds and Microsoft 365 come back here, then Google, Dropbox and Box. Today it holds the Email reader and Contacts over the mail already in the brain. It runs in its own container, so a box that never links an outside account carries none of it.',
+    usedBy: 'Email (the stored mail), Contacts, and the email and contact tools of agents and MCP.',
     whenOff:
-      'Email, Contacts and the account screens are hidden, with their help pages. Agents and MCP get no email or contact tools. Mail, calendar feed and Microsoft sync pause.',
+      'Email and Contacts are hidden, with their help pages. Agents and MCP get no email or contact tools.',
     keeps:
-      'Every mail, contact, event and synced file already in the brain, still found by search, and every linked account. Sync goes on where it stopped when you switch it on again.',
+      'Every mail, contact, event and synced file already in the brain, still found by search.',
     downloadMb: 150,
     memory: 'up to 512 MB (a file job runs one short rclone command, about 85 MB while it runs)',
     memoryMaxMb: 512,
     note: null,
-    offWarning:
-      'Email, Contacts and the account screens hide, and sync pauses. Nothing is deleted.',
+    offWarning: 'Email and Contacts hide. Nothing is deleted.',
   },
 };
 

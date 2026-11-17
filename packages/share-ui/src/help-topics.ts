@@ -42,7 +42,6 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
 
   // ── Review ─────────────────────────────────────────────────────────────
   ['/models', 'models'],
-  ['/settings/discover', 'discover'],
   ['/team-admin', 'team-admin'],
   ['/pending', 'pending'],
 
@@ -60,9 +59,6 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/settings/heartbeats', 'heartbeats'],
   ['/settings/worker-groups', 'worker-groups'],
   ['/settings/appearance', 'appearance'],
-  ['/settings/accounts', 'accounts'],
-  ['/settings/microsoft', 'microsoft'],
-  ['/settings/calendar', 'calendar'],
   ['/settings/profile', 'profile'],
   ['/settings/mcp', 'mcp'],
   ['/settings/api-access', 'api-access'],

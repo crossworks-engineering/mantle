@@ -507,7 +507,7 @@ URLs come from `publicBaseUrl()` ([`packages/content/src/shares.ts`](../packages
 which reads `MANTLE_PUBLIC_URL` ?? `NEXT_PUBLIC_APP_URL` (falls back to
 localhost). Set one of those in the agent's environment so links point at the
 real host. `email_page`'s `includeLink` option reuses `page_share` to add a
-"View online" footer (see [email-send.md](./email-send.md)).
+"View online" footer (see [email-send.md](./_archive/email-send.md)).
 
 ---
 

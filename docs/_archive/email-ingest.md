@@ -1,5 +1,7 @@
 # Email ingestion
 
+> **Archived 2026-11-17 (Sync plan, M4):** this code left the brain. Mail, calendar feeds and Microsoft sync are rebuilt inside the Sync sidecar (docs/services.md, "Sync"). Kept as the reference for that work.
+
 How email enters Mantle, gets gated against your contacts, deduplicated, and
 reaches the brain. This is the canonical reference for the inbound subsystem;
 companion to [`email-send.md`](./email-send.md) (outbound via SMTP submission),

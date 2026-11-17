@@ -29,7 +29,6 @@ import {
   type ContactRow,
   type CreateContactInput,
 } from '@mantle/content';
-import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
@@ -200,14 +199,14 @@ const contact_create: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'admin-kind',
-    // The allowlist that gates mail out (a new contact also starts a paid inbound backfill).
+    // The email allowlist: whose mail the brain keeps when mail sync runs.
     peerRisky: true,
     keyArea: 'contacts',
     clientSourced: CS.creates(),
   },
   name: 'Add a contact',
   description:
-    "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their inbound mail be ingested into the brain (a 90-day history backfill kicks off automatically)." +
+    "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist:** when mail sync runs (the Sync service), only mail from a contact is kept in the brain." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
@@ -255,10 +254,7 @@ const contact_create: BuiltinToolDef = {
         : [],
     };
     try {
-      const { contact, addedEmails } = await createContact(ctx.ownerId, fields);
-      // Pull each newly-added sender's/domain's recent history into the brain
-      // (best-effort; never fails the create).
-      await enqueueBackfills(ctx.ownerId, addedEmails);
+      const { contact } = await createContact(ctx.ownerId, fields);
       ctx.step?.setOutput({ id: contact.id, title: contact.title });
       return { ok: true, output: compact(contact) };
     } catch (err) {
@@ -285,7 +281,7 @@ const contact_update: BuiltinToolDef = {
   preconditions: CONTACT_ID_PRE,
   name: 'Update a contact',
   description:
-    "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards); newly-added entries trigger a 90-day history backfill. Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'." +
+    "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards). Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
@@ -346,7 +342,6 @@ const contact_update: BuiltinToolDef = {
     try {
       const result = await updateContact(ctx.ownerId, id, patch);
       if (!result) return notFound('contact', id, 'contact_find / contact_list');
-      await enqueueBackfills(ctx.ownerId, result.addedEmails);
       ctx.step?.setOutput({ id: result.contact.id, title: result.contact.title });
       return { ok: true, output: compact(result.contact) };
     } catch (err) {
@@ -372,10 +367,10 @@ const contact_delete: BuiltinToolDef = {
   preconditions: CONTACT_ID_PRE,
   name: 'Delete a contact',
   description:
-    "Remove a contact. NOTE: this also removes them from the email allowlist — Saskia can no longer email them after deletion. Returns ok=true on success; ok=false if the contact wasn't found." +
+    "Remove a contact. NOTE: this also removes them from the email allowlist: their mail is no longer kept when mail sync runs. Returns ok=true on success; ok=false if the contact wasn't found." +
     ONLY_WHEN_ASKED,
-  // Deleting a contact silently severs their email pipeline BOTH ways
-  // (send allowlist + inbound ingest) — a side effect the user can't see
+  // Deleting a contact silently takes them off the email allowlist (whose
+  // mail is kept when mail sync runs): a side effect the user can't see
   // coming from "remove X from my contacts". Low-frequency op, so the gate
   // costs nothing; the description's warning stays as the model-facing cue.
   requiresConfirm: true,

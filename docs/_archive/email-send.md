@@ -1,5 +1,7 @@
 # Email send: Saskia sends via provider SMTP
 
+> **Archived 2026-11-17 (Sync plan, M4):** this code left the brain. Mail, calendar feeds and Microsoft sync are rebuilt inside the Sync sidecar (docs/services.md, "Sync"). Kept as the reference for that work.
+
 Mantle reads mail over IMAP ([architecture.md §8](./architecture.md#8-email-pipeline)).
 This is the **outbound** half: the `email_send` tool lets an agent send mail
 *from the user's own mailbox*, so requests like *"research X and email it to me"*

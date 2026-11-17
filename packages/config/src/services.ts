@@ -48,7 +48,7 @@ import { env, type KnownEnvName } from './index';
  *  packages/documents): on by default on every box, its switch carries a
  *  URL and a basic-auth password the way sandboxes carry a token. `sync` is
  *  the Sync sidecar (server/sync): everything that syncs with an outside
- *  account (mail, contacts, calendar feeds, Microsoft); off by default, and
+ *  account (mail, calendar feeds, Microsoft, later Google); off by default, and
  *  off hides those screens and tools. It has no token: on is its profile. */
 export const OPTIONAL_SERVICES = [
   'sandboxes',
@@ -117,13 +117,10 @@ export const BOX_CONTAINERS = [
   'api',
   'gateway',
   'sync',
-  'worker_email',
   'worker_telegram',
-  'worker_microsoft',
   'worker_files',
   'worker_docs',
   'worker_events',
-  'worker_calendar',
   'worker_maintenance',
   'worker_runs',
   'worker_push',
