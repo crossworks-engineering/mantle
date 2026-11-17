@@ -7,10 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** The answers of the made-up provider, in order: `fail` throws (a
  *  timeout), `read` answers. Past the end: `fail`. */
-const h = vi.hoisted(() => ({ plan: [] as ('fail' | 'read')[], calls: 0 }));
+const h = vi.hoisted(() => ({ plan: [] as ('fail' | 'refused' | 'server' | 'read')[], calls: 0 }));
 const extract = async () => {
   h.calls += 1;
-  if ((h.plan.shift() ?? 'fail') === 'fail') throw new Error('timeout');
+  const next = h.plan.shift() ?? 'fail';
+  if (next === 'fail') throw new Error('timeout');
+  if (next === 'refused') throw Object.assign(new Error('vision failed: 429'), { status: 429 });
+  if (next === 'server') throw Object.assign(new Error('vision failed: 503'), { status: 503 });
   return { text: 'read' };
 };
 
@@ -69,6 +72,19 @@ describe('runVisionWorker tries', () => {
   it('with no tries, one call only', async () => {
     expect((await ask()).ran).toBe(false);
     expect(h.calls).toBe(1);
+  });
+
+  it('a refusal (a 4xx) is not asked again', async () => {
+    h.plan = ['refused', 'read'];
+    expect((await ask(2)).ran).toBe(false);
+    expect(h.calls).toBe(1);
+  });
+
+  it('a 5xx is asked again', async () => {
+    h.plan = ['server', 'read'];
+    const out = await ask(2);
+    expect(out.text).toBe('read');
+    expect(h.calls).toBe(2);
   });
 
   it('an answer on the first call: one call', async () => {

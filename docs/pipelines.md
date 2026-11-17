@@ -1113,11 +1113,13 @@ drawn), so it draws only pages that are there.
 two overlap by a tenth of the page, so a mark on the cut is whole in one of
 them. Why: a vision model reads a picture at a fixed budget of its own (the
 box's model on dev reads each picture for about 1,100 tokens, whatever its
-size), so a half gives it each mark at about twice the area. A bench run on
-10 site drawings (2026-11-17, the same question as the Agent's) read with
-the halves 8 of 9 values on one hand-drawn scan (5 alone), 15 of 15 on
-another (12), 7 of 9 on a CAD isometric (5), and 20 of 40 on a dense flow
-diagram (1); no file read fewer. A page gives the same identifier up to
+size), so a half gives it each mark at about twice the area. Two bench runs
+on 10 site drawings (2026-11-17, the same question as the Agent's) read with
+the halves, against the whole page alone: 7 and 8 of 9 values on one
+hand-drawn scan (5), 15 of 15 on another (12), 5 and 7 of 9 on a CAD
+isometric (3 and 5), 20 and 22 of 40 on a dense flow diagram (1), and 7 of 7
+on the sheet that is one large image (5 and 6); no file read fewer. A
+grid-paper sketch: 9 of 12 identifiers in both runs (7). A page gives the same identifier up to
 three times in the Sheet list, one row for each picture (its `Key` says
 which); the text for search has each line one time.
 
@@ -1143,14 +1145,18 @@ blank pictures only asks nothing and writes no row.
 75 M that pdfjs decodes elsewhere in the box (`PDF_MAX_IMAGE_PIXELS`): there
 the image is dropped, and the page draws white. Before this, the Agent sent
 that white page to the model, and its list came back empty. The pictures of
-pages now decode an image up to `PDF_WINDOW_MAX_IMAGE_PIXELS` (100 M,
-`packages/files/src/pdf-open.ts`): they are drawn in the parser's pictures
-child, a process the job can kill. Bench (2026-11-17, the parser image under
-a 2 GB limit): such a sheet drew at 200 DPI with a peak of 1.49 GB, in 5.8 s,
-and the whole page and its halves in one process stayed under the limit
-(pdfjs keeps the decoded image for the windows of one page). The model then
-read 7 of its 7 values. An image past 100 M still draws white, and its
-picture is blank: never asked.
+pages of this Agent decode an image up to `PDF_WINDOW_MAX_IMAGE_PIXELS` (100
+M, `packages/files/src/pdf-open.ts`; each of its windows says
+`largeImages`): they are drawn in the parser's pictures child, a process the
+job can kill. The Reader's eye and pieces, and every other open, keep 75 M.
+`renderPdfWindows` keeps a page for the windows of it one after the other,
+so the image is decoded one time for the page, not for each half. Bench
+(2026-11-17, the parser image under a 2 GB limit): such a sheet drew at 200
+DPI with a peak of 1.49 GB, in 5.8 s, and the whole page and its halves in
+one process stayed under the limit. The model then read 7 of its 7 values.
+An image past 100 M still draws white, and its picture is blank: never
+asked. A kill of the child for memory loses its picture and those after it:
+the run fails, and says which page.
 
 **A picture that is not drawn.** When a page that is there gives no picture
 (the time ran out, the child was stopped, pdfjs cannot draw it), or the
@@ -1196,8 +1202,9 @@ Reader's tabs, the sheet read writes its own two tabs.
 
 **One call more when the provider fails.** The sketch read and the ask of an
 Agent call the vision worker with `tries: 2` (`runVisionWorker`,
-`packages/runtime/src/agent/attachments.ts`): a call that failed (a timeout,
-a stall) is made one time more. Both stop at their first failed call, so on
+`packages/runtime/src/agent/attachments.ts`): a call that failed with no
+answer in time, a dropped line or a 5xx is made one time more; a refusal
+(4xx: a key, a rate limit) is not. Both stop at their first failed call, so on
 dev one slow answer (60 s, no answer) lost 23 of the 112 pieces of a flow
 diagram, and four of its tags. A second failure stops the read as before.
 At most one paid call more for each picture.
@@ -1259,14 +1266,18 @@ from the tabs. This holds for every Agent, `iso-title-block` too.
 The same text is in the file's passages (`content_chunks`), so a search of
 the passages finds it too: `writeRetrievalChunks`
 (`server/api/src/agent/extract/index-writes.ts`) adds the text of the
-file's Agents after its own text, read from the node at the write
+file's Agents after the passages of its own text, in passages of their own
+under the heading `Read by the Agents`, read from the node at the write
 (`agentTextNow`, by Agent id). An extract writes them so. A run that
-changed the text builds the file's passages again from its stored text
-(`data.text`); the passages that did not change take their vectors from the
-embed cache, so only the new text is embedded. A file with no stored text
-yet gets them at its extract. Two writes at the same time (an extract and
-a run that ends during it) can leave the passages without the newest text
-until the next run or extract: accepted, the node's text has it.
+changed the text (the same text again writes nothing) builds the file's
+passages again from its stored text (`data.text`); the passages of the body
+do not move, so their vectors come from the embed cache and only the new
+text is embedded. The extract and the run of one file never run at the same
+time (the extract queue serialises the jobs of a node). A file with no
+stored text (a cost-guard index, `indexLocalOnly`; a scan its extract read
+nothing from) keeps the Agent text in the node's text only: its passages
+are not built from the Agent text alone, so the passages of its local body
+stay.
 
 - The text (`agentTextOf`): the name of each tab, then one line a row,
   `column: value` for each cell with a value; no key, model, hash or page;

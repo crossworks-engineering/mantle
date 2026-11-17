@@ -147,7 +147,13 @@ describe('the step of pdf-sheet-read', () => {
       [1],
       [1, 1, 1, 2, 2, 2, 3, 3, 3],
     ]);
-    expect(drawn[0]![0]).toMatchObject({ scale: PAGE_DPI / 72, maxSide: MAX_SIDE });
+    // Every picture of the Agent may decode a large embedded image.
+    expect(drawn[0]![0]).toMatchObject({
+      scale: PAGE_DPI / 72,
+      maxSide: MAX_SIDE,
+      largeImages: true,
+    });
+    expect(drawn[1]!.every((w) => w.largeImages === true)).toBe(true);
     expect(drawn[1]![0]).toMatchObject({ scale: CORNER_DPI / 72, maxSide: MAX_SIDE });
     // The halves of a wide sheet: left and right, a tenth of it in both.
     expect(drawn[1]!.slice(1, 4).map((w) => w.box ?? null)).toEqual([

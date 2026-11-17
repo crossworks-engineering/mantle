@@ -250,7 +250,20 @@ export type PageWindow = {
    *  JPEG (quality 90) of the same pixels, so a scan of grey noise fits a
    *  model's limit. Left out: always a PNG. */
   maxBytes?: number;
+  /** Decode an embedded image up to `PDF_WINDOW_MAX_IMAGE_PIXELS` (a CAD
+   *  sheet exported as one large picture), not `PDF_MAX_IMAGE_PIXELS`. The
+   *  open is one for all the windows of a call: one window that asks for
+   *  it raises the cap for all. Only the sheet read of the PDF Agent asks;
+   *  the Reader's eye and pieces keep the cap of every open. */
+  largeImages?: boolean;
 };
+
+/** The image cap of one call of {@link renderPdfWindows}. */
+export function windowsImageCapOf(windows: readonly PageWindow[]): number {
+  return windows.some((w) => w.largeImages === true)
+    ? PDF_WINDOW_MAX_IMAGE_PIXELS
+    : PDF_MAX_IMAGE_PIXELS;
+}
 
 export type RenderedWindow = {
   /** The picture: a PNG, or a JPEG when the window's `maxBytes` said so
@@ -280,9 +293,10 @@ export function isBlank(rgba: Uint8ClampedArray): boolean {
 
 /**
  * Render windows of pages to PNG, one open for all of them, in order. The
- * open takes an embedded image up to `PDF_WINDOW_MAX_IMAGE_PIXELS` (a CAD
- * sheet exported as one large picture), and a picture with nothing drawn
- * on it says so (`blank`). Each
+ * open takes an embedded image up to `PDF_WINDOW_MAX_IMAGE_PIXELS` when a
+ * window asks (`largeImages`), and a picture with nothing drawn on it says
+ * so (`blank`). Windows of the same page one after the other share the
+ * page: its images are decoded one time for all of them. Each
  * window is its own picture under `MAX_RENDER_PIXELS`, so a large sheet is
  * read tile by tile at a resolution one whole-page picture cannot hold. A
  * window that cannot be rendered (a page out of range, an empty or
@@ -309,9 +323,16 @@ export async function renderPdfWindows(
   } = {},
 ): Promise<(RenderedWindow | null)[]> {
   const { createCanvas } = await import('@napi-rs/canvas');
-  const params = { ...renderParams(), maxImagePixels: PDF_WINDOW_MAX_IMAGE_PIXELS };
+  const params = { ...renderParams(), maxImagePixels: windowsImageCapOf(windows) };
   return withPdf(bytes, params, async ({ doc }) => {
     const out: (RenderedWindow | null)[] = [];
+    // The page of the window before: kept while the next window is of the
+    // same page, so its decoded images are not decoded again.
+    let page: Awaited<ReturnType<typeof doc.getPage>> | undefined;
+    const letGo = () => {
+      page?.cleanup();
+      page = undefined;
+    };
     for (const [index, w] of windows.entries()) {
       if (
         !Number.isInteger(w.pageNumber) ||
@@ -322,9 +343,11 @@ export async function renderPdfWindows(
         out.push(null);
         continue;
       }
-      let page: Awaited<ReturnType<typeof doc.getPage>> | undefined;
       try {
-        page = await doc.getPage(w.pageNumber);
+        if (page?.pageNumber !== w.pageNumber) {
+          letGo();
+          page = await doc.getPage(w.pageNumber);
+        }
         const base = page.getViewport({ scale: 1 });
         const [x0, y0, x1, y1] = w.box ?? [0, 0, 1, 1];
         const wPt = (Math.min(1, x1) - Math.max(0, x0)) * base.width;
@@ -380,12 +403,12 @@ export async function renderPdfWindows(
         out.push(opts.each ? null : picture);
       } catch {
         // This window only: a page that cannot be drawn must not lose the
-        // pictures of the others.
+        // pictures of the others. Its page is not kept.
+        letGo();
         out.push(null);
-      } finally {
-        page?.cleanup();
       }
     }
+    letGo();
     return out;
   });
 }

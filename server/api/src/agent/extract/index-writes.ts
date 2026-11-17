@@ -39,7 +39,7 @@ import {
   hasSheetMarkers,
   isSpreadsheetTitle,
 } from '@mantle/content';
-import { agentTextNow } from './agent-text';
+import { AGENT_TEXT_HEADING, agentTextNow } from './agent-text';
 import { EntityMention } from './entities';
 import { errorMessage } from '@mantle/std';
 
@@ -315,8 +315,10 @@ export async function writeRetrievalChunks(
       // Now an embed failure throws (queue retries, old chunks intact)
       // and a crash mid-step can never destroy the previous rebuild.
       // A file's text, then the text of its Agents' tabs (./agent-text.ts),
-      // read now: a search of the passages finds a drawing by its title
-      // block and its list.
+      // read now, in passages of their own under their own heading: a
+      // search of the passages finds a drawing by its title block and its
+      // list, and the passages of the body do not move (their vectors stay
+      // in the embed cache).
       const agentText =
         node.type === 'file' && !tableProfilePieces && !gridProfile
           ? await agentTextNow(node.id)
@@ -325,7 +327,10 @@ export async function writeRetrievalChunks(
         tableProfilePieces ??
           (gridProfile
             ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
-            : chunkDocText(agentText ? `${rawBody}\n\n${agentText}` : rawBody)),
+            : [
+                ...chunkDocText(rawBody),
+                ...(agentText ? chunkDocText(`${AGENT_TEXT_HEADING}\n${agentText}`) : []),
+              ]),
       );
       if (pieces.length === 0) {
         // Heads first (workspaces plan U1): a grant change on this node

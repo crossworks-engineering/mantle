@@ -10,8 +10,9 @@
  * its two halves, and on page 1 the title block corner, at a sharper
  * scale. A model reads a picture at a fixed budget of its own, so a half
  * gives it the marks of a dense sheet at twice the area each (bench
- * 2026-11-17: the tags read on 10 drawings went up on 5, on a dense flow
- * diagram from 0 to 18 of 38). The corner is the
+ * 2026-11-17, two runs: the values read on 10 drawings went up on 5 to 6
+ * of them, on a dense flow diagram from 1 to 20 and 22 of 40). The
+ * corner is the
  * box of the Reader `drawing-pdf` (its options in force reach the step as
  * `state.readerOptions`), so a site that set its box gets the same crop.
  * The kind is the one stored in the file's database (`request.kind`): a
@@ -159,10 +160,12 @@ export const step: PipelineStep = async (req, job) => {
   const wide = await withPdf(await job.bytes(), {}, async ({ doc }) => {
     const out: boolean[] = [];
     for (let n = 1; n <= Math.min(pagesOf(req.options), doc.numPages); n++) {
-      const page = await doc.getPage(n);
-      const shown = page.getViewport({ scale: 1 });
-      out.push(shown.width >= shown.height);
-      page.cleanup();
+      // A page pdfjs cannot load is taken as wide: its drawing fails below,
+      // and the run says which page.
+      const page = await doc.getPage(n).catch(() => null);
+      const shown = page?.getViewport({ scale: 1 });
+      out.push(!shown || shown.width >= shown.height);
+      page?.cleanup();
     }
     return out;
   }).catch(() => null);
@@ -182,6 +185,8 @@ export const step: PipelineStep = async (req, job) => {
     scale,
     maxSide: MAX_SIDE,
     maxBytes: PICTURE_MAX_BYTES,
+    // A CAD sheet exported as one large picture is drawn, not white.
+    largeImages: true,
   });
   const warnings: string[] = [];
 

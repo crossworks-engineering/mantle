@@ -35,7 +35,7 @@ import {
 import { readerPassOf, readerTextOf } from '@mantle/content/reader-passes';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { step } from '@mantle/tracing';
-import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
+import { errorMessage, providerErrorStatus, publicProviderErrorMessage } from '@mantle/std';
 
 /** The parser codes that are about the document, not the reader's load. */
 const PARSER_COUNTED = new Set(['too_large', 'timeout', 'crashed']);
@@ -83,8 +83,8 @@ export async function runVisionWorker(opts: {
   maxTokens?: number;
   /** Ask for the least thinking (a reading task under a tight answer cap). */
   leastThinking?: boolean;
-  /** Calls at most: 2 asks one time more when the provider failed (a
-   *  timeout, a stall). A read of many pictures in a row stops at its
+  /** Calls at most: 2 asks one time more when the provider failed with no
+   *  status or a 5xx (a timeout, a stall, a dropped line; never a 4xx). A read of many pictures in a row stops at its
    *  first failed call, so one slow answer lost the rest of a sheet (dev
    *  2026-11-17: 23 of 112 pieces of a flow diagram). At most one paid call
    *  more. Default 1. */
@@ -129,7 +129,15 @@ export async function runVisionWorker(opts: {
       ...(opts.leastThinking ? { leastThinking: true } : {}),
     });
   try {
-    const r = await (opts.tries === 2 ? call().catch(() => call()) : call());
+    // One time more only where a second call can help: no answer in time,
+    // the line dropped, or the provider's own fault (5xx). A refusal (4xx:
+    // a bad key, a rate limit, a bad request) is not asked again.
+    const again = (err: unknown) => {
+      const status = providerErrorStatus(err);
+      if (status !== undefined && status < 500) throw err;
+      return call();
+    };
+    const r = await (opts.tries === 2 ? call().catch(again) : call());
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';
     // The call's spend (tokens, cost from the price table) was recorded by the

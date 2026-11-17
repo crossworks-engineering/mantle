@@ -24,7 +24,8 @@ import { db, nodes } from '@mantle/db';
 /** Put `text` on the file node as the text of the Agent `pipelineId`, or
  *  take that Agent's text out when `text` is ''. Only while the node still
  *  holds the bytes `sha256` the tabs were read from: new bytes in between
- *  get no text of the old ones. True when a row changed. */
+ *  get no text of the old ones. True when the text changed: the same text
+ *  again (a run that paid nothing) writes no row. */
 export async function writeAgentText(
   ownerId: string,
   nodeId: string,
@@ -47,6 +48,7 @@ export async function writeAgentText(
           eq(nodes.id, nodeId),
           eq(nodes.ownerId, ownerId),
           sql`${nodes.data}->>'sha256' = ${sha256}`,
+          sql`coalesce(${nodes.data}->'agent_text'->>${pipelineId}::text, '') <> ${text}::text`,
           // The name-only mode keeps no text of the file's content.
           sql`coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`,
         ),
@@ -55,6 +57,10 @@ export async function writeAgentText(
     return rows.length > 0;
   });
 }
+
+/** The heading of the Agents' text in a file's passages: the passages of
+ *  it are of this section, not of the body's last heading. */
+export const AGENT_TEXT_HEADING = '# Read by the Agents';
 
 /** The text of every Agent on the file node now, by Agent id, for the
  *  file's passages: '' when it has none. Read at the write of the

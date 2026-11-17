@@ -41,6 +41,7 @@ import {
   pageRenderScale,
   rasterizePdfToPngs,
   renderPdfWindows,
+  windowsImageCapOf,
 } from './rasterize';
 
 /** An all-zero RGB image, compressed a megabyte at a time so the raw samples
@@ -435,14 +436,27 @@ describe('the pictures of pages: a larger image cap, and a blank picture says so
     expect(imageCapOf(1e12)).toBe(PDF_WINDOW_MAX_IMAGE_PIXELS);
   });
 
+  it('only windows that ask for large images open with the window cap', () => {
+    expect(windowsImageCapOf([{ pageNumber: 1, scale: 1 }])).toBe(PDF_MAX_IMAGE_PIXELS);
+    expect(windowsImageCapOf([{ pageNumber: 1, scale: 1, largeImages: true }])).toBe(
+      PDF_WINDOW_MAX_IMAGE_PIXELS,
+    );
+    expect(
+      windowsImageCapOf([
+        { pageNumber: 1, scale: 1 },
+        { pageNumber: 1, scale: 1, largeImages: true },
+      ]),
+    ).toBe(PDF_WINDOW_MAX_IMAGE_PIXELS);
+  });
+
   it('a page whose only content is an image past the window cap draws blank, and says so', async () => {
     const huge = await zeroImage(16_000);
     expect(huge.width * huge.height).toBeGreaterThan(PDF_WINDOW_MAX_IMAGE_PIXELS);
     // A caption of one space: text with no ink, so the image is all.
     const pdf = imagePagePdf({ caption: ' ', images: [huge] });
     const [whole, half] = await renderPdfWindows(pdf, [
-      { pageNumber: 1, scale: 1 },
-      { pageNumber: 1, scale: 1, box: [0, 0, 0.55, 1] },
+      { pageNumber: 1, scale: 1, largeImages: true },
+      { pageNumber: 1, scale: 1, box: [0, 0, 0.55, 1], largeImages: true },
     ]);
     expect(whole?.blank).toBe(true);
     expect(half?.blank).toBe(true);

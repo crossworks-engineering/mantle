@@ -99,6 +99,8 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
     expect(after.data.agent_text).toEqual({ 'pdf-sheet-read': text });
     expect(new Date(after.updated_at).getTime()).toBe(new Date(before.updated_at).getTime());
     expect(await found(id, 'FV-1001')).toBe(true);
+    // The same text again changes nothing: no row is written.
+    expect(await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', text))).toBe(false);
     // A second Agent beside it; '' takes one out.
     await extract(() =>
       writeAgentText(owner, id, SHA, 'iso-title-block', 'Title block\nSheet: 1 of 2'),
@@ -144,6 +146,10 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
     expect(text).toContain('made-up body');
     expect(text).toContain('FV-1001');
     expect(text).toContain('1 of 2');
+    const heads = await x<{ h: string | null }>(
+      sql`select heading_path as h from content_chunks where node_id = ${id} and text like '%FV-1001%'`,
+    );
+    expect(heads.map((r) => r.h)).toEqual(['Read by the Agents']);
     expect(m.takeActorMisses()).toEqual([]);
   });
 

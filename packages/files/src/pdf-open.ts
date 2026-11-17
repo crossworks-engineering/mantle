@@ -54,18 +54,24 @@ import path from 'node:path';
 export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
 
 /**
- * The largest embedded image a picture of a page decodes
- * (`renderPdfWindows`), in pixels. A CAD sheet exported as one picture at
- * 40 dots a millimetre (1016 DPI) is about 100 M on A4 (11880 x 8400): past
- * the cap above, pdfjs drops it, and the page draws white. A picture is
- * drawn in a process the job can kill (the parser's pictures child), so an
- * image too large for the memory there costs that picture only.
+ * The largest embedded image a picture of a page for the PDF Agent decodes
+ * (`renderPdfWindows` with `largeImages`), in pixels. A CAD sheet exported
+ * as one picture at 40 dots a millimetre (1016 DPI) is about 100 M on A4
+ * (11880 x 8400): past the cap above, pdfjs drops it, and the page draws
+ * white. Such a picture is drawn in a process the job can kill (the
+ * parser's pictures child).
  *
  * Measured in the parser image under a 2 GB limit (bench, 2026-11-17): such
  * an A4 sheet (RGB with a soft mask of the same size) drawn at 200 DPI rose
  * from 69 MB to 1.49 GB at the peak, in 5.8 s; the whole page and its two
- * halves in one process stayed under the limit (pdfjs keeps the decoded
- * image for the windows of the same page).
+ * halves in one process stayed under the limit (`renderPdfWindows` keeps a
+ * page, and its decoded images, for the windows of it one after the
+ * other). A kill of the child for memory loses its picture and those after
+ * it in the same child: the run that asked fails, and says which page.
+ *
+ * Only `renderPdfWindows` opens with it, and only for windows that ask
+ * (`PageWindow.largeImages`: the PDF Agent's sheet read). The Reader's eye
+ * and pieces, and every other open, keep `PDF_MAX_IMAGE_PIXELS` or lower.
  */
 export const PDF_WINDOW_MAX_IMAGE_PIXELS = 100_000_000;
 
