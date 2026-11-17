@@ -204,8 +204,11 @@ describe('the paid ask of an Agent', () => {
         'ownerId',
         'prompt',
         'systemPrompt',
+        'tries',
       ].sort(),
     );
+    // One call more when the provider failed (runVisionWorker).
+    expect(calls[0]!.tries).toBe(2);
   });
 
   it('an ask with the list part: its system text, its question, the larger cap, and the list as data', async () => {
