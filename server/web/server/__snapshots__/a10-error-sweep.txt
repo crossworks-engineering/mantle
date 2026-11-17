@@ -2,7 +2,7 @@
 # owner with its valid body, and a forced failure at the database. Recorded BEFORE
 # the move (A10_ERROR_SWEEP_RECORD=1); a10-error-sweep.test.ts reads it back and
 # holds every cell to it, or to a named change.
-# cells: 1314
+# cells: 1305
 GET /api/agents plain => 500 application/json {"error":"internal error"}
 GET /api/agents db => 500 application/json {"error":"internal error"}
 GET /api/agents scope => 403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
@@ -849,15 +849,6 @@ POST /api/mcp-status tree-conflict => 200 application/json {"ok":false,"status":
 POST /api/mcp-status tree-invalid => 200 application/json {"ok":false,"status":0,"message":"Could not reach http://localhost:3000/api/mcp — sweep: no network"}
 POST /api/mcp-status tree-gone => 200 application/json {"ok":false,"status":0,"message":"Could not reach http://localhost:3000/api/mcp — sweep: no network"}
 POST /api/mcp-status tree-visibility => 200 application/json {"ok":false,"status":0,"message":"Could not reach http://localhost:3000/api/mcp — sweep: no network"}
-GET /api/microsoft/oauth/callback plain => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback db => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback scope => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback busy => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback tree-not-found => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback tree-conflict => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback tree-invalid => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback tree-gone => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
-GET /api/microsoft/oauth/callback tree-visibility => 307 - location=http://localhost:3000/settings/microsoft?error=Invalid+or+expired+sign-in+attempt.+Please+try+again. 
 GET /api/model-pools plain => 500 application/json {"error":"internal error"}
 GET /api/model-pools db => 500 application/json {"error":"internal error"}
 GET /api/model-pools scope => 403 application/json {"error":"forbidden","reason":"item-workspace","code":"forbidden","message":"You cannot change this item in your workspaces."}
