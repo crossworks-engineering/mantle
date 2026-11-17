@@ -174,12 +174,11 @@ export const step: PipelineStep = async (req, job) => {
     }
     return out;
   }).catch(() => null);
-  // A run that cannot draw a whole page or the corner ends `failed`:
-  // nothing is asked or written, so the paid rows of a run before stay as
-  // they are (the time ran out, the child was stopped, pdfjs cannot draw
-  // the page). The trace says why. A page pdfjs can never draw keeps this
-  // Agent off the file until a person lowers the option `pages`. A half
-  // that is not drawn is a warning: the whole page is read.
+  // A run that cannot draw a picture of a page that is there ends
+  // `failed`: nothing is asked or written, so the paid rows of a run before
+  // stay as they are (the time ran out, the child was stopped, pdfjs cannot
+  // draw the page). The trace says why. A page pdfjs can never draw keeps
+  // this Agent off the file until a person lowers the option `pages`.
   const failed = (why: string) => ({ status: 'failed' as const, warnings: [why] });
   if (!shapes || shapes.length === 0) return failed('The file could not be opened.');
   const readerOptions =
@@ -196,36 +195,31 @@ export const step: PipelineStep = async (req, job) => {
   });
   const warnings: string[] = [];
 
-  // One draw, in the order of the asks: page 1 whole and its corner, the
-  // whole of each page after it, then the halves of each page. A run that
-  // runs out of time loses halves first. The title block is asked first:
-  // a dense page's list may fail its ask, and a failed ask stops the asks
-  // after it.
-  type Ask = { key: string; page: number; list: boolean; half?: true };
+  // One draw, page by page (the pictures of a page one after the other, so
+  // its images are decoded one time): each page whole, page 1's corner,
+  // then the page's two halves.
+  type Ask = { key: string; page: number; list: boolean; order: number };
   const page1 = shapes[0]!;
-  const asks: Ask[] = [
-    { key: 'page-1', page: 1, list: true },
-    { key: 'page-1-title-block', page: 1, list: false },
-  ];
-  const windows = [
-    picture(1, PAGE_DPI / 72),
-    picture(1, CORNER_DPI / 72, cornerOf(page1.widthMm, page1.heightMm, box)),
-  ];
-  for (let n = 2; n <= shapes.length; n++) {
-    asks.push({ key: `page-${n}`, page: n, list: true });
-    windows.push(picture(n, PAGE_DPI / 72));
-  }
+  const asks: Ask[] = [];
+  const windows: ReturnType<typeof picture>[] = [];
   for (const [i, shape] of shapes.entries()) {
+    const n = i + 1;
+    asks.push({ key: `page-${n}`, page: n, list: true, order: 1 });
+    windows.push(picture(n, PAGE_DPI / 72));
+    if (n === 1) {
+      asks.push({ key: 'page-1-title-block', page: 1, list: false, order: 0 });
+      windows.push(picture(1, CORNER_DPI / 72, cornerOf(page1.widthMm, page1.heightMm, box)));
+    }
     for (const [h, half] of halvesOf(shape.wide).entries()) {
-      asks.push({ key: `page-${i + 1}-half-${h + 1}`, page: i + 1, list: true, half: true });
-      windows.push(picture(i + 1, PAGE_DPI / 72, half));
+      asks.push({ key: `page-${n}-half-${h + 1}`, page: n, list: true, order: 2 });
+      windows.push(picture(n, PAGE_DPI / 72, half));
     }
   }
   const drawn = await job.pdfPictures(windows, job.deadline);
-  const lost = asks.findIndex((a, i) => !drawn[i] && !a.half);
+  const lost = asks.findIndex((_, i) => !drawn[i]);
   if (lost >= 0) {
     return failed(
-      lost === 1
+      asks[lost]!.order === 0
         ? 'The title block of page 1 could not be drawn.'
         : `Page ${asks[lost]!.page} could not be drawn.`,
     );
@@ -257,14 +251,10 @@ export const step: PipelineStep = async (req, job) => {
       input: { picture: file, fields, page: ask.page, ...(ask.list ? { list: true } : {}) },
     });
   };
-  // The title block first, then the asks in the order drawn.
-  await add(asks[1]!, drawn[1]!);
-  await add(asks[0]!, drawn[0]!);
-  for (const [i, ask] of asks.entries()) {
-    if (i < 2) continue;
-    const p = drawn[i];
-    if (p) await add(ask, p);
-    else warnings.push(`The picture ${ask.key} could not be drawn, and is not read.`);
-  }
+  // The asks: the title block first, then each page whole, then the
+  // halves. A dense page's list may fail its ask, and a failed ask stops
+  // the asks after it; the picture budget is spent in the same order.
+  const order = asks.map((_, i) => i).sort((a, b) => asks[a]!.order - asks[b]!.order || a - b);
+  for (const i of order) await add(asks[i]!, drawn[i]!);
   return { status: 'ok', calls, ...(warnings.length > 0 ? { warnings } : {}) };
 };

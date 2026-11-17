@@ -1108,8 +1108,8 @@ halves of each page. A failed ask stops the asks after it, and the list of
 a dense page is the ask most likely to fail. The step counts the pages of
 the file and reads the size of each on paper (pdfjs, in the job, nothing
 drawn), so it draws only pages that are there. It draws all the pictures in
-one call of the child, in the same order (page 1 whole and its corner
-first): a run that runs out of time loses halves first.
+one call of the child, page by page (each page whole, page 1's corner, then
+the page's halves), so the images of a page are decoded one time.
 
 **The halves.** A half is 55 percent of the page across its long side
 (`HALF`): left and right of a wide page, top and bottom of a tall one. The
@@ -1162,10 +1162,10 @@ An image past 100 M still draws white, and its picture is blank: never
 asked. A kill of the child for memory loses its picture and those after it:
 the run fails, and says which page.
 
-**A picture that is not drawn.** A half that gives no picture is a
-warning: the whole page is read. When a whole page or the corner gives no
-picture (the time ran out, the child was stopped, pdfjs cannot draw it), or
-the file does not open, the step ends `failed`: nothing is asked and nothing is
+**A picture that is not drawn.** When a picture of a page that is there
+(the page whole, a half, the corner) is not drawn (the time ran out, the
+child was stopped, pdfjs cannot draw it), or the file does not open, the
+step ends `failed`: nothing is asked and nothing is
 written, so the paid rows of a run before stay as they are. The trace says
 which page. A page pdfjs can never draw keeps the Agent off that file until
 an Admin lowers the option `pages`. That option is on the box: it cuts the

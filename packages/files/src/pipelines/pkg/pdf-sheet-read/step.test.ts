@@ -140,20 +140,20 @@ describe('the step of pdf-sheet-read', () => {
       page(3, 'page-3-half-1'),
       page(3, 'page-3-half-2'),
     ]);
-    // One draw: page 1 whole and its corner, each page after it whole,
-    // then the halves of each page (a run out of time loses halves first).
-    expect(drawn.map((w) => w.map((x) => x.pageNumber))).toEqual([[1, 1, 2, 3, 1, 1, 2, 2, 3, 3]]);
+    // One draw, page by page (a page's images are decoded one time): each
+    // page whole, page 1's corner, then the page's halves.
+    expect(drawn.map((w) => w.map((x) => x.pageNumber))).toEqual([[1, 1, 1, 1, 2, 2, 2, 3, 3, 3]]);
     // Every picture of the Agent may decode a large embedded image.
     expect(drawn[0]!.every((w) => w.largeImages === true)).toBe(true);
     expect(drawn[0]![0]).toMatchObject({ scale: PAGE_DPI / 72, maxSide: MAX_SIDE });
     expect(drawn[0]![1]).toMatchObject({ scale: CORNER_DPI / 72, maxSide: MAX_SIDE });
     // The halves of a wide sheet: left and right, a tenth of it in both.
-    expect(drawn[0]!.slice(4, 6).map((w) => w.box)).toEqual([
+    expect(drawn[0]!.slice(2, 4).map((w) => w.box)).toEqual([
       [0, 0, HALF, 1],
       [1 - HALF, 0, 1, 1],
     ]);
-    expect(drawn[0]![2]!.box).toBeUndefined();
-    expect(drawn[0]![4]).toMatchObject({ scale: PAGE_DPI / 72, maxSide: MAX_SIDE });
+    expect(drawn[0]![4]!.box).toBeUndefined();
+    expect(drawn[0]![2]).toMatchObject({ scale: PAGE_DPI / 72, maxSide: MAX_SIDE });
     // The corner is the default box of drawing-pdf (190 x 70 mm) on an A3.
     const [x0, y0, x1, y1] = drawn[0]![1]!.box!;
     expect([x0, y0, x1, y1].map((v) => Math.round(v * 1000))).toEqual([548, 764, 1000, 1000]);
@@ -275,7 +275,7 @@ describe('the step of pdf-sheet-read', () => {
   it('the option pages caps the pages drawn', async () => {
     const { job, drawn } = jobOf(drawingPdf(3));
     const result = await step(request('scan', { pages: 2 }), job);
-    expect(drawn[0]!.map((w) => w.pageNumber)).toEqual([1, 1, 2, 1, 1, 2, 2]);
+    expect(drawn[0]!.map((w) => w.pageNumber)).toEqual([1, 1, 1, 1, 2, 2, 2]);
     expect(inputs(result.calls).map((c) => c.key)).toEqual([
       'page-1-title-block',
       'page-1',
@@ -337,17 +337,13 @@ describe('the step of pdf-sheet-read', () => {
         lossyJob(three, (w) => w.box !== undefined),
       ),
     ).toEqual({ status: 'failed', warnings: ['The title block of page 1 could not be drawn.'] });
-    // A half that is lost is a warning: the whole page is read.
-    const half = await step(
-      request('scan'),
-      lossyJob(three, (w) => w.pageNumber === 2 && w.box !== undefined),
-    );
-    expect(half.status).toBe('ok');
-    expect(half.calls).toHaveLength(8);
-    expect(half.warnings).toEqual([
-      'The picture page-2-half-1 could not be drawn, and is not read.',
-      'The picture page-2-half-2 could not be drawn, and is not read.',
-    ]);
+    // A half that is lost is its page's.
+    expect(
+      await step(
+        request('scan'),
+        lossyJob(three, (w) => w.pageNumber === 2 && w.box !== undefined),
+      ),
+    ).toEqual({ status: 'failed', warnings: ['Page 2 could not be drawn.'] });
   });
 
   it('the asks of a file stay under its cap: three a page, page 1 one more', async () => {
