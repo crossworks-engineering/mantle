@@ -8,8 +8,8 @@
  * the warning of the row cap itself.
  *
  * A row comes in the order of the shape's columns (Text, Page, Layer, X,
- * Y), a missing column as null, and is read by name, as the read in the
- * core gave it before the move.
+ * Y, Region), a missing column as null, and is read by name, as the read in
+ * the core gave it before the move.
  */
 import { FILE_TABS_WRITE, type PipelineStep } from '../../contract';
 import { SHAPES } from '../../shapes';

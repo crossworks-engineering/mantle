@@ -74,6 +74,7 @@ import {
   type PipelineState,
 } from './pipeline-state';
 import {
+  pdfNodeVisionOf,
   pdfReadAgainOf,
   readerStateOf,
   routePdf,
@@ -226,7 +227,7 @@ async function readRouted(
   bytes: Buffer,
   ext: string,
   options: Readonly<Record<string, unknown>>,
-  opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'count' | 'pipelines'>,
+  opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'pdfNodeVision' | 'count' | 'pipelines'>,
 ): Promise<ParsedFile> {
   const named: PdfStored & { facts?: Record<string, unknown> } =
     opts.pdfStored ?? (await routePdf(router, bytes, options, opts.pdfKind));
@@ -248,7 +249,7 @@ async function readRouted(
   // not await it.
   return packagedSheets(reader, bytes, ext, options, {
     kind,
-    state: readerStateOf(decision, body !== undefined),
+    state: readerStateOf(decision, body !== undefined, opts.pdfNodeVision === true),
     ...(body ? { body } : {}),
   });
 }
@@ -343,6 +344,9 @@ type ParseOpts = {
   /** A PDF read again: its stored kind and decision (the File tab). The
    *  router does not run and no model is asked. */
   pdfStored?: PdfStored;
+  /** A PDF whose node holds the text of an older whole-page vision read
+   *  (pdfNodeVisionOf): the reader's File tab says `node text only`. */
+  pdfNodeVision?: boolean;
   /** The reader's options (pipelineStateOf). Left out: the defaults. */
   options?: Readonly<Record<string, unknown>>;
   /** A real read (an upload, a run on demand, a re-read): the run of the
@@ -692,15 +696,20 @@ export async function buildFileDatabase(args: {
   // PDF set"): it works from the stored state of these bytes, read once and
   // fail closed (pdfReadAgainOf), and writes only when that state did not
   // change and the new read is not poorer.
-  let again: { stored: StoredPdf | null; since: FileStamp | null } | undefined;
+  let again:
+    | { stored: StoredPdf | null; since: FileStamp | null; reroute: boolean }
+    | undefined;
   if (!args.parsed && pipelines.routerFor(ext)) {
     const state = await pdfReadAgainOf(names);
     if (state.skip) return { status: 'skipped', reason: state.skip };
     again = state;
   }
-  const pdfStored: PdfStored | undefined = again?.stored
-    ? { kind: again.stored.kind, decision: again.stored.decision }
-    : undefined;
+  // A kind from older rules is named again by the router (no ask).
+  const pdfStored: PdfStored | undefined =
+    again?.stored && !again.reroute
+      ? { kind: again.stored.kind, decision: again.stored.decision }
+      : undefined;
+  const pdfNodeVision = again ? await pdfNodeVisionOf(fileId) : false;
   // A read here takes the box's options of the reader.
   const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext, pipelines);
   const parsed =
@@ -709,6 +718,7 @@ export async function buildFileDatabase(args: {
       pipelines,
       ...(options ? { options } : {}),
       ...(pdfStored ? { pdfStored } : {}),
+      ...(pdfNodeVision ? { pdfNodeVision } : {}),
       count: { ownerId, fileId },
     }));
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {

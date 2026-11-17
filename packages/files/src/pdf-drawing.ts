@@ -50,8 +50,9 @@ const SAMPLE_MAX_PAGES = 3;
 export const DRAWING_MAX_PAGES = 5000;
 /**
  * The most rows one read lists, all pages together: words, tags, line
- * numbers and markups. The answer and the database hold each as a row; the
- * fullest P&ID sheet measured holds about 1,500 words and 200 tags. A page
+ * numbers, markups and segments. The answer and the database hold each as a
+ * row; the fullest P&ID sheet measured holds about 1,500 words and 200 tags,
+ * and a drawing with its text as strokes about 83,000 segments. A page
  * whose rows would pass it has no rows, and says so (`rows_not_listed`).
  */
 export const DRAWING_MAX_ROWS = 300_000;
@@ -109,9 +110,11 @@ export type PdfDrawingPage = PageFacts & {
   eye: PageEye | null;
   /**
    * The page's words, tags, line numbers and markups (./pdf-rows.ts), for a
-   * page with text or markups that is not a document page. Left out for a
-   * document page, a page with no text read, and a page past the file's
-   * word cap (its `notes` say so).
+   * page with text or markups, and the segments of a drawn page with no
+   * text layer. Every page of a file that gets a database has them, a typed
+   * page too, so the Texts tab holds the whole file. Left out for every
+   * page of a `document` (its words are the file's text), a page with no
+   * text read, and a page past the file's row cap (its `notes` say so).
    */
   rows?: PageRows;
 };
@@ -179,15 +182,23 @@ export async function readPdfDrawing(
     },
     (p) => {
       const facts = pageFacts(p);
-      // A typed page of a document gives no rows: its words are the file's
-      // text already. Every other page with text or markups gives its rows,
-      // inside the file's word cap.
-      const rows =
-        pageKindOf(facts) === 'document' ? null : pageRows(p, undefined, opts.titleBlock);
-      if (rows && rows.words.length + rows.markups.length > 0) {
+      // Every page with text, markups or (a drawn page with no text layer)
+      // segments gives its rows, inside the file's row cap. A typed page
+      // too: when the file is not a document, its database holds the whole
+      // file. A document's rows are dropped below.
+      const rows = pageRows(p, undefined, opts.titleBlock);
+      if (rows && facts.class === 'vector_no_text' && p.status === 'ok') {
+        rows.segments = p.segments;
+      }
+      const segments = rows?.segments?.length ?? 0;
+      if (rows && rows.words.length + rows.markups.length + segments > 0) {
         // Every row counts: one word can give many tags (a slash list).
         const count =
-          rows.words.length + rows.tags.length + rows.lines.length + rows.markups.length;
+          rows.words.length +
+          rows.tags.length +
+          rows.lines.length +
+          rows.markups.length +
+          segments;
         const chars =
           rows.words.reduce((n, w) => n + w.text.length, 0) +
           rows.markups.reduce((n, m) => n + m.text.length + m.author.length, 0);
@@ -257,20 +268,22 @@ export async function readPdfDrawing(
     const eye = eyes.get(f.page) ?? null;
     // What the other pictures say is for a page that was never looked at.
     // A page that was asked about and got no answer (its picture could not
-    // be drawn, or showed nothing) is not known: it stays unsure.
-    const kind = pageKindOf(f, eye, asked.has(f.page) ? null : rasterDefault);
+    // be drawn, or showed nothing) is not known: it stays unsure. A page
+    // that reads as blank in a file with an image too large to open is a
+    // picture of a page: the image is most likely on it (a sheet that is
+    // one large picture).
+    const kindOf = (e: PageEye | null, others: PageKind | null): PageKind =>
+      largeImageNotRead && f.class === 'blank' ? 'scan' : pageKindOf(f, e, others);
+    const kind = kindOf(eye, asked.has(f.page) ? null : rasterDefault);
     // `other_pages` only when they changed the answer: a large sheet is a
     // scan by its own size, and a page nothing could name stays unsure.
     const kindFrom: KindFrom = eye
       ? 'picture'
-      : kind !== pageKindOf(f, null, null)
+      : kind !== kindOf(null, null)
         ? 'other_pages'
         : 'rules';
-    // A raster page the pictures named a typed page gives no rows either.
-    const rows = kind === 'document' ? undefined : rowsOf.get(f.page);
-    return { ...f, kind, kindFrom, eye, ...(rows ? { rows } : {}) };
+    return { ...f, kind, kindFrom, eye };
   });
-  markTemplates(pages.map((p) => p.rows));
   // Whether the reader left nothing out: every page has a row, every row
   // was read whole, no image was too large to open (its page then counts as
   // blank, or as its text alone), no page reads as empty while it draws
@@ -292,6 +305,15 @@ export async function readPdfDrawing(
     pages.map((p) => p.kind),
     allRead,
   );
+  // A document gets no database: its words are the file's text. Every
+  // other file keeps the rows of all its pages.
+  if (kind !== 'document') {
+    for (const p of pages) {
+      const rows = rowsOf.get(p.page);
+      if (rows) p.rows = rows;
+    }
+    markTemplates(pages.map((p) => p.rows));
+  }
   return {
     numPages: read.numPages,
     pageCountMayBeShort: read.pageCountMayBeShort,

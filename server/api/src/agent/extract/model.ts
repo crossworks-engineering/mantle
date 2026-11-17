@@ -13,6 +13,8 @@ import {
   type ExtractorParams,
 } from '@mantle/db';
 import { step } from '@mantle/tracing';
+import { fileDbSqlitePath, isFileSha256, pdfKindNote } from '@mantle/files';
+import { storedPdfOf } from '@mantle/content/pdf-read';
 import { backgroundFence, withFenceNote } from '@mantle/std';
 import { chatWithFailover, resolveChatRoutes, type ChatRoutes } from '@mantle/runtime/agent';
 import { type ChatResult } from '@mantle/voice';
@@ -104,15 +106,37 @@ export async function probeExtractionModel(ownerId: string): Promise<void> {
 // ─── Entity reconciliation ──────────────────────────────────────────────────
 
 /**
+ * The kind of a PDF file node as its database names it, in one sentence
+ * (`A piping isometric.`, pdfKindNote), or null: not a PDF with a database
+ * of its bytes, or `unsure`, which says nothing. A fact for the summary
+ * (buildExtractorInput), read with no model from the File tab.
+ */
+export async function pdfKindFactOf(node: {
+  id: string;
+  type: string;
+  data: unknown;
+}): Promise<string | null> {
+  if (node.type !== 'file') return null;
+  const sha = (node.data as Record<string, unknown> | null)?.sha256;
+  if (!isFileSha256(sha)) return null;
+  const abs = await fileDbSqlitePath(node.id, sha);
+  const file = abs ? await storedPdfOf(abs) : null;
+  return file && file.kind !== 'unsure' ? pdfKindNote(file.kind) : null;
+}
+
+/**
  * The extractor's model input: its system prompt, the node's type, and its
  * title and body (the first 8000 characters) fenced as untrusted. Pure, so the prompt can be pinned
- * (background-prompts.test.ts).
+ * (background-prompts.test.ts). `pdfKind`: a PDF drawing's kind as its read
+ * names it (pdfKindFactOf), a fact the summary keeps; it is ours, so it
+ * stays outside the fence.
  */
 export function buildExtractorInput(
   workerSystemPrompt: string | null | undefined,
   node: { title: string; type: string },
   body: string,
   fence = backgroundFence(),
+  pdfKind: string | null = null,
 ): { system: string; user: string } {
   // Tables get a targeted L2 brief: the body is already profile + leading
   // rows (built at commit), so steer the summary toward what the table
@@ -122,7 +146,9 @@ export function buildExtractorInput(
       ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
       : node.type === 'present'
         ? 'This is a Present canvas (a deck, a diagram or a dashboard; its visible text follows). In the summary say what it is, who it is for and what it shows.\n\n'
-        : '';
+        : pdfKind
+          ? `This is a PDF drawing. Its read with no model names its kind: ${pdfKind} In the summary name it by this kind, and do not call it another kind of drawing.\n\n`
+          : '';
   // The node's title and text came from outside (an email subject and body,
   // a fetched page, an upload's filename, other people's words): both are
   // fenced (markers carrying a per-call nonce), their forged markers
@@ -166,6 +192,8 @@ export async function runExtractorModel(
     worker.systemPrompt,
     node,
     body,
+    undefined,
+    await pdfKindFactOf(node),
   );
 
   // Shape-hash gate (Tables v2 §6): commitTable KEEPS data.summary when

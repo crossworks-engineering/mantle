@@ -6,8 +6,9 @@
  *
  * Nothing is dropped. Every word is a row. A token of the wide tag shape
  * (`TAG_LIKE`) ends in exactly one place: an instrument tag, an equipment
- * tag, a line number, or `rejected` (it has the shape and fits no pattern),
- * and the page's account holds the four counts, which add up. Text of the
+ * tag, a line number, `rejected` (it has the shape and fits no pattern), or
+ * `inTable` (a tag's shape in a cell of a table: an item code, not a tag),
+ * and the page's account holds the five counts, which add up. Text of the
  * drawing's frame is flagged by a region, never left out: real tags sit at
  * the edge of a sheet too.
  *
@@ -15,7 +16,7 @@
  * page, origin top left.
  */
 
-import type { Annotation, Box, PagePrimitives } from './pdf-primitives';
+import type { Annotation, Box, PagePrimitives, Segment } from './pdf-primitives';
 import { bubblePairs, bubbleTags, runToken } from './pdf-kind';
 import {
   parseEquipmentTag,
@@ -32,10 +33,14 @@ import {
  * where a drawing's title block is (the box in force, {@link TITLE_BLOCK_MM}
  * by default); by position only, not by the block's own frame. `template`:
  * the same text at the same place on three or more pages of the file
- * ({@link markTemplates}). A flag for a reader to filter on; a tag in such a
- * place is still listed.
+ * ({@link markTemplates}). `table`: a cell of a column of a table or a list
+ * ({@link tableCells}). A flag for a reader to filter on; a tag in the title
+ * block or in template text is still listed. A code in a table is not a tag
+ * (an item code of a material list, a schedule, a grade): it stays a word,
+ * and the page's account counts it (`inTable`); a line number in a table is
+ * still listed.
  */
-export type Region = 'body' | 'title_block' | 'template';
+export type Region = 'body' | 'title_block' | 'template' | 'table';
 
 /** The corner taken as the title block: this wide and this high, in
  *  millimetres on paper, from the lower right corner of the shown page. */
@@ -128,7 +133,7 @@ export type MarkupRow = {
   besideBox: Box | null;
 };
 
-/** What became of the page's tokens. The first four add up to `tagLike`. */
+/** What became of the page's tokens. The first five add up to `tagLike`. */
 export type PageAccount = {
   words: number;
   /** Tokens of the wide tag shape. */
@@ -138,6 +143,9 @@ export type PageAccount = {
   asLine: number;
   /** Of the tag shape, and no pattern fits. */
   rejected: number;
+  /** Read as an instrument or an equipment tag, in a cell of a table
+   *  ({@link tableCells}): not a tag. */
+  inTable: number;
   /** Tokens that gave a tag or a line number and are not of the wide
    *  shape: a line number with an inch mark, a tag with a list after it, an
    *  instrument tag written with no dash. */
@@ -158,6 +166,11 @@ export type PageRows = {
   /** True when the page holds more markups than the pairing looks at
    *  ({@link BESIDE_MAX_PAIRS}): no row names the markup beside it. */
   markupsNotPaired?: boolean;
+  /** The line and curve segments of a drawn page with no text layer (class
+   *  `vector_no_text`: its text, if any, is drawn as strokes), which are
+   *  the page's only data. Set by the reader (./pdf-drawing.ts); left out
+   *  for every other page. */
+  segments?: readonly Segment[];
 };
 
 /**
@@ -224,9 +237,10 @@ function gapMm(a: Box, b: Box, widthMm: number, heightMm: number): number {
  * What one token is by the grammar (./pdf-tags.ts), as rows: instrument
  * tags, line numbers or equipment tags, one for each item of a list
  * (`PSV-101A/B` gives two), by the one order of trial ({@link tokenItems}).
- * `as` names which, or null when no pattern fits. The one place a token
- * becomes a row, for the words of a text layer, the text of a markup and
- * the text read off a scan.
+ * `as` names which, or null when no pattern fits. A token in a cell of a
+ * table (`inTable`) gives no tag: `as` is `inTable`; its line numbers are
+ * still rows. The one place a token becomes a row, for the words of a text
+ * layer, the text of a markup and the text read off a scan.
  */
 export function tokenRows(
   token: string,
@@ -234,15 +248,17 @@ export function tokenRows(
   source: RowSource,
   word: number,
   less: number,
+  inTable = false,
 ): {
   tags: TagRow[];
   lines: LineRow[];
-  as: 'asInstrument' | 'asLine' | 'asEquipment' | null;
+  as: 'asInstrument' | 'asLine' | 'asEquipment' | 'inTable' | null;
 } {
   const sure = (base: number) => Math.max(0, Math.round((base - less) * 100) / 100);
   const read = tokenItems(token);
   if (!read) return { tags: [], lines: [], as: null };
   const { kind, items } = read;
+  if (inTable && kind !== 'line') return { tags: [], lines: [], as: 'inTable' };
   if (kind === 'instrument') {
     return {
       tags: items.map((item) => {
@@ -307,6 +323,76 @@ export function tokenRows(
   };
 }
 
+/** Cells one column of a table needs, at least: the box and three more. */
+export const TABLE_MIN_CELLS = 4;
+/** Left edges this close, in millimetres on paper, line up. */
+export const TABLE_ALIGN_MM = 1;
+/** The most gap between two cells one under the other, in times the
+ *  height of the taller one. A table's rows are close; tags on a drawing
+ *  that line up by chance are far apart. */
+export const TABLE_GAP_HEIGHTS = 1.5;
+
+/**
+ * Which boxes are cells of a column of a table or a list: a box whose left
+ * edge lines up ({@link TABLE_ALIGN_MM}) with the left edges of others, one
+ * under the other on {@link TABLE_MIN_CELLS} lines or more, each gap at most
+ * {@link TABLE_GAP_HEIGHTS} times the taller box. Two checks: the edge, and
+ * the close stack. A material list, a schedule and a line class sheet have
+ * such columns; tags on a drawing are spread out. Boxes in the page frame
+ * (fractions of the shown page); a box on the same line as the one before
+ * it in a column (a word drawn twice) adds no line. Each box is sorted in two
+ * columns at most, so the cost is that of a sort.
+ */
+export function tableCells(boxes: readonly Box[], widthMm: number, heightMm: number): boolean[] {
+  const out = boxes.map(() => false);
+  const buckets = new Map<number, number[]>();
+  boxes.forEach((b, i) => {
+    const k = Math.floor((b[0] * widthMm) / TABLE_ALIGN_MM);
+    const list = buckets.get(k);
+    if (list) list.push(i);
+    else buckets.set(k, [i]);
+  });
+  const top = (i: number) => boxes[i]![1] * heightMm;
+  const bottom = (i: number) => boxes[i]![3] * heightMm;
+  for (const [k, here] of buckets) {
+    // This bucket and the next: edges within the alignment are in one pair.
+    const column = [...here, ...(buckets.get(k + 1) ?? [])].sort((a, b) => top(a) - top(b));
+    let run: number[] = [];
+    let lines = 0;
+    // The last line of the run: its top, its height, its lowest bottom.
+    let lineTop = 0;
+    let lineHigh = 0;
+    let lineBottom = 0;
+    const close = () => {
+      if (lines >= TABLE_MIN_CELLS) for (const i of run) out[i] = true;
+    };
+    for (const i of column) {
+      const t = top(i);
+      const b = bottom(i);
+      const h = Math.max(0, b - t);
+      if (lines > 0 && t - lineTop < 0.5 * Math.min(lineHigh, h)) {
+        // The same line (a word drawn twice): no new line.
+        run.push(i);
+        lineBottom = Math.max(lineBottom, b);
+        continue;
+      }
+      if (lines > 0 && t - lineBottom <= TABLE_GAP_HEIGHTS * Math.max(lineHigh, h)) {
+        run.push(i);
+        lines++;
+      } else {
+        close();
+        run = [i];
+        lines = 1;
+      }
+      lineTop = t;
+      lineHigh = h;
+      lineBottom = b;
+    }
+    close();
+  }
+  return out;
+}
+
 /**
  * The rows of one page. Null for a page with no text read (failed, over
  * its time, or over its glyph budget): it has no rows, and its Pages row
@@ -327,6 +413,7 @@ export function pageRows(
     asEquipment: 0,
     asLine: 0,
     rejected: 0,
+    inTable: 0,
     otherTagTokens: 0,
     fromLists: 0,
     bubbles: 0,
@@ -336,8 +423,15 @@ export function pageRows(
   const lines: LineRow[] = [];
 
   /** Put one token in its place. `word` is -1 for a markup's text. */
-  const place = (token: string, box: Box, source: RowSource, word: number, less: number) => {
-    const found = tokenRows(token, box, source, word, less);
+  const place = (
+    token: string,
+    box: Box,
+    source: RowSource,
+    word: number,
+    less: number,
+    inTable = false,
+  ) => {
+    const found = tokenRows(token, box, source, word, less, inTable);
     tags.push(...found.tags);
     lines.push(...found.lines);
     // The account is of the page's own tokens: the words of its text layer.
@@ -346,6 +440,10 @@ export function pageRows(
     if (shaped) account.tagLike++;
     if (!found.as) {
       if (shaped) account.rejected++;
+      return;
+    }
+    if (found.as === 'inTable') {
+      account.inTable++;
       return;
     }
     if (shaped) account[found.as]++;
@@ -358,7 +456,6 @@ export function pageRows(
   p.texts.forEach((t, i) => {
     firstWord.set(t, words.length);
     for (const w of t.words) {
-      const at = words.length;
       words.push({
         line: i + 1,
         text: w.str,
@@ -369,9 +466,18 @@ export function pageRows(
         spaced: w.spaced,
         region: inTitleBlock(w.box) ? 'title_block' : 'body',
       });
-      const less = w.spaced ? CONFIDENCE.spacedLess : 0;
-      for (const token of tokensOf(w.str)) place(token, w.box, 'text', at, less);
     }
+  });
+  // The words in a column of a table, then each word's tokens in place.
+  const inTable = tableCells(
+    words.map((w) => w.box),
+    widthMm,
+    heightMm,
+  );
+  words.forEach((w, at) => {
+    if (inTable[at] && w.region === 'body') w.region = 'table';
+    const less = w.spaced ? CONFIDENCE.spacedLess : 0;
+    for (const token of tokensOf(w.text)) place(token, w.box, 'text', at, less, inTable[at]);
   });
   account.words = words.length;
 

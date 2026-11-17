@@ -26,6 +26,7 @@ import type { Box } from './pdf-primitives';
 import {
   CONFIDENCE,
   inTitleBlockCorner,
+  tableCells,
   TITLE_BLOCK_MM,
   tokenRows,
   type LineRow,
@@ -246,7 +247,8 @@ export type SketchPageRows = {
  * The rows of one page's read: a row a word (with its piece's box: the
  * model says what a piece holds, not where in it), the tags and line
  * numbers among them by the same grammar as a text layer, and a gap for
- * each piece with no text.
+ * each piece with no text. A piece in a column of a table (the same rule as
+ * a text layer's words, on the pieces' boxes: `tableCells`) gives no tag.
  */
 export function sketchPageRows(
   read: SketchPageRead,
@@ -255,14 +257,25 @@ export function sketchPageRows(
   titleBlock: TitleBlockMm = TITLE_BLOCK_MM,
 ): SketchPageRows {
   const out: SketchPageRows = { words: [], tags: [], lines: [], gaps: [] };
+  // The pieces with text, as boxes, for the table rule.
+  const withText = read.pieces.filter((piece) => piece.text !== null);
+  const cells = tableCells(
+    withText.map((piece) => piece.box),
+    widthMm,
+    heightMm,
+  );
+  const inTable = new Set(withText.filter((_, k) => cells[k]));
   read.pieces.forEach((piece, i) => {
     if (piece.text === null) {
       out.gaps.push({ box: piece.box, why: piece.asked ? 'no_text_read' : 'not_read' });
       return;
     }
+    const table = inTable.has(piece);
     const region = inTitleBlockCorner(piece.box, widthMm, heightMm, titleBlock)
       ? 'title_block'
-      : 'body';
+      : table
+        ? 'table'
+        : 'body';
     // `|` stands between the lines of one piece (the prompt asks for it).
     for (const str of piece.text.split(/[\s|]+/).filter(Boolean)) {
       const at = out.words.length;
@@ -277,7 +290,7 @@ export function sketchPageRows(
         region,
       });
       for (const token of tokensOf(str)) {
-        const found = tokenRows(token, piece.box, 'ocr', at, CONFIDENCE.ocrLess);
+        const found = tokenRows(token, piece.box, 'ocr', at, CONFIDENCE.ocrLess, table);
         out.tags.push(...found.tags);
         out.lines.push(...found.lines);
       }

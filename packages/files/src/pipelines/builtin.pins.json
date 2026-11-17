@@ -2,10 +2,13 @@
   "sheet@1.0.0": "615a78653a957bc7",
   "plan-mspdi@1.0.0": "4e5b10ee77cd3692",
   "pdf-router@1.0.0": "17a764bfb70ebeac",
+  "pdf-router@1.0.1": "17a764bfb70ebeac",
   "drawing-pdf@1.0.0": "1f4059ac375deb95",
+  "drawing-pdf@1.1.0": "1f4059ac375deb95",
   "plot-dwf@1.0.0": "f3f381a5b7455837",
   "drawing-cad@1.0.0": "789f8b02a979d0aa",
   "drawing-raster@1.0.0": "013571e0b60a75f1",
   "site-tags@1.0.0": "5d61a195892d9b4a",
+  "site-tags@1.0.1": "5d61a195892d9b4a",
   "iso-title-block@1.0.0": "b416b0c6751a2808"
 }

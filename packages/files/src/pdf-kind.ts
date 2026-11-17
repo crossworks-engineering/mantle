@@ -153,20 +153,46 @@ export function axisOf(deg: number): 'h' | 'v' | 'iso' | 'other' {
   return 'other';
 }
 
-/** Axis shares of straight segments, by length on paper. */
+/**
+ * A fill: a square of paper this many millimetres wide that holds
+ * {@link FILL_MIN_LINES} lines or more (each {@link AXIS_MIN_MM} long or
+ * longer, by the cell of its midpoint). A slanted line there is hatching, a
+ * solid logo or a filled symbol drawn as strokes, not a line of the
+ * drawing, and it does not count in `other`. Lines on the axes always
+ * count. Measure, 2026-11-17: a CAD isometric plotted as strokes, with a
+ * hatched logo, gave `other` 0.56 by length (all of it 45 and 135 degree
+ * fill lines) and `iso` 0.05; with the fill left out, `iso` 0.107 and
+ * `other` 0.083, the same for 6 to 12 lines a cell. A drawing with no fill
+ * does not change.
+ */
+export const FILL_CELL_MM = 10;
+export const FILL_MIN_LINES = 8;
+
+/** Axis shares of straight segments, by length on paper. A slanted line in
+ *  a fill ({@link FILL_CELL_MM}) is left out. */
 export function axisShares(
   segments: readonly Segment[],
   widthMm: number,
   heightMm: number,
 ): AxisShares {
   const sum = { h: 0, v: 0, iso: 0, other: 0 };
+  const long: { len: number; axis: ReturnType<typeof axisOf>; cell: string }[] = [];
+  const perCell = new Map<string, number>();
   for (const s of segments) {
     if (s.kind !== 'L') continue;
     const dx = (s.b[0] - s.a[0]) * widthMm;
     const dy = (s.b[1] - s.a[1]) * heightMm;
     const len = Math.hypot(dx, dy);
     if (len < AXIS_MIN_MM) continue;
-    sum[axisOf((Math.atan2(-dy, dx) * 180) / Math.PI)] += len;
+    const mx = ((s.a[0] + s.b[0]) / 2) * widthMm;
+    const my = ((s.a[1] + s.b[1]) / 2) * heightMm;
+    const cell = `${Math.floor(mx / FILL_CELL_MM)},${Math.floor(my / FILL_CELL_MM)}`;
+    perCell.set(cell, (perCell.get(cell) ?? 0) + 1);
+    long.push({ len, axis: axisOf((Math.atan2(-dy, dx) * 180) / Math.PI), cell });
+  }
+  for (const l of long) {
+    if (l.axis === 'other' && (perCell.get(l.cell) ?? 0) >= FILL_MIN_LINES) continue;
+    sum[l.axis] += l.len;
   }
   const longMm = sum.h + sum.v + sum.iso + sum.other;
   const share = (v: number) => (longMm > 0 ? Math.round((v / longMm) * 1000) / 1000 : 0);
@@ -535,7 +561,8 @@ export function pageKindOf(
 /**
  * The file's kind from its pages' kinds: the first of these that a page
  * has. One drawing page makes the file a drawing. A file is a `document`
- * only when no page says more AND the reader left nothing out: `allRead`,
+ * only when no page is a drawing, its pages are typed pages but for a few
+ * ({@link DOCUMENT_MIN_SHARE}), AND the reader left nothing out: `allRead`,
  * the caller's ONE fact for that (`readPdfDrawing`: every page has a row,
  * every row was read whole, no image was too large to open). What the
  * reader left out may be the drawing, so the file is `unsure`: it then gets
@@ -551,7 +578,28 @@ export const FILE_KIND_ORDER = [
   'document',
 ] as const;
 
+/**
+ * A file read whole whose pages are typed pages, but for a few the rules
+ * could not name, is a `document`: a report or a slide deck with a chart or
+ * a diagram in it. The share of `document` pages it needs, of all pages,
+ * when no page is a drawing. Measure, 2026-11-17: a 44-page typed document
+ * with 4 pages left unsure, and a 5-page slide deck with 1, were `unsure`;
+ * a 3-page set of 2 diagrams and 1 typed page stays `unsure`.
+ */
+export const DOCUMENT_MIN_SHARE = 0.75;
+
+const DRAWING_PAGE_KINDS: readonly PageKind[] = ['pid', 'isometric', 'scan', 'other_drawing'];
+
 export function fileKindOf(pageKinds: readonly PageKind[], allRead: boolean): PdfKind {
+  const documents = pageKinds.filter((k) => k === 'document').length;
+  if (
+    allRead &&
+    documents > 0 &&
+    documents >= DOCUMENT_MIN_SHARE * pageKinds.length &&
+    !pageKinds.some((k) => DRAWING_PAGE_KINDS.includes(k))
+  ) {
+    return 'document';
+  }
   for (const kind of FILE_KIND_ORDER) {
     if (!pageKinds.includes(kind)) continue;
     return kind === 'document' && !allRead ? 'unsure' : kind;
