@@ -136,7 +136,7 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
     expect(notices).toEqual([]);
   });
 
-  it('the setter takes the six kinds only, and a write mode of rw or ro', async () => {
+  it('the setter takes the five kinds only (no contact since 0378), and a write mode of rw or ro', async () => {
     const id = randomUUID();
     const good = [
       `login:rw:${id}`,
@@ -145,8 +145,6 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
       `assistant:${id}`,
       'assistant:none',
       'link',
-      'contact:rw',
-      'contact:ro',
       'system:worker:extract',
       `peer:${id}`,
     ];
@@ -155,6 +153,8 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
     }
     for (const [a, w] of [
       ['owner', 'rw'],
+      ['contact:rw', 'rw'],
+      ['contact:ro', 'ro'],
       ['system:', 'rw'],
       ['login:rw:x', 'rw'],
       ['system:x', 'rw!'],

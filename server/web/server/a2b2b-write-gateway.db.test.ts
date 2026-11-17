@@ -14,7 +14,7 @@
  *  - an Admin user's write request runs on the write role (F4), off too;
  *  - what the database refuses and the app would let through: off and warn
  *    report it and run it, on refuses it with a scope-write refusal (a 403);
- *  - assistant, link and contact actors with a write scope: on the role, a
+ *  - assistant and link actors with a write scope: on the role, a
  *    create in a workspace they moderate goes through, one with no
  *    Moderator of its home is refused; system work in the same scope stays
  *    on the system pool;
@@ -318,11 +318,10 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     expect(await titleOf(roNote)).toBe(`${tag} warn edit`);
   });
 
-  it('assistant, link and contact writes with a scope run on the write role; system work there does not', async () => {
+  it('assistant and link writes with a scope run on the write role; system work there does not', async () => {
     const actors = [
       { kind: 'assistant' as const, actor: { kind: 'assistant' as const, agentId: null } },
       { kind: 'link' as const, actor: { kind: 'link' as const } },
-      { kind: 'link' as const, actor: { kind: 'contact' as const, canWrite: true } },
     ];
     const create = (title: string) =>
       m.withNodeInsertHeads(owner, [{ type: 'note', path: 'notes' }], (tx) =>
@@ -332,15 +331,13 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
           .returning({ id: m.nodes.id, home: m.nodes.homeWs }),
       );
     // With the edit check on (pnpm test:edit-on, arch A3a) an assistant with
-    // no user and a public link write nothing: the read-only refusal; and a
-    // contact share with Can write writes its app's data only, no item
-    // (0294, A8 F9), refused with the same detail.
+    // no user and a public link write nothing: the read-only refusal.
     const editOn = process.env.MANTLE_TEST_EDIT_CHECK === 'on';
     for (const mode of ['warn', 'on'] as const) {
       setMode(mode);
       for (const a of actors) {
         const name = `${mode} ${a.actor.kind}`;
-        if (editOn && (m.writeModeOf(a.actor) === 'ro' || a.actor.kind === 'contact')) {
+        if (editOn && m.writeModeOf(a.actor) === 'ro') {
           const ro = await m
             .runAsActor(a.actor, () =>
               m.withTurnScope(

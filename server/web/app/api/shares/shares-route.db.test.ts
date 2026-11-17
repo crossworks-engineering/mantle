@@ -107,7 +107,7 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
   const servedOf = async (nodeId: string) =>
     (
       await x<{ s: unknown }>(sql`select settings->'served' as s from shares
-        where node_id = ${nodeId} and revoked_at is null and contact_id is null`)
+        where node_id = ${nodeId} and revoked_at is null`)
     )[0]?.s;
   const levelOf = async (nodeId: string) =>
     (await x<{ a: string }>(sql`select audience::text as a from nodes where id = ${nodeId}`))[0]!.a;

@@ -9,7 +9,6 @@ DELETE /api/apps/deleted/:id class=content scope=content caller=owner gone=false
 DELETE /api/auth/oidc/link class=self scope=self caller=publicLogin gone=false
 DELETE /api/calendar/:id class=area scope=area:connectors caller=owner gone=false
 DELETE /api/contacts/:id class=content scope=content caller=owner gone=false
-DELETE /api/contacts/:id/shares class=content scope=content caller=owner gone=false
 DELETE /api/draws/:id class=content scope=content caller=owner gone=false
 DELETE /api/events/:id class=content scope=content caller=owner gone=false
 DELETE /api/files/files class=content scope=content caller=owner gone=false
@@ -122,7 +121,6 @@ GET /api/changelog class=self scope=self caller=owner gone=false
 GET /api/config class=area scope=area:settings caller=owner gone=false
 GET /api/contacts class=content scope=content caller=owner gone=false
 GET /api/contacts/:id class=content scope=content caller=owner gone=false
-GET /api/contacts/:id/shares class=content scope=content caller=owner gone=false
 GET /api/dashboard class=area scope=area:settings caller=owner gone=false
 GET /api/dashboard/summary class=area scope=area:settings caller=owner gone=false
 GET /api/debug/agents class=area scope=area:settings caller=owner gone=false
@@ -421,7 +419,6 @@ HEAD /api/changelog class=self scope=self caller=owner gone=false
 HEAD /api/config class=area scope=area:settings caller=owner gone=false
 HEAD /api/contacts class=content scope=content caller=owner gone=false
 HEAD /api/contacts/:id class=content scope=content caller=owner gone=false
-HEAD /api/contacts/:id/shares class=content scope=content caller=owner gone=false
 HEAD /api/dashboard class=area scope=area:settings caller=owner gone=false
 HEAD /api/dashboard/summary class=area scope=area:settings caller=owner gone=false
 HEAD /api/debug/agents class=area scope=area:settings caller=owner gone=false
@@ -790,7 +787,6 @@ POST /api/calendar class=area scope=area:connectors caller=owner gone=false
 POST /api/config/adopt class=area scope=area:settings caller=owner gone=false
 POST /api/config/adopt-all class=area scope=area:settings caller=owner gone=false
 POST /api/contacts class=content scope=content caller=owner gone=false
-POST /api/contacts/:id/sharing class=content scope=content caller=owner gone=false
 POST /api/control/call class=public scope=- caller=- gone=false
 POST /api/debug/integrity/landed/delete class=area scope=area:settings caller=owner gone=false
 POST /api/debug/maintenance/run class=area scope=area:settings caller=owner gone=false
@@ -916,7 +912,6 @@ POST /api/secrets/:id/reveal class=area scope=area:keys caller=owner gone=false
 POST /api/services/:name class=area scope=area:settings caller=owner gone=false
 POST /api/settings/worker-groups class=area scope=area:settings caller=owner gone=false
 POST /api/shares class=content scope=content caller=owner gone=false
-POST /api/shares/contacts class=content scope=content caller=owner gone=false
 POST /api/skills class=area scope=area:assistants caller=owner gone=false
 POST /api/studio/prose class=area scope=area:assistants caller=owner gone=false
 POST /api/studio/reset class=area scope=area:assistants caller=owner gone=false
@@ -970,7 +965,6 @@ POST /api/workspaces/:id/archive class=self scope=- caller=login gone=false
 POST /api/workspaces/:id/resources class=self scope=- caller=login gone=false
 POST /api/workspaces/:id/users class=self scope=- caller=login gone=false
 POST /s/:token/canvas/frame-ticket class=link scope=- caller=- gone=false
-POST /s/:token/code class=link scope=- caller=- gone=false
 POST /s/:token/db-broker class=link scope=- caller=- gone=false
 POST /s/:token/evaluate class=link scope=- caller=- gone=false
 POST /s/:token/frame-ticket class=link scope=- caller=- gone=false

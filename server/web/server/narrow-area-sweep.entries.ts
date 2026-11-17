@@ -279,8 +279,8 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/studio/sandbox': {
     body: { agentId: S, messages: [{ role: 'user', content: 'hi' }] },
   },
-  // From a contact: the lookup before the insert reads its sharing
-  // (mantle_contact_sharing) on the users area's narrow exit.
+  // From a contact: the lookup before the insert reads the contact on the
+  // users area's narrow exit.
   'POST /api/team-admin/invites': {
     body: { email: 'sweep-invitee@example.test', contactId: CONTACT_NODE },
   },

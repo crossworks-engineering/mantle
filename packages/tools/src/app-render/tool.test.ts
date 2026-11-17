@@ -1,6 +1,6 @@
 /**
  * app_render's rights and what it hands the renderer (tool.ts): the same
- * rights as opening the app. A client, a contact or a turn with no login is
+ * rights as opening the app. A client or a turn with no login is
  * refused; an app the caller's scope does not read is not found; an Admin
  * user sees the green draft (else the published build), anyone else the
  * published build only; no green build is refused with what to do. The
@@ -160,13 +160,9 @@ describe('app_render', () => {
     expect(seen).toEqual([]);
   });
 
-  it('refuses a client, a contact, a team turn with no login, and a path that names no one', async () => {
+  it('refuses a client, a team turn with no login, and a path that names no one', async () => {
     const calls: ToolHandlerContext[] = [
       { ownerId: 'o', surface: { kind: 'client', loginId: 'c' } } as unknown as ToolHandlerContext,
-      {
-        ownerId: 'o',
-        surface: { kind: 'contact', contactId: 'c', shareId: 's' },
-      } as unknown as ToolHandlerContext,
       {
         ownerId: 'o',
         surface: { kind: 'team', contactName: 'x' },

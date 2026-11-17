@@ -8,7 +8,7 @@
  * mapper's words for every surface but the owner's own web (an app the
  * Admin workspace alone holds), which reads it as before, as the dev console
  * (ownerWebCaller) does. Each surface below is the one a broker passes
- * (appToolScope, the share broker's contact surface). A call that names no
+ * (appToolScope). A call that names no
  * caller is refused (there is no ungated path since step 3b), and so is an
  * app broker's call whose caller unmasks off the owner's web (fix round 1,
  * LOW-1: the caller's `masks` and the call's surface never disagree).
@@ -61,7 +61,6 @@ beforeAll(() => {
 
 const SURFACES: Array<[string, NonNullable<ToolHandlerContext['surface']>]> = [
   ['the member app broker (team)', { kind: 'team', loginId: 'l1', privateReads: false }],
-  ['the shared app broker (contact)', { kind: 'contact', contactId: 'c1', shareId: 's1' }],
 ];
 
 describe('an app broker call never answers a database error’s text off the owner’s web (M3)', () => {

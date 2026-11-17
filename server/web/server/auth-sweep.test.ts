@@ -170,28 +170,28 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     expect(await res.json()).toEqual({ error: 'not found' });
   });
 
-  // Contact shares (0214): the owner's routes refuse an anonymous call; the
-  // code prompt is a /s route, public at the gate (its handler limits and
-  // checks every try itself, contact-share-gate.db.test.ts).
-  it('contact shares: owner routes are refused anonymously; the code prompt is a public /s route', async () => {
-    const owner: Array<[string, string]> = [
-      ['POST', '/api/contacts/:id/sharing'],
-      ['GET', '/api/contacts/:id/shares'],
-      ['DELETE', '/api/contacts/:id/shares'],
-      ['POST', '/api/shares/contacts'],
-      ['PATCH', '/api/shares/:id'],
+  // Contact shares went in migration 0378: their owner routes and the code
+  // prompt are gone, not merely refused. PATCH /api/shares/:id stays (the
+  // open link's own settings) and refuses an anonymous call.
+  it('the removed contact share routes are not routed', async () => {
+    const gone = [
+      '/api/contacts/:id/sharing',
+      '/api/contacts/:id/shares',
+      '/api/shares/contacts',
+      '/s/:token/code',
     ];
-    for (const [method, pattern] of owner) {
-      expect(
-        manifest.some((e) => e.pattern === pattern && e.methods.includes(method)),
-        pattern,
-      ).toBe(true);
-      const res = await app.request(concretePath(pattern), { method });
-      expect(res.status, `${method} ${pattern}`).toBe(401);
+    expect(manifest.filter((e) => gone.includes(e.pattern))).toEqual([]);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    // /api/shares/contacts now reads as /api/shares/:id, which takes no POST.
+    for (const pattern of gone.filter((p) => p.startsWith('/api/'))) {
+      const res = await app.request(concretePath(pattern), { method: 'POST', headers: { cookie } });
+      expect([404, 405], pattern).toContain(res.status);
     }
-    const code = manifest.find((e) => e.pattern === '/s/:token/code');
-    expect(code?.methods).toEqual(['POST']);
-    expect(isPublic(concretePath('/s/:token/code'))).toBe(true);
+    const patch = manifest.find((e) => e.pattern === '/api/shares/:id');
+    expect(patch?.methods).toContain('PATCH');
+    const anon = await app.request(concretePath('/api/shares/:id'), { method: 'PATCH' });
+    expect(anon.status).toBe(401);
   });
 
   // Migration 0177 dropped the forum tables; the archive export went with

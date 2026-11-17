@@ -364,7 +364,6 @@ describe('the narrow system role rights', () => {
       'mantle_peers',
       'peer_shares',
       'push_subscriptions',
-      'contact_share_codes',
       'archive_mcp_login_tokens',
       'archive_client_signin_codes',
       'spaces',
@@ -419,7 +418,7 @@ describe('the narrow system role rights', () => {
     // The allowlist (plan v3.2 S7a part a3): what narrow statements call, by
     // name, measured with the switch on. Only goes down, or a reviewed line.
     expect(Object.keys(NARROW_SYSTEM_FUNCTIONS).sort()).toEqual([
-      // The users area's access log names and a contact's sharing, and the
+      // The users area's access log names, and the
       // integrity audit's check, skip and shared reads (the area reads a
       // trace of every decided function's callers found).
       'public.mantle_access_log_names(uuid,uuid[])',
@@ -435,7 +434,6 @@ describe('the narrow system role rights', () => {
       'public.mantle_connector_beyond_admin(uuid,text)',
       'public.mantle_connector_rows(uuid,text,uuid[])',
       'public.mantle_connector_state(uuid,text)',
-      'public.mantle_contact_sharing(uuid,uuid[])',
       'public.mantle_login_areas(uuid)',
       // S8b round 4: the users area's change reads its target's role from
       // Admin membership (loadLoginTarget), and the peers area asks whether
@@ -482,9 +480,8 @@ describe('the narrow system role rights', () => {
       'mantle_workspace_event',
       'mantle_lock_heads',
       'mantle_share_close_admin',
-      'mantle_share_contact_write_set',
     ];
-    expect(writers).toHaveLength(15);
+    expect(writers).toHaveLength(14);
     for (const body of writers) {
       expect(
         Object.keys(NARROW_DENIED_FUNCTIONS).some((f) => f.startsWith(`public.${body}(`)),
@@ -501,13 +498,8 @@ describe('the narrow system role rights', () => {
       expect(Object.keys(RUNTIME_DENIED_FUNCTIONS), fn).not.toContain(fn);
       expect(why.length, fn).toBeGreaterThan(10);
     }
-    // The four bodies with no Admin check are never the narrow role's.
-    for (const body of [
-      'mantle_contact_sharing_rows',
-      'mantle_contact_shares_revoke_rows',
-      'mantle_share_with_contacts_rows',
-      'mantle_entity_merge_rows',
-    ]) {
+    // The body with no Admin check is never the narrow role's.
+    for (const body of ['mantle_entity_merge_rows']) {
       expect(
         Object.keys(NARROW_DENIED_FUNCTIONS).some((f) => f.startsWith(`public.${body}(`)),
         body,
@@ -648,7 +640,7 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // spots login-credential and control-center only).
 // pipeline_state all (0373: the state of a pipeline, upserted by the settings
 // area's route and pipeline_set; its write is the NARROW_WRITES line).
-const NARROW_COUNTS = { all: 109, read: 52, none: 10 };
+const NARROW_COUNTS = { all: 108, read: 51, none: 10 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

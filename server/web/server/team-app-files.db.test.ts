@@ -32,7 +32,7 @@
  *     is in or one it does not see: refused, it stays read there; between
  *     folders the same workspaces read: it lands;
  *  8. a rename of the runner's file lands; of an Admin file, refused;
- *  9. a read-only login and a shared link write nothing; an app two
+ *  9. a read-only login writes nothing; an app two
  *     workspaces hold writes as its runner;
  *  10. a folder of a workspace the runner is in but the app's holder is
  *     not: it lands there, homed there;
@@ -59,7 +59,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   recordAppAccess: access,
   recordAppError: vi.fn(),
-  recordShareAccess: vi.fn(),
 }));
 
 type Answer = { status: number; body: { ok: boolean; error?: string; output?: unknown } };
@@ -162,22 +161,6 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
           }),
         ),
       req,
-    );
-
-  /** A shared link's run (POST /s/:token/tool-broker, past its code gate). */
-  const linkCall = (slug: string, input: Record<string, unknown>) =>
-    m.asSystem(
-      async () =>
-        answer(
-          await broker.runAppToolBroker(request(slug, input), {
-            via: 'contact',
-            ownerId: owner,
-            share: { id: randomUUID(), contactId: randomUUID() },
-            served: async () => [teamApp],
-            app: async () => ({ id: teamApp, manifest: { toolSlugs: SLUGS } }),
-          }),
-        ),
-      'test',
     );
 
   /** The owner's files named `name`: id, folder, home, indexing, bytes. */
@@ -582,13 +565,11 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     expect(await found(`${tag}-taken.txt`)).toHaveLength(0);
   });
 
-  it('9. a read-only login and a shared link write nothing; an app two workspaces hold writes as its runner', async () => {
+  it('9. a read-only login writes nothing; an app two workspaces hold writes as its runner', async () => {
     const name = `${tag}-iso-9.txt`;
     const input = { parent_path: open, filename: name, content_text: 'x' };
     const ro = await memberCall(moderator, 'file_upload', input, { mode: 'ro' });
     expect(ro.body.ok).toBe(false);
-    const link = await linkCall('file_upload', input);
-    expect(link.status).toBe(403);
     expect(await found(name)).toHaveLength(0);
     const two = await memberCall(moderator, 'file_upload', input, {}, twoHolderApp);
     expect(two.body.ok, JSON.stringify(two.body)).toBe(true);

@@ -19,7 +19,8 @@
  *     holder Write: the rows land (no home rule); no Table named: refused;
  *  3. a user of the holder without Write on the Table and not a Moderator:
  *     refused by the item check, nothing lands;
- *  4. a shared link's run: refused (a link runs no built-in), nothing lands;
+ *  4. (a shared link's run: gone with contact shares, the link's tool
+ *     broker is a fixed 403);
  *  5. a schema write and a row delete from a team app: still refused;
  *  6. an app the Admin workspace alone holds, run by the owner: admin rules,
  *     as before (a schema write runs).
@@ -60,7 +61,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   recordAppAccess: vi.fn(),
   recordAppError: vi.fn(),
-  recordShareAccess: vi.fn(),
 }));
 
 type Answer = { status: number; body: { ok: boolean; error?: string; output?: unknown } };
@@ -187,22 +187,6 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
           app: async () => (await import('@mantle/content')).getAppRuntime(owner, appId),
         }),
       ),
-    );
-
-  /** A shared link's run (POST /s/:token/tool-broker, past its code gate). */
-  const linkCall = (slug: string, input: Record<string, unknown>) =>
-    m.asSystem(
-      async () =>
-        answer(
-          await broker.runAppToolBroker(request(slug, input), {
-            via: 'contact',
-            ownerId: owner,
-            share: { id: randomUUID(), contactId: randomUUID() },
-            served: async () => [teamApp, tables.own],
-            app: async () => ({ id: teamApp, manifest: { toolSlugs: SLUGS } }),
-          }),
-        ),
-      'test',
     );
 
   /** The grid a Table's next reader of drafts sees (its draft, else the
@@ -419,17 +403,6 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     expect(res.body.ok).toBe(false);
     expect(res.body.error).toMatch(/cannot change this item|Write on it|Moderator/i);
     expect(await grid(tables.readOnly)).not.toContain(`${tag} no right`);
-  });
-
-  it('4. a shared link run: refused, nothing lands', async () => {
-    const res = await linkCall('table_row_add', {
-      table_id: tables.own,
-      cells: { Name: `${tag} by link` },
-    });
-    expect(res.status).toBe(403);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.error).toContain('a shared link runs no built-in tools');
-    expect(await grid(tables.own)).not.toContain(`${tag} by link`);
   });
 
   it('5. a schema write and a row delete from a team app: still refused', async () => {
@@ -657,7 +630,7 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
     );
   });
 
-  it('table_commit: refused without Write and on a link; publishes a Table the runner may write', async () => {
+  it('table_commit: refused without Write; publishes a Table the runner may write', async () => {
     const admin = await memberCall(writer, 'table_commit', { id: tables.admin });
     expect(admin.body.ok).toBe(false);
     // The Moderator's draft on readOnly (1b): the writer may not publish it.
@@ -668,9 +641,6 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
       /cannot change this item|Write on it|Moderator|not allowed/i,
     );
     expect(await hasDraft(tables.readOnly)).toBe(true);
-    const link = await linkCall('table_commit', { id: tables.own });
-    expect(link.status).toBe(403);
-    expect(link.body.error).toContain('a shared link runs no built-in tools');
     expect(await hasDraft(tables.own)).toBe(true);
 
     // No pass pending and the last long ago (no extractor runs here): the

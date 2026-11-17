@@ -13,17 +13,13 @@ const ADMIN_LOGIN = '22222222-2222-4222-8222-222222222222';
 const MEMBER_LOGIN = '33333333-3333-4333-8333-333333333333';
 const APP = '44444444-4444-4444-8444-444444444444';
 const SHARE = '55555555-5555-4555-8555-555555555555';
-const CONTACT = '66666666-6666-4666-8666-666666666666';
 const TOKEN = 'batch-share-token';
 
 const h = vi.hoisted(() => ({
   login: 'admin' as 'admin' | 'member',
-  /** The member's Write switch; Informational on the app; Can write on the
-   *  share; the link names a contact. */
+  /** The member's Write switch; Informational on the app. */
   writable: true,
   informational: false,
-  canWrite: true,
-  contact: true,
   /** The next batch fails with this, made from the real error classes. */
   fail: null as null | 'guard' | 'statement' | 'busy' | 'lost',
   order: [] as string[],
@@ -31,7 +27,6 @@ const h = vi.hoisted(() => ({
   execs: 0,
   errors: [] as Array<Record<string, unknown>>,
   access: [] as Array<Record<string, unknown>>,
-  trail: [] as Array<Record<string, unknown>>,
 }));
 
 // adminFacts answers what the stood-in Login (loginStandIn) says of it.
@@ -77,19 +72,13 @@ vi.mock('@/lib/member-apps', async (importOriginal) => ({
   })),
 }));
 
-vi.mock('@/lib/contact-share-gate', () => ({
-  gateShare: vi.fn(async () => ({
-    kind: 'ok',
-    share: {
-      id: SHARE,
-      ownerId: ANCHOR,
-      nodeId: APP,
-      nodeType: 'app',
-      contactId: h.contact ? CONTACT : null,
-      canWrite: h.canWrite,
-    },
+vi.mock('@/lib/share-gate', () => ({
+  openShareLink: vi.fn(async () => ({
+    id: SHARE,
+    ownerId: ANCHOR,
+    nodeId: APP,
+    nodeType: 'app',
   })),
-  contactCodeRequired: vi.fn(() => new Response('code required', { status: 401 })),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
@@ -102,7 +91,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   })),
   recordAppAccess: vi.fn((e: Record<string, unknown>) => void h.access.push(e)),
   recordAppError: vi.fn((e: Record<string, unknown>) => void h.errors.push(e)),
-  recordShareAccess: vi.fn((e: Record<string, unknown>) => void h.trail.push(e)),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => ({
@@ -179,15 +167,12 @@ beforeEach(() => {
   h.login = 'admin';
   h.writable = true;
   h.informational = false;
-  h.canWrite = true;
-  h.contact = true;
   h.fail = null;
   h.order.length = 0;
   h.batches.length = 0;
   h.execs = 0;
   h.errors.length = 0;
   h.access.length = 0;
-  h.trail.length = 0;
 });
 
 describe('who may call it: a batch is a write', () => {
@@ -227,38 +212,7 @@ describe('who may call it: a batch is a write', () => {
     expect(h.access.at(-1)).toMatchObject({ detail: { op: 'batch', refused: 'read-only' } });
   });
 
-  it('Contact with Can write: marks as written from outside BEFORE the write, then syncs', async () => {
-    const res = await callLink(BATCH);
-    expect(res.status).toBe(200);
-    expect(h.order).toEqual(['registry', 'marked', 'batch', 'sync']);
-    expect(h.trail.at(-1)).toMatchObject({ kind: 'write' });
-    expect(h.batches[0]!.caller).toMatchObject({
-      callerKey: `share:${SHARE}`,
-      viewer: { kind: 'contact', contactId: CONTACT },
-    });
-  });
-
-  it('Contact without Can write: 403 read-only, logged, nothing runs', async () => {
-    h.canWrite = false;
-    const res = await callLink(BATCH);
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ reason: 'read-only' });
-    expect(h.batches).toHaveLength(0);
-    expect(h.order).toEqual([]);
-    expect(h.trail.at(-1)).toMatchObject({ kind: 'refused', detail: { op: 'batch' } });
-  });
-
-  it('Contact on an Informational app: 403 read-only, nothing runs', async () => {
-    h.informational = true;
-    const res = await callLink(BATCH);
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ reason: 'read-only' });
-    expect(h.batches).toHaveLength(0);
-    expect(h.trail.at(-1)).toMatchObject({ kind: 'refused', detail: { refused: 'informational' } });
-  });
-
   it('An open link: 403, nothing runs', async () => {
-    h.contact = false;
     const res = await callLink(BATCH);
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ reason: 'read-only' });
@@ -271,7 +225,6 @@ describe('what a failure answers and logs', () => {
   const runners: Array<[string, () => Promise<Response>, () => void]> = [
     ['Admin', () => callOwner(BATCH), () => void (h.login = 'admin')],
     ['Member', () => callOwner(BATCH), () => void (h.login = 'member')],
-    ['Contact', () => callLink(BATCH), () => void 0],
   ];
 
   it.each(runners)('%s: a guard refusal is 409, no fault, no sync', async (_who, call, setup) => {
@@ -444,14 +397,12 @@ describe('the old calls answer as they did', () => {
   });
 
   it('a query on an open link still runs', async () => {
-    h.contact = false;
     const res = await callLink({ op: 'query', sql: 'SELECT 1' });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('{"ok":true,"output":[]}');
   });
 
-  it('an exec on an open link still answers its old 403', async () => {
-    h.contact = false;
+  it('an exec on an open link still answers its 403', async () => {
     const res = await callLink({ op: 'exec', sql: 'DELETE FROM t' });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({

@@ -141,7 +141,7 @@ describe('recordAppError (apps first-class plan G4)', () => {
 
   it('the callers other than the owner share APP_ERROR_LOG_PER_MINUTE per app', () => {
     for (let c = 0; c < 10; c += 1) {
-      for (let i = 0; i < 5; i += 1) fail('app-many', { via: 'contact', contactId: `c${c}` });
+      for (let i = 0; i < 5; i += 1) fail('app-many', { via: 'member', actorId: `m${c}` });
     }
     expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_MINUTE);
   });

@@ -14,7 +14,6 @@ const h = vi.hoisted(() => ({
   modes: [] as string[],
   found: true,
   byArea: 'no-area' as 'closed' | 'gone' | 'no-area',
-  canWrites: [] as boolean[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -38,20 +37,16 @@ vi.mock('@/lib/shares', async (importOriginal) => ({
     h.modes.push(mode);
     return h.found;
   }),
-  getLiveShare: vi.fn(async () => ({ id: SHARE, nodeId: ANCHOR, contactId: null, served: [] })),
+  getLiveShare: vi.fn(async () => ({ id: SHARE, nodeId: ANCHOR, served: [] })),
   revokeShare: vi.fn(async () => true),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
   assertMayLink: vi.fn(async () => ({ id: ANCHOR, type: 'note', path: null })),
-  // The Admin acts (plan v3.2 S6 c2, migration 0310): no users area, and no
-  // contact share by this id, so the link's rule answers below.
+  // The Admin act (plan v3.2 S6 c2, migration 0310): no users area, so the
+  // link's rule answers below.
   adminCloseShare: vi.fn(async () => h.byArea),
-  adminSetContactShareCanWrite: vi.fn(async (_login: string, _id: string, value: boolean) => {
-    h.canWrites.push(value);
-    return { outcome: 'ok', contactId: 'c1' };
-  }),
 }));
 
 // The link check in the login's scope: the caller may change this link.
@@ -64,7 +59,6 @@ beforeEach(() => {
   h.modes = [];
   h.found = true;
   h.byArea = 'no-area';
-  h.canWrites = [];
 });
 
 const patch = async (body: unknown) => {
@@ -96,13 +90,6 @@ describe('PATCH /api/shares/:id', () => {
     expect(h.modes).toEqual(['public']);
     h.found = false;
     expect((await patch({ mode: 'public' })).status).toBe(404);
-  });
-
-  it('"Can write" asks the Admin function, whatever the size of the body', async () => {
-    const res = await patch({ canWrite: true, padding: 'x'.repeat(70 * 1024) });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, canWrite: true });
-    expect(h.canWrites).toEqual([true]);
   });
 
   it('answers a plain 400 for any other mode', async () => {

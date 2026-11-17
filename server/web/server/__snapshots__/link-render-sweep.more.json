@@ -129,15 +129,6 @@
       "view share-live: link"
     ]
   },
-  "page: session cookie, contact share": {
-    "status": 401,
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "text/html; charset=UTF-8"
-    },
-    "body": "html 5771 sha256:2a6881a503045768",
-    "actors": []
-  },
   "view: session cookie": {
     "status": 200,
     "headers": {

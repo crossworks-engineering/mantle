@@ -110,7 +110,7 @@ describe('the body ceiling: which route gets which', () => {
     }
     expect(bodyCeilingFor('/api/auth/client-code')).toBe(AUTH_BODY_CEILING_BYTES);
     // The public share routes (apps audit S2): anyone with a link posts there.
-    for (const p of ['/s/tok/db-broker', '/s/tok/code', '/s/tok/evaluate']) {
+    for (const p of ['/s/tok/db-broker', '/s/tok/evaluate']) {
       expect(bodyCeilingFor(p), p).toBe(SHARE_BODY_CEILING_BYTES);
     }
     for (const p of ['/api/pages/p1/draft', '/api/mcp', '/api/admin/space/i1/save']) {

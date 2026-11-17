@@ -42,14 +42,8 @@
  *                asked), the turn caller, on the Admin assistant's surface
  *   pending      a call queued in a turn, approved by the owner
  *   share-link   an open public link's view (/s/<token>/view)
- *   contact-share  a contact share through the /s broker, with the
- *                contact's cookie: its view, and its app's data
- *                (/s/<token>/db-broker exec; the app's SQLite stood in, as
- *                contact-share-gate.db.test.ts does), with Can write on
- *                (contact-rw) and off (contact-ro); and two denies
- *                (contact-share-deny): an Informational app's data with
- *                Can write on, and the db-broker of a read share of a kind
- *                that is no app
+ *
+ * (Contact shares, a way in until migration 0378, are gone.)
  *
  * Every cell runs in each actor check mode (off; warn; on, the fleet's
  * mode): the box's mode (mantle_set_actor_check) and the process's
@@ -91,14 +85,6 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   embed: vi.fn(async () => VEC),
   embedBatch: vi.fn(async (_o: string, texts: unknown[]) => texts.map(() => VEC)),
-}));
-// The app's own SQLite (the fixture's app has none): a statement the /s
-// broker sends answers as if run; the brain's side of the write (the
-// client-written stamp the probe reads) is the real one.
-vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  appDbQuery: vi.fn(async () => ({ rows: [] })),
-  appDbExec: vi.fn(async () => ({ changes: 1 })),
 }));
 
 type Reply = { isError?: boolean; content?: { text?: string }[] };
@@ -187,9 +173,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
   let dir = '';
   /** Each workspace's assistant. */
   const agentOf: Record<string, string> = {};
-  /** The contact the contact-share cells share with, and its cookie. */
-  let contactId = '';
-  let contactCookie = '';
   /** Each login's read-write key (api-v1) and read-only key (mcp-key). */
   const keyRw: Partial<Record<GuideRole, string>> = {};
   const keyRo: Partial<Record<GuideRole, string>> = {};
@@ -286,22 +269,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
                 'active', true, ${login}, true)`;
       peerToken[role] = token;
     }
-    // One contact with sharing on, and its visitor cookie (the value the
-    // code prompt sets: lib/contact-share-gate.ts).
-    const support = await import('@mantle/content/test-support');
-    const auth = await import('../lib/auth/tokens');
-    contactId = randomUUID();
-    await raw`insert into nodes (id, owner_id, type, title, path)
-      values (${contactId}, ${fx.owner}, 'contact', ${`${fx.tag} contact`}, 'contacts')`;
-    await m.asSystem(() => support.enableContactSharing(fx.owner, contactId), 'test');
-    const [code] = await raw<{ epoch: number }[]>`
-      select code_epoch as epoch from contact_share_codes where contact_id = ${contactId}`;
-    const visitor = auth.buildContactVisitorValue({
-      contactId,
-      ownerId: fx.owner,
-      codeEpoch: code!.epoch,
-    });
-    contactCookie = `${auth.CONTACT_VISITOR_COOKIE}=${visitor.value}`;
     m.takeActorMisses();
   }, 300_000);
 
@@ -595,129 +562,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     })),
   ];
   const MEMBERS: GuideRole[] = ['homeModerator', 'writeGrant', 'readGrant', 'outsider'];
-  /** A contact share of the item (Can write: `write`), made for the cell. */
-  const contactShare = async (id: string, write: boolean): Promise<string> => {
-    const support = await import('@mantle/content/test-support');
-    const [made] = await m.asSystem(
-      () => support.createContactShares(fx.owner, id, [contactId], write),
-      'test',
-    );
-    return made!.path.slice('/s/'.length);
-  };
-  /** An app's published build (the /s broker serves only a built app);
-   *  the bundle itself is never read. */
-  const PUBLISHED = JSON.stringify({
-    storageKey: 'apps/a8.js',
-    sha256: 'a8',
-    builtAt: '2026-10-01T00:00:00Z',
-    esbuildVersion: '0',
-    bytes: 1,
-    ok: true,
-  });
-  /** A contact share through the /s broker, its cookie sent: the view
-   *  (read), the app's data (appData: db-broker exec). */
-  const contactEntry = (actor: 'contact-rw' | 'contact-ro', shareable: Set<string>): Entry => ({
-    surface: 'contact-share',
-    actor,
-    roles: [null],
-    supports: (kind, action) =>
-      (action === 'read' &&
-        kind !== 'app' &&
-        shareable.has(kind) &&
-        [true, 'moderator'].includes(
-          (ITEM_KINDS as Record<string, { publicLink: boolean | string }>)[kind]!.publicLink,
-        )) ||
-      (action === 'appData' && kind === 'app'),
-    run: (_role, kind, action, id) =>
-      guard(async () => {
-        if (kind === 'app') {
-          await raw.begin(async (tx) => {
-            await tx.unsafe(g.FIXTURE_ACTOR);
-            await tx`update apps set manifest = '{}'::jsonb, published_build = ${PUBLISHED}::jsonb
-                      where node_id = ${id}`;
-          });
-        }
-        const token = await contactShare(id, actor === 'contact-rw' && kind === 'app');
-        const headers = {
-          cookie: contactCookie,
-          'x-forwarded-for': `10.7.${Math.floor(Math.random() * 250)}.1`,
-        };
-        const res =
-          action === 'read'
-            ? await runRoute(null, 'GET', `/s/${token}/view`, undefined, { headers })
-            : await runRoute(
-                null,
-                'POST',
-                `/s/${token}/db-broker`,
-                { op: 'exec', sql: 'insert into a8 (v) values (?)', params: [1] },
-                { headers },
-              );
-        return {
-          ok: res.status < 300,
-          status: res.status,
-          text: (await res.text()).slice(0, 4000),
-        };
-      }),
-  });
-
-  /** Two writes of a contact share the pairwise pick cannot reach: the
-   *  oracle knows no Informational switch, and the contact-share entry sends
-   *  app data to an app only. With Can write on (contact-rw), the app's data
-   *  while the app is Informational ("Informational wins over a share's Can
-   *  write", the /s db-broker, access matrix L23): 403 read-only, "This app
-   *  is read-only.", not the Can write off answer. And the db-broker of a
-   *  contact share of `kind`, no app: Can write is an app's only
-   *  (createContactShares refuses it on another kind), so the share is the
-   *  contact's read share (contact-ro), and the broker serves an app only:
-   *  404 not found. */
-  const contactDenyEntry = (actor: 'contact-rw' | 'contact-ro', kind: string): Entry => ({
-    surface: 'contact-share',
-    label: 'contact-share-deny',
-    actor,
-    roles: [null],
-    supports: () => false,
-    always: [{ role: null, kind, placement: 'root', action: 'appData' }],
-    narrow: (k) =>
-      k === 'app'
-        ? {
-            why: 'an Informational app’s data is read only, Can write or not',
-            says: /^403 .*"reason":"read-only","error":"This app is read-only\."/,
-          }
-        : {
-            why: `a share of a ${k} has no app data: the /s broker serves an app only`,
-            says: /^404 .*"error":"not found"/,
-          },
-    run: (_role, k, _action, id) =>
-      guard(async () => {
-        if (k === 'app') {
-          await raw.begin(async (tx) => {
-            await tx.unsafe(g.FIXTURE_ACTOR);
-            await tx`update apps set manifest = '{}'::jsonb, published_build = ${PUBLISHED}::jsonb,
-                            data_read_only = true
-                      where node_id = ${id}`;
-          });
-        }
-        const token = await contactShare(id, actor === 'contact-rw');
-        const res = await runRoute(
-          null,
-          'POST',
-          `/s/${token}/db-broker`,
-          { op: 'exec', sql: 'insert into a8 (v) values (?)', params: [1] },
-          {
-            headers: {
-              cookie: contactCookie,
-              'x-forwarded-for': `10.8.${Math.floor(Math.random() * 250)}.1`,
-            },
-          },
-        );
-        return {
-          ok: res.status < 300,
-          status: res.status,
-          text: (await res.text()).slice(0, 4000),
-        };
-      }),
-  });
-
   /** A run item, through the product's run path whole: a run of the role's
    *  login (no agent: the login's own MCP client planned it), as createRun
    *  makes it (no workspace: the stamp trigger, 0250, takes the planning
@@ -840,8 +684,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
     const WEB_READ_KINDS = new Set<string>(
       kinds.filter((k) => k !== 'branch' && contentRoute(k) !== null),
     );
-    const { CONTACT_SHAREABLE_TYPES } = await import('@mantle/content');
-    const shareable = new Set<string>(CONTACT_SHAREABLE_TYPES as readonly string[]);
     return [
       {
         surface: 'web',
@@ -1157,7 +999,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
           guard(async () => {
             const [s] = await raw<{ token: string }[]>`
             select token from shares
-             where node_id = ${id} and revoked_at is null and contact_id is null limit 1`;
+             where node_id = ${id} and revoked_at is null limit 1`;
             if (!s) return { ok: false, text: 'no open link' };
             const res = await runRoute(null, 'GET', `/s/${s.token}/view`, undefined, {
               headers: { 'x-forwarded-for': `10.9.${Math.floor(Math.random() * 250)}.1` },
@@ -1169,13 +1011,6 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
             };
           }),
       },
-      contactEntry('contact-rw', shareable),
-      contactEntry('contact-ro', shareable),
-      contactDenyEntry('contact-rw', 'app'),
-      contactDenyEntry(
-        'contact-ro',
-        kinds.find((k) => k !== 'app' && shareable.has(k))!,
-      ),
     ];
   };
 
@@ -1368,7 +1203,7 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
         }
         total += cells.length;
         counts.push(
-          `  ${e.label ?? e.surface}${e.surface === 'contact-share' ? ` (${e.actor})` : ''}: ${cells.length} cells (${allow} allow, ${narrow} narrowed) of ${candidates} candidates, ` +
+          `  ${e.label ?? e.surface}: ${cells.length} cells (${allow} allow, ${narrow} narrowed) of ${candidates} candidates, ` +
             `${pass} pass, ${cells.length - pass} fail, ${na} not applicable`,
         );
       }
@@ -1412,20 +1247,18 @@ const NARROWED: Readonly<Record<string, number>> = {
   'run: a run item may not run app_delete: it waits for approval': 5,
   'run-demoted: its login left Admin before the item ran: fail closed': 1,
   'recipe: a recipe step may not call app_delete: it waits for approval': 3,
-  'contact-share-deny: an Informational app’s data is read only, Can write or not': 1,
-  'contact-share-deny: a share of a file has no app data: the /s broker serves an app only': 1,
 };
 
 /** The surface cells not applicable, by reason, over every way in (L1:
  *  none drops out uncounted). */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
-  'a snapshot copy carries no link or share': 15,
+  'a snapshot copy carries no link or share': 5,
   'a snapshot copy holds no grant but its home': 60,
   'an Admin-homed item holds no grant but its home': 144,
-  "no snapshot copy of a app is made (only an accepted item's kinds)": 148,
+  "no snapshot copy of a app is made (only an accepted item's kinds)": 146,
   "no snapshot copy of a branch is made (only an accepted item's kinds)": 79,
   "no snapshot copy of a event is made (only an accepted item's kinds)": 202,
-  "no snapshot copy of a formula is made (only an accepted item's kinds)": 204,
+  "no snapshot copy of a formula is made (only an accepted item's kinds)": 202,
   // 92 since a canvas may carry an open link: the share-link way in reads a
   // canvas too, and a snapshot copy of one is not made.
   "no snapshot copy of a present is made (only an accepted item's kinds)": 92,

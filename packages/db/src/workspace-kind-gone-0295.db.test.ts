@@ -6,9 +6,9 @@
  *  - every rule that called it answers as before: mantle_team_reads over
  *    every kind and level (the bridge of the manual switch), the three
  *    nodes level CHECKs (the same kinds, NOT VALID: no scan of nodes under
- *    the lock, and a write breaking the rule is still refused), and
- *    the contact share check (the registry's contactShare kinds, the old
- *    list without folders);
+ *    the lock, and a write breaking the rule is still refused). The
+ *    contact share check 0295 also wrote is gone since 0378, so it is not
+ *    read here;
  *  - every list written in its place is the old list, nothing wider: no
  *    task, event or Recall map (they joined the workspace class in A1,
  *    never the tier model);
@@ -24,14 +24,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { kindsWhere, type ContactShareKind } from '@mantle/client-types/kinds';
 import { createScratchDatabaseBefore } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const TAG = '0295_a7_workspace_kind_gone';
-/** The functions 0295 writes again, each with the list in its body. */
+/** The functions 0295 writes again, each with the list in its body (and
+ *  still there: 0378 dropped mantle_contact_share_check). */
 const REWRITTEN = [
-  'mantle_contact_share_check',
   'mantle_embedded_level',
   'mantle_inherited_level',
   'mantle_nodes_inherit_trg',
@@ -189,17 +188,13 @@ describe.skipIf(!URL)('0295: mantle_workspace_kind goes, every rule that read it
     await sql`delete from auth.users where id = ${owner}`;
   });
 
-  it('every list written in a function is the old one; the contact share check is the registry’s', async () => {
+  it('every list written in a function is the old one', async () => {
     for (const body of await bodies()) {
       const name = body.split('\n')[0]!;
       const lists = kindLists(body);
       expect(lists.length, name).toBeGreaterThan(0);
-      const want =
-        name === 'mantle_contact_share_check' ? oldKinds.filter((k) => k !== 'branch') : oldKinds;
-      for (const list of lists) expect(list, name).toEqual(want);
+      for (const list of lists) expect(list, name).toEqual(oldKinds);
     }
-    const contact = [...kindsWhere<ContactShareKind>((s) => s.contactShare)].sort();
-    expect(contact).toEqual(oldKinds.filter((k) => k !== 'branch'));
   });
 
   it('a second run changes nothing', async () => {

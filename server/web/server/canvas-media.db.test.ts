@@ -21,8 +21,7 @@
  *    a later move into the workspace serves nothing until a save, a move
  *    out stops at once (M2); bytes that are not their type, a snapshot
  *    copy, a missing or too large size, a closed or expired link: 404;
- *    a contact share never serves one; the link's frame ticket names the
- *    link's list.
+ *    the link's frame ticket names the link's list.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/canvas-media.db.test.ts
  */
@@ -342,23 +341,6 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the open
       const random = await asset(randomUUID());
       expect([admin.status, undeclared.status, random.status]).toEqual([404, 404, 404]);
       expect(admin.text).toBe(random.text);
-    });
-
-    it('a contact share never serves a canvas file', async () => {
-      const { isAssetAllowed } = await import('@/lib/shares');
-      const row = (
-        await su<Record<string, unknown>>(sql`select * from shares where id = ${share.id}`)
-      )[0]!;
-      const asShare = {
-        ...(row as object),
-        ownerId: owner,
-        nodeId: cv,
-        nodeType: 'present',
-      } as never;
-      expect(await isAssetAllowed(asShare, file.w)).toBe(true);
-      expect(
-        await isAssetAllowed({ ...(asShare as object), contactId: randomUUID() } as never, file.w),
-      ).toBe(false);
     });
 
     it('a save that takes a file out: the next fetch is refused', async () => {

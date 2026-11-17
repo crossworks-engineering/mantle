@@ -1,6 +1,6 @@
 /**
  * The app broker sweep (A10 #9: one runAppToolBroker; docs/request-plumbing.md,
- * "App tool broker"). The three live app tool brokers, driven as the route
+ * "App tool broker"). The live app tool brokers, driven as the route
  * loader hands them a request (the body capped at the route's ceiling,
  * capRequestBody; a thrown error answered as app.onError answers it):
  *
@@ -8,9 +8,12 @@
  *    Admin workspace alone holds (admin rules);
  *  - owner-team:  the same route and login, an app another workspace holds
  *    (team rules, plan R2);
- *  - member:      the same route, a member login (lib/app-runner.ts);
- *  - link:        POST /s/:token/tool-broker, a contact share past its code
- *    gate.
+ *  - member:      the same route, a member login (lib/app-runner.ts).
+ *
+ * The link broker (POST /s/:token/tool-broker, a contact share past its code
+ * gate) was recorded too. Contact shares are gone (migration 0378): an open
+ * link gets no tools and its db broker only reads
+ * (app/s/share-link-brokers.test.ts), so its cells are RETIRED below.
  *
  * Each takes the same calls: an allowed read and an allowed write (an
  * outside tool; a write's input is logged), a tool the app does not declare
@@ -19,13 +22,12 @@
  * fails, a body over 8 MB and an app the caller cannot find; the owner's
  * admin rules also the confirmation (asked, and a ticket that does not
  * match). Each cell records the answer (status, body), the app's Activity
- * rows (recordAppAccess), the share's trail (recordShareAccess), the app's
- * error rows (recordAppError), the export syncs scheduled, the verdict it
+ * rows (recordAppAccess), the app's error rows (recordAppError), the export syncs scheduled, the verdict it
  * asked (its rules and the login it named), the rules a refusal named, and
  * the dispatch (the surface, the gate caller, the scope it ran in).
  *
- * The three db brokers (/api/apps/:id/db-broker as an Admin user and as a
- * member, /s/:token/db-broker as a contact that may write) take a query, a
+ * The db brokers (/api/apps/:id/db-broker as an Admin user and as a
+ * member) take a query, a
  * write and a write whose SQL fails: the export syncs each schedules (one
  * after a write, none else) and the client-written mark.
  *
@@ -55,9 +57,6 @@ const ADMIN_LOGIN = '55555555-5555-4555-8555-555555555555';
 const MEMBER_LOGIN = '22222222-2222-4222-8222-222222222222';
 const APP = '77777777-7777-4777-8777-777777777777';
 const OTHER_APP = '88888888-8888-4888-8888-888888888888';
-const SHARE = '99999999-9999-4999-8999-999999999999';
-const CONTACT = '66666666-6666-4666-8666-666666666666';
-const TOKEN = 'sweep-share-token';
 
 const h = vi.hoisted(() => ({
   login: 'admin' as 'admin' | 'member',
@@ -143,27 +142,6 @@ vi.mock('@/lib/member-apps', async (importOriginal) => {
   };
 });
 
-vi.mock('@/lib/contact-share-gate', () => ({
-  gateShare: vi.fn(async () => ({
-    kind: 'ok',
-    share: {
-      id: SHARE,
-      ownerId: ANCHOR,
-      nodeId: APP,
-      nodeType: 'app',
-      contactId: CONTACT,
-      canWrite: true,
-    },
-    contact: { id: CONTACT },
-  })),
-  contactCodeRequired: vi.fn(() => new Response('code required', { status: 401 })),
-}));
-
-vi.mock('@/lib/shares', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  liveServedIds: vi.fn(async () => new Set([APP])),
-}));
-
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getAppRuntime: vi.fn(async (_owner: string, id: string) =>
@@ -181,7 +159,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   memberMayWriteAppData: vi.fn(() => true),
   recordAppAccess: vi.fn((e: unknown) => push('access', e)),
   recordAppError: vi.fn((e: unknown) => push('errors', e)),
-  recordShareAccess: vi.fn((e: unknown) => push('trail', e)),
 }));
 
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
@@ -258,19 +235,6 @@ vi.mock('../../../packages/tools/src/app-tool-level', async (importOriginal) => 
     ),
   };
 });
-// The verdict steps run inside @mantle/tools (app-tool-run.ts
-// appToolRunPlan, which the broker plans every call with), so they are
-// stood in for at their own module.
-vi.mock('../../../packages/tools/src/external-access', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../../packages/tools/src/external-access')>();
-  return {
-    ...real,
-    contactAppToolVerdict: vi.fn(async (_owner: string, declared: string[], slug: string) => {
-      push('verdict', { level: 'contact', ran: h.current });
-      return verdictFor(declared, slug);
-    }),
-  };
-});
 vi.mock('@mantle/tools', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/tools')>();
   return {
@@ -309,9 +273,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
 
 type Handler<P> = (req: Request, ctx: { params: Promise<P> }) => Promise<Response>;
 let ownerTool: Handler<{ id: string }>;
-let linkTool: Handler<{ token: string }>;
 let ownerDb: Handler<{ id: string }>;
-let linkDb: Handler<{ token: string }>;
 let capRequestBody: typeof import('../lib/body-limit').capRequestBody;
 let bodyCeilingFor: typeof import('../lib/body-limit').bodyCeilingFor;
 let appAnswerOf: typeof import('./test-support').appAnswerOf;
@@ -319,20 +281,17 @@ let appAnswerOf: typeof import('./test-support').appAnswerOf;
 beforeAll(async () => {
   process.env.SESSION_SECRET ??= 'a10-app-broker-sweep-secret-at-least-32-chars';
   ownerTool = (await import('../app/api/apps/[id]/tool-broker/route')).POST;
-  linkTool = (await import('../app/s/[token]/tool-broker/route')).POST;
   ownerDb = (await import('../app/api/apps/[id]/db-broker/route')).POST;
-  linkDb = (await import('../app/s/[token]/db-broker/route')).POST;
   ({ capRequestBody, bodyCeilingFor } = await import('../lib/body-limit'));
   ({ appAnswerOf } = await import('./test-support'));
 }, 60_000);
 
 // ── the cells ────────────────────────────────────────────────────────────────
 
-type Broker = 'owner-admin' | 'owner-team' | 'member' | 'link';
-const TOOL_BROKERS: readonly Broker[] = ['owner-admin', 'owner-team', 'member', 'link'];
+type Broker = 'owner-admin' | 'owner-team' | 'member';
+const TOOL_BROKERS: readonly Broker[] = ['owner-admin', 'owner-team', 'member'];
 
-/** Over the member's own read cap (8 MB) and the share routes' ceiling
- *  (1 MB), under the owner's /api/apps ceiling (128 MB); a valid call. */
+/** Over the member's own read cap (8 MB), under the owner's /api/apps ceiling (128 MB); a valid call. */
 const OVERSIZED = (() => {
   const head = '{"slug":"read_tool","input":{"pad":"';
   const tail = '"}}';
@@ -366,8 +325,8 @@ const DB_CASES: Record<string, Call & { fails?: true }> = {
   exec: { body: { op: 'exec', sql: "insert into polls(q) values ('x')" } },
   'exec-fails': { body: { op: 'exec', sql: "insert into polls(q) values ('x')" }, fails: true },
 };
-type DbBroker = 'owner-admin' | 'member' | 'link';
-const DB_BROKERS: readonly DbBroker[] = ['owner-admin', 'member', 'link'];
+type DbBroker = 'owner-admin' | 'member';
+const DB_BROKERS: readonly DbBroker[] = ['owner-admin', 'member'];
 
 /** A long string stands in by its length (the oversized body's pad). */
 function short(value: unknown): unknown {
@@ -389,8 +348,7 @@ async function drive(kind: 'tool' | 'db', broker: Broker, call: Call): Promise<s
   h.current = null;
   h.noApp = !!call.app;
   setUp(broker);
-  const link = broker === 'link';
-  const path = link ? `/s/${TOKEN}/${kind}-broker` : `/api/apps/${call.app ?? APP}/${kind}-broker`;
+  const path = `/api/apps/${call.app ?? APP}/${kind}-broker`;
   const body = call.raw ? (call.body as string) : JSON.stringify(call.body);
   const req = capRequestBody(
     new Request(`http://localhost${path}`, {
@@ -400,14 +358,8 @@ async function drive(kind: 'tool' | 'db', broker: Broker, call: Call): Promise<s
     }),
     bodyCeilingFor(path) as number,
   );
-  const handler =
-    kind === 'tool'
-      ? link
-        ? linkTool(req, { params: Promise.resolve({ token: TOKEN }) })
-        : ownerTool(req, { params: Promise.resolve({ id: call.app ?? APP }) })
-      : link
-        ? linkDb(req, { params: Promise.resolve({ token: TOKEN }) })
-        : ownerDb(req, { params: Promise.resolve({ id: call.app ?? APP }) });
+  const params = { params: Promise.resolve({ id: call.app ?? APP }) };
+  const handler = kind === 'tool' ? ownerTool(req, params) : ownerDb(req, params);
   const res = await appAnswerOf(handler, `http://localhost${path}`);
   const text = await res.text();
   let answer: unknown = text;
@@ -424,7 +376,6 @@ async function drive(kind: 'tool' | 'db', broker: Broker, call: Call): Promise<s
     'verdict',
     'refusal',
     'access',
-    'trail',
     'errors',
     'dispatch',
     'sql',
@@ -473,9 +424,7 @@ const CHANGES = join(HERE, '__snapshots__/a10-app-broker-sweep-changes.txt');
 const OWNER_ADMIN_CALL =
   "the owner's call at admin rules lands its Activity row now, as every other run's call does (main logged none at admin rules)";
 const OWNER_REFUSAL =
-  "the owner's refused call lands its Activity row now (refused: the verdict's reason), as a member's and a contact's always did (main logged only the error row)";
-const LINK_ERROR =
-  "the link's refused or failed call lands its error row now (via 'contact', the share and the contact), as the owner's and a member's always did (main logged none)";
+  "the owner's refused call lands its Activity row now (refused: the verdict's reason), as a member's always did (main logged only the error row)";
 const ADMIN_APP_DATA_DOOR =
   "an Admin user's run reaches its app's database on the system pool by the app-data door, after the app's lookup in its scope, as a member's run does (F4 fix round 2, item 11: in its scope since F4, an Admin user who only reads the app was refused)";
 const TEAM_CALL_INPUT =
@@ -503,10 +452,21 @@ const NAMED_CHANGES: Readonly<Record<string, string>> = {
   'tool member refused': TEAM_CALL_INPUT,
   'tool member unknown-tool': TEAM_CALL_INPUT,
   'tool member tool-error': TEAM_CALL_INPUT,
-  'tool link refused': LINK_ERROR,
-  'tool link unknown-tool': LINK_ERROR,
-  'tool link tool-error': LINK_ERROR,
 };
+
+/**
+ * Brokers gone since the record was taken, each with why: their recorded
+ * cells are left out of the compare (as a10-flags.test.ts RETIRED).
+ */
+const RETIRED: Readonly<Record<string, string>> = {
+  link: 'contact shares are gone (migration 0378): an open link gets no tools and its db broker only reads (app/s/share-link-brokers.test.ts)',
+};
+
+function retired(cell: string): boolean {
+  return Object.keys(RETIRED).some(
+    (broker) => cell.startsWith(`tool ${broker} `) || cell.startsWith(`db ${broker} `),
+  );
+}
 
 function readCells(file: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -539,7 +499,7 @@ describe('A10 #9 app broker sweep', () => {
       writeCells(RECORD, now, '# A10 #9 app broker sweep, recorded on main v0.300.49');
       return;
     }
-    const recorded = readCells(RECORD);
+    const recorded = new Map([...readCells(RECORD)].filter(([k]) => !retired(k)));
     expect([...now.keys()]).toEqual([...recorded.keys()]);
     // Every cell that differs from main, and the fields that do.
     const differs = new Map<string, string[]>();

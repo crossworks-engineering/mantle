@@ -59,23 +59,10 @@ describe('appToolRunPlan', () => {
       expect(await p.actsFor()).toEqual({ login: login.loginId, app: true });
     }
   });
-
-  it("a contact: the contact rules, the link's served items", async () => {
-    const p = plan({
-      via: 'contact',
-      ownerId: 'o',
-      share: { id: 's', contactId: 'c' },
-      served: async () => ['n1'],
-    });
-    expect(p.rules).toBe('contact');
-    expect(p.confirm).toBe(false);
-    expect(p.surface).toEqual({ kind: 'contact', contactId: 'c', shareId: 's' });
-    expect(await p.actsFor()).toEqual({ link: { served: ['n1'] } });
-  });
 });
 
 describe('both app tool paths take the one plan', () => {
-  const STEPS = /\b(appToolLevel|appToolScope|appToolVerdict|contactAppToolVerdict)\s*\(/;
+  const STEPS = /\b(appToolLevel|appToolScope|appToolVerdict)\s*\(/;
   for (const [file, scope] of [
     ['server/web/lib/app-tool-broker.ts', "adminScope: 'caller'"],
     ['packages/tools/src/app-timers/run.ts', "adminScope: 'login'"],

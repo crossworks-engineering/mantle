@@ -3,7 +3,7 @@
  * the link serves that canvas (isEmbeddedPresentAllowed), against a real,
  * migrated Postgres: a canvas on the served list with a snapshot is shown;
  * one off the list, one with no snapshot yet, and one the page does not
- * embed are not; a contact share serves what its page names. Never the
+ * embed are not. Never the
  * canvas itself: the share route answers the picture only.
  *
  * Seeds its own owner and rows and removes them.
@@ -92,12 +92,6 @@ describe.skipIf(!URL)('a shared page shows the canvases its link serves', () => 
       id.noPoster,
     ]);
     expect([...shown]).toEqual([id.served.toLowerCase()]);
-  });
-
-  it('a contact share holds no list: it shows what its page names', async () => {
-    const contact = { ...(await link()), contactId: randomUUID(), settings: {} } as Share;
-    expect(await shares.isEmbeddedPresentAllowed(contact, id.offList)).toBe(true);
-    expect(await shares.isEmbeddedPresentAllowed(contact, id.notEmbedded)).toBe(false);
   });
 
   it('a link to the canvas itself is no page: it shows no embedded picture', async () => {

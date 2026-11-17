@@ -276,11 +276,11 @@ describe('the edit check triggers from the matrix (editCheckTriggers)', () => {
     }
   });
 
-  it('a Recall card follows its map; a contact share needs an Admin user', () => {
+  it('a Recall card follows its map; a share link is checked on its item, with no row mode', () => {
     const card = editCheckTriggers(row('public.recall_nodes'), ['id', 'map_id', 'body_md']);
     expect(card[0]!.ddl).toContain(`"mantle_edit_check_trg"('edit', 'map_id', 'recall_maps', '')`);
     const share = editCheckTriggers(row('public.shares'), ['id', 'node_id', 'revoked_at', 'token']);
-    for (const t of share) expect(t.ddl, t.name).toContain(`'node_id', '', 'contact')`);
+    for (const t of share) expect(t.ddl, t.name).toContain(`'node_id', '', '')`);
     expect(share.find((t) => t.name === 'mantle_edit_check_cols_link_close')!.ddl).toContain(
       'UPDATE OF "revoked_at"',
     );

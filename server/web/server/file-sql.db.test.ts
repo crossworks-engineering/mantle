@@ -11,8 +11,8 @@
  *  3. the shared refusal: a flagged folder the member cannot read, a flip on the
  *     next read, an email attachment below Admin, a drive-synced file;
  *  4. E's answers on real rows, in order;
- *  5. rights: no read of the row gets no rows and no path, on the app broker, a
- *     read-only login and a contact share;
+ *  5. rights: no read of the row gets no rows and no path, on the app broker and a
+ *     read-only login;
  *  6. the broker gate, with the line and without, at admin and team rules, and
  *     app_tools_set.
  *
@@ -36,7 +36,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   recordAppAccess: vi.fn(),
   recordAppError: vi.fn(),
-  recordShareAccess: vi.fn(),
 }));
 
 type Answer = { status: number; body: { ok: boolean; error?: string; output?: unknown } };
@@ -250,19 +249,6 @@ describe.skipIf(!URL)('file_sql', () => {
         ),
       mode,
     );
-  const linkCall = (slug: string, input: Record<string, unknown>) =>
-    sys(async () =>
-      answer(
-        await broker.runAppToolBroker(request(slug, input), {
-          via: 'contact',
-          ownerId: owner,
-          share: { id: randomUUID(), contactId: randomUUID() },
-          served: async () => [teamApp],
-          app: async () => ({ id: teamApp, manifest: { toolSlugs: SLUGS } }),
-        }),
-      ),
-    );
-
   beforeAll(async () => {
     // A spreadsheet is the package `sheet`: its parser job runs in this
     // process (inProcessPipelineFetch); any other route goes where it went.
@@ -853,13 +839,6 @@ describe.skipIf(!URL)('file_sql', () => {
       );
       expect(read).toMatchObject({ ok: true });
     });
-
-    it('a contact share runs no built-in', async () => {
-      const res = await linkCall('file_sql', { file_id: csvFile, sql: 'SELECT * FROM "Sheet1"' });
-      expect(res.status).toBe(403);
-      expect(res.body.ok).toBe(false);
-      clean(res.body.error);
-    });
   });
 
   describe('the broker gate', () => {
@@ -1382,9 +1361,7 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(JSON.stringify(outside.body)).not.toContain(dir);
     });
 
-    it('a contact share runs it not; a read-only login reads what it may', async () => {
-      const link = await linkCall('file_sql', { folder: many, sql: 'SELECT * FROM "Sheet1"' });
-      expect(link.status).toBe(403);
+    it('a read-only login reads what it may', async () => {
       const ro = await inRequest(
         member,
         () => run({ folder: many, sql: 'SELECT "Tag" FROM "Sheet1" LIMIT 1' }),

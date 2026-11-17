@@ -8,7 +8,6 @@
  *  - a member who holds read only is refused, and one who reads nothing gets the
  *    404 of an id no row has;
  *  - an app's link stays a Moderator's;
- *  - a contact share's Can write stays an Admin user's;
  *  - an API key and no credential get nothing here.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/shares-open-route.db.test.ts
@@ -183,21 +182,6 @@ describe.skipIf(!URL)('a public link is open to whoever may edit the item', () =
     const moderator = await route(L.writer, 'POST', '/api/shares', { nodeId: I.appModerated });
     expect(moderator.status, moderator.text).toBe(200);
     expect(await liveLinks(I.appModerated)).toBe(1);
-  });
-
-  it("a contact share's Can write stays an Admin user's", async () => {
-    const shareId = randomUUID();
-    const contact = randomUUID();
-    await x(sql`insert into nodes (id, owner_id, type, title, path, data)
-                values (${contact}, ${L.owner}, 'contact'::node_type, 'A contact', 'contacts'::ltree, '{}'::jsonb)`);
-    await x(sql`insert into shares (id, token, owner_id, node_id, node_type, contact_id)
-                values (${shareId}, ${`sor-${shareId}`}, ${L.owner}, ${I.app}, 'app', ${contact})`);
-    const refused = await route(L.writer, 'PATCH', `/api/shares/${shareId}`, { canWrite: true });
-    expect(refused.status, refused.text).toBe(403);
-    const [row] = await x<{ can_write: boolean }>(
-      sql`select can_write from shares where id = ${shareId}`,
-    );
-    expect(row?.can_write).toBe(false);
   });
 
   it('an API key and no credential get nothing here', async () => {

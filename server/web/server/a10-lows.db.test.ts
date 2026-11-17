@@ -67,11 +67,9 @@ const BAD_ID_404 = 'bad-id-404 (the params gateway: an [id] that is not a uuid n
  *  evaluate route's own 404 text). */
 const BAD_ID_CELLS = [
   'DELETE /api/contacts/:id',
-  'DELETE /api/contacts/:id/shares',
   'DELETE /api/heartbeats/:id',
   'DELETE /api/journal/:id',
   'GET /api/contacts/:id',
-  'GET /api/contacts/:id/shares',
   'GET /api/events/:id',
   'GET /api/formulas/:id',
   'GET /api/heartbeats/:id',
@@ -88,11 +86,17 @@ const BAD_ID_CELLS = [
   'PATCH /api/contacts/:id',
   'PATCH /api/heartbeats/:id',
   'PATCH /api/journal/:id',
-  'POST /api/contacts/:id/sharing',
   'POST /api/formulas/:id/evaluate',
   'POST /api/heartbeats/:id/fire',
   'POST /api/journal/:id/resolve',
 ];
+/** Cells gone since the record was taken, each with why: left out of the
+ *  compare (as a10-flags.test.ts RETIRED). */
+const RETIRED: Readonly<Record<string, string>> = {
+  'bad-id DELETE /api/contacts/:id/shares': 'contact shares are gone (migration 0378)',
+  'bad-id GET /api/contacts/:id/shares': 'contact shares are gone (migration 0378)',
+  'bad-id POST /api/contacts/:id/sharing': 'contact shares are gone (migration 0378)',
+};
 /** The [id] cells whose HTTP item gate went in the pre-check removal part 2:
  *  the params gateway's 404 answers them now, where the gate's answered first
  *  (`{"ok":false,"error":"not found"}`, the same status). */
@@ -441,7 +445,8 @@ describe.skipIf(!DB_URL)('A10 lows: bad ids, dates, paths and keys answer as the
         .map((l) => {
           const at = l.indexOf(' => ');
           return [l.slice(0, at), l.slice(at + 4)] as const;
-        }),
+        })
+        .filter(([name]) => !RETIRED[name]),
     );
     expect([...answers.keys()].sort(), 'the cells are the recorded ones').toEqual(
       [...main.keys()].sort(),

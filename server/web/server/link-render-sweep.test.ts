@@ -6,7 +6,7 @@
  * through enterCall); the snapshot was written on the commit before it and
  * must not change: status, every header (cache, CSP, CORS, cookies,
  * redirects) and the body, for a concrete request of every pattern. Brokers,
- * assets, frames, the code form, bad and expired tokens, retired links,
+ * assets, frames, bad and expired tokens, retired links,
  * missing items, preflights, oversized bodies, other methods, and the
  * credentials the gate judges on the way.
  *
@@ -29,7 +29,6 @@ const PAGE = '44444444-4444-4444-8444-444444444444';
 const OTHER_PAGE = '44444444-4444-4444-8444-000000000000';
 const DRAW = '77777777-7777-4777-8777-777777777777';
 const FILE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const CONTACT = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 const h = vi.hoisted(() => ({
   actors: [] as string[],
@@ -74,18 +73,11 @@ vi.mock('../lib/auth/login-row', () => ({
 
 const SHARES = vi.hoisted(() => {
   const owner = '33333333-3333-4333-8333-333333333333';
-  const base = { ownerId: owner, settings: {}, contactId: null, canWrite: false };
+  const base = { ownerId: owner, settings: {} };
   return {
     live: { ...base, id: 'share-live', nodeId: 'note-1', nodeType: 'note' },
     liveapp: { ...base, id: 'share-app', nodeId: 'app-1', nodeType: 'app' },
     gone: { ...base, id: 'share-gone', nodeId: 'note-gone', nodeType: 'note' },
-    contact: {
-      ...base,
-      id: 'share-contact',
-      nodeId: 'note-2',
-      nodeType: 'note',
-      contactId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    },
   } as Record<string, Record<string, unknown>>;
 });
 
@@ -93,7 +85,6 @@ const shareByToken = async (token: string) => SHARES[token] ?? null;
 
 vi.mock('@/lib/shares', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/shares')>()),
-  resolveActiveShareRowByToken: vi.fn(shareByToken),
   resolveActiveShareByToken: vi.fn(shareByToken),
   loadShareView: vi.fn(async (share: { nodeId: string; id: string }) => {
     await seen(`view ${share.id}`);
@@ -119,19 +110,10 @@ vi.mock('@/lib/shares', async (importOriginal) => ({
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
-  resolveActiveShareRowByToken: vi.fn(shareByToken),
   isRetiredTeamLinkToken: vi.fn(async (token: string) => token === 'team-old'),
   isRetiredClientLinkToken: vi.fn(async (token: string) => token === 'client-old'),
-  contactShareGateRow: vi.fn(async (contactId: string) =>
-    contactId === 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
-      ? { ownerId: '33333333-3333-4333-8333-333333333333', codeEpoch: 2, open: true }
-      : null,
-  ),
-  recordShareAccess: vi.fn(() => {}),
   recordAppAccess: vi.fn(() => {}),
-  listContactShares: vi.fn(async () => ({ items: [], more: false })),
   loadProfilePreferences: vi.fn(async () => ({ siteName: 'A brain' })),
-  checkContactShareCode: vi.fn(async () => ({ ok: false, contactId: null, lockedNow: false })),
   getApp: vi.fn(async () => {
     await seen('app');
     return null;
@@ -253,9 +235,6 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
   });
 
   it('answers every /s request as before', async () => {
-    const contactCookie = `mantle_contact=${
-      tokens.buildContactVisitorValue({ contactId: CONTACT, ownerId: OWNER, codeEpoch: 2 }).value
-    }`;
     const withOrigin = { headers: { origin: ORIGIN } };
     const preflight = {
       method: 'OPTIONS',
@@ -280,17 +259,6 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       { label: 'page: expired (not active)', path: '/s/expired' },
       { label: 'page: retired team link', path: '/s/team-old' },
       { label: 'page: retired client link', path: '/s/client-old' },
-      { label: 'page: contact share, no cookie', path: '/s/contact' },
-      {
-        label: 'page: contact share, cookie',
-        path: '/s/contact',
-        init: { headers: { cookie: contactCookie } },
-      },
-      {
-        label: 'page: contact share, bad cookie',
-        path: '/s/contact',
-        init: { headers: { cookie: 'mantle_contact=nope' } },
-      },
       {
         label: 'page: an API key rides along',
         path: '/s/live',
@@ -309,24 +277,15 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       { label: 'view: open link', path: '/s/live/view', init: withOrigin },
       { label: 'view: item gone', path: '/s/gone/view', init: withOrigin },
       { label: 'view: no such token', path: '/s/missing/view', init: withOrigin },
-      { label: 'view: contact share, no cookie', path: '/s/contact/view', init: withOrigin },
-      {
-        label: 'view: contact share, cookie',
-        path: '/s/contact/view',
-        init: { headers: { origin: ORIGIN, cookie: contactCookie } },
-      },
       { label: 'view: preflight', path: '/s/live/view', init: preflight },
       { label: 'view: POST', path: '/s/live/view', init: post({}) },
       { label: 'rows: no such token', path: '/s/missing/rows?tab=t', init: withOrigin },
-      { label: 'rows: contact share, no cookie', path: '/s/contact/rows', init: withOrigin },
       { label: 'rows: preflight', path: '/s/live/rows', init: preflight },
       { label: 'aggregate: no such token', path: '/s/missing/aggregate', init: withOrigin },
-      { label: 'aggregate: contact, no cookie', path: '/s/contact/aggregate' },
       // The app brokers.
       { label: 'bundle: app link', path: '/s/liveapp/bundle', init: withOrigin },
       { label: 'bundle: note link', path: '/s/live/bundle', init: withOrigin },
       { label: 'bundle: no such token', path: '/s/missing/bundle', init: withOrigin },
-      { label: 'bundle: contact, no cookie', path: '/s/contact/bundle', init: withOrigin },
       { label: 'bundle: preflight', path: '/s/liveapp/bundle', init: preflight },
       { label: 'bundle css: app link', path: '/s/liveapp/bundle/css', init: withOrigin },
       { label: 'bundle css: no such token', path: '/s/missing/bundle/css' },
@@ -334,20 +293,13 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       { label: 'frame ticket: app link', path: '/s/liveapp/frame-ticket', init: post({}) },
       { label: 'frame ticket: note link', path: '/s/live/frame-ticket', init: post({}) },
       { label: 'frame ticket: no such token', path: '/s/missing/frame-ticket', init: post({}) },
-      {
-        label: 'frame ticket: contact, no cookie',
-        path: '/s/contact/frame-ticket',
-        init: post({}),
-      },
       { label: 'frame ticket: GET', path: '/s/liveapp/frame-ticket', init: withOrigin },
       { label: 'frame ticket: preflight', path: '/s/liveapp/frame-ticket', init: preflight },
       { label: 'tool broker: open link', path: '/s/liveapp/tool-broker', init: post({}) },
       { label: 'tool broker: note link', path: '/s/live/tool-broker', init: post({}) },
       { label: 'tool broker: no such token', path: '/s/missing/tool-broker', init: post({}) },
-      { label: 'tool broker: contact, no cookie', path: '/s/contact/tool-broker', init: post({}) },
       { label: 'tool broker: preflight', path: '/s/liveapp/tool-broker', init: preflight },
       { label: 'db broker: no such token', path: '/s/missing/db-broker', init: post({}) },
-      { label: 'db broker: contact, no cookie', path: '/s/contact/db-broker', init: post({}) },
       { label: 'db broker: GET', path: '/s/liveapp/db-broker', init: withOrigin },
       { label: 'db broker: preflight', path: '/s/liveapp/db-broker', init: preflight },
       {
@@ -360,24 +312,18 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       { label: 'frame: app link, bad ticket', path: '/s/liveapp/frame?t=nope' },
       { label: 'frame: note link', path: '/s/live/frame' },
       { label: 'frame: no such token', path: '/s/missing/frame' },
-      { label: 'frame: contact, no ticket', path: '/s/contact/frame' },
       { label: 'frame: preflight', path: '/s/liveapp/frame', init: preflight },
       { label: 'asset: not served', path: `/s/live/a/${FILE}`, init: withOrigin },
       { label: 'asset: no such token', path: `/s/missing/a/${FILE}` },
-      { label: 'asset: contact, no cookie', path: `/s/contact/a/${FILE}` },
       { label: 'asset: preflight', path: `/s/live/a/${FILE}`, init: preflight },
       { label: 'draw: not servable', path: '/s/live/draw', init: withOrigin },
       { label: 'draw: no such token', path: '/s/missing/draw' },
-      { label: 'draw: contact, no cookie', path: '/s/contact/draw' },
       { label: 'embedded draw: not allowed', path: `/s/live/draw/${DRAW}`, init: withOrigin },
       { label: 'embedded draw: no such token', path: `/s/missing/draw/${DRAW}` },
       { label: 'evaluate: no such token', path: '/s/missing/evaluate', init: post({}) },
-      { label: 'evaluate: contact, no cookie', path: '/s/contact/evaluate', init: post({}) },
       { label: 'evaluate: preflight', path: '/s/live/evaluate', init: preflight },
-      { label: 'code: wrong code', path: '/s/contact/code', init: post({ code: '000000' }) },
-      { label: 'code: no such token', path: '/s/missing/code', init: post({ code: '1' }) },
-      { label: 'code: GET', path: '/s/contact/code' },
-      { label: 'code: preflight', path: '/s/contact/code', init: preflight },
+      // The contact code route is gone (migration 0378).
+      { label: 'code: the route is gone', path: '/s/live/code', init: post({ code: '000000' }) },
       // A static segment spelled with escapes: the router decodes it, the
       // gate's credential checks read the path as sent.
       { label: 'escaped: page prefix', path: '/%73/live' },
@@ -641,11 +587,6 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       },
       // A session cookie on /s: the share surface reads no session.
       { label: 'page: session cookie', path: '/s/live', init: { headers: { cookie: session } } },
-      {
-        label: 'page: session cookie, contact share',
-        path: '/s/contact',
-        init: { headers: { cookie: session } },
-      },
       {
         label: 'view: session cookie',
         path: '/s/live/view',

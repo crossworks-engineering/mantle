@@ -5,8 +5,7 @@
  * a child page card of one and embeds one gives the anonymous visitor no
  * label, title or file name: those say "Private item" (the embed is left
  * out); a served item keeps its title. A task's or an event's body and a
- * task's checklist take the note rule (T18). A contact share reads the item
- * as it is. The list 0262 fills from the frozen levels shows exactly what
+ * task's checklist take the note rule (T18). The list 0262 fills from the frozen levels shows exactly what
  * the level rule showed. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run shares-public-redact.db.test
  */
@@ -37,20 +36,14 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
   const SECRET = 'Acquisition plan';
   const SECRET_FILE = 'board-minutes.pdf';
 
-  const shareOf = (
-    nodeId: string,
-    nodeType: string,
-    contactId: string | null = null,
-    served: string[] = [id.openPage],
-  ) =>
+  const shareOf = (nodeId: string, nodeType: string, served: string[] = [id.openPage]) =>
     ({
       id: randomUUID(),
       ownerId: owner,
       nodeId,
       nodeType,
       token: 't',
-      contactId,
-      settings: contactId ? {} : { served },
+      settings: { served },
     }) as unknown as Share;
 
   beforeAll(async () => {
@@ -172,12 +165,6 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
     expect(view.body).toContain('Open page');
   });
 
-  it('a contact task share reads the body as it is', async () => {
-    const view = await shares.loadShareView(shareOf(id.task, 'task', randomUUID()));
-    if (view?.kind !== 'task') throw new Error('not a task');
-    expect(view.body).toContain(SECRET);
-  });
-
   it('0262 fills each link with what the level rule showed: the open page only', async () => {
     for (const [nodeId, type] of [
       [id.page, 'page'],
@@ -203,18 +190,12 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
   });
 
   it('a served item keeps its title; one taken off the list reads "Private item"', async () => {
-    const all = await html(shareOf(id.page, 'page', null, [id.openPage, id.secretPage]));
+    const all = await html(shareOf(id.page, 'page', [id.openPage, id.secretPage]));
     expect(all).toContain(SECRET);
     // The file is not on the list: left out, never named.
     expect(all).not.toContain(SECRET_FILE);
-    const none = await html(shareOf(id.page, 'page', null, []));
+    const none = await html(shareOf(id.page, 'page', []));
     expect(none).not.toContain('Open page');
     expect(none).toContain('Private item');
-  });
-
-  it('a contact share reads the item as it is', async () => {
-    const out = await html(shareOf(id.page, 'page', randomUUID()));
-    expect(out).toContain(SECRET);
-    expect(out).toContain(SECRET_FILE);
   });
 });
