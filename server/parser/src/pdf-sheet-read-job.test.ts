@@ -2,8 +2,8 @@
  * The step of the Agent `pdf-sheet-read` in a parser job: its pictures are
  * drawn by the real pdfjs child of the job handle (./pictures-child.ts), on
  * a made-up PDF this test writes itself. What is pinned:
- *  - a two-page drawing gives three asks: page 1 whole, its title block
- *    corner, page 2 whole;
+ *  - a two-page drawing gives three asks: the title block corner of page 1,
+ *    page 1 whole, page 2 whole;
  *  - the job sends the bytes of each picture the asks name, PNGs of the
  *    asked size;
  *  - the longest side and the JPEG past a size reach the child;
@@ -75,8 +75,8 @@ describe('pdf-sheet-read in a parser job', () => {
     const { result, dir } = await run('isometric', 2);
     const calls = result.calls ?? [];
     expect(calls.map((c) => (c as { key: string }).key)).toEqual([
-      'page-1',
       'page-1-title-block',
+      'page-1',
       'page-2',
     ]);
     const sent = await picturesOf(dir, calls);

@@ -8,7 +8,7 @@
  *  - a plain keyword search (`search_tsv`) finds a word of it;
  *  - a second Agent's text sits beside the first; '' takes one out;
  *  - `updated_at` stays;
- *  - a file in the name-only mode gets none;
+ *  - a file in the name-only mode gets none, nor a file whose bytes changed;
  *  - a person's write may not set the key (the edit check, 0377).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/agent-text.db.test.ts
@@ -25,6 +25,7 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
   let m: typeof import('@mantle/db');
   let writeAgentText: typeof import('./agent-text').writeAgentText;
   const owner = randomUUID();
+  const SHA = 'a'.repeat(64);
   const tag = `atx${randomUUID().slice(0, 6)}`;
 
   const extract = <T>(fn: () => Promise<T>) => m.runAsSystem('queue:extract', fn) as Promise<T>;
@@ -36,7 +37,7 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
     const filename = `drawing-${id.slice(0, 8)}.pdf`;
     await x(sql`insert into nodes (id, owner_id, type, title, path, data, updated_at) values
       (${id}, ${owner}, 'file', ${filename}, 'files',
-       ${JSON.stringify({ filename, mimeType: 'application/pdf', keep: 'me', ...extra })}::jsonb,
+       ${JSON.stringify({ filename, mimeType: 'application/pdf', sha256: SHA, keep: 'me', ...extra })}::jsonb,
        '2026-01-01T00:00:00Z')`);
     return id;
   };
@@ -81,19 +82,21 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
     const id = await fileNode();
     const before = await rowOf(id);
     const text = 'Title block\nLine number: 6-P-1001-A1A; Revision: B\n\nSheet list\nText: FV-1001';
-    expect(await extract(() => writeAgentText(owner, id, 'pdf-sheet-read', text))).toBe(true);
+    expect(await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', text))).toBe(true);
     const after = await rowOf(id);
     expect(after.data.keep).toBe('me');
     expect(after.data.agent_text).toEqual({ 'pdf-sheet-read': text });
     expect(new Date(after.updated_at).getTime()).toBe(new Date(before.updated_at).getTime());
     expect(await found(id, 'FV-1001')).toBe(true);
     // A second Agent beside it; '' takes one out.
-    await extract(() => writeAgentText(owner, id, 'iso-title-block', 'Title block\nSheet: 1 of 2'));
+    await extract(() =>
+      writeAgentText(owner, id, SHA, 'iso-title-block', 'Title block\nSheet: 1 of 2'),
+    );
     expect(Object.keys((await rowOf(id)).data.agent_text as object).sort()).toEqual([
       'iso-title-block',
       'pdf-sheet-read',
     ]);
-    await extract(() => writeAgentText(owner, id, 'pdf-sheet-read', ''));
+    await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', ''));
     expect((await rowOf(id)).data.agent_text).toEqual({
       'iso-title-block': 'Title block\nSheet: 1 of 2',
     });
@@ -103,17 +106,21 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
 
   it('a file in the name-only mode gets no text', async () => {
     const id = await fileNode({ indexing_applied: 'metadata' });
-    expect(await extract(() => writeAgentText(owner, id, 'pdf-sheet-read', 'Text: FV-1001'))).toBe(
-      false,
-    );
+    expect(
+      await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', 'Text: FV-1001')),
+    ).toBe(false);
     expect((await rowOf(id)).data.agent_text).toBeUndefined();
   });
 
-  it('another owner’s node is not written', async () => {
+  it('another owner’s node, or new bytes, are not written', async () => {
     const id = await fileNode();
     expect(
-      await extract(() => writeAgentText(randomUUID(), id, 'pdf-sheet-read', 'Text: FV-1001')),
+      await extract(() => writeAgentText(randomUUID(), id, SHA, 'pdf-sheet-read', 'Text: FV-1001')),
     ).toBe(false);
+    expect(
+      await extract(() => writeAgentText(owner, id, 'b'.repeat(64), 'pdf-sheet-read', 'Text: X')),
+    ).toBe(false);
+    expect((await rowOf(id)).data.agent_text).toBeUndefined();
   });
 
   it('the key is one of the derived keys: a person’s write may not set it (0377)', async () => {

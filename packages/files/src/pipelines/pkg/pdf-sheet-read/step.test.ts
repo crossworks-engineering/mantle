@@ -106,11 +106,18 @@ const inputs = (calls: readonly unknown[] | undefined) =>
   });
 
 describe('the step of pdf-sheet-read', () => {
-  it('a three-page drawing: page 1 whole and its corner, then each page, with the list on the whole pages', async () => {
+  it('a three-page drawing: the corner of page 1 first, then each page whole, with the list on the whole pages', async () => {
     const { job, dir, drawn } = jobOf(drawingPdf(3));
     const result = await step(request('isometric'), job);
     expect(result.status).toBe('ok');
     expect(inputs(result.calls)).toEqual([
+      {
+        key: 'page-1-title-block',
+        worker: VISION_WORKER,
+        picture: 'page-1-title-block.png',
+        fields: 10,
+        page: 1,
+      },
       {
         key: 'page-1',
         worker: VISION_WORKER,
@@ -118,13 +125,6 @@ describe('the step of pdf-sheet-read', () => {
         fields: 10,
         page: 1,
         list: true,
-      },
-      {
-        key: 'page-1-title-block',
-        worker: VISION_WORKER,
-        picture: 'page-1-title-block.png',
-        fields: 10,
-        page: 1,
       },
       {
         key: 'page-2',
@@ -144,11 +144,8 @@ describe('the step of pdf-sheet-read', () => {
       },
     ]);
     // Two draws: page 1 alone (its size places the corner), then the
-    // corner and the pages after it, up to the cap.
-    expect(drawn.map((w) => w.map((x) => x.pageNumber))).toEqual([
-      [1],
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    ]);
+    // corner and the pages after it that are there, up to the cap.
+    expect(drawn.map((w) => w.map((x) => x.pageNumber))).toEqual([[1], [1, 2, 3]]);
     expect(drawn[0]![0]).toMatchObject({ scale: PAGE_DPI / 72, maxSide: MAX_SIDE });
     expect(drawn[1]![0]).toMatchObject({ scale: CORNER_DPI / 72, maxSide: MAX_SIDE });
     // The corner is the default box of drawing-pdf (190 x 70 mm) on an A3.
@@ -170,7 +167,7 @@ describe('the step of pdf-sheet-read', () => {
   it('a one-page drawing: two asks', async () => {
     const { job } = jobOf(drawingPdf(1));
     const result = await step(request('scan'), job);
-    expect(inputs(result.calls).map((c) => c.key)).toEqual(['page-1', 'page-1-title-block']);
+    expect(inputs(result.calls).map((c) => c.key)).toEqual(['page-1-title-block', 'page-1']);
   });
 
   it('the corner follows the box of the Reader that the core hands over', async () => {
@@ -215,18 +212,61 @@ describe('the step of pdf-sheet-read', () => {
     const result = await step(request('scan', { pages: 2 }), job);
     expect(drawn[1]!.map((w) => w.pageNumber)).toEqual([1, 2]);
     expect(inputs(result.calls).map((c) => c.key)).toEqual([
-      'page-1',
       'page-1-title-block',
+      'page-1',
       'page-2',
     ]);
     const one = jobOf(drawingPdf(3));
     const only = await step(request('scan', { pages: 1 }), one.job);
-    expect(inputs(only.calls).map((c) => c.key)).toEqual(['page-1', 'page-1-title-block']);
+    expect(inputs(only.calls).map((c) => c.key)).toEqual(['page-1-title-block', 'page-1']);
   });
 
-  it('a page 1 that cannot be drawn: no ask, a warning', async () => {
+  it('a file that cannot be opened: no ask, a warning', async () => {
     const result = await step(request('scan'), jobOf(Buffer.from('not a pdf')).job);
-    expect(result).toEqual({ status: 'ok', calls: [], warnings: ['Page 1 could not be drawn.'] });
+    expect(result).toEqual({
+      status: 'ok',
+      calls: [],
+      warnings: ['The file could not be opened.'],
+    });
+  });
+
+  /** A job whose child draws no picture for the pages in `lost`, and whose
+   *  deadline is `left` ms away. */
+  function lossyJob(bytes: Buffer, lost: number[], left: number, corner = true) {
+    const { job } = jobOf(bytes);
+    return {
+      ...job,
+      deadline: Date.now() + left,
+      pdfPictures: async (windows: Parameters<typeof job.pdfPictures>[0]) => {
+        const out = await renderPdfWindows(bytes, windows);
+        return out.map((p, i) =>
+          lost.includes(windows[i]!.pageNumber) && (corner || !windows[i]!.box) ? null : p,
+        );
+      },
+    };
+  }
+
+  it('a picture the time ran out for fails the run: nothing is asked or written', async () => {
+    const result = await step(request('scan'), lossyJob(drawingPdf(3), [3], 1_000));
+    expect(result).toEqual({
+      status: 'failed',
+      warnings: ['The time ran out before the pictures.'],
+    });
+    const first = await step(request('scan'), lossyJob(drawingPdf(1), [1], 1_000));
+    expect(first.status).toBe('failed');
+  });
+
+  it('a page that cannot be drawn with time left is left out, with a warning', async () => {
+    const result = await step(request('scan'), lossyJob(drawingPdf(3), [2], 120_000));
+    expect(result.status).toBe('ok');
+    expect(inputs(result.calls).map((c) => c.key)).toEqual([
+      'page-1-title-block',
+      'page-1',
+      'page-3',
+    ]);
+    expect(result.warnings).toEqual(['The picture page-2 could not be drawn.']);
+    const none = await step(request('scan'), lossyJob(drawingPdf(1), [1], 120_000));
+    expect(none).toEqual({ status: 'ok', calls: [], warnings: ['Page 1 could not be drawn.'] });
   });
 
   it('the asks of a file stay under its cap: page 1 two, each page after it one', () => {

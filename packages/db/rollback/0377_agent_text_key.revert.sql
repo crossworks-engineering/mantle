@@ -5,8 +5,12 @@
 -- Optional: the older image never writes `agent_text`, so the list with it
 -- answers as before for every write it makes. This puts 0339's list back
 -- and takes 0377 off the ledger, so the next roll forward applies it again.
--- An `agent_text` key already on a node stays, and a plain search still
--- finds its words; a new upload or an overwrite of the file drops it.
+-- An `agent_text` key already on a node STAYS, and a plain search still
+-- finds its words: the older image does not know the key, so an overwrite
+-- of the file and the name-only mode do NOT drop it. To take the words out
+-- of search too, the operator runs, in the same transaction:
+--   SELECT set_config('mantle.keep_updated_at', 'on', true);
+--   UPDATE nodes SET data = data - 'agent_text' WHERE data ? 'agent_text';
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:

@@ -55,11 +55,12 @@ export const AGENT_HASH_COLUMN = 'Input hash';
 export const AGENT_PAGE_COLUMN = 'Page';
 export const AGENT_TEXT_COLUMN = 'Text';
 export const AGENT_CLASS_COLUMN = 'Class';
-const FIXED_COLUMNS: ReadonlySet<string> = new Set([
-  AGENT_KEY_COLUMN,
-  AGENT_MODEL_COLUMN,
-  AGENT_HASH_COLUMN,
-]);
+/** The fixed columns of an Agent's first tab, in lower case: SQLite takes a
+ *  column name with no regard to case, so a field may not take one in any
+ *  case, nor two fields one name. */
+const FIXED_COLUMNS: ReadonlySet<string> = new Set(
+  [AGENT_KEY_COLUMN, AGENT_MODEL_COLUMN, AGENT_HASH_COLUMN].map((c) => c.toLowerCase()),
+);
 
 /** One checked ask: what the core sends, and the hash of it. */
 export type AgentAsk = {
@@ -151,14 +152,15 @@ function fieldsOf(raw: unknown): readonly PipelineAskField[] | string {
     if (name.length < 1 || name.length > PIPELINE_ASK_FIELD_NAME_MAX || name !== f.name) {
       return `a field name is 1 to ${PIPELINE_ASK_FIELD_NAME_MAX} characters, with no space around it`;
     }
-    if (FIXED_COLUMNS.has(name) || seen.has(name)) return `the field name ${name} is taken`;
+    const low = name.toLowerCase();
+    if (FIXED_COLUMNS.has(low) || seen.has(low)) return `the field name ${name} is taken`;
     if (
       f.hint !== undefined &&
       (typeof f.hint !== 'string' || f.hint.length > PIPELINE_ASK_HINT_MAX)
     ) {
       return `a hint is a text of ${PIPELINE_ASK_HINT_MAX} characters at most`;
     }
-    seen.add(name);
+    seen.add(low);
     out.push(f.hint ? { name, hint: f.hint } : { name });
   }
   return out;
@@ -276,7 +278,8 @@ export function askQuestionOf(fields: readonly PipelineAskField[], list = false)
     'sheet and drawing numbers that the drawing refers to ("sheet"), ' +
     'and other codes that name a thing, such as a weld, a support or a spec ("other"). ' +
     'Each identifier one time, as written. Leave out plain words, dimensions and notes. ' +
-    `At most ${PIPELINE_ASK_LIST_MAX} items.\nAnswer with JSON only.`
+    `At most ${PIPELINE_ASK_LIST_MAX} items.\n` +
+    'Answer with JSON only, on one line with no spaces between the parts, "fields" first.'
   );
 }
 
@@ -362,11 +365,39 @@ export function askAnswerOf(
   fields: readonly PipelineAskField[],
   list: boolean,
 ): { values: Record<string, string | null>; list?: PipelineAskListItem[] } | null {
-  const parsed = answerObjectOf(text);
+  const parsed = answerObjectOf(text) ?? (list ? cutAnswerOf(text) : null);
   if (!parsed) return null;
   if (!list) return { values: valuesIn(parsed, fields) };
-  const named = isObject(parsed.fields) ? parsed.fields : {};
+  // A model that wrote the fields at the top, with no "fields" key: read
+  // them there.
+  const named = isObject(parsed.fields) ? parsed.fields : parsed;
   return { values: valuesIn(named, fields), list: askListOf(parsed.list) };
+}
+
+/**
+ * The answer of a list ask that the token cap cut (a dense sheet): no
+ * whole JSON object, but its parts so far. The `fields` object, when it is
+ * whole, and each whole item of the list before the cut. Null: neither, a
+ * failed ask. Each part is parsed as JSON on its own; nothing else of the
+ * text is read.
+ */
+function cutAnswerOf(text: string): Record<string, unknown> | null {
+  const parse = (s: string): unknown => {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return undefined;
+    }
+  };
+  const f = /"fields"\s*:\s*(\{[^{}]*\})/.exec(text);
+  const fields = f ? parse(f[1]!) : undefined;
+  const at = text.indexOf('"list"');
+  const items =
+    at < 0
+      ? []
+      : [...text.slice(at).matchAll(/\{[^{}]*\}/g)].map((m) => parse(m[0])).filter(isObject);
+  if (!isObject(fields) && items.length === 0) return null;
+  return { fields: isObject(fields) ? fields : {}, list: items };
 }
 
 /** The rows of an Agent's tab that are in the database, each by column
@@ -431,9 +462,16 @@ export async function agentRows(
   const byHash = new Map(stored.map((r) => [text(r[AGENT_HASH_COLUMN]), r]));
   const byKey = new Map(stored.map((r) => [text(r[AGENT_KEY_COLUMN]), r]));
   // The stored list rows, by the hash of their ask.
+  // The rows of ONE key a hash: two asks with the same picture (two equal
+  // pages) share a hash, and each takes the rows of one of them, so a run
+  // again never adds them up.
   const listByHash = new Map<string | null, Readonly<Record<string, unknown>>[]>();
+  const keyOfHash = new Map<string | null, string | null>();
   for (const r of list?.stored ?? []) {
     const h = text(r[AGENT_HASH_COLUMN]);
+    const k = text(r[AGENT_KEY_COLUMN]);
+    if (!keyOfHash.has(h)) keyOfHash.set(h, k);
+    if (keyOfHash.get(h) !== k) continue;
     listByHash.set(h, [...(listByHash.get(h) ?? []), r]);
   }
   const rows: (string | null)[][] = [];
@@ -474,12 +512,20 @@ export async function agentRows(
       if (answer.ok) {
         made += 1;
         const out = answer.output as PipelineAskOutput;
-        rows.push([a.key, ...fields.map((f) => out.values[f] ?? null), out.model, a.hash]);
-        if (a.list) {
-          for (const item of out.list ?? []) {
-            listRows.push([a.key, a.page, item.text, item.class, a.hash]);
-          }
-        }
+        const row = [a.key, ...fields.map((f) => out.values[f] ?? null), out.model, a.hash];
+        rows.push(row);
+        const items = a.list ? (out.list ?? []) : [];
+        for (const item of items) listRows.push([a.key, a.page, item.text, item.class, a.hash]);
+        // An ask after it with the same input (an equal page) takes this
+        // answer, with no second call.
+        byHash.set(a.hash, Object.fromEntries(columns.map((c, i) => [c, row[i] ?? null])));
+        listByHash.set(
+          a.hash,
+          items.map((item) => ({
+            [AGENT_TEXT_COLUMN]: item.text,
+            [AGENT_CLASS_COLUMN]: item.class,
+          })),
+        );
         continue;
       }
       stopped = answer.reason ?? answer.error;

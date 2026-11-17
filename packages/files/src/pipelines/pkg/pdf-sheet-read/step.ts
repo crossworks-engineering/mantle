@@ -18,6 +18,7 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { withPdf } from '../../../pdf-open';
 import { titleBlockOf } from '../../../pdf-rows';
 import {
   PIPELINE_ASK_FIELDS_MAX,
@@ -96,6 +97,9 @@ export const PAGE_DPI = 200;
 export const CORNER_DPI = 300;
 export const MAX_SIDE = 4800;
 export const PICTURE_MAX_BYTES = 5 * 1024 * 1024;
+/** A picture missing this close to the job's deadline is one the time ran
+ *  out for (the parser starts no child under 3 s). */
+export const TIME_MARGIN_MS = 5_000;
 
 const isPng = (b: Buffer) => b.length >= 4 && b[0] === 0x89 && b[1] === 0x50;
 /** The file name of a picture, by its type. */
@@ -122,7 +126,13 @@ export const step: PipelineStep = async (req, job) => {
     return { status: 'not_mine' };
   }
   const fields = fieldsOf(req.options);
-  const pages = pagesOf(req.options);
+  // The pages there are, up to the cap: a page that is there and gives no
+  // picture is told apart from one past the end.
+  const count = await withPdf(await job.bytes(), {}, async ({ doc }) => doc.numPages).catch(
+    () => null,
+  );
+  if (!count) return { status: 'ok', calls: [], warnings: ['The file could not be opened.'] };
+  const pages = Math.min(pagesOf(req.options), count);
   const readerOptions =
     isObject(req.state) && isObject(req.state.readerOptions) ? req.state.readerOptions : {};
   const box = titleBlockOf(readerOptions);
@@ -132,10 +142,22 @@ export const step: PipelineStep = async (req, job) => {
     maxSide: MAX_SIDE,
     maxBytes: PICTURE_MAX_BYTES,
   });
+  // A picture the time ran out for (the child stopped at the job's
+  // deadline) fails the run: nothing is asked or written, so the paid rows
+  // of a run before stay as they are. A picture that cannot be drawn with
+  // time left (a page pdfjs cannot draw) is left out, with a warning: a
+  // run again would draw it no better.
+  const timeUp = () => Date.now() >= job.deadline - TIME_MARGIN_MS;
+  const ranOut = { status: 'failed' as const, warnings: ['The time ran out before the pictures.'] };
+  const warnings: string[] = [];
 
   // Page 1 first: its size on paper places the corner.
   const [first] = await job.pdfPictures([whole(1)], job.deadline);
-  if (!first) return { status: 'ok', calls: [], warnings: ['Page 1 could not be drawn.'] };
+  if (!first) {
+    return timeUp()
+      ? ranOut
+      : { status: 'ok', calls: [], warnings: ['Page 1 could not be drawn.'] };
+  }
   const later = Array.from({ length: pages - 1 }, (_, i) => whole(i + 2));
   const [corner, ...rest] = await job.pdfPictures(
     [
@@ -150,16 +172,19 @@ export const step: PipelineStep = async (req, job) => {
     ],
     job.deadline,
   );
+  if ([corner, ...rest].some((p) => !p) && timeUp()) return ranOut;
 
   const calls: PipelineCall[] = [];
-  const warnings: string[] = [];
   const add = async (
     key: string,
     page: number,
     picture: { png: Buffer } | null | undefined,
     list: boolean,
   ) => {
-    if (!picture) return;
+    if (!picture) {
+      warnings.push(`The picture ${key} could not be drawn.`);
+      return;
+    }
     if (picture.png.length > PICTURE_MAX_BYTES) {
       warnings.push(`The picture ${key} is over 5 MB, and is not read.`);
       return;
@@ -173,8 +198,10 @@ export const step: PipelineStep = async (req, job) => {
       input: { picture: file, fields, page, ...(list ? { list: true } : {}) },
     });
   };
-  await add('page-1', 1, first, true);
+  // The title block first: a dense page's list may fail its ask, and a
+  // failed ask stops the asks after it.
   await add('page-1-title-block', 1, corner, false);
+  await add('page-1', 1, first, true);
   for (const [i, picture] of rest.entries()) await add(`page-${i + 2}`, i + 2, picture, true);
   return { status: 'ok', calls, ...(warnings.length > 0 ? { warnings } : {}) };
 };

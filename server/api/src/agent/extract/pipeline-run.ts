@@ -103,7 +103,8 @@ async function runOnce(
     // trace step's meta. A failed write is a warning: the tabs stand.
     const { text, ...done } = out;
     if (text !== undefined) {
-      await writeAgentText(ownerId, nodeId, pipeline.id, text).catch((err: unknown) => {
+      const sha = String(fileSha256Of(row));
+      await writeAgentText(ownerId, nodeId, sha, pipeline.id, text).catch((err: unknown) => {
         done.warnings.push(`the text for search was not written: ${errorMessage(err)}`);
       });
     }

@@ -1052,9 +1052,13 @@ no model:
 
 | Ask                  | Picture                                   | Fields | List |
 | -------------------- | ----------------------------------------- | ------ | ---- |
-| `page-1`             | page 1, whole, 200 DPI, 4800 px at most   | yes    | yes  |
 | `page-1-title-block` | the title block corner of page 1, 300 DPI | yes    | no   |
+| `page-1`             | page 1, whole, 200 DPI, 4800 px at most   | yes    | yes  |
 | `page-2` and on      | each page after it, whole, as page 1      | yes    | yes  |
+
+The corner goes first: a failed ask stops the asks after it, and the list
+of a dense page is the ask most likely to fail. The step counts the pages
+of the file (pdfjs, in the job), so it draws only pages that are there.
 
 The corner is the box of the Reader's options in force
 (`title_block_width_mm`, `title_block_height_mm`, "The title block box").
@@ -1064,7 +1068,13 @@ no option of the Agent. A picture is a PNG, or a JPEG (quality 90) when the
 PNG is past 5 MB (`PageWindow.maxBytes`, `packages/files/src/rasterize.ts`):
 11 pictures stay under the parser's answer budget of 64 MB, and each under
 the 10 MB of an ask. A picture still past 5 MB is left out, with a warning.
-A page 1 that cannot be drawn gives no ask and a warning.
+
+**A picture that is not drawn.** When the time of the job ran out before a
+picture (the child is stopped at the job's deadline), the step ends
+`failed`: nothing is asked and nothing is written, so the paid rows of a
+run before stay as they are. A picture that pdfjs cannot draw with time
+left is left out, with a warning: a run again would draw it no better. A
+file pdfjs cannot open gives no ask and a warning.
 
 Why the whole page and no tiles: in the P0 score of 20 site PDFs, the old
 whole-page read (144 DPI; about 110 on an A0 under its pixel cap) found 24 of
@@ -1118,7 +1128,12 @@ name the page of the picture:
   400 items an ask at most (`PIPELINE_ASK_LIST_MAX`). A page is a whole
   number from 1 to 10,000.
 - **The answer cap.** An ask with the list part may answer 12,000 tokens;
-  an ask with no list part 1,500, as before (`pipeline-ask.ts`).
+  an ask with no list part 1,500, as before (`pipeline-ask.ts`). The
+  question asks for one line of JSON, `fields` first. An answer the cap
+  cut is not lost: the `fields` object when it is whole, and each whole
+  item before the cut, are read (`cutAnswerOf`), each part as JSON on its
+  own. A model that wrote the fields at the top, with no `fields` key, is
+  read there.
 - **The tab.** An Agent with a list part has a second tab in
   `produces.tabs`; a list part from an Agent with one tab is refused before
   any call (`checkAsks`). One row for each item: `Key` (the ask),
@@ -1129,6 +1144,12 @@ name the page of the picture:
   its row, and its list rows by the same hash, and pays nothing. A stopped
   ask keeps its older row and the list rows of that row's hash. Both tabs
   are written in the one patch, and a Reader's new read keeps both.
+- **Equal pictures.** Two asks of one run with the same input (two equal
+  pages) make one call: the second takes the first's answer. A stored hash
+  gives the list rows of one key only, so a run again never adds them up.
+- **Field names.** SQLite takes a column name with no regard to case: a
+  field may not take `Key`, `Model` or `Input hash`, nor another field's
+  name, in any case (`checkAsks`).
 
 ## The fields in the file's text
 
@@ -1143,7 +1164,8 @@ from the tabs. This holds for every Agent, `iso-title-block` too.
   `column: value` for each cell with a value; no key, model, hash or page;
   no line two times; 64,000 characters at most.
 - One write, with no model and no announcement: an UPDATE of a node's data
-  starts no extract, and `updated_at` stays (`mantle.keep_updated_at`).
+  starts no extract, and `updated_at` stays (`mantle.keep_updated_at`). It
+  writes only while the node holds the bytes the tabs were read from.
 - `agent_text` is a byte key of the extractor's (migration 0377,
   `BYTE_DERIVED_DATA_KEYS`): new bytes drop it, the name-only mode strips it
   with `text`, and a file in that mode gets none. A person's write cannot set

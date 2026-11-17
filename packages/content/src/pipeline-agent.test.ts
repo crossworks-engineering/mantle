@@ -391,6 +391,41 @@ describe('the list part of an ask', () => {
     expect(askListOf(undefined)).toEqual([]);
   });
 
+  it('a list answer the token cap cut: the whole fields and the whole items before the cut', () => {
+    const whole = JSON.stringify({
+      fields: { 'Line number': '6-P-101', Revision: 'B' },
+      list: [
+        { text: 'P-101', class: 'tag' },
+        { text: 'P-102', class: 'tag' },
+      ],
+    });
+    const cut = `${whole.slice(0, whole.lastIndexOf('{'))}{"text":"P-1`;
+    expect(askAnswerOf(cut, FIELDS, true)).toEqual({
+      values: { 'Line number': '6-P-101', Revision: 'B' },
+      list: [{ text: 'P-101', class: 'tag' }],
+    });
+    // An ask with no list part reads no cut answer.
+    expect(askAnswerOf('{"Line number":"6-P', FIELDS, false)).toBeNull();
+    expect(askAnswerOf('{"fields":{"Line', FIELDS, true)).toBeNull();
+  });
+
+  it('a list answer with the fields at the top, with no "fields" key: read there', () => {
+    expect(
+      askAnswerOf('{"Line number":"6-P-101","list":[{"text":"P-1","class":"tag"}]}', FIELDS, true),
+    ).toEqual({
+      values: { 'Line number': '6-P-101', Revision: null },
+      list: [{ text: 'P-1', class: 'tag' }],
+    });
+  });
+
+  it('a field name may not take a fixed column or another field in any case', () => {
+    const named = (names: string[]) =>
+      call('1', 'a.png', { input: { picture: 'a.png', fields: names.map((name) => ({ name })) } });
+    expect(() => checkAsks(AGENT, [named(['key'])], pictures)).toThrow(/taken/);
+    expect(() => checkAsks(AGENT, [named(['INPUT HASH'])], pictures)).toThrow(/taken/);
+    expect(() => checkAsks(AGENT, [named(['Title', 'title'])], pictures)).toThrow(/taken/);
+  });
+
   it('askAnswerOf reads the fields of a list ask from "fields"', () => {
     const text = JSON.stringify({
       fields: { 'Line number': '6-P-101' },
@@ -503,6 +538,35 @@ describe('the list part of an ask', () => {
         ['page-2', 2, 'T-page-2', 'tag', asks()[2]!.hash],
         ['page-2', 2, 'S-1', 'sheet', asks()[2]!.hash],
       ]);
+    });
+
+    it('two asks with the same picture: ONE call, and a run again never adds the list rows up', async () => {
+      // Pages 1 and 2 are equal: the same picture, so the same hash.
+      const equal = () =>
+        checkAsks(
+          LISTER,
+          [listCall('page-1', 'a.png', 1), listCall('page-2', 'a.png', 2)],
+          pictures,
+        );
+      const p = paid();
+      const first = await agentRows('Title block', equal(), [], p.fn, LIST);
+      expect(p.seen).toEqual(['page-1']);
+      expect(first).toMatchObject({ made: 1, reused: 1 });
+      expect(first.listSheet!.rows.map((r) => [r[0], r[1], r[2]])).toEqual([
+        ['page-1', 1, 'T-page-1'],
+        ['page-1', 1, 'S-1'],
+        ['page-2', 2, 'T-page-1'],
+        ['page-2', 2, 'S-1'],
+      ]);
+      let rows = first;
+      for (let run = 0; run < 3; run += 1) {
+        rows = await agentRows('Title block', equal(), storedOf(rows.sheet), paid().fn, {
+          tab: 'Sheet list',
+          stored: storedOf(rows.listSheet),
+        });
+      }
+      expect(rows.listSheet!.rows).toEqual(first.listSheet!.rows);
+      expect(rows.sheet!.rows).toEqual(first.sheet!.rows);
     });
 
     it('an Agent with no list tab gives no list sheet', async () => {

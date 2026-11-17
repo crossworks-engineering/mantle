@@ -19,10 +19,13 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 
 /** Put `text` on the file node as the text of the Agent `pipelineId`, or
- *  take that Agent's text out when `text` is ''. True when a row changed. */
+ *  take that Agent's text out when `text` is ''. Only while the node still
+ *  holds the bytes `sha256` the tabs were read from: new bytes in between
+ *  get no text of the old ones. True when a row changed. */
 export async function writeAgentText(
   ownerId: string,
   nodeId: string,
+  sha256: string,
   pipelineId: string,
   text: string,
 ): Promise<boolean> {
@@ -40,6 +43,7 @@ export async function writeAgentText(
         and(
           eq(nodes.id, nodeId),
           eq(nodes.ownerId, ownerId),
+          sql`${nodes.data}->>'sha256' = ${sha256}`,
           // The name-only mode keeps no text of the file's content.
           sql`coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`,
         ),
