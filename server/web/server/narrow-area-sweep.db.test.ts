@@ -837,14 +837,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
       'offline',
       "Telegram's getMe checks the bot token before the bot is saved",
     ],
-    'POST /api/email/accounts': [
-      'offline',
-      'the IMAP login is tried before the account is saved (email_accounts is narrow all; PUT .../folders writes it on the narrow route)',
-    ],
-    'PATCH /api/email/accounts/:id': [
-      'offline',
-      'the IMAP login is tried before the change is saved',
-    ],
     'POST /api/mcp-connectors/:slug/sync': [
       'offline',
       "the server's tool list is fetched before any write (the tool rows run at tool-group-grant)",

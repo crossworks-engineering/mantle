@@ -15,9 +15,9 @@
  *  - H2: an entity merge moves every fact of the duplicate, one from an
  *    item the scope does not read included (before: left behind, then its
  *    entity set to null by the duplicate's delete, in warn).
- *  - M1: adding a contact queues the backfill of its address for each
- *    enabled mail account (before: the account read was refused in the
- *    scope and no backfill was queued, in every mode).
+ *  - M1: adding a contact works in the scope, in every mode (it queued
+ *    the backfill of its address for each enabled mail account until the
+ *    old sync left, Sync M4: now it queues none).
  *  - Every Admin user is a Moderator of Admin, always: the tick is never
  *    cleared there, an add to Admin is one with it, and migration 0298
  *    ticks one who is not.
@@ -271,17 +271,12 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
   });
 
   for (const mode of ['warn', 'on'] as const) {
-    it(`${mode}: M1, adding a contact queues its backfill for each enabled mail account`, async () => {
+    it(`${mode}: M1, adding a contact works, and queues no mail backfill (Sync M4)`, async () => {
       await setMode(mode);
       boss.sent.length = 0;
       const c = await makeContact(`${mode} m1`);
       expect(c.status).toBe(201);
-      expect(boss.sent.filter((j) => j.queue.endsWith('.backfill'))).toEqual([
-        {
-          queue: 'mantle.email.backfill',
-          data: { accountId: account, target: `${tag}-${mode}-m1@example.invalid` },
-        },
-      ]);
+      expect(boss.sent.filter((j) => j.queue.endsWith('.backfill'))).toEqual([]);
     }, 120_000);
 
     it(`${mode}: H1, the owner switches sharing on, makes the code again, shares, switches it off`, async () => {
