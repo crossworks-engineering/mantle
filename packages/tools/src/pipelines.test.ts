@@ -131,6 +131,9 @@ function file(
 const countsOf = (list: Awaited<ReturnType<typeof listPipelines>>) =>
   Object.fromEntries(list.pipelines.map((p) => [p.id, [p.files, p.older]]));
 
+/** Site tags at the version of the code: its entry is current. */
+const SITE_V = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!.version;
+
 describe('listPipelines', () => {
   it('lists the built-ins, with zero counts on an empty folder', async () => {
     const list = await listPipelines(OWNER);
@@ -173,15 +176,17 @@ describe('listPipelines', () => {
 
   it('the router row: its kinds, its ask and its runs; no counts, no options, no workspace list', async () => {
     h.runs.set('pdf-router', 7);
-    // A PDF database read by drawing-pdf: counted for the reader only.
-    file(1, 'a.pdf', 'a', { id: 'drawing-pdf', version: '1.0.0' });
+    // A PDF database read by drawing-pdf at its version: counted for the
+    // reader only.
+    const pdfV = BUILTIN_PIPELINES.find((p) => p.id === 'drawing-pdf')!.version;
+    file(1, 'a.pdf', 'a', { id: 'drawing-pdf', version: pdfV });
     const list = await listPipelines(OWNER);
     const router = list.pipelines.find((p) => p.id === 'pdf-router')!;
     expect(router).toEqual({
       id: 'pdf-router',
       name: 'PDF router',
       description: BUILTIN_PIPELINES.find((p) => p.id === 'pdf-router')!.description,
-      version: '1.0.0',
+      version: BUILTIN_PIPELINES.find((p) => p.id === 'pdf-router')!.version,
       source: 'builtin',
       problem: null,
       // P3-2: the problem's fixed word, an addition (null for a built-in).
@@ -276,7 +281,7 @@ describe('listPipelines', () => {
     file(2, 'b.csv', 'b', { id: 'sheet', version: '1.9.0' });
     file(3, 'c.csv', 'c', { id: 'sheet', version: '1.10.0', options: '0a1b2c3d' });
     file(4, 'd.csv', 'd');
-    file(5, 'e.dwg', 'e', { id: 'drawing-cad', version: '1.0.0', after: 'site-tags@1.0.0' });
+    file(5, 'e.dwg', 'e', { id: 'drawing-cad', version: '1.0.0', after: `site-tags@${SITE_V}` });
     file(6, 'f.dxf', 'f', undefined, 'site-tags@0.9.0');
     const list = await listPipelines(OWNER);
     const row = (pid: string) => list.pipelines.find((p) => p.id === pid)!;
@@ -293,7 +298,7 @@ describe('listPipelines', () => {
       { version: null, files: 1 },
     ]);
     expect(row('site-tags').versions).toEqual([
-      { version: '1.0.0', files: 1 },
+      { version: SITE_V, files: 1 },
       { version: '0.9.0', files: 1 },
     ]);
     expect([row('site-tags').files, row('site-tags').older]).toEqual([2, 1]);
@@ -344,12 +349,12 @@ describe('listPipelines', () => {
     file(3, 'c.dwg', 'c', {
       id: 'drawing-cad',
       version: '1.0.0',
-      after: 'site-tags@1.0.0#0a1b2c3d',
+      after: `site-tags@${SITE_V}#0a1b2c3d`,
     });
     file(4, 'd.dwg', 'd', {
       id: 'drawing-cad',
       version: '1.0.0',
-      after: 'other@1.0.0,site-tags@1.0.0#0a1b2c3d',
+      after: `other@1.0.0,site-tags@${SITE_V}#0a1b2c3d`,
     });
     // A database built before stamps that Site tags patched (pipeline-reread).
     file(5, 'e.dxf', 'e', undefined, 'site-tags@0.9.0');

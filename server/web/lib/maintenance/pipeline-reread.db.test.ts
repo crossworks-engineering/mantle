@@ -428,7 +428,7 @@ describe.skipIf(!URL)('pipeline-reread', () => {
           })
         ).status,
       ).toBe('patched');
-      expect(await afterOf(patched)).toBe('site-tags@1.0.0');
+      expect(await afterOf(patched)).toBe(`site-tags@${site().version}`);
       expect(await afterOf(fresh)).toBeUndefined();
 
       // The same set as the tool pipeline_reread: a file never patched is
@@ -447,7 +447,7 @@ describe.skipIf(!URL)('pipeline-reread', () => {
       const two = await run('--pipeline=site-tags', scoped(fresh, patched), '--apply');
       expect(two.text).toContain(`${patched.id}: patched (1 tabs, 1 rows)`);
       expect(two.text).toContain('1 never patched');
-      expect(await afterOf(patched)).toBe('site-tags@1.0.0');
+      expect(await afterOf(patched)).toBe(`site-tags@${site().version}`);
       // The reader's stamp is as it was; the patch built nothing.
       expect((await stampOf(patched))?.pipeline_id).toBe('drawing-cad');
       expect(h.builds).toEqual([]);
@@ -467,7 +467,7 @@ describe.skipIf(!URL)('pipeline-reread', () => {
       const three = await run('--pipeline=site-tags', scoped(fresh, patched), '--apply');
       expect(three.text).toContain(`${patched.id}: patched`);
       expect(three.text).toContain('1 never patched');
-      expect(await afterOf(patched)).toBe(`site-tags@1.0.0#${hash}`);
+      expect(await afterOf(patched)).toBe(`site-tags@${site().version}#${hash}`);
       await ps.setPipelineState(anchor, null, site(), { options: { equipment_types: [] } });
     });
 
