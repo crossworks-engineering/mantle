@@ -365,7 +365,7 @@ export const BUILTIN_PIPELINES = [
     id: 'pdf-sheet-read',
     name: 'PDF sheet read',
     description:
-      'Reads the title block and the tags, line numbers and sheet numbers of a PDF drawing that is a scan, an isometric, another drawing or unsure, into the tabs Title block and Sheet list. It runs after an upload and on demand, and makes at most 31 asks of a vision model for a file (an ask the provider failed is tried one time more).',
+      'Reads the title block and the tags, line numbers and sheet numbers of a PDF drawing that is a scan, an isometric, another drawing or unsure, into the tabs Title block and Sheet list. It runs after an upload and on demand, and makes at most 31 asks of a vision model for a file.',
     version: '1.1.0',
     match: { ext: ['pdf'] },
     options: {
