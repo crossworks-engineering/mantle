@@ -296,8 +296,9 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
 
   it('a clash on a file the caller reads but may not change: the bare 409 (no Override offered)', async () => {
     const { id } = await fileWithHistory();
-    const [{ f }] = await raw<{ f: string }[]>`select data->>'filename' as f from nodes
-                                                where id = ${id}`;
+    const f = (
+      await raw<{ f: string }[]>`select data->>'filename' as f from nodes where id = ${id}`
+    )[0]!.f;
     const ro = await upload(L.reader, f, 'other bytes');
     expect(ro.status, await ro.clone().text()).toBe(409);
     const bare = (await ro.json()) as Record<string, unknown>;
