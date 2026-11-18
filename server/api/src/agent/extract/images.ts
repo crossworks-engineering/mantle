@@ -20,7 +20,7 @@ import {
   parserRasterizePdf,
   upsertFile,
 } from '@mantle/files';
-import { startTrace, step } from '@mantle/tracing';
+import { log, startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
@@ -147,7 +147,7 @@ export async function maybeExtractEmbeddedImages(
     for (const p of prior) {
       if (!p.tags.includes(EXTRACTED_IMAGE_TAG)) continue;
       await deleteFileById({ ownerId, fileId: p.id }).catch((err: unknown) => {
-        console.error('[extractor] an older version image was not removed:', errorMessage(err));
+        log('extractor').error(`an older version image was not removed: ${errorMessage(err)}`);
       });
     }
   }

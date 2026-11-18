@@ -13,7 +13,6 @@ import { NextResponse } from '@/server/http-compat';
 import { readerAssetCaller } from '@/lib/auth';
 import { fileVersion } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { CACHE_CONTROL } from '@/lib/cache-control';
 import { historyFileOrNull } from '@/lib/file-history-route';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -54,8 +53,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string; si
     headers: {
       ...safeDownloadHeaders(file.mimeType, versionName(v.filename ?? file.filename, v.seq)),
       'content-length': String(size),
-      // Never kept by a shared cache or the browser.
-      'cache-control': CACHE_CONTROL.privateNone,
     },
   });
 }
