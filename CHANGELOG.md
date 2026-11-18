@@ -4,6 +4,156 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.704.0: honest extraction state, sandbox housekeeping, Sync mail and calendar feeds
+
+- **Added:** each file carries its extraction state: indexed, partial (pages n of m), failed, skipped (with a reason and a hint), pending or name only. It comes from the keys the extractor already writes, with no new column. `file_get`, `file_list`, the Files routes and `node_read` give it. `file_list` with `extraction` (the route takes `?extraction=`) lists the files in one state.
+- **Added:** a new read failure sends the box Admins one push, which opens the Not read list in Files. A partial read sends none.
+- **Changed:** the scan OCR records how many pages it read, so a long scan shows as partial, not as read in full. A file no model may read, whose local read gave its name only, is not marked as read.
+- **Changed:** sandboxes. A stopped sandbox does not count toward the limit, and the default `SANDBOX_MAX_COUNT` is 100 (was 3). The disk budget still bounds stopped ones. Every sandbox tool and route needs the settings area, and an Admin user works in every sandbox, not only in the ones they made.
+- **Added:** Sync M2. The Sync service links IMAP/SMTP mailboxes and ICS calendar feeds. It reads new mail every 5 minutes, pulls each feed every 30 minutes and sends mail, one job at a time. A mailbox never logs in in plain text. The state of each account lives sealed in the new brain table `service_state`; the sidecar keeps no disk. Its account screens show in Settings > Sync, in a sandboxed frame.
+- **Changed:** `email_send` and `email_page` are back, and the Sync service sends the mail. They still wait for a person's approval by default, and the send policy switch and the Sync switch still gate them. A new contact starts a mail backfill again.
+- **Added:** the maintenance task `sync-copy-accounts` copies the mailboxes and feeds a box linked before Sync into `service_state`, with the same ids and no new password.
+- **Note:** the compose file changes (`SYNC_URL`, `SYNC_TOKEN`, `SYNC_BRAIN_URL`, `SANDBOX_MAX_COUNT`): roll with the release compose. The roll writes `SYNC_TOKEN`. Migration 0381 switches the `email_send` and `email_page` tool rows back on, also where an Admin switched them off before. To keep one off, switch it off again in Settings > Tools. A box that linked mail or feeds before Sync runs `sync-copy-accounts` once with Sync on.
+- Migrations: `0380_service_state` (the sealed state of an optional service) and `0381_email_send_back` (switches the two tool rows on again).
+- The client pair is v0.11.0.
+
+## v0.703.1: client pair v0.11.0
+
+- **Changed:** the client pair is v0.11.0: uploads have "Retry failed", the Sync screens are in, the contact share code screens are gone, and the client runs on Next.js 16.4.6.
+- No migration.
+- The client pair is v0.11.0.
+
+## v0.703.0: contact share codes removed, the Sync service, web keep-alive
+
+- **Removed:** contact shares and their codes. Logins with workspaces and password shares replace them. Contacts stay as the email gate, and open links stay as they are. The code route, the code prompt, the "Shared with you" menu, the contact share routes and the visitor cookie are gone. Migration 0378 deletes every contact share row (a kept one would read as an open link with no code).
+- **Added:** the optional Sync service (`sync`, image `mantle-sync`, compose profile `sync`), off by default, switched in Settings > Services. It is the one place for everything that syncs with an outside account. In this release it has `/health` and `/status` only. While it is off, the client hides Email and Contacts, and agents and MCP get no email or contact tools.
+- **Added:** `service_list` and `service_set`: Settings > Services over MCP. MCP leaves out each tool whose optional service is off.
+- **Removed:** the old outside-account sync: the `worker_email`, `worker_microsoft` and `worker_calendar` services (about 400 MiB always on), IMAP sync, backfill, discover and SMTP send, their routes (`/api/microsoft`, `/api/calendar`, `/api/email/discover`, account edit and connect), and the tools `email_send` and `email_page`. Email is read-only until Sync M2: the Email reader, `email_list` and `email_get` read the stored mail. Every stored mail, event, contact, synced file and account row is kept.
+- **Changed:** an Entra MCP connector takes a manual app with the tenant authority, as Settings > Microsoft is gone.
+- **Fixed:** a file synced from OneDrive can be deleted again: `ms_drive_items.node_id` is now `ON DELETE CASCADE`.
+- **Fixed:** the web listener keeps an idle keep-alive socket 130 s, longer than the 2 minute upstream pool of Caddy. Before, a POST that Caddy sent on a socket the server was closing could end as a 502 with no CORS headers.
+- **Note:** the compose file changes (the `sync` service, the three old workers gone): roll with the release compose. The queue setup removes the nine old queues and their schedules.
+- Migrations: `0378_contact_shares_gone` (drops `contact_share_codes`, `share_access_log`, `shares.contact_id` and `shares.can_write`) and `0379_ms_drive_items_node_cascade`.
+- The client pair is v0.10.1.
+
+## v0.702.2: parser memory, parser defaults 2 CPUs and 3 GB
+
+- **Fixed:** the parser runs the garbage collector of a job in step, so the pictures of a very large page (about 100 M pixels) stay under 2 GB.
+- **Changed:** the parser defaults are 2 CPUs and 3 GB (were 1 CPU and 2 GB).
+- **Note:** the compose file changes: roll with the release compose. A 1-vCPU box sets `PARSER_CPUS=1`. A 4 GB box sets `PARSER_MEM_LIMIT=2g`.
+- No migration.
+- The client pair is v0.10.1.
+
+## v0.702.1: PDF sheet read gaps
+
+- **Changed:** `pdf-sheet-read` 1.1.0 asks the vision worker about each page whole and about its two halves, so small text on a large sheet is read. At most 31 asks a file. A blank picture is never asked.
+- **Fixed:** a sheet that is one large embedded image (up to 100 M pixels) is drawn for the Agent. A picture that is not drawn fails the run, so no paid row is lost.
+- **Changed:** a vision call of the sketch read or of an Agent is tried one more time when it gets no status or a 5xx, never on a 4xx.
+- **Changed:** the text of the Agents goes into passages of its own, so search finds it. A run that changed nothing writes nothing.
+- No migration.
+- The client pair is v0.10.1.
+
+## v0.702.0: PDF sheet read Agent, PDF reader 1.1.0
+
+- **Added:** the built-in Agent `pdf-sheet-read`. It reads a PDF of kind scan, isometric, unsure or other drawing page by page with the vision worker, into the tabs `Title block` and `Sheet list`. At most 10 pages and 11 asks a file. Options: `more_fields` and `pages` (1 to 10).
+- **Added:** an ask can carry a list part. The core writes the question and checks the list in the answer as data (text of 120 characters, 400 items, no doubles).
+- **Added:** the text of the tabs of an Agent goes on the file node (`data.agent_text`), so a plain search finds the fields and the list. This is also true for `iso-title-block`.
+- **Changed:** `drawing-pdf` 1.1.0. A list of codes in a table no longer gives tag rows (on the test set, false tags went from 72 to 10 and true tags stayed at 11). Every page of a drawing file has its rows, a typed page too. A drawn page with no text layer gets its lines and curves in the tab `Segments` (250,000 a file at most). The File tab has `Vision text` and the kind rules version 2.
+- **Changed:** the extract gives the summary the kind of a PDF as a fact, so a summary no longer calls an isometric a P&ID.
+- **Note:** PDF databases that `drawing-pdf` 1.0.0 read show as older. `pipeline_reread` reads them again with no model and no cost. A file with a sketch read is skipped, as before.
+- Migration: `0377_agent_text_key` (the extractor key `agent_text`).
+- The client pair is v0.10.1.
+
+## v0.701.0: Agent pipelines, the raster drawing Reader, a default text for any file
+
+- **Added:** the Agent role of a pipeline. An Agent asks a model about a file and writes the answers to a tab of the file's database. It is the one role that costs money. It may ask the AI workers of the box only (now `vision`), never an agent with tools. Its answers are kept by input hash.
+- **Added:** the built-in Agent `iso-title-block` reads the title block of a piping isometric (a TIF scan, an SMF raster or an HP-GL plot) into the tab `Title block`, with at most 2 asks a file.
+- **Added:** the built-in Reader `drawing-raster` reads `.tif`, `.tiff`, `.smf` and `.000` drawings with no model: the tab `Drawing`, a short text and pictures of the sheet. A photo TIFF, a tiled TIFF and a `.000` that is not HP-GL/2 are not its files.
+- **Added:** when the build of an upload writes a file's database, one run is queued for each Agent that reads the file type and is not off in the file's home workspace. `pipeline_run` with `apply` fills a tab later. No timer, sweep or retry starts a run. A Reader's run on demand, a read again and the maintenance tasks ask no model.
+- **Added:** the guards are in the one place where an ask becomes a paid call: the off list, the model work switch of the file, a day cap of the asks of all Agents (`MANTLE_PIPELINE_ASKS_PER_DAY`, 20,000 by default, 0 stops every Agent) and the cap of asks a file. Each paid ask is a trace step `pipeline_ask` with its cost. `pipeline_list` shows the asks of the day and the cap.
+- **Added:** a file that no reader takes gets a short default text: its name, type and size, and for a ZIP or TAR the names of its entries. No model makes it and no entry is opened. So meaning search finds the file.
+- **Note:** after this roll, a new upload of a raster or plot drawing that `drawing-raster` takes starts paid vision asks. To stop that in a workspace, switch the Agent off there with `pipeline_set` (`off_in`).
+- No migration.
+- The client pair is v0.10.1.
+
+## v0.700.2: `app_render`
+
+- **Added:** `app_render` draws a mini app in the browser sidecar and returns a PNG with the errors it raised, as `present_render` does for a canvas. It is read-only: the app's own SQLite opens read-only, and every other bridge call is refused. It has the same rights as opening the app. It is in the apps group and on MCP.
+- No migration.
+- The client pair is v0.10.1.
+
+## v0.700.1: `design_guide` for builders
+
+- **Added:** `design_guide { topic }` gives the design rules for those who build mini apps, decks, dashboards and landing pages, one section at a time, with no spend. The text is the Impeccable skill v4.9.1 (Apache 2.0), with a Mantle part adapted from it. It is in the apps and present groups and on MCP; `app_create` and `present_create` point at it on MCP. It is for what users build, not for the Mantle UI.
+- No migration.
+- The client pair is v0.10.1.
+
+## v0.700.0: Pipelines: one read of a PDF, the same hatch in every process, a clearer compare
+
+- **Changed:** a PDF is read one time: the router hands its page facts to the Reader's job.
+- **Changed:** the PDF decider can make an unsure file more of a drawing, never less.
+- **Changed:** the parser image builds ezdxf from a fork of 1.4.5 (`EZDXF_COMMIT`) whose hatch offset is fixed, so a patterned hatch draws the same in every process.
+- **Changed:** the Reader memo keeps two queues, one for CAD and one for the other Readers, so the run of an own Reader cannot push out the run of a drawing between its passes.
+- **Changed:** `pipeline-compare` ends with where a difference is (by tab, by kind, and by column for a hash). It prints a tab or column name only when a built-in pipeline declares it. A hatch drawing stored before the ezdxf fork shows a difference once.
+- **Fixed:** the picture pass opens its own trace as a `pipeline_run` of the upload, never an `extractor_run`, so the sweep no longer takes a file whose extract has not run as extracted.
+- **Fixed:** the failure of a pipeline step counts on the file that its request names, so a Reader's job on the router's facts reaches the final verdict.
+- No migration.
+- The client pair is v0.9.26.
+
+## v0.607.0: own Readers give text and pictures
+
+- **Added:** an own Reader gives the text of a file where the core has no text route, and its pictures where the core reads none, under the off list. One run of a Reader serves the database, text and picture passes (one memo of a Reader's run). A text-only file keeps its stamp.
+- **Added:** `pipeline_list` rows carry `problemCode`, and `pipeline_test` gives `textLength`. The templates give a short text, and a made-up text-only template (`.qnote`) is added.
+- **Changed:** the Reader memo keeps four runs: two for CAD and two for own Readers.
+- No migration.
+- The client pair is v0.9.26.
+
+## v0.606.0: own pipelines
+
+- **Added:** own pipelines. An Admin with the settings area, or the Admin's agent through MCP, installs a Reader of their own for an extension that no other Reader reads, in TypeScript on Bun or in Python: `pipeline_install` (`POST /api/pipelines`), `pipeline_get` (`GET /api/pipelines/:id/package`) and `pipeline_remove` (`DELETE /api/pipelines/:id`). It asks no model. A package has at most 200 files and 5 MB. A built-in id always wins.
+- **Added:** `pipeline_test` runs a draft package from its own folder and then removes it.
+- **Added:** `docs/pipeline-template/` holds a made-up Reader in Bun and in Python. `scripts/probe-own-python-pipeline.sh` runs the Python one in a built parser image.
+- **Added:** `MANTLE_PIPELINES=curated` makes a box run curated pipelines only: the install refuses, and an own pipeline installed before runs nothing.
+- **Note:** the compose file changes: web writes the packages to `${MANTLE_DATA_DIR}/pipelines`, and the parser mounts that folder read-only (its one mount). Roll with the release compose.
+- Migration: `0376_pipeline_state_package` (the package of an own pipeline on its `pipeline_state` row).
+- The client pair is v0.9.26.
+
+## v0.605.4: `pipeline-compare` on files read before stamps
+
+- **Changed:** `pipeline-compare --older` also compares the databases read before stamps against a run now, and counts them in their own words. A PDF with no stored kind is not compared, so no router runs.
+- **Note:** v0.605.3 has a release commit but no tag. This entry holds its change.
+- No migration.
+- The client pair is v0.9.26.
+
+## v0.605.2: one registry of the pipelines of a box
+
+- **Changed:** one registry (`boxPipelines`) gives the pipelines of a box, and one manifest check (`checkManifest`) is for a built-in and an own manifest. This prepares own pipelines.
+- **Changed:** the failure key of a file carries the pipeline version, so a file that reached its final failure gets its tries again after this change.
+- No migration.
+- The client pair is v0.9.26.
+
+## v0.605.1: the trace of an upload's database read
+
+- **Changed:** the database read of an upload runs in its own trace of kind `pipeline_run` (source upload), so the `file_database` and `auto_table` steps and the cost of the PDF decider land in it. No `extractor_run` opens before the extract, so the sweep still queues a file whose extract died.
+- **Fixed:** `roll.sh` reads the release compose into a variable before its parser check. Before, a pipe under `pipefail` gave a false no at random on a large compose file.
+- **Fixed:** `pipeline-compare` reads a stored tab by its stored column names, and a clock column is null on both sides.
+- No migration.
+- The client pair is v0.9.26.
+
+## v0.605.0: every built-in pipeline runs as a package, an off list per workspace, the PDF router
+
+- **Changed:** every built-in Reader runs as a package in the parser (the job `pipelineRun`): `sheet`, `plan-mspdi`, `plot-dwf`, `drawing-cad`, `drawing-pdf`, and the Transformer `site-tags`. Golden files of made-up inputs hold the rows of the old path.
+- **Added:** the built-in router `pdf-router` names the kind of a PDF, so the right Reader gets it. Its runs are counted. `pipeline_set`, `pipeline_run`, `pipeline_reread` and `pipeline_test` refuse a router.
+- **Changed:** where a pipeline runs. A pipeline is on in every workspace, and an Admin switches it off in a workspace with `pipeline_set` (`off_in`). A Reader that is off spends no parser job and no model call on a new file of its type in that workspace. The paid sketch read of a scan obeys the off list too. A set with `workspaces` is refused.
+- **Added:** the maintenance task `pipeline-compare` shows whether a pipeline gives the same result on real files.
+- **Changed:** the cap on delimited text (`MANTLE_FILE_DB_CSV_MAX_MB`) is one rule for every caller. It goes by what the reader does with the bytes, not by the name, and a wanted Table no longer lifts it. Past it the file records too-large, with no parser job and no Table.
+- **Changed:** the parser stops a `pipelineRun` job at the time limit of its pipeline, and the brain waits 420 s for every pipeline. A result over the answer cap is `too_large`.
+- **Fixed:** a busy or unavailable parser at upload queues one run on demand of the file, so a drawing does not silently lack its Site tags.
+- **Changed:** the docs and the tool help call an `after` pipeline a Transformer.
+- **Note:** migration 0375 clears the workspace list of every pipeline. After it, every pipeline, Site tags too, is on in every workspace. To keep one off in a workspace, set its off list with `pipeline_set`.
+- Migration: `0375_pipeline_state_off_in` (renames `pipeline_state.workspaces` to `off_in`).
+- The client pair is v0.9.26.
+
 ## v0.604.0: Pipelines phase 1 and 2, limits for small boxes, `file_sql` over many files
 
 - **Added:** Pipelines phase 1. One registry names the built-in readers that make a file's database (spreadsheet, project plan, PDF drawing, DWF plot set, CAD drawing), and one lookup picks the reader of a file. Each new file database carries a stamp in `_meta`: the pipeline, its version, the contract and the shapes. No reader's rows change. See `docs/pipelines.md`.
