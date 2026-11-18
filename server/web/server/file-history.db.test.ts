@@ -258,6 +258,32 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     expect(await versionCount(id)).toBe(0);
   });
 
+  it('replace with the same bytes: skipped, nothing written, no version', async () => {
+    const name = `${tag}-retry.txt`;
+    const first = await upload(owner, name, 'gamma');
+    const id = ((await first.json()) as { file: { id: string } }).file.id;
+    const before = (
+      await raw<{ u: string }[]>`select updated_at::text as u from nodes where id = ${id}`
+    )[0]!.u;
+    const again = await upload(owner, name, 'gamma', true);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({
+      skipped: true,
+      reason: 'same-bytes',
+      existing: { id, sha256: sha('gamma') },
+    });
+    const after = (
+      await raw<{ u: string }[]>`select updated_at::text as u from nodes where id = ${id}`
+    )[0]!.u;
+    expect(after).toBe(before);
+    expect(await versionCount(id)).toBe(0);
+    // Other bytes with replace still replace, and keep one version.
+    const other = await upload(owner, name, 'delta', true);
+    expect(other.status).toBe(200);
+    expect(await fileSha(id)).toBe(sha('delta'));
+    expect(await versionCount(id)).toBe(1);
+  });
+
   it('an overwrite keeps the old bytes: listed, counted, downloaded byte for byte', async () => {
     const { id, bodies } = await fileWithHistory();
     expect(await fileSha(id)).toBe(sha(bodies[2]!));

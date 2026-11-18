@@ -193,9 +193,11 @@ export async function upsertFile(args: {
    *  on insert, and on the watcher's row when this
    *  create lost the race to it; an existing file keeps its own. */
   loginId?: string | null;
-  /** An upload with no `overwrite` whose name is taken by the same bytes:
-   *  nothing is written and the file there comes back with `skipped`
-   *  ("Already here"). Without it such an upload is the 409 as before. */
+  /** An upload whose name is taken by the same bytes: nothing is written
+   *  and the file there comes back with `skipped` ("Already here"), with
+   *  `overwrite` too (a retry that resends replace keeps no version).
+   *  Without it such an upload is the 409 as before (an overwrite of the
+   *  same bytes writes the row again, and keeps no version). */
   skipSameBytes?: true;
   /** A restore of a kept version (file-history-restore.ts): the bytes it
    *  replaces are kept as `pre_restore`, naming the version put back. */
@@ -283,6 +285,18 @@ export async function upsertFile(args: {
         const id = existing.id;
         if ((await inCallerScope(() => mayEditNode(id))) === false) {
           throw new FileNameTakenError(filename);
+        }
+        // The same bytes again over the file (an upload's retry after a
+        // dropped connection resends replace): nothing is written and no
+        // version is kept ("Already here").
+        if (args.skipSameBytes) {
+          const theirs = (existing.data as Record<string, unknown> | null)?.sha256;
+          const mine =
+            args.spooled?.sha256 ?? createHash('sha256').update(args.bytes!).digest('hex');
+          if (typeof theirs === 'string' && theirs === mine) {
+            if (args.spooled) await discardSpooled(args.spooled);
+            return { ...fileRowFromNode(existing), skipped: true };
+          }
         }
       }
     }

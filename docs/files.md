@@ -413,7 +413,9 @@ New bytes over a file keep the bytes they replace (owner's decisions,
   nothing is written ("Already here"); other bytes answer 409
   `{ error, reason: 'name-taken', existing: { id, sha256, sizeBytes, name } }`
   so the client can ask Override / Override all / Skip / Skip all. Override
-  is the same upload with `replace=true`. A name taken by a file the caller
+  is the same upload with `replace=true`; with `replace=true` the same
+  bytes are skipped too (a retry keeps no duplicate version). A name taken
+  by a file the caller
   does not read stays the plain 409 (nothing about it is said).
 - **Versions.** Every overwrite with new bytes (an upload with replace, an
   edit, an export saved again, a tool's overwrite) keeps the old bytes as a
