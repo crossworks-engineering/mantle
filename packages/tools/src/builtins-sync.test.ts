@@ -18,9 +18,9 @@ vi.mock('@mantle/email', async (importOriginal) => {
 });
 
 import { sync_remove, sync_drive_set, sync_status } from './builtins-sync';
-import type { ToolContext } from './types';
+import type { ToolHandlerContext } from './types';
 
-const ctx = { ownerId: '00000000-0000-4000-8000-000000000001' } as unknown as ToolContext;
+const ctx = { ownerId: '00000000-0000-4000-8000-000000000001' } as unknown as ToolHandlerContext;
 const ID = '00000000-0000-4000-8000-0000000000aa';
 
 beforeEach(() => {
