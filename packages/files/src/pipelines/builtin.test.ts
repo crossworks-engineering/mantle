@@ -9,7 +9,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FILE_KIND_ORDER, PDF_KINDS } from '../pdf-kind';
 import { extractWeightOfExt, SOME_FILES_EXTS } from '../slug';
-import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
+import {
+  PIPELINE_API,
+  PIPELINE_ASK_PAGE_MAX,
+  PIPELINE_DESCRIPTION_MAX,
+  PIPELINE_WINDOW_DEFAULT,
+  type PipelineManifest,
+} from './contract';
 import {
   BUILTIN_PIPELINES,
   afterMatches,
@@ -48,11 +54,22 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('every extension has exactly one reader, and readerFor finds it', () => {
+  it('every extension has one reader by extension, and readerFor finds it; a second claims kinds only', () => {
     const seen = new Map<string, string>();
     for (const p of READERS) {
       for (const ext of p.match.ext) {
-        expect(seen.get(ext), `.${ext} is read by ${seen.get(ext)} and ${p.id}`).toBeUndefined();
+        const first = seen.get(ext);
+        if (first !== undefined) {
+          // The book reader: a second reader of a routed type, of the kinds
+          // the first does not claim.
+          const firstKinds = READERS.find((r) => r.id === first)!.match.kind ?? [];
+          const kinds = (p.match as PipelineManifest['match']).kind ?? [];
+          expect(kinds.length, `.${ext} is read by ${first} and ${p.id}`).toBeGreaterThan(0);
+          expect(routerFor(BUILTIN_PIPELINES, ext), ext).not.toBeNull();
+          for (const k of kinds) expect(firstKinds as readonly string[]).not.toContain(k);
+          expect(readerFor(BUILTIN_PIPELINES, ext)?.id).toBe(first);
+          continue;
+        }
         seen.set(ext, p.id);
         expect(readerFor(BUILTIN_PIPELINES, ext)?.id).toBe(p.id);
       }
@@ -94,9 +111,20 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('the only python built-in is drawing-raster, model-free, with no automatic Table', () => {
+  it('the python built-ins are drawing-raster and pdf-pages, model-free, with no automatic Table', () => {
     const python = BUILTIN_PIPELINES.filter((p) => (p.runtime as string) === 'python');
-    expect(python.map((p) => p.id)).toEqual(['drawing-raster']);
+    expect(python.map((p) => p.id)).toEqual(['drawing-raster', 'pdf-pages']);
+    const book = python[1] as PipelineManifest;
+    expect(book.needs.workers).toBeUndefined();
+    expect(book.produces).toEqual({ text: true, pictures: true, table: false, pages: true });
+    expect(book.match).toEqual({ ext: ['pdf'], kind: ['book'] });
+    expect(book.needs.window).toEqual(PIPELINE_WINDOW_DEFAULT);
+    expect(Object.keys(book.options ?? {})).toEqual([
+      'text_min_chars',
+      'ocr_min_confidence',
+      'ocr_dpi',
+      'tables',
+    ]);
     const iso = python[0] as PipelineManifest;
     expect(iso.needs.workers).toBeUndefined();
     expect(iso.produces).toEqual({ text: true, pictures: true, table: false });
@@ -233,6 +261,8 @@ describe('the roles', () => {
       'site-tags': 'after',
       'iso-title-block': 'agent',
       'pdf-sheet-read': 'agent',
+      'pdf-pages': 'reader',
+      'pdf-page-read': 'agent',
     });
   });
 
@@ -245,7 +275,7 @@ describe('the roles', () => {
   });
 
   it('an Agent gets the file, writes one tab and at most a list tab, and reads no other database', () => {
-    expect(AGENTS.map((p) => p.id)).toEqual(['iso-title-block', 'pdf-sheet-read']);
+    expect(AGENTS.map((p) => p.id)).toEqual(['iso-title-block', 'pdf-sheet-read', 'pdf-page-read']);
     for (const p of AGENTS as readonly PipelineManifest[]) {
       expect(p.input, p.id).toBe('file');
       expect(p.produces.tabs?.length, p.id).toBeGreaterThanOrEqual(1);
@@ -279,6 +309,9 @@ describe('the roles', () => {
     const readerOf: Record<string, string> = {
       'iso-title-block': 'drawing-raster',
       'pdf-sheet-read': 'drawing-pdf',
+      // By extension; the book's database is the book reader's (pdf-pages,
+      // by the kind `book`).
+      'pdf-page-read': 'drawing-pdf',
     };
     for (const p of AGENTS) {
       expect(isReader(p)).toBe(false);
@@ -301,6 +334,25 @@ describe('the roles', () => {
     const ids: string[] = BUILTIN_PIPELINES.map((p) => p.id);
     expect(ids.indexOf('iso-title-block')).toBeGreaterThan(ids.indexOf('drawing-raster'));
     expect(ids.indexOf('pdf-sheet-read')).toBeGreaterThan(ids.indexOf('drawing-pdf'));
+    expect(ids.indexOf('pdf-page-read')).toBeGreaterThan(ids.indexOf('pdf-pages'));
+  });
+
+  it('the book Agent: one tab, text by page, vision one ask a page, in the book windows', () => {
+    const agent = AGENTS.find((p) => p.id === 'pdf-page-read')! as PipelineManifest;
+    expect(agent.match).toEqual({ ext: ['pdf'] });
+    expect(agent.produces).toEqual({ tabs: ['Page text'], pages: true });
+    expect(agent.needs).toEqual({
+      weight: 'heavy',
+      timeMs: 240_000,
+      workers: { vision: PIPELINE_ASK_PAGE_MAX },
+      window: PIPELINE_WINDOW_DEFAULT,
+    });
+    expect(Object.keys(agent.options ?? {})).toEqual(['pages']);
+    const pages = agent.options!.pages!;
+    expect(pages.type === 'number' && [pages.default, pages.max]).toEqual([
+      2000,
+      PIPELINE_ASK_PAGE_MAX,
+    ]);
   });
 
   it('the PDF Agent: two tabs, the vision worker 31 times at most, two options', () => {
@@ -348,11 +400,12 @@ describe('the PDF router', () => {
     expect(router.produces.shapes).toBeUndefined();
   });
 
-  it('names the ten kinds of PDF_KINDS, and marks the four the rules never give as the decider answer', () => {
-    expect(named).toHaveLength(10);
+  it('names the eleven kinds of PDF_KINDS, and marks the four the rules never give as the decider answer', () => {
+    expect(named).toHaveLength(11);
     expect(new Set(named)).toEqual(new Set(PDF_KINDS));
     const byRules = (router.produces.kinds ?? []).filter((k) => !k.decider).map((k) => k.kind);
-    expect(new Set(byRules)).toEqual(new Set(FILE_KIND_ORDER));
+    // The page rules' kinds, and `book` by its own rule (bookOf).
+    expect(new Set(byRules)).toEqual(new Set([...FILE_KIND_ORDER, 'book']));
     const byDecider = (router.produces.kinds ?? []).filter((k) => k.decider).map((k) => k.kind);
     expect(byDecider.sort()).toEqual(['datasheet', 'equipment_drawing', 'pfd', 'table']);
   });
@@ -362,18 +415,18 @@ describe('the PDF router', () => {
     expect(router.needs.weight).toBe('light');
   });
 
-  it('drawing-pdf claims every kind the router names but document', () => {
+  it('drawing-pdf claims every kind the router names but document and book', () => {
     expect([...(reader.match.kind ?? [])].sort()).toEqual(
-      named.filter((k) => k !== 'document').sort(),
+      named.filter((k) => k !== 'document' && k !== 'book').sort(),
     );
-    // 1.1.0: the rows of the P3 fixes (docs/pipelines.md, "The PDF set").
-    expect(reader.version).toBe('1.1.0');
+    // 1.1.1: the File tab's Rules version 3 (the kind `book`).
+    expect(reader.version).toBe('1.1.1');
   });
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {
     for (const kind of named) {
       expect(readerFor(BUILTIN_PIPELINES, 'pdf', kind)?.id ?? null, kind).toBe(
-        kind === 'document' ? null : 'drawing-pdf',
+        kind === 'document' ? null : kind === 'book' ? 'pdf-pages' : 'drawing-pdf',
       );
     }
     expect(readerFor(BUILTIN_PIPELINES, 'pdf')?.id).toBe('drawing-pdf');

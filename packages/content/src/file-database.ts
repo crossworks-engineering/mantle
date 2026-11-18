@@ -84,6 +84,7 @@ import {
   type PdfDecide,
   type StoredPdf,
 } from './pdf-read';
+import { bookVisionPagesOf } from './book-pages';
 import {
   AGENT_HASH_COLUMN,
   AGENT_LIST_COLUMNS,
@@ -1048,10 +1049,18 @@ export async function agentInputOf(
   ext: string,
   pipelines: BoxPipelines,
   sqlite: string,
-): Promise<{ kind?: string; state: { readerOptions: Readonly<Record<string, unknown>> } }> {
+): Promise<{
+  kind?: string;
+  state: { readerOptions: Readonly<Record<string, unknown>>; visionPages?: number[] };
+}> {
   const kind = pipelines.routerFor(ext) ? (await storedPdfOf(sqlite))?.kind : undefined;
   const readerOptions = (await readerOptionsOf(ownerId, ext, pipelines)) ?? {};
-  return { ...(kind !== undefined ? { kind } : {}), state: { readerOptions } };
+  // A book: the pages its reader left to vision (pdf-page-read, M3).
+  const visionPages = kind === 'book' ? await bookVisionPagesOf(sqlite) : undefined;
+  return {
+    ...(kind !== undefined ? { kind } : {}),
+    state: { readerOptions, ...(visionPages ? { visionPages } : {}) },
+  };
 }
 
 export type FileAgentRun =

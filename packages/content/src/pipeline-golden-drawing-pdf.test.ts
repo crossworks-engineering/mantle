@@ -298,7 +298,7 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
       ),
     ).toMatchObject({
       pipeline_id: 'drawing-pdf',
-      pipeline_version: '1.1.0',
+      pipeline_version: '1.1.1',
       pipeline_api: '1',
       shapes: 'pdf-file-v1',
       pipeline_options: hash,
