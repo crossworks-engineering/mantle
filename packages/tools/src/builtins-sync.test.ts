@@ -44,7 +44,10 @@ describe('sync_remove', () => {
 
 describe('sync_drive_set and sync_status', () => {
   it('a drive change needs a switch or a selection, and maps the selection fields', async () => {
-    expect(await sync_drive_set.handler({ drive_id: ID }, ctx)).toMatchObject({ ok: false });
+    expect(await sync_drive_set.handler({ drive_id: ID }, ctx)).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/pass `enabled`/),
+    });
     expect(admin.calls).toEqual([]);
     await sync_drive_set.handler(
       { drive_id: ID, selections: [{ item_id: 'F1', path: '/Reports', is_folder: true }] },

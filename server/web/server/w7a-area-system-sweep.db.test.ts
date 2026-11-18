@@ -461,7 +461,10 @@ describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', 
       await reopen();
       actor.takeNarrowUses();
       await runAll();
-      expect(actor.takeNarrowUses()['system:admin-area'] ?? 0).toBeGreaterThan(whole.length);
+      // The sync_* tools (Sync plan M3) read no table: each calls the Sync
+      // sidecar's admin routes, so they bring no narrow use of their own.
+      const tableTools = whole.filter((d) => !d.slug.startsWith('sync_'));
+      expect(actor.takeNarrowUses()['system:admin-area'] ?? 0).toBeGreaterThan(tableTools.length);
     } finally {
       await m.closeDb();
       await su`select mantle_set_actor_check(${box!.mode}, 50, 'test')`;

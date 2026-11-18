@@ -230,7 +230,8 @@ export const sync_microsoft_set: BuiltinToolDef = {
       if (!r.ok) return r;
       out.drives = r.output;
     }
-    if (Object.keys(out).length === 0) return { ok: false, error: 'set `mail` or `find_drives`' };
+    if (Object.keys(out).length === 0)
+      return { ok: false, error: 'pass `mail` (true or false) or `find_drives: true`' };
     return { ok: true, output: out };
   },
 };
@@ -300,7 +301,7 @@ export const sync_drive_set: BuiltinToolDef = {
         }))
       : undefined;
     if (typeof i.enabled !== 'boolean' && !selections) {
-      return { ok: false, error: 'set `enabled` or `selections`' };
+      return { ok: false, error: 'pass `enabled` (true or false) or `selections`' };
     }
     return admin('/admin/drive', {
       driveId: i.drive_id,
