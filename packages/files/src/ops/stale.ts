@@ -42,8 +42,7 @@ const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
 function staleCut(installed: readonly { id: string; version: string }[]): SQL {
   const parts: SQL[] = [];
   for (const [reader, v] of Object.entries(READER_VERSIONS)) {
-    // Every stamp is at least 1: a reader still at 1 has no stale file.
-    if (v <= 1) continue;
+    // One range of the index each (an empty one for a reader at 1).
     parts.push(sql`("nodes"."type" = 'file' and "nodes"."data" ? 'read_by'
       and ("nodes"."data" -> 'read_by' ->> 'reader') = ${reader}
       and ("nodes"."data" -> 'read_by' -> 'v') < ${String(v)}::jsonb
