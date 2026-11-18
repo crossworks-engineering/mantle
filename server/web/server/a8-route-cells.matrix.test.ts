@@ -87,11 +87,7 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
   /** A plain user of R, Write off (A8_READ_USER): reads, may not edit. */
   const readUser = randomUUID();
   const loginOf = (role: A8RouteRole) =>
-    role === 'adminWriteGrant'
-      ? adminWriteGrant
-      : role === 'readUser'
-        ? readUser
-        : fx.logins[role];
+    role === 'adminWriteGrant' ? adminWriteGrant : role === 'readUser' ? readUser : fx.logins[role];
 
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');

@@ -966,7 +966,8 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
         plan.uncovered[r.key] = 'no cell where its right and its higher right part';
       }
       if (tells && noPart) {
-        plan.mismatched[r.key] = `a cell parts its right and its higher one: drop noPart (${noPart})`;
+        plan.mismatched[r.key] =
+          `a cell parts its right and its higher one: drop noPart (${noPart})`;
       }
     }
   }
