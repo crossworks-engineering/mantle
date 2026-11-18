@@ -40,6 +40,8 @@ import { createLoginNoticeHandler, warnIfSchemaBehind } from '../lib/push/login-
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
 import { FILE_READ_FAILED_CHANNEL, systemDatabaseUrl } from '@mantle/db';
+import { log } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 
 interface ConversationChange {
   ownerId: string;
@@ -122,11 +124,11 @@ function handleReadFailed(ownerId: string): void {
     try {
       const r = await pushReadFailed(ownerId, readFailedLast);
       if (!r.skipped) {
-        console.log(`[push-notify] read-failed: delivered ${r.delivered}/${r.attempted}`);
+        log('push-notify').info(`read-failed: delivered ${r.delivered}/${r.attempted}`);
       }
     } catch (err) {
       if (!warnIfSchemaBehind(err)) {
-        console.error('[push-notify] read-failed send failed:', (err as Error).message);
+        log('push-notify').error(`read-failed send failed: ${errorMessage(err)}`);
       }
     }
   });

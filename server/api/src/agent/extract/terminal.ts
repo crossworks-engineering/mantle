@@ -20,7 +20,8 @@ import {
   READ_FAILURE_SKIPS,
   FILE_READ_FAILED_CHANNEL,
 } from '@mantle/db';
-import { recordSkippedTrace } from '@mantle/tracing';
+import { log, recordSkippedTrace } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 
 /** A skip trace's fields, with the node it is about. */
 export type SkipInit = Parameters<typeof recordSkippedTrace>[0] & { subjectId: string };
@@ -46,10 +47,7 @@ async function notifyReadFailed(ownerId: string): Promise<void> {
   try {
     await db.execute(sql`SELECT pg_notify(${FILE_READ_FAILED_CHANNEL}, ${ownerId}::text)`);
   } catch (err) {
-    console.error(
-      '[extractor] read-failed notify failed:',
-      err instanceof Error ? err.message : err,
-    );
+    log('extractor').error(`read-failed notify failed: ${errorMessage(err)}`);
   }
 }
 
