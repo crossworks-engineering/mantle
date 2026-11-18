@@ -144,6 +144,9 @@ const CONFIRM_WITHOUT_DESTRUCTIVE_SLUG: Record<string, string> = {
   // Replaces the table's draft (and its live data with commit: true); the
   // commit keeps the version it replaces, so it is undoable.
   table_snapshot_restore: "replaces the table's draft, or its live data with commit",
+  // Replaces a file's bytes with a kept version; the bytes it replaces are
+  // kept as a new version, so it is undoable.
+  file_history_restore: "replaces the file's bytes (the bytes it replaces are kept)",
 };
 
 /** Every tool the floor applies to: destructive OR confirm-gated. */

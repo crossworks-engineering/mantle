@@ -180,6 +180,9 @@ export type TreeItem = {
   workspaces: ListWorkspace[];
   /** A live open public link exists (the "Public" pill). */
   hasLink: boolean;
+  /** A file only: how many kept versions it has (file history; 0 for
+   *  none), for a history badge. */
+  versions?: number;
   /** A member's tree only: a draft rather than a brain item (folder plan
    *  phase 5). `own` is the member's own; `team` a teammate's draft shared
    *  with the team. Absent on a brain item. */

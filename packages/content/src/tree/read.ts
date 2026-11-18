@@ -42,6 +42,7 @@ import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
 import { itemMeta, itemState, itemSubtype, kindItemFilter } from './kinds';
 import { RANK_RE } from '../rank';
+import { withVersions } from '@mantle/files';
 
 type FolderSqlRow = {
   id: string;
@@ -446,8 +447,10 @@ export async function itemPage(
   const more = rows.length > limit;
   const page = more ? rows.slice(0, limit) : rows;
   const last = page.at(-1);
+  const items = page.map((r) => treeItemFromRow(kind, r));
   return {
-    items: page.map((r) => treeItemFromRow(kind, r)),
+    // A file's kept versions (file history), one read for the page.
+    items: kind === 'files' ? await withVersions(items) : items,
     nextCursor:
       more && last ? encodeTreeCursor({ sort, key: String(last.sort_key), id: last.id }) : null,
   };

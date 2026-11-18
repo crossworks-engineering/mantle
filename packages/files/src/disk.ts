@@ -120,35 +120,38 @@ export async function placeStaged(staged: StagedFile): Promise<void> {
  * stage never placed. A crash in between leaves the old bytes under a
  * staging name, which the staged-leftover sweep removes after an hour.
  */
-export function overwritePlacement(staged: StagedFile): {
+export function overwritePlacement(
+  staged: StagedFile,
+  /** Where the old bytes are kept for good (a file history entry, under the
+   *  files root so the link is a link: file-history.ts), asked when `place`
+   *  runs: the flip decides it under the row's lock, from the bytes the row
+   *  names then. Undefined: a staging name, dropped by `release`. A history
+   *  entry stays after `release`; `kept()` says whether it was kept. */
+  historyAt?: () => string | undefined,
+): {
   place: () => Promise<void>;
   unplace: () => Promise<void>;
   release: () => Promise<void>;
   discard: () => Promise<void>;
+  kept: () => boolean;
 } {
-  // The old bytes keep their own times (a hard link); the name says when
-  // they were kept, which the staged-leftover sweep goes by.
-  const keep = path.join(
-    path.dirname(staged.finalPath),
-    `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`,
-  );
+  let keep = '';
+  let asHistory = false;
   let kept = false;
   return {
+    kept: () => kept,
     place: async () => {
-      try {
-        await fs.link(staged.finalPath, keep);
-        kept = true;
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== 'ENOENT') {
-          // A filesystem that refuses hard links: a copy of the old bytes.
-          if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EXDEV' && code !== 'EMLINK') {
-            throw err;
-          }
-          await fs.copyFile(staged.finalPath, keep);
-          kept = true;
-        }
-      }
+      const at = historyAt?.();
+      asHistory = at !== undefined;
+      // The old bytes keep their own times (a hard link); a staging name
+      // says when they were kept, which the staged-leftover sweep goes by.
+      keep =
+        at ??
+        path.join(
+          path.dirname(staged.finalPath),
+          `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`,
+        );
+      kept = await keepBytesAt(staged.finalPath, keep);
       await fs.rename(staged.tempPath, staged.finalPath);
     },
     unplace: async () => {
@@ -157,11 +160,44 @@ export function overwritePlacement(staged: StagedFile): {
       kept = false;
     },
     release: async () => {
+      // A history entry stays: its row names it now.
+      if (asHistory) return;
       if (kept) await fs.unlink(keep).catch(() => {});
       kept = false;
     },
     discard: () => discardStaged(staged),
   };
+}
+
+/**
+ * Keep the bytes at `from` under `to` (its folder made): a hard link, or a
+ * copy on a filesystem that refuses one. False when there is nothing at
+ * `from` (a row whose file was lost). The one way old bytes are kept: an
+ * overwrite's (overwritePlacement) and a delete's (file history).
+ */
+export async function keepBytesAt(from: string, to: string, again = true): Promise<boolean> {
+  await fs.mkdir(path.dirname(to), { recursive: true });
+  try {
+    await fs.link(from, to);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      // The bytes are there, so the folder went (a sweep took an empty
+      // folder between the mkdir and the link): once more.
+      const there = await fs.access(from).then(
+        () => true,
+        () => false,
+      );
+      return there && again ? keepBytesAt(from, to, false) : false;
+    }
+    // A filesystem that refuses hard links: a copy of the old bytes.
+    if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EXDEV' && code !== 'EMLINK') {
+      throw err;
+    }
+    await fs.copyFile(from, to);
+    return true;
+  }
 }
 
 /** Drop a staging file. Safe after placement (ENOENT is fine). */

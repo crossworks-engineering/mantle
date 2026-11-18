@@ -157,6 +157,16 @@ export type {
   FileDerivedCounts,
 } from './dto/file-deletes';
 export type {
+  FileHistoryResponse,
+  FileHistoryRights,
+  FileRestoreResponse,
+  FileVersion,
+  FileVersionTrigger,
+  UploadClashResponse,
+  UploadExistingFile,
+  UploadSkippedResponse,
+} from './dto/file-history';
+export type {
   DataFileRow,
   DataFileState,
   DataFilesResponse,

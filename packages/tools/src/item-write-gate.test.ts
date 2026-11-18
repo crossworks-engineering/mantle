@@ -265,6 +265,17 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['table_snapshot_create', entry('id', 'edit', SNAPSHOTS)],
   ['table_snapshot_delete', entry('id', 'manage', SNAPSHOTS)],
   ['file_rename', entry('file_id', 'edit', WRITE)],
+  // File history: a Moderator's (manage, or a Moderator of a workspace that
+  // holds the file), asked before anything is read or written; then the
+  // overwrite's own edit check, and the node_snapshots edit check (0280).
+  [
+    'file_history_restore',
+    entry('file_id', 'edit', lib('restoreFileVersion: assertMayModerateFile, before the copy')),
+  ],
+  [
+    'file_history_delete',
+    entry('file_id', 'edit', lib('deleteFileVersion: assertMayModerateFile, before the delete')),
+  ],
   ['file_set_indexing', entry('file_id', 'edit', WRITE)],
   ['folder_rename', entry('folder_id', 'edit', SUBTREE)],
   ['folder_describe', entry('folder_id', 'edit', WRITE)],
@@ -355,8 +366,9 @@ describe('the writes the database checks (the pre-check removal)', () => {
     // tree's custom order added tree_item_place; the code tools four;
     // app_source_from_bundle; the three app timer writes; less the three Recall
     // acts that are a person's (person-only-acts.ts); the two task file writes;
-    // the two submission acts; drawing_redraw; pipeline_run.
-    expect(DATABASE_CHECKED.size).toBe(113);
+    // the two submission acts; drawing_redraw; pipeline_run; the two file
+    // history acts (restore, delete a version).
+    expect(DATABASE_CHECKED.size).toBe(115);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

@@ -48,6 +48,9 @@ describe('mcpOnly builtins', () => {
         'api_key_test',
         'app_authoring_guide',
         'file_delete',
+        // A file's kept version deleted for good (file history): an owner's
+        // client only, as file_delete.
+        'file_history_delete',
         // file_upload is no longer here (2026-11-03): seeded so a mini app
         // can declare it, held by the `app-files` group and no agent.
         'folder_create',

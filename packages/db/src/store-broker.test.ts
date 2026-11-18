@@ -467,6 +467,46 @@ describe('sweepOrphans', () => {
     expect(existsSync(stage)).toBe(true);
   });
 
+  it('noRowGoes (file history): a file no row names goes as an unreferenced one, by its change time, while some row names a file', async () => {
+    root = path.join(dir, 'store-norow');
+    // A version: `<owner>/<file>/<version>.bin`, the version the row.
+    const verOf = (rel: string) => /^[a-z]+\/[a-z]+\/([a-z]+)\.bin$/.exec(rel)?.[1] ?? null;
+    // Old write times (a hard link keeps the old bytes' times); the change
+    // time is now, as a fresh link's is.
+    const stray = put('o/f/stray.bin', 30 * HOUR);
+    const kept = put('o/f/kept.bin', 30 * HOUR);
+    const vspec = {
+      store: 'snapshots' as const,
+      label: 'filesnap',
+      root,
+      nodeOf: verOf,
+      pruneEmptyDirs: true,
+      stopWhenNoRows: false,
+      noRowGoes: true,
+      rows: async () => [{ node: 'kept', files: ['o/f/kept.bin'] }],
+    };
+    const now = Date.now();
+    // Linked a moment ago: in flight, never marked.
+    const young = await sweepOrphans(vspec, { now });
+    expect(young.marked).toBe(0);
+    expect(young.noRow).toEqual([]);
+    const first = await sweepOrphans(vspec, { now: now + 2 * HOUR });
+    expect(first.marked).toBe(1);
+    expect(first.removed).toEqual([]);
+    const later = await sweepOrphans(vspec, { now: now + 3 * HOUR });
+    expect(later.removed).toEqual(['o/f/stray.bin']);
+    expect(existsSync(stray)).toBe(false);
+    expect(existsSync(kept)).toBe(true);
+    // No row naming any file (a wrong or empty database): reported only.
+    const lone = put('o/g/lone.bin', 30 * HOUR);
+    for (const t of [now + 5 * HOUR, now + 7 * HOUR]) {
+      const r = await sweepOrphans({ ...vspec, rows: async () => [] }, { now: t });
+      expect(r.removed).toEqual([]);
+      expect(r.noRow.sort()).toEqual(['o/f/kept.bin', 'o/g/lone.bin']);
+    }
+    expect(existsSync(lone)).toBe(true);
+  });
+
   it("never removes a node's files while its row names a file that is not on disk", async () => {
     root = path.join(dir, 'store-4');
     const only = put('r/d.r-1.sqlite', 30 * HOUR);

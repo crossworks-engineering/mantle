@@ -223,6 +223,14 @@ const csvUpload = (c: A8RouteCtx) => {
   };
 };
 
+/** A file's version acts: the right passed, and a fresh file keeps no
+ *  version (file-history.db.test.ts makes one). */
+const FILE_NO_VERSION =
+  'the right passed; a fresh file keeps no version, so the version answers not found';
+/** Who restores or deletes a file's version (the owner's rule, 2026-11-18). */
+const FILE_VERSION_MODERATORS =
+  'restore and delete of a version are a Moderator’s (of the home, of a workspace that holds the file, or an Admin user): a user with Write on edits the file and does not restore it';
+
 /** Every route the cells run, by its row key. */
 export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'PATCH /api/notes/:id': { kind: 'note', action: 'edit', body: title, warnMade: true },
@@ -569,6 +577,26 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     },
   },
   'DELETE /api/files/files/:id': { kind: 'file', action: 'delete', seed: 'file_rename' },
+  // File history (docs/files.md, "File history"): restore and delete of a
+  // version are a Moderator's (the home's, a holder's, or an Admin user),
+  // never a user with Write on. A fresh file keeps no version, so the
+  // allowed request is the not found of the version after the right.
+  'POST /api/files/files/:id/history/:sid/restore': {
+    kind: 'file',
+    action: 'edit',
+    seed: 'file_rename',
+    params: () => ({ sid: '00000000-0000-4000-8000-0000000000a8' }),
+    allowedStatus: { status: 404, why: FILE_NO_VERSION },
+    narrow: { roles: ['writeGrant'], why: FILE_VERSION_MODERATORS },
+  },
+  'DELETE /api/files/files/:id/history/:sid': {
+    kind: 'file',
+    action: 'edit',
+    seed: 'file_rename',
+    params: () => ({ sid: '00000000-0000-4000-8000-0000000000a8' }),
+    allowedStatus: { status: 404, why: FILE_NO_VERSION },
+    narrow: { roles: ['writeGrant'], why: FILE_VERSION_MODERATORS },
+  },
   'POST /api/files/files/:id': {
     kind: 'file',
     action: 'edit',

@@ -703,6 +703,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_copy',
       'folder_move',
       'folder_copy',
+      // A file's kept versions (file history): list, and restore, which keeps
+      // the bytes it replaces as a new version (undoable). Restore asks a
+      // Moderator of the file, as by hand. Deleting a version is the owner's
+      // client's alone (file_history_delete, mcpOnly).
+      'file_history_list',
+      'file_history_restore',
       // Showing a stored image is a file READ that happens to render rather
       // than return text — it delegates to no worker and generates nothing,
       // so it belongs here rather than in `media-workers`.

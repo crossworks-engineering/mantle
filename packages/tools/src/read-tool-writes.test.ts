@@ -198,6 +198,8 @@ const NO_WRITE_FOUND: readonly string[] = [
   'event_get',
   'event_list',
   'file_get',
+  // The versions' rows and the Moderator check: no write.
+  'file_history_list',
   'file_list',
   'file_read',
   'file_sql',

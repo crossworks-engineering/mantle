@@ -2682,6 +2682,13 @@
       "when": 1792150000000,
       "tag": "0383_shared_item_rights",
       "breakpoints": true
+    },
+    {
+      "idx": 384,
+      "version": "7",
+      "when": 1792160000000,
+      "tag": "0384_file_history",
+      "breakpoints": true
     }
   ]
 }

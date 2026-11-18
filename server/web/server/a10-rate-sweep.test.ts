@@ -538,6 +538,12 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [members('member-bytes', 240)],
   }),
+  // A kept version's bytes (file history): the member's byte budget, as
+  // the file's own.
+  ...getHead('/api/files/files/:id/history/:sid/download', {
+    cred: 'member',
+    limits: [members('member-bytes', 240)],
+  }),
   // A place in a folder's custom order, per login (an Admin user's too):
   // an item's place and the folder PATCH (a folder's `after`) share it.
   ...TREE_PLACE.map((row): SweepCell => ({

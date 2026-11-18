@@ -581,6 +581,7 @@ export {
   mayEditSql,
   mayManageInSql,
   mayManageSql,
+  mayModerateSql,
   mayMoveSql,
   mayReadInSql,
   missesAnySql,

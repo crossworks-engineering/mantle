@@ -134,6 +134,7 @@ describe('MCP tool hints on the surface', () => {
       'event_delete',
       'file_create',
       'file_delete',
+      'file_history_delete',
       'file_upload',
       'formula_delete',
       'formula_update',

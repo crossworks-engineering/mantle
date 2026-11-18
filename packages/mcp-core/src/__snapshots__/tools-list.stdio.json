@@ -2137,6 +2137,35 @@
   }
  },
  {
+  "name": "file_history_restore",
+  "description": "Put a version from `file_history_list` back: its bytes become the file's again (same file id, so links hold), and the file is read again. The bytes it replaces are kept as a new version, so a restore is undone by restoring that one. For a Moderator of the file's workspace, of a workspace that holds it, or an Admin. Confirm with the user first.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The file's id (UUID) - from `file_list` / `search_nodes`."
+    },
+    "version_id": {
+     "type": "string",
+     "description": "The version id, from `file_history_list`."
+    }
+   },
+   "required": [
+    "file_id",
+    "version_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_history_restore",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "file_move",
   "description": "Move ONE file to another folder; the filename travels unchanged (use `file_rename` to change the name). The file keeps its id, shares, and history. If the destination folder indexes differently (name-only vs full), the file is automatically re-indexed to match where it lands. Refuses when the destination already has a file by that name. To duplicate instead of relocate, use `file_copy`.",
   "inputSchema": {
@@ -8481,6 +8510,35 @@
   }
  },
  {
+  "name": "file_history_delete",
+  "description": "Delete one version from a file's history (`file_history_list`) and its kept bytes, to free space. That version cannot be restored after. The file itself is not touched. For a Moderator of the file's workspace, of a workspace that holds it, or an Admin. Confirm with the user first.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The file's id (UUID) - from `file_list` / `search_nodes`."
+    },
+    "version_id": {
+     "type": "string",
+     "description": "The version id, from `file_history_list`."
+    }
+   },
+   "required": [
+    "file_id",
+    "version_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_history_delete",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "folder_delete",
   "description": "Delete an EMPTY folder. Refuses unless the folder is empty: clear its children first. Cannot delete the `files` root. (The Files screen's folder delete instead moves what a folder holds up to its parent: a clashing folder merges into the one there, a clashing file gets a new name like report-2.pdf.)",
   "inputSchema": {
@@ -11663,6 +11721,30 @@
   },
   "annotations": {
    "title": "file_get",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "file_history_list",
+  "description": "List the versions a file kept, newest first: each time new bytes replaced it (an upload with replace, an edit, an export saved again) the bytes they replaced were kept (kind replace), and a restore keeps the bytes it replaced (kind pre_restore). Each has its id, seq (v1, v2 ...), when, who, its size, sha256 and the name the file had. `mayRestore` says whether you may restore or delete one. Use it to find the version to pass to `file_history_restore`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The file's id (UUID) - from `file_list` / `search_nodes`."
+    }
+   },
+   "required": [
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_history_list",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

@@ -9,6 +9,7 @@ import { diskPathForLtree, filesRoot, ltreeToDash } from '../index';
 import { type ExtractionState } from '../extraction-status';
 import { emailAttachmentIds } from '../email-attachments';
 import { keyWithoutSearch } from '../file-data';
+import { withVersions } from '../file-history';
 import { db, nodes, READ_FAILURE_SKIPS, type Node } from '@mantle/db';
 import {
   fileRowFromNode,
@@ -92,7 +93,7 @@ export async function listFilesByExtraction(args: {
     );
     files = files.filter((f) => !hidden.has(f.id));
   }
-  return { files, truncated: rows.length >= EXTRACTION_LIST_MAX };
+  return { files: await withVersions(files), truncated: rows.length >= EXTRACTION_LIST_MAX };
 }
 
 /**
@@ -112,7 +113,7 @@ export async function listRecentFiles(args: {
     .where(and(eq(nodes.ownerId, args.ownerId), eq(nodes.type, 'file'), isNull(nodes.supersededBy)))
     .orderBy(sql`${nodes.updatedAt} desc`)
     .limit(limit);
-  return rows.map(fileRowFromNode);
+  return withVersions(rows.map(fileRowFromNode));
 }
 
 export async function listFiles(args: { ownerId: string; parentPath: string }): Promise<FileRow[]> {
@@ -126,7 +127,9 @@ export async function listFiles(args: { ownerId: string; parentPath: string }): 
         sql`${nodes.path}::text = ${args.parentPath}`,
       ),
     );
-  return rows.map(fileRowFromNode).sort((a, b) => a.filename.localeCompare(b.filename));
+  return withVersions(
+    rows.map(fileRowFromNode).sort((a, b) => a.filename.localeCompare(b.filename)),
+  );
 }
 
 export async function folderById(args: {
@@ -170,7 +173,7 @@ export async function fileById(args: { ownerId: string; fileId: string }): Promi
     .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
   if (!row || row.type !== 'file') return null;
-  return fileRowFromNode(row);
+  return (await withVersions([fileRowFromNode(row)]))[0]!;
 }
 
 /** The files among `ids` the caller reads (its scope's row rules decide),

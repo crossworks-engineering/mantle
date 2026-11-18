@@ -35,6 +35,7 @@ import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
 import { purgeExpiredDeletedApps, sweepAppFileLeftovers } from '@mantle/content/app-trash';
 import { purgeOrphanTableHistory } from '@mantle/content/table-snapshots';
+import { purgeOrphanFileHistory } from '@mantle/files';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { runFilesStagedReap, summariseFilesStagedReap } from './files-staged-reap';
 import { summariseStoreSweep, sweepStores } from '@mantle/content/store-sweep';
@@ -149,14 +150,16 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     if (r.deleted === 0) return 'nothing to reap';
     return `deleted ${r.deleted} access log row(s)`;
   },
-  // Deleted apps past their 30 days, and the history of deleted tables.
+  // Deleted apps past their 30 days, and the history of deleted tables and
+  // files.
   'app-trash-purge': async () => {
     const r = await purgeExpiredDeletedApps();
     const t = await purgeOrphanTableHistory();
+    const f = await purgeOrphanFileHistory();
     const left = await sweepAppFileLeftovers();
-    return r.apps === 0 && t.tables === 0 && left === 0
+    return r.apps === 0 && t.tables === 0 && f.files === 0 && left === 0
       ? 'nothing to purge'
-      : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s), ${left} leftover work file(s)`;
+      : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s) and ${f.files} deleted file(s), ${left} leftover work file(s)`;
   },
   // The old store revisions no row points at. A store a hard stop stopped
   // fails the run, so the history shows it; a store a restore holds is a

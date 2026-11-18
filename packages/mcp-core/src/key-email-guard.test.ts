@@ -109,6 +109,20 @@ describe('a key without Search and email attachments on MCP', () => {
     expect(files.fileById).toHaveBeenCalledTimes(1);
   });
 
+  it('the file history tools too: refused on an attachment, before they run (as file_get)', async () => {
+    const tools = toolsFor(['files']);
+    // Restore and delete are peerRisky: a key gets them only when the owner
+    // named them; the guard holds them the same way when it does.
+    expect(tools.get('file_history_list')).toBeDefined();
+    for (const slug of ['file_history_list', 'file_history_restore', 'file_history_delete']) {
+      const tool = tools.get(slug);
+      if (!tool) continue;
+      const res = await tool({ file_id: MAIL, version_id: PLAIN }, {});
+      expect(res.isError, slug).toBe(true);
+      expect(res.content[0]!.text, slug).toBe(`Error: ${KEY_EMAIL_REFUSAL}`);
+    }
+  });
+
   it('checks folder ids and folder paths too, uploads and moves included', async () => {
     const { before } = keyEmailGuard('owner-1');
     expect(await before!('folder_copy', { folder_id: MAIL, dest_parent_path: 'files' })).toBe(

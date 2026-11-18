@@ -66,6 +66,13 @@ export type FileRow = {
    *  private workspace or shares it; its author may delete it. Absent on
    *  every other item. */
   readOnly?: true;
+  /** How many kept versions the file has (file history; 0 for none): the
+   *  lists and the one-file read fill it, in one read per list. */
+  versions?: number;
+  /** When new bytes last replaced the file (ISO): an item derived from it
+   *  (an extracted image, an auto Table) made before this is from an older
+   *  version. Absent when its bytes were never replaced. */
+  replacedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -221,6 +228,7 @@ export function fileRowFromNode(row: Node): FileRow {
           ? 'full'
           : null,
     extraction: extractionOf(data),
+    ...(typeof data.replaced_at === 'string' ? { replacedAt: data.replaced_at } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

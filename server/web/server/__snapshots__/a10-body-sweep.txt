@@ -2903,6 +2903,7 @@ POST /api/files/folders/:id/run owner array => 400 application/json {"error":"In
 POST /api/files/folders/:id/run owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 # 2026-11-14 (Pipelines phase 2 M4, docs/pipelines.md): POST /api/pipelines/:id/test had no route on main; its cells are the branch's own answers (no valid body is kept for it: the sweep's body names no fileId, so valid, empty and nul are the 400 of its body).
 # 2026-11-14 (Pipelines phase 2 M8, docs/pipelines.md): POST /api/pipelines/:id/reread had no route on main; its cells are the branch's own answers (the sample id names no pipeline: 404 after the body read).
+# 2026-11-18 (Files program P3, file history): POST /api/files/files/:id/history/:sid/restore and DELETE /api/files/files/:id/history/:sid had no route on main; their cells are the branch's own answers.
 POST /api/pipelines/:id/test owner valid => 400 application/json {"error":"fileId: Invalid input: expected string, received undefined"}
 POST /api/pipelines/:id/test owner malformed => 400 application/json {"error":"invalid JSON"}
 POST /api/pipelines/:id/test owner empty => 400 application/json {"error":"fileId: Invalid input: expected string, received undefined"}
@@ -2927,3 +2928,15 @@ DELETE /api/pipelines/:id owner empty => 500 application/json {"error":"internal
 DELETE /api/pipelines/:id owner nul => 500 application/json {"error":"internal error"}
 DELETE /api/pipelines/:id owner array => 500 application/json {"error":"internal error"}
 DELETE /api/pipelines/:id owner chunked => 500 application/json {"error":"internal error"}
+DELETE /api/files/files/:id/history/:sid owner valid => 404 application/json {"error":"not found"}
+DELETE /api/files/files/:id/history/:sid owner malformed => 404 application/json {"error":"not found"}
+DELETE /api/files/files/:id/history/:sid owner empty => 404 application/json {"error":"not found"}
+DELETE /api/files/files/:id/history/:sid owner nul => 404 application/json {"error":"not found"}
+DELETE /api/files/files/:id/history/:sid owner array => 404 application/json {"error":"not found"}
+DELETE /api/files/files/:id/history/:sid owner chunked => 404 application/json {"error":"not found"}
+POST /api/files/files/:id/history/:sid/restore owner valid => 404 application/json {"error":"not found"}
+POST /api/files/files/:id/history/:sid/restore owner malformed => 404 application/json {"error":"not found"}
+POST /api/files/files/:id/history/:sid/restore owner empty => 404 application/json {"error":"not found"}
+POST /api/files/files/:id/history/:sid/restore owner nul => 404 application/json {"error":"not found"}
+POST /api/files/files/:id/history/:sid/restore owner array => 404 application/json {"error":"not found"}
+POST /api/files/files/:id/history/:sid/restore owner chunked => 404 application/json {"error":"not found"}
