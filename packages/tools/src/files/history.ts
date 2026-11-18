@@ -14,7 +14,7 @@ import {
   mayModerateFile,
   restoreFileVersion,
 } from '@mantle/files';
-import { errorMessage } from '@mantle/std';
+import { publicErrorText } from '@mantle/std';
 import type { BuiltinToolDef } from '../types';
 import { str } from '../coerce';
 import { notFound } from '../errors';
@@ -50,7 +50,7 @@ export const file_history_list: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: "List a file's versions",
   description:
-    'List the versions a file kept, newest first: each time new bytes replaced it (an upload with replace, an edit, an export saved again) the bytes they replaced were kept (`replace`), and a restore keeps the bytes it replaced (`pre_restore`). Each has its id, seq (v1, v2 ...), when, who, its size, sha256 and the name the file had. `mayRestore` says whether you may restore or delete one. Use it to find the version to pass to `file_history_restore`.',
+    'List the versions a file kept, newest first: each time new bytes replaced it (an upload with replace, an edit, an export saved again) the bytes they replaced were kept (kind replace), and a restore keeps the bytes it replaced (kind pre_restore). Each has its id, seq (v1, v2 ...), when, who, its size, sha256 and the name the file had. `mayRestore` says whether you may restore or delete one. Use it to find the version to pass to `file_history_restore`.',
   inputSchema: {
     type: 'object',
     properties: { file_id: FILE_ID },
@@ -68,7 +68,7 @@ export const file_history_list: BuiltinToolDef = {
       ctx.step?.setOutput({ fileId, count: versions.length });
       return { ok: true, output: { file_id: fileId, versions, mayRestore: may } };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorText(err, 'file_history_list') };
     }
   },
 };
@@ -120,7 +120,7 @@ export const file_history_restore: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorText(err, 'file_history_restore') };
     }
   },
 };
@@ -140,6 +140,9 @@ export const file_history_delete: BuiltinToolDef = {
     clientSourced: CS.onNodes('file_id'),
   },
   requiresConfirm: true,
+  // Removes kept bytes for good: the owner's own client only, as
+  // file_delete (never granted to an in-brain agent).
+  mcpOnly: true,
   preconditions: FILE_ID_PRE,
   name: 'Delete a version of a file',
   description:
@@ -166,7 +169,7 @@ export const file_history_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ fileId, deleted: versionId });
       return { ok: true, output: { file_id: fileId, deleted: versionId } };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorText(err, 'file_history_delete') };
     }
   },
 };
