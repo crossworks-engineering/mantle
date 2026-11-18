@@ -293,7 +293,16 @@ export async function upsertFile(args: {
           const theirs = (existing.data as Record<string, unknown> | null)?.sha256;
           const mine =
             args.spooled?.sha256 ?? createHash('sha256').update(args.bytes!).digest('hex');
-          if (typeof theirs === 'string' && theirs === mine) {
+          // Only while its bytes are on disk: a row whose file was lost
+          // takes the write (the self-heal below).
+          const at = diskPathForFile(args.parentPath, filename);
+          const onDisk =
+            at !== null &&
+            (await fsp.access(at).then(
+              () => true,
+              () => false,
+            ));
+          if (typeof theirs === 'string' && theirs === mine && onDisk) {
             if (args.spooled) await discardSpooled(args.spooled);
             return { ...fileRowFromNode(existing), skipped: true };
           }
