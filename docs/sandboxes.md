@@ -67,7 +67,8 @@ sandboxd — binding a defaulted path into sandboxd would have Docker create a
 stray root-owned directory on every box that never sets the variable.
 
 Optional: `SANDBOX_DEFAULT_IMAGE` (pin a different base image),
-`SANDBOX_MAX_COUNT` (default 3), `SANDBOX_IDLE_STOP_MINUTES` (default 60),
+`SANDBOX_MAX_COUNT` (running sandboxes at once, default 100; a stopped one does
+not count, the disk budget bounds those), `SANDBOX_IDLE_STOP_MINUTES` (default 60),
 `SANDBOX_DISK_BUDGET_BYTES` (default 10 GB), `SANDBOX_EGRESS_ALLOW`
 (extra balanced-tier hosts, comma-separated), `SANDBOX_PULL_MIN_FREE_BYTES`
 (default 10 GB: sandboxd refuses to download an image that is not local
@@ -103,14 +104,14 @@ the Files ROOT is refused outright, so a sandbox sees only what it was given.
 `sandbox_import` remains the answer for a one-off file.
 
 **Whose sandbox.** On a brain on workspaces a sandbox records the login that
-made it. Any Admin user whose settings area is on may make sandboxes, but
-works only in its own (exec, ls, the toolbelt, export, import, publish,
-autostart, stop, rm); the brain owner's login works in every one, and a
-sandbox made before this was recorded counts as the brain owner's. Only the
+made it. Any Admin user whose settings area is on may make sandboxes and
+works in every one, another login's too (exec, ls, the toolbelt, export,
+import, publish, autostart, stop, rm): the users of a brain are trusted, and
+an Admin clears out the sandboxes of others (owner, 2026-11-18). Only the
 brain owner's login mounts a folder: the mount shows the folder's whole
 directory, files the caller may not read included. The Sandboxes routes
-(`/api/sandboxes/:id`, its stop and its delete) apply the same rule to the
-signed-in login: another login's sandbox is not found. `sandbox_publish`
+(`/api/sandboxes/:id`, its stop and its delete) follow the same rule.
+`sandbox_publish`
 binds only the sandbox's own tool group (its integration service is
 `sandbox-<name>`): an existing group of anything else is refused, never
 repointed. It writes the proxy key (`sandboxd/proxy`) to the API-key vault
@@ -154,18 +155,18 @@ neither MCP nor in-app agents get the tools (one rule for every optional
 service, [services.md](services.md)); a call that races a switch is refused
 with how to switch the service on.
 
-| tool | what it does |
-| --- | --- |
-| `sandbox_create` | new named sandbox (image + egress tier selectable) |
-| `sandbox_exec` | run a bash command; `run_terminal`'s exact timeout/output/trace discipline |
-| `sandbox_list` | rows merged with live state + disk usage |
-| `sandbox_stop` / `sandbox_rm` | stop (keeps everything) / remove (keeps `/files` unless `purge_files`; confirm-gated) |
-| `sandbox_export` | tar a `/files` path into `files/auto-filed/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
-| `sandbox_import` | copy a Files-workspace file into `/files`, byte for byte (100 MB cap); works on a stopped sandbox |
-| `sandbox_ls` | structured directory listing (name, type, size, modified); works stopped, does not wake the container |
-| `sandbox_autostart` | store a command re-run on every wake, so an idle-stopped service comes back by itself |
-| `sandbox_publish` | declare a service port; creates an integration tool group bound to the proxy |
-| `sandbox_mcp_tools` / `sandbox_mcp_call` | the in-sandbox Claude Code toolbelt over MCP |
+| tool                                     | what it does                                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `sandbox_create`                         | new named sandbox (image + egress tier selectable)                                                                                    |
+| `sandbox_exec`                           | run a bash command; `run_terminal`'s exact timeout/output/trace discipline                                                            |
+| `sandbox_list`                           | rows merged with live state + disk usage                                                                                              |
+| `sandbox_stop` / `sandbox_rm`            | stop (keeps everything) / remove (keeps `/files` unless `purge_files`; confirm-gated)                                                 |
+| `sandbox_export`                         | tar a `/files` path into `files/auto-filed/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
+| `sandbox_import`                         | copy a Files-workspace file into `/files`, byte for byte (100 MB cap); works on a stopped sandbox                                     |
+| `sandbox_ls`                             | structured directory listing (name, type, size, modified); works stopped, does not wake the container                                 |
+| `sandbox_autostart`                      | store a command re-run on every wake, so an idle-stopped service comes back by itself                                                 |
+| `sandbox_publish`                        | declare a service port; creates an integration tool group bound to the proxy                                                          |
+| `sandbox_mcp_tools` / `sandbox_mcp_call` | the in-sandbox Claude Code toolbelt over MCP                                                                                          |
 
 ## Published services: sandbox output the brain can call
 
@@ -180,7 +181,7 @@ authored tools. From there it is the normal Toolsmith flow:
 (an owner decision). An MCP server built in a sandbox surfaces the same way.
 
 The SSRF guard has exactly **one** deliberate exemption for this: the exact
-`SANDBOXD_URL` origin *and* a `/svc/` path prefix, pinned by tests,
+`SANDBOXD_URL` origin _and_ a `/svc/` path prefix, pinned by tests,
 sandboxd's control verbs and every other private host stay blocked.
 
 ## The MCP toolbelt
@@ -201,13 +202,13 @@ Ubuntu 24.04 LTS). Since `24.04-v4` it carries every language, each with a
 short kit chosen by its job in Mantle, so a sandbox never installs a toolchain
 and a first build works with no network:
 
-| Language | Kit (pre-installed, or in the package cache) | Tools |
-| --- | --- | --- |
-| Node 26 + npm + pnpm | zod, date-fns, csv-parse, exceljs, cheerio, esbuild, typescript, jsonwebtoken (`require` from anywhere; for ESM, `npm install --offline --before=<kit date>`) | biome, vitest, tsc |
-| Bun | the Node kit through `require`; `bun:sqlite`, `bun test` built in | |
-| Python 3.12 (venv `/opt/venv`) | requests, httpx, flask, fastapi, uvicorn, pandas, numpy, pydantic, pyyaml, python-dateutil, openpyxl, xlsxwriter, python-docx, pypdf, pdfplumber, beautifulsoup4, lxml, psycopg[binary], sqlite-utils, jinja2, matplotlib, plotly, scipy, pint, ezdxf, shapely, networkx | ruff, pytest |
-| Go | modernc.org/sqlite, yaml.v3, excelize, cobra, chi, pgx, testify (module cache) | gofmt, go vet, staticcheck |
-| Rust (wasm32-unknown-unknown) | wasm-bindgen, js-sys, web-sys, serde, serde_json, serde-wasm-bindgen, console_error_panic_hook, nalgebra, geo, dxf, image, csv, rusqlite (bundled), anyhow, regex, chrono, reqwest (rustls) (cargo cache, fetched not built) | rustfmt, clippy, wasm-pack, wasm-bindgen, wasm-opt |
+| Language                       | Kit (pre-installed, or in the package cache)                                                                                                                                                                                                                             | Tools                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Node 26 + npm + pnpm           | zod, date-fns, csv-parse, exceljs, cheerio, esbuild, typescript, jsonwebtoken (`require` from anywhere; for ESM, `npm install --offline --before=<kit date>`)                                                                                                            | biome, vitest, tsc                                 |
+| Bun                            | the Node kit through `require`; `bun:sqlite`, `bun test` built in                                                                                                                                                                                                        |                                                    |
+| Python 3.12 (venv `/opt/venv`) | requests, httpx, flask, fastapi, uvicorn, pandas, numpy, pydantic, pyyaml, python-dateutil, openpyxl, xlsxwriter, python-docx, pypdf, pdfplumber, beautifulsoup4, lxml, psycopg[binary], sqlite-utils, jinja2, matplotlib, plotly, scipy, pint, ezdxf, shapely, networkx | ruff, pytest                                       |
+| Go                             | modernc.org/sqlite, yaml.v3, excelize, cobra, chi, pgx, testify (module cache)                                                                                                                                                                                           | gofmt, go vet, staticcheck                         |
+| Rust (wasm32-unknown-unknown)  | wasm-bindgen, js-sys, web-sys, serde, serde_json, serde-wasm-bindgen, console_error_panic_hook, nalgebra, geo, dxf, image, csv, rusqlite (bundled), anyhow, regex, chrono, reqwest (rustls) (cargo cache, fetched not built)                                             | rustfmt, clippy, wasm-pack, wasm-bindgen, wasm-opt |
 
 SQLite works in every language (node:sqlite, bun:sqlite, sqlite3 +
 sqlite-utils, modernc.org/sqlite, rusqlite bundled), with the `sqlite3` and
@@ -228,8 +229,20 @@ points at it. Its shape is a contract (code tools read it; schema 2):
   "schema": 2,
   "image": "titanwest/mantle-sandbox:24.04-v5",
   "summary": "…",
-  "languages": [{ "name": "node", "version": "26.13.0", "tools": [{ "name": "tsc", "version": "…" }], "use": "…" }],
-  "libraries": { "python": [{ "name": "pandas", "version": "…" }], "node": [], "go": [], "rust": [] },
+  "languages": [
+    {
+      "name": "node",
+      "version": "26.13.0",
+      "tools": [{ "name": "tsc", "version": "…" }],
+      "use": "…"
+    }
+  ],
+  "libraries": {
+    "python": [{ "name": "pandas", "version": "…" }],
+    "node": [],
+    "go": [],
+    "rust": []
+  },
   "sqlite": [{ "name": "node:sqlite", "language": "node", "note": "built in" }],
   "tools": [{ "name": "git", "version": "…" }],
   "offline": { "npm_before": "<kit date>" },
@@ -326,7 +339,7 @@ mutate the registry when sandboxd is unreachable.
   runtime-flag upgrade path, `systrap` works without KVM, which the fleet
   lacks).
 - The balanced-tier proxy listener carries no auth (apt cannot send a bearer)
-, bounded by forwarding only to allowlisted hosts, reachable only from
+  , bounded by forwarding only to allowlisted hosts, reachable only from
   stack-internal networks.
 - Sandboxes never see brain env by construction (container env is set at
   create), and the proxy strips `Authorization` so the sandboxd token never

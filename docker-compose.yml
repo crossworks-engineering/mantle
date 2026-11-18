@@ -1326,7 +1326,7 @@ services:
       SANDBOX_NETWORK: mantle_sandbox
       SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v5}
       SANDBOX_PULL_MIN_FREE_BYTES: ${SANDBOX_PULL_MIN_FREE_BYTES:-}
-      SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-3}
+      SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-100}
       SANDBOX_EGRESS_ALLOW: ${SANDBOX_EGRESS_ALLOW:-}
       # Read-only inbox mounts (docs/sandboxes.md). HOST-absolute, for the same
       # reason MANTLE_SANDBOXES_HOST_DIR is: sandboxd hands the bind SOURCE to

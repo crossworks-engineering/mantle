@@ -47,6 +47,7 @@ import { promisify } from 'node:util';
 import * as docker from './docker';
 import * as mcp from './mcp';
 import { startEgressProxy } from './egress';
+import { sandboxLimitRefusal } from './limit';
 import { resolveImportPath } from './paths';
 
 // Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
@@ -88,7 +89,9 @@ const EGRESS_PROXY_HOST = process.env.SANDBOX_EGRESS_PROXY_HOST || 'mantle_sandb
  *  /etc/mantle/sandbox-kit.json inside). Pinned tag: updating the image is an
  *  explicit SANDBOX_DEFAULT_IMAGE change, never silent drift. */
 const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v5';
-const MAX_SANDBOXES = Number(process.env.SANDBOX_MAX_COUNT || 3);
+/** Running sandboxes at once. A stopped one does not count: it holds disk,
+ *  which DISK_BUDGET_BYTES bounds, and no memory or CPU (owner, 2026-11-18). */
+const MAX_SANDBOXES = Number(process.env.SANDBOX_MAX_COUNT || 100);
 const MEM_BYTES = Number(process.env.SANDBOX_MEM_BYTES || 1024 * 1024 * 1024);
 const NANO_CPUS = Number(process.env.SANDBOX_NANO_CPUS || 1e9); // 1 CPU
 const PIDS_LIMIT = Number(process.env.SANDBOX_PIDS_LIMIT || 512);
@@ -458,12 +461,8 @@ async function createSandbox(input: CreateInput) {
     input.network === 'none' ? 'none' : input.network === 'balanced' ? 'balanced' : 'full';
 
   const existing = await docker.listContainers([`${LABEL}=true`]);
-  if (existing.length >= MAX_SANDBOXES) {
-    throw new HttpError(
-      409,
-      `sandbox limit reached (${MAX_SANDBOXES}) — remove one with sandbox_rm (or stop+rm via the UI) before creating another`,
-    );
-  }
+  const atLimit = sandboxLimitRefusal(existing, MAX_SANDBOXES);
+  if (atLimit) throw new HttpError(409, atLimit);
   const used = await usedBytes().catch(() => 0);
   if (used > DISK_BUDGET_BYTES) {
     throw new HttpError(

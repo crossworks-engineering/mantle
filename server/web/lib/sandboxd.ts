@@ -92,20 +92,11 @@ export async function sandboxdRm(id: string, purge: boolean): Promise<boolean> {
 }
 
 /**
- * Sandbox `ref` for the signed-in login, or null (the route answers 404):
- * the sandbox tools' maker rule (packages/tools
- * sandbox/common.ts sandboxRefusal) on the Sandboxes routes. The brain owner
- * (the anchor login, whose id is the owner id) works in every sandbox; any
- * other login only in the ones it made (sandboxes.created_by; a row with no
- * maker is the brain owner's).
+ * Sandbox `ref`, or null (the route answers 404). The Sandboxes routes need
+ * the settings area, so the caller is an Admin user, who works in every
+ * sandbox, another login's too (owner, 2026-11-18; the sandbox tools' rule,
+ * packages/tools sandbox/common.ts).
  */
-export async function sandboxForLogin(
-  user: { id: string; actor: { id: string } },
-  ref: string,
-): Promise<Sandbox | null> {
-  const row = await getSandboxByRef(user.id, ref);
-  if (!row) return null;
-  const login = user.actor.id;
-  if (login === user.id || row.createdBy === login) return row;
-  return null;
+export async function sandboxForLogin(user: { id: string }, ref: string): Promise<Sandbox | null> {
+  return getSandboxByRef(user.id, ref);
 }
