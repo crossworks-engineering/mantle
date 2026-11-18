@@ -205,7 +205,7 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
         keys.mintAccessKey({
           name: `${tag} read only`,
           loginId: L.holderMod,
-          access: 'read_only',
+          access: 'read',
           areas: null,
           riskyTools: [],
           expiresAt: new Date(Date.now() + 30 * 86_400_000),
@@ -215,12 +215,18 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
       'test',
     );
     roKey = minted!.key;
+    // Both checks on, as a box runs them (a lane migrates with them off).
+    await raw`select mantle_set_actor_check('on', 50, 'test')`;
+    await raw`select mantle_set_edit_check('on', 50, 'test')`;
+    process.env.MANTLE_ACTOR_CHECK = 'on';
+    (await import('../../../packages/db/src/actor')).noteBoxActorCheckMode('on');
     await sys(() => fl.ensureFilesRootBranch(owner));
   }, 300_000);
 
   afterAll(async () => {
     delete process.env.FILE_HISTORY_KEEP;
     delete process.env.FILE_HISTORY_MAX_MB;
+    process.env.MANTLE_ACTOR_CHECK = 'warn';
     vi.unstubAllGlobals();
     await raw?.end();
     await m?.closeDb();
