@@ -87,7 +87,9 @@ import {
   AGENT_HASH_COLUMN,
   agentRows,
   agentTextOf,
+  askCapOf,
   checkAsks,
+  type AgentAsk,
   type AgentAskFn,
 } from './pipeline-agent';
 import {
@@ -312,7 +314,12 @@ async function packagedSheets(
   const passes = pipeline.produces.text === true || pipeline.produces.pictures === true;
   if (!named && (pipeline.id === 'drawing-cad' || pipeline.source === 'own' || passes)) {
     const run = await readerRun(pipeline, bytes, ext, options);
-    return withRunFacts(pipeline, run, parsedFileOfRun(pipeline, run), readerGivesText(pipeline, ext));
+    return withRunFacts(
+      pipeline,
+      run,
+      parsedFileOfRun(pipeline, run),
+      readerGivesText(pipeline, ext),
+    );
   }
   const run = await runPackaged(pipeline, named?.body ?? bytes, stepFileOf(bytes, ext), {
     options,
@@ -1062,6 +1069,9 @@ export async function runAgentOnFile(args: {
   if (!readDocMeta(names.sqlite, [])) return { status: 'skipped', reason: 'no-database' };
 
   const state = await pipelineStateOf(ownerId, pipeline);
+  if (readsInWindows(pipeline, ext)) {
+    return runAgentWindowed({ ...args, pipeline, pipelines, ext, sqlite: names.sqlite, state });
+  }
   const step = await agentStep(
     pipeline,
     bytes,
@@ -1125,8 +1135,193 @@ export async function runAgentOnFile(args: {
       },
     });
     if (!stopped) await countRun(ownerId, pipeline.id, fileId);
-    return { ...done, text: agentTextOf(sheets) };
+    return { ...done, text: pipeline.produces.pages === true ? '' : agentTextOf(sheets) };
   });
+}
+
+/**
+ * An Agent that reads in page windows (`needs.window`, docs/pipelines.md,
+ * "Page windows"; P4, write in parts): the money rule of runAgentOnFile,
+ * window by window. For each window: one parser job on the window's PDF
+ * gives its asks (agentStep, with the window's pages), the core answers
+ * them (agentRows: from the tab by hash, else one paid call), and the
+ * rows so far are written with one patch, so a kill loses one window's
+ * calls at most, and the next run takes the written rows by their hash.
+ *
+ * The cap of `needs.workers` holds for the whole file: an ask past it is
+ * not made, and the run is `stopped` (`cap`). After the first stop no
+ * window makes a call; each keeps the rows of its keys that are there. A
+ * window the parser cannot cut or the step cannot read is left out with a
+ * warning, and its stored rows stay. The stamp entry is set only when every
+ * ask of every window has its answer; else it is taken out.
+ */
+async function runAgentWindowed(args: {
+  fileId: string;
+  ownerId: string;
+  sha256: unknown;
+  bytes: Buffer;
+  pipeline: BoxPipeline & { needs: { window: { pages: number; mb: number } } };
+  pipelines: BoxPipelines;
+  ext: string;
+  sqlite: string;
+  state: PipelineState;
+  ask: AgentAskFn;
+}): Promise<FileAgentRun> {
+  const { fileId, ownerId, bytes, pipeline, ext, sqlite, state } = args;
+  const sha256 = args.sha256 as string;
+  const tab = pipeline.produces.tabs![0]!;
+  const listTab = pipeline.produces.tabs?.[1];
+  const storedOf = (name: string) => {
+    const t = textTabAt(sqlite, name);
+    return (t?.rows ?? []).map((r) =>
+      Object.fromEntries(t!.columns.map((c, i) => [c.name, r[i] ?? null])),
+    );
+  };
+  const stored = storedOf(tab);
+  const storedList = listTab ? storedOf(listTab) : [];
+  const input = await agentInputOf(ownerId, ext, args.pipelines, sqlite);
+  const file = stepFileOf(bytes, ext);
+  let sheet = null as ParsedSheet | null;
+  let listSheet = null as ParsedSheet | null;
+  const seen = new Set<string>();
+  const warnings: string[] = [];
+  let made = 0;
+  let reused = 0;
+  let stopped: string | undefined;
+  let lost = false;
+  let first = true;
+  const asked = new Map<string, number>();
+  /** The stored rows of the keys no window has asked yet (or of a window
+   *  that failed), kept over each write so no paid row is lost. */
+  const unseen = (rows: readonly Readonly<Record<string, unknown>>[], to: ParsedSheet | null) => {
+    if (!to) return [];
+    return rows
+      .filter((r) => !seen.has(String(r.Key ?? '')))
+      .map((r) => to.columns.map((c) => (r[c.name] ?? null) as string | number | null));
+  };
+  const write = async (final: boolean): Promise<FileAgentRun | null> => {
+    const out = await writeUnderRow(fileId, ownerId, sha256, async () => {
+      const meta = readDocMeta(sqlite, ['pipelines_after']);
+      if (!meta) return 'no-database' as const;
+      const keepOld = !final || lost;
+      const sheets = [
+        sheet
+          ? { ...sheet, rows: [...sheet.rows, ...(keepOld ? unseen(stored, sheet) : [])] }
+          : null,
+        listSheet
+          ? {
+              ...listSheet,
+              rows: [...listSheet.rows, ...(keepOld ? unseen(storedList, listSheet) : [])],
+            }
+          : null,
+      ].filter((t): t is ParsedSheet => t !== null);
+      const done = final && stopped === undefined && !lost;
+      patchFileDatabaseDoc(sqlite, {
+        replaceTabs: sheets.map((t) => t.name),
+        tabs: tabsOfSheets(sheets),
+        ftsSkipColumns: [AGENT_HASH_COLUMN],
+        setMeta: {
+          pipelines_after: done
+            ? withAfterEntry(meta.pipelines_after, pipeline, state.optionsHash)
+            : withoutAfterEntry(meta.pipelines_after, pipeline.id),
+        },
+      });
+      return 'written' as const;
+    });
+    if (out === 'written') return null;
+    if (out === 'no-database') return { status: 'skipped', reason: 'no-database' };
+    return out;
+  };
+  for await (const w of pdfWindows(bytes, sha256, pipeline.needs.window)) {
+    if (!w.part) {
+      lost = true;
+      first = false;
+      warnings.push(`Pages ${w.from} to ${w.to} could not be cut from the file.`);
+      continue;
+    }
+    const { part } = w;
+    const window = { pageFrom: part.pageFrom, pageTo: part.pageTo, pagesTotal: part.pagesTotal };
+    let step: Awaited<ReturnType<typeof agentStep>>;
+    let asks: AgentAsk[];
+    try {
+      step = await agentStep(pipeline, part.bytes, file, state.options, { ...input, window });
+      asks = step.status === 'ok' ? checkAsks(pipeline, step.asks, step.pictures) : [];
+    } catch (err) {
+      if (isParserError(err) && err.retryable) throw err;
+      lost = true;
+      first = false;
+      warnings.push(
+        `Pages ${part.pageFrom} to ${part.pageTo} could not be read: ${errorMessage(err).slice(0, 200)}`,
+      );
+      continue;
+    }
+    if (step.status === 'not_mine') {
+      if (first) return { status: 'skipped', reason: 'no-match' };
+      continue;
+    }
+    first = false;
+    warnings.push(...step.warnings);
+    // The cap of the manifest is for the whole file, over every window.
+    const room = asks.filter((a) => {
+      const n = asked.get(a.worker) ?? 0;
+      if (n >= askCapOf(pipeline, a.worker)) return false;
+      asked.set(a.worker, n + 1);
+      return true;
+    });
+    if (room.length < asks.length) stopped ??= 'cap';
+    for (const a of asks) seen.add(a.key);
+    const out = await agentRows(
+      tab,
+      room,
+      stored,
+      stopped === undefined ? args.ask : undefined,
+      listTab ? { tab: listTab, stored: storedList } : undefined,
+    );
+    made += out.made;
+    reused += out.reused;
+    if (out.stopped !== undefined && out.stopped !== 'no_ask') stopped ??= out.stopped;
+    // The asks past the cap keep their stored rows.
+    const capped = asks.filter((a) => !room.includes(a));
+    const kept = capped.flatMap((a) => stored.filter((r) => String(r.Key ?? '') === a.key));
+    if (out.sheet || kept.length > 0) {
+      const cols: ParsedSheet['columns'] | undefined = out.sheet?.columns ?? sheet?.columns;
+      if (cols) {
+        const rows: ParsedSheet['rows'] = [
+          ...(out.sheet?.rows ?? []),
+          ...kept.map((r) => cols.map((c) => (r[c.name] ?? null) as string | null)),
+        ];
+        sheet = sheet
+          ? { ...sheet, rows: [...sheet.rows, ...rows] }
+          : { name: tab, columns: cols, rows };
+      }
+    }
+    if (out.listSheet) {
+      listSheet = listSheet
+        ? { ...listSheet, rows: [...listSheet.rows, ...out.listSheet.rows] }
+        : out.listSheet;
+    }
+    // Write in parts: the rows so far, before the next window's calls.
+    if (out.made > 0) {
+      const skipped = await write(false);
+      if (skipped) return skipped;
+    }
+  }
+  const skipped = await write(true);
+  if (skipped) return skipped;
+  if (stopped === undefined && !lost) await countRun(ownerId, pipeline.id, fileId);
+  const sheets = [sheet, listSheet].filter((t): t is ParsedSheet => t !== null);
+  return {
+    status: 'asked',
+    rows: sheet?.rows.length ?? 0,
+    ...(listTab ? { listRows: listSheet?.rows.length ?? 0 } : {}),
+    made,
+    reused,
+    ...(stopped !== undefined ? { stopped } : lost ? { stopped: 'window_failed' } : {}),
+    warnings,
+    // An Agent of page text gives the file's passages by page (P3), not the
+    // text of its tab: no copy of every page in the node's data.
+    text: pipeline.produces.pages === true ? '' : agentTextOf(sheets),
+  };
 }
 
 /**

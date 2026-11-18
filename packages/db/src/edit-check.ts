@@ -40,6 +40,7 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
   schemaDigest: ['server/api/src/agent/extract/index-writes.ts'],
   parser_failures: ['server/api/src/agent/extract/parser-failures.ts'],
   agent_text: ['server/api/src/agent/extract/agent-text.ts'],
+  images: ['server/api/src/agent/extract/images.ts'],
   // The refold.
   refolded: [
     'server/api/src/agent/extract/gates.ts',
@@ -62,7 +63,7 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
 export const NODE_DERIVED_KEYS: readonly string[] = Object.keys(DERIVED_KEY_WRITERS);
 
 /** What the extractor writes about a file's bytes (mantle_node_extractor_keys,
- *  0281; `parser_failures` since 0339; `agent_text` since 0377): the read-only snapshot copy's list
+ *  0281; `parser_failures` since 0339; `agent_text` since 0377; `images` since 0384): the read-only snapshot copy's list
  *  (it may change on a copy) and the files' BYTE_DERIVED_DATA_KEYS. A part
  *  of NODE_DERIVED_KEYS. */
 export const NODE_EXTRACTOR_KEYS: readonly string[] = [
@@ -81,6 +82,7 @@ export const NODE_EXTRACTOR_KEYS: readonly string[] = [
   'schemaDigest',
   'parser_failures',
   'agent_text',
+  'images',
 ];
 
 /** The presentation keys of nodes.data (mantle_node_presentation_keys):

@@ -66,6 +66,36 @@ const BUNDLED_ASSETS = [
     path: 'the parser image (Dockerfile), read by server/parser/cad/drawing_raster.py',
     licenseFile: 'scripts/license-texts/libtiff.txt',
   },
+  {
+    name: 'qpdf (Debian package qpdf)',
+    license: 'Apache-2.0',
+    path: 'the parser image (Dockerfile), run by server/parser/src/pdf-split.ts',
+    licenseFile: 'scripts/license-texts/Apache-2.0.txt',
+  },
+  {
+    name: 'Tesseract OCR and its English data (Debian packages tesseract-ocr, tesseract-ocr-eng)',
+    license: 'Apache-2.0',
+    path: 'the parser image (Dockerfile), the local OCR of the CAD tier',
+    licenseFile: 'scripts/license-texts/Apache-2.0.txt',
+  },
+  {
+    name: 'pdfplumber (Python, in the parser image)',
+    license: 'MIT',
+    path: 'the parser image (Dockerfile), the CAD venv',
+    licenseFile: 'scripts/license-texts/pdfplumber.txt',
+  },
+  {
+    name: 'pdfminer.six (Python, in the parser image)',
+    license: 'MIT',
+    path: 'the parser image (Dockerfile), the CAD venv',
+    licenseFile: 'scripts/license-texts/pdfminer-six.txt',
+  },
+  {
+    name: 'pypdfium2 and PDFium (Python, in the parser image)',
+    license: '(Apache-2.0 OR BSD-3-Clause)',
+    path: 'the parser image (Dockerfile), the CAD venv',
+    licenseFile: 'scripts/license-texts/Apache-2.0.txt',
+  },
 ];
 
 const LICENSE_FILE_RE = /^(LICEN[SC]E|COPYING|NOTICE|UNLICENSE)(\..*)?$/i;

@@ -292,7 +292,7 @@ describe('readEmbeddedImages (the parser): the per-document cap', () => {
 
   it('honours a raised cap, so a screenshot-heavy manual keeps its later figures', async () => {
     const bytes = await manual(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
-    const result = await readEmbeddedImages(bytes, 'pptx', { maxImages: 200 });
+    const result = await readEmbeddedImages(bytes, 'pptx', { maxImages: 600 });
     expect(result.images).toHaveLength(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
     expect(result.rejected.over_cap).toBeUndefined();
   });

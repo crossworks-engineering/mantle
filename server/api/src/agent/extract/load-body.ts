@@ -38,11 +38,16 @@ import { errorMessage } from '@mantle/std';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
-import { readerPassOf, readerTextOf } from '@mantle/content/reader-passes';
+import { readerPassOf, readerTextOf, standingReaderText } from '@mantle/content/reader-passes';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
-import { composeImageBody, ocrIngestPdfNode, visionIngestImageNode } from './images';
+import {
+  composeImageBody,
+  ocrIngestPdfNode,
+  stampReaderPages,
+  visionIngestImageNode,
+} from './images';
 import { sketchIngestPdfNode } from './pdf-sketch';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 
@@ -554,10 +559,30 @@ export async function loadExtractableBody(
     isVisionImage(fileExt, fileMime) &&
     !(await readerTakes(node, ownerId, fileExt));
 
+  // A PDF whose database a Reader that stands over the core's PDF read
+  // wrote (P2, docs/pipelines.md "Page windows"; a book read in page
+  // windows with local OCR): the Reader's text is the file's text. The core
+  // reads no text of its own, runs no native read, no sketch read and no
+  // OCR for it, and stamps no `document_unreadable`. The pages the Reader
+  // read are stamped as the OCR stamps them (`ocr`), so a book with a window
+  // that could not be read shows `partial`. A Reader that gave no text
+  // leaves the file to the core's read, as before.
+  const standing =
+    node.type === 'file' && !existingData.text && !existingData.content && fileExt === 'pdf'
+      ? await standingReaderText(ownerId, { id: node.id, sha256: existingData.sha256 }, fileExt)
+      : null;
+
   // Read the FULL extracted text once. `body` (truncated) is what the LLM
   // sees; `rawBody` is what we persist so the document stays retrievable.
   let rawBody: string;
-  if (isImageNeedingVision) {
+  if (standing) {
+    rawBody = cleanText(standing.text);
+    await step({ name: 'reader_text', kind: 'db_write' }, async (h) => {
+      const pages = standing.pages;
+      if (pages) await stampReaderPages(node.id, ownerId, pages);
+      h.setMeta({ chars: rawBody.length, ...(pages ? { pages } : {}) });
+    });
+  } else if (isImageNeedingVision) {
     const vision = await visionIngestImageNode(node, ownerId);
     if (!vision.text) {
       // Vision produced no text — an SVG/vector the model can't read, a blank
@@ -610,7 +635,9 @@ export async function loadExtractableBody(
   // giving up, try OCR via the vision worker (rasterize → describe+OCR), the
   // same route images take. Only triggered when the body IS the filename, so a
   // PDF with a real text layer never pays the OCR cost.
-  const isPdf = fileExt === 'pdf' || fileMime === 'application/pdf';
+  // A PDF whose Reader's text stands (P2, above) takes none of the core's
+  // PDF reads below.
+  const isPdf = (fileExt === 'pdf' || fileMime === 'application/pdf') && !standing;
   const isPdfWithoutTextLayer =
     node.type === 'file' &&
     !existingData.text &&

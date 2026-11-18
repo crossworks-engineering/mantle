@@ -50,6 +50,7 @@ import {
   type FilePatch,
 } from '@mantle/content/file-database';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { filePagesOf } from '@mantle/content/page-passages';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { db, nodes } from '@mantle/db';
@@ -114,8 +115,11 @@ async function runOnce(
         },
       );
       // The passages again, from the file's stored text and the new Agent
-      // text: the old passages' vectors come from the embed cache.
-      if (changed) {
+      // text: the old passages' vectors come from the embed cache. An Agent
+      // of page text (`produces.pages`) gives its text by page, read from
+      // its tab when the passages are built (P3): new answers build them
+      // again too.
+      if (changed || (pipeline.produces.pages === true && done.made > 0)) {
         await passagesAgain(ownerId, nodeId).catch((err: unknown) => {
           done.warnings.push(`the passages were not written again: ${errorMessage(err)}`);
         });
@@ -132,8 +136,15 @@ async function runOnce(
       pipelines,
     });
   }
-  // A reader runs only on a file it is the reader of.
-  if (pipelines.readerFor(fileDataExt(row))?.id !== pipeline.id) {
+  // A reader runs only on a file it is the reader of: by the extension, or
+  // a Reader that claims the kinds the file type's router names (a PDF's
+  // book reader), whose build names the kind again (buildFileDatabase).
+  const ext = fileDataExt(row);
+  const claims =
+    pipeline.match.ext.includes(ext) &&
+    (pipeline.match.kind?.length ?? 0) > 0 &&
+    pipelines.routerFor(ext) !== null;
+  if (pipelines.readerFor(ext)?.id !== pipeline.id && !claims) {
     return { status: 'skipped', reason: 'no-reader' };
   }
   const loaded = await readFileNodeBytes(row);
@@ -195,7 +206,14 @@ export async function passagesAgain(ownerId: string, nodeId: string): Promise<vo
     .select()
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
-  const text = (node?.data as Record<string, unknown> | undefined)?.text;
-  if (!node || node.type !== 'file' || typeof text !== 'string' || text.trim() === '') return;
+  if (!node || node.type !== 'file') return;
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const text = typeof data.text === 'string' ? data.text : '';
+  // A file with no stored text but pages in its database (P3) has
+  // passages all the same: they are built from the pages.
+  if (text.trim() === '') {
+    const pages = await filePagesOf({ id: node.id, ownerId, sha256: data.sha256 });
+    if (!pages || pages.pages.length === 0) return;
+  }
   await writeRetrievalChunks(node, ownerId, text, null);
 }

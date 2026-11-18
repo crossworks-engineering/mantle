@@ -101,4 +101,23 @@ describe('checkManifest', () => {
     expect(refusal({ ...OWN, entry: 'lib/step.py' })).toBeNull();
     expect(refusal({ ...OWN, runtime: 'bun', entry: 'src/step.js' })).toBeNull();
   });
+
+  it('takes page windows on a .pdf pipeline of 1 to 500 pages and 1 to 64 MB only', () => {
+    const pdf = { ...OWN, match: { ext: ['pdf'] } };
+    const win = (window: unknown) => ({ ...pdf, needs: { ...pdf.needs, window } });
+    expect(refusal(win({ pages: 50, mb: 50 }))).toBeNull();
+    expect(refusal(win({ pages: 500, mb: 64 }))).toBeNull();
+    for (const bad of [
+      { pages: 0, mb: 50 },
+      { pages: 501, mb: 50 },
+      { pages: 50, mb: 65 },
+      { pages: 1.5, mb: 2 },
+      'big',
+    ]) {
+      expect(refusal(win(bad)), JSON.stringify(bad)).toMatch(/needs\.window must be/);
+    }
+    expect(refusal({ ...OWN, needs: { ...OWN.needs, window: { pages: 50, mb: 50 } } })).toMatch(
+      /\.pdf only/,
+    );
+  });
 });

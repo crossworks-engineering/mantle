@@ -85,20 +85,23 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     }
   });
 
-  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339 and 0377) is this list', () => {
+  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339, 0377 and 0384) is this list', () => {
     const m = migration('0281_edit_check_tables');
-    // The extractor's keys, last replaced in 0377 (the text of the Agents'
-    // tabs), before it in 0339 (the parser's failure count).
-    const extractor = sqlArrayAfter(
-      migration('0377_agent_text_key'),
-      'mantle_node_extractor_keys"()',
-    );
+    // The extractor's keys, last replaced in 0384 (the pictures a file left
+    // out), before it in 0377 (the text of the Agents' tabs) and 0339 (the
+    // parser's failure count).
+    const extractor = sqlArrayAfter(migration('0384_images_key'), 'mantle_node_extractor_keys"()');
     expect(extractor).toEqual([...NODE_EXTRACTOR_KEYS]);
     expect(
+      sqlArrayAfter(migration('0377_agent_text_key'), 'mantle_node_extractor_keys"()'),
+    ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => k !== 'images'));
+    expect(
       sqlArrayAfter(migration('0339_parser_failures_key'), 'mantle_node_extractor_keys"()'),
-    ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => k !== 'agent_text'));
+    ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => k !== 'agent_text' && k !== 'images'));
     expect(sqlArrayAfter(m, 'mantle_node_extractor_keys"()')).toEqual(
-      NODE_EXTRACTOR_KEYS.filter((k) => k !== 'parser_failures' && k !== 'agent_text'),
+      NODE_EXTRACTOR_KEYS.filter(
+        (k) => k !== 'parser_failures' && k !== 'agent_text' && k !== 'images',
+      ),
     );
     // The derived keys are the extractor's and the rest.
     const rest = sqlArrayAfter(m, 'mantle_node_derived_keys"()\n');
@@ -119,7 +122,7 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     expect(copy).toHaveLength(13);
     // The copy's trigger now reads the named list (0281): the same 13, and
     // the parser's failure count since 0339, the Agents' text since 0377.
-    expect([...copy, 'parser_failures', 'agent_text'].sort()).toEqual(
+    expect([...copy, 'parser_failures', 'agent_text', 'images'].sort()).toEqual(
       [...NODE_EXTRACTOR_KEYS].sort(),
     );
     const files = read('packages/files/src/ops/files.ts');
@@ -127,7 +130,7 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     const bytes = [...files.slice(at, files.indexOf('] as const', at)).matchAll(/'([^']+)'/g)].map(
       (m) => m[1]!,
     );
-    expect(bytes).toHaveLength(15);
+    expect(bytes).toHaveLength(16);
     for (const k of [...copy, ...bytes]) expect(NODE_DERIVED_KEYS, k).toContain(k);
   });
 

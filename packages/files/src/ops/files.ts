@@ -104,6 +104,8 @@ export const BYTE_DERIVED_DATA_KEYS = [
   'parser_failures',
   // The text of the tabs of the Agents (docs/pipelines.md, "Agents").
   'agent_text',
+  // The pictures a file left out, `{ kept, found }` (G4, migration 0384).
+  'images',
 ] as const;
 
 /**
