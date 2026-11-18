@@ -169,7 +169,6 @@ export async function fileProcessing(
 
 export const file_processing: BuiltinToolDef = {
   slug: 'file_processing',
-  usageTier: 4,
   policy: {
     matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     effect: 'read',

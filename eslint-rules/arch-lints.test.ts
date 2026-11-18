@@ -561,8 +561,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // connectors area).
     // The Sync service's screens (Sync M2, +1 with a caller): POST
     // /api/services/:name/frame-ticket (the connectors area).
-    expect(rows.filter((r) => r.caller).length).toBe(883);
-    // 883 + the 13 call rows above + the public webhook + the 8 documents
+    // A file's processing (+2 with a caller): GET (+HEAD)
+    // /api/files/files/:id/processing (owner, the file's read).
+    expect(rows.filter((r) => r.caller).length).toBe(885);
+    // 885 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
     // + the 2 rows of its second milestone + the 3 public rows of a Present
@@ -612,7 +614,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     //   and POST .../relink, .../remove, .../forget (the sidecar's token); GET
     //   and HEAD of the sign-in start (the screen ticket) and of its two
     //   callbacks (the sign-in's cookie and state).
-    expect(rows.length).toBe(1000);
+    // + the 2 processing rows (GET and HEAD /api/files/files/:id/processing).
+    expect(rows.length).toBe(1002);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

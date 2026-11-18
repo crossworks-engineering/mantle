@@ -199,6 +199,7 @@ const NO_WRITE_FOUND: readonly string[] = [
   'event_list',
   'file_get',
   'file_list',
+  'file_processing',
   'file_read',
   'file_sql',
   'folder_get_by_path',

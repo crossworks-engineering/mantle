@@ -11707,6 +11707,30 @@
   }
  },
  {
+  "name": "file_processing",
+  "description": "What the brain did with one file and where its content went: `status` (ingest done, partial, waiting, failed or none; a `job` in the queue; its database state), size, pages, whether it was embedded, the counts of text chunks, facts and mentions, its database (state, size, the pipeline that read it), the last error, and `derived`: the items made from it (extracted images, auto Tables, pages and notes) with id, kind and title. Read only. For its text use `file_read`; for its rows, `file_sql`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The file's id (UUID), from `file_list` or `search_nodes`."
+    }
+   },
+   "required": [
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_processing",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "file_read",
   "description": "Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files).",
   "inputSchema": {

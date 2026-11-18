@@ -33,7 +33,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ownerCallerAtRead: vi.fn(async () => ({ id: OWNER })),
 }));
 
-const row = (id: string) => ({ id, filename: `${id.slice(0, 4)}.pdf`, updatedAt: '2026-10-01' });
+const row = (id: string) => ({
+  id,
+  filename: `${id.slice(0, 4)}.pdf`,
+  updatedAt: '2026-10-01',
+  extraction: { state: 'indexed' as const },
+});
 
 vi.mock('@mantle/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
