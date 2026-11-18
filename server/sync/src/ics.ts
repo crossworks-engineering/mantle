@@ -76,7 +76,10 @@ function toIso(t: { toJSDate: () => Date } | null | undefined): string | null {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function tzOf(t: any): string | undefined {
   const tzid = t?.zone?.tzid;
-  return typeof tzid === 'string' && tzid && tzid !== 'floating' ? tzid : undefined;
+  // A zone name past the brain's bound (64) is left out: display only.
+  return typeof tzid === 'string' && tzid && tzid !== 'floating' && tzid.length <= 64
+    ? tzid
+    : undefined;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

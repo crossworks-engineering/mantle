@@ -4,7 +4,8 @@
  * escapes what it shows.
  */
 import { describe, expect, it } from 'vitest';
-import { clipEnvelope, clipMessage, WIRE_LIMITS } from '@mantle/email/wire';
+import { clipEnvelope, clipMessage, envelopeFits, WIRE_LIMITS } from '@mantle/email/wire';
+import { feedBody } from './feeds';
 import { parseFeed } from './ics';
 import { SendRefusedError, senderFor } from './send';
 import { tokenOk } from './server';
@@ -190,20 +191,32 @@ describe('the screens', () => {
 });
 
 describe('the bounds the brain takes', () => {
-  it("clips every field of an outsider's message, so one message never stops a mailbox", () => {
-    const long = 'x'.repeat(100_000);
+  it('never cuts a sender or an id: a message past their bounds is never fetched', () => {
+    const long = 'x'.repeat(400);
+    // Cut to 320, this sender would end in @acme.com and pass an @acme.com contact.
+    const from = `${long}@acme.com.attacker.test`;
+    expect(envelopeFits({ providerMsgId: 'INBOX:1:1', fromAddr: from })).toBe(false);
+    expect(envelopeFits({ providerMsgId: 'x'.repeat(501), fromAddr: 'a@b.test' })).toBe(false);
+    expect(envelopeFits({ providerMsgId: 'INBOX:1:1', fromAddr: 'a@b.test' })).toBe(true);
     const e = clipEnvelope({
       providerMsgId: 'INBOX:1:1',
-      fromAddr: `${long}@a.test`,
-      references: long,
-      inReplyTo: long,
-      rfcMessageId: long,
+      fromAddr: from,
+      rfcMessageId: 'm'.repeat(2000),
+      inReplyTo: 'r'.repeat(2000),
+      references: 'x'.repeat(100_000),
     });
-    expect(e.fromAddr.length).toBe(WIRE_LIMITS.address);
+    expect(e.fromAddr).toBe(from);
+    // An over-long Message-ID is left out, never cut (a cut one could match another).
+    expect(e.rfcMessageId).toBeUndefined();
+    expect(e.inReplyTo).toBeUndefined();
     expect(e.references!.length).toBe(WIRE_LIMITS.references);
-    expect(e.inReplyTo!.length).toBe(WIRE_LIMITS.messageId);
+  });
+
+  it('clips the content of a message', () => {
+    const long = 'x'.repeat(100_000);
     const m = clipMessage({
-      ...e,
+      providerMsgId: 'INBOX:1:1',
+      fromAddr: 'a@b.test',
       toAddrs: Array.from({ length: 5000 }, (_, i) => `r${i}@a.test`),
       subject: long,
       internalDate: '2026-11-18T00:00:00.000Z',
@@ -213,6 +226,22 @@ describe('the bounds the brain takes', () => {
     expect(m.subject!.length).toBe(WIRE_LIMITS.subject);
     expect(m.attachments).toHaveLength(WIRE_LIMITS.attachments);
     expect(m.attachments[0]!.filename.length).toBe(WIRE_LIMITS.filename);
+  });
+
+  it('keeps a feed post under the byte ceiling: descriptions go first', () => {
+    const ev = (i: number) => ({
+      uid: `u${i}`,
+      title: 't',
+      startsAt: '2026-11-20T09:00:00.000Z',
+      description: '漢'.repeat(4000),
+    });
+    const events = Array.from({ length: 5000 }, (_, i) => ev(i));
+    type Body = { events: { description?: string }[] };
+    const body = JSON.parse(feedBody({ id: 'f', name: 'n' }, events)) as Body;
+    expect(body.events).toHaveLength(5000);
+    expect(body.events[0]!.description).toBeUndefined();
+    const small = JSON.parse(feedBody({ id: 'f', name: 'n' }, events.slice(0, 10))) as Body;
+    expect(small.events[0]!.description).toHaveLength(4000);
   });
 
   it("clips a feed event's long text", () => {

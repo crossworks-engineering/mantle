@@ -73,9 +73,13 @@ export type WireRun = {
 };
 
 /** The bound of each field the brain takes (its schema, server/web
- *  lib/sidecar-schemas.ts). The sidecar clips to them before it posts
+ *  lib/sidecar-schemas.ts). The sidecar clips CONTENT to them before it posts
  *  (clipEnvelope, clipMessage), so one odd message from anyone can never
- *  make a batch a 400 and stop a mailbox. */
+ *  make a batch a 400 and stop a mailbox. An IDENTITY field is never clipped
+ *  (a cut sender could pass another domain's contact, a cut Message-ID could
+ *  match another message): a message whose sender or id is over its bound
+ *  is never fetched at all (envelopeFits), and an over-long Message-ID is
+ *  left out. */
 export const WIRE_LIMITS = {
   id: 500,
   messageId: 998,
@@ -96,14 +100,24 @@ const cut = (s: string | undefined, n: number) => (s === undefined ? undefined :
 const cutList = (l: string[] | undefined, n: number, each: number) =>
   l === undefined ? undefined : l.slice(0, n).map((s) => s.slice(0, each));
 
-/** An envelope within WIRE_LIMITS. */
+/** Whether an envelope's identity fits the brain's bounds: its sender and
+ *  its id. One that does not is skipped, never fetched. */
+export function envelopeFits(e: Pick<WireEnvelope, 'providerMsgId' | 'fromAddr'>): boolean {
+  return e.fromAddr.length <= WIRE_LIMITS.address && e.providerMsgId.length <= WIRE_LIMITS.id;
+}
+
+/** An envelope within WIRE_LIMITS (call envelopeFits first: the sender and
+ *  the id pass as they are). A Message-ID over its bound is left out, not
+ *  cut. The caller has already judged the client-code headers on the whole
+ *  values (touchesClientCodeMail), so cutting References loses nothing. */
 export function clipEnvelope(e: WireEnvelope): WireEnvelope {
   const L = WIRE_LIMITS;
+  const id = (v: string | undefined) => (v !== undefined && v.length > L.messageId ? undefined : v);
   return {
     providerMsgId: e.providerMsgId,
-    rfcMessageId: cut(e.rfcMessageId, L.messageId),
-    fromAddr: e.fromAddr.slice(0, L.address),
-    inReplyTo: cut(e.inReplyTo, L.messageId),
+    rfcMessageId: id(e.rfcMessageId),
+    fromAddr: e.fromAddr,
+    inReplyTo: id(e.inReplyTo),
     references: cut(e.references, L.references),
     clientCodeHeader: e.clientCodeHeader,
   };

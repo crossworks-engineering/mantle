@@ -8,9 +8,11 @@ import {
   MAIL_GATE_BATCH_MAX,
   clipEnvelope,
   clipMessage,
+  envelopeFits,
   type WireEnvelope,
   type WireMessage,
 } from '@mantle/email/wire';
+import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
 import { errorMessage } from '@mantle/std';
 import { BrainError, type Brain } from './brain';
 import { backfillSender, mask, recentSenders, syncMailbox, type WantedOf } from './imap';
@@ -41,14 +43,22 @@ const envelopeOf = (m: {
     clientCodeHeader: m.clientCodeHeader,
   });
 
-/** The brain refused this one request (a 4xx): skip it and go on, so one odd
- *  message can never stop a mailbox. A 5xx or a network fault stops the run
- *  (the cursor stays, the next run tries again). */
+/** The brain refused this one body (400, or 413 too large): skip it and go
+ *  on, so one odd message can never stop a mailbox. Any other answer (a 404:
+ *  the mailbox was switched off; a 401; a 5xx; a network fault) stops the
+ *  run, and the cursor stays where it is. */
 const refused = (err: unknown) =>
-  err instanceof BrainError && err.status >= 400 && err.status < 500;
+  err instanceof BrainError && (err.status === 400 || err.status === 413);
 
 function gateFor(brain: Brain, accountId: string): WantedOf {
-  return async (messages) => {
+  return async (all) => {
+    // Never fetched: a sender or an id past the brain's bounds (never cut: a
+    // cut sender could pass another domain's contact), and a client sign-in
+    // code mail, judged here on the whole header values.
+    const messages = all.filter((m) => envelopeFits(m) && !touchesClientCodeMail(m));
+    if (messages.length < all.length) {
+      console.warn(`[sync] ${all.length - messages.length} message(s) skipped before the gate`);
+    }
     const wanted: string[] = [];
     for (let i = 0; i < messages.length; i += MAIL_GATE_BATCH_MAX) {
       try {
