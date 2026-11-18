@@ -26,6 +26,8 @@ import {
   PIPELINE_API,
   PIPELINE_DESCRIPTION_MAX,
   PIPELINE_KIT,
+  PIPELINE_WINDOW_MB_MAX,
+  PIPELINE_WINDOW_PAGES_MAX,
   type PipelineManifest,
   type PipelineSource,
 } from './contract';
@@ -103,6 +105,8 @@ function firstBreak(m: Record<string, unknown>, source: PipelineSource): string 
   ) {
     return `needs.timeMs must be a whole number from 1 to ${PIPELINE_TIME_MAX_MS}.`;
   }
+  const windowBroken = windowBreak(needs.window, match.ext as string[]);
+  if (windowBroken) return windowBroken;
   const options = m.options === undefined ? {} : m.options;
   if (!isObject(options)) return 'options must be a set of names and specs.';
   for (const [name, spec] of Object.entries(options)) {
@@ -110,6 +114,23 @@ function firstBreak(m: Record<string, unknown>, source: PipelineSource): string 
     if (broken) return broken;
   }
   if (source === 'own') return ownBreak(m, match, needs);
+  return null;
+}
+
+/** What is wrong with `needs.window`, or null: a PDF reader's only, of
+ *  1 to PIPELINE_WINDOW_PAGES_MAX pages and 1 to PIPELINE_WINDOW_MB_MAX MB. */
+function windowBreak(window: unknown, ext: readonly string[]): string | null {
+  if (window === undefined) return null;
+  const whole = (v: unknown, max: number) =>
+    Number.isInteger(v) && (v as number) >= 1 && (v as number) <= max;
+  if (
+    !isObject(window) ||
+    !whole(window.pages, PIPELINE_WINDOW_PAGES_MAX) ||
+    !whole(window.mb, PIPELINE_WINDOW_MB_MAX)
+  ) {
+    return `needs.window must be { pages: 1 to ${PIPELINE_WINDOW_PAGES_MAX}, mb: 1 to ${PIPELINE_WINDOW_MB_MAX} }.`;
+  }
+  if (ext.length !== 1 || ext[0] !== 'pdf') return 'needs.window is for a pipeline of .pdf only.';
   return null;
 }
 

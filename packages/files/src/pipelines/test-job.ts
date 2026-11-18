@@ -33,7 +33,7 @@ async function* linesOf(text: string): AsyncGenerator<string> {
 /** Fakes of the native helpers a test may give (the CAD tier's reply, the
  *  PDF eye and pictures). */
 export type StepHelpers = Partial<
-  Pick<StepJob, 'cadRender' | 'pdfEye' | 'pdfPictures' | 'sheetPictures'>
+  Pick<StepJob, 'cadRender' | 'pdfEye' | 'pdfPictures' | 'sheetPictures' | 'pdfPageCount'>
 >;
 
 export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers = {}): StepJob {
@@ -48,6 +48,12 @@ export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers
     pdfEye: async () => null,
     pdfPictures: async (windows) => windows.map(() => null),
     pdfPagePieces: none('pdfPagePieces'),
+    // No qpdf in a test: the page objects of the body, counted. Good for
+    // the plain PDFs a test makes; a test may give its own.
+    pdfPageCount: async () => {
+      const n = body.toString('latin1').match(/\/Type\s*\/Page(?![a-zA-Z])/g)?.length ?? 0;
+      return n > 0 ? n : null;
+    },
     cadRender: helpers.cadRender ?? none('cadRender'),
     dwfRender: none('dwfRender'),
     sheetPictures: none('sheetPictures'),

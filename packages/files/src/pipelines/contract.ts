@@ -33,6 +33,27 @@ export const PIPELINE_FACTS_MAX_BYTES = 32 * 1024 * 1024;
 /** The longest description of a pipeline, in characters. */
 export const PIPELINE_DESCRIPTION_MAX = 300;
 
+/** Page windows (docs/pipelines.md, "Page windows"): a pipeline that says
+ *  `needs.window` reads a PDF one window at a time, each window a PDF of at
+ *  most `pages` pages and `mb` MB of the original, cut by the parser with
+ *  qpdf. The bounds of a manifest's numbers: a window of 1 to 500 pages and
+ *  1 to 64 MB (a window travels as one parser answer, 96 MB at most). */
+export const PIPELINE_WINDOW_PAGES_MAX = 500;
+export const PIPELINE_WINDOW_MB_MAX = 64;
+/** The window of the built-in book reader, Jason's word (2026-11-18): 50
+ *  pages or 50 MB, whichever comes first. */
+export const PIPELINE_WINDOW_DEFAULT = { pages: 50, mb: 50 } as const;
+/** The tab of a Reader that says `produces.pages`: one row a page, the
+ *  page of the ORIGINAL file in `Page` and its text in `Text`. The core
+ *  builds the file's passages from it, one `Page N` section a page. */
+export const PAGES_TAB = 'Pages';
+export const PAGE_COLUMN = 'Page';
+export const PAGE_TEXT_COLUMN = 'Text';
+/** The key of an Agent's ask of one page, for an Agent that says
+ *  `produces.pages`: `page-<N>`, N the page of the original file. The
+ *  answer's field `Text` stands over the Reader's text of that page. */
+export const PAGE_ASK_KEY_PREFIX = 'page-';
+
 /** The AI worker of an Agent's picture ask: the box's vision worker
  *  (docs/pipelines.md, "Agents"). */
 export const VISION_WORKER = 'vision';
@@ -173,6 +194,14 @@ export type PipelineManifest = {
     table?: false;
     /** The tabs an `after` pipeline writes, by name. It may write no other. */
     tabs?: readonly string[];
+    /** Text by page (docs/pipelines.md, "Page passages"). A Reader: its tab
+     *  `Pages` (PAGES_TAB) holds one row a page, `Page` (the page of the
+     *  original file) and `Text`. An Agent: its asks are keyed `page-<N>`
+     *  (PAGE_ASK_KEY_PREFIX) and its field `Text` is the text of page N, over
+     *  the Reader's. The file's passages are built from these, one section
+     *  `Page N` a page, with no length cap, so a citation names the true
+     *  page of the original file. */
+    pages?: true;
   };
   needs: {
     timeMs?: number;
@@ -182,6 +211,13 @@ export type PipelineManifest = {
     workers?: Readonly<Record<string, number>>;
     /** Brain tools it may call, by name. */
     tools?: readonly string[];
+    /** Page windows (docs/pipelines.md, "Page windows"): a PDF is read one
+     *  window at a time, each at most `pages` pages and `mb` MB, whatever the
+     *  file's size. Each window is one parser job of the step, with the
+     *  window's PDF as its body and `pageFrom`, `pageTo` and `pagesTotal` in
+     *  the request. A Reader's windows are merged into one write; an Agent's
+     *  rows are written after each window. */
+    window?: { pages: number; mb: number };
   };
 };
 
@@ -218,9 +254,25 @@ export type PipelineStepRequest = {
   /** The kind the router named, for a pipeline that claims kinds. On a
    *  re-read it is the kind stored in the file's database. */
   kind?: string;
+  /** A windowed run (`needs.window`): the body is a PDF of the pages
+   *  `pageFrom` to `pageTo` (1-based, both in) of the original file of
+   *  `pagesTotal` pages, renumbered from 1 inside the window. `file` is
+   *  still the original file. A page a step names (a `Page` cell, an ask's
+   *  `page`, a `page-<N>` key) is a page of the ORIGINAL file: page `i` of
+   *  the window is page `pageFrom + i - 1`. The `state` of window 1 is the
+   *  core's; of each later window, the `state` the window before returned
+   *  (the open table of a table that runs over the edge). */
+  pageFrom?: number;
+  pageTo?: number;
+  pagesTotal?: number;
 };
 
-/** The input of the one write call. */
+/** The input of the one write call. In a windowed run (`needs.window`)
+ *  each window's write is merged into one, in page order: a tab of a name
+ *  an earlier window wrote gets this window's rows after its own (by column
+ *  name; a column the first window's tab does not have is left out, with a
+ *  warning), a new tab is added, the texts are joined by a blank line, the
+ *  pictures are added, and the last window's `description` stands. */
 export type FileTabsWriteInput = {
   tabs: ParsedSheet[]; // whole tabs (../sheet-to-grid.ts)
   description?: string;
@@ -282,6 +334,10 @@ export type StepJob = {
     widthMm: number,
     name: string,
   ): Promise<{ dpi: number; pieces: unknown[]; notSent: unknown[]; pictures: Buffer[] } | null>;
+  /** The page count of the body when it is a PDF, read by qpdf with no
+   *  page decode (any size the parser takes), or null when qpdf cannot
+   *  read it. For a router that must name a file past the size pdfjs opens. */
+  pdfPageCount(): Promise<number | null>;
   /** The CAD tier on the body (`--dwg-render`): its JSON reply. */
   cadRender(opts: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>>;
   dwfRender: DwfRenderFn;
