@@ -84,8 +84,14 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
   const keyRw: Partial<Record<A8RouteRole, string>> = {};
   /** The Admin user with Write on the item through W (A8_ADMIN_WRITE_GRANT). */
   const adminWriteGrant = randomUUID();
+  /** A plain user of R, Write off (A8_READ_USER): reads, may not edit. */
+  const readUser = randomUUID();
   const loginOf = (role: A8RouteRole) =>
-    role === 'adminWriteGrant' ? adminWriteGrant : fx.logins[role];
+    role === 'adminWriteGrant'
+      ? adminWriteGrant
+      : role === 'readUser'
+        ? readUser
+        : fx.logins[role];
 
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
@@ -165,8 +171,15 @@ describe.skipIf(!DB_URL)('A8 route cells: every item route gives the oracle’s 
               values (${fx.ws.admin}, ${adminWriteGrant}, true),
                      (${fx.ws.W}, ${adminWriteGrant}, false)
               on conflict do nothing`;
+    // A member who is a plain user of R (Write off), no Moderator tick.
+    await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+              values (${readUser}, ${`${fx.tag}-ru@example.invalid`}, 'x', false,
+                      'member', 'readUser')`;
+    await raw`insert into workspace_users (workspace_id, login_id, moderator)
+              values (${fx.ws.R}, ${readUser}, false)
+              on conflict do nothing`;
     const keys = await import('../lib/access-keys');
-    for (const role of [...rc.A8_ROUTE_ROLES, rc.A8_ADMIN_WRITE_GRANT]) {
+    for (const role of [...rc.A8_ROUTE_ROLES, rc.A8_ADMIN_WRITE_GRANT, rc.A8_READ_USER]) {
       const login = loginOf(role);
       const minted = await m.asSystem(
         () =>
