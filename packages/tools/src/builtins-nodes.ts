@@ -16,6 +16,7 @@ import {
   workspaces,
 } from '@mantle/db';
 import { withoutDwgAnswers } from '@mantle/files/dwg';
+import { extractionOf } from '@mantle/files/extraction-status';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -113,6 +114,10 @@ export const node_read: BuiltinToolDef = {
         tags: row.tags,
         url: nodeUrl(row.id),
         data: row.data && withoutDwgAnswers(row.data),
+        // A file: whether its content was read (FileRow.extraction).
+        ...(row.type === 'file'
+          ? { extraction: extractionOf(row.data as Record<string, unknown>, row.updatedAt) }
+          : {}),
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
         ...(succ

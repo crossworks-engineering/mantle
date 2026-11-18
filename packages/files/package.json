@@ -16,6 +16,7 @@
     "./slug": "./src/slug.ts",
     "./shapes": "./src/pipelines/shapes.ts",
     "./dwg": "./src/dwg.ts",
+    "./extraction-status": "./src/extraction-status.ts",
     "./dwg-keys": "./src/dwg-keys.ts",
     "./cad-sniff": "./src/cad-sniff.ts",
     "./parser-wire": "./src/parser-wire.ts",

@@ -42,6 +42,7 @@ export {
 } from './ops/files';
 export {
   listRecentFiles,
+  listFilesByExtraction,
   listFiles,
   folderById,
   folderByPath,

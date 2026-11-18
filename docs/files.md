@@ -202,7 +202,29 @@ The flag is `data.indexing: 'full' | 'metadata'` on file and folder nodes;
 absent means inherit. Effective mode = own flag → nearest ancestor folder's
 flag → `full`, resolved at **extract time**, so moving files or re-flagging
 folders needs no stored denormalisation. `data.indexing_applied` records which
-mode the extractor last ran, and is what listings badge.
+mode the extractor last ran. It is the MODE, stamped before the read: it is
+not whether the read worked.
+
+**Was the content read?** Every file row (`file_get`, `file_list`, the Files
+routes) and `node_read` of a file carry `extraction`
+(`packages/files/src/extraction-status.ts`), derived live from keys the
+extractor already writes, so there is no new state:
+
+| `state`     | When                                                                                                                                                                   | Also                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `indexed`   | the read ended (`extract_completed_at`)                                                                                                                                | `reason: local_only` for a file read with no model (no assistant in its workspace) |
+| `partial`   | a scan read in part: `data.ocr = { pages_read, pages_total }` (the OCR reads 10 pages)                                                                                 | `pages: { read, total }`                                                           |
+| `failed`    | a current terminal skip that is a read failure (`READ_FAILURE_SKIPS`: `document_unreadable`, `pdf_too_large`, `encrypted_pdf`, `bytes_unavailable`), or a parked write | `reason`, `hint`                                                                   |
+| `skipped`   | any other current terminal skip (nothing to read: `body_too_short`, `no_parser`, ...)                                                                                  | `reason`, `hint`                                                                   |
+| `pending`   | not read yet: queued, retrying, or a stale verdict after a new write                                                                                                   |                                                                                    |
+| `name_only` | the indexing mode is name only                                                                                                                                         |                                                                                    |
+
+`file_list` with `extraction: 'failed'` (or another state) lists the files in
+that state in every folder, or under `parent_path`, newest first; the route
+is `GET /api/files/files?extraction=failed[&under=]`. A new read failure
+sends the box admins' devices one "needs you" push (`failedFileReads`,
+`@mantle/db`; the event is the extractor's `needs_you_changed` notify). A
+partial read sends none: every scan past 10 pages is one.
 
 Toggling has teeth in both directions:
 

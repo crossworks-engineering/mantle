@@ -16,6 +16,7 @@ import {
   isCadExt,
   isDrawingExt,
   isParserError,
+  parserPdfPageCount,
   parserRasterizePdf,
   upsertFile,
 } from '@mantle/files';
@@ -718,15 +719,27 @@ export async function ocrIngestPdfNode(
       const text = cleanText(parts.join('\n\n').trim());
       if (!text) return { text: null, encrypted, bytesMissing: false, rasterizeError: null, ran }; // worker unavailable / blank scan / encrypted
 
+      // A scan longer than the page cap is read in part: `data.ocr` then
+      // says how far (`{ pages_read, pages_total }`), so the file's status
+      // shows "partial" (FileRow.extraction) and not a whole read. One page
+      // count of the parser, only when the cap was reached; a count that
+      // fails leaves the plain `true`.
+      const total =
+        pages.length >= MAX_OCR_PAGES ? await parserPdfPageCount(buf).catch(() => null) : null;
+      const ocrMark =
+        total && total > pages.length
+          ? JSON.stringify({ pages_read: pages.length, pages_total: total })
+          : 'true';
+
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
           .update(nodes)
           .set({
-            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${model ?? ''}::text, 'ocr', true)`,
+            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${model ?? ''}::text, 'ocr', ${ocrMark}::jsonb)`,
             updatedAt: new Date(),
           })
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
-        h.setMeta({ chars: text.length, pages: pages.length });
+        h.setMeta({ chars: text.length, pages: pages.length, pages_total: total });
       });
       return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
     },

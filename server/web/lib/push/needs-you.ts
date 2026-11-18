@@ -13,11 +13,16 @@ export type NeedsYouItem = { id: string; title: string; from: string; at: string
 
 export type NeedsYouArrival =
   | { kind: 'provider'; item: NeedsYouItem; alert: ProviderAlert }
-  | { kind: 'parked'; item: NeedsYouItem; count: number };
+  | { kind: 'parked'; item: NeedsYouItem; count: number }
+  | { kind: 'failed_reads'; item: NeedsYouItem; count: number };
 
 /** Extractions the workspaces heads check parked (server side only, never on
  *  the wire): how many, and when the newest was parked. */
 export type ParkedSummary = { count: number; newest: string | null };
+
+/** Files the brain could not read (@mantle/db failedFileReads): the same
+ *  shape. */
+export type FailedReadsSummary = ParkedSummary;
 
 /** A provider outage is pushed once, while it is new: a permanent one shows
  *  at once, a transient one after 10 min, so its start may be 11 min old when
@@ -46,6 +51,7 @@ export function needsYouArrivals(
   seen: ReadonlySet<string>,
   now: number,
   parked: ParkedSummary | null = null,
+  failedReads: FailedReadsSummary | null = null,
 ): NeedsYouArrival[] {
   const out: NeedsYouArrival[] = [];
   for (const alert of providers) {
@@ -56,6 +62,18 @@ export function needsYouArrivals(
       kind: 'parked',
       item: { id: 'extract-parked', title: 'Extraction parked', from: '', at: parked.newest },
       count: parked.count,
+    });
+  }
+  if (failedReads && failedReads.count > 0 && failedReads.newest) {
+    out.push({
+      kind: 'failed_reads',
+      item: {
+        id: 'file-read-failed',
+        title: 'A file could not be read',
+        from: '',
+        at: failedReads.newest,
+      },
+      count: failedReads.count,
     });
   }
   return out
@@ -81,6 +99,16 @@ export function needsYouMessage(first: NeedsYouArrival): {
   body: string;
   deepLink: string;
 } {
+  if (first.kind === 'failed_reads') {
+    return {
+      title: 'A file could not be read',
+      body:
+        first.count === 1
+          ? 'One file could not be read: its content is not in search. See Files.'
+          : `${first.count} files could not be read: their content is not in search. See Files.`,
+      deepLink: '/files',
+    };
+  }
   if (first.kind === 'parked') {
     return {
       title: 'Extraction parked',

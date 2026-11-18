@@ -6,6 +6,9 @@
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { diskPathForLtree, filesRoot, ltreeToDash } from '../index';
+import { type ExtractionState } from '../extraction-status';
+import { emailAttachmentIds } from '../email-attachments';
+import { keyWithoutSearch } from '../file-data';
 import { db, nodes } from '@mantle/db';
 import {
   fileRowFromNode,
@@ -14,6 +17,58 @@ import {
   type FileRow,
   type FolderRow,
 } from './shared';
+
+/** The most rows `listFilesByExtraction` reads before it filters. */
+export const EXTRACTION_LIST_MAX = 500;
+
+/** The keys a file in each state holds, as SQL: a cheap first cut, which
+ *  `extractionOf` (the one rule) then settles row by row. */
+const EXTRACTION_CUT: Readonly<Record<ExtractionState, ReturnType<typeof sql>>> = {
+  failed: sql`(${nodes.data} ? 'extract_skipped' or ${nodes.data} ? 'extract_parked')`,
+  skipped: sql`${nodes.data} ? 'extract_skipped'`,
+  partial: sql`jsonb_typeof(${nodes.data}->'ocr') = 'object'`,
+  pending: sql`not (${nodes.data} ? 'extract_completed_at') and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`,
+  indexed: sql`${nodes.data} ? 'extract_completed_at'`,
+  name_only: sql`${nodes.data}->>'indexing_applied' = 'metadata'`,
+};
+
+/**
+ * The files in one extraction state (failed, partial, ...), in the whole
+ * tree or under `under` (an ltree path), newest first, read in the caller's
+ * scope. Reads at most EXTRACTION_LIST_MAX candidate rows; `truncated` says
+ * the cut was reached. The answer is an object, which the key email guard
+ * does not filter, so an API key without the Search area loses the email
+ * attachment rows here (as listDataFiles does).
+ */
+export async function listFilesByExtraction(args: {
+  ownerId: string;
+  state: ExtractionState;
+  under?: string;
+}): Promise<{ files: FileRow[]; truncated: boolean }> {
+  const rows = await db
+    .select()
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'file'),
+        isNull(nodes.supersededBy),
+        args.under ? sql`${nodes.path} <@ ${args.under}::ltree` : undefined,
+        EXTRACTION_CUT[args.state],
+      ),
+    )
+    .orderBy(sql`${nodes.updatedAt} desc`)
+    .limit(EXTRACTION_LIST_MAX);
+  let files = rows.map(fileRowFromNode).filter((f) => f.extraction.state === args.state);
+  if (keyWithoutSearch() && files.length > 0) {
+    const hidden = await emailAttachmentIds(
+      args.ownerId,
+      files.map((f) => f.id),
+    );
+    files = files.filter((f) => !hidden.has(f.id));
+  }
+  return { files, truncated: rows.length >= EXTRACTION_LIST_MAX };
+}
 
 /**
  * The newest files across the WHOLE tree, most-recently-touched first.

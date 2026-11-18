@@ -249,7 +249,7 @@ const PRIVATE: FileDataRefusal = {
 };
 
 /** Whether the caller is an API key limited to areas that leave out Search. */
-function keyWithoutSearch(): boolean {
+export function keyWithoutSearch(): boolean {
   const caller = currentCaller();
   const areas = caller?.facts?.keyAreas;
   return caller?.via === 'key' && Array.isArray(areas) && !areas.includes('search');

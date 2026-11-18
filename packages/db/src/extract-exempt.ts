@@ -106,6 +106,18 @@ export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
   'derived_mixed_unrefolded',
 ];
 
+/** The terminal skips that are a READ failure: the file has content, and
+ *  the brain could not read it (task 8d40932a). The file's status says
+ *  `failed` for these, `skipped` for the other terminal skips
+ *  (packages/files extraction-status.ts holds the same list), and the
+ *  admins' phones hear of a new one ("needs you"). */
+export const READ_FAILURE_SKIPS: readonly string[] = [
+  'document_unreadable',
+  'pdf_too_large',
+  'encrypted_pdf',
+  'bytes_unavailable',
+];
+
 /** The jsonb to merge onto `nodes.data` for a terminal skip. `at` is the
  *  database clock, the same clock the drain compares with `updated_at`.
  *  `extra`: what else the verdict answers (an app's failed summary call

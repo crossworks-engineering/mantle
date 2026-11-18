@@ -7,7 +7,10 @@ import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
   DATA_FILES_UNDER,
+  EXTRACTION_STATES,
   listDataFiles,
+  listFilesByExtraction,
+  type ExtractionState,
   emailAttachmentIds,
   reachesEmailAttachment,
   diskPathForFile,
@@ -57,6 +60,12 @@ const ListQuery = z.union([
   // the "Data files" view. Its rights are file_sql's (listDataFiles).
   // `under` limits it to a folder and its sub-folders.
   z.object({ data: z.literal('1'), under: z.string().regex(DATA_FILES_UNDER).optional() }),
+  // The files in one read state (failed, partial, ...), as file_list's
+  // `extraction` (FileRow.extraction, task 8d40932a).
+  z.object({
+    extraction: z.enum(EXTRACTION_STATES as [ExtractionState, ...ExtractionState[]]),
+    under: z.string().regex(DATA_FILES_UNDER).optional(),
+  }),
 ]);
 
 export async function GET(req: Request) {
@@ -97,6 +106,15 @@ export async function GET(req: Request) {
       ...list,
       files: await withoutMail(list.files),
     } satisfies DataFilesResponse);
+  }
+  if ('extraction' in parsed.data) {
+    const list = await listFilesByExtraction({
+      ownerId: user.id,
+      state: parsed.data.extraction,
+      under: parsed.data.under,
+    });
+    const files = await withoutMail(list.files).then((rows) => withDataView(rows, dbExts));
+    return NextResponse.json({ files: await capped(files), truncated: list.truncated });
   }
   if ('recent' in parsed.data) {
     const limit = parsed.data.limit;

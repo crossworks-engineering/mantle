@@ -12,6 +12,9 @@ import {
   folderByPath,
   listAllFolders,
   listFiles,
+  listFilesByExtraction,
+  EXTRACTION_STATES,
+  type ExtractionState,
   DATA_FILES_UNDER,
   filesRootMounted,
   listDataFiles,
@@ -73,6 +76,7 @@ export const file_list: BuiltinToolDef = {
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
     'With `data: true` instead, list the files that have a read-only database (spreadsheets, CSVs, plans, drawings) in every folder, or under `parent_path`, each with its state; query one with `file_sql`. ' +
+    "Each file says if its content was read (`extraction`); `extraction: 'failed'` lists the unread files. " +
     "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
   inputSchema: {
     type: 'object',
@@ -87,9 +91,46 @@ export const file_list: BuiltinToolDef = {
         description:
           'List the files with a database, in that folder and its sub-folders (all folders with no parent_path): state ready, too-large, no-rows, unreadable or not-built.',
       },
+      extraction: {
+        type: 'string',
+        enum: [...EXTRACTION_STATES],
+        description:
+          "List the files whose content is in this read state, in that folder and its sub-folders (all folders with no parent_path). 'failed' finds the files the brain could not read.",
+      },
     },
   },
   handler: async (input, ctx) => {
+    const state = strOpt(input.extraction);
+    if (state !== undefined) {
+      if (!(EXTRACTION_STATES as readonly string[]).includes(state)) {
+        return {
+          ok: false,
+          error: `extraction must be one of ${EXTRACTION_STATES.join(', ')} (got '${state.slice(0, 40)}').`,
+        };
+      }
+      const under = strOpt(input.parent_path);
+      if (under !== undefined && !DATA_FILES_UNDER.test(under)) {
+        return {
+          ok: false,
+          error: `parent_path must be a folder path from folder_list, e.g. 'files.work' (got '${under.slice(0, 80)}').`,
+        };
+      }
+      const list = await listFilesByExtraction({
+        ownerId: ctx.ownerId,
+        state: state as ExtractionState,
+        under,
+      });
+      ctx.step?.setOutput({ count: list.files.length, truncated: list.truncated });
+      return {
+        ok: true,
+        output: list.truncated
+          ? {
+              ...list,
+              hint: 'The list read the newest 500 candidate files only: pass parent_path to list one folder and its sub-folders.',
+            }
+          : list,
+      };
+    }
     if (bool(input.data) === true) {
       if (!(await filesRootMounted())) {
         return {

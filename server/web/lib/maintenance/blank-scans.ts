@@ -108,7 +108,8 @@ export function readBefore(candidates: BlankCandidate[], before: Date): BlankCan
 
 /**
  * A candidate, as SQL on `nodes`: a brain-owned PDF file node page OCR read
- * (a terminal `no_text_layer` skip, or `data.ocr`) that this remedy has not
+ * (a terminal `no_text_layer` skip, or `data.ocr`: true, or the pages read
+ * of a longer scan) that this remedy has not
  * sent before. A native read (`data.native_pdf`) ran no render and is never
  * one, nor a metadata-only file (its content stays out). The finder lists by
  * it, and the write that sends a file checks it again in its own UPDATE: a
@@ -125,7 +126,8 @@ const IS_CANDIDATE = sql`(
   and coalesce(${nodes.data}->>'native_pdf', '') <> 'true'
   and ${nodes.data}->>${REREAD_STAMP} is null
   and (${nodes.data}->'extract_skipped'->>'reason' = 'no_text_layer'
-       or ${nodes.data}->>'ocr' = 'true')
+       or ${nodes.data}->>'ocr' = 'true'
+       or jsonb_typeof(${nodes.data}->'ocr') = 'object')
 )`;
 
 /** Every candidate, oldest first. */

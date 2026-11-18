@@ -39,6 +39,7 @@ const PUBLIC = [
   'bulkRefusalOf',
   // ops/queries.ts
   'listRecentFiles',
+  'listFilesByExtraction',
   'listFiles',
   'folderById',
   'folderByPath',

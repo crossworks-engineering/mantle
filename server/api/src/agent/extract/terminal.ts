@@ -11,7 +11,14 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, nodes, extractSkippedStamp, dropIndexWork, readIndexWork } from '@mantle/db';
+import {
+  db,
+  nodes,
+  extractSkippedStamp,
+  dropIndexWork,
+  readIndexWork,
+  READ_FAILURE_SKIPS,
+} from '@mantle/db';
 import { recordSkippedTrace } from '@mantle/tracing';
 
 /** A skip trace's fields, with the node it is about. */
@@ -27,6 +34,19 @@ export async function recordTerminalSkip(
 ): Promise<void> {
   await recordSkippedTrace(init);
   await stampExtractSkipped(init.subjectId, init.disposition, readIndexWork(node.data), extra);
+  // A read failure: the admins' phones hear of it (the "needs you" event,
+  // migration 0186; the push worker counts the failed files). Notify only:
+  // nothing that listens starts model work.
+  if (READ_FAILURE_SKIPS.includes(init.disposition)) await notifyNeedsYou(init.ownerId);
+}
+
+/** Best effort: a lost notice only means no phone push for this file. */
+async function notifyNeedsYou(ownerId: string): Promise<void> {
+  try {
+    await db.execute(sql`SELECT pg_notify('needs_you_changed', ${ownerId}::text)`);
+  } catch (err) {
+    console.error('[extractor] needs-you notify failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 /** Merge `data.extract_skipped = { reason, at: now() }` onto the node, and

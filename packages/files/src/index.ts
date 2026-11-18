@@ -401,6 +401,7 @@ export {
   type BulkDeleteRefusal,
   listFiles,
   listRecentFiles,
+  listFilesByExtraction,
   fileById,
   filesByIds,
   syncFileFromDisk,
@@ -474,3 +475,9 @@ export {
   type SketchRead,
 } from './pdf-sketch';
 export { TITLE_BLOCK_MM, titleBlockOf, type TitleBlockMm } from './pdf-rows';
+export {
+  EXTRACTION_STATES,
+  extractionOf,
+  type ExtractionState,
+  type FileExtraction,
+} from './extraction-status';

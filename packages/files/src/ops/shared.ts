@@ -7,6 +7,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
+import { extractionOf, type FileExtraction } from '../extraction-status';
 import {
   db,
   isWriteRefused,
@@ -56,6 +57,10 @@ export type FileRow = {
   /** Which mode the extractor LAST ran for this file ('metadata' spine vs full
    *  content). Null until first extraction. What a listing should badge. */
   indexingApplied: 'full' | 'metadata' | null;
+  /** Whether the content was read: indexed, partial (pages n of m), failed
+   *  or skipped (with the reason and a hint), pending, or name only
+   *  (../extraction-status.ts). `indexingApplied` is the mode, not this. */
+  extraction: FileExtraction;
   /** A read-only snapshot copy of an accepted item (data.snapshot_of):
    *  nobody edits it, moves it out of its
    *  private workspace or shares it; its author may delete it. Absent on
@@ -215,6 +220,7 @@ export function fileRowFromNode(row: Node): FileRow {
         : data.indexing_applied === 'full'
           ? 'full'
           : null,
+    extraction: extractionOf(data, row.updatedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

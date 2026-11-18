@@ -12,6 +12,7 @@ vi.mock('@mantle/db', () => ({
   agents: {},
   assistantMessages: {},
   parkedExtractions: vi.fn(async () => ({ count: 0, newest: null })),
+  failedFileReads: vi.fn(async () => ({ count: 0, newest: null })),
 }));
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({
@@ -73,6 +74,35 @@ describe('parked extractions (W1 audit, LOW 4)', () => {
   it('none parked, or parked long ago, pushes nothing', () => {
     expect(needsYouArrivals([], new Set(), NOW, { count: 0, newest: null })).toEqual([]);
     expect(needsYouArrivals([], new Set(), NOW, { count: 1, newest: ago(3_600_000) })).toEqual([]);
+  });
+});
+
+describe('files the brain could not read (task 8d40932a)', () => {
+  it('a new failed read arrives once, as a count, and points at Files', () => {
+    const seen = new Set<string>();
+    const a = needsYouArrivals([], seen, NOW, null, { count: 2, newest: ago(60_000) });
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ kind: 'failed_reads', count: 2 });
+    const m = needsYouMessage(a[0]!);
+    expect(m.title).toBe('A file could not be read');
+    expect(m.body).toContain('2 files');
+    expect(m.deepLink).toBe('/files');
+    rememberArrivals(seen, a);
+    expect(needsYouArrivals([], seen, NOW, null, { count: 2, newest: ago(60_000) })).toEqual([]);
+  });
+
+  it('a newer failure is a new arrival; an old one is not', () => {
+    const seen = new Set<string>();
+    rememberArrivals(
+      seen,
+      needsYouArrivals([], seen, NOW, null, { count: 1, newest: ago(90_000) }),
+    );
+    expect(needsYouArrivals([], seen, NOW, null, { count: 2, newest: ago(10_000) })).toHaveLength(
+      1,
+    );
+    expect(
+      needsYouArrivals([], new Set(), NOW, null, { count: 1, newest: ago(3_600_000) }),
+    ).toEqual([]);
   });
 });
 
