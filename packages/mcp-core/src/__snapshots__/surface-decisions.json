@@ -2078,7 +2078,7 @@
  },
  "file_reindex": {
   "readOnly": false,
-  "peerRisky": false,
+  "peerRisky": true,
   "spendsOwnerKeys": false,
   "keyArea": "files",
   "keySharedContent": false,
@@ -2091,7 +2091,7 @@
    "spends": "none",
    "creates": false,
    "keyArea": "files",
-   "peerRisky": false
+   "peerRisky": true
   }
  },
  "file_rename": {
