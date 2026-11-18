@@ -17,7 +17,7 @@
 import { effectiveOptions, keptReaderRun } from '@mantle/files';
 import { readFileDbStamp, readFileRowNow } from './file-database';
 import { filePagesOf, pagesText } from './page-passages';
-import { boxPipelines } from './pipeline-registry';
+import { boxPipelines, type BoxPipelines } from './pipeline-registry';
 import {
   pagesReadOf,
   readerGivesText,
@@ -66,6 +66,26 @@ export async function readerTextOf(
   return r.status === 'ok' ? (r.write?.text ?? '') : '';
 }
 
+/** The Reader that wrote the database of a file at these bytes, when it
+ *  stands over the core's PDF read (readerStandsOver), or null. */
+async function standingReaderOf(fileId: string, sha256: string, pipelines: BoxPipelines) {
+  const stamp = await readFileDbStamp(fileId, sha256);
+  const reader = stamp ? pipelines.byId(stamp.pipeline_id) : null;
+  return reader && readerStandsOver(reader) ? reader : null;
+}
+
+/** Whether a PDF's database at these bytes was written by a Reader that
+ *  stands over the core's PDF read (a book): the picture pass leaves its
+ *  pages to that Reader (server/api/src/agent/extract/images.ts). */
+export async function readerStandsOverFile(
+  ownerId: string,
+  fileId: string,
+  sha256: unknown,
+): Promise<boolean> {
+  if (typeof sha256 !== 'string') return false;
+  return (await standingReaderOf(fileId, sha256, await boxPipelines(ownerId))) !== null;
+}
+
 /** The text of a file whose Reader stands over the core's PDF read, and
  *  the pages it read when it read in windows. */
 export type StandingText = { text: string; pages?: { read: number; total: number } };
@@ -90,11 +110,9 @@ export async function standingReaderText(
   ext: string,
 ): Promise<StandingText | null> {
   if (ext !== 'pdf' || typeof file.sha256 !== 'string') return null;
-  const stamp = await readFileDbStamp(file.id, file.sha256);
-  if (!stamp) return null;
   const pipelines = await boxPipelines(ownerId);
-  const reader = pipelines.byId(stamp.pipeline_id);
-  if (!reader || !readerStandsOver(reader)) return null;
+  const reader = await standingReaderOf(file.id, file.sha256, pipelines);
+  if (!reader) return null;
   const options = effectiveOptions(reader, (await pipelineStateOf(ownerId, reader)).options);
   const kept = keptReaderRun<PipelineRunResult>(routedRunKey(reader, file.sha256, ext, options));
   const run = kept ? await kept.catch(() => null) : null;
