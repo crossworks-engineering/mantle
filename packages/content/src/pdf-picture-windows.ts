@@ -26,6 +26,10 @@ export type PdfPicturesRead = ExtractEmbeddedImagesResult & {
   countCut?: boolean;
 };
 
+/** How long the windows past the cap may spend counting the pictures they
+ *  leave out, for one file: the same 60 s one read gives its own count. */
+const OVER_CAP_COUNT_FILE_MS = 60_000;
+
 /** The most bytes of pictures one windowed read holds: past it a picture
  *  is counted as left out (`answer_budget`), never held. */
 export const PICTURES_HELD_MAX_BYTES = 256 * 1024 * 1024;
@@ -62,12 +66,21 @@ export async function picturesByWindows(
   const seen = new Set(images.map((i) => i.sha256));
   const start = whole?.pdf ? whole.pdf.pagesScanned + 1 : 1;
   const sha = createHash('sha256').update(bytes).digest('hex');
-  for await (const w of pdfWindows(bytes, sha, window, start)) {
+  // Past the cap the windows only count what they leave out: one budget of
+  // time for the whole file, past it the rest is not read and the count is
+  // a floor (`countCut`), so the parser is not held window after window.
+  let counting = 0;
+  for await (const w of pdfWindows(bytes, sha, window, start, whole?.pdf?.pagesTotal)) {
+    if (images.length >= cap && counting >= OVER_CAP_COUNT_FILE_MS) {
+      countCut = true;
+      break;
+    }
     if (!w.part) {
       windowsFailed += 1;
       continue;
     }
     const { part } = w;
+    const began = Date.now();
     // Once the file is known to hold pictures, a window of one picture a
     // page is no scan: its pictures are read (the scan rule of one read,
     // packages/files/src/pdf.ts, judges a whole file, not 50 pages of it).
@@ -83,6 +96,7 @@ export async function picturesByWindows(
       windowsFailed += 1;
       continue;
     }
+    if (images.length >= cap) counting += Date.now() - began;
     candidates += got.candidates;
     if (got.pdf?.countCut) countCut = true;
     for (const [k, v] of Object.entries(got.rejected)) {

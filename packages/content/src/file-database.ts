@@ -86,6 +86,8 @@ import {
 } from './pdf-read';
 import {
   AGENT_HASH_COLUMN,
+  AGENT_LIST_COLUMNS,
+  AGENT_PAGE_COLUMN,
   agentRows,
   agentTextOf,
   askCapOf,
@@ -1334,10 +1336,31 @@ async function runAgentWindowed(args: {
           : { name: tab, columns: cols, rows };
       }
     }
-    if (out.listSheet) {
+    // ... and their stored list rows, paid as well.
+    const cappedKeys = new Set(capped.map((a) => a.key));
+    const keptList = storedList.filter((r) => cappedKeys.has(String(r.Key ?? '')));
+    const listOut: ParsedSheet | null = out.listSheet
+      ? out.listSheet
+      : keptList.length > 0 && listTab
+        ? {
+            name: listTab,
+            columns: AGENT_LIST_COLUMNS.map((name) => ({
+              name,
+              type: name === AGENT_PAGE_COLUMN ? ('number' as const) : ('text' as const),
+            })),
+            rows: [],
+          }
+        : null;
+    if (listOut) {
+      const rows: ParsedSheet['rows'] = [
+        ...listOut.rows,
+        ...keptList.map((r) =>
+          listOut.columns.map((c) => (r[c.name] ?? null) as string | number | null),
+        ),
+      ];
       listSheet = listSheet
-        ? { ...listSheet, rows: [...listSheet.rows, ...out.listSheet.rows] }
-        : out.listSheet;
+        ? { ...listSheet, rows: [...listSheet.rows, ...rows] }
+        : { ...listOut, rows };
     }
     // Write in parts: the rows so far, before the next window's calls.
     if (out.made > 0) {

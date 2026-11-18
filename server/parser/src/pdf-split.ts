@@ -70,7 +70,7 @@ async function cut(
   // of the whole), the smallest window. `--` closes the page list.
   const ended = await runChild(
     QPDF,
-    ['--empty', '--no-warn', '--pages', input, `${from}-${to}`, '--', out],
+    ['--empty', '--no-warn', '--deterministic-id', '--pages', input, `${from}-${to}`, '--', out],
     { timeoutMs: Math.max(1_000, timeoutMs), cwd: dir, env: childEnv(dir) },
   );
   if (!fine(ended.code)) {

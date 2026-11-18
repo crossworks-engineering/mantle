@@ -199,8 +199,8 @@ and dropped the rest). Set it per brain in **Settings → AI workers →
 Extractor → "Embedded images per document"**
 (`ExtractorParams.max_embedded_images_per_doc`; blank or 0 means the default
 500). Each image kept is one vision call, so the number is a real spend
-decision. A PDF read counts the pictures past the cap for up to 60 s of the
-job, so the count is exact on all but a very long file (then it is a floor).
+decision. A PDF read counts the pictures past the cap for up to 60 s of the job
+(and the page windows past the cap 60 s in all for a file), so the count is exact on all but a very long file (then it is a floor).
 
 **A file that leaves pictures out says so** (task 8d40932a, G4). The picture
 pass stamps `data.images = { kept, found }` when the cap left pictures out or
