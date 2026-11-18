@@ -83,7 +83,9 @@ export const step: PipelineStep = async (req, job) => {
   if (ext !== 'pdf' || req.kind !== KIND) return { status: 'not_mine' };
   const failed = (why: string) => ({ status: 'failed' as const, warnings: [why] });
   // The file's first marked pages, up to the option; of them, this window's.
-  const marked = visionPagesOf(req.state).slice(0, pagesOf(req.options));
+  const all = visionPagesOf(req.state);
+  const cap = pagesOf(req.options);
+  const marked = all.slice(0, cap);
   const from = req.pageFrom ?? 1;
   let to = req.pageTo;
   if (to === undefined) {
@@ -94,7 +96,18 @@ export const step: PipelineStep = async (req, job) => {
     to = from + count - 1;
   }
   const here = marked.filter((n) => n >= from && n <= to);
-  if (here.length === 0) return { status: 'ok', calls: [] };
+  // The marked pages of this window past the option are said, never cut in
+  // silence.
+  const past = all.slice(cap).filter((n) => n >= from && n <= to);
+  const capWarning =
+    past.length > 0
+      ? [
+          `${past.length} marked pages of this window are past the option pages (${cap}), and are not read.`,
+        ]
+      : [];
+  if (here.length === 0) {
+    return { status: 'ok', calls: [], ...(capWarning.length > 0 ? { warnings: capWarning } : {}) };
+  }
 
   const drawn = await job.pdfPictures(
     here.map((n) => ({
@@ -109,7 +122,7 @@ export const step: PipelineStep = async (req, job) => {
   const lost = here.findIndex((_, i) => !drawn[i]);
   if (lost >= 0) return failed(`Page ${here[lost]} could not be drawn.`);
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...capWarning];
   const calls: PipelineCall[] = [];
   /** The bytes of pictures the run may still send (the parser's budget). */
   let left = PIPELINE_PICTURES_MAX_BYTES;
@@ -121,10 +134,10 @@ export const step: PipelineStep = async (req, job) => {
       warnings.push(`Page ${n} is blank, and is not read.`);
       continue;
     }
-    if (p.png.length > left) {
-      warnings.push(`Page ${n} is past the picture budget of the run, and is not read.`);
-      continue;
-    }
+    // Past the budget of one answer: the window fails, so no marked page is
+    // left out of a run that says it is done (the window of 15 pages keeps
+    // under it: the manifest).
+    if (p.png.length > left) return failed(`Page ${n} is past the picture budget of the window.`);
     left -= p.png.length;
     const file = `${key}.${isPng(p.png) ? 'png' : 'jpg'}`;
     await fs.writeFile(path.join(job.dir, file), p.png);

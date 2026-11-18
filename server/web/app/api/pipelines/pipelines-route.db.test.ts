@@ -171,13 +171,15 @@ describe.skipIf(!URL)('GET /api/pipelines: the settings area is the check', () =
       'site-tags',
       'iso-title-block',
       'pdf-sheet-read',
+      'pdf-pages',
+      'pdf-page-read',
     ]);
     const sheet = body.pipelines.find((p) => p.id === 'sheet')!;
     expect({ files: sheet.files, older: sheet.older }).toEqual({ files: 2, older: 1 });
     // The router: its kind word, the kinds it names, and no counts.
     const router = body.pipelines.find((p) => p.id === 'pdf-router')!;
     expect(router).toMatchObject({ kind: 'router', reads: ['pdf'], files: null, older: null });
-    expect(router.names).toHaveLength(10);
+    expect(router.names).toHaveLength(11);
     expect(body.pipelines.find((p) => p.id === 'drawing-pdf')!.claims).toHaveLength(9);
     // Numbers only: no file name, no id, no cell.
     for (const word of [csv, teamCsv, 'pumps', 'valves', 'P-101', 'V-201']) {

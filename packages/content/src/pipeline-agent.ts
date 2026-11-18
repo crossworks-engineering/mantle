@@ -313,12 +313,13 @@ export function askValuesOf(
 function valuesIn(
   parsed: Record<string, unknown>,
   fields: readonly PipelineAskField[],
+  cellMax: number = AFTER_CELL_MAX_CHARS,
 ): Record<string, string | null> {
   const out: Record<string, string | null> = {};
   for (const f of fields) {
     const v = Object.hasOwn(parsed, f.name) ? parsed[f.name] : null;
     const s = typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '';
-    out[f.name] = s === '' ? null : s.slice(0, AFTER_CELL_MAX_CHARS);
+    out[f.name] = s === '' ? null : s.slice(0, cellMax);
   }
   return out;
 }
@@ -360,15 +361,24 @@ export function askListOf(raw: unknown): PipelineAskListItem[] {
  * fields, and with `list` the list. An ask with the list part reads its
  * fields from the key `fields`. Null: no JSON object, a failed ask.
  */
+/** The longest text of a page an Agent of page text (`produces.pages`,
+ *  pdf-page-read) keeps: what its token cap can give (LIST_ANSWER_MAX_TOKENS
+ *  in server/api/src/agent/extract/pipeline-ask.ts), not a cell's 4,096, so
+ *  a dense page is not cut. */
+export const PAGE_TEXT_ANSWER_MAX_CHARS = 60_000;
+
 export function askAnswerOf(
   text: string,
   fields: readonly PipelineAskField[],
   list: boolean,
+  /** The longest text of one field: a cell (AFTER_CELL_MAX_CHARS), or a
+   *  whole page for an Agent of page text (PAGE_TEXT_ANSWER_MAX_CHARS). */
+  cellMax: number = AFTER_CELL_MAX_CHARS,
 ): { values: Record<string, string | null>; list?: PipelineAskListItem[]; cut?: true } | null {
   const whole = answerObjectOf(text);
   const parsed = whole ?? (list ? cutAnswerOf(text) : null);
   if (!parsed) return null;
-  if (!list) return { values: valuesIn(parsed, fields) };
+  if (!list) return { values: valuesIn(parsed, fields, cellMax) };
   // A model that wrote the fields at the top, with no "fields" key: read
   // them there.
   const named = isObject(parsed.fields) ? parsed.fields : parsed;

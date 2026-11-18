@@ -23,7 +23,7 @@ pdfplumber's `find_tables` on a text page; on a scanned page the ruled lines
 centre of its box. A page with no ruled lines: columns from the left edges of
 words over the rows (a whitespace table). A table that runs on over the next
 page (the same header, or no header and the same column edges) is ONE tab,
-named by its nearest heading and its pages ("A2 Rev 3 p12-14"); every row
+named by its nearest heading and its pages ("SPEC X1 REV 0 p12-14"); every row
 keeps its page (the column Page). The tab Tables indexes them with an honest
 quality: ok, partial (with a note) or text only.
 
@@ -75,7 +75,9 @@ NATIVE_DPI_MIN = 200
 # rasterize.ts; pdf_eye.py's MAX_PIXELS): a larger sheet is drawn at fewer dots.
 MAX_PIXELS = 4096 * 4096
 # Ink: a pixel darker than this, and the share of the page under which a page
-# with no text layer is blank.
+# with no text layer is faint: OCR still reads it, and when it finds under
+# the text floor the page is blank (no paid ask for a speck). A page with no
+# ink at all is blank with no OCR.
 INK_LEVEL = 128
 BLANK_INK_SHARE = 0.001
 # One Tesseract run, at most (seconds). A page past it goes to vision.
@@ -89,6 +91,16 @@ OCR_IN_FLIGHT = 3
 PICTURES_MAX_BYTES = 60 * 1024 * 1024
 
 OCR_FAILED = "Tesseract could not read some pages; they are marked for vision."
+TEXT_LAYER_FAILED = "pdfminer could not read the text layer of this window; its pages are drawn and read by OCR."
+RENDER_FAILED = "Some pages could not be drawn; they are marked for vision."
+TABLES_FAILED = "The tables of some text pages could not be found; their text is read."
+# The time a window's job may take in all (seconds): a Tesseract run still
+# going then is stopped, and its page goes to vision. Under the job's end.
+JOB_BUDGET_S = 225
+# G1, the PNG of each page left to vision as one of the file's pictures: off
+# until the core takes a book Reader's pictures (images.ts reads the core's
+# own pictures of a PDF), so no window carries pictures nothing keeps.
+PAGE_PICTURES = False
 # The time a window spends drawing pages for OCR, at most (seconds): the
 # job's end is 240 s (PARSER_JOB_TIMEOUT_MS.pipelineRun), and a job that
 # ends loses its whole window. A page after it goes to vision.
@@ -512,15 +524,17 @@ def scan_page_tables(shape, grids, words, lines, page, method):
 # ── OCR ─────────────────────────────────────────────────────────────────────
 
 
-def tesseract(png, dpi):
+def tesseract(png, dpi, end=None):
     """Tesseract's TSV of a page picture: (words, text, mean confidence), or
-    None when it could not run."""
+    None when it could not run, or ran past OCR_TIMEOUT_S or `end` (a
+    time.monotonic() the window's job must be done by)."""
     env = dict(os.environ, OMP_THREAD_LIMIT="1")
+    timeout = OCR_TIMEOUT_S if end is None else min(OCR_TIMEOUT_S, max(1.0, end - time.monotonic()))
     try:
         p = subprocess.run(
             ["tesseract", png, "stdout", "--psm", "3", "--dpi", str(int(dpi)), "-l", "eng", "tsv"],
             capture_output=True,
-            timeout=OCR_TIMEOUT_S,
+            timeout=timeout,
             env=env,
             check=False,
         )
@@ -673,16 +687,23 @@ class Tables:
                 self.open["edges"] = t["edges"]
                 continue
             self.close()
-            if len(t["rows"]) < 2:
+            # The first row is the header when it reads as one; else the
+            # columns are `Column N` and every row is data, so a run on of a
+            # table that did not join loses no row to its column names.
+            has_header = header_like(t["rows"][0])
+            if has_header and len(t["rows"]) < 2:
                 # A header with no rows under it that goes on no table: its
                 # text stays in the page's text.
                 continue
+            width = len(t["rows"][0])
+            header = t["rows"][0] if has_header else [""] * width
+            body, body_confs = (t["rows"][1:], t["confs"][1:]) if has_header else (t["rows"], t["confs"])
             rec = {
                 "tab": None,
                 "heading": t["heading"] or "",
                 "title": t.get("title") or "",
-                "header": t["rows"][0],
-                "columns": column_names(t["rows"][0]),
+                "header": header,
+                "columns": column_names(header),
                 "edges": t["edges"],
                 "first": page,
                 "last": page,
@@ -696,7 +717,7 @@ class Tables:
                 "carried": False,
                 "data": [],
             }
-            self.add(rec, page, t["rows"][1:], t["confs"][1:], t, min_conf)
+            self.add(rec, page, body, body_confs, t, min_conf)
             self.open = rec
         if self.open is not None and not self.open["to_bottom"]:
             self.close()
@@ -788,6 +809,21 @@ class Tables:
         return name
 
 
+HEADER_DIGITS_MAX = 0.15  # a header row is mostly letters: under this share of digits
+HEADER_CELL_MAX = 40  # and no cell of it is longer than this
+
+
+def header_like(row):
+    """Whether a table's first row reads as its header: some cell has text,
+    under HEADER_DIGITS_MAX of its characters are digits, and no cell is a
+    sentence (HEADER_CELL_MAX). A row of data (sizes, codes, numbers) is not."""
+    cells = [c or "" for c in row]
+    chars = "".join(cells).replace(" ", "")
+    if not chars or any(len(c) > HEADER_CELL_MAX for c in cells):
+        return False
+    return sum(ch.isdigit() for ch in chars) < HEADER_DIGITS_MAX * len(chars)
+
+
 def column_names(header):
     """The tab's columns: Page, then the header's cells; an empty cell is
     `Column N`, a second of a name gets ` (2)`."""
@@ -844,6 +880,7 @@ def read_pages(path, job, opts, request):
     dpi = option(opts, "ocr_dpi", OCR_DPI, 100, 600)
     pic_dpi = option(opts, "picture_dpi", PICTURE_DPI, 72, 300)
     want_tables = opts.get("tables", True) is not False
+    want_pictures = opts.get("page_pictures", PAGE_PICTURES) is True
 
     pages = {}
     warnings = []
@@ -857,24 +894,36 @@ def read_pages(path, job, opts, request):
     try:
         count = len(pdf)
         first, total, last_window = window_of(request, count)
-        deadline = time.monotonic() + OCR_BUDGET_S
+        started = time.monotonic()
+        deadline = started + OCR_BUDGET_S
+        job_end = started + JOB_BUDGET_S
         pool = ThreadPoolExecutor(max_workers=OCR_WORKERS)
         waiting = deque()
 
+        def note(word_):
+            if word_ not in warnings:
+                warnings.append(word_)
+
         def finish(item):
-            n, arr, drawn, png, paper, grids, fut = item
+            n, arr, drawn, png, paper, grids, faint, fut = item
             got = fut.result()
             try:
                 os.remove(png)
             except OSError:
                 pass
             if got is None:
-                pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": "", "note": "ocr_failed"}
-                if OCR_FAILED not in warnings:
-                    warnings.append(OCR_FAILED)
+                pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
+                note(OCR_FAILED)
             else:
                 words, text, mean = got
-                method = "vision" if (mean < min_conf or nonspace(text) < text_min) else "ocr"
+                if faint and nonspace(text) < text_min:
+                    # Almost no ink, and OCR found next to nothing: a blank
+                    # page with a speck or a stamp. What OCR read is kept.
+                    method = "blank"
+                elif mean < min_conf or nonspace(text) < text_min:
+                    method = "vision"
+                else:
+                    method = "ocr"
                 pages[n] = {"paper": paper, "method": method, "conf": round(mean, 1), "text": text}
                 # The layout reads words with a letter or a digit: a speck read
                 # as `~` or `|` would break a row of a table.
@@ -888,8 +937,11 @@ def read_pages(path, job, opts, request):
 
         def keep_picture(n, arr, drawn):
             """G1: the PNG of a page marked for vision, one of the file's
-            pictures, while the answer's picture budget lasts."""
+            pictures, while the answer's picture budget lasts. Only with the
+            option `page_pictures` (PAGE_PICTURES)."""
             nonlocal pics_bytes, pics_left_out
+            if not want_pictures:
+                return
             name = "page-%05d.png" % n
             at = os.path.join(job, name)
             size = picture_of(arr, drawn, pic_dpi, at)
@@ -902,58 +954,77 @@ def read_pages(path, job, opts, request):
             caption = "Page %d%s" % (n, ": " + head if head else "")
             pics.append({"file": name, "mime": "image/png", "caption": caption[:200], "page": n})
 
-        with pdfplumber.open(path) as doc:
+        try:
+            doc = pdfplumber.open(path)
+        except Exception:  # noqa: BLE001 - pdfminer cannot parse it: every page is drawn and read
+            doc = None
+            note(TEXT_LAYER_FAILED)
+        try:
             for i in range(count):
                 n = first + i
+                pl, raw, text, paper = None, [], "", "unknown"
                 try:
-                    pl = doc.pages[i]
-                    w_pt, h_pt = float(pl.width), float(pl.height)
-                    paper = paper_of(w_pt * 25.4 / 72, h_pt * 25.4 / 72)
-                    raw = pl.extract_words(extra_attrs=["size"])
-                    text = pl.extract_text() or ""
+                    if doc is not None:
+                        pl = doc.pages[i]
+                        w_pt, h_pt = float(pl.width), float(pl.height)
+                        paper = paper_of(w_pt * 25.4 / 72, h_pt * 25.4 / 72)
+                        raw = pl.extract_words(extra_attrs=["size"])
+                        text = pl.extract_text() or ""
                 except Exception:  # noqa: BLE001 - a page pdfminer cannot read is drawn and read
-                    pl, raw, text, paper = None, [], "", "unknown"
+                    pl, raw, text = None, [], ""
                 if pl is not None and nonspace(text) >= text_min:
                     words = [word(w["text"], w["x0"], w["top"], w["x1"], w["bottom"]) for w in raw]
-                    for w, r in zip(words, raw):
-                        w["size"] = r.get("size")
                     pages[n] = {"paper": paper, "method": "text", "conf": None, "text": text.strip()}
                     if want_tables:
-                        tables_by_page[n] = text_page_tables(pl, words, lines_of(words), n, w_pt, h_pt)
+                        try:
+                            tables_by_page[n] = text_page_tables(pl, words, lines_of(words), n, w_pt, h_pt)
+                        except Exception:  # noqa: BLE001 - its text stands; its tables are not found
+                            note(TABLES_FAILED)
                     pl.close()
                     continue
                 native = native_dpi(pl) if pl is not None else None
                 if pl is not None:
                     pl.close()
                 late = time.monotonic() > deadline
-                arr, drawn = render(pdf, i, pic_dpi if late else ocr_dpi_of(native, dpi))
-                if float((arr < INK_LEVEL).mean()) < BLANK_INK_SHARE:
+                try:
+                    arr, drawn = render(pdf, i, pic_dpi if late else ocr_dpi_of(native, dpi))
+                except Exception:  # noqa: BLE001 - pdfium cannot draw the page: vision tries
+                    pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
+                    note(RENDER_FAILED)
+                    continue
+                ink = float((arr < INK_LEVEL).mean())
+                if ink == 0.0:
                     pages[n] = {"paper": paper, "method": "blank", "conf": None, "text": ""}
                     continue
                 if late:
                     # Past the OCR budget of a window: the page goes to vision
-                    # with its picture, never lost (the job's end would lose
-                    # the whole window).
+                    # (the job's end would lose the whole window).
                     pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
                     keep_picture(n, arr, drawn)
-                    if OCR_LATE not in warnings:
-                        warnings.append(OCR_LATE)
+                    note(OCR_LATE)
                     continue
                 # The ruled lines first: their grid places the words, and the
                 # picture Tesseract reads leaves out the row lines.
+                grids, ocr_arr = [], arr
                 if want_tables:
-                    grids, ruled = ruled_grids(arr)
-                    ocr_arr = np.where(ruled > 0, np.uint8(255), arr)
-                else:
-                    grids, ocr_arr = [], arr
+                    try:
+                        grids, ruled = ruled_grids(arr)
+                        ocr_arr = np.where(ruled > 0, np.uint8(255), arr)
+                    except Exception:  # noqa: BLE001 - no grid: the page is read as text
+                        grids, ocr_arr = [], arr
                 png = os.path.join(job, "ocr-%05d.png" % n)
                 Image.fromarray(ocr_arr, "L").save(png)
                 del ocr_arr
-                waiting.append((n, arr, drawn, png, paper, grids, pool.submit(tesseract, png, drawn)))
+                faint = ink < BLANK_INK_SHARE
+                fut = pool.submit(tesseract, png, drawn, job_end)
+                waiting.append((n, arr, drawn, png, paper, grids, faint, fut))
                 while len(waiting) >= OCR_IN_FLIGHT:
                     finish(waiting.popleft())
             while waiting:
                 finish(waiting.popleft())
+        finally:
+            if doc is not None:
+                doc.close()
         pool.shutdown()
     finally:
         pdf.close()
@@ -1033,9 +1104,10 @@ def build(read, state):
                 "rows": index,
             }
         )
-    if first == 1:
-        # One File row for the file: the first window writes it, with the
-        # file's page count when the core gave it.
+    if not (isinstance(state, dict) and state.get("file") is True):
+        # One File row for the file, with its kind: the first window that is
+        # read writes it (its state says so after), so a lost window 1 does
+        # not lose the kind, and with it the Agent's run.
         tabs.append(
             {
                 "name": FILE_TAB,
@@ -1072,7 +1144,7 @@ def build(read, state):
     text = "\n\n".join("## Page %d\n\n%s" % (n, pages[n]["text"]) if pages[n]["text"] else "## Page %d" % n for n in sorted(pages))
     next_state = None
     if not read["last_window"]:
-        next_state = {"totals": totals}
+        next_state = {"totals": totals, "file": True}
         if carry is not None:
             next_state["open"] = carry
     return tabs, desc[:300], text, counts, next_state

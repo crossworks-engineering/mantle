@@ -469,7 +469,9 @@ export const BUILTIN_PIPELINES = [
     description:
       'Reads by vision the pages of a PDF book that OCR read badly, or that hold a figure, one ask a page, into the tab Page text. It runs after an upload and on demand, and reads no page the book reader read well.',
     version: '1.0.0',
-    match: { ext: ['pdf'] },
+    // The kind it reads: no window is cut and no job runs on a PDF of
+    // another kind (runAgentOnFile).
+    match: { ext: ['pdf'], kind: ['book'] },
     options: {
       pages: {
         type: 'number',
@@ -482,14 +484,16 @@ export const BUILTIN_PIPELINES = [
     },
     produces: { tabs: ['Page text'], pages: true },
     // One step a window and no model in it: the pictures of the window's
-    // marked pages, drawn in the parser's pdfjs child. The cap of a file is
-    // the page cap of an ask (PIPELINE_ASK_PAGE_MAX); the option and the
-    // box's day cap bound a run.
+    // marked pages, drawn in the parser's pdfjs child. A window of 15 pages:
+    // 15 pictures of 4 MB at most stay under the 64 MB of one answer
+    // (PIPELINE_PICTURES_MAX_BYTES), so no marked page is left out. The cap
+    // of a file is the page cap of an ask (PIPELINE_ASK_PAGE_MAX); the
+    // option and the box's day cap bound a run.
     needs: {
       weight: 'heavy',
       timeMs: 240_000,
       workers: { vision: PIPELINE_ASK_PAGE_MAX },
-      window: { ...PIPELINE_WINDOW_DEFAULT },
+      window: { pages: 15, mb: PIPELINE_WINDOW_DEFAULT.mb },
     },
   }),
 ] as const;

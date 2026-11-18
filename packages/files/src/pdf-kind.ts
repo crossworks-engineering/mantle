@@ -505,9 +505,11 @@ const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
 
 /**
  * Whether a long PDF is a book, from the first pages' facts and kinds (the
- * sample), with no model. Every page read of the sample is on office paper
- * (`a4` or `a3`: an A4, Letter or A3 sheet), none is a P&ID or an isometric, and
- * BOOK_MIN_SHARE of them or more are scans or typed text. A sample with no
+ * sample), with no model. BOOK_MIN_SHARE of the pages read of the sample or
+ * more are on office paper (`a4` or `a3`: an A4, Letter or A3 sheet; a
+ * fold-out sheet in a spec book makes no drawing set of it), none is a P&ID
+ * or an isometric, and BOOK_MIN_SHARE of them or more are scans or typed
+ * text. A sample with no
  * page read is no book: the page rules decide. The page count is the
  * caller's (qpdf): over BOOK_MIN_PAGES.
  */
@@ -518,7 +520,8 @@ export function bookOf(
   if (pageCount === null || pageCount <= BOOK_MIN_PAGES) return false;
   const read = sample.filter((p) => p.class !== undefined);
   if (read.length === 0) return false;
-  if (!read.every((p) => p.size === 'a4' || p.size === 'a3')) return false;
+  const office = read.filter((p) => p.size === 'a4' || p.size === 'a3').length;
+  if (office < BOOK_MIN_SHARE * read.length) return false;
   if (read.some((p) => p.kind !== undefined && BOOK_NOT_KINDS.includes(p.kind))) return false;
   const typed = read.filter((p) => BOOK_CLASSES.includes(p.class!)).length;
   return typed >= BOOK_MIN_SHARE * read.length;

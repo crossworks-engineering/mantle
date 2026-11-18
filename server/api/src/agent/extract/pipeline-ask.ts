@@ -31,6 +31,7 @@ import {
   ASK_SYSTEM_TEXT,
   askAnswerOf,
   askQuestionOf,
+  PAGE_TEXT_ANSWER_MAX_CHARS,
   type AgentAsk,
   type AgentAskFn,
 } from '@mantle/content/pipeline-agent';
@@ -95,6 +96,10 @@ export function pipelineAskOf(
       return null;
     })());
 
+  // An Agent of page text (`produces.pages`, pdf-page-read) asks for a whole
+  // page: the token cap of a list ask, and a page's text, not a cell's. At
+  // 1,500 tokens a dense page's JSON is cut, a failed ask that stops the run.
+  const pageText = pipeline.produces?.pages === true;
   return async (ask: AgentAsk): Promise<PipelineCallAnswer> => {
     const why = await fixedNo();
     if (why) return no(why);
@@ -118,7 +123,7 @@ export function pipelineAskOf(
           mimeType: ask.mime,
           systemPrompt: ask.list ? ASK_LIST_SYSTEM_TEXT : ASK_SYSTEM_TEXT,
           prompt: askQuestionOf(ask.fields, ask.list),
-          maxTokens: ask.list ? LIST_ANSWER_MAX_TOKENS : ANSWER_MAX_TOKENS,
+          maxTokens: ask.list || pageText ? LIST_ANSWER_MAX_TOKENS : ANSWER_MAX_TOKENS,
           leastThinking: true,
           // One time more when the provider failed: a failed ask stops the
           // asks after it in the run.
@@ -142,7 +147,12 @@ export function pipelineAskOf(
           h.setError(out.note ?? 'no text');
           return { ok: false, error: 'failed', reason: 'no_text' };
         }
-        const answer = askAnswerOf(out.text, ask.fields, ask.list);
+        const answer = askAnswerOf(
+          out.text,
+          ask.fields,
+          ask.list,
+          pageText ? PAGE_TEXT_ANSWER_MAX_CHARS : undefined,
+        );
         if (!answer) {
           h.setError('the answer is no JSON object');
           return { ok: false, error: 'failed', reason: 'no_json' };

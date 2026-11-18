@@ -252,6 +252,17 @@ describe('the paid ask of an Agent', () => {
     expect(h.steps[0]!.init).toMatchObject({ input: { list: true } });
   });
 
+  it('an Agent of page text asks with the large cap and keeps a whole page, not a cell', async () => {
+    const page = 'MADE-UP SPEC LINE '.repeat(800).trim();
+    answer = { ...answer, text: JSON.stringify({ Text: page }) };
+    const pages = { ...AGENT, produces: { tabs: ['Page text'], pages: true } } as PipelineManifest;
+    const fields = [{ name: 'Text' }];
+    const out = await mod.pipelineAskOf('owner', 'node', pages, deps())({ ...ASK, fields });
+    expect(calls[0]!.maxTokens).toBe(mod.LIST_ANSWER_MAX_TOKENS);
+    expect(out.ok && (out.output as { values: Record<string, string> }).values.Text).toBe(page);
+    expect(page.length).toBeGreaterThan(4096);
+  });
+
   it('an ask with no list part keeps the small cap and gives no list', async () => {
     const out = await mod.pipelineAskOf('owner', 'node', AGENT, deps())(ASK);
     expect(calls[0]!.maxTokens).toBe(mod.ANSWER_MAX_TOKENS);

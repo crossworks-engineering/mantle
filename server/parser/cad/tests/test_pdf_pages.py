@@ -145,6 +145,20 @@ class PureParts(unittest.TestCase):
         t.end(True)
         self.assertEqual([r["tab"] for r in t.done], ["Table p2"])
 
+    def test_a_first_row_of_data_is_no_header(self):
+        """A run on that does not join (here: the table above ended before
+        the bottom) keeps its first row as data, under Column N."""
+        self.assertTrue(pdf_pages.header_like(["ITEM", "SIZE", "RATING"]))
+        self.assertFalse(pdf_pages.header_like(["PIPE", "1/2-24", "SCH 40", "123-45"]))
+        self.assertFalse(pdf_pages.header_like(["", ""]))
+        e = [0.1, 0.4, 0.7, 0.9]
+        t = pdf_pages.Tables(None)
+        t.page(1, [self._t([["A", "B", "C"], ["1", "2", "3"]], e, to_bottom=False)], 70)
+        t.page(2, [self._t([["10", "20", "30"], ["40", "50", "60"]], e)], 70)
+        t.end(True)
+        self.assertEqual(t.done[1]["columns"], ["Column 1", "Column 2", "Column 3"])
+        self.assertEqual(t.done[1]["data"], [[2, "10", "20", "30"], [2, "40", "50", "60"]])
+
     def test_quality(self):
         rec = {"odd": 0, "rows": 10, "header": ["a", "b"], "cells": 20, "empty": 0, "low": 0}
         self.assertEqual(pdf_pages.quality_of(rec), ("ok", ""))
@@ -243,6 +257,9 @@ class TextLayer(unittest.TestCase):
         self.assertEqual((idx[0][2], idx[0][3]), ("2-4", 120))
         self.assertIn("File", t1)
         self.assertNotIn("File", t2)
+        # A lost window 1: the first window read writes the kind.
+        r3, _ = run(b, {"pageFrom": 4, "pageTo": 7, "pagesTotal": 7})
+        self.assertEqual(tabs_of(r3)[0]["File"]["rows"][0][:2], ["book", "book"])
         self.assertEqual([r[0] for r in t2["Pages"]["rows"]], [4, 5, 6, 7])
         # The last window says the whole book: its description stands.
         self.assertTrue(tabs_of(r2)[1]["description"].startswith("A book of 7 pages: 7 text, 0 OCR"))
@@ -296,7 +313,8 @@ class Scans(unittest.TestCase):
         cls.pages, cls.truth, cls.methods = book_pdfs.book()
         cls.pdf = os.path.join(cls.dir, "scan.pdf")
         book_pdfs.write_pdf(cls.pdf, cls.pages, scan=set(range(1, 10)))
-        cls.result, cls.job = run(cls.pdf)
+        # G1's pictures are an option until the core keeps them (PAGE_PICTURES).
+        cls.result, cls.job = run(cls.pdf, {"options": {"page_pictures": True}})
         cls.tabs, cls.input = tabs_of(cls.result)
 
     def test_methods(self):
@@ -328,6 +346,24 @@ class Scans(unittest.TestCase):
         self.assertEqual(idx[names[0]][5], "ocr")
         self.assertIn(idx[names[0]][6], ("ok", "partial"))
 
+    def test_g1_is_off_by_default(self):
+        pages, _, _ = book_pdfs.book()
+        pdf = os.path.join(self.dir, "fig.pdf")
+        book_pdfs.write_pdf(pdf, [pages[7]], scan={1})
+        r, job = run(pdf)
+        self.assertEqual(tabs_of(r)[0]["Pages"]["rows"][0][2], "vision")
+        self.assertEqual(tabs_of(r)[1]["pictures"], [])
+        self.assertFalse(any(f.endswith(".png") for f in os.listdir(job)))
+
+    def test_a_faint_page_is_read_and_blank_when_ocr_finds_nothing(self):
+        pdf = os.path.join(self.dir, "faint.pdf")
+        book_pdfs.write_pdf(pdf, [[("line", 800, 1100, 812, 1100, 3)], [("text", 90, 1100, 24, False, "SIGNED AND DATED BY THE MADE-UP INSPECTOR OF RECORD")]], scan={1, 2}, noise=False)
+        r, _ = run(pdf)
+        rows = tabs_of(r)[0]["Pages"]["rows"]
+        self.assertEqual(rows[0][2], "blank")
+        self.assertEqual(rows[1][2], "ocr")
+        self.assertIn("INSPECTOR", rows[1][5])
+
     def test_g1_a_gray_picture_of_the_vision_page(self):
         pics = self.input["pictures"]
         self.assertEqual([p["file"] for p in pics], ["page-00008.png"])
@@ -357,7 +393,7 @@ class OcrBudget(unittest.TestCase):
         old = pdf_pages.OCR_BUDGET_S
         pdf_pages.OCR_BUDGET_S = -1
         try:
-            r, job = run(pdf)
+            r, job = run(pdf, {"options": {"page_pictures": True}})
         finally:
             pdf_pages.OCR_BUDGET_S = old
         tabs, inp = tabs_of(r)

@@ -13,6 +13,7 @@ import {
   PIPELINE_API,
   PIPELINE_ASK_PAGE_MAX,
   PIPELINE_DESCRIPTION_MAX,
+  PIPELINE_PICTURES_MAX_BYTES,
   PIPELINE_WINDOW_DEFAULT,
   type PipelineManifest,
 } from './contract';
@@ -339,14 +340,16 @@ describe('the roles', () => {
 
   it('the book Agent: one tab, text by page, vision one ask a page, in the book windows', () => {
     const agent = AGENTS.find((p) => p.id === 'pdf-page-read')! as PipelineManifest;
-    expect(agent.match).toEqual({ ext: ['pdf'] });
+    expect(agent.match).toEqual({ ext: ['pdf'], kind: ['book'] });
     expect(agent.produces).toEqual({ tabs: ['Page text'], pages: true });
     expect(agent.needs).toEqual({
       weight: 'heavy',
       timeMs: 240_000,
       workers: { vision: PIPELINE_ASK_PAGE_MAX },
-      window: PIPELINE_WINDOW_DEFAULT,
+      window: { pages: 15, mb: PIPELINE_WINDOW_DEFAULT.mb },
     });
+    // 15 pictures of PICTURE_MAX_BYTES fit one answer.
+    expect(15 * 4 * 1024 * 1024).toBeLessThanOrEqual(PIPELINE_PICTURES_MAX_BYTES);
     expect(Object.keys(agent.options ?? {})).toEqual(['pages']);
     const pages = agent.options!.pages!;
     expect(pages.type === 'number' && [pages.default, pages.max]).toEqual([
