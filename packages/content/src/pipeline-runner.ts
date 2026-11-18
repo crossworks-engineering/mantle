@@ -288,9 +288,13 @@ export async function* pdfWindows(
   sha256: string,
   window: { pages: number; mb: number },
   startPage = 1,
+  knownTotal?: number,
 ): AsyncGenerator<PdfWindowStep> {
   let from = startPage;
-  let total: number | null = null;
+  // A caller that knows the page count (a read of the first pages) has
+  // every cut guarded; else the first must be cut, for the count.
+  let total: number | null = knownTotal ?? null;
+  if (total !== null && from > total) return;
   for (;;) {
     const cut = { from, pages: window.pages, mb: window.mb, sha256 };
     // The first window must be cut: there is no page count without it.
