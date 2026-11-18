@@ -297,6 +297,59 @@ What the brain did with a file, derived live (nothing new is stored):
   pages and notes). Its gate is the file's own: a file the caller does not
   read is a 404, and every count is read in the caller's scope.
 
+### 8d. Reindex and stale indexes
+
+A file says what read it, so a better reader shows which files it would
+read better, and a person reads them again. Nothing reads a file again by
+itself (cost safety: no trigger, no timer).
+
+- **The stamps** (`packages/files/src/read-stamp.ts`), on the file node's
+  data, written by the brain only (derived keys, migration 0385):
+  `read_by` `{ reader, v }` when a read of the text completes (the extract,
+  and the local read with no model: `server/api/src/agent/extractor.ts`,
+  `extract/gates.ts`); `reader` is the core reader of the type (the parser
+  route: `pdf-parse`, `mammoth`, `exceljs`, `utf8`, ..., or `image` for a
+  picture read by vision). `pipeline_read` `{ id, name, version }` when a
+  Reader pipeline builds the file's database
+  (`packages/content/src/file-database.ts`). New bytes drop both; the next
+  read writes them again.
+- **Versions.** `READER_VERSIONS` in `read-stamp.ts` is the one list of the
+  core readers' versions (each starts at 1). Raise a number when a reader
+  reads better: the files it read at a lower number become stale. A
+  pipeline's version is its manifest's; an installed newer version makes
+  the files its older version read stale. Never lower a number.
+- **Stale** (`staleOf`): a stamp below the version in force. A file with no
+  stamp (read before the stamps, or not read) is NOT stale, so a roll paints
+  nothing stale. The row status carries `stale: true` (only when true) and
+  `pipeline` (the name of the Reader pipeline that built its database);
+  the row carries the stamps as `readBy` and `pipelineRead`. The processing
+  answer has `stale` (true, false, or null for no stamp), `readBy` and
+  `pipelineRead`, each with the version in force (`current`).
+- **Reindex**: `POST /api/files/reindex` `{ ids }` (1 to 200 file ids) and
+  the `file_reindex` tool, one function (`reindexFiles` in `@mantle/tools`).
+  Each file is read again through the whole pipeline on the existing extract
+  queue, under its caps: the keys the extractor derived from the bytes are
+  dropped (the cached text, the summary, the reader's stamp, a skip or
+  parked verdict) and `markContentChanged` asks for the whole pass (text,
+  chunks, vector, facts, mentions). The old chunks and facts stay until the
+  new pass replaces them. A file with a database (or a word) for its bytes
+  also gets one run of the box's Reader of its type (model free, with the
+  `after` chain), unless the Reader is off in its home workspace; a file
+  with none gets its database from the extract, as at upload. Two checks:
+  the edit of each file (`itemWriteVerdicts`: whoever may change the file
+  by hand), and the busy check of the queue (more than 50 waiting: nothing
+  is queued). The answer `{ queued, databases, skipped }` names every id
+  not queued with its reason: `not-found`, `not-allowed`, `in-queue`,
+  `busy`. More than 200 ids is a 400 and queues nothing: send the rest in
+  another call.
+- **The list**: `GET /api/files/stale?state=stale|failed|partial&cursor=&limit=`
+  and the `file_stale_list` tool (`fileStaleList` in `@mantle/tools`): one
+  page of file rows with their status, newest first, in the caller's read
+  scope, `next` for the next page and `total`. `failed` and `partial` are
+  the read states of `extractionOf`. The stale cut is found in two partial
+  indexes (migration 0385), not by a pass over every file's data.
+- **MCP `file_list`** rows carry `status` too, as the HTTP list.
+
 ---
 
 ## 9. MCP tools
@@ -313,6 +366,8 @@ Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 | `file_upload`     | Create/overwrite a file (`content_text` or `content_base64`)     |
 | `file_get`        | File metadata only                                               |
 | `file_processing` | What the brain did with a file, and the items made from it (§8c) |
+| `file_reindex`    | Read files again through the whole pipeline (§8d)                |
+| `file_stale_list` | The files that need attention: stale, failed, partial (§8d)      |
 | `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)        |
 | `file_delete`     | Delete a file (both DB row and disk)                             |
 | `screenshots`     | The area screenshots it reads: a list, or one with its image     |

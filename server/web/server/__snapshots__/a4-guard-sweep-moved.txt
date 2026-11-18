@@ -255,7 +255,7 @@ m253 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m254 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m255 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10715
+# cells whose guard entry moved to the pipeline: 10751
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2221,6 +2221,27 @@ first POST /api/files/folders/:id/run member-cookie=m60
 first POST /api/files/folders/:id/run admin-bearer=m48
 first POST /api/files/folders/:id/run member-bearer=m61
 first POST /api/files/folders/:id/run revoked-bearer=m27
+first POST /api/files/reindex owner-cookie=m45
+first POST /api/files/reindex admin-cookie=m46
+first POST /api/files/reindex limited-cookie=m47
+first POST /api/files/reindex member-cookie=m60
+first POST /api/files/reindex admin-bearer=m48
+first POST /api/files/reindex member-bearer=m61
+first POST /api/files/reindex revoked-bearer=m27
+first GET /api/files/stale owner-cookie=m21
+first GET /api/files/stale admin-cookie=m22
+first GET /api/files/stale limited-cookie=m23
+first GET /api/files/stale member-cookie=m49
+first GET /api/files/stale admin-bearer=m25
+first GET /api/files/stale member-bearer=m50
+first GET /api/files/stale revoked-bearer=m27
+first HEAD /api/files/stale owner-cookie=m28
+first HEAD /api/files/stale admin-cookie=m29
+first HEAD /api/files/stale limited-cookie=m30
+first HEAD /api/files/stale member-cookie=m58
+first HEAD /api/files/stale admin-bearer=m32
+first HEAD /api/files/stale member-bearer=m59
+first HEAD /api/files/stale revoked-bearer=m34
 first GET /api/fleet owner-cookie=m35
 first GET /api/fleet admin-cookie=m36
 first GET /api/fleet limited-cookie=m43
@@ -7976,6 +7997,21 @@ more POST /api/files/folders/:id/run bumped-cookie=m27
 more POST /api/files/folders/:id/run gone-cookie=m27
 more POST /api/files/folders/:id/run rotated-bearer=m27
 more POST /api/files/folders/:id/run expired-bearer=m27
+more POST /api/files/reindex disabled-cookie=m27
+more POST /api/files/reindex bumped-cookie=m27
+more POST /api/files/reindex gone-cookie=m27
+more POST /api/files/reindex rotated-bearer=m27
+more POST /api/files/reindex expired-bearer=m27
+more GET /api/files/stale disabled-cookie=m27
+more GET /api/files/stale bumped-cookie=m27
+more GET /api/files/stale gone-cookie=m27
+more GET /api/files/stale rotated-bearer=m27
+more GET /api/files/stale expired-bearer=m27
+more HEAD /api/files/stale disabled-cookie=m34
+more HEAD /api/files/stale bumped-cookie=m34
+more HEAD /api/files/stale gone-cookie=m34
+more HEAD /api/files/stale rotated-bearer=m34
+more HEAD /api/files/stale expired-bearer=m34
 more GET /api/fleet disabled-cookie=m27
 more GET /api/fleet bumped-cookie=m27
 more GET /api/fleet gone-cookie=m27
