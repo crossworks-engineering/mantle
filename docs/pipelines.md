@@ -2337,6 +2337,107 @@ Reader that claims kinds on a file of its type (the build names the kind).
 **P6, local OCR.** qpdf, Tesseract with its English data, pdfplumber and
 pypdfium2 are in the parser image (docs/parser.md, "Page windows").
 
+## The book reader
+
+The built-ins on the page windows (M3 of the large-PDF plan, dev-brain page
+4ff4d4e5): the router's kind `book`, the Reader `pdf-pages` and the Agent
+`pdf-page-read`. None of them asks a model but the Agent, and the Agent asks
+only for the pages OCR could not read well.
+
+**The kind `book`** (`bookOf`, `packages/files/src/pdf-kind.ts`;
+`PDF_KIND_RULES_VERSION` 3). The router names a PDF a book, before its page
+rules and with no ask, when the file is past the 256 MB pdfjs opens, or when
+it has more than 20 pages (`job.pdfPageCount`, qpdf) and its first 20 pages,
+read as every page is, are all on office paper (A4, Letter, A3), none is a
+P&ID or an isometric, and 80% or more are scans or typed text. A book hands
+the Reader no facts: the Reader reads the file, window by window. A stored
+kind from older rules is named again with no ask on a read again, as for
+every rules version. `drawing-pdf` does not claim `book`, so `pdf-sheet-read`
+never asks for the title block of a book's pages.
+
+**The Reader `pdf-pages`** (Python, `server/parser/cad/pdf_pages.py`; a
+window of 50 pages or 50 MB a job). For each page:
+
+- `text`: its text layer (pdfplumber) holds 40 or more characters that are
+  not spaces (the option `text_min_chars`);
+- `ocr`: else the page is drawn (pypdfium2) at its scan's own dots, from 200
+  up to the option `ocr_dpi` (300), and read by Tesseract with `--psm 3`
+  (never 6: rows cross the ruled lines), TSV out. A 200 dpi scan drawn at
+  300 read 90% of the table cells right on the made-up spec book, drawn at
+  its own 200 dots 96%;
+- `vision`: the OCR's mean confidence is under `ocr_min_confidence` (70) or
+  it gave under 40 characters (a figure, a bad copy): the Agent reads the
+  page. Its PNG (150 dpi, gray) is one of the file's pictures (G1), named
+  `page-<NNNNN>.png` in its window, captioned with its page and its first
+  heading line;
+- `blank`: no text layer and almost no ink: nothing to read, and no paid ask
+  for a white page.
+
+A window stops its OCR after 180 s (the job ends at 240 s and would lose the
+whole window): the pages after it are `vision`, with their pictures, and a
+warning says so. A page Tesseract could not read is `vision` too. The tab
+`Pages` holds one row a page: `Page` (of the original file), `Paper`,
+`Method`, `Confidence` (OCR's mean, none for a text page), `Chars`, `Text`.
+The text is the pages with a `## Page N` line before each. The tab `File`
+(window 1 only) holds the kind `book`, the rules version and the page count.
+`produces.table: false`: the upload makes no Table of these tabs.
+
+**Tables** (the brief, section 4). On a text page, pdfplumber's
+`find_tables`; on a scanned page, the ruled lines (OpenCV: a morphology open
+with long kernels; each line fitted straight, so a skewed scan keeps its
+rows) give the grid, and each Tesseract word goes in the cell that holds the
+centre of its box. The picture Tesseract reads leaves out the row lines (a
+ruled line read as `|` or a dash breaks a cell; with the column lines gone too,
+Tesseract loses whole narrow columns), and a cell's edge marks of a ruled
+line are cut. A page with no ruled lines: a run of three or more rows of
+three or more word groups whose left edges fall in the same columns (a
+whitespace table). A table runs on over the next page (one tab) when the
+table before ran to the bottom of its page (no word under it but the
+footer), it is the first table of the next page, and its header is the same
+(OCR's two reads of one header are 80% alike or more), or it has no header
+and the same column edges (within 2% of the page width). A new title over it
+(a line in larger type than the table's own, `TITLE_SCALE`) starts a new
+table though its header is the same: a spec book has one spec a page, each
+with the same columns. Over a window edge the open table goes on through the
+step's `state` (`{ open, totals }`, a few KB): the next window writes its
+rows to the same tab, and the window that closes it writes its row of
+`Tables`; a window lost in between ends it.
+
+A table's tab is named by its nearest heading above it and its pages
+(`A2 Rev 3 p12-14`, `Table p7` with no heading; a table still open at the
+end of a window is `A2 Rev 3 p48 on`), cut to 48 characters of heading; a second of
+a name gets ` (2)`. Every row starts with the column `Page`, the page of the
+original file it came from. The tab `Tables` indexes them: `Tab`, `Title`,
+`Pages`, `Rows`, `Columns`, `Method` (`text`, `ocr`), `Quality`, `Note`.
+Quality is `ok` (every row fills the header's columns, under 10% of the
+cells empty, no cell under the OCR floor), `partial` with a note that says
+which (`12 of 40 rows do not fill the header's 6 columns`), or `text only`
+(a ruled table on a page OCR read badly: vision reads the page, and its
+text is in the passages). The description of the database says how many are
+partial or text only. Libraries: MIT, Apache-2.0 or BSD only; no Camelot
+(Ghostscript), Tabula or PyMuPDF.
+
+**The Agent `pdf-page-read`** (`./pkg/pdf-page-read`). It claims the kind
+`book` and reads in the same page windows (P4). The core gives its step the
+pages the Reader marked `vision` (`state.visionPages`, read from the tab
+`Pages` by `bookVisionPagesOf`, `packages/content/src/book-pages.ts`), so a
+page the Reader read well is never asked. One ask a page, keyed `page-<N>`,
+with the one field `Text`; its text stands over the Reader's for the
+page's passage (P3), and is the description of the page's picture (G1). The
+option `pages` (2,000) is the most marked pages of a file it reads, from the
+first; the box's day cap bounds a run. A marked page that cannot be drawn
+ends the run `failed` (no ask, no write); a blank picture is not read.
+
+**Tests** (made-up PDFs only). `server/parser/cad/tests/test_pdf_pages.py`
+draws a book (`tests/book_pdfs.py`): prose, a table over three pages with
+its header on each, a table over two pages with its header on the first
+only, a table with no ruled lines, a figure and a blank page, as a scan and
+as a text twin. The scan: every page gets its method, each table is one tab
+with the right pages, 95% or more of the cells right, every row's page
+right, one picture (the figure's). The twin: every page is `text`, nothing
+is asked or drawn, the cells are exact. Two windows carry a table over
+their edge.
+
 ## Text and pictures from every Reader
 
 The owner's decision of 2026-11-15 ("pick 1"): the `text` and `pictures`
