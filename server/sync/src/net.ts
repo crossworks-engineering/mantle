@@ -22,11 +22,12 @@ export class HostRefusedError extends Error {
 export async function checkedAddress(host: string): Promise<string> {
   const name = host.trim();
   const answers = isIP(name)
-    ? [{ address: name }]
+    ? [{ address: name, family: isIP(name) }]
     : await lookup(name, { all: true, verbatim: true });
   if (answers.length === 0) throw new HostRefusedError(name);
   for (const a of answers) {
     if (isBlockedIp(a.address, { allowLan: true })) throw new HostRefusedError(name);
   }
-  return answers[0]!.address;
+  // IPv4 first: a container network often has no IPv6 road out.
+  return (answers.find((a) => a.family === 4) ?? answers[0]!).address;
 }
