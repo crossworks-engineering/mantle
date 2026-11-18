@@ -312,6 +312,7 @@ const HTTP_SURFACE = [
   'extract_from_image',
   'file_get',
   'file_list',
+  'file_processing',
   'file_read',
   'file_sql',
   'find_window',

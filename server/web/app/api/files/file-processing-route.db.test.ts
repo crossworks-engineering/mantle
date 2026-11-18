@@ -151,6 +151,9 @@ describe.skipIf(!URL)('file status and processing: the file read gate is the one
     if (!reg?.ok) {
       await su(sql`create schema if not exists pgboss`);
       await su(sql`create table pgboss.job (name text not null, state text not null, data jsonb)`);
+      // The app's roles read pg-boss's tables (applyRuntimeGrants); a table
+      // made after the migrate takes the grant here.
+      await su(sql`grant select on pgboss.job to mantle_system_narrow, mantle_runtime`);
       await su(sql`insert into pgboss.job (name, state, data) values
         ('mantle.extract', 'created', ${JSON.stringify({ nodeId: fileId })}::jsonb),
         ('mantle.extract', 'completed', ${JSON.stringify({ nodeId: derivedId })}::jsonb)`);
