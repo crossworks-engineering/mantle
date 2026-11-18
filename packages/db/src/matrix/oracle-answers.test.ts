@@ -48,9 +48,18 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // canvas's link; adminWriteGrant, who edits it too, also deletes its
   // content row or an app's data row and writes an app's code (those ask
   // edit as well). No other answer moved (checked with --against).
+  // Decision A (owner page d7313c67): an Admin user counts as a Moderator of
+  // the home of any item it reads, so edit and add follow manage: 132 inputs
+  // moved, each deny to allow, all a login's: adminReadGrant (an Admin user
+  // who reads through R, Write off) on every edit-rule write (edit, rank, a
+  // link, a content row's delete, history, a Recall card, an app's code,
+  // data, switch and lowering, an app's create) and a create in the folder;
+  // adminWriteGrant on a create in the folder (12). No other answer moved
+  // (checked with --against). An Admin user who does not read the item gets
+  // nothing more (the a8 grid's admin seat on H's items).
   a3a: {
     inputs: 33_120,
-    sha256: '1d50ae49f14f8da2eec249cc3c3351cd45909f434cedc37d8bf0067b09090b91',
+    sha256: '8aa497cff103f6b98244aaefe35b1120adc5d4461837153ae84e8f5bf1fc801c',
   },
   'a3a-detail': {
     inputs: 1_104,

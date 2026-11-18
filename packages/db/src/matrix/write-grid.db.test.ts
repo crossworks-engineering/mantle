@@ -570,8 +570,12 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     // (adminWriteGrant and adminReadGrant: delete, an app's or a canvas's
     // link; adminWriteGrant also a content row's and an app's data row's
     // delete and an app's code).
-    expect(tally.allowed).toBe(955);
-    expect(tally.denied).toBe(2025);
+    // Decision A (owner page d7313c67): an Admin user counts as a Moderator
+    // of the home of any item it reads: 132 cells from denied to allowed, the
+    // 132 inputs the a3a pin names (adminReadGrant's edit-rule writes and
+    // both Admin seats' create in the folder).
+    expect(tally.allowed).toBe(1087);
+    expect(tally.denied).toBe(1893);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });
