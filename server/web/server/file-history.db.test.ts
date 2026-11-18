@@ -493,12 +493,31 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
       const shaOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
       expect(left.map((r) => r.s)).not.toContain(shaOf(big('a')));
       expect(left.map((r) => r.s)).toContain(shaOf(big('c')));
-      // One version bigger than the cap still stays: the newest always.
-      process.env.FILE_HISTORY_MAX_MB = '1';
+      // A version bigger than the whole cap (a 2.5 GB file on a 2 GB box,
+      // here 1.2 MB on 1 MB): it stays, the newest of a live file, and so
+      // do the other files' newest versions (a soft cap: never every other
+      // file's history for one big file).
+      const newest = async () =>
+        new Set(
+          (
+            await raw<{ s: string }[]>`select source_hash as s from node_snapshots
+                                         where node_id in (${a.id}, ${b.id})`
+          ).map((r) => r.s),
+        );
       const huge = Buffer.alloc(1200 * 1024, 'h');
       const hfile = await write(`${tag}-caph.bin`, huge);
       await write(`${tag}-caph.bin`, Buffer.alloc(10, 'x'));
       expect(await versionCount(hfile.id)).toBe(1);
+      expect(await newest()).toEqual(new Set([shaOf(big('c')), shaOf(big('b'))]));
+      // Its delete: a deleted file's history goes first, oldest first, until
+      // the box is under the cap (its big version; its small pre_delete
+      // stays); the live files' newest versions stay.
+      const del = await sys(() => fl.deleteFileById({ ownerId: owner, fileId: hfile.id }));
+      expect(del.ok).toBe(true);
+      const hrows = await raw<{ t: string }[]>`select trigger as t from node_snapshots
+                                                 where node_id = ${hfile.id}`;
+      expect(hrows.map((r) => r.t)).toEqual(['pre_delete']);
+      expect(await newest()).toEqual(new Set([shaOf(big('c')), shaOf(big('b'))]));
     } finally {
       delete process.env.FILE_HISTORY_MAX_MB;
     }
@@ -544,6 +563,55 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     for (const k of kept) {
       expect(existsSync(path.join(dir, 'files', '.file-history', k.p))).toBe(false);
     }
+  });
+
+  it('a file with history gone from disk (the watcher): a pre_delete marker starts the 30 days', async () => {
+    const name = `${tag}-hostgone.txt`;
+    const f = await put(name, 'h1');
+    await put(name, 'h2');
+    await rm(path.join(dir, 'files', name), { force: true });
+    const res = await sys(() =>
+      fl.deleteFileByPath({ ownerId: owner, parentPath: 'files', filename: name }),
+    );
+    expect(res.ok).toBe(true);
+    const rows = await raw<{ t: string; p: string | null }[]>`
+      select trigger as t, db_path as p from node_snapshots where node_id = ${f.id} order by seq`;
+    expect(rows.map((r) => [r.t, r.p === null])).toEqual([
+      ['replace', false],
+      ['pre_delete', true],
+    ]);
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`update node_snapshots set created_at = now() - interval '31 days'
+                where node_id = ${f.id} and trigger = 'replace'`;
+    });
+    await sys(() => fl.purgeOrphanFileHistory());
+    expect(await versionCount(f.id)).toBe(2);
+  });
+
+  it('a write for one file (a restore) never lands on another that holds its name, nor makes one', async () => {
+    const x1 = await put(`${tag}-expect-x.txt`, 'x');
+    const y1 = await put(`${tag}-expect-y.txt`, 'y');
+    const write = (filename: string) =>
+      sys(() =>
+        fl.upsertFile({
+          ownerId: owner,
+          parentPath: 'files',
+          filename,
+          bytes: Buffer.from('other'),
+          overwrite: true,
+          expectId: y1.id,
+        }),
+      );
+    await expect(write(`${tag}-expect-x.txt`)).rejects.toThrow(/not the file this write is for/);
+    expect(await fileSha(x1.id)).toBe(sha('x'));
+    await expect(write(`${tag}-expect-none.txt`)).rejects.toThrow(/not the file this write is for/);
+    const made = await raw<{ n: number }[]>`select count(*)::int as n from nodes
+      where owner_id = ${owner} and data->>'filename' = ${`${tag}-expect-none.txt`}`;
+    expect(Number(made[0]!.n)).toBe(0);
+    // Its own name: written.
+    await write(`${tag}-expect-y.txt`);
+    expect(await fileSha(y1.id)).toBe(sha('other'));
   });
 
   it('overwrites at the same time: every record is its bytes, and no bytes are lost', async () => {

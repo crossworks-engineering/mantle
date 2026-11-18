@@ -13,9 +13,10 @@
  *    the same overwrite, which keeps the bytes it replaces as `pre_restore`:
  *    a restore is undone the same way.
  *  - the newest FILE_HISTORY_KEEP versions stay per file, and the whole box
- *    keeps FILE_HISTORY_MAX_MB of them, oldest pruned first, the newest
- *    always (pruneFileHistory, after each overwrite). Pruned files go at
- *    once, so a loop of overwrites never holds more than the cap.
+ *    keeps FILE_HISTORY_MAX_MB of them, a soft cap: deleted files' history
+ *    goes first, then live files' older versions, oldest first, never the
+ *    newest version of a live file (pruneFileHistory, after each overwrite
+ *    and delete). Pruned files go at once.
  *  - a deleted file keeps its bytes as a last `pre_delete` version
  *    (keepDeletedFileBytes), and its history goes FILE_HISTORY_ORPHAN_DAYS
  *    after that delete, in the nightly purge (purgeOrphanFileHistory). No
@@ -137,7 +138,8 @@ export async function recordFileVersion(
     id: string;
     ownerId: string;
     fileId: string;
-    rel: string;
+    /** Null: a marker with no bytes (a file gone from disk, deleted). */
+    rel: string | null;
     sizeBytes: number;
     sha256: string | null;
     filename: string | null;
@@ -347,14 +349,17 @@ async function removeVersionFiles(paths: readonly (string | null)[]): Promise<vo
 
 /**
  * Prune after new bytes replaced `fileId`: its versions past the newest
- * FILE_HISTORY_KEEP, then every file's versions past FILE_HISTORY_MAX_MB
- * for the whole box (that part alone after a delete kept a file's bytes:
- * `fileId` null), oldest first (the newest version of the box always
- * stays, whatever its size). Each one statement, so a version written
- * meanwhile is never removed. The named system step (the brain's
+ * FILE_HISTORY_KEEP, then the box's versions past FILE_HISTORY_MAX_MB
+ * (that part alone after a delete kept a file's bytes: `fileId` null).
+ * The box cap is soft and never evicts the newest version of a live file
+ * (the bytes most likely wanted back): it trims, oldest first, (1) the
+ * history of deleted files (their `pre_delete` rows and the versions
+ * before), then (2) the older versions of live files, until the box is
+ * under the cap or nothing else may go. Each one statement, so a version
+ * written meanwhile is never removed. The named system step (the brain's
  * bookkeeping: the box cap removes versions of files the caller does not
  * read). Never fails the write it follows: a failure is logged, and the
- * next write prunes again.
+ * next write prunes again. What it removed, and why, is logged.
  */
 export async function pruneFileHistory(fileId: string | null): Promise<void> {
   const check = fileId
@@ -370,31 +375,46 @@ export async function pruneFileHistory(fileId: string | null): Promise<void> {
             .delete(nodeSnapshots)
             .where(
               sql`${nodeSnapshots.id} in (
-            select id from (
-              select id, row_number() over (order by seq desc) as rn
-                from node_snapshots
-               where node_id = ${fileId} and node_kind = 'file'
-            ) ranked
-            where rn > ${keep})`,
+                select id from (
+                  select id, row_number() over (order by seq desc) as rn
+                    from node_snapshots
+                   where node_id = ${fileId} and node_kind = 'file'
+                ) ranked
+                where rn > ${keep})`,
             )
             .returning({ dbPath: nodeSnapshots.dbPath });
+      // The rows that may go, in the order they go (a deleted file's first,
+      // then a live file's older ones; oldest first in each), each with what
+      // the box holds past the cap before it: a row goes while that is above
+      // zero.
       const boxWide = await db
         .delete(nodeSnapshots)
         .where(
           sql`${nodeSnapshots.id} in (
-            select id from (
-              select id,
-                     row_number() over w as rn,
-                     sum(coalesce(db_bytes, 0)) over w as cum
-                from node_snapshots
-               where node_kind = 'file'
-              window w as (order by created_at desc, id desc
-                           rows between unbounded preceding and current row)
-            ) ranked
-            where rn > 1 and cum > ${maxBytes})`,
+            with v as (
+              select s.id, coalesce(s.db_bytes, 0) as b, s.created_at,
+                     not exists (select 1 from nodes n where n.id = s.node_id) as gone,
+                     row_number() over (partition by s.node_id order by s.seq desc) as rn
+                from node_snapshots s
+               where s.node_kind = 'file'
+            ),
+            excess as (select sum(b) - ${maxBytes} as over from v),
+            ranked as (
+              select id, b,
+                     sum(b) over (order by gone desc, created_at, id
+                                  rows between unbounded preceding and current row) - b as before
+                from v
+               where gone or rn > 1
+            )
+            select r.id from ranked r, excess e where e.over > 0 and r.before < e.over)`,
         )
         .returning({ dbPath: nodeSnapshots.dbPath });
       await removeVersionFiles([...perFile, ...boxWide].map((r) => r.dbPath));
+      if (perFile.length > 0 || boxWide.length > 0) {
+        console.info(
+          `[files] file history pruned: ${perFile.length} past the per-file keep (${keep}), ${boxWide.length} past the box cap (${envNum('FILE_HISTORY_MAX_MB')} MB)`,
+        );
+      }
     });
   } catch (err) {
     console.error(

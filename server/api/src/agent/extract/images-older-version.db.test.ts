@@ -6,9 +6,11 @@
  *
  *  - images of older bytes stay (Pages embed them by id) and are marked
  *    `olderVersion`;
- *  - a new image pass runs only when a person put the new bytes there
- *    (`data.replaced_by` owner or member): an agent's, an export's or the
- *    system's save starts no pass (no vision work);
+ *  - a new image pass runs only when a person put the new bytes there by
+ *    hand (`data.replaced_by` 'person': the upload with replace, the
+ *    restore route); any other save (an agent's, an app's or an MCP
+ *    client's in a login's scope, an export's, the system's) starts no pass
+ *    (no vision work);
  *  - bytes put back (a restore) whose images are there: no pass, and those
  *    images lose the mark.
  *
@@ -108,8 +110,8 @@ describe.skipIf(!URL)('extracted images of an older version: kept, marked', () =
     h.opened.length = 0;
   });
 
-  it("an agent's, an export's or the system's new bytes: the older images stay, marked; no pass", async () => {
-    for (const by of ['agent', 'export', 'system']) {
+  it("any save but a person's by hand: the older images stay, marked; no pass", async () => {
+    for (const by of ['agent', 'export', 'system', 'owner', 'member']) {
       const { node, image } = await fileWithImage(B, A, {
         replaced_at: new Date().toISOString(),
         replaced_by: by,
@@ -124,7 +126,7 @@ describe.skipIf(!URL)('extracted images of an older version: kept, marked', () =
   });
 
   it("a person's new bytes: the older images stay, marked, and a new pass runs", async () => {
-    for (const by of ['owner', 'member']) {
+    for (const by of ['person']) {
       h.opened.length = 0;
       const { node, image } = await fileWithImage(B, A, {
         replaced_at: new Date().toISOString(),
@@ -139,7 +141,7 @@ describe.skipIf(!URL)('extracted images of an older version: kept, marked', () =
   it('bytes whose images are there (a restore): no pass, and those images lose the mark', async () => {
     const { node, image } = await fileWithImage(A, A, {
       replaced_at: new Date().toISOString(),
-      replaced_by: 'owner',
+      replaced_by: 'person',
     });
     await x(
       sql`update nodes set data = data || '{"olderVersion": true}'::jsonb where id = ${image}`,

@@ -53,6 +53,7 @@ import {
   inFlipTransaction,
   type Node,
   nodes,
+  nodeSnapshots,
   changedFields,
   markContentChanged,
   oneRow,
@@ -204,6 +205,14 @@ export async function upsertFile(args: {
   /** A restore of a kept version (file-history-restore.ts): the bytes it
    *  replaces are kept as `pre_restore`, naming the version put back. */
   restoreOf?: { seq: number };
+  /** The file this write is for (a restore): the row found at the name
+   *  must be it, else the write is refused (409), never written over
+   *  another file that took the name, nor made new. */
+  expectId?: string;
+  /** A person put these bytes there by hand (the upload with replace, the
+   *  restore route): the one case a new image pass runs for new bytes
+   *  (data.replaced_by 'person'; images.ts). */
+  personSave?: true;
 }): Promise<FileRow & { skipped?: true }> {
   if (!isFilesPath(args.parentPath)) {
     throw new InputError(`upsertFile: parent '${args.parentPath}' is outside the files root`);
@@ -313,6 +322,12 @@ export async function upsertFile(args: {
     }
   }
 
+  if (args.expectId && existing?.id !== args.expectId) {
+    if (args.spooled) await discardSpooled(args.spooled);
+    throw new ConflictError(
+      `upsertFile: '${filename}' is not the file this write is for (renamed, moved or replaced meanwhile)`,
+    );
+  }
   // A new file never lands in a folder the caller does not read: the
   // overwrite above went on for a file that was there, and one gone since
   // (deleted between the checks) leaves nothing to write over.
@@ -569,7 +584,11 @@ export async function upsertFile(args: {
             existing && !sameContent
               ? {
                   replaced_at: new Date().toISOString(),
-                  replaced_by: args.exportSave ? 'export' : fileWriteActor(args.ownerId),
+                  replaced_by: args.personSave
+                    ? 'person'
+                    : args.exportSave
+                      ? 'export'
+                      : fileWriteActor(args.ownerId),
                 }
               : null;
           // The same bytes as the row names now keep no version.
@@ -1447,12 +1466,40 @@ export async function deleteFileByPath(args: {
   const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
   if (ids.length === 0) return { ok: false };
   const done = await withDeadlockRetry(() =>
-    withNodeDeleteHeads(ids, (tx) =>
-      tx
+    withNodeDeleteHeads(ids, async (tx) => {
+      // A file with history gone from disk: a `pre_delete` marker (no
+      // bytes, they are gone) starts the purge's 30 days at this delete.
+      // Written before the row's delete (the row needs the file there);
+      // the markers of a file the delete did not take go with it.
+      const marked: { id: string; fileId: string }[] = [];
+      if (fileHistoryKept(args.parentPath)) {
+        const withHistory = await tx
+          .selectDistinct({ id: nodeSnapshots.nodeId })
+          .from(nodeSnapshots)
+          .where(and(inArray(nodeSnapshots.nodeId, ids), eq(nodeSnapshots.nodeKind, 'file')));
+        for (const { id } of withHistory) {
+          const versionId = randomUUID();
+          await recordFileVersion(tx, {
+            id: versionId,
+            ownerId: args.ownerId,
+            fileId: id,
+            rel: null,
+            sizeBytes: 0,
+            sha256: null,
+            filename: args.filename,
+            trigger: 'pre_delete',
+          });
+          marked.push({ id: versionId, fileId: id });
+        }
+      }
+      const gone = await tx
         .delete(nodes)
         .where(and(where, inArray(nodes.id, ids)))
-        .returning({ id: nodes.id }),
-    ),
+        .returning({ id: nodes.id });
+      const left = marked.filter((m) => !gone.some((g) => g.id === m.fileId)).map((m) => m.id);
+      if (left.length > 0) await tx.delete(nodeSnapshots).where(inArray(nodeSnapshots.id, left));
+      return gone;
+    }),
   );
   for (const { id } of done) await removeFileDbNamesAfterCommit(id);
   return { ok: done.length > 0 };

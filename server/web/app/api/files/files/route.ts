@@ -227,6 +227,9 @@ export async function POST(req: Request) {
           filename: upload.filename,
           spooled: upload.spooled,
           overwrite: parsed.fields.replace === 'true',
+          // A person's upload with replace: the one overwrite (with the
+          // restore route) a new image pass runs for (images.ts).
+          ...(parsed.fields.replace === 'true' ? { personSave: true as const } : {}),
           // A taken name with the same bytes: "Already here", nothing
           // written; other bytes are the 409 with the file there
           // (UploadClashResponse).

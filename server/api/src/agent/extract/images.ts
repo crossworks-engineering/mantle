@@ -129,7 +129,8 @@ export async function maybeExtractEmbeddedImages(
   // them by id, and data is never thrown away. They are marked
   // `olderVersion` (an image made from these bytes again, a restore, loses
   // the mark), and a new pass runs only when a person put the new bytes
-  // there: an agent's, an export's or the system's save keeps the older
+  // there by hand (data.replaced_by 'person'): any other save (an agent's,
+  // an app's, an MCP client's, an export's, the system's) keeps the older
   // images and starts no vision work.
   const sha = typeof data.sha256 === 'string' ? data.sha256 : null;
   const replacedAt = typeof data.replaced_at === 'string' ? data.replaced_at : null;
@@ -163,11 +164,13 @@ export async function maybeExtractEmbeddedImages(
     total: number;
   }[];
   if (Number(prior[0]?.cur ?? 0) > 0) return;
-  const personStarted = data.replaced_by === 'owner' || data.replaced_by === 'member';
+  // Set only by the two person routes (an upload with replace, a restore):
+  // a login's scope alone is no sign (apps and MCP clients run in one).
+  const personStarted = data.replaced_by === 'person';
   if (replacedAt && !personStarted) {
     if (marked.length > 0) {
       log('extractor').info(
-        `${marked.length} images marked as from an older version; no new image pass (the new bytes were not a person's save)`,
+        `${marked.length} images marked as from an older version; no new image pass (the new bytes were not a person's upload or restore)`,
       );
     }
     return;

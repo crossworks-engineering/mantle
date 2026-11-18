@@ -175,14 +175,22 @@ export function overwritePlacement(
  * `from` (a row whose file was lost). The one way old bytes are kept: an
  * overwrite's (overwritePlacement) and a delete's (file history).
  */
-export async function keepBytesAt(from: string, to: string): Promise<boolean> {
+export async function keepBytesAt(from: string, to: string, again = true): Promise<boolean> {
   await fs.mkdir(path.dirname(to), { recursive: true });
   try {
     await fs.link(from, to);
     return true;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return false;
+    if (code === 'ENOENT') {
+      // The bytes are there, so the folder went (a sweep took an empty
+      // folder between the mkdir and the link): once more.
+      const there = await fs.access(from).then(
+        () => true,
+        () => false,
+      );
+      return there && again ? keepBytesAt(from, to, false) : false;
+    }
     // A filesystem that refuses hard links: a copy of the old bytes.
     if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EXDEV' && code !== 'EMLINK') {
       throw err;

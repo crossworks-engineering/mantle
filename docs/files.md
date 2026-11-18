@@ -430,12 +430,17 @@ New bytes over a file keep the bytes they replace (owner's decisions,
   each tree item carry `versions` (a count, one read per list) for a badge,
   and the row `replacedAt`.
 - **Limits.** The newest `FILE_HISTORY_KEEP` (10) versions stay per file,
-  and the whole box keeps `FILE_HISTORY_MAX_MB` (2048) of them, oldest
-  first, the newest always. The prune runs after each overwrite, and its
-  files go at once, so a loop of overwrites never holds more than the cap.
+  and the whole box keeps `FILE_HISTORY_MAX_MB` (2048) of them, a soft
+  cap: it trims, oldest first, deleted files' history, then live files'
+  older versions, and never the newest version of a live file (one big
+  file never takes every other file's history; the box may stay over the
+  cap by those). The prune runs after each overwrite and each delete that
+  kept bytes, its files go at once, and it logs what it removed and why.
   A deleted file keeps its last bytes as a `pre_delete` version (linked
   under the row's lock before the delete), and its history goes 30 days
-  after that delete, in the nightly `app-trash-purge`. A version file no
+  after that delete, in the nightly `app-trash-purge`. A file gone from
+  disk (the watcher's delete) gets a `pre_delete` marker with no bytes, so
+  its clock starts there too. A version file no
   row names (a crash between its link and its commit, an overwrite that
   never landed) goes in the store sweep an hour on (`filesnap`). No new
   job, no model work.
@@ -445,7 +450,8 @@ New bytes over a file keep the bytes they replace (owner's decisions,
   (`mayModerateSql`); never a plain user with Write on, never a read-only
   login, a public link or a key without its rights.
 - **Restore.** The version's bytes go back through the same overwrite (the
-  same file id, every gate of a write), so the bytes they replace are kept
+  same file id, every gate of a write; a file that took the name meanwhile
+  is refused, 409, never written over), so the bytes they replace are kept
   as a `pre_restore` version: a restore is undone by restoring that one.
   The bytes are copied (never linked) and hashed; a hash that differs from
   the row's is logged, never a refusal (the bytes are the version).
@@ -453,9 +459,11 @@ New bytes over a file keep the bytes they replace (owner's decisions,
   upload is. Extracted images are never removed for new bytes (Pages embed
   them by id): images of older bytes are marked `olderVersion` (an image
   carries `sourceSha256`, the bytes it came from), and a new image pass
-  runs only when a person put the new bytes there (`replaced_by` owner or
-  member). An agent's, an export's or the system's save starts no image
-  pass and no vision work; its file keeps the older images, marked. An auto
+  runs only when a person put the new bytes there by hand
+  (`replaced_by` 'person', set only by the upload with replace and the
+  restore route). Any other save (an agent's, an app's or an MCP client's
+  in a login's scope, an export's, the system's) starts no image pass and
+  no vision work; its file keeps the older images, marked. An auto
   Table keeps its rows (people may have edited them); a Table made before
   its file's `replacedAt` is from an older version, which the client can
   show.

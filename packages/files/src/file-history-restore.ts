@@ -37,6 +37,9 @@ export async function restoreFileVersion(
   ownerId: string,
   fileId: string,
   versionId: string,
+  /** The restore route's own: a person restored by hand (a new image pass
+   *  may run for the bytes; images.ts). */
+  opts: { personSave?: true } = {},
 ): Promise<{ file: FileRow; restored: FileVersion } | null> {
   await assertMayModerateFile(fileId);
   const file = await fileById({ ownerId, fileId });
@@ -60,6 +63,10 @@ export async function restoreFileVersion(
       spooled,
       overwrite: true,
       restoreOf: { seq: v.seq },
+      // The file read above, by id: a file that took its name meanwhile is
+      // never written over (409).
+      expectId: fileId,
+      ...(opts.personSave ? { personSave: true as const } : {}),
     });
     const { abs: _abs, ...restored } = v;
     return { file: row, restored };

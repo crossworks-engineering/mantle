@@ -33,7 +33,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string; s
   if (!(await historyFileOrNull(user.id, id))) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  const result = await restoreFileVersion(user.id, id, sid);
+  // A person's restore by hand: the one restore a new image pass may run for.
+  const result = await restoreFileVersion(user.id, id, sid, { personSave: true });
   if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({
     file: result.file,
