@@ -736,6 +736,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     requiresEnv: ['ALLOWED_USER_ID'],
   },
   {
+    slug: 'sync-copy-accounts',
+    title: 'Copy old mailboxes and feeds into Sync',
+    description:
+      'Copies each IMAP mailbox (its settings and sealed app password) and each ICS calendar feed the old sync left on email_accounts and calendar_accounts into the Sync service (service_state), under the same id, so stored mail and events stay linked. No new password. Run once on a box that had mail or feeds before Sync, with Sync on. An account already in Sync is skipped. Output is numbers only.',
+    kind: 'backfill',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/sync-copy-accounts.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    requiresEnv: ['MANTLE_MASTER_KEY'],
+    notes:
+      'The old rows stay as they are (a later release drops their credential columns). Microsoft accounts are not copied (Sync plan M3).',
+  },
+  {
     slug: 'purge-noncontact-emails',
     title: 'Purge emails from non-contacts',
     description:

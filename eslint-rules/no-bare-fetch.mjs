@@ -137,6 +137,14 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'owner config',
     why: "sandboxd's control API: the stack's own SANDBOXD_URL",
   },
+  'packages/email/src/sync-client.ts': {
+    kind: 'owner config',
+    why: "the Sync sidecar's send and backfill: the stack's own SYNC_URL, with its token, no redirect",
+  },
+  'server/web/lib/service-screens.ts': {
+    kind: 'owner config',
+    why: "the Sync sidecar's account screens: the stack's own SYNC_URL, with its token, no redirect",
+  },
   'packages/content/src/livekit.ts': {
     kind: 'owner config',
     why: "the LiveKit health probe (Settings > Services): the stack's own MANTLE_LIVEKIT_URL",

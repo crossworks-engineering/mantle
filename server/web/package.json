@@ -82,6 +82,7 @@
     "mcp-calls:reap": "bun --env-file=./.env.local scripts/mcp-calls-reap.ts",
     "ui-calls:reap": "bun --env-file=./.env.local scripts/ui-calls-reap.ts",
     "app-export:catch-up": "bun --env-file=./.env.local scripts/app-export-catch-up.ts",
+    "sync:copy-accounts": "bun --env-file=./.env.local scripts/sync-copy-accounts.ts",
     "typecheck": "tsc --noEmit",
     "widen:content-hits": "bun --env-file=./.env.local scripts/widen-content-hits.ts",
     "workspaces:check": "bun --env-file=./.env.local scripts/workspaces-check.ts",

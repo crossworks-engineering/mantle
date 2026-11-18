@@ -304,6 +304,10 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'none',
     why: 'a one-time code is a way in (0350): issued and spent only at the full-route spot oidc-link (server/web lib/oidc/store.ts), so the runtime role holds no right on it',
   },
+  'public.service_state': {
+    narrow: 'none',
+    why: "an optional service's state (0380): the Sync sidecar's linked accounts with their passwords, its feeds and cursors, sealed. Read and written only by the sidecar routes (/api/sidecar/state, the service's own token) on the system pool, outside every scope, so the runtime role holds no right on it",
+  },
   'public.sso_setup': {
     narrow: 'none',
     why: "what the setup screen stored (0361): the provider's client secret, sealed, and the SCIM token's hash, each a way in. Read and written only at the full-route spot oidc-link (server/web lib/oidc/store.ts), so the runtime role holds no right on it",
@@ -1512,6 +1516,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // What the setup screen stored (0361): read and written at the full-route
   // spot oidc-link only.
   { ...none('public.sso_setup'), narrow: 'none' },
+  // An optional service's state (0380): the Sync sidecar's sealed accounts,
+  // feeds and cursors, read and written by the sidecar routes on the system
+  // pool only.
+  { ...none('public.service_state', 'system'), narrow: 'none' },
   // SCIM user provisioning (0359): the logins the identity provider
   // manages. Written at the full-route spot login-credential only.
   { ...none('public.scim_users'), narrow: 'read' },
@@ -1771,6 +1779,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.control_bans', // 0364
   'public.control_results', // 0364
   'public.control_service', // 0364
+  'public.service_state', // 0380
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

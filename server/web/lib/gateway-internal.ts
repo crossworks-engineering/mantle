@@ -18,14 +18,27 @@ const digest = (s: string) => createHash('sha256').update(s).digest();
 
 /** Null when the request is the gateway's, else the answer to send. */
 export function gatewayRequestRefusal(req: Request): Response | null {
-  // Through the front door: not the gateway, whatever it carries.
+  return internalTokenRefusal(req, env('GATEWAY_TOKEN'), 'x-mantle-gateway-token');
+}
+
+/**
+ * The one check of a box service calling the brain with its own token (the
+ * gateway's, the Sync sidecar's): null when `req` carries `token` in
+ * `header` and came straight from the stack's network, else the answer.
+ */
+export function internalTokenRefusal(
+  req: Request,
+  token: string | undefined,
+  header: string,
+): Response | null {
+  // Through the front door: not a box service, whatever it carries.
   if (req.headers.has('x-forwarded-for') || req.headers.has('forwarded')) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  // No token on the box: no gateway can prove itself, the same 401.
-  const token = env('GATEWAY_TOKEN') ?? '';
-  const got = req.headers.get('x-mantle-gateway-token') ?? '';
-  if (!token || !got || !timingSafeEqual(digest(got), digest(token))) {
+  // No token on the box: no service can prove itself, the same 401.
+  const want = token ?? '';
+  const got = req.headers.get(header) ?? '';
+  if (!want || !got || !timingSafeEqual(digest(got), digest(want))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   return null;

@@ -3025,15 +3025,21 @@ printf 'GOTENBERG_PASSWORD=keep\nMANTLE_DOCUMENTS_OFF=1\n' >> "$T/stack/.env"
 svc_run
 check "documents on again: the off-on-purpose line is dropped" sh -c "
   grep -q '\"ok\":true' '$T/sig/service-status.json' && ! grep -q '^MANTLE_DOCUMENTS_OFF=' '$T/stack/.env'"
-# ── Sync (server/sync): no token, one container, on is the profile ──
+# ── Sync (server/sync): one container; its token (SYNC_TOKEN, both ways
+# with the brain) as the documents engine's password ──
 svc_case syncon '{"service":"sync","enable":true}'
 svc_run
 check "sync on: status done" grep -q '"phase":"done","service":"sync","enable":true.*"ok":true' "$T/sig/service-status.json"
 check "sync on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedder,sync' "$T/stack/.env"
-check "sync on: no token written" sh -c "! grep -q '^SYNC' '$T/stack/.env'"
-check "sync on: pulls and starts the sync container alone (--no-deps)" sh -c "
-  grep -qE 'profile sync pull sync$' '$T/calls' && grep -qE 'profile sync up -d --no-deps sync$' '$T/calls'"
+check "sync on: the token is provisioned, 64 hex" grep -qE '^SYNC_TOKEN=[0-9a-f]{64}$' "$T/stack/.env"
+check "sync on: pulls sync alone" grep -qE 'profile sync pull sync$' "$T/calls"
+check "sync on: a new token recreates the app containers once" grep -qE 'profile sync up -d web api worker_files' "$T/calls"
 check "sync on: waits on mantle_sync" grep -q 'inspect .*mantle_sync$' "$T/calls"
+svc_case syncon2 '{"service":"sync","enable":true}'
+printf 'SYNC_TOKEN=keep\n' >> "$T/stack/.env"
+svc_run
+check "sync on, token already there: starts only sync (--no-deps), token kept" sh -c "
+  grep -qE 'profile sync up -d --no-deps sync$' '$T/calls' && grep -qx 'SYNC_TOKEN=keep' '$T/stack/.env'"
 svc_case syncoff '{"service":"sync","enable":false}'
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes,sync/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
 svc_run

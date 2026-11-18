@@ -1,17 +1,42 @@
 /**
- * Email builtins: read the stored mail (email_list, email_get). Sending left
- * the brain with the old mail sync (Sync plan, M4): it is rebuilt in the
- * Sync service, where the send policy (MANTLE_POLICY_EMAIL_SEND) gates it
- * again (docs/services.md, "Sync").
+ * Email builtins. Send mail FROM the user's own mailbox (email_send,
+ * email_page) and read the stored mail (email_list, email_get).
+ *
+ * Sending goes through the Sync service (Sync plan M2; docs/email-send.md):
+ * the brain checks the box policy (MANTLE_POLICY_EMAIL_SEND), the recipients
+ * against the contacts allowlist and the page it renders; the sidecar sends
+ * it over the mailbox's own SMTP submission (the provider relays it; we never
+ * run our own MTA). While Sync is off the send tools are off with it.
+ *
+ * Gate: requiresConfirm is TRUE on both (outward under the user's real
+ * address); an operator clears it per row in Settings > Tools.
  */
 
 import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
-import { db, emailAccounts, emails } from '@mantle/db';
-import { parserText } from '@mantle/files';
-import { str, strOptTrim as strOpt } from './coerce';
+import { db, emailAccounts, emails, itemWriteRefusal } from '@mantle/db';
+import { sendViaSync, type SyncSendInput } from '@mantle/email';
+import { EMAIL_SEND_POLICY_OFF_MESSAGE, emailSendAllowed } from '@mantle/config';
+import {
+  getPage,
+  docToText,
+  renderPageEmail,
+  cidForPageImage,
+  LinkRefusedError,
+  shareUrlForToken,
+  contactEmails,
+  loginEmails,
+  findContactsByEmails,
+  recordContactSent,
+  normalizeEmail,
+} from '@mantle/content';
+import { parserText, readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
+import { linkError, openLink } from './builtins-share';
+import { str, strOptTrim as strOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { areaSystem } from './admin-gate';
+import { lowersEmailPage } from './client-sourced';
+import { CS } from './client-sourced-rule';
 
 /**
  * The email tools run in the caller's scope: the
@@ -34,6 +59,346 @@ async function ownerAccountIds(ownerId: string): Promise<string[]> {
   );
   return rows.map((r) => r.id);
 }
+
+/** Flatten one or more comma-separated recipient strings into a clean list. */
+function flatRecipients(...raws: (string | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const raw of raws) {
+    if (!raw) continue;
+    for (const p of raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean))
+      out.push(p);
+  }
+  return out;
+}
+
+/** Recipients NOT permitted by the allowlist. The allowlist is the user's own
+ *  account addresses, their `contact` nodes and the brain's active logins
+ *  (users are contacts in user form). Fail CLOSED: with no contacts
+ *  yet, an agent can still email the user themselves but not arbitrary outside
+ *  addresses — so a prompt-injected agent on a fresh install can't exfiltrate
+ *  by emailing a stranger. Add a contact to permit sending to them. */
+async function blockedRecipients(ownerId: string, addrs: string[]): Promise<string[]> {
+  // Concrete contact addresses only — `contactEmails` excludes `@domain`
+  // wildcards by design. Domains are an INBOUND-only notion ("trust mail FROM
+  // this domain"); you can't send to a whole domain. The inbound ContactGate
+  // (@mantle/content) is the side that honours domains.
+  const contacts = await contactEmails(ownerId); // already lower-cased + deduped
+  const accounts = await mailSystem(() =>
+    db
+      .select({ address: emailAccounts.address })
+      .from(emailAccounts)
+      .where(eq(emailAccounts.userId, ownerId)),
+  );
+  const logins = await mailSystem(() => loginEmails());
+  const allowed = new Set<string>([
+    ...contacts,
+    ...logins,
+    ...accounts.map((a) => a.address.toLowerCase()),
+  ]);
+  return addrs.filter((a) => !allowed.has(normalizeEmail(a)));
+}
+
+/** Shared allowlist guard for the send tools. Returns an error result to bail
+ *  with, or null when every recipient is permitted. */
+async function allowlistError(
+  ownerId: string,
+  ...raws: (string | undefined)[]
+): Promise<{ ok: false; error: string } | null> {
+  const blocked = await blockedRecipients(ownerId, flatRecipients(...raws));
+  if (blocked.length === 0) return null;
+  return {
+    ok: false,
+    error:
+      `these recipients aren't in the user's contact list: ${blocked.join(', ')}. ` +
+      `Ask the user to confirm and add them as contacts at /contacts (they will then be reachable).`,
+  };
+}
+
+/** Look up each recipient against the contact list and bump that contact's
+ *  outbound counter + last-contacted timestamp for the given method. Best
+ *  effort: per-contact errors are logged, not surfaced — a stats-tracking
+ *  miss must never make a successful send look failed to the caller. */
+async function noteContactActivity(
+  ownerId: string,
+  method: 'email',
+  raws: (string | undefined)[],
+): Promise<void> {
+  const addrs = flatRecipients(...raws)
+    .map(normalizeEmail)
+    .filter(Boolean);
+  if (addrs.length === 0) return;
+  try {
+    const idsByEmail = await findContactsByEmails(ownerId, addrs);
+    if (idsByEmail.size === 0) return;
+    await Promise.all(
+      [...idsByEmail.values()].map((id) =>
+        recordContactSent(ownerId, id, method).catch((err) =>
+          console.error('[email_send] recordContactSent failed', { id, err }),
+        ),
+      ),
+    );
+  } catch (err) {
+    console.error('[email_send] noteContactActivity lookup failed', err);
+  }
+}
+
+/** The send tools' answer while the box policy switches email sending off
+ *  (MANTLE_POLICY_EMAIL_SEND=off, docs/policy.md). The tools also leave
+ *  every agent and MCP list then; this covers a caller that names one
+ *  anyway (an app's declared tool, a run). Both transports refuse too. */
+const EMAIL_SEND_OFF = {
+  ok: false as const,
+  error: `${EMAIL_SEND_POLICY_OFF_MESSAGE} Nothing was sent; this box's mail accounts send nothing while it is off.`,
+};
+
+type SendAttachment = NonNullable<SyncSendInput['attachments']>[number];
+
+const email_send: BuiltinToolDef = {
+  slug: 'email_send',
+  policy: {
+    matrix: { none: 'names no item' },
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    outside: { egress: true },
+    peerRisky: true,
+    clientSourced: CS.always(CS.OUTWARD),
+  },
+  name: 'Send an email',
+  description:
+    "Send an email FROM the user's own mailbox through the Sync service (its SMTP submission). Provide `to`, `subject`, and a plain-text `body`. Optional `cc`/`bcc`, and `from` to choose which of the user's linked addresses sends it (defaults to the first mailbox that can send). Use only when the user explicitly asks to send or email something. The message goes out under the user's real address, so write it accurately and professionally; when relaying research, include the source links in the body. If no linked mailbox can send, or Sync is off, the call fails with a clear message.",
+  // Outward-facing under the user's real address — gated like telegram_send.
+  // Operators who trust the flow clear it per-tool in Settings → Tools (the
+  // seed never re-asserts the flag on existing rows).
+  requiresConfirm: true,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      to: { type: 'string', description: 'recipient email (comma-separate for multiple)' },
+      subject: {
+        type: 'string',
+        description: 'subject line, e.g. "Quote request: aluminium profiles"',
+      },
+      body: { type: 'string', description: 'plain-text body' },
+      cc: { type: 'string', description: 'optional cc (comma-separate for multiple)' },
+      bcc: { type: 'string', description: 'optional bcc (comma-separate for multiple)' },
+      from: {
+        type: 'string',
+        description: "optional: which of the user's account addresses to send from",
+      },
+    },
+    required: ['to', 'subject', 'body'],
+  },
+  handler: async (input, ctx) => {
+    if (!emailSendAllowed()) return EMAIL_SEND_OFF;
+    const to = str(input.to).trim();
+    const subject = str(input.subject).trim();
+    const body = str(input.body);
+    if (!to) return { ok: false, error: 'to is required' };
+    if (!subject) return { ok: false, error: 'subject is required' };
+    if (!body) return { ok: false, error: 'body is required' };
+
+    const cc = strOpt(input.cc);
+    const bcc = strOpt(input.bcc);
+    const gate = await allowlistError(ctx.ownerId, to, cc, bcc);
+    if (gate) return gate;
+    try {
+      const res = await sendViaSync({
+        from: strOpt(input.from),
+        to: flatRecipients(to),
+        subject,
+        text: body,
+        ...(cc ? { cc: flatRecipients(cc) } : {}),
+        ...(bcc ? { bcc: flatRecipients(bcc) } : {}),
+      });
+      ctx.step?.setMeta({ from: res.from, to, subject, message_id: res.messageId });
+      ctx.step?.setOutput({
+        messageId: res.messageId,
+        accepted: res.accepted,
+        rejected: res.rejected,
+      });
+      // Bump per-contact stats (count + last_contacted_at) for any recipients
+      // that resolved to a contact. Best-effort; can't fail the send.
+      await noteContactActivity(ctx.ownerId, 'email', [to, cc, bcc]);
+      return {
+        ok: true,
+        output: {
+          from: res.from,
+          to,
+          subject,
+          messageId: res.messageId,
+          accepted: res.accepted,
+          rejected: res.rejected,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+const email_page: BuiltinToolDef = {
+  slug: 'email_page',
+  policy: {
+    matrix: { action: 'read', param: 'pageId', kinds: ['page'] },
+    // Audit only: the row names it (the queue asks nothing of it).
+    itemArgs: [{ param: 'pageId', least: 'none' }],
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    // Mail out under the owner's address.
+    peerRisky: true,
+    outside: { egress: true },
+    lowering: lowersEmailPage,
+  },
+  name: 'Email a page',
+  description:
+    "Send one of the user's pages as a richly-formatted HTML email: the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also add a 'View online' footer with the page's public link (see `page_share`). The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no linked mailbox can send, or Sync is off, the call fails with a clear message.",
+  // Outward-facing under the user's real address — same gate as email_send.
+  requiresConfirm: true,
+  preconditions: [
+    { kind: 'node_exists', param: 'pageId', nodeType: 'page', lookup: 'page_list / search_nodes' },
+  ],
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pageId: {
+        type: 'string',
+        description: "The page's id (UUID) — from `page_list` / `search_nodes`.",
+      },
+      to: { type: 'string', description: 'recipient email (comma-separate for multiple)' },
+      subject: { type: 'string', description: 'optional — defaults to the page title' },
+      cc: { type: 'string', description: 'optional cc (comma-separate for multiple)' },
+      bcc: { type: 'string', description: 'optional bcc (comma-separate for multiple)' },
+      from: {
+        type: 'string',
+        description: "optional: which of the user's account addresses to send from",
+      },
+      includeLink: {
+        type: 'boolean',
+        description:
+          "optional: also open (or reuse) the page's public read-only link and add a 'View online' footer. Refused before sending when you may not open the page's link.",
+      },
+    },
+    required: ['pageId', 'to'],
+  },
+  handler: async (input, ctx) => {
+    if (!emailSendAllowed()) return EMAIL_SEND_OFF;
+    const pageId = str(input.pageId).trim();
+    const to = str(input.to).trim();
+    if (!pageId) return { ok: false, error: 'pageId is required' };
+    if (!to) return { ok: false, error: 'to is required' };
+
+    // Read in the caller's scope: a page the scope does not read is not
+    // found, and nothing is sent.
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    // A public link is a link on the page: a user who may edit it, as
+    // page_share (docs/workspaces.md). Refused before anything is sent.
+    if (input.includeLink === true) {
+      const refused = await itemWriteRefusal([pageId], 'edit');
+      if (refused) return { ok: false, error: `Nothing was sent: ${refused}` };
+    }
+
+    const gate = await allowlistError(ctx.ownerId, to, strOpt(input.cc), strOpt(input.bcc));
+    if (gate) return gate;
+
+    const subject = strOpt(input.subject) ?? page.title;
+
+    // Optionally mint a public link and surface it in the email footer + text.
+    let shareUrl: string | undefined;
+    if (input.includeLink === true) {
+      try {
+        const share = await openLink(ctx, pageId, undefined);
+        shareUrl = shareUrlForToken(share.token);
+      } catch (err) {
+        // A link the caller may not open is refused BEFORE anything is sent,
+        // so the mail never goes out promising a link it does not carry. The
+        // check runs before any write.
+        if (err instanceof LinkRefusedError) {
+          return {
+            ok: false,
+            error: `Nothing was sent: the page's link cannot be opened (${linkError(err)}). Send it without includeLink.`,
+          };
+        }
+        // Anything else stays non-fatal: the page goes without the online link.
+      }
+    }
+    const footerHtml = shareUrl
+      ? `<a href="${shareUrl}" style="color:#2563eb;text-decoration:underline">View this page online &rarr;</a>`
+      : undefined;
+
+    const { html, imageFileIds } = renderPageEmail(page.doc, { title: page.title, footerHtml });
+
+    // Inline the embedded images as cid attachments so they render even when
+    // the client blocks remote images (and without exposing private files).
+    const attachments: SendAttachment[] = [];
+    for (const fileId of imageFileIds) {
+      const file = await readFileById({ ownerId: ctx.ownerId, fileId });
+      if (!file) continue;
+      attachments.push({
+        cid: cidForPageImage(fileId),
+        contentB64: Buffer.from(file.bytes).toString('base64'),
+        filename: file.row.filename,
+        contentType: file.row.mimeType,
+      });
+    }
+
+    const text = docToText(page.doc) + (shareUrl ? `\n\n— View online: ${shareUrl}` : '');
+    const cc = strOpt(input.cc);
+    const bcc = strOpt(input.bcc);
+    try {
+      const res = await sendViaSync({
+        from: strOpt(input.from),
+        to: flatRecipients(to),
+        subject,
+        html,
+        text,
+        ...(cc ? { cc: flatRecipients(cc) } : {}),
+        ...(bcc ? { bcc: flatRecipients(bcc) } : {}),
+        ...(attachments.length ? { attachments } : {}),
+      });
+      ctx.step?.setMeta({
+        from: res.from,
+        to,
+        subject,
+        page_id: pageId,
+        message_id: res.messageId,
+      });
+      ctx.step?.setOutput({
+        messageId: res.messageId,
+        accepted: res.accepted,
+        rejected: res.rejected,
+        images: attachments.length,
+        shareUrl,
+      });
+      // Same per-contact stats bump as email_send — keeps the counts honest
+      // regardless of which send-shaped tool delivered the message.
+      await noteContactActivity(ctx.ownerId, 'email', [to, strOpt(input.cc), strOpt(input.bcc)]);
+      return {
+        ok: true,
+        output: {
+          from: res.from,
+          to,
+          subject,
+          pageId,
+          messageId: res.messageId,
+          accepted: res.accepted,
+          rejected: res.rejected,
+          inlineImages: attachments.length,
+          ...(shareUrl ? { shareUrl } : {}),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+// ─── Read side: list + get ───────────────────────────────────────────────────
 
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
@@ -243,4 +608,4 @@ const email_get: BuiltinToolDef = {
   },
 };
 
-export const EMAIL_TOOLS: BuiltinToolDef[] = [email_list, email_get];
+export const EMAIL_TOOLS: BuiltinToolDef[] = [email_send, email_page, email_list, email_get];

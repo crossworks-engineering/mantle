@@ -23,9 +23,8 @@ import { maskToolDatabaseErrors } from './tool-error-mask';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const DIRS = ['packages/tools/src', 'packages/runtime/src'];
 
-/** Tool replies that still carry errorMessage(err), as of the A10 lows.
- *  108 to 106: email_send and email_page left with the old sync (Sync M4). */
-const PIN = 106;
+/** Tool replies that still carry errorMessage(err), as of the A10 lows. */
+const PIN = 108;
 
 function sources(dir: string): string[] {
   const out: string[] = [];

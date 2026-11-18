@@ -1510,6 +1510,7 @@ service_token_var() {
     sandboxes) echo SANDBOXD_TOKEN ;;
     calls) echo MANTLE_LIVEKIT_API_SECRET ;;
     documents) echo GOTENBERG_PASSWORD ;;
+    sync) echo SYNC_TOKEN ;;
   esac
 }
 

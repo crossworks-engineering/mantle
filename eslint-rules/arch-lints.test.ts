@@ -559,8 +559,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // POST /api/email/accounts, GET (+HEAD), PATCH /api/email/accounts/:id
     // and GET (+HEAD), PUT /api/email/accounts/:id/folders (owner, the
     // connectors area).
-    expect(rows.filter((r) => r.caller).length).toBe(882);
-    // 882 + the 13 call rows above + the public webhook + the 8 documents
+    // The Sync service's screens (Sync M2, +1 with a caller): POST
+    // /api/services/:name/frame-ticket (the connectors area).
+    expect(rows.filter((r) => r.caller).length).toBe(883);
+    // 883 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
     // + the 2 rows of its second milestone + the 3 public rows of a Present
@@ -602,7 +604,11 @@ describe('the architecture ratchets (pinned counts)', () => {
     //   /api/pipelines/:id/package, DELETE /api/pipelines/:id).
     // - the 6 contact share rows (0378): the 5 above and POST /s/:token/code.
     // - the 38 rows of the old sync (Sync M4).
-    expect(rows.length).toBe(970);
+    // + the 18 rows of the Sync service (Sync M2): the frame ticket row, and
+    //   17 public rows that judge their own credential, no caller: GET, HEAD
+    //   and POST /api/services/sync/ui (the screen ticket) and the 14 rows of
+    //   /api/sidecar/* (the sidecar's token).
+    expect(rows.length).toBe(988);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

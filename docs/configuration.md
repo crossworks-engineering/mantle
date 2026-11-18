@@ -55,6 +55,7 @@ hand-written `.env`:
 | `PARSER_TOKEN` | installer, or a roll when missing | bearer between the app services and the parser service ([parser.md](./parser.md)); never rotated on a re-run |
 | `GATEWAY_TOKEN` | installer, or a roll when missing | bearer between the app services and the service gateway ([gateway.md](./gateway.md)); never rotated on a re-run. Without it the gateway answers every service call 503 |
 | `SANDBOXD_TOKEN` | installer when sandboxes are on | bearer between web/api and `sandboxd`; never rotated on a re-run |
+| `SYNC_TOKEN` | installer, or a roll when missing | bearer both ways between the app services and the Sync sidecar ([services.md](./services.md), "Sync"); never rotated on a re-run. Inert while Sync is off |
 | `MANTLE_SANDBOXES_HOST_DIR` | installer (`<data-dir>/sandboxes`) | host-absolute bind source `sandboxd` hands to the Docker daemon |
 
 Alongside the five compose refuses to start without (`POSTGRES_PASSWORD`,

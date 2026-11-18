@@ -50,6 +50,7 @@ export const ACTOR_BINDER_PINS = {
   // system(audit:gateway-call) and system(maintenance:gateway-calls-reap)
   // by the gateway process, outside every scope.
   'packages/db/src/service-gateway-calls.ts': 2,
+  'packages/db/src/service-state.ts': 2,
   // The read of company sign-in's setup row (0371, 0372), at boot before any
   // scope and every 60 seconds.
   'packages/db/src/sso-row.ts': 1,
@@ -99,6 +100,7 @@ export const ACTOR_BINDER_PINS = {
   'server/mcp/src/stdio-actor.ts': 2,
   'server/web/lib/auth/session.ts': 2,
   'server/web/lib/share-gate.ts': 1,
+  'server/web/lib/sidecar.ts': 1,
   // The Control Center's admin channel (docs/control-center.md): a signed
   // `tool` call runs its tool as system(control:tool), once per call.
   'server/web/lib/control/tool-channel.ts': 1,

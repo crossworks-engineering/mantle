@@ -12,7 +12,7 @@ vitals pills on the dashboard show each one's state and link there:
 | **Helpers**        | Core boxes only: the headless browser (PDF export, drawing pictures in exports).                                                                         | about 1 GB                                                                                      | up to 1.5 GB                                                   |
 | **Documents**      | The documents engine (Gotenberg): Office files to PDF, page and HTML prints with headers and page numbers, the PDF tools ([documents.md](documents.md)). | about 700 MB (2.4 GB on disk)                                                                   | up to 2 GB (about 300 MB resident after the first job)         |
 | **Calls**          | LiveKit, the media server for voice calls between people in Messages ([messenger.md](messenger.md), "Calls"; `infra/livekit/README.md`). Off by default. | about 45 MB                                                                                     | up to 512 MB                                                   |
-| **Sync**           | The home of everything that syncs with an outside account; today the Email reader and Contacts. Off by default. See "Sync" below.                        | about 150 MB (the rest of its image is the server image's layers)                               | up to 512 MB                                                   |
+| **Sync**           | Everything that syncs with an outside account: IMAP/SMTP mail, send, ICS calendar feeds, Email and Contacts. Off by default. See "Sync" below.           | about 150 MB (the rest of its image is the server image's layers)                               | up to 512 MB                                                   |
 
 All six are compose **profiles**, and each service name is its profile
 (`sandboxes`, `local-embedder`, `helpers`, `calls`, `documents`, `sync`). A switch changes the box's `.env`
@@ -57,24 +57,47 @@ ignored.
   them whatever their own profile says. This replaces
   `scripts/install.sh --helpers` for a running box.
 
-- **Sync** (the `sync` service, `server/sync`, image `mantle-sync`) has no
-  token: "on" is its profile. It is the one place for everything that syncs
-  with an outside account (the standing rule: anything that syncs goes
-  there). **Off by default.** The old in-brain mail, calendar-feed and
-  Microsoft sync, their workers and their account screens were removed in
-  Sync plan M4; mail, feeds and Microsoft come back inside this service.
-  Today Sync gates the Email reader (the mail already stored) and Contacts.
+- **Sync** (the `sync` service, `server/sync`, image `mantle-sync`): "on"
+  is its profile. It is the one place for everything that syncs with an
+  outside account (the standing rule: anything that syncs goes there).
+  **Off by default.** Since Sync plan M2 it links IMAP/SMTP mailboxes and
+  ICS calendar feeds: it reads new mail every 5 minutes, sends mail for
+  `email_send` and `email_page`, pulls each feed every 30 minutes, and
+  serves its own account screens (Settings > Sync, in a sandboxed frame).
+  Microsoft (M3) and Google (M5) come later.
+  - **No disk, no database login, no master key.** Its state (each
+    mailbox's settings and app password, each feed, each cursor) lives in
+    the brain's `service_state` table, sealed there with the master key
+    (`/api/sidecar/state`). Mail and events go to the brain through its one
+    gate and store (`/api/sidecar/mail/*`, `/api/sidecar/events`): stored
+    mail, events and contacts are brain data, as before.
+  - **One token both ways**, `SYNC_TOKEN` (install.sh and every roll write
+    it, on or off). The brain reaches the sidecar at `SYNC_URL`
+    (`http://sync:8099`), the sidecar the brain at `SYNC_BRAIN_URL`. A
+    request through the front door is refused on both.
+  - **Its screens** come through one brain route,
+    `/api/services/sync/ui?p=<path>&t=<ticket>`: the client asks
+    `POST /api/services/sync/frame-ticket` (the connectors area), shows the
+    frame with no script allowed, and the route re-checks the ticket's login
+    on every request.
+  - **One job at a time** (one mailbox or one feed in hand), so its memory
+    stays flat.
+
   While it is off:
-  - the client hides Email and Contacts (`/api/shell` `features.sync`), with
-    their help topics (`service: sync` in the topic's frontmatter) and User
-    Guide pages;
-  - agents and MCP get no email or contact tools (`registerToolService`);
-  - contact share codes admit nobody.
+  - the client hides Email, Contacts and Settings > Sync (`/api/shell`
+    `features.sync`), with their help topics (`service: sync` in the topic's
+    frontmatter) and User Guide pages;
+  - agents and MCP get no email or contact tools (`registerToolService`),
+    so nothing sends;
+  - no mail or feed syncs, and a new contact starts no backfill.
 
   Nothing is deleted: mail, contacts, events and synced files stay in the
-  brain and in search. The sidecar itself answers `/health` and `/status`
-  only so far. Its image carries the rclone binary: a file job runs one
-  short rclone command, no rclone daemon runs.
+  brain and in search, and the linked accounts stay sealed in
+  `service_state`: on again goes on where it stopped. A box that linked
+  mail or feeds before Sync runs the maintenance task `sync-copy-accounts`
+  once with Sync on: it copies the old accounts in, same ids, no new
+  password. The image also carries the rclone binary for the file sync of
+  M3: a file job runs one short rclone command, no rclone daemon runs.
 
 **Off never removes anything.** Switching sandboxes off stops the running
 sandbox containers (stop, not remove) and the supervisor. Every sandbox, its

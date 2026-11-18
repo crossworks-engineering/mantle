@@ -59,6 +59,7 @@ const READS_ITS_ITEM: ReadonlySet<string> = new Set([
   'screenshot_render',
   'sandbox_import',
   'peer_file_copy',
+  'email_page',
   'app_import',
 ]);
 
@@ -436,6 +437,8 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       'sandbox_export',
       'peer_file_copy',
       'recipe_tool_test',
+      'email_send',
+      'email_page',
       'email_list',
       'email_get',
       'run_terminal',

@@ -128,6 +128,10 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The service gateway's call log (0358): written and reaped by the
   // gateway process, outside every scope.
   'packages/db/src/service-gateway-calls.ts': 'full',
+  // An optional service's state (0380): the Sync sidecar's sealed accounts,
+  // feeds and cursors, read and written by its routes (/api/sidecar/state,
+  // the sidecar's token) outside every scope.
+  'packages/db/src/service-state.ts': 'full',
   // The push worker's count of parked extractions.
   'packages/db/src/extract-parked.ts': 'full',
   // A one-off maintenance script (extract-skip-stamp.ts).

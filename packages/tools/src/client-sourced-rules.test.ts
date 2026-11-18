@@ -75,7 +75,7 @@ describe('every built-in write tool is classified (the sweep)', () => {
   });
 
   it('the lowering tools are the lowering rule', () => {
-    for (const slug of ['access_set', 'node_share', 'page_share']) {
+    for (const slug of ['access_set', 'node_share', 'page_share', 'email_page']) {
       expect(writeRuleFor(slug)).toEqual({ kind: 'lowering' });
     }
   });

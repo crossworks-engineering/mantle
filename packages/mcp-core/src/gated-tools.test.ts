@@ -150,7 +150,7 @@ describe('a client that cached the full list calls a tool by its own name on the
     read: 'contact_get',
     write: 'contact_update',
     delete: 'contact_delete',
-    send: 'telegram_send',
+    send: 'email_send',
   };
 
   /** A connection with the four tools, on the map or not, whose pre-run

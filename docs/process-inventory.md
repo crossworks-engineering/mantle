@@ -37,6 +37,7 @@ interval server/web/app/api/assistant/stream/route.ts the request's actor (a kee
 interval server/web/app/api/assistant/turn/[turnId]/stream/route.ts the request's actor (a keepalive, no database)
 interval server/web/lib/sse.ts the request's actor (a login check on ping)
 interval server/web/workers/_runner.ts none: keeps the process open
+interval server/sync/src/scheduler.ts none: the Sync sidecar's one lane (mail every 5 minutes, feeds every 30), no database: the brain's sidecar routes run its writes as system(worker:sync)
 interval server/web/workers/control.ts system(worker:control)
 interval server/web/workers/docs-sync.ts system(worker:docs-sync)
 interval server/web/workers/events-reminders.ts system(worker:events-reminders)
@@ -45,7 +46,7 @@ listen packages/content/src/messenger.ts none: wakes a messenger_wait, which rea
 listen server/api/src/agent/runtime.ts system(listen:<channel>) per channel (listenAs); the turn it starts binds its own
 listen server/api/src/turn-cancel.ts none: aborts a turn in memory, no database
 listen server/gateway/src/main.ts none: the service gateway has no database (its registry and call log are the brain's, over its token)
-listen server/sync/src/main.ts none: the Sync sidecar has no database (M1: its health and status only)
+listen server/sync/src/main.ts none: the Sync sidecar has no database (its state and every mail and event are the brain's, over its token; /api/sidecar/* runs them as system(worker:sync))
 listen server/parser/src/main.ts none: the parser service has no brain database
 listen server/sandboxd/src/egress.ts none: a network listener, no brain database
 listen server/sandboxd/src/main.ts none: a network listener, no brain database

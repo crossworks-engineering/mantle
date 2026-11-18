@@ -184,6 +184,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/integration.ts': ['tool-config'],
   // A service gateway row: where the gateway sends a service's calls (0358).
   'packages/db/src/service-gateway.ts': ['tool-config'],
+  // A mailbox the Sync sidecar linked (its row, branch path and provider).
+  'packages/email/src/ingest.ts': ['mail-account'],
   'packages/tools/src/mcp-oauth.ts': ['tool-config'],
   'server/web/lib/heartbeats.ts': ['heartbeat-maker'],
   'packages/runtime/src/heartbeats/tools.ts': ['heartbeat-maker'],

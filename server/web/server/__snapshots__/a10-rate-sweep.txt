@@ -27,6 +27,7 @@
 # 2026-11-06 (the agent UI ui answer limit): POST /api/assistant/turn/:turnId/ui/:callId, a window's answer to its turn's ui call, takes chat-turn-ui-answer (60 a minute per member), an Admin user not limited; its probes are the branch's own answers (no limit on main; the sample call is no call of the member's turn: 404 under the limit).
 # 2026-11-09 (Control Center, docs/control-center.md): POST /api/control/call takes control-call (120 a minute per address, a machine's 429); its probes are the branch's own answers (no route on main; no control lines: 404 under the limit).
 # 2026-11-10 (Control Center step 2, owner decision B): POST /api/users/sso-setup/scim-token answers the plain 404 off a Control Center (SCIM runs on a CC only), so the answer under its limit is 404 where main's was 403; the limit itself is main's.
+# 2026-11-18 (Sync M2): POST /api/services/:name/frame-ticket, an optional service's screen ticket, takes service-frame-ticket (30 a minute per login, an Admin user's too); its probes are the branch's own answers (no route on main).
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -180,6 +181,10 @@ POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket count (log
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket scope => other address 429; other login 404; other login, other address 404
 POST /api/presents/:id/frame-ticket member member-canvas-frame-ticket order: no login => first 429 at 0; answer 401; then 404
+POST /api/services/:name/frame-ticket owner service-frame-ticket count (login 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/services/:name/frame-ticket owner service-frame-ticket window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/services/:name/frame-ticket owner service-frame-ticket scope => other address 429; other login 404; other login, other address 404
+POST /api/services/:name/frame-ticket owner service-frame-ticket order: no login => first 429 at 0; answer 401; then 404
 GET /api/presents/:id/data member canvas-data count (login 600/60s) => first 429 at 601; #600 400; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 GET /api/presents/:id/data member canvas-data window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
 GET /api/presents/:id/data member canvas-data scope => other address 429; other login 400; other login, other address 400

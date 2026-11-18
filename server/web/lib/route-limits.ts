@@ -184,6 +184,9 @@ export const RATE_LIMITS = {
   // Admin user's counts too, as an app's run (the app limits' rule). No
   // app text: a canvas is not an app.
   memberCanvasFrameTicket: perLogin('member-canvas-frame-ticket', 30),
+  /** An optional service's screen ticket (the Sync account screens), per
+   *  login: one per frame load; the screens renew it themselves. */
+  serviceFrameTicket: perLogin('service-frame-ticket', 30),
   /** A canvas frame document, per address: its ticket is in its URL and the
    *  canvas can read it, so a replay within the ticket's life is bounded. */
   canvasFrame: perIp('canvas-frame', 120),

@@ -1,19 +1,29 @@
 # Email and contacts
 
-Read the mail the brain already holds, and choose whose mail it keeps.
+Link your mailboxes, choose whose mail the brain keeps, and let the assistant send mail.
 
 ## Before you start
 
 Email and Contacts need the **Sync** service. An admin turns it on in **Settings > Services**. While it is off, both screens are hidden; nothing is deleted.
 
-Linking a mailbox moves into the Sync service. Until it is rebuilt there, no new mail arrives and the assistant sends no mail. The mail already in the brain stays readable and searchable.
+## Link a mailbox
+
+1. Open **Settings > Sync** and choose **Add a mailbox**.
+2. Enter your email address and an **app password** from your mail provider (not your account password).
+3. Enter the IMAP server (incoming). Add the SMTP server (sending) if the assistant may send from this mailbox.
+4. Choose **Check and save**. The brain logs in once to check, then the first sync starts.
+
+New mail arrives every 5 minutes. The first sync reads back one year by default.
 
 ## Contacts are the gate
 
 Your contacts decide whose mail the brain keeps when mail sync runs.
 
 - Mail is kept only when it comes from a contact, or from one of your own logins.
+- Add a contact and the last 90 days of their mail comes in.
 - Remove a contact and their new mail is no longer kept.
+
+**Settings > Sync > Find senders** lists recent senders who are not contacts yet, with **Add as contact**.
 
 Each contact holds one or more email entries. An entry is a full address (`sam@example.com`) or a whole domain (`@example.com`, anyone there). A domain entry does not cover sub-domains.
 
@@ -34,6 +44,10 @@ Ask the assistant about the content, not the message:
 
 - "What did Sam quote for the roof?"
 - "Summarise this week's mail from Acme."
+
+## Send mail
+
+Ask the assistant: "Email Sam the quote" or "Email Sam the meeting notes page". It sends from your linked mailbox, to contacts only, and waits for your approval by default.
 
 ## Next
 

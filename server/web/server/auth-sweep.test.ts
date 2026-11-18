@@ -257,6 +257,8 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
         '/api/livekit/webhook',
         '/api/mcp',
         '/api/oauth',
+        '/api/services/sync/ui',
+        '/api/sidecar',
         '/api/update-notice',
         '/api/version',
         '/pair',

@@ -38,6 +38,7 @@ export * from './app-databases';
 export * from './app-table-exports';
 export * from './app-timers';
 export * from './gateway-services';
+export * from './service-state';
 export * from './pipeline-state';
 export * from './model-pools';
 export * from './tables';

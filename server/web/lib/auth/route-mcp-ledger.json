@@ -77,6 +77,8 @@
     "DELETE /api/secrets/:id": { "planned": "secret_delete" },
     "DELETE /api/settings/worker-groups/:id": { "planned": "worker_group_delete" },
     "DELETE /api/shares/:id": "node_unshare",
+    "DELETE /api/sidecar/mail/accounts/:id": { "none": "outside: the Sync sidecar calls this" },
+    "DELETE /api/sidecar/state/:key": { "none": "outside: the Sync sidecar calls this" },
     "DELETE /api/skills/:id": { "planned": "skill_delete" },
     "DELETE /api/tables/:id": "table_delete",
     "DELETE /api/tables/:id/history/:sid": "table_snapshot_delete",
@@ -393,12 +395,15 @@
     "GET /api/secrets/:id": { "planned": "secret_get" },
     "GET /api/services": "service_list",
     "GET /api/services/status": "service_list",
+    "GET /api/services/sync/ui": { "none": "a person's screen in a frame (a mailbox's app password is typed there); the Sync account admin tools come with the Sync service's own MCP (Sync plan M3)" },
     "GET /api/settings/worker-groups": "worker_group_list",
     "GET /api/shares": { "planned": "link_list" },
     "GET /api/shares/all": { "planned": "link_list" },
     "GET /api/shell": {
       "none": "Screen data: it only draws a screen, and other tools hold the facts"
     },
+    "GET /api/sidecar/state": { "none": "outside: the Sync sidecar calls this" },
+    "GET /api/sidecar/state/:key": { "none": "outside: the Sync sidecar calls this" },
     "GET /api/skills": { "planned": "skill_list" },
     "GET /api/skills/:id": { "planned": "skill_get" },
     "GET /api/skills/backrefs": { "planned": "skill_list" },
@@ -932,8 +937,17 @@
     },
     "POST /api/secrets/:id/reveal": { "people": "the secret value would enter the model" },
     "POST /api/services/:name": "service_set",
+    "POST /api/services/:name/frame-ticket": { "none": "a person's screen in a frame (a mailbox's app password is typed there); the Sync account admin tools come with the Sync service's own MCP (Sync plan M3)" },
+    "POST /api/services/sync/ui": { "none": "a person's screen in a frame (a mailbox's app password is typed there); the Sync account admin tools come with the Sync service's own MCP (Sync plan M3)" },
     "POST /api/settings/worker-groups": "worker_group_ensure",
     "POST /api/shares": "node_share",
+    "POST /api/sidecar/contacts": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/contacts/unknown": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/events": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/mail/accounts": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/mail/gate": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/mail/ingest": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/mail/run": { "none": "outside: the Sync sidecar calls this" },
     "POST /api/skills": {
       "planned": "skill_create",
       "note": "goes through the held group door when built"
@@ -1115,6 +1129,7 @@
       "tool": "recall_card_put",
       "gap": "an Admin user's edit keeps a confirmed prompt and may set prompt or the slug; an agent's new words send it back to a person, and a slug change is refused"
     },
+    "PUT /api/sidecar/state/:key": { "none": "outside: the Sync sidecar calls this" },
     "PUT /api/tables/:id/draft": {
       "tool": ["table_row_update", "table_cell_set"],
       "gap": "no whole-grid save: that is the editor autosave"

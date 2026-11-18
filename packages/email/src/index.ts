@@ -28,3 +28,22 @@ export {
   type MessageListItem,
 } from './messages';
 export { isClientCodeMail, redactSigninCodes, touchesClientCodeMail } from './client-code-mail';
+export {
+  mailboxOf,
+  saveMailbox,
+  disableMailbox,
+  gateEnvelopes,
+  ingestWireMessage,
+  recordMailRun,
+} from './ingest';
+export * from './wire';
+export {
+  sendViaSync,
+  enqueueBackfills,
+  SyncOffError,
+  SyncSendError,
+  EmailSendPolicyOffError,
+  EMAIL_SEND_POLICY_OFF_CODE,
+  type SyncSendInput,
+  type SyncSendResult,
+} from './sync-client';

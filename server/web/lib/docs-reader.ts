@@ -21,6 +21,7 @@ export const SYNC_GUIDE_PAGES: ReadonlySet<string> = new Set([
   '03-using-jackdaw/03-email-and-contacts.md',
   '06-help/contacts.md',
   '06-help/inbox.md',
+  '06-help/sync.md',
 ]);
 
 /** A page the reader leaves out now: a Sync page while Sync is off. */

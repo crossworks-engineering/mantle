@@ -4,7 +4,8 @@
  * A turn marked client-sourced (client-sourced.ts) may read freely. What
  * waits at /pending is any call that would put brain content in front of a
  * client or the public:
- *  - a lowering to client or public (`access_set`, a share link);
+ *  - a lowering to client or public (`access_set`, a share link,
+ *    `email_page` with a link);
  *  - a write INTO an item a client or the public already reads: a page,
  *    note, table, drawing, file, folder, formula or app, its blocks, rows,
  *    draft, commit, title or place. That is its grants: a workspace with a
