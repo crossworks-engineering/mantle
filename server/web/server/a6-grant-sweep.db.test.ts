@@ -42,6 +42,16 @@
  * caps carry the new mayMove (true for system work). The cells of removed
  * code (REMOVED_CELLS) keep main's record.
  *
+ * Decision A (owner page d7313c67): an Admin user counts as a Moderator of
+ * the home of an item it reads, and of nothing it does not read. 11 cells
+ * moved, all the owner's: linkRights' manage of nR, nPriv and fQ (items it
+ * does not read) back to main's false; and aQ (an app homed in Q that the
+ * owner reads through P, Write off) is now its to edit: the chips' and
+ * caps' mayEdit, linkRights' edit, assertMayLink's edit, the link serve
+ * candidates of pg and its served-list check (+aQ), the launcher's data
+ * access (read_write, three cells), the scope's edit refusal (none), and
+ * the grants panel's serve candidates of pg.
+ *
  * Per-login items (A6 fix round 1, M1): an item with nodes.login_id set (a
  * chat summary note, a Telegram attachment) is its own login's only. Each
  * login's own per-login note and page, through the panel, its previews,
