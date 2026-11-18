@@ -19,7 +19,6 @@ import { TOKEN_HEADER } from './brain';
 import { backfill, runError } from './mail';
 import { SendRefusedError, senderFor, sendMail, type SendInput } from './send';
 import { uiReply, type UiDeps } from './ui';
-import type { Lane } from './scheduler';
 
 export type SyncState = {
   /** rclone's version at boot, or null when the binary did not run. */
@@ -85,7 +84,7 @@ function html(res: ServerResponse, status: number, text: string): void {
   res.end(text);
 }
 
-export type SyncDeps = UiDeps & { lane: Lane; token: string };
+export type SyncDeps = UiDeps & { token: string };
 
 export function createSyncServer(state: SyncState, deps: SyncDeps | null): Server {
   return createServer((req: IncomingMessage, res: ServerResponse) => {

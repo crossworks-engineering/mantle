@@ -17,7 +17,7 @@ import { clearFeed } from './feeds';
 import { allFolders, connect, probe } from './imap';
 import { discover, runError } from './mail';
 import { probeSmtp } from './send';
-import type { Scheduler } from './scheduler';
+import type { Lane, Scheduler } from './scheduler';
 import { DEFAULT_EXCLUDED_FOLDERS, type Feed, type MailAccount, type State } from './state';
 
 export type UiRequest = {
@@ -32,7 +32,7 @@ export type UiRequest = {
   ticket: string;
 };
 
-export type UiDeps = { brain: Brain; state: State; scheduler: Scheduler };
+export type UiDeps = { brain: Brain; state: State; scheduler: Scheduler; lane: Lane };
 
 export type UiReply = { status: number; html: string };
 
@@ -363,11 +363,15 @@ function confirmScreen(req: UiRequest, title: string, text: string, action: stri
 async function removeMailbox(req: UiRequest, deps: UiDeps, id: string): Promise<UiReply> {
   const account = await deps.state.account(id);
   if (!account) return notFound(req);
-  await deps.brain.del(`/api/sidecar/mail/accounts/${id}`).catch((err: unknown) => {
-    // A mailbox row the brain no longer has: the state still goes.
-    if ((err as { status?: number }).status !== 404) throw err;
+  // After a run of it that is under way (the lane), so nothing it writes
+  // comes back after the removal.
+  await deps.lane.exclusive(async () => {
+    await deps.brain.del(`/api/sidecar/mail/accounts/${id}`).catch((err: unknown) => {
+      // A mailbox row the brain no longer has: the state still goes.
+      if ((err as { status?: number }).status !== 404) throw err;
+    });
+    await deps.state.deleteAccount(id);
   });
-  await deps.state.deleteAccount(id);
   return listScreen(req, deps, `Removed ${account.address}. Its stored mail stays in the brain.`);
 }
 
@@ -414,8 +418,12 @@ async function saveFeed(req: UiRequest, deps: UiDeps, id: string | null): Promis
 async function removeFeed(req: UiRequest, deps: UiDeps, id: string): Promise<UiReply> {
   const feed = await deps.state.feed(id);
   if (!feed) return notFound(req);
-  await clearFeed(deps.brain, feed);
-  await deps.state.deleteFeed(id);
+  // After a run of it that is under way (the lane), so no event it stores
+  // comes back after the removal.
+  await deps.lane.exclusive(async () => {
+    await clearFeed(deps.brain, feed);
+    await deps.state.deleteFeed(id);
+  });
   return listScreen(req, deps, `Removed ${feed.name} and its events.`);
 }
 

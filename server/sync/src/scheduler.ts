@@ -17,6 +17,9 @@ const TICK_MS = 60_000;
 export type Lane = {
   /** Run `job` after every job before it. Its errors are logged only. */
   run(name: string, job: () => Promise<unknown>): Promise<void>;
+  /** Run `job` after every job before it, and answer its result or throw
+   *  its error (a removal: it waits for a run of the same account). */
+  exclusive<T>(job: () => Promise<T>): Promise<T>;
   /** Jobs waiting or running. */
   depth(): number;
 };
@@ -38,6 +41,17 @@ export function createLane(): Lane {
       });
       tail = next;
       return next;
+    },
+    exclusive<T>(job: () => Promise<T>): Promise<T> {
+      depth += 1;
+      const result = tail.then(job).finally(() => {
+        depth -= 1;
+      });
+      tail = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
     },
     depth: () => depth,
   };

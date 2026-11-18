@@ -10,6 +10,7 @@ import { parseFeed } from './ics';
 import { SendRefusedError, senderFor } from './send';
 import { tokenOk } from './server';
 import { uiReply, type UiDeps } from './ui';
+import { createLane } from './scheduler';
 import type { MailAccount } from './state';
 
 const NOW = Date.parse('2026-11-18T08:00:00Z');
@@ -147,6 +148,7 @@ describe('the screens', () => {
   const deps = {
     brain: {} as UiDeps['brain'],
     scheduler: { stop() {}, tick: async () => {}, runNow() {} },
+    lane: createLane(),
     state: {
       accounts: async () => [evil],
       feeds: async () => [
@@ -262,5 +264,41 @@ describe('the bounds the brain takes', () => {
     expect(ev!.uid.length).toBeLessThanOrEqual(1000);
     expect(ev!.description!.length).toBe(4000);
     expect(ev!.location!.length).toBe(1000);
+  });
+});
+
+describe('the job lane', () => {
+  it('runs a removal only after the run under way, and answers its result or error', async () => {
+    const lane = createLane();
+    const seen: string[] = [];
+    let release!: () => void;
+    void lane.run(
+      'feed run',
+      () =>
+        new Promise<void>(
+          (r) =>
+            (release = () => {
+              seen.push('run done');
+              r();
+            }),
+        ),
+    );
+    const removal = lane.exclusive(async () => {
+      seen.push('removed');
+      return 7;
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(seen).toEqual([]);
+    release();
+    expect(await removal).toBe(7);
+    expect(seen).toEqual(['run done', 'removed']);
+    await expect(
+      lane.exclusive(async () => {
+        throw new Error('no');
+      }),
+    ).rejects.toThrow('no');
+    // The lane goes on after a failed job.
+    expect(await lane.exclusive(async () => 'ok')).toBe('ok');
+    expect(lane.depth()).toBe(0);
   });
 });
