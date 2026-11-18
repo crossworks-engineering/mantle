@@ -376,6 +376,12 @@ export async function upsertFile(args: {
       if (args.skipSameBytes && theirSha === mySha) {
         return { ...fileRowFromNode(existing), skipped: true };
       }
+      // A file the caller reads but may not change: the bare refusal, as the
+      // overwrite branch answers it (an Override could not work).
+      const holder = existing.id;
+      if ((await inCallerScope(() => mayEditNode(holder))) === false) {
+        throw new FileNameTakenError(filename);
+      }
       throw new FileNameClashError(filename, {
         id: existing.id,
         sha256: theirSha,
@@ -565,10 +571,24 @@ export async function upsertFile(args: {
           // The row as it is now, under its heads: what the bytes on disk
           // are (a write that landed since the read above is in both).
           const [locked] = await tx
-            .select({ data: nodes.data })
+            .select({ data: nodes.data, path: sql<string>`${nodes.path}::text` })
             .from(nodes)
             .where(eq(nodes.id, row.id))
             .limit(1);
+          // Still the file at this folder and name: one moved or renamed
+          // since the read above (a restore's, a replace upload's) is never
+          // written under its old name.
+          const lockedName = (locked?.data as Record<string, unknown> | null)?.filename;
+          if (
+            locked &&
+            (locked.path !== args.parentPath ||
+              typeof lockedName !== 'string' ||
+              lockedName.toLowerCase() !== filename.toLowerCase())
+          ) {
+            throw new ConflictError(
+              `upsertFile: '${filename}' was moved or renamed meanwhile; nothing was written`,
+            );
+          }
           const oldData = { ...((locked?.data ?? target.data ?? {}) as Record<string, unknown>) };
           if (folded) delete oldData.space_file;
           // Merge onto the node's data (as syncFileFromDisk does): rebuilding

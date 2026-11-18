@@ -387,10 +387,18 @@ export async function pruneFileHistory(fileId: string | null): Promise<void> {
       // then a live file's older ones; oldest first in each), each with what
       // the box holds past the cap before it: a row goes while that is above
       // zero.
-      const boxWide = await db
-        .delete(nodeSnapshots)
-        .where(
-          sql`${nodeSnapshots.id} in (
+      // The box part only while the box is over the cap: one sum first.
+      const [box] = await db
+        .select({ total: sql<string>`coalesce(sum(${nodeSnapshots.dbBytes}), 0)` })
+        .from(nodeSnapshots)
+        .where(eq(nodeSnapshots.nodeKind, 'file'));
+      const over = Number(box?.total ?? 0) > maxBytes;
+      const boxWide = !over
+        ? []
+        : await db
+            .delete(nodeSnapshots)
+            .where(
+              sql`${nodeSnapshots.id} in (
             with v as (
               select s.id, coalesce(s.db_bytes, 0) as b, s.created_at,
                      not exists (select 1 from nodes n where n.id = s.node_id) as gone,
@@ -407,8 +415,8 @@ export async function pruneFileHistory(fileId: string | null): Promise<void> {
                where gone or rn > 1
             )
             select r.id from ranked r, excess e where e.over > 0 and r.before < e.over)`,
-        )
-        .returning({ dbPath: nodeSnapshots.dbPath });
+            )
+            .returning({ dbPath: nodeSnapshots.dbPath });
       await removeVersionFiles([...perFile, ...boxWide].map((r) => r.dbPath));
       if (perFile.length > 0 || boxWide.length > 0) {
         console.info(

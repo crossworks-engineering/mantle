@@ -294,6 +294,21 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     expect(await versionCount(id)).toBe(0);
   });
 
+  it('a clash on a file the caller reads but may not change: the bare 409 (no Override offered)', async () => {
+    const { id } = await fileWithHistory();
+    const [{ f }] = await raw<{ f: string }[]>`select data->>'filename' as f from nodes
+                                                where id = ${id}`;
+    const ro = await upload(L.reader, f, 'other bytes');
+    expect(ro.status, await ro.clone().text()).toBe(409);
+    const bare = (await ro.json()) as Record<string, unknown>;
+    expect(bare.reason).toBeUndefined();
+    expect(bare.existing).toBeUndefined();
+    // A user with Write on (may change it): the clash with the file.
+    const w = await upload(L.writeUser, f, 'other bytes');
+    expect(w.status, await w.clone().text()).toBe(409);
+    expect(((await w.json()) as Record<string, unknown>).reason).toBe('name-taken');
+  });
+
   it('replace with the same bytes: skipped, nothing written, no version', async () => {
     const name = `${tag}-retry.txt`;
     const first = await upload(owner, name, 'gamma');
