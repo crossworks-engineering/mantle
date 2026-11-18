@@ -45,7 +45,6 @@ import {
   removeFileDbNone,
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
-  AFTER_CELL_MAX_CHARS,
   SHAPES,
   stampOfMeta,
   withAfterEntry,
@@ -87,6 +86,7 @@ import {
 import { bookVisionPagesOf } from './book-pages';
 import {
   AGENT_HASH_COLUMN,
+  PAGE_TEXT_ANSWER_MAX_CHARS,
   AGENT_LIST_COLUMNS,
   AGENT_PAGE_COLUMN,
   agentRows,
@@ -671,7 +671,9 @@ async function writeRowsOrWord(
 const AGENT_ROWS_MAX = 64 * 400;
 
 /** One tab of the database at `abs`, whole, every cell as text but in a
- *  number column (the Page of a list tab): an Agent's rows. Null: no
+ *  number column (the Page of a list tab): an Agent's rows, each cell up to
+ *  a page of text (PAGE_TEXT_ANSWER_MAX_CHARS: an Agent of page text keeps
+ *  a whole page, and a run again or a re-read must not cut it). Null: no
  *  database, no such tab, or it cannot be read. */
 function textTabAt(abs: string, name: string): ParsedSheet | null {
   try {
@@ -690,7 +692,7 @@ function textTabAt(abs: string, name: string): ParsedSheet | null {
       abs,
       name,
       columns,
-      { maxRows: AGENT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
+      { maxRows: AGENT_ROWS_MAX, cellMaxChars: PAGE_TEXT_ANSWER_MAX_CHARS },
       (row) => {
         rows.push(columns.map((c) => cell(c, row[c])));
         return true;
