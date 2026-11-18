@@ -2170,6 +2170,35 @@
   }
  },
  {
+  "name": "file_reindex",
+  "description": "Read files again through the whole pipeline: text from the bytes, summary, chunks, embedding, facts, mentions, and the file database when it has one. Use it for a file whose `status.stale` is true (find them with `file_stale_list`) or whose read failed. Returns `queued`, `databases` (database runs queued) and `skipped`, a reason for each id not queued: `not-found`, `not-allowed` (you may not change it), `in-queue` (already being read), `busy` (queue full: try later). Each read spends model work, under the box caps. For one file's details use `file_processing`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_ids": {
+     "minItems": 1,
+     "maxItems": 200,
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "The files to read again (UUIDs, from `file_list` or `file_stale_list`)."
+    }
+   },
+   "required": [
+    "file_ids"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_reindex",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "file_rename",
   "description": "Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. `huntsman-report` → `customerx-report`).",
   "inputSchema": {
@@ -11708,7 +11737,7 @@
  },
  {
   "name": "file_processing",
-  "description": "What the brain did with one file and where its content went: `status` (ingest done, partial, waiting, failed or none; a `job` in the queue; its database state), size, pages, whether it was embedded, the counts of text chunks, facts and mentions, its database (state, size, the pipeline that read it), the last error, and `derived`: the items made from it (extracted images, auto Tables, pages and notes) with id, kind and title. Read only. For its text use `file_read`; for its rows, `file_sql`.",
+  "description": "What the brain did with one file and where its content went: `status` (ingest done, partial, waiting, failed or none; a `job` in the queue; its database state), size, pages, whether it was embedded, the counts of text chunks, facts and mentions, its database (state, size, the pipeline that read it), what read it (`readBy`, `pipelineRead`) and whether a newer reader or pipeline is there now (`stale`; reindex it with `file_reindex`), the last error, and `derived`: the items made from it (extracted images, auto Tables, pages and notes) with id, kind and title. Read only. For its text use `file_read`; for its rows, `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -11805,6 +11834,42 @@
   },
   "annotations": {
    "title": "file_sql",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "file_stale_list",
+  "description": "One page of the files that need attention, newest first, each with its `status`: `stale` (read by an older reader or pipeline than the box has now), `failed` (could not be read) or `partial` (read in part). Returns `files`, `total` (all in that state you can read) and `next` (pass it as `cursor` for the next page; null on the last). Read only. To read them again use `file_reindex`; for one file's details, `file_processing`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "state": {
+     "type": "string",
+     "enum": [
+      "stale",
+      "failed",
+      "partial"
+     ],
+     "description": "Which list."
+    },
+    "cursor": {
+     "type": "string",
+     "description": "The `next` of the page before."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 200,
+     "description": "Files in this page."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_stale_list",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

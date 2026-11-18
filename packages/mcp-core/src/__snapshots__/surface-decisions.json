@@ -2076,6 +2076,24 @@
    "peerRisky": false
   }
  },
+ "file_reindex": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": false
+  }
+ },
  "file_rename": {
   "readOnly": false,
   "peerRisky": false,
@@ -2113,6 +2131,24 @@
   }
  },
  "file_sql": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": false
+  }
+ },
+ "file_stale_list": {
   "readOnly": true,
   "peerRisky": false,
   "spendsOwnerKeys": false,
