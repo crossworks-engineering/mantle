@@ -265,6 +265,8 @@ describe.skipIf(!URL)('a file with no Table', () => {
       expect(await tablesOf(file.id)).toEqual([]);
       expect(namesOf(file.id)).toHaveLength(1);
       expect((await dataOf(file.id)).extract_completed_at).toBeTruthy();
+      // What read it (P5): the core reader of the type, at its version.
+      expect((await dataOf(file.id)).read_by).toEqual({ reader: 'dwg', v: expect.any(Number) });
       const hits = await search(DWG_VALUE);
       expect(hits.map((hit) => hit.nodeId)).toContain(file.id);
       expect(hits.find((hit) => hit.nodeId === file.id)!.text).toContain(DWG_VALUE);
@@ -295,6 +297,10 @@ describe.skipIf(!URL)('a file with no Table', () => {
       expect(await tablesOf(file.id)).toEqual([]);
       expect(namesOf(file.id)).toHaveLength(1);
       expect((await dataOf(file.id)).extract_completed_at).toBeTruthy();
+      expect((await dataOf(file.id)).read_by).toEqual({
+        reader: 'exceljs',
+        v: expect.any(Number),
+      });
       const hits = await search(XLS_VALUE);
       expect(hits.map((hit) => hit.nodeId)).toContain(file.id);
       expect(hits.find((hit) => hit.nodeId === file.id)!.text).toContain(XLS_VALUE);

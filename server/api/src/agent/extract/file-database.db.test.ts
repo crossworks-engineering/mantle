@@ -485,6 +485,13 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       db.close();
       expect(Object.fromEntries(rows.map((r) => [r.k, r.v]))).toEqual(want);
       expect(await readStamp(file.id, sha)).toEqual(want);
+      // The node's copy of the stamp (P5): which pipeline read it, at
+      // which version, readable with no look into the database.
+      expect(((await nodeRow(file.id)).data as Record<string, unknown>).pipeline_read).toEqual({
+        id: csv.id,
+        name: csv.name,
+        version: csv.version,
+      });
     });
 
     it('a packaged reader builds through the same write spot: its rows and its stamp', async () => {
