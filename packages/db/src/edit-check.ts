@@ -44,6 +44,7 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
   // core reader at a completed read, the Reader pipeline at its build.
   read_by: ['server/api/src/agent/extractor.ts', 'server/api/src/agent/extract/gates.ts'],
   pipeline_read: ['packages/content/src/file-database.ts'],
+  images: ['server/api/src/agent/extract/images.ts'],
   // The refold.
   refolded: [
     'server/api/src/agent/extract/gates.ts',
@@ -67,7 +68,8 @@ export const NODE_DERIVED_KEYS: readonly string[] = Object.keys(DERIVED_KEY_WRIT
 
 /** What the extractor writes about a file's bytes (mantle_node_extractor_keys,
  *  0281; `parser_failures` since 0339; `agent_text` since 0377; `read_by`
- *  and `pipeline_read` since 0385): the read-only snapshot copy's list
+ *  and `pipeline_read` since 0385; `images` since 0386): the read-only
+ *  snapshot copy's list
  *  (it may change on a copy) and the files' BYTE_DERIVED_DATA_KEYS. A part
  *  of NODE_DERIVED_KEYS. */
 export const NODE_EXTRACTOR_KEYS: readonly string[] = [
@@ -88,6 +90,7 @@ export const NODE_EXTRACTOR_KEYS: readonly string[] = [
   'agent_text',
   'read_by',
   'pipeline_read',
+  'images',
 ];
 
 /** The presentation keys of nodes.data (mantle_node_presentation_keys):

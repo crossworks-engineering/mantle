@@ -35,7 +35,7 @@
  * The real spend is downstream and unavoidable: every image saved becomes an
  * image node the vision worker will describe — one call each. The gate in
  * `@mantle/files/embedded-images` (dimensions, byte floor, duplicate collapse)
- * and the 30-per-document cap bound it, but on a large corpus this is still
+ * and the 500-per-document cap bound it, but on a large corpus this is still
  * real money. That is why the script is dry-run by default and prints an
  * upper bound before you commit to it.
  *
@@ -46,7 +46,10 @@
  *
  * Idempotent: a document that already produced images is skipped by the
  * candidate query AND again by the extractor's own `sourceFileId` dedupe, so
- * re-running never doubles.
+ * re-running never doubles. A document that left pictures out (`data.images`
+ * with kept under found, task 8d40932a G5) is a candidate again: with a
+ * raised cap the extractor saves only the pictures it does not have (by
+ * sha256), so only the new ones cost a vision call.
  */
 
 import postgres from 'postgres';
@@ -95,7 +98,7 @@ const DEFAULT_EXTS = [
 /** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in
  *  `@mantle/files/embedded-images`. Used only when the extractor worker has no
  *  explicit `max_embedded_images_per_doc` set. */
-const DEFAULT_MAX_IMAGES_PER_DOC = 30;
+const DEFAULT_MAX_IMAGES_PER_DOC = 500;
 
 /** The cap the extractor will actually apply, read from the same worker param
  *  the Settings → AI workers form writes. The backfill only fires
@@ -251,12 +254,20 @@ async function main() {
       and lower(coalesce(n.data->>'filename', n.title)) ~ ${extPattern}
       -- never re-open an image we ourselves extracted
       and n.data->>'sourceFileId' is null
-      -- and skip anything that already yielded pictures
-      and not exists (
-        select 1 from nodes c
-        where c.owner_id = n.owner_id
-          and c.type = 'file'
-          and c.data->>'sourceFileId' = n.id::text
+      -- and skip anything that already yielded pictures, unless it left
+      -- pictures out (data.images, kept < found): a raised cap fetches the
+      -- rest, and the extractor keeps the pictures it has by their sha256
+      and (
+        not exists (
+          select 1 from nodes c
+          where c.owner_id = n.owner_id
+            and c.type = 'file'
+            and c.data->>'sourceFileId' = n.id::text
+        )
+        or (
+          jsonb_typeof(n.data->'images') = 'object'
+          and (n.data->'images'->>'kept')::int < (n.data->'images'->>'found')::int
+        )
       )
     order by n.created_at desc
     ${args.limit ? sql`limit ${args.limit}` : sql``}`;

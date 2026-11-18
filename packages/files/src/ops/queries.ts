@@ -36,7 +36,7 @@ function extractionCut(state: ExtractionState): ReturnType<typeof sql> {
     case 'skipped':
       return sql`(${nodes.data} ? 'extract_skipped' and not ${failedReason})`;
     case 'partial':
-      return sql`jsonb_typeof(${nodes.data}->'ocr') = 'object'`;
+      return sql`(jsonb_typeof(${nodes.data}->'ocr') = 'object' or jsonb_typeof(${nodes.data}->'images') = 'object')`;
     case 'pending':
       return sql`not (${nodes.data} ?| array['extract_completed_at', 'extract_skipped', 'extract_parked']) and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`;
     case 'indexed':

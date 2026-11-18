@@ -14,10 +14,18 @@
  * made, kept for the extract (readerRun), so the three passes cost one job.
  * No model is asked: the run is model-free.
  */
-import { effectiveOptions } from '@mantle/files';
-import { readFileRowNow } from './file-database';
+import { effectiveOptions, keptReaderRun } from '@mantle/files';
+import { readFileDbStamp, readFileRowNow } from './file-database';
+import { filePagesOf, pagesText } from './page-passages';
 import { boxPipelines } from './pipeline-registry';
-import { readerGivesText, readerRun, type PipelineRunResult } from './pipeline-runner';
+import {
+  pagesReadOf,
+  readerGivesText,
+  readerRun,
+  readerStandsOver,
+  routedRunKey,
+  type PipelineRunResult,
+} from './pipeline-runner';
 import { pipelineOffHere, pipelineStateOf } from './pipeline-state';
 
 export { readerGivesText };
@@ -56,4 +64,50 @@ export async function readerTextOf(
 ): Promise<string> {
   const r = await run(bytes);
   return r.status === 'ok' ? (r.write?.text ?? '') : '';
+}
+
+/** The text of a file whose Reader stands over the core's PDF read, and
+ *  the pages it read when it read in windows. */
+export type StandingText = { text: string; pages?: { read: number; total: number } };
+
+/**
+ * The Reader's text of a PDF whose database a Reader that stands over the
+ * core's PDF read wrote (P2, readerStandsOver: it claims the router's kinds
+ * and says `produces.text`; a book). Then the core reads no text of its
+ * own, runs no native read and no OCR, and stamps no `document_unreadable`
+ * (server/api/src/agent/extract/load-body.ts). Null: the file's database
+ * was written by no such Reader, or the Reader gave no text.
+ *
+ * Where the text comes from, in order, never a new parser job: the run the
+ * database pass of this extract made, kept (routedReaderRun); else, for a
+ * Reader that says `produces.pages`, its pages in the database, joined
+ * (`## Page N` before each). The pages read come from the run, else from
+ * the database's `_meta`.
+ */
+export async function standingReaderText(
+  ownerId: string,
+  file: { id: string; sha256: unknown },
+  ext: string,
+): Promise<StandingText | null> {
+  if (ext !== 'pdf' || typeof file.sha256 !== 'string') return null;
+  const stamp = await readFileDbStamp(file.id, file.sha256);
+  if (!stamp) return null;
+  const pipelines = await boxPipelines(ownerId);
+  const reader = pipelines.byId(stamp.pipeline_id);
+  if (!reader || !readerStandsOver(reader)) return null;
+  const options = effectiveOptions(reader, (await pipelineStateOf(ownerId, reader)).options);
+  const kept = keptReaderRun<PipelineRunResult>(routedRunKey(reader, file.sha256, ext, options));
+  const run = kept ? await kept.catch(() => null) : null;
+  if (run?.status === 'ok' && run.write?.text) {
+    return {
+      text: run.write.text,
+      ...(run.windows
+        ? { pages: { read: pagesReadOf(run.windows), total: run.windows.pagesTotal } }
+        : {}),
+    };
+  }
+  if (reader.produces.pages !== true) return null;
+  const pages = await filePagesOf({ id: file.id, ownerId, sha256: file.sha256 }, pipelines);
+  if (!pages || pages.pages.length === 0) return null;
+  return { text: pagesText(pages.pages), ...(pages.read ? { pages: pages.read } : {}) };
 }

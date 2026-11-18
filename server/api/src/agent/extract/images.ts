@@ -10,8 +10,11 @@ import { and, eq, sql } from 'drizzle-orm';
 import { createPartOfFile, db, nodes } from '@mantle/db';
 import {
   CAD_EXTS,
+  MAX_EMBEDDED_IMAGES_PER_DOC,
+  PDF_MAX_BYTES,
   deleteFileById,
   extOf,
+  picturesLeftOut,
   ensureExtractedImagesFolder,
   isCadExt,
   isDrawingExt,
@@ -25,6 +28,12 @@ import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import { readerPassOf } from '@mantle/content/reader-passes';
+import {
+  picturesByWindows,
+  picturesLeftOutOf,
+  picturesNeedWindows,
+  type PdfPicturesRead,
+} from '@mantle/content/pdf-picture-windows';
 import { loadFileBytes } from './file-bytes';
 import { stepInOwnTrace } from './trace';
 
@@ -163,7 +172,14 @@ export async function maybeExtractEmbeddedImages(
     cur: number;
     total: number;
   }[];
-  if (Number(prior[0]?.cur ?? 0) > 0) return;
+  // A file that left pictures out (`data.images`, G4) is a candidate again
+  // (G5): the pictures of its current bytes are kept by their sha256, and
+  // only the new ones are saved (one vision call each).
+  const have =
+    Number(prior[0]?.cur ?? 0) > 0
+      ? await extractedPicturesOf(ownerId, node.id, current)
+      : new Set<string>();
+  if (have.size > 0 && !picturesLeftOut(data)) return;
   // Set only by the two person routes (an upload with replace, a restore):
   // a login's scope alone is no sign (apps and MCP clients run in one).
   const personStarted = data.replaced_by === 'person';
@@ -204,11 +220,33 @@ export async function maybeExtractEmbeddedImages(
 
   const { extractEmbeddedImages, buildImageTitles, buildImageFilename, buildSourceSlug } =
     await import('@mantle/files/embedded-images');
-  const result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
-    // Blank/0 on the worker means "use the built-in default", not "keep none".
-    maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
-    ...(own ? { reader: own } : {}),
+  // Blank/0 on the worker means "use the built-in default", not "keep none".
+  const cap = maxImages && maxImages > 0 ? maxImages : MAX_EMBEDDED_IMAGES_PER_DOC;
+  // A PDF past the size pdfjs opens is read in page windows (G2); so are the
+  // pages of a long PDF past the ones one read scans.
+  const isPdf = loaded.ext === 'pdf' && !own;
+  const whole =
+    isPdf && loaded.bytes.length > PDF_MAX_BYTES
+      ? null
+      : await extractEmbeddedImages(loaded.bytes, loaded.ext, {
+          maxImages: cap,
+          ...(own ? { reader: own } : {}),
+        });
+  const result: PdfPicturesRead =
+    isPdf && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
+      ? await picturesByWindows(loaded.bytes, cap, whole)
+      : { ...whole!, windowsFailed: 0 };
+  // The pictures of the file the cap keeps, those it had before too.
+  const keptTotal = result.images.length;
+  // The pictures a file leaves out are stamped on it, and a stamp of an
+  // earlier read that left none out goes (G4). Never fatal.
+  await stampPicturesLeftOut(node, ownerId, result).catch((err: unknown) => {
+    console.error('[extractor] picture count not stamped:', errorMessage(err));
   });
+  // The pictures this file has from an earlier read keep their nodes (G5).
+  if (have.size > 0) {
+    result.images = result.images.filter((img) => !have.has(img.sha256));
+  }
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
     // images" should be explainable from /traces rather than mysterious.
@@ -307,7 +345,7 @@ export async function maybeExtractEmbeddedImages(
               // an older version (the dedupe above).
               ...(sha ? { sourceSha256: sha } : {}),
               sourceOrdinal: img.ordinal,
-              sourceTotal: result.images.length,
+              sourceTotal: keptTotal,
               ...(img.location ? { sourceLocation: img.location } : {}),
               // Which tier produced the pixels (DWF: sidecar render vs the
               // container's small preview) — the predicate the backfill's
@@ -320,7 +358,7 @@ export async function maybeExtractEmbeddedImages(
               imageContext: buildImageContext({
                 title,
                 ordinal: img.ordinal,
-                total: result.images.length,
+                total: keptTotal,
                 sourceTitle: node.title || loaded.filename,
                 location: img.location,
                 heading: img.heading,
@@ -788,4 +826,84 @@ export async function ocrIngestPdfNode(
       return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
     },
   );
+}
+
+// ─── pictures: page windows and the honest count (G2, G4, G5) ─────────────
+
+/** The sha256 of each picture already extracted from this file, of its
+ *  current bytes (`current`: the dedupe's rule, file history). */
+async function extractedPicturesOf(
+  ownerId: string,
+  fileId: string,
+  current: ReturnType<typeof sql>,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ sha: sql<string | null>`${nodes.data}->>'sha256'` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
+        current,
+      ),
+    );
+  return new Set(rows.map((r) => r.sha ?? '').filter((s) => s !== ''));
+}
+
+/**
+ * Stamp the pictures a file left out (G4): `data.images = { kept, found }`
+ * when the cap left some out (`over_cap`, and the parser's answer budget)
+ * or a page window could not be read (each such window counts as one
+ * picture found and not kept, at least: its pictures are not known). A
+ * file that left none out has the key taken off, so a raised cap that
+ * fetched the rest clears the badge (G5). `extractionOf` reads it
+ * (packages/files/src/extraction-status.ts). Byte-derived (migration 0386):
+ * new bytes drop it.
+ */
+async function stampPicturesLeftOut(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  result: PdfPicturesRead,
+): Promise<void> {
+  const kept = result.images.length;
+  const left = picturesLeftOutOf(result);
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  if (left === 0 && data.images === undefined) return;
+  const next =
+    left > 0
+      ? sql`${nodes.data} || jsonb_build_object('images', jsonb_build_object('kept', ${kept}::int, 'found', ${kept + left}::int))`
+      : sql`${nodes.data} - 'images'`;
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+    await tx
+      .update(nodes)
+      .set({ data: next })
+      .where(
+        and(
+          eq(nodes.id, node.id),
+          eq(nodes.ownerId, ownerId),
+          sql`${nodes.data}->>'sha256' is not distinct from ${(data.sha256 as string | undefined) ?? null}`,
+        ),
+      );
+  });
+}
+
+/**
+ * Stamp the pages a Reader read of a book it read in page windows (P2,
+ * load-body.ts): `ocr = { pages_read, pages_total }`, as the OCR of a scan
+ * stamps it, so a book with a window that could not be read shows
+ * `partial` (extractionOf). Here because `ocr` is this module's key.
+ */
+export async function stampReaderPages(
+  nodeId: string,
+  ownerId: string,
+  pages: { read: number; total: number },
+): Promise<void> {
+  await db
+    .update(nodes)
+    .set({
+      data: sql`${nodes.data} || jsonb_build_object('ocr', jsonb_build_object('pages_read', ${pages.read}::int, 'pages_total', ${pages.total}::int))`,
+    })
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
 }

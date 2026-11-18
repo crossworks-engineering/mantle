@@ -271,7 +271,7 @@ export const process_extraction: BuiltinToolDef = {
   policy: {
     // The owner's rule: re-running an item's extraction (model spend) is an
     // edit of it, as its itemArgs ask.
-    matrix: { action: 'edit', param: 'node_id', kinds: ['note', 'page'] },
+    matrix: { action: 'edit', param: 'node_id', kinds: ['note', 'page', 'file'] },
     effect: 'write',
     spends: 'ownerKey',
     scope: 'any',

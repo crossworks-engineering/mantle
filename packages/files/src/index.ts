@@ -538,9 +538,12 @@ export {
   type SketchRead,
 } from './pdf-sketch';
 export { TITLE_BLOCK_MM, titleBlockOf, type TitleBlockMm } from './pdf-rows';
+export { PDF_MAX_BYTES } from './parser-wire';
+export { MAX_EMBEDDED_IMAGES_PER_DOC } from './embedded-images';
 export {
   EXTRACTION_STATES,
   extractionOf,
+  picturesLeftOut,
   type ExtractionState,
   type FileExtraction,
 } from './extraction-status';

@@ -67,11 +67,7 @@ export async function filePagesOf(
   if (!names) return null;
   let meta: Readonly<Record<string, string>> | null;
   try {
-    meta = readDocMeta(names.sqlite, [
-      ...PIPELINE_STAMP_KEYS,
-      'pages_read',
-      'pages_total',
-    ]);
+    meta = readDocMeta(names.sqlite, [...PIPELINE_STAMP_KEYS, 'pages_read', 'pages_total']);
   } catch {
     return null;
   }

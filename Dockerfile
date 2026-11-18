@@ -7,7 +7,8 @@
 #     one container that reads every untrusted file: the workspace's readers
 #     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, ezdgn, matplotlib) and
 #     ffmpeg. It replaced Apache Tika and the media
-#     sidecar (2026-10). The CAD venv also holds OpenCV, for the PDF picture reader (cad/pdf_eye.py).
+#     sidecar (2026-10). The CAD venv also holds OpenCV, for the PDF picture reader (cad/pdf_eye.py),
+#     and pdfplumber and pypdfium2, with qpdf and Tesseract beside it, for large PDFs (pdf-split.ts).
 #   (the owner-UI / client image moved to the mantle-client repo at the split)
 #
 # Build:  docker build --target server -t <ns>/mantle-server:<tag> .
@@ -285,6 +286,24 @@ RUN /opt/cad/bin/pip install --no-cache-dir --no-deps --only-binary :all: \
        "opencv-python-headless==5.0.0.93" \
     && /opt/cad/bin/pip check \
     && /opt/cad/bin/python -c "import cv2" \
+    && rm -rf /root/.cache
+# Large PDFs (task 8d40932a, docs/pipelines.md "Page windows"): qpdf
+# (Apache-2.0) cuts a PDF of any size into page windows with no page decode
+# (server/parser/src/pdf-split.ts); Tesseract 5 with its English data
+# (Apache-2.0) is the local OCR of a scanned book, read with `--psm 3` (never
+# 6 on tables); pdfplumber (MIT, on pdfminer.six, MIT) reads a PDF's text
+# layer and its tables, and pypdfium2 (Apache-2.0 or BSD-3) draws a page for
+# the OCR. No PyMuPDF, no Ghostscript (AGPL). Pinned, binary-only; the
+# import and the `--list-langs` check fail the build if they do not load.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends qpdf tesseract-ocr tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/* \
+    && qpdf --version \
+    && tesseract --list-langs | grep -qx eng
+RUN /opt/cad/bin/pip install --no-cache-dir --only-binary :all: \
+       "pdfplumber==0.11.7" "pypdfium2==4.30.1" \
+    && /opt/cad/bin/pip check \
+    && /opt/cad/bin/python -c "import pdfplumber, pypdfium2" \
     && rm -rf /root/.cache
 # No MPLCONFIGDIR here: each job gets its own, inside the job's directory
 # (server/parser/src/proc.ts jobEnv), so no job reads a cache another left.

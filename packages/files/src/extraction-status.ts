@@ -16,7 +16,9 @@
  *    updated_at, is about re-queuing, not about this);
  *  - `extract_parked`: the write of a finished read was refused;
  *  - `extract_completed_at`: a read that ended; `ocr.pages_read` and
- *    `ocr.pages_total` say when a scan was read in part;
+ *    `ocr.pages_total` say when a scan (or a book read in page windows)
+ *    was read in part, and `images.kept` and `images.found` when pictures
+ *    were left out (over the cap, or a window that failed: G4);
  *  - none of these: not read yet (queued, retrying, or never queued).
  *
  * Pure, with no imports: the file listing, `node_read` and the tests share it.
@@ -43,6 +45,9 @@ export type FileExtraction = {
   hint?: string;
   /** A scan read in part: the pages read and the pages in the file. */
   pages?: { read: number; total: number };
+  /** Pictures left out (over the cap, or a page window that could not be
+   *  read): the pictures kept and the pictures found (G4). */
+  pictures?: { kept: number; found: number };
 };
 
 /** Verdicts that mean the content is there but could not be read. Every
@@ -82,7 +87,20 @@ const HINTS: Readonly<Record<string, string>> = {
 };
 
 const PARTIAL_HINT = (read: number, total: number) =>
-  `Only pages 1 to ${read} of ${total} were read. The other pages are not in search.`;
+  `Only ${read} of ${total} pages were read. The other pages are not in search.`;
+
+const PICTURES_HINT = (kept: number, found: number) =>
+  `${kept} of ${found} pictures kept. The others are not in search: raise the picture cap and read the file again to fetch them.`;
+
+/** The pictures a file left out (`data.images`), or null. */
+export function picturesLeftOut(
+  data: Readonly<Record<string, unknown>>,
+): { kept: number; found: number } | null {
+  const img = data.images as { kept?: unknown; found?: unknown } | undefined;
+  const kept = typeof img?.kept === 'number' ? img.kept : null;
+  const found = typeof img?.found === 'number' ? img.found : null;
+  return kept !== null && found !== null && kept < found ? { kept, found } : null;
+}
 
 function hintOf(reason: string): string | undefined {
   return HINTS[reason];
@@ -111,8 +129,19 @@ export function extractionOf(
     const ocr = d.ocr as { pages_read?: unknown; pages_total?: unknown } | undefined;
     const read = typeof ocr?.pages_read === 'number' ? ocr.pages_read : null;
     const total = typeof ocr?.pages_total === 'number' ? ocr.pages_total : null;
+    const pictures = picturesLeftOut(d);
     if (read !== null && total !== null && read < total) {
-      return { state: 'partial', pages: { read, total }, hint: PARTIAL_HINT(read, total) };
+      return {
+        state: 'partial',
+        pages: { read, total },
+        hint:
+          PARTIAL_HINT(read, total) +
+          (pictures ? ` ${PICTURES_HINT(pictures.kept, pictures.found)}` : ''),
+        ...(pictures ? { pictures } : {}),
+      };
+    }
+    if (pictures) {
+      return { state: 'partial', pictures, hint: PICTURES_HINT(pictures.kept, pictures.found) };
     }
     if (d.indexing_applied === 'local') {
       return { state: 'indexed', reason: 'local_only', hint: HINTS.local_only };
