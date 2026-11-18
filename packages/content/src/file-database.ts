@@ -39,6 +39,7 @@ import {
   pdfFileTabOf,
   pdfReadPoorer,
   pipelineStampOf,
+  PIPELINE_CALLS_MAX,
   PIPELINE_STAMP_KEYS,
   removeFileDbNames,
   removeFileDbNone,
@@ -89,15 +90,16 @@ import {
   agentTextOf,
   askCapOf,
   checkAsks,
-  type AgentAsk,
   type AgentAskFn,
 } from './pipeline-agent';
 import {
   afterBodyOf,
   agentStep,
+  isWindowLost,
   pagesReadOf,
   pdfWindows,
   PipelineRunError,
+  windowJob,
   readerGivesText,
   readerRun,
   readerStandsOver,
@@ -133,6 +135,11 @@ export type ParsedFile =
       /** A Reader that read the file in page windows: the pages read and
        *  the pages of the file, kept in the database's `_meta`. */
       pages?: { read: number; total: number };
+      /** The Reader that made these sheets when it is not the reader of the
+       *  extension (a Reader that claims the router's kind and stands over
+       *  the core's PDF read): the stamp names it, so the text pass and a
+       *  status read find it. */
+      readBy?: PipelineManifest;
     }
   | { kind: 'none'; word: FileDbNoneWord }
   | { kind: 'not-plan' }
@@ -216,7 +223,10 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
     ? await readRouted(router, bytes, ext, options, opts)
     : await packagedSheets(pipeline, bytes, ext, options);
   const hash = optionsHash(pipeline, options);
-  return parsed.kind === 'sheets' && hash ? { ...parsed, optionsHash: hash } : parsed;
+  // A Reader that claims the kind (readBy) brought the hash of its own options.
+  return parsed.kind === 'sheets' && hash && !parsed.readBy
+    ? { ...parsed, optionsHash: hash }
+    : parsed;
 }
 
 /**
@@ -269,11 +279,21 @@ async function readRouted(
   // that reads in page windows: its run reads the file (never the facts)
   // and is kept for the extract, so the text pass takes the same run.
   if (readerStandsOver(reader) || readsInWindows(reader, ext)) {
-    const run = await routedReaderRun(reader, bytes, ext, options, {
+    // Its own options in force (the box's, for a real read), not those of
+    // the extension's reader: the text pass finds the run by them.
+    const own = effectiveOptions(
+      reader,
+      opts.count ? (await pipelineStateOf(opts.count.ownerId, reader)).options : {},
+    );
+    const run = await routedReaderRun(reader, bytes, ext, own, {
       kind,
       state: readerStateOf(decision, false, opts.pdfNodeVision === true),
     });
-    return withRunFacts(reader, run, parsedFileOfRun(reader, run));
+    const parsed = withRunFacts(reader, run, parsedFileOfRun(reader, run));
+    const hash = optionsHash(reader, own);
+    return parsed.kind === 'sheets'
+      ? { ...parsed, readBy: reader, ...(hash ? { optionsHash: hash } : {}) }
+      : parsed;
   }
   // The router's page facts go to a reader that claims the kind (a
   // built-in: an own Reader claims none), as the body of its job: the file
@@ -590,6 +610,8 @@ async function writeRowsOrWord(
     return { status: 'none', word: w };
   };
   if (parsed.kind === 'none') return word(parsed.word);
+  // The stamp and the count name the Reader that made the sheets.
+  if (parsed.readBy) file = { ...file, pipeline: parsed.readBy };
   // The cap before the conversion: past it the word costs no copy of the rows.
   const rows = rowsOf(parsed);
   if (rows > importMaxRows()) return word('too-large', true);
@@ -1191,6 +1213,17 @@ async function runAgentWindowed(args: {
   let lost = false;
   let first = true;
   const asked = new Map<string, number>();
+  // The hashes of the paid answers in the tab: an ask with one is free.
+  const paidHashes = new Set(stored.map((r) => String(r[AGENT_HASH_COLUMN] ?? '')));
+  const windowView = {
+    ...pipeline,
+    needs: {
+      ...pipeline.needs,
+      workers: Object.fromEntries(
+        Object.keys(pipeline.needs.workers ?? {}).map((w) => [w, PIPELINE_CALLS_MAX]),
+      ),
+    },
+  };
   /** The stored rows of the keys no window has asked yet (or of a window
    *  that failed), kept over each write so no paid row is lost. */
   const unseen = (rows: readonly Readonly<Record<string, unknown>>[], to: ParsedSheet | null) => {
@@ -1241,34 +1274,39 @@ async function runAgentWindowed(args: {
     }
     const { part } = w;
     const window = { pageFrom: part.pageFrom, pageTo: part.pageTo, pagesTotal: part.pagesTotal };
-    let step: Awaited<ReturnType<typeof agentStep>>;
-    let asks: AgentAsk[];
-    try {
-      step = await agentStep(pipeline, part.bytes, file, state.options, { ...input, window });
-      asks = step.status === 'ok' ? checkAsks(pipeline, step.asks, step.pictures) : [];
-    } catch (err) {
-      if (isParserError(err) && err.retryable) throw err;
+    // One window's asks are checked against a step's own bound (64 calls);
+    // the cap of the manifest holds over the whole file, below.
+    const read = await windowJob(async () => {
+      const step = await agentStep(pipeline, part.bytes, file, state.options, {
+        ...input,
+        window,
+      });
+      const asks = step.status === 'ok' ? checkAsks(windowView, step.asks, step.pictures) : [];
+      return { step, asks };
+    });
+    if (isWindowLost(read)) {
       lost = true;
       first = false;
-      warnings.push(
-        `Pages ${part.pageFrom} to ${part.pageTo} could not be read: ${errorMessage(err).slice(0, 200)}`,
-      );
+      warnings.push(`Pages ${part.pageFrom} to ${part.pageTo} could not be read: ${read.lost}`);
       continue;
     }
+    const { step, asks } = read;
     if (step.status === 'not_mine') {
       if (first) return { status: 'skipped', reason: 'no-match' };
       continue;
     }
     first = false;
     warnings.push(...step.warnings);
-    // The cap of the manifest is for the whole file, over every window.
+    // The cap of the manifest is for the whole file, over every window, and
+    // counts the paid calls only: an ask answered from the tab by its hash
+    // costs nothing and always has room.
     const room = asks.filter((a) => {
+      if (paidHashes.has(a.hash)) return true;
       const n = asked.get(a.worker) ?? 0;
       if (n >= askCapOf(pipeline, a.worker)) return false;
       asked.set(a.worker, n + 1);
       return true;
     });
-    if (room.length < asks.length) stopped ??= 'cap';
     for (const a of asks) seen.add(a.key);
     const out = await agentRows(
       tab,
@@ -1280,6 +1318,7 @@ async function runAgentWindowed(args: {
     made += out.made;
     reused += out.reused;
     if (out.stopped !== undefined && out.stopped !== 'no_ask') stopped ??= out.stopped;
+    if (room.length < asks.length) stopped ??= 'cap';
     // The asks past the cap keep their stored rows.
     const capped = asks.filter((a) => !room.includes(a));
     const kept = capped.flatMap((a) => stored.filter((r) => String(r.Key ?? '') === a.key));

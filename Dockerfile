@@ -293,15 +293,19 @@ RUN /opt/cad/bin/pip install --no-cache-dir --no-deps --only-binary :all: \
 # (Apache-2.0) is the local OCR of a scanned book, read with `--psm 3` (never
 # 6 on tables); pdfplumber (MIT, on pdfminer.six, MIT) reads a PDF's text
 # layer and its tables, and pypdfium2 (Apache-2.0 or BSD-3) draws a page for
-# the OCR. No PyMuPDF, no Ghostscript (AGPL). Pinned, binary-only; the
-# import and the `--list-langs` check fail the build if they do not load.
+# the OCR. No PyMuPDF, no Ghostscript (AGPL). Pinned with every dependency
+# pdfminer.six brings (charset-normalizer MIT, cryptography Apache-2.0 or
+# BSD-3, cffi MIT, pycparser BSD-3; Pillow is matplotlib's), binary-only,
+# --no-deps so nothing comes unpinned; pip check, the import and the
+# `--list-langs` check fail the build if they do not load.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends qpdf tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/* \
     && qpdf --version \
     && tesseract --list-langs | grep -qx eng
-RUN /opt/cad/bin/pip install --no-cache-dir --only-binary :all: \
-       "pdfplumber==0.11.7" "pypdfium2==4.30.1" \
+RUN /opt/cad/bin/pip install --no-cache-dir --no-deps --only-binary :all: \
+       "pdfplumber==0.11.7" "pdfminer.six==20250506" "pypdfium2==4.30.1" \
+       "charset-normalizer==3.5.2" "cryptography==50.0.2" "cffi==2.1.1" "pycparser==3.12" \
     && /opt/cad/bin/pip check \
     && /opt/cad/bin/python -c "import pdfplumber, pypdfium2" \
     && rm -rf /root/.cache

@@ -185,6 +185,34 @@ describe('runWindowed', () => {
   });
 });
 
+describe('runWindowed: a window that fails once', () => {
+  it('tries a window again in place after a first timeout, and loses nothing', async () => {
+    cutBy();
+    let tries = 0;
+    readByWindow((from) => {
+      if (from !== 51) return null;
+      tries += 1;
+      return tries === 1
+        ? new ParserError('timeout', 'slow', { retryable: true, terminal: false })
+        : null;
+    });
+    const run = await runWindowed(BOOK as never, Buffer.from('book'), FILE, { options: {} });
+    expect(tries).toBe(2);
+    expect(run.windows).toEqual({ pagesTotal: TOTAL, failed: [] });
+    expect(pagesReadOf(run.windows!)).toBe(TOTAL);
+  });
+
+  it('gives a window up after its second failure and goes on', async () => {
+    cutBy();
+    readByWindow((from) =>
+      from === 51 ? new ParserError('crashed', 'oom', { retryable: true, terminal: false }) : null,
+    );
+    const run = await runWindowed(BOOK as never, Buffer.from('book'), FILE, { options: {} });
+    expect(run.windows!.failed).toEqual([{ from: 51, to: 100 }]);
+    expect(pagesReadOf(run.windows!)).toBe(70);
+  });
+});
+
 describe('mergeWindowWrite', () => {
   it('appends rows by column name and says what a later window could not keep', () => {
     const warnings: string[] = [];

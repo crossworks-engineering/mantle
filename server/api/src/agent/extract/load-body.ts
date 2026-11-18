@@ -579,7 +579,9 @@ export async function loadExtractableBody(
     rawBody = cleanText(standing.text);
     await step({ name: 'reader_text', kind: 'db_write' }, async (h) => {
       const pages = standing.pages;
-      if (pages) await stampReaderPages(node.id, ownerId, pages);
+      if (pages && typeof existingData.sha256 === 'string') {
+        await stampReaderPages(node.id, ownerId, existingData.sha256, pages);
+      }
       h.setMeta({ chars: rawBody.length, ...(pages ? { pages } : {}) });
     });
   } else if (isImageNeedingVision) {

@@ -27,6 +27,7 @@ import {
   PIPELINE_STEPS_MAX,
   SHAPES,
   isParserError,
+  isParserUnavailable,
   memoReaderRun,
   optionsHash,
   parserPdfSplit,
@@ -46,7 +47,7 @@ import {
   type ShapeId,
 } from '@mantle/files';
 import { scanTabColumns } from '@mantle/tabledb';
-import { askCapOf } from './pipeline-agent';
+import { AgentAskError, askCapOf } from './pipeline-agent';
 
 /** How the core answers one worker call of a step. */
 export type PipelineAsk = (call: PipelineCall & { call: 'worker' }) => Promise<PipelineCallAnswer>;
@@ -225,6 +226,39 @@ export function readsInWindows(
   return pipeline.needs.window !== undefined && ext === 'pdf';
 }
 
+/** A window job that failed for good: its words, for the warning. */
+export type WindowLost = { lost: string };
+
+/**
+ * One parser job of a window (the cut, a step, a picture read), with the
+ * window's own failure rule (docs/pipelines.md, "Page windows"): a first
+ * failure the parser counts but that is not yet terminal (a timeout, a
+ * crash, too large) is tried once more in place, as its ledger key is the
+ * window's own; a second failure, a terminal one or a broken contract
+ * (PipelineRunError, AgentAskError) gives the window up (`lost`), and the
+ * caller goes on with the next window. A busy or unavailable parser throws
+ * (the job is retried whole), as does any error that is not the parser's or
+ * the contract's.
+ */
+export async function windowJob<T>(job: () => Promise<T>): Promise<T | WindowLost> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await job();
+    } catch (err) {
+      if (isParserUnavailable(err)) throw err;
+      const contract = err instanceof PipelineRunError || err instanceof AgentAskError;
+      if (!isParserError(err) && !contract) throw err;
+      if (attempt < 2 && isParserError(err) && err.retryable && !err.terminal) continue;
+      return { lost: err instanceof Error ? err.message.slice(0, 200) : 'failed' };
+    }
+  }
+}
+
+/** Whether a window job's answer is a window given up. */
+export function isWindowLost(v: unknown): v is WindowLost {
+  return typeof v === 'object' && v !== null && typeof (v as WindowLost).lost === 'string';
+}
+
 /** One window of a PDF, as the parser cut it, with its pages. */
 export type PdfWindowPart = {
   bytes: Buffer;
@@ -258,14 +292,16 @@ export async function* pdfWindows(
   let from = startPage;
   let total: number | null = null;
   for (;;) {
-    let part: PdfWindowPart;
-    try {
-      part = await parserPdfSplit(bytes, { from, pages: window.pages, mb: window.mb, sha256 });
-    } catch (err) {
-      if (total === null || !isParserError(err) || err.retryable) throw err;
-      const to = Math.min(total, from + window.pages - 1);
-      yield { part: null, from, to, pagesTotal: total };
-      if (to >= total) return;
+    const cut = { from, pages: window.pages, mb: window.mb, sha256 };
+    // The first window must be cut: there is no page count without it.
+    const part: PdfWindowPart | WindowLost =
+      total === null
+        ? await parserPdfSplit(bytes, cut)
+        : await windowJob(() => parserPdfSplit(bytes, cut));
+    if (isWindowLost(part)) {
+      const to = Math.min(total!, from + window.pages - 1);
+      yield { part: null, from, to, pagesTotal: total! };
+      if (to >= total!) return;
       from = to + 1;
       continue;
     }
@@ -364,17 +400,15 @@ export async function runWindowed(
     }
     const { part } = w;
     pagesTotal = part.pagesTotal;
-    let run: PipelineRunResult;
-    try {
-      run = await runPackaged(pipeline, part.bytes, file, {
+    const run = await windowJob(() =>
+      runPackaged(pipeline, part.bytes, file, {
         options: opts.options,
         ...(opts.kind !== undefined ? { kind: opts.kind } : {}),
         ...(state !== undefined ? { state } : {}),
         window: { pageFrom: part.pageFrom, pageTo: part.pageTo, pagesTotal: part.pagesTotal },
-      });
-    } catch (err) {
-      if (isParserError(err) && err.retryable) throw err;
-      if (!isParserError(err) && !(err instanceof PipelineRunError)) throw err;
+      }),
+    );
+    if (isWindowLost(run)) {
       lose(part.pageFrom, part.pageTo, 'could not be read');
       continue;
     }

@@ -227,7 +227,7 @@ const bunGc = (globalThis as { Bun?: { gc: (sync: boolean) => void } }).Bun?.gc;
  */
 export async function extractPdfImages(
   bytes: Buffer,
-  opts?: { maxImages?: number; counted?: PdfPicturesCounted },
+  opts?: { maxImages?: number; counted?: PdfPicturesCounted; notScan?: true },
 ): Promise<EmbeddedImage[]> {
   const maxImages = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
   const counted = opts?.counted;
@@ -344,7 +344,9 @@ export async function extractPdfImages(
 
       // Pages read while the document is still scan-shaped (one image on
       // every page so far), counted but not yet fetched.
-      let deferred: number[] | null = pageCount >= 2 ? [] : null;
+      // `notScan`: the caller knows the file holds pictures (a page window
+      // of a file an earlier read found pictures in), so no shape rule.
+      let deferred: number[] | null = pageCount >= 2 && opts?.notScan !== true ? [] : null;
       // Pages with no image that may each be a scan page whose image pdfjs
       // dropped (see above). Read inside `withPdf`, after its size refusal.
       let droppedLeft = deferred
