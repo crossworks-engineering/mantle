@@ -27,7 +27,7 @@ import { startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
-import { readerPassOf } from '@mantle/content/reader-passes';
+import { readerPassOf, readerStandsOverFile } from '@mantle/content/reader-passes';
 import {
   picturesByWindows,
   picturesLeftOutOf,
@@ -170,6 +170,11 @@ export async function maybeExtractEmbeddedImages(
   // A PDF past the size pdfjs opens is read in page windows (G2); so are the
   // pages of a long PDF past the ones one read scans.
   const isPdf = loaded.ext === 'pdf' && !own;
+  // A book whose Reader stands over the core's PDF read (P2): its pages are
+  // the Reader's to picture (the page pictures of the scan, G1), so the
+  // pass reads no windows of it, and none of a book past 256 MB at all.
+  const book = isPdf && (await readerStandsOverFile(ownerId, node.id, data.sha256));
+  if (book && loaded.bytes.length > PDF_MAX_BYTES) return;
   const whole =
     isPdf && loaded.bytes.length > PDF_MAX_BYTES
       ? null
@@ -178,7 +183,7 @@ export async function maybeExtractEmbeddedImages(
           ...(own ? { reader: own } : {}),
         });
   const result: PdfPicturesRead =
-    isPdf && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
+    isPdf && !book && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
       ? await picturesByWindows(loaded.bytes, cap, whole)
       : { ...whole!, windowsFailed: 0 };
   // The pictures of the file the cap keeps, those it had before too.
@@ -819,7 +824,7 @@ async function stampPicturesLeftOut(
         and(
           eq(nodes.id, node.id),
           eq(nodes.ownerId, ownerId),
-          sql`${nodes.data}->>'sha256' is not distinct from ${(data.sha256 as string | undefined) ?? null}`,
+          sql`coalesce(${nodes.data}->>'sha256', '') = ${typeof data.sha256 === 'string' ? data.sha256 : ''}`,
         ),
       );
   });
