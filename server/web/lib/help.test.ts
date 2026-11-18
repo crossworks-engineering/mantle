@@ -162,7 +162,7 @@ describe('help for the screens of an optional service', () => {
       const raw = fs.readFileSync(path.join(HELP_DIR, `${t}.md`), 'utf8');
       return parseFrontmatter(raw).data.service === 'sync';
     });
-    expect(marked.sort()).toEqual(['contacts', 'inbox']);
+    expect(marked.sort()).toEqual(['contacts', 'inbox', 'sync']);
     for (const t of marked) expect(SYNC_GUIDE_PAGES.has(`06-help/${t}.md`)).toBe(true);
     for (const rel of SYNC_GUIDE_PAGES) {
       expect(fs.existsSync(path.join(HELP_DIR, '..', rel)), rel).toBe(true);

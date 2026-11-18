@@ -71,6 +71,8 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/settings/backups', 'backups'],
   ['/settings/updates', 'updates'],
   ['/settings/services', 'services'],
+  // The Sync service's own account screens (mailboxes, calendar feeds).
+  ['/settings/sync', 'sync'],
   ['/settings/users', 'users'],
   // Security was folded into Users; the route only redirects there.
   ['/settings/security', 'users'],

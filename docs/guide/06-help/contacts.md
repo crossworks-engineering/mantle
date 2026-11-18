@@ -11,6 +11,7 @@ Contacts are the people and companies you deal with. They are also the email gat
 - Click **+** (Add a contact) and fill in a **First name**, **Last name** or **Company**, then **Email addresses**, a **Cell number** and **Tags**.
 - Each email line is a full address (`orders@example.com`) or a whole domain (`@example.com`).
 - Use the **Description** field to tell the assistant who this is, for example "our electrician, only works Tuesdays".
+- A new address pulls in that sender's last 90 days of mail.
 - Removing an address stops its new mail from being kept.
 
 ## Assistant
@@ -23,5 +24,5 @@ The assistant cannot delete contacts.
 ## Technical
 
 - A contact is a `contact` node. Its email list is the gate mail sync checks.
-- Mail from addresses that are not contacts is never stored.
+- Mail from addresses that are not contacts is never stored. The assistant sends mail to contacts only.
 - Tools: `contact_find`, `contact_list`, `contact_get`, `contact_create`, `contact_update`. `contact_delete` is in a separate admin group.
