@@ -13,9 +13,9 @@
  *    reads its own private item there, not another user's.
  *  - W7a fix round 1, on MCP as a second Admin login L (Admin, not a
  *    Moderator, its keys area off) and as the anchor:
- *    H1: sandbox_import and peer_file_copy on another user's private file
- *    are refused or not found and nothing leaves (no outbound call; the
- *    email_page half left with the tool, Sync M4); sandbox_export onto a
+ *    H1: sandbox_import, peer_file_copy and email_page (includeLink) on
+ *    another user's private file or page are refused or not found and
+ *    nothing leaves (no outbound call, no link); sandbox_export onto a
  *    same-named file the scope cannot edit is refused and the file is
  *    unchanged.
  *    M1: ask_responder's nested Admin turn (no login named) answers L, not
@@ -436,7 +436,22 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       const copy = await mcpCall(login, 'peer_file_copy', { peer: 'any', file_id: memFile });
       expect(copy.isError, copy.text).toBe(true);
       expect(copy.text).toMatch(/not found|no file/);
-      // Nothing left the box: no import, no peer.
+      const mail = await mcpCall(login, 'email_page', {
+        pageId: privatePage,
+        to: 'nobody@example.invalid',
+        includeLink: true,
+      });
+      expect(mail.isError, mail.text).toBe(true);
+      expect(mail.text).toMatch(/not found/);
+      // A page it reads but may not link: refused before anything is sent.
+      const roMail = await mcpCall(login, 'email_page', {
+        pageId: roPage,
+        to: 'nobody@example.invalid',
+        includeLink: true,
+      });
+      expect(roMail.isError, roMail.text).toBe(true);
+      expect(roMail.text).toMatch(/Nothing was sent: You cannot change this item/);
+      // Nothing left the box: no import, no peer, no mail transport.
       expect(outbound.filter((u) => !u.includes('embed'))).toEqual([]);
       // sandbox_export onto the member's same-named file: refused, unchanged.
       const exp = await mcpCall(login, 'sandbox_export', {

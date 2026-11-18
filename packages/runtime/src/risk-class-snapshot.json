@@ -89,6 +89,8 @@
   "dwg_render": "read",
   "email_get": "read",
   "email_list": "read",
+  "email_page": "send",
+  "email_send": "send",
   "entity_facts": "read",
   "entity_mentions": "read",
   "entity_neighbors": "read",

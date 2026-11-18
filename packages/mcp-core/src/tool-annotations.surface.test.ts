@@ -89,6 +89,8 @@ describe('MCP tool hints on the surface', () => {
     expect(names((r) => r.hints?.openWorldHint)).toEqual([
       'api_key_test',
       'api_tool_test',
+      'email_page',
+      'email_send',
       'model_catalog',
       'openrouter_benchmarks',
       'openrouter_rankings',

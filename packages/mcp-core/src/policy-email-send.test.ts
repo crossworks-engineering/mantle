@@ -1,16 +1,15 @@
 /**
  * The box policy's email sending switch on the MCP surface (docs/policy.md):
- * with MANTLE_POLICY_EMAIL_SEND=off the send tools (EMAIL_SEND_TOOL_SLUGS)
+ * with MANTLE_POLICY_EMAIL_SEND=off the send tools (email_send, email_page)
  * leave tools/list and nothing else does (the mail reads stay); with no
  * policy the list is the one the snapshot pins (mcp-surface-snapshot.test.ts,
- * unchanged by this feature). email_send and email_page left with the old
- * sync (Sync M4) and come back in the Sync service; until then no send tool
- * is registered, and the switch takes nothing else away.
+ * unchanged by this feature).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
 import { EMAIL_SEND_TOOL_SLUGS, resetBoxPolicyForTests } from '@mantle/config';
+import { getBuiltin } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
 
 async function names(): Promise<string[]> {
@@ -38,8 +37,7 @@ describe('MANTLE_POLICY_EMAIL_SEND', () => {
   it('off: the send tools leave tools/list, nothing else does', async () => {
     setEmailSend(undefined);
     const all = await names();
-    // No send tool is registered while sending lives outside the brain.
-    for (const slug of EMAIL_SEND_TOOL_SLUGS) expect(all).not.toContain(slug);
+    for (const slug of EMAIL_SEND_TOOL_SLUGS) expect(all).toContain(slug);
     expect(all).toContain('email_list');
     expect(all).toContain('email_get');
 
@@ -48,5 +46,17 @@ describe('MANTLE_POLICY_EMAIL_SEND', () => {
     expect(off).toEqual(all.filter((n) => !EMAIL_SEND_TOOL_SLUGS.includes(n)));
     expect(off).toContain('email_list');
     expect(off).toContain('email_get');
+  });
+
+  it('off: a send tool named anyway answers that sending is off', async () => {
+    setEmailSend('off');
+    for (const slug of EMAIL_SEND_TOOL_SLUGS) {
+      const out = await getBuiltin(slug)!.handler(
+        { to: 'friend@example.com', subject: 'Hi', body: 'x', pageId: 'p1' },
+        { ownerId: 'owner-1' } as never,
+      );
+      expect(out, slug).toMatchObject({ ok: false });
+      expect((out as { error: string }).error, slug).toMatch(/MANTLE_POLICY_EMAIL_SEND/);
+    }
   });
 });

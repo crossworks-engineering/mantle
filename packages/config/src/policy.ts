@@ -20,9 +20,9 @@
  * Each rule has ONE reader here and one gate where it bites:
  *   - Telegram: telegramAllowed() (the poll worker, the Bot transport, the
  *     tool lists, the Telegram routes' switch).
- *   - Email sending: emailSendAllowed() (the tool lists, the approval of a
- *     queued send; no mail transport since Sync plan M4, the Sync service
- *     brings send back and reads it again).
+ *   - Email sending: emailSendAllowed() (the one mail transport, @mantle/email
+ *     sendViaSync through the Sync service, the tool lists, the approval of
+ *     a queued send).
  *   - Models: modelPolicyRefusal() (the one model check, @mantle/voice
  *     model-policy.ts, which every model call path goes through).
  *   - Passwords: passwordPolicyMin() (the one password rule,

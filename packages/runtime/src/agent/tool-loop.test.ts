@@ -133,6 +133,7 @@ vi.mock('@mantle/tools', async () => ({
       );
       return {
         access_set: cs.lowersAccessSet,
+        email_page: cs.lowersEmailPage,
         node_share: 'always',
         page_share: 'always',
       };

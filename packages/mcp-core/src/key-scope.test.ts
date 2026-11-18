@@ -77,7 +77,7 @@ describe('API key areas for MCP tools', () => {
   });
 
   it('leaves everything else to an all-areas key', () => {
-    for (const slug of ['recall_open', 'agent_list', 'peer_call', 'telegram_send', 'tree_list']) {
+    for (const slug of ['recall_open', 'agent_list', 'peer_call', 'email_send', 'tree_list']) {
       expect(toolKeyArea(slug), slug).toBeNull();
       expect(keyAreasAllowTool(slug, null), slug).toBe(true);
       expect(keyAreasAllowTool(slug, [...KEY_AREAS]), slug).toBe(false);
@@ -105,16 +105,16 @@ describe('API key areas for MCP tools', () => {
 
   it('an all-areas key is the owner-peer surface: risky tools only by name', () => {
     const plain = registeredFor({ areas: null, write: true });
-    expect(plain).not.toContain('telegram_send');
+    expect(plain).not.toContain('email_send');
     expect(plain).toContain('recall_open');
-    const named = registeredFor({ areas: null, write: true, riskyAllowed: ['telegram_send'] });
-    expect(named).toContain('telegram_send');
+    const named = registeredFor({ areas: null, write: true, riskyAllowed: ['email_send'] });
+    expect(named).toContain('email_send');
   });
 
   it('narrows the owner surface, never widens it (plan 7.5)', () => {
     const owner = new Set(registeredFor({ via: 'oauth', write: true }));
     for (const caller of [
-      { areas: null, write: true, riskyAllowed: ['telegram_send', 'not_a_tool'] },
+      { areas: null, write: true, riskyAllowed: ['email_send', 'not_a_tool'] },
       { areas: [...KEY_AREAS], write: true },
       { areas: ['tasks'] },
     ] satisfies Partial<McpCaller>[]) {

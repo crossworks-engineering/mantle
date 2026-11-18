@@ -84,8 +84,9 @@ async function call(path: string, body: unknown, timeoutMs: number): Promise<Res
 
 /** A message for the sidecar to send from one of the owner's mailboxes. */
 export type SyncSendInput = {
-  /** The mailbox (email_accounts id) to send from. */
-  accountId: string;
+  /** Which of the owner's linked addresses sends it; none: the first linked
+   *  mailbox that can send (the sidecar picks). */
+  from?: string;
   to: string[];
   cc?: string[];
   bcc?: string[];
@@ -97,7 +98,13 @@ export type SyncSendInput = {
   attachments?: { filename?: string; contentType?: string; cid?: string; contentB64: string }[];
 };
 
-export type SyncSendResult = { messageId: string; accepted: string[]; rejected: string[] };
+export type SyncSendResult = {
+  /** The address it went out from. */
+  from: string;
+  messageId: string;
+  accepted: string[];
+  rejected: string[];
+};
 
 /** Send through the sidecar: the one send path of MantleOS's own mail.
  *  Throws EmailSendPolicyOffError, SyncOffError, SyncSendError. */
@@ -110,7 +117,12 @@ export async function sendViaSync(input: SyncSendInput): Promise<SyncSendResult>
   if (!res.ok || !body || body.error) {
     throw new SyncSendError(body?.error ?? `the Sync service answered ${res.status}`);
   }
-  return { messageId: body.messageId, accepted: body.accepted, rejected: body.rejected };
+  return {
+    from: body.from,
+    messageId: body.messageId,
+    accepted: body.accepted,
+    rejected: body.rejected,
+  };
 }
 
 /**
