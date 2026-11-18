@@ -563,8 +563,11 @@ describe('the architecture ratchets (pinned counts)', () => {
     // /api/services/:name/frame-ticket (the connectors area).
     // A file's processing (+2 with a caller): GET (+HEAD)
     // /api/files/files/:id/processing (owner, the file's read).
-    expect(rows.filter((r) => r.caller).length).toBe(885);
-    // 885 + the 13 call rows above + the public webhook + the 8 documents
+    // Reindex and stale indexes (+3 with a caller): GET (+HEAD)
+    // /api/files/stale and POST /api/files/reindex (owner, the files' read
+    // and edit).
+    expect(rows.filter((r) => r.caller).length).toBe(888);
+    // 888 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
     // + the 2 rows of its second milestone + the 3 public rows of a Present
@@ -615,7 +618,7 @@ describe('the architecture ratchets (pinned counts)', () => {
     //   and HEAD of the sign-in start (the screen ticket) and of its two
     //   callbacks (the sign-in's cookie and state).
     // + the 2 processing rows (GET and HEAD /api/files/files/:id/processing).
-    expect(rows.length).toBe(1002);
+    expect(rows.length).toBe(1005);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

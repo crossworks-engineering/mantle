@@ -160,8 +160,6 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     });
     await setData(ids.failed!, { extract_skipped: { reason: 'document_unreadable' } });
     await setData(ids.partial!, { ...done, ocr: { pages_read: 2, pages_total: 9 } });
-    // Each write touches updated_at: the pipeline file, written after the
-    // reader one, is the newest stale file.
 
     // Two workspaces hold the folder: one with Write on (the writer), one
     // with Write off (the reader). The files take the folder's rows.
@@ -203,24 +201,33 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
+  /** The two stale files, newest first as the list orders them (a grant
+   *  write can give both the same updated_at; the id breaks the tie). */
+  const staleOrder = async () =>
+    (
+      await x<{ id: string }>(sql`select id::text as id from nodes
+        where id in (${ids.pipeline!}, ${ids.reader!}) order by updated_at desc, id desc`)
+    ).map((r) => r.id);
+
   it('the stale list holds the stale files only, newest first, with a total', async () => {
     const got = await stale(admin);
     expect(got.status, got.text).toBe(200);
-    expect(got.body!.files.map((r) => r.id)).toEqual([ids.pipeline, ids.reader]);
+    expect(got.body!.files.map((r) => r.id)).toEqual(await staleOrder());
     expect(got.body!.total).toBe(2);
     expect(got.body!.next).toBeNull();
-    const pipe = got.body!.files[0]!.status as FileStatus;
+    const pipe = got.body!.files.find((r) => r.id === ids.pipeline)!.status as FileStatus;
     expect(pipe).toMatchObject({ ingest: 'done', stale: true, pipeline: 'Spreadsheet' });
   });
 
   it('pages with a cursor; a bad state or cursor is a 400', async () => {
+    const [first, second] = await staleOrder();
     const one = await stale(admin, '?limit=1');
     expect(one.status, one.text).toBe(200);
-    expect(one.body!.files.map((r) => r.id)).toEqual([ids.pipeline]);
+    expect(one.body!.files.map((r) => r.id)).toEqual([first]);
     expect(one.body!.total).toBe(2);
     expect(one.body!.next).toEqual(expect.any(String));
     const two = await stale(admin, `?limit=1&cursor=${encodeURIComponent(one.body!.next!)}`);
-    expect(two.body!.files.map((r) => r.id)).toEqual([ids.reader]);
+    expect(two.body!.files.map((r) => r.id)).toEqual([second]);
     expect(two.body!.next).toBeNull();
     expect((await stale(admin, '?state=old')).status).toBe(400);
     expect((await stale(admin, '?cursor=nope')).status).toBe(400);

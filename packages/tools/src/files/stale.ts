@@ -64,7 +64,6 @@ export async function fileStaleList(
 export const file_stale_list: BuiltinToolDef = {
   slug: 'file_stale_list',
   policy: {
-    matrix: { none: 'a list over the caller’s files, read in its scope; it names no item' },
     effect: 'read',
     spends: 'none',
     scope: 'any',
