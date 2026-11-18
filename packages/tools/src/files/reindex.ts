@@ -10,27 +10,33 @@
  *    from them are dropped (the cached text, the summary, the reader's
  *    stamp, a skip or parked verdict), as a content change does, and
  *    markContentChanged asks the extractor for its whole pass (text,
- *    chunks, vector, facts, mentions). The old chunks and facts stay until
- *    the new pass replaces them: nothing is thrown away before it is
- *    rebuilt. The text of the Agents' tabs and the pipeline's stamp stay
- *    (no database is rebuilt by the extract);
+ *    chunks, vector, facts, mentions). Only for a file whose bytes are
+ *    there (one look at each, before anything is dropped): a file with no
+ *    bytes keeps all it has and is skipped `bytes-missing`. The cached text
+ *    is what the extractor would read instead of the bytes, so it goes; it
+ *    is made again from the bytes that were just found. The old chunks and
+ *    facts stay until the new pass replaces them. The text of the Agents'
+ *    tabs and the pipeline's stamp stay (no database is rebuilt by the
+ *    extract);
  *  - when the file has a database (or a word) for its bytes, one run of the
- *    box's Reader of its type (notifyPipelineRun, model free), which
- *    builds it again and runs the `after` chain. A file with none gets its
- *    database from the extract itself (auto-table: an extract pending and
- *    no name for the bytes), as an upload does. Not where the Reader is off
- *    in the file's home workspace.
+ *    box's Reader of its type (notifyPipelineRun). The Reader asks no
+ *    model; the `after` chain that follows it may ask one (as at upload),
+ *    within the box's day cap. A file with none gets its database from the
+ *    extract itself (auto-table: an extract pending and no name for the
+ *    bytes), as an upload does. Not where the Reader is off in the file's
+ *    home workspace.
  *
  * Two checks, and no third. Rights: the edit of each file (itemWriteVerdicts,
  * the one mapper's rule: whoever may change the file by hand may read it
  * again), asked once for all ids. Cost: the busy check of the queue
  * (extractQueueBusy, as pipeline_run) before anything is queued, and the
- * cap of FILE_REINDEX_MAX ids per call. A person or an agent asked: no
- * trigger, no timer calls this.
+ * cap of FILE_REINDEX_MAX ids per call. A person asked, by hand or from
+ * their own MCP connection: no trigger, no timer calls this, and no agent of
+ * the brain holds the tool (mcpOnly, as pipeline_run).
  *
  * Every id is either queued or named in `skipped`, with its reason.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   db,
   extractJobsFor,
@@ -43,7 +49,14 @@ import {
   withDeadlockRetry,
   withHeads,
 } from '@mantle/db';
-import { BYTE_DERIVED_DATA_KEYS, extOf, fileDbNameExists } from '@mantle/files';
+import {
+  BYTE_DERIVED_DATA_KEYS,
+  emailAttachmentIds,
+  extOf,
+  fileDbNameExists,
+  keyWithoutSearch,
+  loadFileHead,
+} from '@mantle/files';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { log } from '@mantle/tracing';
@@ -63,6 +76,9 @@ const REINDEX_DROP_KEYS: readonly string[] = [
   ...BYTE_DERIVED_DATA_KEYS.filter((k) => k !== 'agent_text' && k !== 'pipeline_read'),
   'extract_parked',
 ];
+
+/** How many files' bytes are looked for at once. */
+const BYTES_BATCH = 8;
 
 /** The ids of a call, checked: 1 to FILE_REINDEX_MAX uuids, each once, or
  *  the refusal. */
@@ -95,24 +111,40 @@ export async function reindexFiles(
   const skipped: FileReindexAnswer['skipped'] = [];
   const skip = (id: string, reason: FileReindexSkip) => skipped.push({ id, reason });
 
-  // The files the caller reads, in its scope: one read.
+  // The files the caller reads, in its scope, current ones only: one read.
+  // `data` holds only what finding the bytes needs (loadFileHead).
   const rows = await db
     .select({
       id: nodes.id,
       title: nodes.title,
+      path: nodes.path,
       home: itemHomeSql(),
       filename: sql<string | null>`${nodes.data}->>'filename'`,
       sha256: sql<string | null>`${nodes.data}->>'sha256'`,
+      data: sql<Record<string, unknown>>`jsonb_build_object(
+        'filename', ${nodes.data}->'filename',
+        'sha256', ${nodes.data}->'sha256',
+        'space_file', ${nodes.data}->'space_file')`,
     })
     .from(nodes)
     .where(
       and(
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'file'),
+        isNull(nodes.supersededBy),
         sql`${nodes.id} = any (${`{${ids.join(',')}}`}::uuid[])`,
       ),
     );
-  const byId = new Map(rows.map((r) => [r.id.toLowerCase(), r]));
+  // An API key without the Search area does not reach an email attachment
+  // (access matrix M4), as on the file lists. On MCP the key's areas are in
+  // the caller's facts; the HTTP route asks callerMayReadEmail itself.
+  const hidden = keyWithoutSearch()
+    ? await emailAttachmentIds(
+        ownerId,
+        rows.map((r) => r.id),
+      )
+    : new Set<string>();
+  const byId = new Map(rows.filter((r) => !hidden.has(r.id)).map((r) => [r.id.toLowerCase(), r]));
   const found = ids.filter((id) => byId.has(id));
   for (const id of ids) if (!byId.has(id)) skip(id, 'not-found');
 
@@ -127,21 +159,36 @@ export async function reindexFiles(
 
   // A read already queued or running is not queued twice.
   const jobs = await extractJobsFor(allowed);
-  const take: string[] = [];
+  const waiting: string[] = [];
   for (const id of allowed) {
     if (jobs.has(id)) skip(id, 'in-queue');
-    else take.push(id);
+    else waiting.push(id);
   }
-  if (take.length === 0) return { queued: 0, databases: 0, skipped };
+  if (waiting.length === 0) return { queued: 0, databases: 0, skipped };
 
   // The cost check: a busy queue takes nothing more now.
   if (await extractQueueBusy()) {
-    for (const id of take) skip(id, 'busy');
+    for (const id of waiting) skip(id, 'busy');
     return { queued: 0, databases: 0, skipped };
   }
 
-  // Drop what the extractor derived from the bytes and ask for its whole
-  // pass, in one transaction for all of them (the heads first, workspaces
+  // The bytes of each, before anything is dropped: with none there is
+  // nothing to read again, and the file keeps all it has.
+  const take: string[] = [];
+  for (let i = 0; i < waiting.length; i += BYTES_BATCH) {
+    const batch = waiting.slice(i, i + BYTES_BATCH);
+    const heads = await Promise.all(
+      batch.map((id) => loadFileHead(byId.get(id)!, 1).catch(() => null)),
+    );
+    batch.forEach((id, j) => {
+      if (heads[j] === null) skip(id, 'bytes-missing');
+      else take.push(id);
+    });
+  }
+  if (take.length === 0) return { queued: 0, databases: 0, skipped };
+
+  // Drop what the extractor derived from the bytes (they are there) and ask
+  // for its whole pass, in one transaction for all of them (the heads first, workspaces
   // plan U1). The announcements go out when it commits.
   const drop = sql`array[${sql.join(
     REINDEX_DROP_KEYS.map((k) => sql`${k}`),
@@ -153,7 +200,11 @@ export async function reindexFiles(
         .update(nodes)
         .set({ data: sql`coalesce(${nodes.data}, '{}'::jsonb) - ${drop}` })
         .where(
-          and(eq(nodes.type, 'file'), sql`${nodes.id} = any (${`{${take.join(',')}}`}::uuid[])`),
+          and(
+            eq(nodes.type, 'file'),
+            isNull(nodes.supersededBy),
+            sql`${nodes.id} = any (${`{${take.join(',')}}`}::uuid[])`,
+          ),
         );
       for (const id of take) await markContentChanged(tx, { id, type: 'file' }, ['content']);
     }),
@@ -183,6 +234,10 @@ export async function reindexFiles(
 
 export const file_reindex: BuiltinToolDef = {
   slug: 'file_reindex',
+  // A member's own client and MCP connection run it; no agent of the brain
+  // is granted it (no tool group holds it), as pipeline_run. An in-brain
+  // agent gets it only on the owner's word.
+  mcpOnly: true,
   policy: {
     // Reading a file again spends model work on it: the edit of it, as
     // process_extraction asks.
@@ -192,16 +247,20 @@ export const file_reindex: BuiltinToolDef = {
     // gates and caps, as an upload's does (pipeline_run says the same), so
     // a member reindexes by MCP as by hand.
     spends: 'none',
+    // Each queued read spends model work (summary, facts, embedding, and
+    // the Reader's `after` chain), so an API key or a peer must have this
+    // tool named, as pipeline_run. A member keeps what he may do by hand.
+    peerRisky: true,
     scope: 'any',
     keyArea: 'files',
     itemArgs: [{ param: 'file_ids' }],
     // It reads the file's own bytes again; nothing new reaches anyone.
     clientSourced: CS.onNodes('file_ids'),
-    idempotent: true,
+    recipe: { step: 'forbidden' },
   },
   name: 'Reindex files',
   description:
-    "Read files again through the whole pipeline: text from the bytes, summary, chunks, embedding, facts, mentions, and the file database when it has one. Use it for a file whose `status.stale` is true (find them with `file_stale_list`) or whose read failed. Returns `queued`, `databases` (database runs queued) and `skipped`, a reason for each id not queued: `not-found`, `not-allowed` (you may not change it), `in-queue` (already being read), `busy` (queue full: try later). Each read spends model work, under the box caps. For one file's details use `file_processing`.",
+    "Read files again through the whole pipeline: text from the bytes, summary, chunks, embedding, facts, mentions, and the file database when it has one. Use it for a file whose `status.stale` is true (find them with `file_stale_list`) or whose read failed. Returns `queued`, `databases` (database runs queued) and `skipped`, a reason for each id not queued: `not-found`, `not-allowed` (you may not change it), `in-queue` (already being read), `busy` (queue full: try later), `bytes-missing` (the file's bytes are gone: nothing to read, nothing dropped). Each read spends model work, under the box caps. For one file's details use `file_processing`.",
   inputSchema: {
     type: 'object',
     properties: {

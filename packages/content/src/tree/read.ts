@@ -43,7 +43,7 @@ import { decodeTreeCursor, encodeTreeCursor } from './cursor';
 import { itemMeta, itemState, itemSubtype, kindItemFilter } from './kinds';
 import { RANK_RE } from '../rank';
 import { extractionOf, readStampsOf, withFileStatus } from '@mantle/files';
-import { boxPipelines } from '../pipeline-registry';
+import { fileStatusPipelines } from '../pipeline-registry';
 
 type FolderSqlRow = {
   id: string;
@@ -132,9 +132,9 @@ async function withTreeFileStatus<T extends TreeItem>(
       ...readStampsOf(data),
     };
   });
-  const { dbExts, acted } = await boxPipelines(ownerId);
+  const { dbExts, installed } = await fileStatusPipelines(ownerId);
   const status = new Map(
-    (await withFileStatus(files, dbExts, acted)).map((f) => [f.id, f.status] as const),
+    (await withFileStatus(files, dbExts, installed)).map((f) => [f.id, f.status] as const),
   );
   return items.map((item) => {
     const s = status.get(item.id);

@@ -111,18 +111,36 @@ export function currentReaderVersion(reader: string): number | null {
   return Object.hasOwn(READER_VERSIONS, reader) ? READER_VERSIONS[reader as ReaderKey] : null;
 }
 
-/** The installed pipelines' versions by id, for the stale rule. */
-export type PipelineVersions = ReadonlyMap<string, string>;
+/** An installed pipeline as the stale rule reads it: its version, and the
+ *  workspaces where it is off (pipeline_state.off_in). A file homed where
+ *  its Reader is off gets no Reader run, so a reindex could never make its
+ *  pipeline stamp current: there the stamp decides nothing. */
+export type InstalledPipeline = { id: string; version: string; offIn?: readonly string[] };
+
+/** The installed pipelines by id, for the stale rule. */
+export type PipelineVersions = ReadonlyMap<string, { version: string; offIn?: readonly string[] }>;
+
+/** The map of staleOf from a list of installed pipelines. */
+export function pipelineVersionsOf(installed: readonly InstalledPipeline[]): PipelineVersions {
+  return new Map(installed.map((p) => [p.id, { version: p.version, offIn: p.offIn }]));
+}
+
+/** Whether any installed pipeline is off somewhere: only then does the
+ *  stale rule need a file's home. */
+export function anyPipelineOff(installed: readonly InstalledPipeline[]): boolean {
+  return installed.some((p) => (p.offIn?.length ?? 0) > 0);
+}
 
 /**
  * Whether a file's stamps are stale: true when a stamp is below the version
  * in force, false when every stamp it has is current, null when it has no
  * stamp at all (unknown). A reader this code no longer knows, or a pipeline
- * not installed now, decides nothing. Without `pipelines` the pipeline
- * stamp decides nothing.
+ * not installed now, decides nothing; nor does a pipeline that is off in the
+ * file's `home` workspace (no Reader run would follow a reindex there).
+ * Without `pipelines` the pipeline stamp decides nothing.
  */
 export function staleOf(
-  stamps: { readBy?: ReadByStamp; pipelineRead?: PipelineReadStamp },
+  stamps: { readBy?: ReadByStamp; pipelineRead?: PipelineReadStamp; home?: string | null },
   pipelines?: PipelineVersions,
 ): boolean | null {
   if (!stamps.readBy && !stamps.pipelineRead) return null;
@@ -132,7 +150,8 @@ export function staleOf(
   }
   if (stamps.pipelineRead && pipelines) {
     const cur = pipelines.get(stamps.pipelineRead.id);
-    if (cur !== undefined && versionBelow(stamps.pipelineRead.version, cur)) return true;
+    const off = !!stamps.home && (cur?.offIn?.includes(stamps.home) ?? false);
+    if (cur && !off && versionBelow(stamps.pipelineRead.version, cur.version)) return true;
   }
   return false;
 }

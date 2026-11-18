@@ -6,7 +6,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { buildSectionOutline } from '@mantle/search';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { boxPipelines, fileStatusPipelines } from '@mantle/content/pipeline-registry';
 import {
   fileById,
   folderByPath,
@@ -190,8 +190,8 @@ async function withStatus<T extends Parameters<typeof withFileStatus>[0][number]
   rows: readonly T[],
 ) {
   if (rows.length === 0) return [];
-  const { dbExts, acted } = await boxPipelines(ownerId);
-  return withFileStatus(rows, dbExts, acted);
+  const { dbExts, installed } = await fileStatusPipelines(ownerId);
+  return withFileStatus(rows, dbExts, installed);
 }
 
 /** A file's extracted text past this many chars is "large": dumping it whole

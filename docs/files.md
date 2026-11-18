@@ -326,33 +326,43 @@ itself (cost safety: no trigger, no timer).
   the files its older version read stale. Never lower a number.
 - **Stale** (`staleOf`): a stamp below the version in force. A file with no
   stamp (read before the stamps, or not read) is NOT stale, so a roll paints
-  nothing stale. The row status carries `stale: true` (only when true) and
+  nothing stale. A pipeline's stamp decides nothing for a file homed in a
+  workspace where that pipeline is off (no Reader run would follow a
+  reindex there): the lists pass the off lists (`fileStatusPipelines` in
+  `@mantle/content`). The row status carries `stale: true` (only when true) and
   `pipeline` (the name of the Reader pipeline that built its database);
   the row carries the stamps as `readBy` and `pipelineRead`. The processing
   answer has `stale` (true, false, or null for no stamp), `readBy` and
   `pipelineRead`, each with the version in force (`current`).
 - **Reindex**: `POST /api/files/reindex` `{ ids }` (1 to 200 file ids) and
   the `file_reindex` tool, one function (`reindexFiles` in `@mantle/tools`).
+  The tool is `mcpOnly` and `peerRisky`, as `pipeline_run`: a member runs it
+  by hand or from their own MCP connection (a key or peer must have it
+  named), and no tool group of an in-brain agent holds it.
   Each file is read again through the whole pipeline on the existing extract
-  queue, under its caps: the keys the extractor derived from the bytes are
-  dropped (the cached text, the summary, the reader's stamp, a skip or
-  parked verdict) and `markContentChanged` asks for the whole pass (text,
-  chunks, vector, facts, mentions). The old chunks and facts stay until the
-  new pass replaces them. A file with a database (or a word) for its bytes
-  also gets one run of the box's Reader of its type (model free, with the
-  `after` chain), unless the Reader is off in its home workspace; a file
-  with none gets its database from the extract, as at upload. Two checks:
-  the edit of each file (`itemWriteVerdicts`: whoever may change the file
-  by hand), and the busy check of the queue (more than 50 waiting: nothing
-  is queued). The answer `{ queued, databases, skipped }` names every id
-  not queued with its reason: `not-found`, `not-allowed`, `in-queue`,
-  `busy`. More than 200 ids is a 400 and queues nothing: send the rest in
-  another call.
+  queue, under its caps. First the bytes of each are looked for (one small
+  read): a file whose bytes are in neither place keeps everything it has and
+  is skipped `bytes-missing`. Then the keys the extractor derived from the
+  bytes are dropped (the cached text, the summary, the reader's stamp, a
+  skip or parked verdict) and `markContentChanged` asks for the whole pass
+  (text, chunks, vector, facts, mentions). The old chunks and facts stay
+  until the new pass replaces them. A file with a database (or a word) for
+  its bytes also gets one run of the box's Reader of its type, unless the
+  Reader is off in its home workspace. The Reader asks no model; the
+  `after` chain that follows it may ask one, as at upload, within the box's
+  day cap. A file with none gets its database from the extract, as at
+  upload. Two checks: the edit of each file (`itemWriteVerdicts`: whoever
+  may change the file by hand), and the busy check of the queue (more than
+  50 waiting: nothing is queued). The answer `{ queued, databases, skipped }`
+  names every id not queued with its reason: `not-found`, `not-allowed`,
+  `in-queue`, `busy`, `bytes-missing`. More than 200 ids is a 400 and
+  queues nothing: send the rest in another call.
 - **The list**: `GET /api/files/stale?state=stale|failed|partial&cursor=&limit=`
   and the `file_stale_list` tool (`fileStaleList` in `@mantle/tools`): one
   page of file rows with their status, newest first, in the caller's read
-  scope, `next` for the next page and `total`. `failed` and `partial` are
-  the read states of `extractionOf`. The stale cut is found in two partial
+  scope, `next` for the next page and `total` (the page and the total use
+  one predicate, so they agree). `failed` and `partial` are the read states
+  of `extractionOf`. The stale cut is found in two partial
   indexes (migration 0384), not by a pass over every file's data.
 - **MCP `file_list`** rows carry `status` too, as the HTTP list.
 

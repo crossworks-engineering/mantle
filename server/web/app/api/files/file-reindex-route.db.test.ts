@@ -15,6 +15,11 @@
  *  - A queued file loses what the extractor derived from its bytes (its
  *    text, summary, reader stamp) and is stamped for a whole read; the
  *    pipeline's stamp and its facts stay until the new read.
+ *  - A file whose bytes are gone keeps everything and is `bytes-missing`;
+ *    a superseded file is `not-found` (audit r1 M2, LOW 5).
+ *  - A file stale only by its pipeline is not stale where that pipeline is
+ *    off in its home workspace, in the list, its total and the row (LOW 3);
+ *    a cursor that is not the ISO form is a 400 (LOW 7).
  *
  * No owner session is made: the logins are rows of the scratch database.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/app/api/files/file-reindex-route.db.test.ts
@@ -128,7 +133,17 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     await x(sql`insert into nodes (owner_id, type, title, slug, path)
       values (${owner}, 'branch', 'files', 'files', 'files') on conflict do nothing`);
     const f = await import('@mantle/files');
-    const roles = ['plain', 'current', 'reader', 'pipeline', 'failed', 'partial', 'queued'];
+    const roles = [
+      'plain',
+      'current',
+      'reader',
+      'pipeline',
+      'failed',
+      'partial',
+      'queued',
+      'gone',
+      'old',
+    ];
     const made = await m.runAsSystem('test:file-reindex-route', () =>
       m.withCreateHome({ createWs: adminWs, privateWs: null, quiet: true }, async () => {
         const folder = await f.createFolder({ ownerId: owner, parentPath: 'files', slug: tag });
@@ -160,6 +175,21 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     });
     await setData(ids.failed!, { extract_skipped: { reason: 'document_unreadable' } });
     await setData(ids.partial!, { ...done, ocr: { pages_read: 2, pages_total: 9 } });
+    // `gone`: read, current, and its bytes are in neither place (the disk
+    // file removed, no sha256 for the object store).
+    await setData(ids.gone!, { ...done, read_by: { reader: 'utf8', v: 1 } });
+    await m.withHeads([ids.gone!], 'update', async (tx) => {
+      await tx.execute(sql`update nodes set data = data - 'sha256' where id = ${ids.gone}`);
+    });
+    const [goneRow] = await x<{ id: string; path: string; data: unknown }>(
+      sql`select id::text as id, path::text as path, data from nodes where id = ${ids.gone}`,
+    );
+    const gonePath = f.foldedFilePath(goneRow!) ?? f.diskPathForFile(goneRow!.path, 'gone.txt')!;
+    await rm(gonePath);
+    // `old`: superseded by `plain`.
+    await m.withHeads([ids.old!], 'update', async (tx) => {
+      await tx.execute(sql`update nodes set superseded_by = ${ids.plain} where id = ${ids.old}`);
+    });
 
     // Two workspaces hold the folder: one with Write on (the writer), one
     // with Write off (the reader). The files take the folder's rows.
@@ -231,6 +261,16 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     expect(two.body!.next).toBeNull();
     expect((await stale(admin, '?state=old')).status).toBe(400);
     expect((await stale(admin, '?cursor=nope')).status).toBe(400);
+    // A crafted cursor: a time not in the ISO form, or not a real day, is a
+    // 400 and never reaches the database.
+    const crafted = (ts: string) =>
+      Buffer.from(`${ts}|${randomUUID()}`, 'utf8').toString('base64url');
+    for (const ts of ['Nov 19 2026', '2026-11-19', '2026-02-30T00:00:00Z', '20261119T000000Z']) {
+      expect((await stale(admin, `?cursor=${crafted(ts)}`)).status, ts).toBe(400);
+    }
+    expect((await stale(admin, `?cursor=${crafted('2026-11-19T00:00:00.5+00:00')}`)).status).toBe(
+      200,
+    );
     expect((await stale(admin, '?limit=500')).status).toBe(400);
   });
 
@@ -257,6 +297,51 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     expect(of(ids.reader!)?.stale).toBe(true);
     expect(of(ids.current!)).not.toHaveProperty('stale');
     expect(of(ids.plain!)).not.toHaveProperty('stale');
+  });
+
+  it('a pipeline off in the file home: not stale in the list, its total or the row', async () => {
+    const [home] = await x<{ home: string }>(
+      sql`select home_ws::text as home from nodes where id = ${ids.pipeline}`,
+    );
+    expect(home?.home).toEqual(expect.any(String));
+    await su(sql`insert into pipeline_state (owner_id, pipeline_id, off_in)
+      values (${owner}, 'sheet', array[${home!.home}]::uuid[])
+      on conflict (owner_id, pipeline_id) do update set off_in = excluded.off_in`);
+    try {
+      const got = await stale(admin);
+      expect(got.status, got.text).toBe(200);
+      expect(got.body!.files.map((r) => r.id)).toEqual([ids.reader]);
+      expect(got.body!.total).toBe(1);
+      const list = await get(admin, `/api/files/files?parent=files.${tag}`);
+      const rows = ((await list.json()) as { files: Array<{ id: string; status?: FileStatus }> })
+        .files;
+      const pipe = rows.find((r) => r.id === ids.pipeline)!.status!;
+      expect(pipe).not.toHaveProperty('stale');
+      // The pipeline that built it is still named.
+      expect(pipe.pipeline).toBe('Spreadsheet');
+    } finally {
+      await su(sql`update pipeline_state set off_in = null
+        where owner_id = ${owner} and pipeline_id = 'sheet'`);
+    }
+    expect((await stale(admin)).body!.total).toBe(2);
+  });
+
+  it('a file with no bytes keeps all it has and is bytes-missing; a superseded one not-found', async () => {
+    const before = await dataOf(ids.gone!);
+    expect(before.text).toBe('x');
+    const got = await reindex(admin, [ids.gone!, ids.old!]);
+    expect(got.status, got.text).toBe(200);
+    expect(got.body).toEqual({
+      queued: 0,
+      databases: 0,
+      skipped: [
+        { id: ids.old, reason: 'not-found' },
+        { id: ids.gone, reason: 'bytes-missing' },
+      ],
+    });
+    const after = await dataOf(ids.gone!);
+    expect(after).toEqual(before);
+    expect(after).not.toHaveProperty('index_work');
   });
 
   it('a body of more than 200 ids, or of no ids, is a 400 and queues nothing', async () => {

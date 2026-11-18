@@ -8,23 +8,27 @@
  *  - `failed`: its content could not be read (extraction state `failed`);
  *  - `partial`: read in part (a scan's first pages).
  *
- * One query for the page and one for the total, both in the caller's scope,
- * then the rows of the page by id. The stale cut finds its rows in the two
- * partial indexes of migration 0384 (no pass over every file's data): a
- * reader's part only for a reader whose version was raised, a pipeline's
- * only for the files it read at another version than the installed one.
- * Every row of a
- * page is checked again with the one rule (the row's extraction, staleOf).
+ * One query for the page and one for the total, both in the caller's scope
+ * and on the SAME predicate, then the rows of the page by id: `total` and
+ * the rows always agree. The stale cut finds its rows in the two partial
+ * indexes of migration 0384 (no pass over every file's data): a reader's
+ * part only for a reader whose version was raised, a pipeline's only for
+ * the files it read at another version than the installed one, and not
+ * where the pipeline is off in the file's home (no Reader run would follow
+ * a reindex there). The cut is the SQL form of the one rule (staleOf, and
+ * the stamps' own form: readByOf, pipelineReadStampOf); the failed and
+ * partial cuts are the SQL form of extractionOf. read-stamp tests and the
+ * route's db test hold the two forms together.
  *
  * Read only. Paging is by (updated_at, id), so a page never repeats or skips
  * a row that does not change meanwhile.
  */
 import { and, eq, getTableColumns, isNull, sql, type SQL } from 'drizzle-orm';
-import { db, nodes, READ_FAILURE_SKIPS, type Node } from '@mantle/db';
+import { db, itemHomeSql, nodes, READ_FAILURE_SKIPS, type Node } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from '../email-attachments';
 import { keyWithoutSearch } from '../file-data';
-import { READER_VERSIONS, staleOf } from '../read-stamp';
+import { READER_VERSIONS, type InstalledPipeline } from '../read-stamp';
 import { fileRowFromNode, type FileRow } from './shared';
 
 export type StaleListState = 'stale' | 'failed' | 'partial';
@@ -35,11 +39,11 @@ export const STALE_LIST_MAX = 200;
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
 
 /** The stale cut: a reader's files below its version, a pipeline's files
- *  below the installed version. False when nothing can be stale. Each part
- *  names the predicate of its partial index (0384) in the text itself, so
- *  a generic plan still proves it; the keys and versions are parameters,
- *  the index's conditions. */
-function staleCut(installed: readonly { id: string; version: string }[]): SQL {
+ *  below the installed version (not where it is off). False when nothing
+ *  can be stale. Each part names the predicate of its partial index (0384)
+ *  in the text itself, so a generic plan still proves it; the keys and
+ *  versions are parameters, the index's conditions. */
+function staleCut(installed: readonly InstalledPipeline[]): SQL {
   const parts: SQL[] = [];
   for (const [reader, v] of Object.entries(READER_VERSIONS)) {
     // One range of the index each (an empty one for a reader at 1).
@@ -52,9 +56,17 @@ function staleCut(installed: readonly { id: string; version: string }[]): SQL {
     const m = SEMVER.exec(p.version);
     if (!m) continue;
     const v = sql`("nodes"."data" -> 'pipeline_read' ->> 'version')`;
+    // A stamp in its form only (pipelineReadStampOf: id and version text).
+    const form = sql`jsonb_typeof("nodes"."data" -> 'pipeline_read' -> 'id') = 'string'
+      and jsonb_typeof("nodes"."data" -> 'pipeline_read' -> 'version') = 'string'`;
+    // Not where it is off: a file homed there gets no Reader run.
+    const on = p.offIn?.length
+      ? sql`and not coalesce(${itemHomeSql()} = any (${`{${p.offIn.join(',')}}`}::uuid[]), false)`
+      : sql``;
     parts.push(sql`("nodes"."type" = 'file' and "nodes"."data" ? 'pipeline_read'
       and ("nodes"."data" -> 'pipeline_read' ->> 'id') = ${p.id}
       and (${v} < ${p.version} or ${v} > ${p.version})
+      and ${form} ${on}
       and case when ${v} ~ '^[0-9]+[.][0-9]+[.][0-9]+$'
                then string_to_array(${v}, '.')::numeric[]
                     < array[${m[1]}, ${m[2]}, ${m[3]}]::numeric[]
@@ -90,7 +102,14 @@ function cursorOf(ts: string, id: string): string {
   return Buffer.from(`${ts}|${id}`, 'utf8').toString('base64url');
 }
 
-/** The (updated_at, id) a cursor names, or null when it is not one. */
+/** The ISO form of the time a cursor carries (to_json of a timestamptz):
+ *  date, time, up to 6 digits of a second, and its zone. */
+const CURSOR_TS =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
+/** The (updated_at, id) a cursor names, or null when it is not one: the
+ *  time only in its ISO form and a real day, so a crafted cursor is a 400,
+ *  never a database error. */
 export function parseStaleCursor(cursor: string): { ts: string; id: string } | null {
   if (cursor.length > 200) return null;
   const text = Buffer.from(cursor, 'base64url').toString('utf8');
@@ -98,7 +117,11 @@ export function parseStaleCursor(cursor: string): { ts: string; id: string } | n
   if (at < 0) return null;
   const ts = text.slice(0, at);
   const id = text.slice(at + 1);
-  if (!UUID_RE.test(id) || Number.isNaN(Date.parse(ts))) return null;
+  const m = CURSOR_TS.exec(ts);
+  if (!m || !UUID_RE.test(id)) return null;
+  // A real day of that month (no 31 April, no 29 February out of a leap year).
+  const day = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (day.getUTCDate() !== Number(m[3])) return null;
   return { ts, id };
 }
 
@@ -123,7 +146,7 @@ function listSelect() {
 export async function listFilesNeedingAttention(args: {
   ownerId: string;
   state: StaleListState;
-  installed: readonly { id: string; version: string }[];
+  installed: readonly InstalledPipeline[];
   cursor?: { ts: string; id: string } | null;
   limit?: number;
 }): Promise<{ files: FileRow[]; next: string | null; total: number }> {
@@ -152,7 +175,6 @@ export async function listFilesNeedingAttention(args: {
   ]);
   const more = page.length > limit;
   const ids = page.slice(0, limit);
-  const versions = new Map(args.installed.map((p) => [p.id, p.version]));
   let files: FileRow[] = [];
   if (ids.length) {
     const rows = await db
@@ -165,13 +187,8 @@ export async function listFilesNeedingAttention(args: {
         ),
       );
     const byId = new Map(rows.map((r) => [r.id, fileRowFromNode(r as unknown as Node)]));
-    files = ids
-      .map((r) => byId.get(r.id))
-      .filter((f): f is FileRow => f !== undefined)
-      // The one rule again: SQL only finds the candidates.
-      .filter((f) =>
-        args.state === 'stale' ? staleOf(f, versions) === true : f.extraction.state === args.state,
-      );
+    // The rows of the page as found: the same predicate as `total`.
+    files = ids.map((r) => byId.get(r.id)).filter((f): f is FileRow => f !== undefined);
   }
   if (keyWithoutSearch() && files.length > 0) {
     const hidden = await emailAttachmentIds(

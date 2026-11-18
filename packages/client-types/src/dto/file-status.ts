@@ -164,8 +164,10 @@ export type FileReindexBody = { ids: string[] };
  *  - `not-found`: no such file, or the caller cannot read it;
  *  - `not-allowed`: the caller reads it but may not change it;
  *  - `in-queue`: a read of it is already queued or running;
- *  - `busy`: the read queue is busy; nothing was queued, try again later. */
-export type FileReindexSkip = 'not-found' | 'not-allowed' | 'in-queue' | 'busy';
+ *  - `busy`: the read queue is busy; nothing was queued, try again later;
+ *  - `bytes-missing`: the file's bytes are in neither place (disk, object
+ *    store): nothing it has was dropped, there is nothing to read again. */
+export type FileReindexSkip = 'not-found' | 'not-allowed' | 'in-queue' | 'busy' | 'bytes-missing';
 
 /** The answer of a reindex: every id sent is counted in `queued` or named
  *  once in `skipped`. `databases`: of the queued files, those whose

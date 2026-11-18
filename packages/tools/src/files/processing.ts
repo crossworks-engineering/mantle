@@ -21,11 +21,11 @@ import {
   currentReaderVersion,
   fileById,
   fileDbStateOf,
-  staleOf,
+  pipelineVersionsOf,
   withFileStatus,
 } from '@mantle/files';
 import { readFileDbStamp } from '@mantle/content/file-database';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { fileStatusPipelines } from '@mantle/content/pipeline-registry';
 import {
   FILE_DERIVED_MAX,
   type FileDerivedItem,
@@ -113,14 +113,14 @@ export async function fileProcessing(
 ): Promise<FileProcessing | null> {
   const row = await fileById({ ownerId, fileId });
   if (!row) return null;
-  const { dbExts, acted } = await boxPipelines(ownerId);
-  const versions = new Map(acted.map((p) => [p.id, p.version]));
+  const { dbExts, installed } = await fileStatusPipelines(ownerId);
+  const versions = pipelineVersionsOf(installed);
   // Entity edges are read in an Admin scope only (their row rule, 0265):
   // in any other scope the count would be a false 0, so it is not counted.
   // Fails closed: an error reads as no.
   const admin = !(await scopeOutsideAdmin().catch(() => true));
   const [[file], statsRows, derivedRows] = await Promise.all([
-    withFileStatus([row], dbExts, acted),
+    withFileStatus([row], dbExts, installed),
     db.execute(sql`
       select n.embedding is not null as embedded,
              length(n.data->>'text') as text_chars,
@@ -191,8 +191,10 @@ export async function fileProcessing(
         }
       : null,
     job: file!.status.job ?? null,
-    // What read it (@mantle/files read-stamp.ts): null with no stamp.
-    stale: staleOf(row, versions),
+    // What read it (@mantle/files read-stamp.ts): null with no stamp, else
+    // the row status's own answer (which knows the file's home, for a
+    // pipeline that is off there).
+    stale: !row.readBy && !row.pipelineRead ? null : file!.status.stale === true,
     readBy: row.readBy
       ? {
           reader: row.readBy.reader,
@@ -201,7 +203,7 @@ export async function fileProcessing(
         }
       : null,
     pipelineRead: row.pipelineRead
-      ? { ...row.pipelineRead, current: versions.get(row.pipelineRead.id) ?? null }
+      ? { ...row.pipelineRead, current: versions.get(row.pipelineRead.id)?.version ?? null }
       : null,
     error: failed && ex.reason ? { reason: ex.reason, hint: ex.hint ?? null } : null,
     images: imagesOf(stats?.images),

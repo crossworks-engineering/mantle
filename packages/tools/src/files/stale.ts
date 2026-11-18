@@ -18,7 +18,7 @@ import {
   type FileStatus,
   type StaleListState,
 } from '@mantle/files';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { fileStatusPipelines } from '@mantle/content/pipeline-registry';
 import type { FileStaleAnswer } from '@mantle/client-types/dto/file-status';
 import type { BuiltinToolDef } from '../types';
 
@@ -42,15 +42,15 @@ export async function fileStaleList(
     cursor = typeof q.cursor === 'string' ? parseStaleCursor(q.cursor) : null;
     if (!cursor) return { ok: false, error: 'cursor must be the `next` of a page before.' };
   }
-  const { dbExts, acted } = await boxPipelines(ownerId);
+  const { dbExts, installed } = await fileStatusPipelines(ownerId);
   const page = await listFilesNeedingAttention({
     ownerId,
     state,
-    installed: acted,
+    installed,
     cursor,
     limit,
   });
-  const files = await withFileStatus(page.files, dbExts, acted);
+  const files = await withFileStatus(page.files, dbExts, installed);
   return {
     ok: true,
     answer: {

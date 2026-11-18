@@ -569,6 +569,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../storage
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
       '@napi-rs/canvas':
         specifier: 1.0.13
         version: 1.0.13

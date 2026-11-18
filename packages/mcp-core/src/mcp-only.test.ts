@@ -48,6 +48,9 @@ describe('mcpOnly builtins', () => {
         'api_key_test',
         'app_authoring_guide',
         'file_delete',
+        // Reading files again (docs/files.md 8d): a member's own client and
+        // MCP connection; no tool group holds it, as pipeline_run.
+        'file_reindex',
         // file_upload is no longer here (2026-11-03): seeded so a mini app
         // can declare it, held by the `app-files` group and no agent.
         'folder_create',

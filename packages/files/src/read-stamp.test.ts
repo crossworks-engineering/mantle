@@ -13,11 +13,12 @@ import {
   readByStampOf,
   readStampsOf,
   readerKeyOf,
+  pipelineVersionsOf,
   staleOf,
 } from './read-stamp';
 import { CAD_EXT_LIST } from './cad-sniff';
 
-const installed = new Map([['sheet', '1.2.0']]);
+const installed = pipelineVersionsOf([{ id: 'sheet', version: '1.2.0' }]);
 
 describe('the reader of a file', () => {
   it('is the parser route of its type, or image for a picture', () => {
@@ -93,6 +94,20 @@ describe('stale', () => {
     ).toBe(false);
     // An unknown reader key decides nothing.
     expect(staleOf({ readBy: { reader: 'gone-reader', v: 0 } })).toBe(false);
+  });
+
+  it('a pipeline off in the file home decides nothing: no Reader run would follow a reindex', () => {
+    const ws = '11111111-1111-4111-8111-111111111111';
+    const off = pipelineVersionsOf([{ id: 'sheet', version: '1.2.0', offIn: [ws] }]);
+    const old = { pipelineRead: { id: 'sheet', name: 'Sheet', version: '1.1.9' } };
+    expect(staleOf({ ...old, home: ws }, off)).toBe(false);
+    // Elsewhere, or with no home, it is stale as before.
+    expect(staleOf({ ...old, home: '22222222-2222-4222-8222-222222222222' }, off)).toBe(true);
+    expect(staleOf({ ...old, home: null }, off)).toBe(true);
+    // The reader's own stamp still decides where the pipeline is off.
+    expect(
+      staleOf({ ...old, home: ws, readBy: { reader: 'utf8', v: READER_VERSIONS.utf8 - 1 } }, off),
+    ).toBe(true);
   });
 
   it('the status says stale only when true, and names the pipeline', () => {

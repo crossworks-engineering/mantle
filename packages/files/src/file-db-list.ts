@@ -20,7 +20,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { db, extractJobsFor, nodes } from '@mantle/db';
+import { db, extractJobsFor, itemHomeSql, nodes, type ExtractJobState } from '@mantle/db';
+import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import {
   fileDataExt,
   fileDataListKeys,
@@ -30,7 +32,14 @@ import {
 } from './file-data';
 import type { FileExtraction } from './extraction-status';
 import { fileStatusOf, type FileStatus } from './file-status';
-import { staleOf, type PipelineReadStamp, type ReadByStamp } from './read-stamp';
+import {
+  anyPipelineOff,
+  pipelineVersionsOf,
+  staleOf,
+  type InstalledPipeline,
+  type PipelineReadStamp,
+  type ReadByStamp,
+} from './read-stamp';
 import {
   fileDbPaths,
   fileIdsWithDatabase,
@@ -180,16 +189,46 @@ async function rowDbState(id: string, sha: unknown, names: Set<string>): Promise
   return (await readFileDbNone(id, sha)) ?? 'not-built';
 }
 
+/** The queue's jobs of these rows, or none when the queue cannot be read:
+ *  the job is a side note of a row, and never breaks a list of files. The
+ *  fault is logged. */
+async function jobsOrNone(ids: readonly string[]): Promise<Map<string, ExtractJobState>> {
+  try {
+    return await extractJobsFor(ids);
+  } catch (err) {
+    log('files').warn(`file status: the read queue was not read: ${errorMessage(err)}`);
+    return new Map();
+  }
+}
+
+/** The home workspace of each of these rows that has a pipeline stamp, in
+ *  the caller's scope (rows it listed). Read only when a pipeline is off
+ *  somewhere: else no row's stale rule needs it. */
+async function homesOf(
+  rows: readonly { id: string; pipelineRead?: PipelineReadStamp }[],
+  installed: readonly InstalledPipeline[] | undefined,
+): Promise<Map<string, string | null>> {
+  const ids = rows.filter((r) => r.pipelineRead).map((r) => r.id);
+  if (!installed || ids.length === 0 || !anyPipelineOff(installed)) return new Map();
+  const got = await db
+    .select({ id: nodes.id, home: itemHomeSql() })
+    .from(nodes)
+    .where(sql`${nodes.id} = any (${`{${ids.join(',')}}`}::uuid[])`);
+  return new Map(got.map((r) => [r.id, r.home]));
+}
+
 /**
  * File rows with their Data view (withDataView) and their compact `status`
  * (file-status.ts): ONE read of the queue for the whole list
- * (extractJobsFor), and ONE read of the folder of databases when a row has
- * a Data view (finishedFileDbNames); a `.none` is opened for its word, a
- * few at a time. A folder of many built spreadsheets costs no look per
- * file. The rows are what the caller's scope already read. `stale` and
- * `pipeline` come from the row's own stamps (read-stamp.ts) and
- * `installed`, the pipelines of the box that run (BoxPipelines.acted): no
- * read at all. Without `installed`, only the reader's stamp decides `stale`.
+ * (extractJobsFor; a queue that cannot be read gives rows with no `job`),
+ * and ONE read of the folder of databases when a row has a Data view
+ * (finishedFileDbNames); a `.none` is opened for its word, a few at a time.
+ * A folder of many built spreadsheets costs no look per file. The rows are
+ * what the caller's scope already read. `stale` and `pipeline` come from
+ * the row's own stamps (read-stamp.ts) and `installed`, the pipelines of the
+ * box that run with their off lists (fileStatusPipelines in
+ * @mantle/content): no read, but the rows' homes when a pipeline is off
+ * somewhere. Without `installed`, only the reader's stamp decides `stale`.
  */
 export async function withFileStatus<
   T extends {
@@ -203,13 +242,14 @@ export async function withFileStatus<
 >(
   rows: readonly T[],
   dbExts: ReadonlySet<string>,
-  installed?: readonly { id: string; version: string }[],
+  installed?: readonly InstalledPipeline[],
 ): Promise<(T & { dataView: boolean; status: FileStatus })[]> {
   if (rows.length === 0) return [];
-  const versions = installed ? new Map(installed.map((p) => [p.id, p.version])) : undefined;
-  const [viewed, jobs] = await Promise.all([
+  const versions = installed ? pipelineVersionsOf(installed) : undefined;
+  const [viewed, jobs, homes] = await Promise.all([
     withDataView(rows, dbExts),
-    extractJobsFor(rows.map((r) => r.id)),
+    jobsOrNone(rows.map((r) => r.id)),
+    homesOf(rows, installed),
   ]);
   const names = viewed.some((row) => row.dataView)
     ? await finishedFileDbNames()
@@ -227,7 +267,7 @@ export async function withFileStatus<
           extraction: row.extraction.state,
           job: jobs.get(row.id),
           db: dbs[j],
-          stale: staleOf(row, versions),
+          stale: staleOf({ ...row, home: homes.get(row.id) ?? null }, versions),
           pipeline: row.pipelineRead?.name,
         }),
       });
