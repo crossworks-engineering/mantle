@@ -215,6 +215,18 @@ export const ENV_NUMBERS = {
     min: 1,
     doc: `table edit history, ${MB}`,
   },
+  FILE_HISTORY_KEEP: {
+    default: 10,
+    int: 'floor',
+    min: 1,
+    doc: 'versions kept per file (file history); 0 or less is 1',
+  },
+  FILE_HISTORY_MAX_MB: {
+    default: 2048,
+    int: 'floor',
+    min: 1,
+    doc: `file history of the whole box, ${MB}`,
+  },
   TABLE_IMPORT_MAX_ROWS: {
     default: 2_000_000,
     positive: true,

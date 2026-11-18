@@ -100,6 +100,7 @@ import { telegram_send } from './builtins-telegram';
 import { TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 import { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
 import { FILE_OPERATOR_TOOLS } from './builtins-files';
+import { FILE_HISTORY_TOOLS } from './builtins-files';
 import { NOTE_OPERATOR_TOOLS } from './builtins-notes';
 import { invoke_agent } from './builtins-delegation';
 
@@ -314,6 +315,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // The pipelines list (docs/pipelines.md): an Admin user's client reads it.
   ...PIPELINE_TOOLS,
   ...FILE_OPERATOR_TOOLS,
+  // A file's kept versions (file history): list, restore, delete.
+  ...FILE_HISTORY_TOOLS,
   ...NOTE_OPERATOR_TOOLS,
   ...TREE_OPERATOR_TOOLS,
   // The mini-app authoring guide for an MCP client (in-app agents carry the
@@ -353,6 +356,7 @@ export {
   FILE_OPERATOR_TOOLS,
   FILE_TOOLS,
 } from './builtins-files';
+export { FILE_HISTORY_TOOLS } from './builtins-files';
 export { TELEGRAM_TOOLS, TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 export { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
 export { DELEGATION_TOOLS } from './builtins-delegation';

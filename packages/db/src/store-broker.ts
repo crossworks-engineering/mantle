@@ -308,13 +308,21 @@ export const STORE_FILE_COLUMNS = {
     table: 'node_snapshots',
     node: 'id',
     files: ['db_path'],
-    where: "node_kind <> 'table'",
+    where: "node_kind not in ('table', 'file')",
   },
   tablesnap: {
     table: 'node_snapshots',
     node: 'id',
     files: ['db_path'],
     where: "node_kind = 'table'",
+  },
+  // A file's kept versions (file history, 0384): relative to
+  // MANTLE_FILES_ROOT/.file-history.
+  filesnap: {
+    table: 'node_snapshots',
+    node: 'id',
+    files: ['db_path'],
+    where: "node_kind = 'file'",
   },
   accepted: { table: 'accepted_snapshots', node: 'node_id', files: ['table_path'] },
 } as const satisfies Record<
@@ -359,7 +367,7 @@ export async function storeRows(store: SweptStore): Promise<SweepRow[]> {
  *  this process's). Read on the caller's handle (the
  *  system pool). */
 export async function storeTombstones(
-  store: 'appsnap' | 'tablesnap' | 'accepted',
+  store: 'appsnap' | 'tablesnap' | 'filesnap' | 'accepted',
 ): Promise<{ path: string; ageMs: number }[]> {
   const [{ db }, { sql }] = await Promise.all([import('./gateway/handles'), import('drizzle-orm')]);
   const rows = (await db.execute(
@@ -371,7 +379,7 @@ export async function storeTombstones(
 
 /** Clear the tombstones of files the sweep removed (or found gone). */
 export async function forgetTombstones(
-  store: 'appsnap' | 'tablesnap' | 'accepted',
+  store: 'appsnap' | 'tablesnap' | 'filesnap' | 'accepted',
   paths: readonly string[],
 ): Promise<void> {
   if (!paths.length) return;

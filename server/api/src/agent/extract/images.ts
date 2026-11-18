@@ -123,9 +123,13 @@ export async function maybeExtractEmbeddedImages(
   if (!IMAGE_BEARING_EXTS.has(ext) && !own) return;
   if (NEW_UPLOAD_ONLY_IMAGE_EXTS.has(ext) && !bytesUnread(data)) return;
 
-  // Dedupe: if this document already produced images, do nothing.
-  const [existing] = await db
-    .select({ id: nodes.id })
+  // Dedupe: if this document already produced images from its current
+  // bytes, do nothing. Images made before new bytes replaced the file
+  // (data.replaced_at: an upload with replace, an edit, a restore; file
+  // history) are of an older version: they go, and the new bytes' images
+  // are made as for a new upload (the normal path, no extra model work).
+  const prior = await db
+    .select({ id: nodes.id, createdAt: nodes.createdAt, tags: nodes.tags })
     .from(nodes)
     .where(
       and(
@@ -134,8 +138,19 @@ export async function maybeExtractEmbeddedImages(
         sql`${nodes.data}->>'sourceFileId' = ${node.id}`,
       ),
     )
-    .limit(1);
-  if (existing) return;
+    .limit(500);
+  if (prior.length > 0) {
+    const replacedAt = typeof data.replaced_at === 'string' ? Date.parse(data.replaced_at) : NaN;
+    const stale =
+      Number.isFinite(replacedAt) && prior.every((p) => p.createdAt.getTime() < replacedAt);
+    if (!stale) return;
+    for (const p of prior) {
+      if (!p.tags.includes(EXTRACTED_IMAGE_TAG)) continue;
+      await deleteFileById({ ownerId, fileId: p.id }).catch((err: unknown) => {
+        console.error('[extractor] an older version image was not removed:', errorMessage(err));
+      });
+    }
+  }
 
   const loaded = await loadFileBytes(node);
   if (!loaded) {

@@ -19,6 +19,7 @@ import {
 } from './files/write';
 import { file_move, file_copy, folder_move, folder_copy } from './files/organise';
 import { folder_create, folder_delete, file_upload, file_delete } from './files/operator';
+export { FILE_HISTORY_TOOLS } from './files/history';
 export { folder_list, file_list, file_read, file_get, folder_get_by_path } from './files/read';
 export {
   file_create,

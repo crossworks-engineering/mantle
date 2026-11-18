@@ -50,6 +50,11 @@ export type SystemStep =
   /** A table commit's history line pruned (keep and size limits), after the
    *  commit, which recorded its own row with edit of the table. */
   | 'table-history'
+  /** A file's history line pruned (FILE_HISTORY_KEEP per file, and the
+   *  box's FILE_HISTORY_MAX_MB over every file, oldest first) after new
+   *  bytes replaced it, which recorded its own row with edit of the file;
+   *  the pruned files removed. */
+  | 'file-history'
   /** An email attachment's bytes from object storage, for a caller whose
    *  scope holds Admin and read the file node first. */
   | 'attachment-bytes'

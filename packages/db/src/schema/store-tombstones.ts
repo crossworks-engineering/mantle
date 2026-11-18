@@ -12,7 +12,8 @@ export const storeTombstones = pgTable(
   'store_tombstones',
   {
     /** 'appsnap' (path relative to APP_DB_DIR), 'tablesnap' and 'accepted'
-     *  (relative to TABLE_DB_DIR). */
+     *  (relative to TABLE_DB_DIR), 'filesnap' (relative to
+     *  MANTLE_FILES_ROOT/.file-history, 0384). */
     store: text('store').notNull(),
     path: text('path').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })

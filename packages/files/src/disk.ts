@@ -120,21 +120,32 @@ export async function placeStaged(staged: StagedFile): Promise<void> {
  * stage never placed. A crash in between leaves the old bytes under a
  * staging name, which the staged-leftover sweep removes after an hour.
  */
-export function overwritePlacement(staged: StagedFile): {
+export function overwritePlacement(
+  staged: StagedFile,
+  /** Where the old bytes are kept for good (a file history entry, under the
+   *  files root so the link is a link: file-history.ts). Given, `release`
+   *  leaves them there; `kept()` says whether they were kept. */
+  historyAt?: string,
+): {
   place: () => Promise<void>;
   unplace: () => Promise<void>;
   release: () => Promise<void>;
   discard: () => Promise<void>;
+  kept: () => boolean;
 } {
   // The old bytes keep their own times (a hard link); the name says when
   // they were kept, which the staged-leftover sweep goes by.
-  const keep = path.join(
-    path.dirname(staged.finalPath),
-    `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`,
-  );
+  const keep =
+    historyAt ??
+    path.join(
+      path.dirname(staged.finalPath),
+      `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`,
+    );
   let kept = false;
   return {
+    kept: () => kept,
     place: async () => {
+      if (historyAt) await fs.mkdir(path.dirname(historyAt), { recursive: true });
       try {
         await fs.link(staged.finalPath, keep);
         kept = true;
@@ -157,8 +168,9 @@ export function overwritePlacement(staged: StagedFile): {
       kept = false;
     },
     release: async () => {
-      if (kept) await fs.unlink(keep).catch(() => {});
-      kept = false;
+      // A history entry stays: its row names it now.
+      if (kept && !historyAt) await fs.unlink(keep).catch(() => {});
+      if (!historyAt) kept = false;
     },
     discard: () => discardStaged(staged),
   };

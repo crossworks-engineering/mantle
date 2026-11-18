@@ -402,12 +402,59 @@ recommended path for renames.
 
 ---
 
+### 10a. File history
+
+New bytes over a file keep the bytes they replace (owner's decisions,
+2026-11-18; `packages/files/src/file-history.ts`, migration 0384).
+
+- **Upload clash.** An upload to a name already in the folder (no
+  `replace`): the same bytes (`data.sha256`) answer 200
+  `{ skipped: true, reason: 'same-bytes', existing: { id, sha256 } }` and
+  nothing is written ("Already here"); other bytes answer 409
+  `{ error, reason: 'name-taken', existing: { id, sha256, sizeBytes, name } }`
+  so the client can ask Override / Override all / Skip / Skip all. Override
+  is the same upload with `replace=true`. A name taken by a file the caller
+  does not read stays the plain 409 (nothing about it is said).
+- **Versions.** Every overwrite with new bytes (an upload with replace, an
+  edit, an export saved again, a tool's overwrite) keeps the old bytes as a
+  `replace` version: the overwrite's own hard link of them lands in
+  `MANTLE_FILES_ROOT/.file-history/<owner>/<file>/<version>.bin` (every part
+  a server-made uuid; a dot folder the watcher and the sweeps never enter)
+  and its `node_snapshots` row (`node_kind` 'file') is written in the
+  overwrite's own transaction. Same bytes keep nothing. The file row and
+  each tree item carry `versions` (a count, one read per list) for a badge,
+  and the row `replacedAt`.
+- **Limits.** The newest `FILE_HISTORY_KEEP` (10) versions stay per file,
+  and the whole box keeps `FILE_HISTORY_MAX_MB` (2048) of them, oldest
+  first, the newest always. The prune runs after each overwrite, and its
+  files go at once, so a loop of overwrites never holds more than the cap.
+  A deleted file's history goes 30 days after its newest version, in the
+  nightly `app-trash-purge`. No new job, no model work.
+- **Rights.** Listing and downloading a version: whoever reads the file.
+  Restore and delete of a version: a Moderator of the file's home, a
+  Moderator of a workspace that holds the file, or an Admin user
+  (`mayModerateSql`); never a plain user with Write on, never a read-only
+  login, a public link or a key without its rights.
+- **Restore.** The version's bytes go back through the same overwrite (the
+  same file id, every gate of a write), so the bytes they replace are kept
+  as a `pre_restore` version: a restore is undone by restoring that one.
+  The bytes are copied (never linked) and checked against their sha256.
+- **Derived items.** New bytes (a replace or a restore) are read again as an
+  upload is. Extracted images made before `replacedAt` belong to an older
+  version: the next image pass removes them and makes the new ones. An auto
+  Table keeps its rows (people may have edited them); a Table made before
+  its file's `replacedAt` is from an older version, which the client can
+  show.
+- **Routes and tools.** `GET /api/files/files/:id/history`,
+  `GET .../history/:sid/download`, `POST .../history/:sid/restore`,
+  `DELETE .../history/:sid`; MCP `file_history_list`,
+  `file_history_restore`, `file_history_delete`.
+
 ## 11. Known sharp edges
 
-- **No file move.** Move = delete + reupload. Adds folder-cascade
-  complexity disproportionate to the value at this scale.
-- **No file versioning.** Edits overwrite; the old content is gone.
-  Git the folder if you care.
+- **Host edits keep no version.** A file changed on disk outside Mantle
+  (section 10) is read again, but its old bytes are not kept: file
+  history keeps what a write through Mantle replaced.
 - **Scanned PDFs return empty text.** No OCR; they fall through the
   20-char guard and get skipped.
 - **Concurrent writes**: two simultaneous saves on the same file

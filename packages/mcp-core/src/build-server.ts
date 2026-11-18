@@ -107,6 +107,7 @@ import {
   STATUS_PEER_TOOL_SLUGS,
   TERMINAL_TOOLS,
 } from '@mantle/tools';
+import { FILE_HISTORY_TOOLS } from '@mantle/tools';
 import {} from '@mantle/content';
 import { feature, telegramAllowed } from '@mantle/config';
 import { makeRegisterContext } from './register/context';
@@ -455,6 +456,9 @@ export function registerMantleTools(
   // Files: create-from-text and resolve-a-folder-by-path, the two the
   // hand-written file surface never had.
   registerBuiltinTools(FILE_CREATE_TOOLS);
+  // A file's kept versions (file history): list for whoever reads the
+  // file; restore and delete for its Moderators, as by hand.
+  registerBuiltinTools(FILE_HISTORY_TOOLS);
 
   // Content lifecycle. content_supersede down-weights, never deletes;
   // process_extraction spends model budget, which is the point of asking for it.

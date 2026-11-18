@@ -76,6 +76,16 @@ export function mayMoveSql(alias?: string): SQL<boolean> {
                        or "public"."mantle_mod_holds"(${column(alias, 'read_ws')}, ${column(alias, 'read_ws')}), false)`;
 }
 
+/** The scope may moderate the item: manage (a Moderator of its home, or an
+ *  Admin user who reads it), or a Moderator of a workspace that holds it
+ *  (0383, mantle_mod_holds). Not a grant with Write on: a plain user never
+ *  passes. A file's history acts, restore and delete of a version (owner's
+ *  rule, 2026-11-18; packages/files/src/file-history.ts). */
+export function mayModerateSql(alias?: string): SQL<boolean> {
+  return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')}, ${column(alias, 'read_ws')})
+                       or "public"."mantle_mod_holds"(${column(alias, 'read_ws')}, ${column(alias, 'read_ws')}), false)`;
+}
+
 /** The workspace role's read rule on nodes, over the scope's settings
  *  (0242): a workspace of the scope holds the item. Written as the row rule
  *  is, so an index on the column serves it. */

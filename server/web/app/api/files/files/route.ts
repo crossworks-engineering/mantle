@@ -31,6 +31,7 @@ import type {
   BulkDeleteCascadeResponse,
   BulkDeleteFilesResponse,
   DataFilesResponse,
+  UploadSkippedResponse,
 } from '@mantle/client-types';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -169,9 +170,13 @@ async function mailFolderRefusal(ownerId: string, parentPath: string): Promise<R
  * A new file takes its folder's sharing, like every other item in it: no
  * confirm (owner's word, 2026-11-12). A `confirm` field or JSON key from an
  * older client is accepted and ignored.
- * A name already taken in the folder is 409 unless the multipart form says
- * `replace=true`: then the new bytes replace the file in place (same node,
- * so links and history hold; its old index is dropped and rebuilt).
+ * A name already taken in the folder: the same bytes answer 200
+ * `{ skipped: true, reason: 'same-bytes', existing }` (nothing written);
+ * other bytes 409 `{ error, reason: 'name-taken', existing }` (the file there,
+ * when the caller reads it) unless the multipart form says `replace=true`:
+ * then the new bytes replace the file in place (same node, so links hold;
+ * its old bytes are kept as a version, file history; its old index is
+ * dropped and rebuilt).
  */
 export async function POST(req: Request) {
   const user = ownerCaller();
@@ -222,11 +227,22 @@ export async function POST(req: Request) {
           filename: upload.filename,
           spooled: upload.spooled,
           overwrite: parsed.fields.replace === 'true',
+          // A taken name with the same bytes: "Already here", nothing
+          // written; other bytes are the 409 with the file there
+          // (UploadClashResponse).
+          skipSameBytes: true,
         });
       } finally {
         // No-op once adopted (the rename moved it); the safety net for every
         // failure between spool and adoption (parent missing, bad name, …).
         await discardSpooled(upload.spooled);
+      }
+      if (row.skipped) {
+        return NextResponse.json({
+          skipped: true,
+          reason: 'same-bytes',
+          existing: { id: row.id, sha256: row.sha256 },
+        } satisfies UploadSkippedResponse);
       }
       // Record the ingest event so the node-biography view has a
       // "what came in" anchor. Truncated content snippet (first ~2KB)

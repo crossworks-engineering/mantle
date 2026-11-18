@@ -184,6 +184,8 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `APP_SNAPSHOT_MCP_MAX_MB` | 512 | whole, min 1 | app snapshots before an MCP write, MB; 0 or less is 1 |
 | `APP_CODE_EDIT_MAX_MB` | 64 | whole, min 1 | code-tool undo records of one app, MB; 0 or less is 1 |
 | `TABLE_HISTORY_MAX_MB` | 512 | whole, min 1 | table edit history, MB; 0 or less is 1 |
+| `FILE_HISTORY_KEEP` | 10 | whole, min 1 | versions kept per file (file history); 0 or less is 1 |
+| `FILE_HISTORY_MAX_MB` | 2048 | whole, min 1 | file history of the whole box, MB; 0 or less is 1 |
 | `TABLE_IMPORT_MAX_ROWS` | 2000000 | whole, above 0 | largest table import, rows |
 | `TABLE_SQL_TIMEOUT_MS` | 5000 | above 0 | table SQL statement timeout, ms |
 | `FILE_DB_READERS` | the caller | whole, at least 1, max 16 | SQL reader processes of file_sql and table_sql at one time in one server process (default from the cores: fileDbReadersDefault, @mantle/tabledb) |

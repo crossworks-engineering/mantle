@@ -21,6 +21,7 @@
     "DELETE /api/events/:id": "event_delete",
     "DELETE /api/files/files": "file_delete",
     "DELETE /api/files/files/:id": "file_delete",
+    "DELETE /api/files/files/:id/history/:sid": "file_history_delete",
     "DELETE /api/files/folders/:id": "folder_delete",
     "DELETE /api/fleet/boxes/:id": {
       "planned": "control_box_remove",
@@ -237,6 +238,10 @@
     },
     "GET /api/files/files": { "tool": "file_list", "gap": "no recent view across folders" },
     "GET /api/files/files/:id": ["file_get", "file_read"],
+    "GET /api/files/files/:id/history": "file_history_list",
+    "GET /api/files/files/:id/history/:sid/download": {
+      "none": "the bytes of a kept version for a person to save; an agent restores it (file_history_restore) and reads the file (file_read)"
+    },
     "GET /api/files/folders": "folder_list",
     "GET /api/files/folders/:id": { "tool": "folder_get_by_path", "gap": "by path, not by id" },
     "GET /api/fleet": {
@@ -773,6 +778,7 @@
     "POST /api/files/files": "file_upload",
     "POST /api/files/files/:id": "file_copy",
     "POST /api/files/files/:id/database": "file_sql",
+    "POST /api/files/files/:id/history/:sid/restore": "file_history_restore",
     "POST /api/files/files/:id/run": "pipeline_run",
     "POST /api/files/folders": "folder_create",
     "POST /api/files/folders/:id": "folder_copy",

@@ -5,6 +5,7 @@
  */
 
 import { createReadStream, promises as fsp } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
@@ -73,7 +74,14 @@ import { assertAppRunFileWrite } from '../app-run-write';
 import { removeFileDbNamesAfterCommit } from '../file-dbs';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
 import { isSystemScope } from '@mantle/db/viewer';
-import { ConflictError, editCheckRefusalError, InputError } from '@mantle/std';
+import { ConflictError, defineDomainError, editCheckRefusalError, InputError } from '@mantle/std';
+import {
+  fileHistoryKept,
+  fileVersionAbsPath,
+  fileVersionRelPath,
+  pruneFileHistory,
+  recordFileVersion,
+} from '../file-history';
 import { FILES_ROOT_LABEL } from '../paths';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
@@ -185,7 +193,14 @@ export async function upsertFile(args: {
    *  on insert, and on the watcher's row when this
    *  create lost the race to it; an existing file keeps its own. */
   loginId?: string | null;
-}): Promise<FileRow> {
+  /** An upload with no `overwrite` whose name is taken by the same bytes:
+   *  nothing is written and the file there comes back with `skipped`
+   *  ("Already here"). Without it such an upload is the 409 as before. */
+  skipSameBytes?: true;
+  /** A restore of a kept version (file-history-restore.ts): the bytes it
+   *  replaces are kept as `pre_restore`, naming the version put back. */
+  restoreOf?: { seq: number };
+}): Promise<FileRow & { skipped?: true }> {
   if (!isFilesPath(args.parentPath)) {
     throw new InputError(`upsertFile: parent '${args.parentPath}' is outside the files root`);
   }
@@ -312,7 +327,21 @@ export async function upsertFile(args: {
       ));
     if (there) {
       if (args.spooled) await discardSpooled(args.spooled);
-      throw new ConflictError(`writeFile: '${filename}' already exists in this folder`);
+      // The caller reads this file (callerSeesNode above), so what it is may
+      // be said: the same bytes are "already here"; other bytes are the
+      // clash the client asks about (Override / Skip).
+      const have = existing.data as Record<string, unknown> | null;
+      const theirSha = typeof have?.sha256 === 'string' ? have.sha256 : null;
+      const mySha = args.spooled?.sha256 ?? createHash('sha256').update(args.bytes!).digest('hex');
+      if (args.skipSameBytes && theirSha === mySha) {
+        return { ...fileRowFromNode(existing), skipped: true };
+      }
+      throw new FileNameClashError(filename, {
+        id: existing.id,
+        sha256: theirSha,
+        sizeBytes: Number(have?.size_bytes ?? 0),
+        name: typeof have?.filename === 'string' ? have.filename : filename,
+      });
     }
   }
   const staged: StagedFile = args.spooled
@@ -467,7 +496,24 @@ export async function upsertFile(args: {
   // Over a file a row owns, the stage goes over it as the flip's last step;
   // a create that lost the race to a row holding its bytes has nothing to
   // place (its stage went above).
-  const placement = existing ? overwriteSteps(row.id, staged) : null;
+  // New bytes over a file keep the old ones as a version (file-history.ts):
+  // the overwrite's own link of them lands in the history folder, and the
+  // row is written in the flip once they are kept.
+  const versionId =
+    existing && !sameContent && fileHistoryKept(args.parentPath) ? randomUUID() : null;
+  const versionRel = versionId ? fileVersionRelPath(args.ownerId, row.id, versionId) : null;
+  const placement = existing
+    ? overwriteSteps(
+        row.id,
+        staged,
+        brokerLockTx,
+        versionRel ? fileVersionAbsPath(versionRel) : undefined,
+      )
+    : null;
+  let versionKept = false;
+  // When new bytes replaced the file: a derived item (an extracted image, an
+  // auto Table) made before it is from an older version (file-history.ts).
+  const replacedAt = existing && !sameContent ? new Date().toISOString() : null;
   // Heads first: the chunk delete below needs them.
   const flip = (place: (() => Promise<void>) | null) =>
     withDeadlockRetry(() =>
@@ -489,7 +535,10 @@ export async function upsertFile(args: {
             .update(nodes)
             .set({
               title: nextTitle,
-              data: fileDataAfterWrite(oldData, newData, !sameContent),
+              data: {
+                ...fileDataAfterWrite(oldData, newData, !sameContent),
+                ...(replacedAt ? { replaced_at: replacedAt } : {}),
+              },
               // Only when the caller brings tags: a plain re-upsert leaves them
               // be, and the race path above must still land them on the
               // watcher's row.
@@ -522,6 +571,23 @@ export async function upsertFile(args: {
           // The bytes, last: a rename over the file (its old bytes kept
           // until the flip settles).
           if (place) await place();
+          // The kept bytes' version row, in this transaction: a flip that
+          // does not land takes it back with the bytes. Old bytes that were
+          // not there (a row whose file was lost) keep no version.
+          if (versionId && versionRel && placement?.kept()) {
+            await recordFileVersion(tx, {
+              id: versionId,
+              ownerId: args.ownerId,
+              fileId: row.id,
+              rel: versionRel,
+              sizeBytes: Number(oldData.size_bytes ?? 0),
+              sha256: typeof oldData.sha256 === 'string' ? oldData.sha256 : null,
+              filename: typeof oldData.filename === 'string' ? oldData.filename : filename,
+              trigger: args.restoreOf ? 'pre_restore' : 'replace',
+              restoredFrom: args.restoreOf?.seq ?? null,
+            });
+            versionKept = true;
+          }
           return out;
         }),
       ),
@@ -530,6 +596,9 @@ export async function upsertFile(args: {
     ? await flipThenPlace({ ...placement, flip: (place) => flip(place) })
     : await flip(null);
   if (!updated) throw new Error('upsertFile: update returned no row');
+  // The history's keep and size limits, once the flip has committed (a
+  // failure is logged, never the write's).
+  if (versionKept) await afterOuterCommit(() => pruneFileHistory(row.id));
 
   return fileRowFromNode(updated);
 }
@@ -553,8 +622,11 @@ export function overwriteSteps(
   staged: StagedFile,
   /** The put-back's lock transaction (tests stand in for it). */
   lockTx: typeof brokerLockTx = brokerLockTx,
+  /** Where the old bytes are kept as a version (file-history.ts), if
+   *  they are. */
+  historyAt?: string,
 ) {
-  const placement = overwritePlacement(staged);
+  const placement = overwritePlacement(staged, historyAt);
   const putBack = async (why: string) => {
     if (!(await placedBytesIntact(staged))) {
       console.error(
@@ -568,6 +640,7 @@ export function overwriteSteps(
     place: placement.place,
     release: placement.release,
     discard: placement.discard,
+    kept: placement.kept,
     settle: async () => (await rowNow(id)).sha256 === staged.sha256,
     unplace: async () => {
       // Decided inside the lock: never the bytes-only branch after that,
@@ -1546,6 +1619,28 @@ export class FileNameTakenError extends ConflictError {
     this.name = 'FileNameTakenError';
   }
 }
+
+/** The file already under a name an upload brought other bytes for. */
+export type FileNameClash = { id: string; sha256: string | null; sizeBytes: number; name: string };
+
+/** A name taken in the folder by a file the caller reads, with other bytes:
+ *  409 with that file (UploadClashResponse, @mantle/client-types), so the
+ *  client can ask Override (the upload again with replace) or Skip. */
+export class FileNameClashError extends ConflictError {
+  constructor(
+    filename: string,
+    readonly existing: FileNameClash,
+  ) {
+    super(`writeFile: '${filename}' already exists in this folder`);
+    this.name = 'FileNameClashError';
+  }
+}
+
+defineDomainError(FileNameClashError, {
+  reason: 'the name is taken by a file the caller reads, with other bytes; the body names it',
+  status: 409,
+  body: (e) => ({ error: e.message, reason: 'name-taken', existing: e.existing }),
+});
 
 /**
  * Whether a file in `parentPath` has `filename` (ignoring case), asked

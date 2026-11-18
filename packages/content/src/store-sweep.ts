@@ -33,6 +33,7 @@ import {
   type SweepSpec,
 } from '@mantle/db';
 import { tableDbRoot } from '@mantle/tabledb';
+import { fileHistoryRoot } from '@mantle/files';
 import { appDbRoot } from './app-broker';
 import { SNAPSHOT_OWNER } from './table-storage';
 
@@ -56,6 +57,9 @@ export type StoreSweepOptions = Pick<
   'dryRun' | 'now' | 'graceMs' | 'allowMany' | 'budget'
 >;
 
+const FILE_VERSION_FILE =
+  /^[^/]+\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.bin$/;
+
 const SNAPSHOT_FILE =
   /^[^/]+\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.sqlite$/;
 
@@ -74,7 +78,7 @@ const SNAPSHOT_FILE =
 export function snapshotSweepSpecs(): SweepSpec[] {
   const roots = storeRoots();
   const part = (
-    label: 'appsnap' | 'tablesnap' | 'accepted',
+    label: 'appsnap' | 'tablesnap' | 'filesnap' | 'accepted',
     base: string,
     folder: string,
     nodeOf: (rel: string) => string | null,
@@ -113,6 +117,9 @@ export function snapshotSweepSpecs(): SweepSpec[] {
   return [
     part('appsnap', roots.appdb, '_snapshots', snapshotOf),
     part('tablesnap', roots.tables, '_snapshots', snapshotOf),
+    // A file's kept versions (file history): <owner>/<file>/<version>.bin
+    // under the files root's history folder.
+    part('filesnap', fileHistoryRoot(), '', (rel) => FILE_VERSION_FILE.exec(rel)?.[1] ?? null),
     part('accepted', roots.tables, SNAPSHOT_OWNER, (rel) =>
       rel.includes('/') || rel.endsWith('.draft.sqlite') ? null : revisionNode(rel, 'tables'),
     ),

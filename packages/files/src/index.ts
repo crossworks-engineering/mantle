@@ -418,6 +418,25 @@ export { overwriteSteps } from './ops/files';
 // A drawing check's crop (circuit_verify's evidence files): outside the
 // ops barrel's pinned surface.
 export { DRAWING_CHECK_PROVENANCE, isDrawingCheckCrop } from './ops/files';
+// File history (docs/files.md, "File history"): the versions new bytes keep.
+export { FileNameClashError, type FileNameClash } from './ops/files';
+export {
+  assertMayModerateFile,
+  deleteFileVersion,
+  FILE_HISTORY_DIR,
+  FILE_HISTORY_ORPHAN_DAYS,
+  FILE_VERSION_RIGHT_MESSAGE,
+  fileHistoryRoot,
+  fileVersion,
+  fileVersionCounts,
+  listFileVersions,
+  mayModerateFile,
+  purgeOrphanFileHistory,
+  withVersions,
+  type FileVersion,
+  type FileVersionTrigger,
+} from './file-history';
+export { restoreFileVersion } from './file-history-restore';
 export {
   ownIndexingMode,
   privateFileIds,
