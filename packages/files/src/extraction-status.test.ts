@@ -94,4 +94,12 @@ describe('the read failures are one list', () => {
     expect(x.hint).toMatch(/950 of 1000 pages were read/);
     expect(x.hint).toMatch(/3 of 4 pictures kept/);
   });
+
+  it('a count of pictures cut short says at least', () => {
+    const x = extractionOf({
+      extract_completed_at: LATER,
+      images: { kept: 500, found: 610, more: true },
+    });
+    expect(x.hint).toMatch(/^500 of at least 610 pictures kept\./);
+  });
 });

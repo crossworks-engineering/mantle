@@ -91,6 +91,30 @@ const BUNDLED_ASSETS = [
     licenseFile: 'scripts/license-texts/pdfminer-six.txt',
   },
   {
+    name: 'charset-normalizer (Python, in the parser image, for pdfminer.six)',
+    license: 'MIT',
+    path: 'the parser image (Dockerfile), the CAD venv',
+    licenseFile: 'scripts/license-texts/MIT.txt',
+  },
+  {
+    name: 'cryptography (Python, in the parser image, for pdfminer.six)',
+    license: '(Apache-2.0 OR BSD-3-Clause)',
+    path: 'the parser image (Dockerfile), the CAD venv',
+    licenseFile: 'scripts/license-texts/Apache-2.0.txt',
+  },
+  {
+    name: 'cffi (Python, in the parser image, for cryptography)',
+    license: 'MIT',
+    path: 'the parser image (Dockerfile), the CAD venv',
+    licenseFile: 'scripts/license-texts/MIT.txt',
+  },
+  {
+    name: 'pycparser (Python, in the parser image, for cffi)',
+    license: 'BSD-3-Clause',
+    path: 'the parser image (Dockerfile), the CAD venv',
+    licenseFile: 'scripts/license-texts/BSD-3-Clause.txt',
+  },
+  {
     name: 'pypdfium2 and PDFium (Python, in the parser image)',
     license: '(Apache-2.0 OR BSD-3-Clause)',
     path: 'the parser image (Dockerfile), the CAD venv',

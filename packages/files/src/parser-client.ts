@@ -543,13 +543,18 @@ export async function parserText(bytes: Buffer, ext: string): Promise<string> {
 export async function parserImages(
   bytes: Buffer,
   ext: string,
-  opts: { maxImages: number; dpi?: number },
+  opts: { maxImages: number; dpi?: number; notScan?: true },
 ): Promise<import('./embedded-images').ExtractEmbeddedImagesResult> {
   const body = jsonOf(
     await exchange(
       'images',
       bytes,
-      { ext, maxImages: opts.maxImages, ...(opts.dpi ? { dpi: opts.dpi } : {}) },
+      {
+        ext,
+        maxImages: opts.maxImages,
+        ...(opts.dpi ? { dpi: opts.dpi } : {}),
+        ...(opts.notScan ? { notScan: true } : {}),
+      },
       PARSER_ANSWER_MAX_BYTES,
     ),
   );

@@ -85,6 +85,7 @@ export async function runJob(
       const result = await readEmbeddedImages(await fs.readFile(p.input), str(opts.ext, 'ext'), {
         maxImages: int(opts.maxImages, 30, 0, MAX_EMBEDDED_IMAGES_CEILING),
         ...(typeof opts.dpi === 'number' ? { dpi: int(opts.dpi, 300, 50, 600) } : {}),
+        ...(opts.notScan === true ? { notScan: true as const } : {}),
         render: dwfRenderer(p.dir, timeoutMs),
       });
       // The answer's budget: the pictures in reading order until it is

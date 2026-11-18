@@ -43,6 +43,7 @@ async function extractRaw(
     render?: DwfRenderFn;
     dpi?: number;
     counted?: import('./pdf').PdfPicturesCounted;
+    notScan?: true;
   },
 ): Promise<EmbeddedImage[]> {
   if (ext === 'docx') return (await import('./docx')).extractDocxImages(bytes);
@@ -52,6 +53,7 @@ async function extractRaw(
     return (await import('./pdf')).extractPdfImages(bytes, {
       maxImages: opts.maxImages,
       ...(opts.counted ? { counted: opts.counted } : {}),
+      ...(opts.notScan ? { notScan: true as const } : {}),
     });
   }
   if (ext === 'pptx' || ext === 'xlsx' || ext === 'xlsm') {
@@ -88,7 +90,7 @@ async function extractRaw(
 export async function readEmbeddedImages(
   bytes: Buffer,
   ext: string,
-  opts?: { maxImages?: number; render?: DwfRenderFn; dpi?: number },
+  opts?: { maxImages?: number; render?: DwfRenderFn; dpi?: number; notScan?: true },
 ): Promise<ExtractEmbeddedImagesResult> {
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
   const lower = ext.toLowerCase();
@@ -99,6 +101,7 @@ export async function readEmbeddedImages(
     ...(opts?.render ? { render: opts.render } : {}),
     ...(opts?.dpi ? { dpi: opts.dpi } : {}),
     ...(lower === 'pdf' ? { counted } : {}),
+    ...(opts?.notScan ? { notScan: true as const } : {}),
   });
   const result = gateAndCap(raw, cap);
   if (lower !== 'pdf') return result;

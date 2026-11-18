@@ -56,6 +56,7 @@ vi.mock('./terminal', () => ({ recordTerminalSkip: h.recordTerminalSkip }));
 vi.mock('@mantle/content/reader-passes', () => ({
   readerPassOf: vi.fn(async () => null),
   readerTextOf: vi.fn(async () => ''),
+  standingReaderText: vi.fn(async () => null),
 }));
 
 import { defaultFileText } from '@mantle/files';
