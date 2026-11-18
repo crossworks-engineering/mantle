@@ -286,13 +286,12 @@ export async function mayModerateFile(fileId: string): Promise<boolean | null> {
 }
 
 /** Throws the edit check's refusal unless the current scope may moderate
- *  the file: 404 for one it does not read, 403 for one it reads only. */
+ *  the file: 404 for one it does not read, 403 for one it reads only (the
+ *  one mapper answers it by the database's own words). */
 export async function assertMayModerateFile(fileId: string): Promise<void> {
   const ok = await mayModerateFile(fileId);
   if (ok === null) throw editCheckRefusalError('no_read');
-  if (!ok) {
-    throw Object.assign(editCheckRefusalError('no_edit'), { message: FILE_VERSION_RIGHT_MESSAGE });
-  }
+  if (!ok) throw editCheckRefusalError('no_edit');
 }
 
 /**

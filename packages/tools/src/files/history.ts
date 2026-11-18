@@ -9,6 +9,7 @@
  */
 import {
   deleteFileVersion,
+  FILE_VERSION_RIGHT_MESSAGE,
   listFileVersions,
   mayModerateFile,
   restoreFileVersion,
@@ -99,6 +100,8 @@ export const file_history_restore: BuiltinToolDef = {
     const versionId = str(input.version_id).trim();
     if (!fileId || !versionId) return { ok: false, error: 'file_id and version_id are required' };
     try {
+      const refused = await moderateRefusal(fileId);
+      if (refused) return refused;
       const res = await restoreFileVersion(ctx.ownerId, fileId, versionId);
       if (!res) {
         return {
@@ -151,6 +154,8 @@ export const file_history_delete: BuiltinToolDef = {
     const versionId = str(input.version_id).trim();
     if (!fileId || !versionId) return { ok: false, error: 'file_id and version_id are required' };
     try {
+      const refused = await moderateRefusal(fileId);
+      if (refused) return refused;
       const gone = await deleteFileVersion(ctx.ownerId, fileId, versionId);
       if (!gone) {
         return {
@@ -165,6 +170,15 @@ export const file_history_delete: BuiltinToolDef = {
     }
   },
 };
+
+/** The caller's right to restore or delete a version, in words an agent
+ *  acts on (the library asks the same check again, in the database's
+ *  words). */
+async function moderateRefusal(fileId: string): Promise<{ ok: false; error: string } | null> {
+  const may = await mayModerateFile(fileId);
+  if (may === null) return notFound('file', fileId, 'file_list / search_nodes');
+  return may ? null : { ok: false, error: FILE_VERSION_RIGHT_MESSAGE };
+}
 
 /** A file's history: list, restore, delete a version. */
 export const FILE_HISTORY_TOOLS: readonly BuiltinToolDef[] = [
