@@ -3,7 +3,7 @@
 -- rollback). Not a migration: nothing runs it on its own.
 --
 -- It puts 0102's ON DELETE RESTRICT back on ms_drive_items.node_id and takes
--- 0378 off the ledger, so the next roll forward runs it again. Rows the
+-- 0379 off the ledger, so the next roll forward runs it again. Rows the
 -- cascade already removed (with their deleted files) do not come back; they
 -- were provenance of files that no longer exist.
 --
@@ -19,4 +19,4 @@ ALTER TABLE "public"."ms_drive_items" DROP CONSTRAINT IF EXISTS "ms_drive_items_
 ALTER TABLE "public"."ms_drive_items" ADD CONSTRAINT "ms_drive_items_node_id_fkey"
   FOREIGN KEY ("node_id") REFERENCES "public"."nodes"("id") ON DELETE RESTRICT;
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792070000000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792080000000;
