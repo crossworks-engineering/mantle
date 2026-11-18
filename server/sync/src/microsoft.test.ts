@@ -66,7 +66,9 @@ describe('what a drive run does with each file', () => {
   });
 
   it('leaves an unchanged file, fetches a changed or new one', () => {
-    const map = new Map<string, MapRow>([['a', { itemId: 'a', hash: 'quickxor:1', size: 5 }]]);
+    const map = new Map<string, MapRow>([
+      ['a', { itemId: 'a', hash: 'quickxor:1', size: 5, modTime: null }],
+    ]);
     const p = plan();
     planItem(p, map, { selections: [] }, file('a', 5, 'quickxor:1'));
     planItem(p, map, { selections: [] }, file('b', 5, 'quickxor:2'));
@@ -75,23 +77,32 @@ describe('what a drive run does with each file', () => {
     expect(p.fetch.map((f) => f.id)).toEqual(['b', 'a']);
   });
 
-  it('re-links a file from the copied old map (no hash yet) when its size matches', () => {
+  it('re-links a copied old file only when its size matches and it has not changed since', () => {
+    const old = '2026-11-01T10:00:00Z';
     const map = new Map<string, MapRow>([
-      ['old', { itemId: 'old', hash: null, size: 10 }],
-      ['moved', { itemId: 'moved', hash: null, size: 10 }],
+      ['same', { itemId: 'same', hash: null, size: 10, modTime: old }],
+      ['resized', { itemId: 'resized', hash: null, size: 10, modTime: old }],
+      ['edited', { itemId: 'edited', hash: null, size: 10, modTime: old }],
+      ['notime', { itemId: 'notime', hash: null, size: 10, modTime: null }],
     ]);
     const p = plan();
-    planItem(p, map, { selections: [] }, file('old', 10, 'quickxor:x'));
-    planItem(p, map, { selections: [] }, file('moved', 11, 'quickxor:y'));
-    expect(p.relink.map((f) => f.id)).toEqual(['old']);
-    expect(p.fetch.map((f) => f.id)).toEqual(['moved']);
+    const at = (id: string, size: number, modTime: string | null) => ({
+      ...file(id, size, 'quickxor:x'),
+      modTime,
+    });
+    planItem(p, map, { selections: [] }, at('same', 10, '2026-11-01T09:59:00Z'));
+    planItem(p, map, { selections: [] }, at('resized', 11, '2026-11-01T09:59:00Z'));
+    planItem(p, map, { selections: [] }, at('edited', 10, '2026-11-17T08:00:00Z'));
+    planItem(p, map, { selections: [] }, at('notime', 10, null));
+    expect(p.relink.map((f) => f.id)).toEqual(['same']);
+    expect(p.fetch.map((f) => f.id)).toEqual(['resized', 'edited', 'notime']);
   });
 
   it('removes only what the listing did not keep: gone, or out of the selections', () => {
     const map = new Map<string, MapRow>([
-      ['in', { itemId: 'in', hash: 'h', size: 1 }],
-      ['out', { itemId: 'out', hash: 'h', size: 1 }],
-      ['gone', { itemId: 'gone', hash: 'h', size: 1 }],
+      ['in', { itemId: 'in', hash: 'h', size: 1, modTime: null }],
+      ['out', { itemId: 'out', hash: 'h', size: 1, modTime: null }],
+      ['gone', { itemId: 'gone', hash: 'h', size: 1, modTime: null }],
     ]);
     const p = plan();
     const drive = { selections: [{ itemId: 'f1', path: '/Keep', isFolder: true }] };
@@ -101,7 +112,9 @@ describe('what a drive run does with each file', () => {
   });
 
   it('skips a file over the cap and keeps its old copy', () => {
-    const map = new Map<string, MapRow>([['big', { itemId: 'big', hash: 'h', size: 1 }]]);
+    const map = new Map<string, MapRow>([
+      ['big', { itemId: 'big', hash: 'h', size: 1, modTime: null }],
+    ]);
     const p = plan();
     planItem(p, map, { selections: [] }, file('big', FILE_MAX_BYTES + 1, 'h2'));
     expect(p.fetch).toEqual([]);
@@ -147,6 +160,9 @@ describe('branch names', () => {
   it('keep the old account branch form', () => {
     expect(msBranchPath('Jo.Doe@Example.com')).toMatch(/^microsoft\.jo_doe_[0-9a-f]{4}$/);
     expect(msBranchPath('@example.com')).toMatch(/^microsoft\.account_[0-9a-f]{4}$/);
+    // A long name still makes a label the brain takes (at most 64).
+    const long = msBranchPath(`${'a'.repeat(80)}@example.com`).split('.')[1]!;
+    expect(long.length).toBeLessThanOrEqual(64);
   });
   it('give each drive an ltree label', () => {
     expect(driveLabel('Shared Documents', 'b!x')).toMatch(/^shared_documents_[0-9a-f]{4}$/);

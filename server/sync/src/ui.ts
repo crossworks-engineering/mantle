@@ -183,7 +183,7 @@ async function listScreen(req: UiRequest, deps: UiDeps, notice?: string): Promis
     })
     .join('');
   const microsoft = app
-    ? `${msList || '<p class="muted">No Microsoft account connected yet.</p>'}<p><a class="btn" href="${esc(connect)}" target="_blank" rel="noopener">Connect a Microsoft account</a> <a class="btn" href="${esc(href(req, '/microsoft/app'))}">Microsoft app</a></p><p class="muted">Connect opens Microsoft's sign-in in a new tab. Come back here when it says connected.</p>`
+    ? `${msList || '<p class="muted">No Microsoft account connected yet.</p>'}<p><a class="btn" href="${esc(connect)}" target="_blank" rel="noopener">Connect a Microsoft account</a> <a class="btn" href="${esc(href(req, '/microsoft/app'))}">Microsoft app</a></p><p class="muted">Connect opens Microsoft's sign-in in a new tab. When it says connected, come back and press Reload.</p>`
     : `<p class="muted">Set the Microsoft app (an Azure app registration) first.</p><p><a class="btn" href="${esc(href(req, '/microsoft/app'))}">Set the Microsoft app</a></p>`;
   return {
     status: 200,

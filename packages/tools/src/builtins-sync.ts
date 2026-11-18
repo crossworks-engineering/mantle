@@ -139,6 +139,8 @@ export const sync_mailbox_set: BuiltinToolDef = {
 export const sync_feed_set: BuiltinToolDef = {
   slug: 'sync_feed_set',
   mcpOnly: true,
+  // A feed's address can carry a secret (a private iCal link).
+  redactInputFields: ['url'],
   policy: writePolicy('adds or changes a calendar feed', { area: 'connectors', systemWhole: true }),
   name: 'Add or edit a calendar feed',
   description:

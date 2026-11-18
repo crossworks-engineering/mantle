@@ -19,13 +19,17 @@ import { createInterface } from 'node:readline';
 import { Readable } from 'node:stream';
 import { errorMessage } from '@mantle/std';
 import { BrainError, type Brain } from './brain';
-import { accessToken, inSelections } from './microsoft';
+import { accessToken, currentSelections, inSelections } from './microsoft';
 import type { MsDrive, State } from './state';
 
 /** The largest file a drive run takes: the brain's buffered upload cap
  *  (MAX_UPLOAD_BYTES), as before M4. A bigger one is skipped and counted. */
 export const FILE_MAX_BYTES = 64 * 1024 * 1024;
 const BATCH = 500;
+/** The most files one run fetches: a large first sync goes on in the next
+ *  runs, so mail and feeds on the one lane do not wait for hours. Removal
+ *  is not held back (the listing still names every file). */
+export const FETCH_MAX = 300;
 const ERROR_MAX = 300;
 /** rclone's onedrive remote, named in its environment only. */
 const REMOTE = 'ms';
@@ -85,7 +89,21 @@ export function parseLsjsonLine(line: string): Listed | null | 'bad' {
   };
 }
 
-export type MapRow = { itemId: string; hash: string | null; size: number | null };
+export type MapRow = {
+  itemId: string;
+  hash: string | null;
+  size: number | null;
+  /** When the item last changed, as the map knows it (ISO). */
+  modTime: string | null;
+};
+
+/** The listed time is not after the map's (a second's slack). */
+function notNewer(listed: string | null, known: string | null): boolean {
+  if (!listed || !known) return false;
+  const a = Date.parse(listed);
+  const b = Date.parse(known);
+  return Number.isFinite(a) && Number.isFinite(b) && a <= b + 1000;
+}
 
 export type Plan = {
   /** Files to fetch: new, or changed. */
@@ -114,7 +132,9 @@ export function planItem(
   }
   const known = map.get(item.id);
   if (known?.hash && item.hash && known.hash === item.hash) return;
-  if (known && !known.hash && known.size === item.size) {
+  // A copied old row (no hash yet): re-linked only when its size is the
+  // same and it has not changed since the old sync's last run.
+  if (known && !known.hash && known.size === item.size && notNewer(item.modTime, known.modTime)) {
     plan.relink.push(item);
     return;
   }
@@ -217,7 +237,7 @@ async function fetchOne(
   drive: MsDrive,
   path: string,
   item: Listed,
-): Promise<'stored' | 'skipped'> {
+): Promise<{ kind: 'stored' } | { kind: 'skipped' } | { kind: 'failed'; why: string }> {
   const child = spawn(
     'rclone',
     ['cat', '--config', '/dev/null', `${REMOTE}:${item.path.slice(1)}`],
@@ -259,17 +279,19 @@ async function fetchOne(
     // rclone ended on its own with an error: that is the failure. Else the
     // brain (or the road to it) stopped first, and rclone is stopped here.
     const done = child.exitCode !== null || child.signalCode !== null;
-    if (done && child.exitCode !== 0) {
-      throw new Error(`rclone cat failed: ${lastLine(stderr)}`, { cause: err });
-    }
+    // This one file could not be downloaded (Microsoft refused it): the run
+    // goes on without it, and tries it again next time.
+    if (done && child.exitCode !== 0) return { kind: 'failed', why: lastLine(stderr) };
     if (!done) child.kill('SIGKILL');
     await exited;
-    if (err instanceof BrainError && (err.status === 400 || err.status === 413)) return 'skipped';
+    if (err instanceof BrainError && (err.status === 400 || err.status === 413)) {
+      return { kind: 'skipped' };
+    }
     throw err;
   }
   const code = await exited;
-  if (code !== 0) throw new Error(`rclone cat failed: ${lastLine(stderr)}`);
-  return 'stored';
+  if (code !== 0) return { kind: 'failed', why: lastLine(stderr) };
+  return { kind: 'stored' };
 }
 
 export type DriveRun = {
@@ -288,11 +310,14 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
     const account = await state.msAccount(drive.accountId);
     if (!account) throw new Error('its Microsoft account is not connected');
     const path = `${account.branchPath}.${drive.branchLabel}`;
+    // Each chosen folder's path as it is now (a renamed folder keeps
+    // syncing; its files are not taken for gone).
+    const chosen = { selections: await currentSelections(state, drive) };
     const map = await loadMap(brain, drive.id);
     const plan: Plan = { fetch: [], relink: [], seen: new Set(), oversize: 0 };
     const listing = await listDrive(state, drive, (item) => {
       run.listed += 1;
-      planItem(plan, map, drive, item);
+      planItem(plan, map, chosen, item);
     });
     run.skipped += plan.oversize;
     for (let i = 0; i < plan.relink.length; i += BATCH) {
@@ -307,9 +332,22 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
       });
       run.relinked += r.relinked;
     }
-    for (const item of plan.fetch) {
-      if ((await fetchOne(brain, state, drive, path, item)) === 'stored') run.fetched += 1;
-      else run.skipped += 1;
+    let failed = 0;
+    let lastFailure = '';
+    for (const item of plan.fetch.slice(0, FETCH_MAX)) {
+      const got = await fetchOne(brain, state, drive, path, item);
+      if (got.kind === 'stored') run.fetched += 1;
+      else if (got.kind === 'skipped') run.skipped += 1;
+      else {
+        failed += 1;
+        lastFailure = got.why;
+      }
+    }
+    if (failed) {
+      error = `${failed} file(s) could not be downloaded; the last: ${lastFailure}`.slice(
+        0,
+        ERROR_MAX,
+      );
     }
     if (listing.complete) {
       const gone = goneIds(map, plan.seen);
@@ -324,6 +362,11 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
       // A listing that stopped early removes nothing: a file it missed is
       // not gone.
       error = listing.error;
+    }
+    if (plan.fetch.length > FETCH_MAX) {
+      console.warn(
+        `[sync] drive ${drive.id}: ${plan.fetch.length - FETCH_MAX} file(s) left for the next run`,
+      );
     }
   } catch (err) {
     error = errorMessage(err).slice(0, ERROR_MAX);

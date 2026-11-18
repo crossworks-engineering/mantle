@@ -6,7 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { errorMessage } from '@mantle/std';
-import type { Brain } from './brain';
+import { BrainError, type Brain } from './brain';
 import { clearFeed } from './feeds';
 import { probe } from './imap';
 import { runError } from './mail';
@@ -33,6 +33,20 @@ export class AccountError extends Error {
 }
 
 export const DAYS_MAX = 3650;
+
+/** The brain's mailbox row for an address (made or found). A 409: the
+ *  address is linked the other way (IMAP or Outlook), said as it is. */
+async function mailboxRow(
+  deps: AccountDeps,
+  body: Record<string, unknown>,
+): Promise<{ id: string }> {
+  try {
+    return await deps.brain.post<{ id: string }>('/api/sidecar/mail/accounts', body);
+  } catch (err) {
+    if (err instanceof BrainError && err.status === 409) throw new AccountError(err.message);
+    throw err;
+  }
+}
 const SELECTIONS_MAX = 500;
 
 function portOf(v: unknown): number | null {
@@ -96,7 +110,7 @@ export async function saveMailbox(
     }
   }
   const displayName = (input.displayName ?? '').trim() || null;
-  const { id: mailboxId } = await deps.brain.post<{ id: string }>('/api/sidecar/mail/accounts', {
+  const { id: mailboxId } = await mailboxRow(deps, {
     address,
     displayName,
     enabled: input.enabled,
@@ -221,7 +235,7 @@ export async function setOutlookMail(
   const account = await deps.state.msAccount(accountId);
   if (!account) throw new AccountError('No such Microsoft account.');
   if (on) {
-    const { id: mailboxId } = await deps.brain.post<{ id: string }>('/api/sidecar/mail/accounts', {
+    const { id: mailboxId } = await mailboxRow(deps, {
       address: account.upn.toLowerCase(),
       displayName: account.displayName,
       enabled: true,

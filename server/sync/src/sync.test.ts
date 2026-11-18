@@ -224,7 +224,8 @@ describe('the screens', () => {
     expect(list.html).toContain('/api/services/sync/oauth/start?t=tk%22%3C');
     const app = await uiReply(req('/microsoft/app'), deps);
     expect(app.html).not.toContain('secret-value-9999');
-    expect(app.html).toContain('secr…9999');
+    expect(app.html).toContain('…9999');
+    expect(app.html).not.toContain('secr…');
   });
 
   it('answers 404 for a path it does not know, and never shows a password', async () => {

@@ -117,7 +117,7 @@ export async function syncOAuthCallback(req: Request): Promise<Response> {
     return resultPage(
       200,
       'Connected',
-      `${r.upn} is connected. Close this tab and go back to Settings > Accounts to turn on its drives and mail.`,
+      `${r.upn} is connected. Close this tab, go back to Settings > Accounts and press Reload, then turn on its drives and mail.`,
       true,
     );
   } catch (err) {

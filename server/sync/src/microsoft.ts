@@ -70,7 +70,8 @@ function label(text: string, max: number): string {
  *  domain>`, as before M4 (so a reconnected account keeps its branch). */
 export function msBranchPath(upn: string): string {
   const at = upn.lastIndexOf('@');
-  const local = label(at < 0 ? upn : upn.slice(0, at), 60) || 'account';
+  // 59: with `_` and 4 hex the label stays within ltree's 64 the brain takes.
+  const local = label(at < 0 ? upn : upn.slice(0, at), 59) || 'account';
   const domain = at < 0 ? '' : upn.slice(at + 1).toLowerCase();
   return `microsoft.${local}_${sha256hex(domain).slice(0, 4)}`;
 }
@@ -136,28 +137,30 @@ async function refresh(state: State, a: MsAccount): Promise<string> {
   const app = await state.msApp();
   if (!app) throw new MsAuthError('The Microsoft app is not set on this box.');
   if (!a.refreshToken) throw new MsAuthError('Connect this Microsoft account again.');
+  let t: TokenAnswer;
   try {
     // No `scope` on a refresh: an account consented before a scope was added
     // could not refresh with it (AADSTS65001).
-    const t = await tokenRequest(app, {
-      grant_type: 'refresh_token',
-      refresh_token: a.refreshToken,
-    });
-    const next: MsAccount = {
-      ...a,
-      accessToken: t.access_token,
-      refreshToken: t.refresh_token ?? a.refreshToken,
-      expiresAt: Date.now() + t.expires_in * 1000,
-      scopes: t.scope ? t.scope.split(' ').filter(Boolean) : a.scopes,
-      lastError: null,
-    };
-    await state.putMsAccount(next);
-    return t.access_token;
+    t = await tokenRequest(app, { grant_type: 'refresh_token', refresh_token: a.refreshToken });
   } catch (err) {
     const lastError = `token refresh failed: ${errorMessage(err)}`.slice(0, ERROR_MAX);
-    await state.putMsAccount({ ...a, lastError }).catch(() => {});
+    const fresh = await state.msAccount(a.id).catch(() => null);
+    if (fresh) await state.putMsAccount({ ...fresh, lastError }).catch(() => {});
     throw err;
   }
+  // Read again: the mail switch may have moved meanwhile, or the account
+  // been disconnected (then nothing is written back).
+  const fresh = await state.msAccount(a.id);
+  if (!fresh) throw new MsAuthError('This Microsoft account is not connected.');
+  await state.putMsAccount({
+    ...fresh,
+    accessToken: t.access_token,
+    refreshToken: t.refresh_token ?? fresh.refreshToken,
+    expiresAt: Date.now() + t.expires_in * 1000,
+    scopes: t.scope ? t.scope.split(' ').filter(Boolean) : fresh.scopes,
+    lastError: null,
+  });
+  return t.access_token;
 }
 
 // ── Graph ──────────────────────────────────────────────────────────────────
@@ -235,7 +238,7 @@ export function appView(app: MsApp | null) {
     clientId: app.clientId,
     tenant: app.tenant,
     redirectUri: app.redirectUri,
-    secretMasked: s.length >= 8 ? `${s.slice(0, 4)}…${s.slice(-4)}` : '••••',
+    secretMasked: s.length >= 8 ? `…${s.slice(-4)}` : '••••',
   };
 }
 
@@ -271,6 +274,10 @@ export async function startSignIn(state: State): Promise<{ url: string; state: s
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash('sha256').update(verifier).digest());
   const st = randomBytes(16).toString('hex');
+  // Sign-ins started and never finished: dropped once past their time.
+  for (const old of await state.oauthAll()) {
+    if (Date.now() - old.value.at > OAUTH_TTL_MS) await state.deleteOAuth(old.key).catch(() => {});
+  }
   await state.putOAuth(st, { verifier, at: Date.now() });
   const u = new URL(`${AUTHORITY}/${encodeURIComponent(app.tenant)}/oauth2/v2.0/authorize`);
   u.search = new URLSearchParams({
@@ -471,6 +478,43 @@ export async function browseDrive(
     size: typeof it.size === 'number' ? it.size : null,
     path: itemPathOf(it),
   }));
+}
+
+/** The drive's selections with each one's path as it is now, read by its
+ *  id (a folder renamed or moved since it was chosen). A choice Microsoft no
+ *  longer knows (404: deleted) keeps its old path; its files are gone.
+ *  Any other error stops the run before it removes anything. Saved back when
+ *  a path changed. */
+export async function currentSelections(state: State, drive: MsDrive): Promise<DriveSelection[]> {
+  if (drive.selections.length === 0) return [];
+  const token = await accessToken(state, drive.accountId);
+  let moved = false;
+  const now: DriveSelection[] = [];
+  for (const sel of drive.selections) {
+    if (!GRAPH_ID_RE.test(sel.itemId) || !GRAPH_ID_RE.test(drive.driveId)) {
+      now.push(sel);
+      continue;
+    }
+    try {
+      const it = await graphJson<GraphItem>(
+        token,
+        `/drives/${drive.driveId}/items/${sel.itemId}?$select=id,name,parentReference`,
+      );
+      const path = itemPathOf(it);
+      if (path && path !== sel.path) {
+        moved = true;
+        now.push({ ...sel, path, name: it.name ?? sel.name });
+      } else now.push(sel);
+    } catch (err) {
+      if (err instanceof GraphError && err.status === 404) now.push(sel);
+      else throw err;
+    }
+  }
+  if (moved) {
+    const fresh = await state.msDrive(drive.id);
+    if (fresh) await state.putMsDrive({ ...fresh, selections: now });
+  }
+  return now;
 }
 
 /** Whether a drive item at `path` (after the root, `/a/b.txt`) with `itemId`

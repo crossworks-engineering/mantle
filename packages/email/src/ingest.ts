@@ -39,6 +39,7 @@ import { hashBuffer } from '@mantle/storage';
 import { stageFileObject } from '@mantle/files/broker';
 import { loadContactGate } from '@mantle/content';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { ConflictError } from '@mantle/std';
 import { accountBranchPath } from './accounts';
 import { redactSigninCodes, touchesClientCodeMail } from './client-code-mail';
 import { salienceForDeliveryKind } from './classify';
@@ -84,11 +85,20 @@ export async function saveMailbox(
   },
 ): Promise<string> {
   const address = input.address.trim().toLowerCase();
+  const provider = input.provider ?? 'imap';
   const [existing] = await db
-    .select({ id: emailAccounts.id })
+    .select({ id: emailAccounts.id, provider: emailAccounts.provider })
     .from(emailAccounts)
     .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.address, address)))
     .limit(1);
+  // One address, one way in: an IMAP mailbox and an Outlook inbox never
+  // share a row (switching one off would switch the other off). An old row
+  // of the same kind comes back, so its stored mail stays linked.
+  if (existing && existing.provider !== provider) {
+    throw new ConflictError(
+      `${address} is linked as ${existing.provider === 'microsoft' ? 'a Microsoft account' : 'a mailbox'} already. Remove that first.`,
+    );
+  }
   if (existing) {
     await db
       .update(emailAccounts)
@@ -107,7 +117,7 @@ export async function saveMailbox(
       .insert(emailAccounts)
       .values({
         userId: ownerId,
-        provider: input.provider ?? 'imap',
+        provider,
         address,
         displayName: input.displayName ?? null,
         ingestPolicy: 'approve_list',

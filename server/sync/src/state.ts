@@ -174,6 +174,13 @@ export function createState(brain: Brain) {
     msCursor: async (id: string) => (await get<MsCursor>(`mscursor:${id}`)) ?? { since: null },
     putMsCursor: (id: string, c: MsCursor) => put(`mscursor:${id}`, c),
     oauth: (st: string) => get<MsOAuth>(`msoauth:${st}`),
+    /** Every sign-in under way: its state and value. */
+    oauthAll: async () => {
+      const r = await brain.get<{ values: { key: string; value: MsOAuth }[] }>(
+        `/api/sidecar/state?prefix=${encodeURIComponent('msoauth:')}`,
+      );
+      return r.values.map((v) => ({ key: v.key.slice('msoauth:'.length), value: v.value }));
+    },
     putOAuth: (st: string, o: MsOAuth) => put(`msoauth:${st}`, o),
     deleteOAuth: (st: string) => del(`msoauth:${st}`),
   };
