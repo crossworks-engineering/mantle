@@ -365,14 +365,22 @@ async function removeMailbox(req: UiRequest, deps: UiDeps, id: string): Promise<
   if (!account) return notFound(req);
   // After a run of it that is under way (the lane), so nothing it writes
   // comes back after the removal.
-  await deps.lane.exclusive(async () => {
-    await deps.brain.del(`/api/sidecar/mail/accounts/${id}`).catch((err: unknown) => {
-      // A mailbox row the brain no longer has: the state still goes.
-      if ((err as { status?: number }).status !== 404) throw err;
-    });
-    await deps.state.deleteAccount(id);
-  });
-  return listScreen(req, deps, `Removed ${account.address}. Its stored mail stays in the brain.`);
+  const done = await settlesSoon(
+    deps.lane.exclusive(async () => {
+      await deps.brain.del(`/api/sidecar/mail/accounts/${id}`).catch((err: unknown) => {
+        // A mailbox row the brain no longer has: the state still goes.
+        if ((err as { status?: number }).status !== 404) throw err;
+      });
+      await deps.state.deleteAccount(id);
+    }),
+  );
+  return listScreen(
+    req,
+    deps,
+    done
+      ? `Removed ${account.address}. Its stored mail stays in the brain.`
+      : `Removing ${account.address}: it finishes after the sync under way. Its stored mail stays in the brain.`,
+  );
 }
 
 function feedForm(
@@ -420,11 +428,19 @@ async function removeFeed(req: UiRequest, deps: UiDeps, id: string): Promise<UiR
   if (!feed) return notFound(req);
   // After a run of it that is under way (the lane), so no event it stores
   // comes back after the removal.
-  await deps.lane.exclusive(async () => {
-    await clearFeed(deps.brain, feed);
-    await deps.state.deleteFeed(id);
-  });
-  return listScreen(req, deps, `Removed ${feed.name} and its events.`);
+  const done = await settlesSoon(
+    deps.lane.exclusive(async () => {
+      await clearFeed(deps.brain, feed);
+      await deps.state.deleteFeed(id);
+    }),
+  );
+  return listScreen(
+    req,
+    deps,
+    done
+      ? `Removed ${feed.name} and its events.`
+      : `Removing ${feed.name}: it finishes after the sync under way, and its events go with it.`,
+  );
 }
 
 async function discoverScreen(req: UiRequest, deps: UiDeps, notice?: string): Promise<UiReply> {
@@ -462,6 +478,24 @@ async function addSender(req: UiRequest, deps: UiDeps): Promise<UiReply> {
     return discoverScreen(req, deps, `Could not add ${address}: ${errorMessage(err)}`);
   }
   return discoverScreen(req, deps, `Added ${address}. Their recent mail comes in now.`);
+}
+
+/** How long a removal screen waits for the lane before it answers. */
+const REMOVE_WAIT_MS = 20_000;
+
+/** True when `job` finished within REMOVE_WAIT_MS (its error thrown), false
+ *  when it is still queued behind a long sync: it then finishes on its own,
+ *  and the screen says so instead of timing out. */
+async function settlesSoon(job: Promise<unknown>): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wait = new Promise<false>((r) => (timer = setTimeout(() => r(false), REMOVE_WAIT_MS)));
+  // A queued removal that fails later is logged, never unhandled.
+  job.catch((err: unknown) => console.warn(`[sync] a removal failed: ${errorMessage(err)}`));
+  try {
+    return await Promise.race([job.then(() => true as const), wait]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function notFound(req: UiRequest): UiReply {
