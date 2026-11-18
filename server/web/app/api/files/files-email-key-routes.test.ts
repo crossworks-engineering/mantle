@@ -58,6 +58,8 @@ vi.mock('@mantle/files', async (importOriginal) => ({
 vi.mock('@mantle/content/pipeline-state', async (orig) => ({
   ...(await orig<typeof import('@mantle/content/pipeline-state')>()),
   ownManifests: async () => [],
+  // Off nowhere: the status's read of the off lists needs no database here.
+  offListsOf: async () => new Map(),
 }));
 
 vi.mock('@/lib/files', async (importOriginal) => ({
