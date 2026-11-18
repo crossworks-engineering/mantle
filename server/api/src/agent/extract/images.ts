@@ -225,11 +225,10 @@ export async function maybeExtractEmbeddedImages(
   // A PDF past the size pdfjs opens is read in page windows (G2); so are the
   // pages of a long PDF past the ones one read scans.
   const isPdf = loaded.ext === 'pdf' && !own;
-  // A book whose Reader stands over the core's PDF read (P2): its pages are
-  // the Reader's to picture (the page pictures of the scan, G1), so the
-  // pass reads no windows of it, and none of a book past 256 MB at all.
+  // A book whose Reader stands over the core's PDF read (P2) is read by
+  // windows like any PDF, but each window keeps the scan rule: its scanned
+  // pages are the Reader's to picture (G1), never page scans here.
   const book = isPdf && (await readerStandsOverFile(ownerId, node.id, data.sha256));
-  if (book && loaded.bytes.length > PDF_MAX_BYTES) return;
   const whole =
     isPdf && loaded.bytes.length > PDF_MAX_BYTES
       ? null
@@ -238,20 +237,23 @@ export async function maybeExtractEmbeddedImages(
           ...(own ? { reader: own } : {}),
         });
   const result: PdfPicturesRead =
-    isPdf && !book && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
-      ? await picturesByWindows(loaded.bytes, cap, whole)
+    isPdf && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
+      ? await picturesByWindows(loaded.bytes, cap, whole, undefined, { scanBook: book })
       : { ...whole!, windowsFailed: 0 };
   // The pictures of the file the cap keeps, those it had before too.
   const keptTotal = result.images.length;
-  // The pictures a file leaves out are stamped on it, and a stamp of an
+  // The pictures a file leaves out are stamped on it once the new ones are
+  // saved (a save that failed is a picture not kept), and a stamp of an
   // earlier read that left none out goes (G4). Never fatal.
-  await stampPicturesLeftOut(node, ownerId, result).catch((err: unknown) => {
-    log('extractor').warn(`picture count not stamped: ${errorMessage(err)}`);
-  });
+  const stamp = (notSaved: number) =>
+    stampPicturesLeftOut(node, ownerId, result, keptTotal - notSaved).catch((err: unknown) => {
+      log('extractor').warn(`picture count not stamped: ${errorMessage(err)}`);
+    });
   // The pictures this file has from an earlier read keep their nodes (G5).
   if (have.size > 0) {
     result.images = result.images.filter((img) => !have.has(img.sha256));
   }
+  if (result.images.length === 0) await stamp(0);
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
     // images" should be explainable from /traces rather than mysterious.
@@ -291,7 +293,7 @@ export async function maybeExtractEmbeddedImages(
   const sourceSlug = buildSourceSlug(loaded.filename);
   const titles = buildImageTitles(result.images, node.title || loaded.filename);
 
-  await stepInOwnTrace(
+  const created = await stepInOwnTrace(
     ownerId,
     node,
     {
@@ -398,6 +400,7 @@ export async function maybeExtractEmbeddedImages(
       return createdIds;
     },
   );
+  await stamp(result.images.length - (Array.isArray(created) ? created.length : 0));
 }
 
 /**
@@ -870,14 +873,16 @@ async function stampPicturesLeftOut(
   node: typeof nodes.$inferSelect,
   ownerId: string,
   result: PdfPicturesRead,
+  saved: number,
 ): Promise<void> {
-  const kept = result.images.length;
-  const left = picturesLeftOutOf(result);
+  const found = result.images.length + picturesLeftOutOf(result);
+  const kept = Math.max(0, Math.min(saved, found));
   const data = (node.data ?? {}) as Record<string, unknown>;
-  if (left === 0 && data.images === undefined) return;
+  if (kept === found && data.images === undefined) return;
+  // `more`: the count past the cap was cut short, so `found` is a floor.
   const next =
-    left > 0
-      ? sql`${nodes.data} || jsonb_build_object('images', jsonb_build_object('kept', ${kept}::int, 'found', ${kept + left}::int))`
+    kept < found
+      ? sql`${nodes.data} || jsonb_build_object('images', jsonb_build_object('kept', ${kept}::int, 'found', ${found}::int, 'more', ${result.countCut === true}::boolean))`
       : sql`${nodes.data} - 'images'`;
   await db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
@@ -896,19 +901,31 @@ async function stampPicturesLeftOut(
 
 /**
  * Stamp the pages a Reader read of a book it read in page windows (P2,
- * load-body.ts): `ocr = { pages_read, pages_total }`, as the OCR of a scan
- * stamps it, so a book with a window that could not be read shows
- * `partial` (extractionOf). Here because `ocr` is this module's key.
+ * load-body.ts): `ocr = { pages_read, pages_total }` when a window could
+ * not be read, as the OCR of a scan stamps it, so the book shows `partial`
+ * (extractionOf); a book read whole carries no `ocr` (one of an older
+ * read goes). Only while the node holds the bytes `sha256`. Here because
+ * `ocr` is this module's key.
  */
 export async function stampReaderPages(
   nodeId: string,
   ownerId: string,
+  sha256: string,
   pages: { read: number; total: number },
 ): Promise<void> {
   await db
     .update(nodes)
     .set({
-      data: sql`${nodes.data} || jsonb_build_object('ocr', jsonb_build_object('pages_read', ${pages.read}::int, 'pages_total', ${pages.total}::int))`,
+      data:
+        pages.read < pages.total
+          ? sql`${nodes.data} || jsonb_build_object('ocr', jsonb_build_object('pages_read', ${pages.read}::int, 'pages_total', ${pages.total}::int))`
+          : sql`${nodes.data} - 'ocr'`,
     })
-    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
+    .where(
+      and(
+        eq(nodes.id, nodeId),
+        eq(nodes.ownerId, ownerId),
+        sql`${nodes.data}->>'sha256' = ${sha256}`,
+      ),
+    );
 }

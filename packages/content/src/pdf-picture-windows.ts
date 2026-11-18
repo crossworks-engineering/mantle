@@ -14,12 +14,21 @@
  * stamps.
  */
 import { createHash } from 'node:crypto';
-import { PIPELINE_WINDOW_DEFAULT, isParserError, parserImages } from '@mantle/files';
+import { PIPELINE_WINDOW_DEFAULT, parserImages } from '@mantle/files';
 import type { ExtractEmbeddedImagesResult } from '@mantle/files/embedded-images';
-import { pdfWindows } from './pipeline-runner';
+import { isWindowLost, pdfWindows, windowJob } from './pipeline-runner';
 
-/** A picture read of a whole PDF, with the windows it could not read. */
-export type PdfPicturesRead = ExtractEmbeddedImagesResult & { windowsFailed: number };
+/** A picture read of a whole PDF, with the windows it could not read, and
+ *  whether a count past the cap was cut short (then what it left out is a
+ *  floor). */
+export type PdfPicturesRead = ExtractEmbeddedImagesResult & {
+  windowsFailed: number;
+  countCut?: boolean;
+};
+
+/** The most bytes of pictures one windowed read holds: past it a picture
+ *  is counted as left out (`answer_budget`), never held. */
+export const PICTURES_HELD_MAX_BYTES = 256 * 1024 * 1024;
 
 /** Whether the picture pass reads this PDF in page windows: past the size
  *  pdfjs opens, or a first read that scanned fewer pages than the file has. */
@@ -42,8 +51,11 @@ export async function picturesByWindows(
   cap: number,
   whole: ExtractEmbeddedImagesResult | null,
   window: { pages: number; mb: number } = PIPELINE_WINDOW_DEFAULT,
+  opts: { scanBook?: boolean } = {},
 ): Promise<PdfPicturesRead> {
   const images = [...(whole?.images ?? [])];
+  let held = images.reduce((n, i) => n + i.bytes.length, 0);
+  let countCut = whole?.pdf?.countCut === true;
   const rejected: ExtractEmbeddedImagesResult['rejected'] = { ...(whole?.rejected ?? {}) };
   let candidates = whole?.candidates ?? 0;
   let windowsFailed = 0;
@@ -56,15 +68,23 @@ export async function picturesByWindows(
       continue;
     }
     const { part } = w;
-    let got: ExtractEmbeddedImagesResult;
-    try {
-      got = await parserImages(part.bytes, 'pdf', { maxImages: Math.max(0, cap - images.length) });
-    } catch (err) {
-      if (isParserError(err) && err.retryable) throw err;
+    // Once the file is known to hold pictures, a window of one picture a
+    // page is no scan: its pictures are read (the scan rule of one read,
+    // packages/files/src/pdf.ts, judges a whole file, not 50 pages of it).
+    // Not for a book whose Reader pictures its scanned pages (G1).
+    const notScan = !opts.scanBook && images.length > 0;
+    const got = await windowJob(() =>
+      parserImages(part.bytes, 'pdf', {
+        maxImages: Math.max(0, cap - images.length),
+        ...(notScan ? { notScan: true } : {}),
+      }),
+    );
+    if (isWindowLost(got)) {
       windowsFailed += 1;
       continue;
     }
     candidates += got.candidates;
+    if (got.pdf?.countCut) countCut = true;
     for (const [k, v] of Object.entries(got.rejected)) {
       const key = k as keyof ExtractEmbeddedImagesResult['rejected'];
       rejected[key] = (rejected[key] ?? 0) + (v ?? 0);
@@ -78,6 +98,12 @@ export async function picturesByWindows(
         rejected.over_cap = (rejected.over_cap ?? 0) + 1;
         continue;
       }
+      if (held + img.bytes.length > PICTURES_HELD_MAX_BYTES) {
+        const r = rejected as Record<string, number | undefined>;
+        r.answer_budget = (r.answer_budget ?? 0) + 1;
+        continue;
+      }
+      held += img.bytes.length;
       seen.add(img.sha256);
       // The page of the original file, and the order over every window.
       const page = img.location?.page;
@@ -90,7 +116,7 @@ export async function picturesByWindows(
       });
     }
   }
-  return { images, rejected, candidates, windowsFailed };
+  return { images, rejected, candidates, windowsFailed, ...(countCut ? { countCut } : {}) };
 }
 
 /** The pictures a read left out: over the cap, past the parser's answer

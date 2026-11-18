@@ -205,9 +205,10 @@ job, so the count is exact on all but a very long file (then it is a floor).
 **A file that leaves pictures out says so** (task 8d40932a, G4). The picture
 pass stamps `data.images = { kept, found }` when the cap left pictures out or
 a page window of the file could not be read (each such window counts as one
-picture found at least). `extractionOf` then gives the file `partial` with
-the hint "N of M pictures kept", and `file_list` with `extraction: partial`
-lists it. A file that left none out stamps nothing, and a later read that
+picture found at least), stamped after the save, so a picture whose save
+failed is one not kept. `extractionOf` then gives the file `partial` with
+the hint "N of M pictures kept" ("N of at least M" when the count past the
+cap was cut short), and `file_list` with `extraction: partial` lists it. A file that left none out stamps nothing, and a later read that
 kept every picture takes the stamp off.
 
 **A raised cap fetches the rest** (G5). A file whose `data.images` says
@@ -223,7 +224,15 @@ parser cuts each window with qpdf (`/pdf/split`, docs/parser.md) and reads its
 pictures, with the cap left over; the reading order, each picture's page on
 the original file and the sha256 dedupe hold across windows. A PDF of more
 than 100 pages (`MAX_PDF_PAGES_SCANNED`) has its first 100 read whole and the
-rest by windows, so no page of a long manual is left unread.
+rest by windows, so no page of a long manual is left unread. A window job
+that fails is tried once more in place (its count is its own), then left
+out and counted; a busy parser fails the pass, and the extract tries again.
+Once the file is known to hold pictures, a window of one picture a page is
+no scan and its pictures are read. A book whose Reader stands over the
+core's PDF read (docs/pipelines.md, "Page windows") keeps the scan rule in
+every window: its scanned pages are its Reader's to picture. One windowed
+read holds at most 256 MB of pictures; past it a picture is counted as
+left out, never held.
 
 **Scanned PDFs are excluded by shape detection** (one image per page across the
 document); those belong to the rasterize + OCR path above; extracting them

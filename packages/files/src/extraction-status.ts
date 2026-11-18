@@ -47,7 +47,7 @@ export type FileExtraction = {
   pages?: { read: number; total: number };
   /** Pictures left out (over the cap, or a page window that could not be
    *  read): the pictures kept and the pictures found (G4). */
-  pictures?: { kept: number; found: number };
+  pictures?: { kept: number; found: number; more?: true };
 };
 
 /** Verdicts that mean the content is there but could not be read. Every
@@ -89,17 +89,18 @@ const HINTS: Readonly<Record<string, string>> = {
 const PARTIAL_HINT = (read: number, total: number) =>
   `Only ${read} of ${total} pages were read. The other pages are not in search.`;
 
-const PICTURES_HINT = (kept: number, found: number) =>
-  `${kept} of ${found} pictures kept. The others are not in search: raise the picture cap and read the file again to fetch them.`;
+const PICTURES_HINT = (kept: number, found: number, more: boolean) =>
+  `${kept} of ${more ? 'at least ' : ''}${found} pictures kept. The others are not in search: a raised picture cap and a new read fetch those the cap left out.`;
 
 /** The pictures a file left out (`data.images`), or null. */
 export function picturesLeftOut(
   data: Readonly<Record<string, unknown>>,
-): { kept: number; found: number } | null {
-  const img = data.images as { kept?: unknown; found?: unknown } | undefined;
+): { kept: number; found: number; more?: true } | null {
+  const img = data.images as { kept?: unknown; found?: unknown; more?: unknown } | undefined;
   const kept = typeof img?.kept === 'number' ? img.kept : null;
   const found = typeof img?.found === 'number' ? img.found : null;
-  return kept !== null && found !== null && kept < found ? { kept, found } : null;
+  if (kept === null || found === null || kept >= found) return null;
+  return { kept, found, ...(img?.more === true ? { more: true as const } : {}) };
 }
 
 function hintOf(reason: string): string | undefined {
@@ -136,12 +137,18 @@ export function extractionOf(
         pages: { read, total },
         hint:
           PARTIAL_HINT(read, total) +
-          (pictures ? ` ${PICTURES_HINT(pictures.kept, pictures.found)}` : ''),
+          (pictures
+            ? ` ${PICTURES_HINT(pictures.kept, pictures.found, pictures.more === true)}`
+            : ''),
         ...(pictures ? { pictures } : {}),
       };
     }
     if (pictures) {
-      return { state: 'partial', pictures, hint: PICTURES_HINT(pictures.kept, pictures.found) };
+      return {
+        state: 'partial',
+        pictures,
+        hint: PICTURES_HINT(pictures.kept, pictures.found, pictures.more === true),
+      };
     }
     if (d.indexing_applied === 'local') {
       return { state: 'indexed', reason: 'local_only', hint: HINTS.local_only };

@@ -2286,7 +2286,10 @@ cannot cut or the step cannot read is left out with a warning and the run
 goes on from the last good state; the database's `_meta` keeps `pages_read`
 and `pages_total`, so the file's status says `partial` with the pages read.
 `not_mine` on window 1 is the run's answer. A busy parser fails the run, and
-the extract tries again.
+the extract tries again. A window job (the cut, the step) that fails is
+tried once more in place before it is left out: a first timeout or crash
+of one window never loses the book (its failure count is the window's
+own).
 
 A step's job handle has `pdfPageCount()` (qpdf, no pdfjs), so a router names
 a file past the 256 MB pdfjs opens.
@@ -2300,7 +2303,8 @@ Reader's text is the file's text: from the run of this extract's database
 pass, kept for the extract (`routedReaderRun`, no second job), else, for a
 Reader that says `produces.pages`, from its pages in the database. The pages
 it read are stamped as the scan OCR stamps them (`ocr`). A Reader that gave
-no text leaves the file to the core's read, as before. Such a Reader writes
+no text leaves the file to the core's read, as before. The database's stamp
+names that Reader, not the extension's reader. Such a Reader writes
 the `File` tab (`pdf-file-v1`) with its kind: a read again of a PDF finds its
 kind there, and a database with no `File` tab is kept as it is (`kept`).
 
