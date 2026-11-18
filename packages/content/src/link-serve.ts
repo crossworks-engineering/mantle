@@ -88,7 +88,8 @@ export type LinkRights = {
   /** A Moderator of the home, or a Write grant in one of the caller's
    *  workspaces. */
   edit: boolean;
-  /** A Moderator of the home, or an Admin user (mantle_may_manage_in). */
+  /** A Moderator of the home, or an Admin user who reads it
+   *  (mantle_may_manage_in). */
   manage: boolean;
   /** A read-only snapshot copy: it never carries a link. */
   snapshotCopy?: boolean;

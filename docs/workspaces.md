@@ -207,13 +207,13 @@ every workspace it is granted to, each with a Write switch.
   of its home. An app is the exception: its code, data, snapshots and
   timers stay with its home's Moderators (and its data with its Write
   grants), never a holder's Moderator.
-- **An Admin user** (owner's word, 2026-11-18) counts as a Moderator of
-  the home of every item it reads: wherever this table says "Moderator of
-  its home" (delete, a home move from H, grants, an app's or a canvas's
-  link, history, app code), an Admin user may too. A home move still needs
-  a Moderator of T, and editing the content is the edit rule above (an
-  Admin user who only reads the item through a plain seat does not edit
-  it).
+- **An Admin user** (owner's word, 2026-11-18, decision A) counts as a
+  Moderator of the home of any item it can read, and of nothing it does
+  not read: wherever this table says "Moderator of its home" (edit,
+  delete, a home move from H, grants, an app's or a canvas's link,
+  history, app code), an Admin user who reads the item may too, through
+  any seat. An item it does not read stays not found. A home move still
+  needs a Moderator of T.
 - A Recall map is narrower than the table: deleting it, confirming a
   prompt on it and reordering its cards stay with the Admin users, whoever
   else may edit it ([recall.md](./recall.md)).
