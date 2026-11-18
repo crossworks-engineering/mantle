@@ -53,9 +53,39 @@
           "spec",
           "#DIV/0!"
         ],
-        ["P-102", 7, "2026-03-02", "2026-03-02T14:05:00.000Z", false, 14, null, null, "ok"],
-        ["P-103", null, null, "2026-03-03T23:59:00.000Z", true, null, "rich text", null, "ok"],
-        ["P-104", 1250, "2026-03-04", null, null, 2500, "  padded  ", null, null],
+        [
+          "P-102",
+          7,
+          "2026-03-02",
+          "2026-03-02T14:05:00.000Z",
+          false,
+          14,
+          null,
+          null,
+          "ok"
+        ],
+        [
+          "P-103",
+          null,
+          null,
+          "2026-03-03T23:59:00.000Z",
+          true,
+          null,
+          "rich text",
+          null,
+          "ok"
+        ],
+        [
+          "P-104",
+          1250,
+          "2026-03-04",
+          null,
+          null,
+          2500,
+          "  padded  ",
+          null,
+          null
+        ],
         [
           "P-105",
           -0.001,

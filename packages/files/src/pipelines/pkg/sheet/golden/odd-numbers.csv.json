@@ -26,8 +26,20 @@
       ],
       "name": "Sheet1",
       "rows": [
-        ["P-1", "1e999", "NaN", "Infinity", "#DIV/0!"],
-        ["P-2", "5", "6", "-Infinity", "#N/A"]
+        [
+          "P-1",
+          "1e999",
+          "NaN",
+          "Infinity",
+          "#DIV/0!"
+        ],
+        [
+          "P-2",
+          "5",
+          "6",
+          "-Infinity",
+          "#N/A"
+        ]
       ]
     }
   ]
