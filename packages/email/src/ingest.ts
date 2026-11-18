@@ -73,7 +73,15 @@ export async function mailboxOf(ownerId: string, accountId: string): Promise<Ema
  */
 export async function saveMailbox(
   ownerId: string,
-  input: { address: string; displayName?: string | null; enabled?: boolean },
+  input: {
+    address: string;
+    displayName?: string | null;
+    enabled?: boolean;
+    /** 'imap' (default) or 'microsoft' (an Outlook inbox, Sync plan M3). */
+    provider?: 'imap' | 'microsoft';
+    /** Where a new row's mail lands; default from the address. */
+    branchPath?: string;
+  },
 ): Promise<string> {
   const address = input.address.trim().toLowerCase();
   const [existing] = await db
@@ -99,11 +107,11 @@ export async function saveMailbox(
       .insert(emailAccounts)
       .values({
         userId: ownerId,
-        provider: 'imap',
+        provider: input.provider ?? 'imap',
         address,
         displayName: input.displayName ?? null,
         ingestPolicy: 'approve_list',
-        branchPath: accountBranchPath(address),
+        branchPath: input.branchPath ?? accountBranchPath(address),
         enabled: input.enabled ?? true,
       })
       .returning({ id: emailAccounts.id }),
@@ -316,8 +324,9 @@ export async function recordMailRun(account: EmailAccount, run: WireRun): Promis
     .where(eq(emailAccounts.id, account.id));
 }
 
-/** Make sure every ltree label on `path` has a branch node. Idempotent. */
-async function ensureBranchPath(ownerId: string, path: string): Promise<void> {
+/** Make sure every ltree label on `path` has a branch node. Idempotent.
+ *  The Sync service's file route places a drive's files with it too. */
+export async function ensureBranchPath(ownerId: string, path: string): Promise<void> {
   const segments = path.split('.');
   for (let i = 1; i <= segments.length; i++) {
     const prefix = segments.slice(0, i).join('.');

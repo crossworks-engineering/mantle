@@ -61,6 +61,7 @@ import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 import { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
 import { SERVICE_TOOLS } from './builtins-services';
+import { SYNC_TOOLS } from './builtins-sync';
 import { PIPELINE_TOOLS } from './pipelines';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
@@ -307,6 +308,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...VAULT_KEY_TOOLS,
   ...GATEWAY_SERVICE_TOOLS,
   ...SERVICE_TOOLS,
+  // The Sync service's accounts (sync_*): an Admin user's client runs them
+  // as the account screens do.
+  ...SYNC_TOOLS,
   // The pipelines list (docs/pipelines.md): an Admin user's client reads it.
   ...PIPELINE_TOOLS,
   ...FILE_OPERATOR_TOOLS,
@@ -324,7 +328,9 @@ registerDocumentToolServices();
 // The email and contact tools need the Sync service (outside accounts: mail,
 // contacts, calendar feeds, Microsoft). Off, an agent's list and MCP leave
 // them out (docs/services.md, "Sync").
-for (const t of [...EMAIL_TOOLS, ...CONTACT_TOOLS]) registerToolService(t.slug, 'sync');
+for (const t of [...EMAIL_TOOLS, ...CONTACT_TOOLS, ...SYNC_TOOLS]) {
+  registerToolService(t.slug, 'sync');
+}
 
 // Each definition's `readOnly` and `spends` read its policy.
 for (const def of BUILTIN_TOOLS) withPolicyFlags(def);

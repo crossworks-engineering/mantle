@@ -24,7 +24,7 @@ describe('the sync sidecar routes', () => {
   it('says what it is and the providers it serves', () => {
     expect(syncReply('GET', '/status', { rclone: 'v1.76.0' })).toEqual({
       status: 200,
-      body: { service: 'sync', rclone: 'v1.76.0', providers: ['imap', 'ics'] },
+      body: { service: 'sync', rclone: 'v1.76.0', providers: ['imap', 'ics', 'microsoft'] },
     });
   });
 

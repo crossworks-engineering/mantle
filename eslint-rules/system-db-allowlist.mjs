@@ -132,6 +132,9 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // feeds and cursors, read and written by its routes (/api/sidecar/state,
   // the sidecar's token) outside every scope.
   'packages/db/src/service-state.ts': 'full',
+  // The Sync service's file map (0382): read and written by the sidecar's
+  // routes (/api/sidecar/files) outside every scope.
+  'packages/db/src/sync-items.ts': 'full',
   // The push worker's count of parked extractions.
   'packages/db/src/extract-parked.ts': 'full',
   // A one-off maintenance script (extract-skip-stamp.ts).

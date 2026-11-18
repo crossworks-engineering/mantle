@@ -281,6 +281,16 @@ export {
   deleteServiceState,
 } from './service-state';
 export {
+  SYNC_ITEMS_PAGE_MAX,
+  type SyncItem,
+  listSyncItems,
+  getSyncItem,
+  putSyncItem,
+  deleteSyncItems,
+  deleteSyncSource,
+  syncItemsUseNode,
+} from './sync-items';
+export {
   READ_ONLY_CALLER_ERROR,
   GateNotReadyError,
   PreRunSideEffectError,

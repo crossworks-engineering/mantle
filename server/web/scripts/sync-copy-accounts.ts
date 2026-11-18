@@ -8,9 +8,15 @@
  * linked to its mailbox and stored events to their feed. No new password,
  * no new consent.
  *
+ * M3: the Microsoft app (microsoft_config, or the MS_* environment), each
+ * connected Microsoft account with its tokens and its Outlook mail switch,
+ * each drive with its chosen folders, and each drive's file map
+ * (ms_drive_items into sync_items, 0382), under the same ids: the first
+ * drive run re-links every file it already holds, it downloads none again.
+ *
  * The old rows are left as they are (a later release drops their credential
  * columns). An account already in service_state is skipped, so a second run
- * changes nothing. Microsoft accounts are not copied here (M3).
+ * changes nothing.
  *
  * Output is numbers only (no address, host or URL).
  *
@@ -18,7 +24,7 @@
  *   pnpm -C server/web sync:copy-accounts           # DRY RUN: counts only
  *   pnpm -C server/web sync:copy-accounts --apply   # copy them
  */
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { env } from '@mantle/config';
 import { open } from '@mantle/crypto';
 import { errorMessage } from '@mantle/std';
@@ -27,7 +33,15 @@ import {
   closeDb,
   emailAccounts,
   getServiceState,
+  getSyncItem,
+  microsoftConfig,
+  msAccounts,
+  msDriveItems,
+  msDrives,
+  msDriveScopes,
+  nodes,
   putServiceState,
+  putSyncItem,
   resolveSingleOwnerId,
   runAsSystem,
   db,
@@ -157,17 +171,207 @@ async function copyFeeds(ownerId: string): Promise<Counts> {
   return c;
 }
 
+/** The Microsoft app (server/sync src/state.ts MsApp): the owner's
+ *  microsoft_config row, else the MS_* environment, as before M4. */
+async function copyMicrosoftApp(ownerId: string): Promise<Counts> {
+  const c: Counts = { found: 0, copied: 0, already: 0, skipped: 0 };
+  const [row] = await db
+    .select()
+    .from(microsoftConfig)
+    .where(eq(microsoftConfig.ownerId, ownerId))
+    .limit(1);
+  let app: { clientId: string; clientSecret: string; tenant: string; redirectUri: string } | null =
+    null;
+  if (row) {
+    c.found = 1;
+    try {
+      app = {
+        clientId: row.clientId,
+        clientSecret: open(row.clientSecretEnc, ownerId),
+        tenant: row.tenant,
+        redirectUri: row.redirectUri,
+      };
+    } catch {
+      c.skipped = 1;
+      return c;
+    }
+  } else if (env('MS_CLIENT_ID') && env('MS_CLIENT_SECRET')) {
+    c.found = 1;
+    const publicUrl = (env('MANTLE_PUBLIC_URL') ?? '').trim().replace(/\/+$/, '');
+    const redirectUri =
+      env('MS_REDIRECT_URI') || (publicUrl ? `${publicUrl}/api/microsoft/oauth/callback` : '');
+    if (!/^https?:\/\//.test(redirectUri)) {
+      c.skipped = 1;
+      return c;
+    }
+    app = {
+      clientId: env('MS_CLIENT_ID')!,
+      clientSecret: env('MS_CLIENT_SECRET')!,
+      tenant: env('MS_TENANT') || 'common',
+      redirectUri,
+    };
+  }
+  if (!app) return c;
+  if (await getServiceState(SIDECAR_SERVICE, 'msapp')) {
+    c.already = 1;
+    return c;
+  }
+  if (apply) await putServiceState(SIDECAR_SERVICE, 'msapp', sealState('msapp', app));
+  c.copied = 1;
+  return c;
+}
+
+type MsCounts = { accounts: Counts; drives: Counts; files: Counts };
+
+/** Each connected account (its tokens, its mail switch and watermark), its
+ *  drives (their switch and chosen folders) and their file maps. */
+async function copyMicrosoft(ownerId: string): Promise<MsCounts> {
+  const zero = (): Counts => ({ found: 0, copied: 0, already: 0, skipped: 0 });
+  const out: MsCounts = { accounts: zero(), drives: zero(), files: zero() };
+  const accounts = await db.select().from(msAccounts).where(eq(msAccounts.userId, ownerId));
+  for (const a of accounts) {
+    out.accounts.found += 1;
+    const key = `msaccount:${a.id}`;
+    const known = !!(await getServiceState(SIDECAR_SERVICE, key));
+    if (known) out.accounts.already += 1;
+    else {
+      const opened = (() => {
+        try {
+          return {
+            accessToken: a.accessTokenEnc ? open(a.accessTokenEnc, a.id) : null,
+            refreshToken: a.refreshTokenEnc ? open(a.refreshTokenEnc, a.id) : null,
+          };
+        } catch {
+          return null;
+        }
+      })();
+      if (!opened) {
+        out.accounts.skipped += 1;
+        continue;
+      }
+      const { accessToken, refreshToken } = opened;
+      // Its Outlook mail: the companion mailbox row the mail switch made.
+      const [mailbox] = await db
+        .select()
+        .from(emailAccounts)
+        .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.msAccountId, a.id)))
+        .limit(1);
+      const account = {
+        id: a.id,
+        upn: a.upn,
+        displayName: a.displayName,
+        accessToken,
+        refreshToken,
+        expiresAt: a.tokenExpiresAt ? a.tokenExpiresAt.getTime() : null,
+        scopes: a.scopes,
+        branchPath: a.branchPath,
+        mail: !!mailbox?.enabled,
+        mailboxId: mailbox?.id ?? null,
+        lastError: null,
+      };
+      const since = (mailbox?.syncState as { graph?: { mail?: { since?: unknown } } } | null)?.graph
+        ?.mail?.since;
+      if (apply) {
+        await putServiceState(SIDECAR_SERVICE, key, sealState(key, account));
+        if (mailbox && typeof since === 'string') {
+          const ck = `mscursor:${a.id}`;
+          await putServiceState(SIDECAR_SERVICE, ck, sealState(ck, { since }));
+        }
+      }
+      out.accounts.copied += 1;
+    }
+    for (const d of await db.select().from(msDrives).where(eq(msDrives.accountId, a.id))) {
+      out.drives.found += 1;
+      const dk = `msdrive:${d.id}`;
+      if (await getServiceState(SIDECAR_SERVICE, dk)) out.drives.already += 1;
+      else {
+        const scopes = await db
+          .select()
+          .from(msDriveScopes)
+          .where(eq(msDriveScopes.driveDbId, d.id));
+        const drive = {
+          id: d.id,
+          accountId: a.id,
+          driveId: d.driveId,
+          driveType: d.driveType,
+          name: d.name,
+          siteName: d.siteName,
+          webUrl: d.webUrl,
+          branchLabel: d.branchLabel,
+          enabled: d.enabled,
+          selections: scopes.map((s) => ({
+            itemId: s.itemId,
+            path: s.path,
+            isFolder: s.isFolder,
+            ...(s.name ? { name: s.name } : {}),
+          })),
+        };
+        if (apply) await putServiceState(SIDECAR_SERVICE, dk, sealState(dk, drive));
+        out.drives.copied += 1;
+      }
+      // The file map: each item to its node, with the node's size, so the
+      // first run re-links an unchanged file instead of fetching it.
+      const items = await db.select().from(msDriveItems).where(eq(msDriveItems.driveDbId, d.id));
+      const sizes = new Map<string, number | null>();
+      const ids = items.map((i) => i.nodeId);
+      for (let i = 0; i < ids.length; i += 1000) {
+        const rows = await db
+          .select({ id: nodes.id, data: nodes.data })
+          .from(nodes)
+          .where(inArray(nodes.id, ids.slice(i, i + 1000)));
+        for (const r of rows) {
+          const n = (r.data as { sizeBytes?: unknown } | null)?.sizeBytes;
+          sizes.set(r.id, typeof n === 'number' ? n : null);
+        }
+      }
+      for (const it of items) {
+        out.files.found += 1;
+        if (await getSyncItem(SIDECAR_SERVICE, d.id, it.itemId)) {
+          out.files.already += 1;
+          continue;
+        }
+        if (!sizes.has(it.nodeId)) {
+          out.files.skipped += 1;
+          continue;
+        }
+        if (apply) {
+          await putSyncItem(SIDECAR_SERVICE, d.id, {
+            itemId: it.itemId,
+            nodeId: it.nodeId,
+            hash: null,
+            size: sizes.get(it.nodeId) ?? null,
+            modTime: it.lastModified,
+          });
+        }
+        out.files.copied += 1;
+      }
+    }
+  }
+  return out;
+}
+
 const line = (what: string, c: Counts) =>
   `[sync-copy-accounts] ${what}: ${c.found} found, ${c.copied} ${apply ? 'copied' : 'to copy'}, ${c.already} already in Sync, ${c.skipped} skipped (no settings, or a seal that does not open)`;
 
 async function main() {
   const ownerId = env('ALLOWED_USER_ID') || (await resolveSingleOwnerId());
   if (!ownerId) throw new Error('no owner on this box');
-  const [mail, feeds] = await runAsSystem('backfill:sync-copy-accounts', () =>
-    Promise.all([copyMailboxes(ownerId), copyFeeds(ownerId)]),
+  const [mail, feeds, app, ms] = await runAsSystem(
+    'backfill:sync-copy-accounts',
+    async () =>
+      [
+        await copyMailboxes(ownerId),
+        await copyFeeds(ownerId),
+        await copyMicrosoftApp(ownerId),
+        await copyMicrosoft(ownerId),
+      ] as const,
   );
   console.log(line('mailboxes', mail));
   console.log(line('calendar feeds', feeds));
+  console.log(line('Microsoft app', app));
+  console.log(line('Microsoft accounts', ms.accounts));
+  console.log(line('Microsoft drives', ms.drives));
+  console.log(line('synced files (the file map)', ms.files));
   if (!apply) console.log('[sync-copy-accounts] DRY RUN: pass --apply to copy them');
 }
 

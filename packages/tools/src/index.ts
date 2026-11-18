@@ -190,6 +190,7 @@ export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 export { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
 export { SERVICE_TOOLS } from './builtins-services';
+export { SYNC_TOOLS } from './builtins-sync';
 export {
   PIPELINE_TOOLS,
   WORKSPACES_REFUSED,

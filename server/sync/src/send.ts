@@ -10,7 +10,8 @@
  */
 import nodemailer from 'nodemailer';
 import { checkedAddress, plaintextMailAllowed } from './net';
-import type { HostPort, MailAccount } from './state';
+import { MAIL_SEND_SCOPE } from './microsoft';
+import type { HostPort, MailAccount, MsAccount } from './state';
 
 export type SendInput = {
   from?: string;
@@ -58,6 +59,17 @@ export function senderFor(accounts: MailAccount[], from?: string): MailAccount {
     );
   }
   return first;
+}
+
+/** The Microsoft account to send from through Outlook (Sync plan M3): the
+ *  one at `from`, else the first that sends. One sends when its mail switch
+ *  is on and it granted Mail.Send. Null: none. */
+export function outlookSenderFor(accounts: MsAccount[], from?: string): MsAccount | null {
+  const sending = accounts.filter(
+    (a) => a.mail && !!a.mailboxId && a.scopes.includes(MAIL_SEND_SCOPE),
+  );
+  if (from) return sending.find((a) => a.upn.toLowerCase() === from.trim().toLowerCase()) ?? null;
+  return sending[0] ?? null;
 }
 
 async function transportFor(smtp: HostPort, user: string, pass: string) {

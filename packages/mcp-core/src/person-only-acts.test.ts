@@ -353,6 +353,12 @@ const EXEMPT: Readonly<Record<string, string>> = {
     'turning it off on a stored key is held for a person (held-tools.ts)',
   'app_timer_set.enabled': 'an app timer, no look at an agent',
   'gateway_service_set.enabled': 'a service switch, no look at an agent',
+  // The Sync accounts (Sync plan M3): the switches the account screens set by
+  // hand. Connecting an outside account stays a person's consent in the
+  // browser: no tool connects one (sync_status names where).
+  'sync_mailbox_set.enabled': 'a mailbox sync switch, no look at an agent',
+  'sync_feed_set.enabled': 'a calendar feed switch, no look at an agent',
+  'sync_drive_set.enabled': 'a drive sync switch, no look at an agent',
   'worker_group_ensure.enabled': 'a panel switch, no look at an agent',
   sandbox_publish: 'declares a port on a sandbox, no look at an agent',
   'file_copy.confirm': NEW_ITEM_NO_CONFIRM,

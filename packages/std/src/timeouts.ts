@@ -112,6 +112,14 @@ export const NET_TIMEOUTS = {
   /** One Sync account screen, through the brain (a save logs in to the
    *  mail server first). */
   syncScreen: 120_000,
+  /** One admin call of the brain's Sync tools to the sidecar (a mailbox
+   *  save logs in to the mail server first; a drive list asks Microsoft). */
+  syncAdmin: 120_000,
+  /** One Microsoft Graph call of the Sync sidecar (a page of mail, a token). */
+  syncGraph: 60_000,
+  /** One drive file the Sync sidecar streams into the brain (rclone cat, up
+   *  to the 64 MB cap on a slow link). */
+  syncFile: 15 * 60_000,
   /** One job of the documents engine (Gotenberg): its own API_TIMEOUT is
    *  60 s, plus the upload and the answer. */
   documentsJob: 90_000,
