@@ -51,7 +51,11 @@ describe.skipIf(!URL)('extracted images of an older version: kept, marked', () =
     (await m.systemDb.execute(q)) as unknown as T[];
 
   /** A pdf file node whose current bytes are `sha`, and one image made from `from`. */
-  const fileWithImage = async (sha: string, from: string, extra: Record<string, unknown>) => {
+  const fileWithImage = async (
+    sha: string,
+    from: string | null,
+    extra: Record<string, unknown>,
+  ) => {
     const id = randomUUID();
     const image = randomUUID();
     const filename = `${tag}-${id.slice(0, 8)}.pdf`;
@@ -60,7 +64,7 @@ describe.skipIf(!URL)('extracted images of an older version: kept, marked', () =
       (${id}, ${owner}, 'file', ${filename}, 'files', ${JSON.stringify(data)}::jsonb)`);
     await x(sql`insert into nodes (id, owner_id, type, title, path, data, tags) values
       (${image}, ${owner}, 'file', ${`${filename} image`}, 'files',
-       ${JSON.stringify({ filename: `${image}.png`, sourceFileId: id, sourceSha256: from })}::jsonb,
+       ${JSON.stringify({ filename: `${image}.png`, sourceFileId: id, ...(from ? { sourceSha256: from } : {}) })}::jsonb,
        array['file', 'extracted-image'])`);
     const node = {
       id,
@@ -150,5 +154,16 @@ describe.skipIf(!URL)('extracted images of an older version: kept, marked', () =
     await extract(() => maybeExtractEmbeddedImages(node, owner, 10));
     expect(h.opened).toEqual([]);
     expect(await imageData(image)).not.toHaveProperty('olderVersion');
+  });
+
+  it('an image from before the mark (no sourceSha256), made before the replace: marked', async () => {
+    const { node, image } = await fileWithImage(B, null, {
+      replaced_at: new Date().toISOString(),
+      replaced_by: 'agent',
+    });
+    await x(sql`update nodes set created_at = now() - interval '1 day' where id = ${image}`);
+    await extract(() => maybeExtractEmbeddedImages(node, owner, 10));
+    expect(h.opened).toEqual([]);
+    expect(await imageData(image)).toMatchObject({ olderVersion: true });
   });
 });

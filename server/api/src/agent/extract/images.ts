@@ -135,9 +135,10 @@ export async function maybeExtractEmbeddedImages(
   const replacedAt = typeof data.replaced_at === 'string' ? data.replaced_at : null;
   // An image's bytes are its file's current ones: made from this sha256, or
   // (an image from before the mark) made after the last replace.
-  const current = sql`(${nodes.data}->>'sourceSha256' = ${sha ?? ''}
+  const current = sql`coalesce(${nodes.data}->>'sourceSha256' = ${sha ?? ''}
     or (${nodes.data}->>'sourceSha256' is null
-        and (${replacedAt}::timestamptz is null or ${nodes.createdAt} >= ${replacedAt}::timestamptz)))`;
+        and (${replacedAt}::timestamptz is null or ${nodes.createdAt} >= ${replacedAt}::timestamptz)),
+    false)`;
   const marked = await db
     .update(nodes)
     .set({
@@ -154,14 +155,14 @@ export async function maybeExtractEmbeddedImages(
     )
     .returning({ id: nodes.id });
   const prior = (await db.execute(sql`
-    select count(*) filter (where ${current})::int as now, count(*)::int as all
+    select count(*) filter (where ${current})::int as cur, count(*)::int as total
       from ${nodes}
      where ${nodes.ownerId} = ${ownerId} and ${nodes.type} = 'file'
        and ${nodes.data}->>'sourceFileId' = ${node.id}`)) as unknown as {
-    now: number;
-    all: number;
+    cur: number;
+    total: number;
   }[];
-  if (Number(prior[0]?.now ?? 0) > 0) return;
+  if (Number(prior[0]?.cur ?? 0) > 0) return;
   const personStarted = data.replaced_by === 'owner' || data.replaced_by === 'member';
   if (replacedAt && !personStarted) {
     if (marked.length > 0) {
@@ -173,7 +174,7 @@ export async function maybeExtractEmbeddedImages(
   }
   // A folder of their own when older images are there (their names would
   // clash): one per set of bytes.
-  const olderImages = Number(prior[0]?.all ?? 0) > 0;
+  const olderImages = Number(prior[0]?.total ?? 0) > 0;
   const loaded = await loadFileBytes(node);
   if (!loaded) {
     // A byte-load failure used to return silently, which made it
