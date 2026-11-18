@@ -203,13 +203,13 @@ function mailboxForm(req: UiRequest, id: string | null, f: MailboxFields, error?
     html: page(
       isNew ? 'Add a mailbox' : 'Edit a mailbox',
       `<h1>${isNew ? 'Add a mailbox' : 'Edit a mailbox'}</h1>${error ? `<div class="error">${esc(error)}</div>` : ''}
-<p class="muted">Use an app password from your mail provider, not your account password. Common servers: Gmail imap.gmail.com and smtp.gmail.com; Outlook.com outlook.office365.com and smtp.office365.com (port 587, no TLS box); iCloud imap.mail.me.com and smtp.mail.me.com (587).</p>
+<p class="muted">Use an app password from your mail provider, not your account password. Common servers: Gmail imap.gmail.com and smtp.gmail.com; Outlook.com outlook.office365.com and smtp.office365.com (SMTP port 587); iCloud imap.mail.me.com and smtp.mail.me.com (SMTP port 587). For port 587 untick TLS: the connection then upgrades with STARTTLS, which is required.</p>
 <form method="post" action="${esc(href(req, isNew ? '/mailbox/save' : `/mailbox/${id}/save`))}">
 ${input('address', 'Email address', 'email', isNew ? ' required' : ' readonly')}
 ${input('displayName', 'Name shown on sent mail (optional)')}
 <label for="password">App password${isNew ? '' : ' (leave empty to keep it)'}</label><input id="password" name="password" type="password" autocomplete="new-password"${isNew ? ' required' : ''}>
 <fieldset><legend>Incoming (IMAP)</legend>${input('imapHost', 'Server', 'text', ' required')}${input('imapPort', 'Port', 'number', ' min="1" max="65535" required')}${check('imapSecure', 'TLS (port 993)')}</fieldset>
-<fieldset><legend>Sending (SMTP, optional)</legend><p class="muted">Leave the server empty and this mailbox does not send.</p>${input('smtpHost', 'Server')}${input('smtpPort', 'Port', 'number', ' min="1" max="65535"')}${check('smtpSecure', 'TLS (port 465; off for 587 STARTTLS)')}</fieldset>
+<fieldset><legend>Sending (SMTP, optional)</legend><p class="muted">Leave the server empty and this mailbox does not send.</p>${input('smtpHost', 'Server')}${input('smtpPort', 'Port', 'number', ' min="1" max="65535"')}${check('smtpSecure', 'TLS from the start (port 465); off: STARTTLS on port 587')}</fieldset>
 ${input('firstScanDays', 'First scan reaches back (days)', 'number', ` min="1" max="${DAYS_MAX}"`)}
 ${check('enabled', 'Sync this mailbox')}
 <p><button class="primary" type="submit">Check and save</button> <a class="btn" href="${esc(href(req, '/'))}">Cancel</a></p>

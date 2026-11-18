@@ -9,7 +9,7 @@
  * a page renders to. This module only sends.
  */
 import nodemailer from 'nodemailer';
-import { checkedAddress } from './net';
+import { checkedAddress, plaintextMailAllowed } from './net';
 import type { HostPort, MailAccount } from './state';
 
 export type SendInput = {
@@ -67,6 +67,8 @@ async function transportFor(smtp: HostPort, user: string, pass: string) {
     port: smtp.port,
     // true: implicit TLS (465); false: STARTTLS on a plain port (587).
     secure: smtp.secure,
+    // No TLS from the start: STARTTLS is required, never skipped.
+    requireTLS: !smtp.secure && !plaintextMailAllowed(),
     tls: { servername: smtp.host },
     auth: { user, pass },
   });

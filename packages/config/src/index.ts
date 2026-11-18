@@ -251,6 +251,7 @@ export type KnownEnvName =
   | 'SANDBOX_PIDS_LIMIT'
   | 'SESSION_SECRET'
   | 'SYNC_BRAIN_URL'
+  | 'SYNC_PLAINTEXT_MAIL'
   | 'SYNC_PORT'
   | 'SYNC_TOKEN'
   | 'SYNC_URL'

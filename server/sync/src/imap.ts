@@ -20,7 +20,7 @@ import { classifyDelivery } from '@mantle/email/classify';
 import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
 import { MAIL_MESSAGE_MAX_BYTES, type WireMessage } from '@mantle/email/wire';
 import { errorMessage } from '@mantle/std';
-import { checkedAddress } from './net';
+import { checkedAddress, plaintextMailAllowed } from './net';
 import type { MailAccount, MailCursor } from './state';
 
 /** Envelopes per batch: one gate call, then the full fetches. */
@@ -164,6 +164,8 @@ export async function connect(
     host: address,
     port: account.imap.port,
     secure: account.imap.secure,
+    // No TLS from the start: STARTTLS is required, never skipped.
+    doSTARTTLS: account.imap.secure ? undefined : !plaintextMailAllowed(),
     servername: account.imap.host,
     tls: { servername: account.imap.host },
     auth: { user: account.address, pass: account.password },
@@ -403,8 +405,17 @@ async function fullMessage(
       bodyText: `(This message is ${Math.round(message.sizeBytes / 1024 / 1024)} MB, past the ${MAIL_MESSAGE_MAX_BYTES / 1024 / 1024} MB the brain fetches in full. Read it in your mail client.)`,
     };
   }
-  const msg = await client.fetchOne(String(uid), { source: true }, { uid: true });
+  // A server that gave no size: read at most one byte past the cap.
+  const source =
+    typeof message.sizeBytes === 'number' ? true : { maxLength: MAIL_MESSAGE_MAX_BYTES + 1 };
+  const msg = await client.fetchOne(String(uid), { source }, { uid: true });
   if (!msg || !msg.source) throw new Error('a listed message could not be fetched');
+  if (msg.source.length > MAIL_MESSAGE_MAX_BYTES) {
+    return {
+      ...base,
+      bodyText: `(This message is past the ${MAIL_MESSAGE_MAX_BYTES / 1024 / 1024} MB the brain fetches in full. Read it in your mail client.)`,
+    };
+  }
   // No HTML-to-text here: an HTML-only mail keeps its HTML, and the brain's
   // parser reads it.
   const parsed = await simpleParser(msg.source, { skipHtmlToText: true });

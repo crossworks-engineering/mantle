@@ -27,6 +27,8 @@ const MB = 1024 * 1024;
 
 /** A JSON body's ceiling on any route not listed below. */
 export const JSON_BODY_CEILING_BYTES = 8 * MB;
+/** One calendar feed from the Sync sidecar (POST /api/sidecar/events). */
+export const FEED_BODY_BYTES = 32 * MB;
 
 /** The most a member's app tool call carries (lib/app-runner.ts
  *  memberToolBroker): a team app's file_upload of up to 16 MB
@@ -133,6 +135,8 @@ export function bodyCeilingFor(path: string): number | null {
   if (path === '/api/control/call') return CONTROL_BODY_CEILING_BYTES;
   // One message the Sync sidecar fetched, attachments in base64 (wire.ts).
   if (path === '/api/sidecar/mail/ingest') return MAIL_INGEST_BODY_BYTES;
+  // One calendar feed's complete set (5000 events at most, each clipped).
+  if (path === '/api/sidecar/events') return FEED_BODY_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }

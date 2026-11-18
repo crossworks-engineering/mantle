@@ -4,11 +4,11 @@
  * list and text, so a body the ceiling lets through stays small to judge.
  */
 import { z } from 'zod';
-import { MAIL_GATE_BATCH_MAX } from '@mantle/email/wire';
+import { MAIL_GATE_BATCH_MAX, WIRE_LIMITS as L } from '@mantle/email/wire';
 import { SERVICE_STATE_KEY_RE } from '@mantle/db';
 
-const id = z.string().min(1).max(500);
-const addr = z.string().max(320);
+const id = z.string().min(1).max(L.id);
+const addr = z.string().max(L.address);
 const text = (n: number) => z.string().max(n);
 
 export const StateKey = z.string().regex(SERVICE_STATE_KEY_RE, 'bad key');
@@ -21,10 +21,10 @@ export const MailboxBody = z.object({
 
 export const Envelope = z.object({
   providerMsgId: id,
-  rfcMessageId: text(998).optional(),
+  rfcMessageId: text(L.messageId).optional(),
   fromAddr: addr,
-  inReplyTo: text(998).optional(),
-  references: text(16_000).optional(),
+  inReplyTo: text(L.messageId).optional(),
+  references: text(L.references).optional(),
   clientCodeHeader: z.boolean().optional(),
 });
 
@@ -36,16 +36,16 @@ export const GateBody = z.object({
 const DELIVERY_KINDS = ['direct', 'list', 'automated', 'marketing'] as const;
 
 export const WireMessageBody = Envelope.extend({
-  threadId: text(500).optional(),
-  fromName: text(500).optional(),
-  toAddrs: z.array(addr).max(1000),
-  ccAddrs: z.array(addr).max(1000).optional(),
-  bccAddrs: z.array(addr).max(1000).optional(),
-  subject: text(10_000).optional(),
-  snippet: text(10_000).optional(),
+  threadId: text(L.id).optional(),
+  fromName: text(L.name).optional(),
+  toAddrs: z.array(addr).max(L.addresses),
+  ccAddrs: z.array(addr).max(L.addresses).optional(),
+  bccAddrs: z.array(addr).max(L.addresses).optional(),
+  subject: text(L.subject).optional(),
+  snippet: text(L.subject).optional(),
   internalDate: z.string().max(64),
-  labels: z.array(text(500)).max(200).optional(),
-  folder: text(1000).optional(),
+  labels: z.array(text(L.label)).max(L.labels).optional(),
+  folder: text(L.folder).optional(),
   isRead: z.boolean().optional(),
   isStarred: z.boolean().optional(),
   sizeBytes: z.number().int().nonnegative().optional(),
@@ -55,13 +55,13 @@ export const WireMessageBody = Envelope.extend({
   attachments: z
     .array(
       z.object({
-        filename: text(1000),
-        mimeType: text(255).optional(),
+        filename: text(L.filename),
+        mimeType: text(L.mimeType).optional(),
         sizeBytes: z.number().int().nonnegative().optional(),
         contentB64: z.string(),
       }),
     )
-    .max(500),
+    .max(L.attachments),
   clientCodeMail: z.boolean().optional(),
 });
 
@@ -78,8 +78,8 @@ export const RunBody = z.object({
   error: text(2000).optional(),
 });
 
-/** The most events one feed may hold (a bigger feed is cut by the sidecar,
- *  newest first, and says so in its status). */
+/** The most events one feed may hold (the sidecar stops there, in the feed's
+ *  own order). */
 export const FEED_EVENTS_MAX = 5000;
 
 export const FeedEventsBody = z.object({

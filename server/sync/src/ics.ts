@@ -39,6 +39,10 @@ const MAX_OCCURRENCES_PER_SERIES = 400;
 export const MAX_TOTAL_EVENTS = 5000;
 const MAX_FEED_BYTES = 12 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
+/** A UID (an occurrence's carries its start too) and a description, within
+ *  the brain's bounds; 5000 events of these stay under its 32 MB ceiling. */
+const UID_MAX = 1000;
+const DESCRIPTION_MAX = 4000;
 
 export async function fetchFeed(url: string): Promise<string> {
   // webcal:// is https for iCal feeds.
@@ -79,14 +83,16 @@ function tzOf(t: any): string | undefined {
 function mapOne(uid: string, start: any, end: any, ev: any): CalEvent | null {
   const startsAt = toIso(start);
   if (!startsAt) return null;
+  // Each field within the brain's bounds (POST /api/sidecar/events), so one
+  // odd invite can never make the whole feed a 400.
   return {
-    uid,
+    uid: uid.slice(0, UID_MAX),
     title: String(ev.summary ?? '(untitled)').slice(0, 200),
     startsAt,
     endsAt: toIso(end),
     allDay: !!start.isDate,
-    location: ev.location ? String(ev.location) : null,
-    description: ev.description ? String(ev.description) : undefined,
+    location: ev.location ? String(ev.location).slice(0, 1000) : null,
+    description: ev.description ? String(ev.description).slice(0, DESCRIPTION_MAX) : undefined,
     timezone: tzOf(start),
   };
 }

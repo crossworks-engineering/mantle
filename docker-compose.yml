@@ -777,9 +777,11 @@ services:
   # default (profile `sync`, Settings > Services). While it is off the brain
   # hides those screens and tools and their sync pauses; nothing is deleted.
   # Its own image (Dockerfile target `sync`) carries the rclone binary for
-  # short file jobs; no rclone daemon runs. M1 is the skeleton: a health check
-  # and a status answer, no secret, no database. On the default network: the
-  # outside accounts it will reach need a road out.
+  # short file jobs; no rclone daemon runs. Since M2 it syncs IMAP mailboxes
+  # and ICS feeds, sends mail and serves its account screens. It holds no
+  # database login and no master key: its state and every mail and event go
+  # to the brain at SYNC_BRAIN_URL with SYNC_TOKEN (/api/sidecar/*). On the
+  # default network: the mail servers and feeds it reaches need a road out.
   sync:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-sync:${MANTLE_IMAGE_TAG:-latest}
     command: ['scripts/run-service.sh', 'server/sync', 'src/main.ts']

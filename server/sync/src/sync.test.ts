@@ -4,6 +4,7 @@
  * escapes what it shows.
  */
 import { describe, expect, it } from 'vitest';
+import { clipEnvelope, clipMessage, WIRE_LIMITS } from '@mantle/email/wire';
 import { parseFeed } from './ics';
 import { SendRefusedError, senderFor } from './send';
 import { tokenOk } from './server';
@@ -185,5 +186,52 @@ describe('the screens', () => {
     expect((await uiReply(req('/mailbox/not-a-uuid'), deps)).status).toBe(404);
     const form = await uiReply(req(`/mailbox/${evil.id}`), deps);
     expect(form.html).not.toContain('value="pw"');
+  });
+});
+
+describe('the bounds the brain takes', () => {
+  it("clips every field of an outsider's message, so one message never stops a mailbox", () => {
+    const long = 'x'.repeat(100_000);
+    const e = clipEnvelope({
+      providerMsgId: 'INBOX:1:1',
+      fromAddr: `${long}@a.test`,
+      references: long,
+      inReplyTo: long,
+      rfcMessageId: long,
+    });
+    expect(e.fromAddr.length).toBe(WIRE_LIMITS.address);
+    expect(e.references!.length).toBe(WIRE_LIMITS.references);
+    expect(e.inReplyTo!.length).toBe(WIRE_LIMITS.messageId);
+    const m = clipMessage({
+      ...e,
+      toAddrs: Array.from({ length: 5000 }, (_, i) => `r${i}@a.test`),
+      subject: long,
+      internalDate: '2026-11-18T00:00:00.000Z',
+      attachments: Array.from({ length: 600 }, () => ({ filename: long, contentB64: '' })),
+    });
+    expect(m.toAddrs).toHaveLength(WIRE_LIMITS.addresses);
+    expect(m.subject!.length).toBe(WIRE_LIMITS.subject);
+    expect(m.attachments).toHaveLength(WIRE_LIMITS.attachments);
+    expect(m.attachments[0]!.filename.length).toBe(WIRE_LIMITS.filename);
+  });
+
+  it("clips a feed event's long text", () => {
+    const [ev] = parseFeed(
+      feed(
+        [
+          'BEGIN:VEVENT',
+          `UID:${'u'.repeat(3000)}`,
+          'DTSTART:20261120T090000Z',
+          'SUMMARY:x',
+          `DESCRIPTION:${'d'.repeat(50_000)}`,
+          `LOCATION:${'l'.repeat(5000)}`,
+          'END:VEVENT',
+        ].join('\r\n'),
+      ),
+      NOW,
+    );
+    expect(ev!.uid.length).toBeLessThanOrEqual(1000);
+    expect(ev!.description!.length).toBe(4000);
+    expect(ev!.location!.length).toBe(1000);
   });
 });

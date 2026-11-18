@@ -9,6 +9,7 @@
  */
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { env } from '@mantle/config';
 import { isBlockedIp } from '@mantle/std/egress';
 
 export class HostRefusedError extends Error {
@@ -30,4 +31,11 @@ export async function checkedAddress(host: string): Promise<string> {
   }
   // IPv4 first: a container network often has no IPv6 road out.
   return (answers.find((a) => a.family === 4) ?? answers[0]!).address;
+}
+
+/** A test bench's switch (SYNC_PLAINTEXT_MAIL=1): a mailbox may log in with no
+ *  TLS. Unset, a mailbox with its TLS box off must upgrade with STARTTLS, so
+ *  the app password never crosses in plain text. */
+export function plaintextMailAllowed(): boolean {
+  return env('SYNC_PLAINTEXT_MAIL') === '1';
 }

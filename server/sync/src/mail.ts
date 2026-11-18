@@ -4,9 +4,15 @@
  * each through the brain's one gate (POST /api/sidecar/mail/gate) and store
  * (POST /api/sidecar/mail/ingest).
  */
-import { MAIL_GATE_BATCH_MAX, type WireEnvelope, type WireMessage } from '@mantle/email/wire';
+import {
+  MAIL_GATE_BATCH_MAX,
+  clipEnvelope,
+  clipMessage,
+  type WireEnvelope,
+  type WireMessage,
+} from '@mantle/email/wire';
 import { errorMessage } from '@mantle/std';
-import type { Brain } from './brain';
+import { BrainError, type Brain } from './brain';
 import { backfillSender, mask, recentSenders, syncMailbox, type WantedOf } from './imap';
 import type { MailAccount, State } from './state';
 
@@ -25,24 +31,38 @@ const envelopeOf = (m: {
   inReplyTo?: string;
   references?: string;
   clientCodeHeader?: boolean;
-}): WireEnvelope => ({
-  providerMsgId: m.providerMsgId,
-  rfcMessageId: m.rfcMessageId,
-  fromAddr: m.fromAddr,
-  inReplyTo: m.inReplyTo,
-  references: m.references,
-  clientCodeHeader: m.clientCodeHeader,
-});
+}): WireEnvelope =>
+  clipEnvelope({
+    providerMsgId: m.providerMsgId,
+    rfcMessageId: m.rfcMessageId,
+    fromAddr: m.fromAddr,
+    inReplyTo: m.inReplyTo,
+    references: m.references,
+    clientCodeHeader: m.clientCodeHeader,
+  });
+
+/** The brain refused this one request (a 4xx): skip it and go on, so one odd
+ *  message can never stop a mailbox. A 5xx or a network fault stops the run
+ *  (the cursor stays, the next run tries again). */
+const refused = (err: unknown) =>
+  err instanceof BrainError && err.status >= 400 && err.status < 500;
 
 function gateFor(brain: Brain, accountId: string): WantedOf {
   return async (messages) => {
     const wanted: string[] = [];
     for (let i = 0; i < messages.length; i += MAIL_GATE_BATCH_MAX) {
-      const r = await brain.post<{ wanted: string[] }>('/api/sidecar/mail/gate', {
-        accountId,
-        envelopes: messages.slice(i, i + MAIL_GATE_BATCH_MAX).map(envelopeOf),
-      });
-      wanted.push(...r.wanted);
+      try {
+        const r = await brain.post<{ wanted: string[] }>('/api/sidecar/mail/gate', {
+          accountId,
+          envelopes: messages.slice(i, i + MAIL_GATE_BATCH_MAX).map(envelopeOf),
+        });
+        wanted.push(...r.wanted);
+      } catch (err) {
+        if (!refused(err)) throw err;
+        console.warn(
+          `[sync] the brain refused a batch of envelopes (skipped): ${(err as Error).message}`,
+        );
+      }
     }
     return wanted;
   };
@@ -50,11 +70,16 @@ function gateFor(brain: Brain, accountId: string): WantedOf {
 
 function ingestFor(brain: Brain, accountId: string, counter: { ingested: number }) {
   return async (message: WireMessage) => {
-    const r = await brain.post<{ stored: boolean }>('/api/sidecar/mail/ingest', {
-      accountId,
-      message,
-    });
-    if (r.stored) counter.ingested += 1;
+    try {
+      const r = await brain.post<{ stored: boolean }>('/api/sidecar/mail/ingest', {
+        accountId,
+        message: clipMessage(message),
+      });
+      if (r.stored) counter.ingested += 1;
+    } catch (err) {
+      if (!refused(err)) throw err;
+      console.warn(`[sync] the brain refused a message (skipped): ${(err as Error).message}`);
+    }
   };
 }
 
