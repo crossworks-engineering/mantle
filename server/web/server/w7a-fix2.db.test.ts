@@ -566,31 +566,24 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
     expect(row!.by).toBe(second);
   });
 
-  it('L: L works only in its own sandboxes; the anchor in every one', async () => {
+  it("L and the anchor each work in every sandbox, the other login's too", async () => {
+    // Owner, 2026-11-18: an Admin user works in every sandbox (the maker rule
+    // is gone; every sandbox tool needs the settings area). The daemon is
+    // offline here, so each call fails later, never on whose sandbox it is.
     const calls: Array<[string, Record<string, unknown>]> = [
       ['sandbox_exec', { command: 'cat /mnt/inbox/x' }],
       ['sandbox_ls', {}],
       ['sandbox_mcp_call', { tool: 'Read', arguments: {} }],
       ['sandbox_stop', {}],
-      ['sandbox_rm', {}],
     ];
     for (const [slug, args] of calls) {
-      const other = await inAdminTurn(second, () =>
-        dispatchAs(second, slug, { sandbox: ownerBox, ...args }),
-      );
-      expect(other.ok, slug).toBe(false);
-      expect(errorOf(other), slug).toMatch(/made by another login/);
-      // Its own sandbox, and the anchor on either: past the maker check (the
-      // daemon is offline here).
-      const mine = await inAdminTurn(second, () =>
-        dispatchAs(second, slug, { sandbox: lBox, ...args }),
-      );
-      expect(errorOf(mine), slug).not.toMatch(/made by another login/);
-      for (const box of [ownerBox, lBox]) {
-        const anchor = await inAdminTurn(owner, () =>
-          dispatchAs(owner, slug, { sandbox: box, ...args }),
-        );
-        expect(errorOf(anchor), `${slug} ${box}`).not.toMatch(/made by another login/);
+      for (const login of [second, owner]) {
+        for (const box of [ownerBox, lBox]) {
+          const res = await inAdminTurn(login, () =>
+            dispatchAs(login, slug, { sandbox: box, ...args }),
+          );
+          expect(errorOf(res), `${slug} ${box}`).not.toMatch(/made by another login/);
+        }
       }
     }
   });

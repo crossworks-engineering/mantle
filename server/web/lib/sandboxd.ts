@@ -1,6 +1,4 @@
 import { env, serviceEnabled } from '@mantle/config';
-import { getSandboxByRef } from '@mantle/content';
-import type { Sandbox } from '@mantle/db';
 /**
  * Server-side sandboxd client for the Sandboxes UI surface — the web tier's
  * sibling of the tool layer's `sandboxd()` helper (packages/tools/src/
@@ -89,14 +87,4 @@ export async function sandboxdStop(id: string): Promise<boolean> {
 /** Remove a sandbox's container; `purge` also deletes its /files host dir. */
 export async function sandboxdRm(id: string, purge: boolean): Promise<boolean> {
   return (await call('DELETE', `/sandboxes/${id}${purge ? '?purge=1' : ''}`)) !== null;
-}
-
-/**
- * Sandbox `ref`, or null (the route answers 404). The Sandboxes routes need
- * the settings area, so the caller is an Admin user, who works in every
- * sandbox, another login's too (owner, 2026-11-18; the sandbox tools' rule,
- * packages/tools sandbox/common.ts).
- */
-export async function sandboxForLogin(user: { id: string }, ref: string): Promise<Sandbox | null> {
-  return getSandboxByRef(user.id, ref);
 }

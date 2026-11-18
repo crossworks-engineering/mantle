@@ -1,9 +1,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { and, desc, sql } from 'drizzle-orm';
 import { db, traceSteps } from '@mantle/db';
-import { deleteSandboxRow } from '@mantle/content';
+import { deleteSandboxRow, getSandboxByRef } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
-import { sandboxForLogin, sandboxdList, sandboxdRm } from '@/lib/sandboxd';
+import { sandboxdList, sandboxdRm } from '@/lib/sandboxd';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -25,7 +25,7 @@ export const policy = routePolicy({
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const row = await sandboxForLogin(user, id);
+  const row = await getSandboxByRef(user.id, id);
   if (!row) return NextResponse.json({ error: 'sandbox not found' }, { status: 404 });
 
   const live = await sandboxdList();
@@ -88,7 +88,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const row = await sandboxForLogin(user, id);
+  const row = await getSandboxByRef(user.id, id);
   if (!row) return NextResponse.json({ error: 'sandbox not found' }, { status: 404 });
 
   const purge = new URL(req.url).searchParams.get('purge') === '1';

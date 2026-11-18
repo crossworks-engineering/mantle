@@ -110,9 +110,10 @@ import, publish, autostart, stop, rm): the users of a brain are trusted, and
 an Admin clears out the sandboxes of others (owner, 2026-11-18). Only the
 brain owner's login mounts a folder: the mount shows the folder's whole
 directory, files the caller may not read included. The Sandboxes routes
-(`/api/sandboxes/:id`, its stop and its delete) follow the same rule.
-`sandbox_publish`
-binds only the sandbox's own tool group (its integration service is
+(`/api/sandboxes/:id`, its stop and its delete) follow the same rule. An
+Admin user can so read inside the brain owner's mounted folder through a
+sandbox the owner made: accepted, as the users of a brain are trusted
+(`docs/agent-ui.md`). `sandbox_publish` binds only the sandbox's own tool group (its integration service is
 `sandbox-<name>`): an existing group of anything else is refused, never
 repointed. It writes the proxy key (`sandboxd/proxy`) to the API-key vault
 only for a caller whose keys area is on; without it the vault is left as it
@@ -338,8 +339,8 @@ mutate the registry when sandboxd is unreachable.
   is out of scope for the default runtime (gVisor remains a
   runtime-flag upgrade path, `systrap` works without KVM, which the fleet
   lacks).
-- The balanced-tier proxy listener carries no auth (apt cannot send a bearer)
-  , bounded by forwarding only to allowlisted hosts, reachable only from
+- The balanced-tier proxy listener carries no auth (apt cannot send a bearer),
+  bounded by forwarding only to allowlisted hosts, reachable only from
   stack-internal networks.
 - Sandboxes never see brain env by construction (container env is set at
   create), and the proxy strips `Authorization` so the sandboxd token never

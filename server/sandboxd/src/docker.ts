@@ -184,6 +184,18 @@ export const listContainers = (labelFilters: string[]): Promise<ContainerSummary
     `/containers/json?all=true&filters=${encodeURIComponent(JSON.stringify({ label: labelFilters }))}`,
   );
 
+/** Bytes each sandbox container wrote outside its /files folder (its
+ *  writable layer: apt installs, global packages), by docker's own count.
+ *  `size=true` makes docker sum each layer, so it is asked only where the
+ *  disk budget is checked. */
+export const containerLayerBytes = async (labelFilters: string[]): Promise<number> => {
+  const list: Array<{ SizeRw?: number }> = await json(
+    'GET',
+    `/containers/json?all=true&size=true&filters=${encodeURIComponent(JSON.stringify({ label: labelFilters }))}`,
+  );
+  return list.reduce((sum, c) => sum + (Number(c.SizeRw) > 0 ? Number(c.SizeRw) : 0), 0);
+};
+
 export const createContainer = (name: string, spec: unknown): Promise<{ Id: string }> =>
   json('POST', `/containers/create?name=${encodeURIComponent(name)}`, spec);
 

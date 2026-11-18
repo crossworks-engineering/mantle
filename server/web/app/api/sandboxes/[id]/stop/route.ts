@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
-import { setSandboxStatus } from '@mantle/content';
+import { getSandboxByRef, setSandboxStatus } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
-import { sandboxForLogin, sandboxdStop } from '@/lib/sandboxd';
+import { sandboxdStop } from '@/lib/sandboxd';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -22,7 +22,7 @@ export const policy = routePolicy({
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const row = await sandboxForLogin(user, id);
+  const row = await getSandboxByRef(user.id, id);
   if (!row) return NextResponse.json({ error: 'sandbox not found' }, { status: 404 });
 
   const ok = await sandboxdStop(row.id);

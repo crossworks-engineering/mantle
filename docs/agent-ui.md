@@ -387,6 +387,12 @@ these apart, and they are accepted as they are:
   may carry a document into a shared folder; the rule that a key never
   changes the document of a page another workspace reads holds for edits.
   A move of an existing item still asks.
+- **Every Admin user works in every sandbox** (owner, 2026-11-18). Any
+  Admin user may run commands in, export from, publish and remove another
+  login's sandbox, and read its command history on the Sandboxes screen.
+  So an Admin user can read, inside a sandbox the brain owner made with a
+  mounted folder, files of that folder they could not read in Files. Only
+  the brain owner mounts a folder.
 - **More than 5 files from parallel uploads.** One trusted editor who sends
   several uploads to a task at the same moment can pass the 5-file cap.
 - **A folder run takes every file the caller sees under it** (pipelines,

@@ -261,8 +261,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
         containerId: 'c1',
       }),
     );
-    // L's own sandbox: a login works only in the sandboxes it made (W7a fix
-    // round 2), the anchor in every one.
+    // L's own sandbox, beside the anchor's (an Admin user works in every
+    // sandbox since 2026-11-18).
     await sys(() =>
       c.createSandboxRow({
         id: randomUUID(),

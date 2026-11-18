@@ -196,9 +196,16 @@ async function findContainer(id: string): Promise<docker.ContainerSummary> {
 const lastActivity = new Map<string, number>();
 const markActive = (id: string) => lastActivity.set(id, Date.now());
 
+/** The disk the sandboxes hold: their /files folders, and what each
+ *  container wrote outside /files (its writable layer). A stopped sandbox
+ *  does not count toward the cap of running ones, so this budget is what
+ *  bounds the stopped ones (owner, 2026-11-18). */
 async function usedBytes(): Promise<number> {
-  const { stdout } = await execFileP('du', ['-sb', SANDBOXES_DIR]);
-  return Number(stdout.split('\t')[0]) || 0;
+  const [{ stdout }, layers] = await Promise.all([
+    execFileP('du', ['-sb', SANDBOXES_DIR]),
+    docker.containerLayerBytes([`${LABEL}=true`]),
+  ]);
+  return (Number(stdout.split('\t')[0]) || 0) + layers;
 }
 
 /** Hand /files back to uid 1000 so the host-side owner can read/copy/delete
@@ -241,6 +248,12 @@ const WAKE_SCRIPT = '.sandbox-wake';
  */
 async function ensureRunning(c: docker.ContainerSummary, id: string): Promise<void> {
   if (c.State === 'running') return;
+  // A wake starts one more running sandbox: the same cap as a create.
+  const atLimit = sandboxLimitRefusal(
+    await docker.listContainers([`${LABEL}=true`]),
+    MAX_SANDBOXES,
+  );
+  if (atLimit) throw new HttpError(409, atLimit);
   await docker.startContainer(c.Id);
   try {
     await stat(path.join(filesDir(id), WAKE_SCRIPT));

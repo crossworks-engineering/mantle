@@ -1,9 +1,8 @@
 /**
  * Sandbox lifecycle: create, exec, list, stop, remove, autostart.
  *
- * In a workspace scope a sandbox records the login that
- * made it, and exec, stop, rm and autostart work only on the caller's own
- * sandboxes (the brain owner's login: on every one). Only the brain owner's
+ * In a workspace scope a sandbox records the login that made it. Every
+ * Admin user works in every sandbox (common.ts). Only the brain owner's
  * login mounts a Files folder.
  */
 
