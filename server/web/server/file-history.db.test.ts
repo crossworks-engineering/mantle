@@ -381,7 +381,7 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     }
     expect((await restore(L.outsider)).status).toBe(404);
     const ro = await restore({ key: roKey });
-    expect(ro.status, `read-only key: ${await ro.clone().text()}`).toBe(403);
+    expect(ro.status, `read-only key: ${await ro.clone().text()}`).toBe(401);
     expect(await versionCount(id)).toBe(2);
     expect(await fileSha(id)).toBe(sha(bodies[2]!));
 
@@ -420,8 +420,11 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     expect((await del(L.writeUser)).status).toBe(403);
     expect((await del(L.reader)).status).toBe(403);
     expect((await del(L.outsider)).status).toBe(404);
+    // The read-only key is live (it reads the history), and refused the write.
+    const roRead = await runRoute({ key: roKey }, 'GET', `/api/files/files/${id}/history`);
+    expect(roRead.status, await roRead.clone().text()).toBe(200);
     const ro = await runRoute({ key: roKey }, 'DELETE', `/api/files/files/${id}/history/${v.id}`);
-    expect(ro.status, `read-only key: ${await ro.clone().text()}`).toBe(403);
+    expect(ro.status, `read-only key: ${await ro.clone().text()}`).toBe(401);
     expect(await versionCount(id)).toBe(2);
     const ok = await del(L.holderMod);
     expect(ok.status, await ok.clone().text()).toBe(200);
