@@ -90,11 +90,16 @@ export const sync_mailbox_set: BuiltinToolDef = {
       address: { type: 'string', description: 'The email address (ignored on an edit).' },
       display_name: { type: 'string', description: 'The name shown on sent mail.' },
       password: { type: 'string', description: 'The app password.' },
-      imap_host: { type: 'string' },
-      imap_port: { type: 'integer', minimum: 1, maximum: 65535 },
+      imap_host: { type: 'string', description: 'The IMAP server, e.g. `imap.example.com`.' },
+      imap_port: { type: 'integer', minimum: 1, maximum: 65535, description: 'Usually 993.' },
       imap_tls: { type: 'boolean', default: true, description: 'TLS from the start (port 993).' },
       smtp_host: { type: 'string', description: 'Leave out: this mailbox does not send.' },
-      smtp_port: { type: 'integer', minimum: 1, maximum: 65535 },
+      smtp_port: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 65535,
+        description: 'Usually 465 or 587.',
+      },
       smtp_tls: {
         type: 'boolean',
         description: 'true: TLS from the start (465); false: STARTTLS (587).',
@@ -138,8 +143,11 @@ export const sync_feed_set: BuiltinToolDef = {
     type: 'object',
     properties: {
       id: idProp('The feed to change; leave out to add one'),
-      name: { type: 'string' },
-      url: { type: 'string' },
+      name: { type: 'string', description: 'The name the calendar shows, e.g. `Team holidays`.' },
+      url: {
+        type: 'string',
+        description: "The feed's iCal address, e.g. `https://calendar.example.com/a.ics`.",
+      },
       enabled: { type: 'boolean', default: true, description: 'Sync this feed.' },
     },
     required: ['name'],
@@ -164,10 +172,14 @@ export const sync_microsoft_app_set: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      client_id: { type: 'string' },
-      client_secret: { type: 'string' },
+      client_id: { type: 'string', description: "The app's application (client) ID, a GUID." },
+      client_secret: { type: 'string', description: "A client secret's value from the app." },
       tenant: { type: 'string', default: 'common', description: 'e.g. `organizations`.' },
-      redirect_uri: { type: 'string' },
+      redirect_uri: {
+        type: 'string',
+        description:
+          'Exactly as registered, e.g. `https://brain.example.com/api/microsoft/oauth/callback`.',
+      },
     },
     required: ['client_id', 'redirect_uri'],
   },
@@ -191,8 +203,8 @@ export const sync_microsoft_set: BuiltinToolDef = {
     type: 'object',
     properties: {
       account_id: idProp('The Microsoft account'),
-      mail: { type: 'boolean' },
-      find_drives: { type: 'boolean' },
+      mail: { type: 'boolean', description: 'Outlook mail on (true) or off (false).' },
+      find_drives: { type: 'boolean', description: 'true: look for its drives again.' },
     },
     required: ['account_id'],
   },
@@ -243,17 +255,18 @@ export const sync_drive_set: BuiltinToolDef = {
     type: 'object',
     properties: {
       drive_id: idProp('The drive'),
-      enabled: { type: 'boolean' },
+      enabled: { type: 'boolean', description: 'The drive syncs (true) or stops (false).' },
       selections: {
         type: 'array',
         maxItems: 500,
+        description: 'What syncs; an empty list is the whole drive.',
         items: {
           type: 'object',
           properties: {
-            item_id: { type: 'string' },
-            path: { type: 'string', description: 'From the drive top, starting with `/`.' },
-            is_folder: { type: 'boolean' },
-            name: { type: 'string' },
+            item_id: { type: 'string', description: "The item's id from `sync_drive_browse`." },
+            path: { type: 'string', description: 'From the drive top, e.g. `/Reports/2026`.' },
+            is_folder: { type: 'boolean', description: 'A folder (true) or one file (false).' },
+            name: { type: 'string', description: 'Its name, for display.' },
           },
           required: ['item_id', 'path', 'is_folder'],
         },
