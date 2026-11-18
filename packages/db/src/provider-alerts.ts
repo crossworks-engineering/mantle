@@ -318,7 +318,8 @@ export type ExtractJobState = 'queued' | 'running';
  * docs/files.md "Status and processing"). The ids are rows the caller's
  * scope already read: this answers only for them. Running wins over
  * queued. An empty map when pg-boss has no schema or job table yet (a
- * fresh brain); any other error is thrown.
+ * fresh brain) or no database is reached; any other database error is
+ * thrown.
  */
 export async function extractJobsFor(
   ids: readonly string[],
@@ -335,11 +336,12 @@ export async function extractJobsFor(
       GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean }>;
     for (const r of rows) out.set(r.id, r.running ? 'running' : 'queued');
   } catch (err) {
-    // No pg-boss schema or job table yet (a fresh brain): nothing is
-    // queued. Any other error is thrown, as extractionQueueCounts throws:
-    // a queue that cannot be read is a fault to see, not an empty queue.
+    // No pg-boss schema or job table yet (a fresh brain), or no database
+    // reached at all (no SQLSTATE): nothing is queued. Any other answer of
+    // the database (a refused grant, a bad query) is thrown, as
+    // extractionQueueCounts throws: a fault to see, not an empty queue.
     const code = pgErrorCode(err);
-    if (code !== '42P01' && code !== '3F000') throw err;
+    if (code !== null && code !== '42P01' && code !== '3F000') throw err;
   }
   return out;
 }
