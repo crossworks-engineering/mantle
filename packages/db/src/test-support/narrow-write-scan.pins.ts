@@ -15,6 +15,10 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
     "the Telegram poller (system work; a chat's turn runs in the chat login's scope)",
   'packages/db/src/service-gateway-calls.ts':
     "the service gateway's call log: written and reaped by the gateway process (server/gateway), outside every scope",
+  'packages/db/src/service-state.ts':
+    "an optional service's state (0380): read and written by the Sync sidecar's routes (/api/sidecar/state, its token), outside every scope",
+  'packages/email/src/ingest.ts':
+    "the brain's half of mail sync: the Sync sidecar's routes (/api/sidecar/mail/*, its token) as system(worker:sync), and a new mailbox's row at the spot mail-account",
   'server/api/src/bench/haystack.ts': 'the memory benchmark harness (a scratch brain, never a box)',
   'server/api/src/workflows/runs-worker-turn.ts': "the runs worker's turn (system work)",
   'server/web/lib/auth/device-token-reap.ts': 'a reaper loop (system work)',

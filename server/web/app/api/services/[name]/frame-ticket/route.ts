@@ -21,6 +21,7 @@ export const policy = routePolicy({
     class: 'area',
     area: 'connectors',
     item: { none: 'manages the connectors area: the Admin step checks it' },
+    limits: { rateLimit: ['serviceFrameTicket'] },
   },
 });
 
