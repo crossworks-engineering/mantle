@@ -143,7 +143,7 @@ jobs:
         run: |
           python3 -m venv /tmp/cad-venv
           EZDXF_COMMIT=$(sed -n 's/^ARG EZDXF_COMMIT=//p' Dockerfile)
-          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn,ezdwg "ezdxf @ https://github.com/crossworks-engineering/ezdxf/archive/${EZDXF_COMMIT}.tar.gz" "matplotlib==3.11.2" "ezdgn==0.3.2" "ezdwg==0.19.2" "opencv-python-headless==5.0.0.93" "pdfplumber==0.11.10" "pypdfium2==5.15.2"
+          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn,ezdwg "ezdxf @ https://github.com/crossworks-engineering/ezdxf/archive/${EZDXF_COMMIT}.tar.gz" "matplotlib==3.11.2" "ezdgn==0.3.2" "ezdwg==0.19.2" "opencv-python-headless==5.0.0.93" "pdfplumber==0.11.7" "pypdfium2==4.30.1"
           /tmp/cad-venv/bin/python -m unittest discover -s server/parser/cad/tests -v
 
       # Boot every server process the way the image does (each compose
