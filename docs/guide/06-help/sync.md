@@ -14,9 +14,6 @@ This screen links your mailboxes, calendar feeds and Microsoft 365 accounts to t
 - **Sync now** runs a mailbox or a feed at once. Mail syncs every 5 minutes, feeds every 30 minutes.
 - **Find senders** lists recent senders who are not contacts yet. **Add as contact** brings in their last 90 days of mail.
 - **Remove** stops the sync and deletes the password. Mail already stored stays. A removed feed takes its events with it.
-
-## Microsoft 365
-
 - **Microsoft app**: an admin registers a web app in Microsoft Entra once and enters its client ID, secret, tenant and redirect URI here. The screen shows the redirect URI to register.
 - **Connect a Microsoft account** opens Microsoft's sign-in in a new tab. Sign in, then come back: the account shows with its OneDrive and the libraries of the SharePoint sites you follow.
 - **Turn on** a drive to sync it. Its files land in the brain as normal files every 5 minutes, under Microsoft in the files tree. **Choose folders** limits it to the folders or files you tick. A file that leaves the drive, or your choice, leaves the brain at the next sync.

@@ -70,6 +70,20 @@ const READS_ITS_ITEM: ReadonlySet<string> = new Set([
  * create lands in (the database's create check), or the handler checks it.
  */
 const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
+  // The Sync service's accounts (Sync plan M3): each id names an outside
+  // account, a drive or a feed in the Sync service's own state, not an item.
+  ...[
+    'sync_drive_set',
+    'sync_feed_set',
+    'sync_mailbox_set',
+    'sync_microsoft_app_set',
+    'sync_microsoft_set',
+    'sync_remove',
+    'sync_run',
+  ].map((slug): [string, string] => [
+    slug,
+    "an outside account in the Sync service's state, not an item",
+  ]),
   ['app_data_write', "the app's MCP access switch and the login's Write switch, in the handler"],
   ['app_import', 'reads the file it imports; the new app is a create'],
   ['app_undelete', "a deleted app: its home's Moderators only, in the handler (app-trash)"],

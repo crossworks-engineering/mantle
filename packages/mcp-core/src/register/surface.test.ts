@@ -164,6 +164,12 @@ const HTTP_SURFACE = [
   'sheet_build',
   'show_image',
   'speech_file_create',
+  'sync_drive_set',
+  'sync_feed_set',
+  'sync_mailbox_set',
+  'sync_microsoft_app_set',
+  'sync_microsoft_set',
+  'sync_run',
   'table_cell_set',
   'table_column_add',
   'table_column_update',
@@ -221,6 +227,7 @@ const HTTP_SURFACE = [
   'recall_card_delete',
   'recall_map_delete',
   'sandbox_rm',
+  'sync_remove',
   'table_column_delete',
   'table_delete',
   'table_row_delete',
@@ -366,6 +373,8 @@ const HTTP_SURFACE = [
   'search_chunks',
   'service_list',
   'summarize_text',
+  'sync_drive_browse',
+  'sync_status',
   'table_aggregate',
   'table_get',
   'table_history',
@@ -416,6 +425,8 @@ describe('MCP tool surface', () => {
         'email_list',
         'contact_find',
         'contact_create',
+        'sync_status',
+        'sync_drive_set',
       ]) {
         expect(gone, slug).toContain(slug);
       }

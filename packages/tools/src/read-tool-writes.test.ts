@@ -243,6 +243,10 @@ const NO_WRITE_FOUND: readonly string[] = [
   // Settings > Services: the services view (services.json, the run status
   // file, the services' health probes); no write.
   'service_list',
+  // The Sync service's accounts (plan M3): the sidecar's admin answer
+  // (its state, a drive folder from Microsoft); no write.
+  'sync_drive_browse',
+  'sync_status',
   'table_aggregate',
   'table_get',
   'table_history',

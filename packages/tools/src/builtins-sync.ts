@@ -29,19 +29,20 @@ async function admin(path: string, body: Record<string, unknown> = {}): Promise<
   }
 }
 
-const readPolicy = {
-  effect: 'read',
-  spends: 'none',
-  scope: { area: 'connectors', systemWhole: true },
-  recipe: { step: 'forbidden' },
-} as const;
+/** Every sync_* tool: the connectors area, run whole, as the screens. Each
+ *  def writes its scope out (the scoreboard counts each one, admin-counts.mjs). */
+type Whole = { area: 'connectors'; systemWhole: true };
 
-function writePolicy(what: string, idempotent = true): ToolPolicy {
+function readPolicy(scope: Whole): ToolPolicy {
+  return { effect: 'read', spends: 'none', scope, recipe: { step: 'forbidden' } };
+}
+
+function writePolicy(what: string, scope: Whole, idempotent = true): ToolPolicy {
   return {
     matrix: { none: 'an outside account of the Sync service is not an item' },
     effect: 'write',
     spends: 'none',
-    scope: { area: 'connectors', systemWhole: true },
+    scope,
     peerRisky: true,
     ...(idempotent ? { idempotent: true as const } : {}),
     recipe: { step: 'forbidden' },
@@ -64,7 +65,7 @@ function connectWhere(): string {
 export const sync_status: BuiltinToolDef = {
   slug: 'sync_status',
   mcpOnly: true,
-  policy: readPolicy,
+  policy: readPolicy({ area: 'connectors', systemWhole: true }),
   name: 'Sync accounts and status',
   description:
     "Every outside account the Sync service holds (Settings > Accounts): IMAP mailboxes, calendar feeds, the Microsoft app, each Microsoft account with its Outlook mail switch and its OneDrive and SharePoint drives (on or off, chosen folders), and each one's last run. No password, token or feed address is shown. Ids here are what the other sync_* tools take.",
@@ -78,7 +79,10 @@ export const sync_status: BuiltinToolDef = {
 export const sync_mailbox_set: BuiltinToolDef = {
   slug: 'sync_mailbox_set',
   mcpOnly: true,
-  policy: writePolicy('adds or changes a linked mailbox'),
+  policy: writePolicy('adds or changes a linked mailbox', {
+    area: 'connectors',
+    systemWhole: true,
+  }),
   redactInputFields: ['password'],
   name: 'Add or edit a mailbox',
   description:
@@ -135,7 +139,7 @@ export const sync_mailbox_set: BuiltinToolDef = {
 export const sync_feed_set: BuiltinToolDef = {
   slug: 'sync_feed_set',
   mcpOnly: true,
-  policy: writePolicy('adds or changes a calendar feed'),
+  policy: writePolicy('adds or changes a calendar feed', { area: 'connectors', systemWhole: true }),
   name: 'Add or edit a calendar feed',
   description:
     "Add an iCal calendar feed (no `id`), or change one (`id`). Its events land in the calendar every 30 minutes. `url` is the feed's https or webcal address (it can carry a secret: it is never shown again); on an edit leave it out to keep it.",
@@ -164,7 +168,10 @@ export const sync_feed_set: BuiltinToolDef = {
 export const sync_microsoft_app_set: BuiltinToolDef = {
   slug: 'sync_microsoft_app_set',
   mcpOnly: true,
-  policy: writePolicy('sets the Microsoft app this box signs in with'),
+  policy: writePolicy('sets the Microsoft app this box signs in with', {
+    area: 'connectors',
+    systemWhole: true,
+  }),
   redactInputFields: ['client_secret'],
   name: 'Set the Microsoft app',
   description:
@@ -195,7 +202,10 @@ export const sync_microsoft_app_set: BuiltinToolDef = {
 export const sync_microsoft_set: BuiltinToolDef = {
   slug: 'sync_microsoft_set',
   mcpOnly: true,
-  policy: writePolicy("switches a Microsoft account's Outlook mail, or looks for its drives"),
+  policy: writePolicy("switches a Microsoft account's Outlook mail, or looks for its drives", {
+    area: 'connectors',
+    systemWhole: true,
+  }),
   name: 'Change a Microsoft account',
   description:
     "Switch a connected Microsoft account's Outlook mail on or off (`mail`; only mail from contacts is kept; off keeps the stored mail), and/or look for its OneDrive and SharePoint drives again (`find_drives`: a new drive starts off). Turn a drive on with sync_drive_set.",
@@ -228,26 +238,32 @@ export const sync_microsoft_set: BuiltinToolDef = {
 export const sync_drive_browse: BuiltinToolDef = {
   slug: 'sync_drive_browse',
   mcpOnly: true,
-  policy: readPolicy,
+  policy: {
+    ...readPolicy({ area: 'connectors', systemWhole: true }),
+    matrix: { none: "a drive's ids are Microsoft's, not items of the brain" },
+  },
   name: 'Browse a drive',
   description:
-    "One folder of a OneDrive or SharePoint drive (its top when `item_id` is left out): each item's id, name, whether it is a folder, size and path. Use it to choose what syncs (sync_drive_set `selections`).",
+    "One folder of a OneDrive or SharePoint drive (its top when `folder` is left out): each item's id, name, whether it is a folder, size and path. Use it to choose what syncs (sync_drive_set `selections`).",
   inputSchema: {
     type: 'object',
     properties: {
       drive_id: idProp('The drive'),
-      item_id: { type: 'string', description: 'A folder from an earlier browse.' },
+      folder: { type: 'string', description: "A folder's id from an earlier browse." },
     },
     required: ['drive_id'],
   },
   handler: async (i): Promise<ToolHandlerResult> =>
-    admin('/admin/drive/browse', { driveId: i.drive_id, itemId: i.item_id ?? '' }),
+    admin('/admin/drive/browse', { driveId: i.drive_id, itemId: i.folder ?? '' }),
 };
 
 export const sync_drive_set: BuiltinToolDef = {
   slug: 'sync_drive_set',
   mcpOnly: true,
-  policy: writePolicy('switches a drive or chooses what in it syncs'),
+  policy: writePolicy('switches a drive or chooses what in it syncs', {
+    area: 'connectors',
+    systemWhole: true,
+  }),
   name: 'Switch a drive or choose its folders',
   description:
     'Turn a OneDrive or SharePoint drive on or off (`enabled`; off keeps every synced file), and/or choose what in it syncs (`selections`, which replace the old ones; an empty list syncs the whole drive). Each selection is a folder or a file from sync_drive_browse: its `item_id`, `path` and `is_folder`. Files land in the brain as normal files every 5 minutes; a file outside the choice leaves the brain at the next run.',
@@ -297,7 +313,10 @@ export const sync_drive_set: BuiltinToolDef = {
 export const sync_remove: BuiltinToolDef = {
   slug: 'sync_remove',
   mcpOnly: true,
-  policy: writePolicy('removes a linked account', false),
+  policy: {
+    ...writePolicy('removes a linked account', { area: 'connectors', systemWhole: true }, false),
+    riskClass: 'delete',
+  },
   name: 'Remove a linked account',
   description:
     "Remove a mailbox, a calendar feed or a Microsoft account by its id. A mailbox's password and a Microsoft account's tokens are deleted; stored mail and synced files stay in the brain. A feed's events leave the calendar. It waits for a run of that account under way.",
@@ -312,7 +331,10 @@ export const sync_remove: BuiltinToolDef = {
 export const sync_run: BuiltinToolDef = {
   slug: 'sync_run',
   mcpOnly: true,
-  policy: writePolicy('starts a sync of one account now'),
+  policy: writePolicy('starts a sync of one account now', {
+    area: 'connectors',
+    systemWhole: true,
+  }),
   name: 'Sync one account now',
   description:
     "Start a sync of one mailbox, feed, drive or Microsoft account's Outlook mail now (it runs in the background). sync_status shows the outcome.",

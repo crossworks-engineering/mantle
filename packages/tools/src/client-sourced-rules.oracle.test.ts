@@ -324,6 +324,17 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   api_key_set: always('changes the secrets tools and agents sign in with'),
   gateway_service_set: always('changes where the service gateway sends calls'),
   service_set: always('switches a service of the box on or off'),
+  // The Sync service's accounts (Sync plan M3): MCP only, the account
+  // screens' actions; a client-sourced call always waits for the owner.
+  sync_mailbox_set: always('adds or changes a linked mailbox'),
+  sync_feed_set: always('adds or changes a calendar feed'),
+  sync_microsoft_app_set: always('sets the Microsoft app this box signs in with'),
+  sync_microsoft_set: always(
+    "switches a Microsoft account's Outlook mail, or looks for its drives",
+  ),
+  sync_drive_set: always('switches a drive or chooses what in it syncs'),
+  sync_remove: always('removes a linked account'),
+  sync_run: always('starts a sync of one account now'),
   pipeline_reread: always('reads the older files of this box again'),
   pipeline_run: onNodes('file_id', 'folder_id'),
   pipeline_set: always('changes how files are read on this box'),

@@ -6111,6 +6111,269 @@
   }
  },
  {
+  "name": "sync_drive_set",
+  "description": "Turn a OneDrive or SharePoint drive on or off (`enabled`; off keeps every synced file), and/or choose what in it syncs (`selections`, which replace the old ones; an empty list syncs the whole drive). Each selection is a folder or a file from sync_drive_browse: its `item_id`, `path` and `is_folder`. Files land in the brain as normal files every 5 minutes; a file outside the choice leaves the brain at the next run.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "drive_id": {
+     "type": "string",
+     "description": "The drive (its id from sync_status)."
+    },
+    "enabled": {
+     "type": "boolean",
+     "description": "The drive syncs (true) or stops (false)."
+    },
+    "selections": {
+     "maxItems": 500,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "item_id": {
+        "type": "string",
+        "description": "The item's id from `sync_drive_browse`."
+       },
+       "path": {
+        "type": "string",
+        "description": "From the drive top, e.g. `/Reports/2026`."
+       },
+       "is_folder": {
+        "type": "boolean",
+        "description": "A folder (true) or one file (false)."
+       },
+       "name": {
+        "type": "string",
+        "description": "Its name, for display."
+       }
+      },
+      "required": [
+       "item_id",
+       "path",
+       "is_folder"
+      ]
+     },
+     "description": "What syncs; an empty list is the whole drive."
+    }
+   },
+   "required": [
+    "drive_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_drive_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_feed_set",
+  "description": "Add an iCal calendar feed (no `id`), or change one (`id`). Its events land in the calendar every 30 minutes. `url` is the feed's https or webcal address (it can carry a secret: it is never shown again); on an edit leave it out to keep it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The feed to change; leave out to add one (its id from sync_status)."
+    },
+    "name": {
+     "type": "string",
+     "description": "The name the calendar shows, e.g. `Team holidays`."
+    },
+    "url": {
+     "type": "string",
+     "description": "The feed's iCal address, e.g. `https://calendar.example.com/a.ics`."
+    },
+    "enabled": {
+     "type": "boolean",
+     "description": "Sync this feed."
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_feed_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_mailbox_set",
+  "description": "Link an IMAP mailbox (no `id`), or change one (`id`). The Sync service logs in to IMAP, and to SMTP when `smtp_host` is set, before it saves; a failed login is refused with the server's answer. Use an app password from the mail provider. On an edit an empty `password` keeps the stored one. Only mail from contacts is kept. Port 993 with TLS for IMAP; SMTP 465 with TLS, or 587 with `smtp_tls` false (STARTTLS, required).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The mailbox to change; leave out to add one (its id from sync_status)."
+    },
+    "address": {
+     "type": "string",
+     "description": "The email address (ignored on an edit)."
+    },
+    "display_name": {
+     "type": "string",
+     "description": "The name shown on sent mail."
+    },
+    "password": {
+     "type": "string",
+     "description": "The app password."
+    },
+    "imap_host": {
+     "type": "string",
+     "description": "The IMAP server, e.g. `imap.example.com`."
+    },
+    "imap_port": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 65535,
+     "description": "Usually 993."
+    },
+    "imap_tls": {
+     "type": "boolean",
+     "description": "TLS from the start (port 993)."
+    },
+    "smtp_host": {
+     "type": "string",
+     "description": "Leave out: this mailbox does not send."
+    },
+    "smtp_port": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 65535,
+     "description": "Usually 465 or 587."
+    },
+    "smtp_tls": {
+     "type": "boolean",
+     "description": "true: TLS from the start (465); false: STARTTLS (587)."
+    },
+    "first_scan_days": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 3650,
+     "description": "How far the first scan reaches back, in days."
+    },
+    "enabled": {
+     "type": "boolean",
+     "description": "Sync this mailbox."
+    }
+   },
+   "required": [
+    "imap_host",
+    "imap_port"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_mailbox_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_microsoft_app_set",
+  "description": "Set the Microsoft (Entra) app this box signs in with: its application (client) ID, a client secret (leave it out on a change to keep the stored one), the tenant (`common`, `organizations` or a tenant id) and the redirect URI registered on the app, exactly (`<this box's address>/api/microsoft/oauth/callback`). The app needs the delegated Graph rights Files.Read.All, Sites.Read.All, Mail.Read, Mail.Send and Calendars.Read.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "client_id": {
+     "type": "string",
+     "description": "The app's application (client) ID, a GUID."
+    },
+    "client_secret": {
+     "type": "string",
+     "description": "A client secret's value from the app."
+    },
+    "tenant": {
+     "type": "string",
+     "description": "e.g. `organizations`."
+    },
+    "redirect_uri": {
+     "type": "string",
+     "description": "Exactly as registered, e.g. `https://brain.example.com/api/microsoft/oauth/callback`."
+    }
+   },
+   "required": [
+    "client_id",
+    "redirect_uri"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_microsoft_app_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_microsoft_set",
+  "description": "Switch a connected Microsoft account's Outlook mail on or off (`mail`; only mail from contacts is kept; off keeps the stored mail), and/or look for its OneDrive and SharePoint drives again (`find_drives`: a new drive starts off). Turn a drive on with sync_drive_set.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "account_id": {
+     "type": "string",
+     "description": "The Microsoft account (its id from sync_status)."
+    },
+    "mail": {
+     "type": "boolean",
+     "description": "Outlook mail on (true) or off (false)."
+    },
+    "find_drives": {
+     "type": "boolean",
+     "description": "true: look for its drives again."
+    }
+   },
+   "required": [
+    "account_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_microsoft_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_run",
+  "description": "Start a sync of one mailbox, feed, drive or Microsoft account's Outlook mail now (it runs in the background). sync_status shows the outcome.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The mailbox, feed, drive or Microsoft account (its id from sync_status)."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_run",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "table_cell_set",
   "description": "Set a single cell — row by id, column by id or name. Writes to DRAFT. To change cells on more than one row, when you have `table_rows_upsert`, use one call of it with `key: [\"@row_id\"]`.",
   "inputSchema": {
@@ -8531,6 +8794,30 @@
    "title": "sandbox_rm",
    "readOnlyHint": false,
    "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_remove",
+  "description": "Remove a mailbox, a calendar feed or a Microsoft account by its id. A mailbox's password and a Microsoft account's tokens are deleted; stored mail and synced files stay in the brain. A feed's events leave the calendar. It waits for a run of that account under way.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The mailbox, feed or Microsoft account (its id from sync_status)."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_remove",
+   "readOnlyHint": false,
+   "destructiveHint": false,
    "idempotentHint": false,
    "openWorldHint": false
   }
@@ -13409,6 +13696,50 @@
   },
   "annotations": {
    "title": "summarize_text",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_drive_browse",
+  "description": "One folder of a OneDrive or SharePoint drive (its top when `folder` is left out): each item's id, name, whether it is a folder, size and path. Use it to choose what syncs (sync_drive_set `selections`).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "drive_id": {
+     "type": "string",
+     "description": "The drive (its id from sync_status)."
+    },
+    "folder": {
+     "type": "string",
+     "description": "A folder's id from an earlier browse."
+    }
+   },
+   "required": [
+    "drive_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_drive_browse",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "sync_status",
+  "description": "Every outside account the Sync service holds (Settings > Accounts): IMAP mailboxes, calendar feeds, the Microsoft app, each Microsoft account with its Outlook mail switch and its OneDrive and SharePoint drives (on or off, chosen folders), and each one's last run. No password, token or feed address is shown. Ids here are what the other sync_* tools take.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "sync_status",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

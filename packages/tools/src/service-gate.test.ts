@@ -51,8 +51,13 @@ describe('tool slugs map to their optional service', () => {
           expect(svc, `${s} in ${f}`).toBe('documents');
           continue;
         }
-        // The email and contact tools need the Sync service (builtins.ts).
-        if (f.endsWith('builtins-email.ts') || f.endsWith('builtins-contacts.ts')) {
+        // The email, contact and Sync account tools need the Sync service
+        // (builtins.ts).
+        if (
+          f.endsWith('builtins-email.ts') ||
+          f.endsWith('builtins-contacts.ts') ||
+          f.endsWith('builtins-sync.ts')
+        ) {
           expect(svc, `${s} in ${f}`).toBe('sync');
           continue;
         }

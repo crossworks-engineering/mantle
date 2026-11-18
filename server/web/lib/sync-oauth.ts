@@ -89,7 +89,7 @@ export async function syncOAuthStart(req: Request): Promise<Response> {
     headers: {
       location: started.url,
       'set-cookie': `${OAUTH_COOKIE}=${started.state}; Path=/api; Max-Age=${COOKIE_MAX_AGE_S}; HttpOnly; SameSite=Lax${secure}`,
-        'referrer-policy': 'no-referrer',
+      'referrer-policy': 'no-referrer',
     },
   });
 }

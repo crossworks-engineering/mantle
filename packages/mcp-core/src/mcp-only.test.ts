@@ -92,6 +92,17 @@ describe('mcpOnly builtins', () => {
         // reads and switches the box's optional services.
         'service_list',
         'service_set',
+        // The Sync service's accounts (docs/services.md "Sync", plan M3): an
+        // Admin user's client runs the account screens' actions.
+        'sync_drive_browse',
+        'sync_drive_set',
+        'sync_feed_set',
+        'sync_mailbox_set',
+        'sync_microsoft_app_set',
+        'sync_microsoft_set',
+        'sync_remove',
+        'sync_run',
+        'sync_status',
         'telegram_edit',
         'telegram_mark_processed',
         'telegram_pair',

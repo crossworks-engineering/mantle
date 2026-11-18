@@ -112,6 +112,11 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   // granted in the app). It has its own gate: without confirm: true it only
   // says what would go, and asks the model to tell the user first.
   recall_map_delete: { reason: 'owner act on MCP; refuses without confirm: true', mcpOnly: true },
+  sync_remove: {
+    reason:
+      "an admin's act on MCP, as the screen's Remove: stored mail and synced files stay; a feed's events go with it",
+    mcpOnly: true,
+  },
   // An Admin's own pipeline off the box (docs/pipelines.md, "Own pipelines"):
   // the databases it wrote stay, and the package installs again from its
   // source. The Admin check is the rule (owner, 2026-11-15): no confirm.
