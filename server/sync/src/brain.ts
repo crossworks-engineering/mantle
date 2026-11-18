@@ -6,9 +6,9 @@
  *
  * No redirect is followed (the token must never reach another address).
  */
-export const TOKEN_HEADER = 'x-mantle-sync-token';
+import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
-const TIMEOUT_MS = 120_000;
+export const TOKEN_HEADER = 'x-mantle-sync-token';
 
 export class BrainError extends Error {
   constructor(
@@ -46,7 +46,7 @@ export function createBrain(opts: { url: string; token: string }): Brain {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       redirect: 'error',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: timeoutSignal(NET_TIMEOUTS.syncBrain),
     });
     const text = await res.text();
     const parsed = parseJson(text);

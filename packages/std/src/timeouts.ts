@@ -104,6 +104,9 @@ export const NET_TIMEOUTS = {
   webFetch: 25_000,
   /** One send through the Sync sidecar: its SMTP answer included. */
   syncSend: 120_000,
+  /** One call of the Sync sidecar to its brain (a mail with its attachments
+   *  included). */
+  syncBrain: 120_000,
   /** Handing the Sync sidecar a new contact's backfill (it runs later). */
   syncBackfill: 10_000,
   /** One Sync account screen, through the brain (a save logs in to the

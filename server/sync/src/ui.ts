@@ -11,7 +11,7 @@
  * no contact yet, with "Add as contact").
  */
 import { randomUUID } from 'node:crypto';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, isUuid } from '@mantle/std';
 import type { Brain } from './brain';
 import { clearFeed } from './feeds';
 import { allFolders, connect, probe } from './imap';
@@ -36,7 +36,6 @@ export type UiDeps = { brain: Brain; state: State; scheduler: Scheduler };
 
 export type UiReply = { status: number; html: string };
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DAYS_MAX = 3650;
 
 function esc(v: unknown): string {
@@ -483,7 +482,7 @@ export async function uiReply(req: UiRequest, deps: UiDeps): Promise<UiReply> {
   if (p === '/discover/add' && post) return addSender(req, deps);
 
   const m = /^\/(mailbox|feed)\/([0-9a-f-]{36})(?:\/(save|run|remove|folders))?$/.exec(p);
-  if (!m || !UUID_RE.test(m[2]!)) return notFound(req);
+  if (!m || !isUuid(m[2])) return notFound(req);
   const [, kind, id, action] = m as unknown as [
     string,
     'mailbox' | 'feed',

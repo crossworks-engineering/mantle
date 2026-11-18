@@ -81,7 +81,6 @@ function html(res: ServerResponse, status: number, text: string): void {
   res.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
     'content-length': Buffer.byteLength(text),
-    'cache-control': 'no-store',
   });
   res.end(text);
 }
