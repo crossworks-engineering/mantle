@@ -166,6 +166,16 @@ const ALLOWED: Record<Need, Place[]> = {
   edit: ['allowed', 'editOnly'],
   manage: ['allowed'],
 };
+/** The same for the Admin seat: an Admin user counts as a Moderator of the
+ *  home of any item it reads (owner page d7313c67, decision A), so its
+ *  editOnly and noEdit items, homed in X and read through Admin's or R's
+ *  grant, are its to edit and manage; noRead stays not found. */
+const ADMIN_ALLOWED: Record<Need, Place[]> = {
+  read: ['allowed', 'editOnly', 'noEdit'],
+  edit: ['allowed', 'editOnly', 'noEdit'],
+  manage: ['allowed', 'editOnly', 'noEdit'],
+};
+const allowedOf = (who: Who) => (who === 'admin' ? ADMIN_ALLOWED : ALLOWED);
 const PLACES: readonly Place[] = ['noRead', 'noEdit', 'editOnly', 'allowed'];
 const MODES: readonly Mode[] = ['on', 'warn'];
 
@@ -1458,7 +1468,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
               for (const p of PLACES) {
                 const name = `${route.name} ${mode} ${who}/${p}`;
                 const looser = route.allowedFor?.[who]?.includes(p) === true;
-                const allowedHere = ALLOWED[route.need].includes(p) || looser;
+                const allowedHere = allowedOf(who)[route.need].includes(p) || looser;
                 const was = await once(route, who, p, true);
                 const now = await once(route, who, p, false);
                 recorded.push(

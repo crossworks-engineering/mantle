@@ -750,10 +750,13 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(manageChecked).toBeGreaterThan(6);
   }, 600_000);
 
-  it('tasks, events, Recall maps and links: a Write grant alone manages nothing (A0 fix round 3, M-b)', async () => {
+  it('tasks, events, Recall maps and links: a Write grant alone manages nothing; an Admin user who reads the item does (A0 fix round 3, M-b; decision A)', async () => {
     // Real items, made by the Admin user through their own routes, then
     // homed in Side with a Write grant only: to the member's private
-    // workspace, and to Admin (so the Admin user edits them, never manages).
+    // workspace, and to Admin. The member edits them and manages nothing.
+    // The Admin user reads them (through Admin), so it counts as a Moderator
+    // of their home and manages them (owner page d7313c67, decision A; it
+    // never managed them before).
     const grantWriteOnly = async (id: string) => {
       await homeIn(id, side);
       await m.withHeads([id], 'update', async (tx) => {
@@ -810,9 +813,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     if (closed.status !== 200) failures.push(`member closes a link ${closed.status}`);
     for (const [method, path] of writes(writeOnly).slice(0, 3)) {
       // An Admin user with the users area may close any link (the guide),
-      // so the link is checked on the others only. The item gate: 403.
+      // so the link is checked on the others only. The item gate lets the
+      // Admin user by: it reads the item (decision A).
       const r = await call(path, owner, method);
-      if (r.status !== 403 || !r.text.includes('item-workspace')) {
+      if (r.status >= 300 || r.text.includes('item-workspace')) {
         failures.push(`admin ${method} ${path} ${r.status} ${r.text.slice(0, 120)}`);
       }
     }

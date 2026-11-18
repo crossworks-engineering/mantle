@@ -205,10 +205,14 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     expect(json(mine.text).source).toBe('draft');
     expect((await call(`/api/tables/${tableId}`, owner)).text).toContain(DRAFT);
 
-    // Homed in Ro, also in Rd: the Admin user has Read only, the member Read.
+    // Homed in Ro, also in Rd: the member reads it and may not edit it. The
+    // Admin user (a plain user of Ro) reads it too, so it counts as a
+    // Moderator of its home and edits it (owner page d7313c67, decision A):
+    // it still reads the draft.
     await homeIn(tableId, ro);
     await alsoIn(tableId, rd);
-    for (const who of [owner, mem]) {
+    expect((await call(`/api/tables/${tableId}/rows?draft=1`, owner)).text).toContain(DRAFT);
+    for (const who of [mem]) {
       const rows = await call(`/api/tables/${tableId}/rows?draft=1`, who);
       expect(rows.status, rows.text.slice(0, 200)).toBe(200);
       expect(rows.text).not.toContain(DRAFT);
@@ -223,12 +227,12 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     }
     // The package reads ask the row too (getTable, the tools' window file).
     const content = await import('@mantle/content');
-    await m.withViewer({ login: owner }, async () => {
+    await m.withViewer({ login: mem }, async () => {
       const t = await content.getTable(owner, tableId);
       expect(JSON.stringify(t)).not.toContain(DRAFT);
     });
     const storage = await import('@mantle/content/table-storage');
-    await m.withViewer({ login: owner }, async () => {
+    await m.withViewer({ login: mem }, async () => {
       // windowFile (the tools) reads the draft file only when draftOk.
       const surface = await storage.tableSqlSurface(owner, tableId);
       expect(surface?.draftOk).toBe(false);
@@ -404,9 +408,12 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await homeIn(app.id, side);
     await grantWrite(app.id);
     const appLink = await linkOn(app.id, 'app');
+    // An app's link is its managers'. The Admin user reads the app (through
+    // Ro), so it counts as a Moderator of its home and manages it (owner page
+    // d7313c67, decision A); a Write grant alone still manages nothing
+    // (w6a-route-sweep M-b, the a3a oracle's writeGrant).
     const appChange = await call(`/api/shares/${appLink}`, owner, 'PATCH', { serve: [] });
-    expect(appChange.status, appChange.text.slice(0, 200)).toBe(403);
-    expect(appChange.text).toContain('item-workspace');
+    expect(appChange.status, appChange.text.slice(0, 200)).toBe(200);
   }, 60_000);
 
   // ── M2 ────────────────────────────────────────────────────────────────────
@@ -533,7 +540,11 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
           )
         : [segs.map((s) => (s === ':kind' ? 'pages' : s.startsWith(':') ? 'x' : s)).join('/')];
       for (const p of paths) {
-        for (const who of [owner, mem]) {
+        // The member reads these items and may not edit them. The Admin user
+        // (a plain user of Ro and Rd) reads them too, so it counts as a
+        // Moderator of their home and edits them (owner page d7313c67,
+        // decision A): an editor, it is not asked here.
+        for (const who of [mem]) {
           const r = await call(`${p}${p.includes('?') ? '&' : '?'}draft=1`, who);
           calls += 1;
           if (r.text.includes(DRAFT)) failures.push(`${who === owner ? 'admin' : 'member'} ${p}`);

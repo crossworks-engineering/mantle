@@ -79,6 +79,16 @@ const ALLOWED: Record<Need, Place[]> = {
   edit: ['allowed', 'editOnly'],
   manage: ['allowed'],
 };
+/** The same for the Admin seat: an Admin user counts as a Moderator of the
+ *  home of any item it reads (owner page d7313c67, decision A), so its
+ *  editOnly and noEdit items, homed in X and read through Admin's or R's
+ *  grant, are its to edit and manage; noRead stays not found. */
+const ADMIN_ALLOWED: Record<Need, Place[]> = {
+  read: ['allowed', 'editOnly', 'noEdit'],
+  edit: ['allowed', 'editOnly', 'noEdit'],
+  manage: ['allowed', 'editOnly', 'noEdit'],
+};
+const allowedOf = (who: Who) => (who === 'admin' ? ADMIN_ALLOWED : ALLOWED);
 const PLACES: readonly Place[] = ['noRead', 'noEdit', 'editOnly', 'allowed'];
 
 /** What a store root holds: every file but SQLite's journals, its size,
@@ -361,7 +371,7 @@ describe.skipIf(!DB_URL)(
     /** One cell: was (pre-check on) and now (bypassed) on fresh items. */
     const runCell = async (family: string, tool: Tool, who: Who, p: Place, way: Way) => {
       const effective: Place = tool.adminKind ? (who === 'admin' ? 'allowed' : 'noRead') : p;
-      const allowed = ALLOWED[tool.need].includes(effective);
+      const allowed = allowedOf(who)[tool.need].includes(effective);
       const wantNow =
         tool.nowBy?.[who]?.[effective] ?? tool.now?.[effective] ?? (allowed ? 'ok' : 'refused');
       const once = async (precheck: boolean): Promise<Cell> => {

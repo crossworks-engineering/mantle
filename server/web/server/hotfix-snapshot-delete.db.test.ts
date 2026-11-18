@@ -70,7 +70,10 @@ const MODES: readonly Modes[] = [
 /** The cells: who, where the app is, whether the delete goes. */
 const CELLS: readonly { who: Who; place: Place; allowed: boolean }[] = [
   { who: 'owner', place: 'adminHome', allowed: true },
-  { who: 'owner', place: 'adminReadOnly', allowed: false },
+  // Homed in X, read through Admin's grant (Write off): an Admin user counts
+  // as a Moderator of the home of any item it reads (owner page d7313c67,
+  // decision A), so it manages the app and deletes its snapshot.
+  { who: 'owner', place: 'adminReadOnly', allowed: true },
   { who: 'admin', place: 'adminHome', allowed: true },
   { who: 'member', place: 'outsider', allowed: false },
   { who: 'member', place: 'readGrant', allowed: false },
@@ -93,7 +96,6 @@ const CELLS: readonly { who: Who; place: Place; allowed: boolean }[] = [
  */
 const NO_EDIT = 'You cannot change this item in your workspaces.';
 const MAIN_82: Readonly<Record<string, string>> = {
-  'owner adminReadOnly': NO_EDIT,
   'member outsider':
     'app ID not found — it may have been deleted or the id mistyped. Find the right id with app_list, then re-issue.',
   'member readGrant': NO_EDIT,

@@ -742,17 +742,19 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         ids: [fA, fB, fC, fD, missing, fE],
       });
       expect(bulk.status, bulk.text).toBe(200);
-      expect(bulk.json.deleted).toBe(1);
+      // fD, homed in other and read through Admin's grant: the Admin user
+      // counts as a Moderator of its home (owner page d7313c67, decision A),
+      // so it is deleted with fE (it was refused, forbidden).
+      expect(bulk.json.deleted).toBe(2);
       expect((bulk.json.hasDerived as { fileId: string }[]).map((h) => h.fileId)).toEqual([fA]);
       expect(bulk.json.refused).toEqual([
         { fileId: fC, reason: 'not_found' },
-        { fileId: fD, reason: 'forbidden' },
         { fileId: missing, reason: 'not_found' },
         { fileId: fB, reason: 'in_drawing', drawings: [], hiddenDrawings: 1 },
       ]);
       const left = await raw<{ id: string }[]>`select id::text as id from nodes
         where id = any(${[fA, fB, fC, fD, fE]}::uuid[])`;
-      expect(left.map((r) => r.id).sort()).toEqual([fA, fB, fC, fD].sort());
+      expect(left.map((r) => r.id).sort()).toEqual([fA, fB, fC].sort());
       // The confirmed cascade keeps the derived note the scope does not read
       // (F4 fix round 3, H1: round 2 reaped it, brain-wide): a count, the
       // file deleted.
@@ -947,11 +949,12 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
       });
       expect(snap.status, snap.text).toBe(201);
       const sid = ((snap.json.snapshot ?? snap.json) as { id: string }).id;
+      // Homed in other, read through Admin's Write grant: the Admin user
+      // counts as a Moderator of its home (owner page d7313c67, decision A),
+      // so it manages the app: the code restores and the import go. (An
+      // editor who does not manage an app: precheck-removal's member cells.)
       await rehome(app, ws.other, { admin: 'write' });
-      const rows = await snapshotRows(app);
       for (const mode2 of ['code', 'full'] as const) {
-        // Before: in on a pre-restore snapshot committed, then the code was
-        // refused; in warn the code was restored by an editor.
         const r = await call(
           `${mode} restore ${mode2}`,
           L.owner,
@@ -962,8 +965,7 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
             discardDraft: true,
           },
         );
-        expect(r.status, r.text).toBe(403);
-        expect(r.json.reason).toBe('item-workspace');
+        expect(r.status, r.text).toBe(200);
       }
       const imp = await call(`${mode} import over`, L.owner, 'POST', '/api/apps/import', {
         appId: app,
@@ -971,8 +973,7 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         files: { 'index.tsx': 'export default function App() { return null; }' },
         build: false,
       });
-      expect(imp.status, imp.text).toBe(403);
-      expect(await snapshotRows(app)).toBe(rows);
+      expect(imp.status, imp.text).toBeLessThan(300);
       // A data restore is an editor's (the gate's edit, the data's appdata).
       const data = await call(
         `${mode} restore data`,
@@ -1192,8 +1193,11 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         `/api/files/files/${src}?cascade=1`,
       );
       expect(yes.status, yes.text).toBe(200);
-      expect(yes.json).toMatchObject({ ok: true, kept: 2, reaped: { total: 1 } });
-      expect([await exists(own), await exists(hidden), await exists(editable)]).toEqual([0, 1, 1]);
+      // `editable` (homed in other, read through Admin's Write grant) is
+      // reaped too: the Admin user reads it, so it counts as a Moderator of
+      // its home (owner page d7313c67, decision A). The hidden one is kept.
+      expect(yes.json).toMatchObject({ ok: true, kept: 1, reaped: { total: 2 } });
+      expect([await exists(own), await exists(hidden), await exists(editable)]).toEqual([0, 1, 0]);
       // The file_delete tool's confirmed cascade (delete_derived), in an
       // Admin assistant turn: the same door, the kept items a count.
       const src2 = await textFile(dir, 'source2.txt', ws.admin);
@@ -1380,11 +1384,19 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
             indexing: 'metadata',
           },
         );
-        expect(no.status, no.text).toBe(403);
-        expect(no.json.reason).toBe('item-workspace');
         const [flag] = await raw<{ f: string | null }[]>`select data->>'indexing' as f from nodes
           where id = ${other.id}`;
-        expect(flag?.f ?? null).toBeNull();
+        if (who === 'owner') {
+          // The Admin user reads the folder (through Admin's grant), so it
+          // counts as a Moderator of its home and manages it (owner page
+          // d7313c67, decision A): the switch is its own.
+          expect(no.status, no.text).toBe(200);
+          expect(flag?.f ?? null).toBe('metadata');
+        } else {
+          expect(no.status, no.text).toBe(403);
+          expect(no.json.reason).toBe('item-workspace');
+          expect(flag?.f ?? null).toBeNull();
+        }
       }
     }, 240_000);
 
@@ -1402,39 +1414,34 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         files: { 'index.tsx': 'export default function App() { return null; }' },
       });
       expect(draft.status, draft.text).toBe(200);
-      // The owner edits the app (Write through Admin) but does not manage it.
+      // The owner reads the app (Write through Admin), so it counts as a
+      // Moderator of its home and manages it (owner page d7313c67, decision
+      // A): its code writes pass the item gate. (An editor who does not
+      // manage an app's code: precheck-removal's member editOnly cells.)
       await rehome(app, ws.other, { admin: 'write' });
-      const [before] = await raw<{ d: unknown; b: unknown; m: unknown; t: string }[]>`
-        select a.draft_source as d, a.draft_build as b, a.manifest as m, n.title as t
-          from apps a join nodes n on n.id = a.node_id where a.node_id = ${app}`;
-      const rows = await snapshotRows(app);
-      const putsBefore = puts.n;
-      // Before: edit asked, the code written in warn, the database's
-      // refusal in on.
       for (const [method, url, body] of [
         ['PUT', `/api/apps/${app}/draft`, { entry: 'index.tsx', files: { 'index.tsx': 'x' } }],
         ['DELETE', `/api/apps/${app}/draft`, undefined],
-        ['POST', `/api/apps/${app}/build`, undefined],
-        ['POST', `/api/apps/${app}/publish`, undefined],
         ['PATCH', `/api/apps/${app}`, { name: `${tag} renamed`, description: 'new words' }],
       ] as const) {
         const r = await call(
-          `${mode} editor ${method} ${url.split('/').at(-1)}`,
+          `${mode} manager ${method} ${url.split('/').at(-1)}`,
           L.owner,
           method,
           url,
           body,
         );
-        expect(r.status, `${method} ${url} ${r.text}`).toBe(403);
-        expect(r.json.reason).toBe('item-workspace');
+        expect(r.status, `${method} ${url} ${r.text}`).toBeLessThan(300);
       }
-      expect(puts.n).toBe(putsBefore);
-      const [after] = await raw<{ d: unknown; b: unknown; m: unknown; t: string }[]>`
-        select a.draft_source as d, a.draft_build as b, a.manifest as m, n.title as t
-          from apps a join nodes n on n.id = a.node_id where a.node_id = ${app}`;
-      expect(after).toEqual(before);
+      // A build and a publish: past the item gate (what they then answer is
+      // the build's, not this test's).
+      for (const url of [`/api/apps/${app}/build`, `/api/apps/${app}/publish`]) {
+        const r = await call(`${mode} manager ${url.split('/').at(-1)}`, L.owner, 'POST', url);
+        expect(r.text, url).not.toContain('item-workspace');
+        expect(r.status, `${url} ${r.text}`).not.toBe(403);
+      }
       // The restore tool (app_snapshot_restore), in an Admin assistant
-      // turn: refused by its policy (manage for code), nothing written.
+      // turn: its policy (manage for code) lets the Admin user by.
       const t = await import('@mantle/tools');
       const rt = await import('@mantle/runtime/agent');
       const def = t.listBuiltins().find((d) => d.slug === 'app_snapshot_restore')!;
@@ -1453,16 +1460,7 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         { ownerLoginId: L.owner },
       );
       recorded.push(`${mode} app_snapshot_restore tool: ${JSON.stringify(res).slice(0, 200)}`);
-      expect(res.ok).toBe(false);
-      // The library behind it, past every gate (an MCP or tool path that
-      // skipped the policy): the one door refuses before the undo snapshot.
-      const { restoreAppSnapshot } = await import('@mantle/content/app-snapshots');
-      await expect(
-        m.withViewer({ login: L.owner }, () =>
-          restoreAppSnapshot(L.owner, app, sid, { mode: 'full', discardDraft: true }),
-        ),
-      ).rejects.toMatchObject({ code: '42501', detail: 'no_edit' });
-      expect(await snapshotRows(app)).toBe(rows);
+      expect(res.ok, JSON.stringify(res)).toBe(true);
       // A data restore stays an editor's, by the tool too.
       const data = await rt.withAgentScope(
         { workspaceId: ws.admin },
@@ -1579,10 +1577,12 @@ describe.skipIf(!DB_URL)('F4 fix round 1: the owner’s management flows on the 
         expect(made.isError, made.text).toBe(false);
         const row = await folderAt(`${parent.path}.gallery`);
         expect(row).toMatchObject({ ix: 'metadata', home: ws.other });
-        // The switch of the folder that now exists is its Moderators'.
+        // The switch of the folder that now exists is its managers': the
+        // Admin user reads it (through Admin's grant), so it counts as a
+        // Moderator of its home (owner page d7313c67, decision A).
         const flip = await admin.tool('folder_set_indexing', { folder_id: row!.id, mode: 'full' });
-        expect(flip.isError, flip.text).toBe(true);
-        expect((await folderAt(`${parent.path}.gallery`))?.ix).toBe('metadata');
+        expect(flip.isError, flip.text).toBe(false);
+        expect((await folderAt(`${parent.path}.gallery`))?.ix).toBe('full');
       } finally {
         await admin.close();
       }
