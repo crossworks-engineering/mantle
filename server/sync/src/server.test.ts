@@ -21,10 +21,10 @@ describe('the sync sidecar routes', () => {
     expect(syncReply('GET', '/health', { rclone: null }).status).toBe(503);
   });
 
-  it('says what it is, and serves no provider yet', () => {
+  it('says what it is and the providers it serves', () => {
     expect(syncReply('GET', '/status', { rclone: 'v1.76.0' })).toEqual({
       status: 200,
-      body: { service: 'sync', rclone: 'v1.76.0', providers: [] },
+      body: { service: 'sync', rclone: 'v1.76.0', providers: ['imap', 'ics'] },
     });
   });
 

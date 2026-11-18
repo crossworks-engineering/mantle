@@ -6,11 +6,17 @@
   "scripts": {
     "dev": "bun --watch --env-file=../web/.env.local src/main.ts",
     "start": "bun --env-file=../web/.env.local src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@mantle/config": "workspace:*",
-    "@mantle/std": "workspace:*"
+    "@mantle/email": "workspace:*",
+    "@mantle/std": "workspace:*",
+    "ical.js": "2.2.1",
+    "imapflow": "2.9.1",
+    "mailparser": "3.13.0",
+    "nodemailer": "10.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
