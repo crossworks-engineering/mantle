@@ -1254,7 +1254,8 @@ name the page of the picture:
   400 items an ask at most (`PIPELINE_ASK_LIST_MAX`). A page is a whole
   number from 1 to 10,000.
 - **The answer cap.** An ask with the list part may answer 12,000 tokens;
-  an ask with no list part 1,500, as before (`pipeline-ask.ts`). The
+  an ask with no list part 1,500, as before (`pipeline-ask.ts`), but for
+  an Agent of page text (`produces.pages`), which asks with 12,000 too. The
   question asks for one line of JSON, `fields` first. An answer the cap
   cut is not lost: the `fields` object when it is whole, and each whole
   item before the cut, are read (`cutAnswerOf`), each part as JSON on its
