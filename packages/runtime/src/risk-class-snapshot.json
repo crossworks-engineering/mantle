@@ -108,6 +108,7 @@
   "file_get": "read",
   "file_list": "read",
   "file_move": "write",
+  "file_processing": "read",
   "file_read": "read",
   "file_rename": "write",
   "file_set_indexing": "write",
