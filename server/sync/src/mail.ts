@@ -15,8 +15,9 @@ import {
 import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
 import { errorMessage } from '@mantle/std';
 import { BrainError, type Brain } from './brain';
-import { backfillSender, mask, recentSenders, syncMailbox, type WantedOf } from './imap';
-import type { MailAccount, State } from './state';
+import { backfillSender, mask, recentSenders, syncMailbox } from './imap';
+import { backfillOutlook, recentOutlookSenders, syncOutlook } from './outlook';
+import type { MailAccount, MsAccount, State } from './state';
 
 /** How far a new contact's backfill reaches. */
 const BACKFILL_DAYS = 90;
@@ -50,8 +51,10 @@ const envelopeOf = (m: {
 const refused = (err: unknown) =>
   err instanceof BrainError && (err.status === 400 || err.status === 413);
 
-function gateFor(brain: Brain, accountId: string): WantedOf {
-  return async (all) => {
+type GateEnvelope = Parameters<typeof envelopeOf>[0];
+
+function gateFor(brain: Brain, accountId: string) {
+  return async (all: GateEnvelope[]): Promise<string[]> => {
     // Never fetched: a sender or an id past the brain's bounds (never cut: a
     // cut sender could pass another domain's contact), and a client sign-in
     // code mail, judged here on the whole header values.
@@ -136,10 +139,77 @@ export async function runMailbox(brain: Brain, state: State, account: MailAccoun
   });
 }
 
+/** The Microsoft accounts whose Outlook mail syncs (the mail switch on,
+ *  and their mailbox row made). */
+export async function outlookAccounts(
+  state: State,
+): Promise<(MsAccount & { mailboxId: string })[]> {
+  return (await state.msAccounts()).filter(
+    (a): a is MsAccount & { mailboxId: string } => a.mail && !!a.mailboxId,
+  );
+}
+
+/** One run of a Microsoft account's Outlook inbox, reported as a mailbox's. */
+export async function runOutlookMail(
+  brain: Brain,
+  state: State,
+  account: MsAccount & { mailboxId: string },
+): Promise<void> {
+  const startedAt = new Date().toISOString();
+  const counter = { ingested: 0 };
+  let scanned = 0;
+  let error: string | undefined;
+  try {
+    const r = await syncOutlook(
+      state,
+      account,
+      gateFor(brain, account.mailboxId),
+      ingestFor(brain, account.mailboxId, counter),
+    );
+    scanned = r.scanned;
+  } catch (err) {
+    error = runError(err, { address: account.upn });
+    console.warn(`[sync] Outlook ${mask(account.upn)} run failed: ${error}`);
+  }
+  await brain.post('/api/sidecar/mail/run', {
+    accountId: account.mailboxId,
+    startedAt,
+    scanned,
+    ingested: counter.ingested,
+    ...(error ? { error } : {}),
+  });
+  await state.putStatus(account.mailboxId, {
+    at: new Date().toISOString(),
+    ok: !error,
+    ...(error ? { error } : {}),
+    count: counter.ingested,
+  });
+}
+
 /** Each target's last 90 days across every enabled mailbox. */
 export async function backfill(brain: Brain, state: State, targets: string[]): Promise<number> {
   const since = new Date(Date.now() - BACKFILL_DAYS * 86_400_000);
   let ingested = 0;
+  for (const account of await outlookAccounts(state)) {
+    for (const target of targets) {
+      const counter = { ingested: 0 };
+      try {
+        await backfillOutlook(
+          state,
+          account,
+          target,
+          since,
+          gateFor(brain, account.mailboxId),
+          ingestFor(brain, account.mailboxId, counter),
+        );
+      } catch (err) {
+        console.warn(
+          `[sync] backfill on ${mask(account.upn)} failed: ${runError(err, { address: account.upn })}`,
+        );
+      }
+      ingested += counter.ingested;
+    }
+  }
   for (const account of await state.accounts()) {
     if (!account.enabled) continue;
     for (const target of targets) {
@@ -176,9 +246,15 @@ export type DiscoveredSender = {
 export async function discover(brain: Brain, state: State): Promise<DiscoveredSender[]> {
   const since = new Date(Date.now() - DISCOVER_DAYS * 86_400_000);
   const merged = new Map<string, DiscoveredSender & { at: number }>();
+  const lists = [];
   for (const account of await state.accounts()) {
-    if (!account.enabled) continue;
-    for (const s of await recentSenders(account, since)) {
+    if (account.enabled) lists.push(await recentSenders(account, since));
+  }
+  for (const account of await outlookAccounts(state)) {
+    lists.push(await recentOutlookSenders(state, account, since));
+  }
+  for (const list of lists) {
+    for (const s of list) {
       const at = s.lastDate.getTime();
       const prev = merged.get(s.fromAddr);
       if (prev) {

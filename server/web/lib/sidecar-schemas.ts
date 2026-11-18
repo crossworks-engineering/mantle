@@ -17,6 +17,14 @@ export const MailboxBody = z.object({
   address: z.string().email().max(320),
   displayName: text(200).nullish(),
   enabled: z.boolean().optional(),
+  /** Where its mail comes from: an IMAP mailbox (default) or a Microsoft
+   *  account's Outlook inbox (Sync plan M3). */
+  provider: z.enum(['imap', 'microsoft']).optional(),
+  /** An Outlook inbox's mail lands under its account's branch. */
+  branchPath: z
+    .string()
+    .regex(/^[a-z0-9_]{1,64}(\.[a-z0-9_]{1,64}){1,7}$/)
+    .optional(),
 });
 
 export const Envelope = z.object({
@@ -114,3 +122,31 @@ export const AddContactBody = z.object({
   address: z.string().email().max(320),
   name: text(200).optional(),
 });
+
+// ── Files (Sync service plan M3; lib/sidecar-files.ts) ─────────────────────
+const source = z.string().min(1).max(200);
+const itemId = z.string().min(1).max(400);
+const hash = z.string().max(200).nullable();
+const size = z.number().int().nonnegative().nullable();
+const modTime = z.coerce.date().nullable();
+
+/** POST /api/sidecar/files: what a streamed file is, in its query. */
+export const FileQuery = z.object({
+  source,
+  item: itemId,
+  path: z.string().max(600),
+  name: z.string().min(1).max(400),
+  mime: z.string().max(200).optional(),
+  hash: z.string().max(200).optional(),
+  size: z.coerce.number().int().nonnegative().optional(),
+  mod: z.coerce.date().optional(),
+});
+
+export const FileRelinkBody = z.object({
+  source,
+  items: z.array(z.object({ itemId, hash, size, modTime })).max(2000),
+});
+
+export const FileRemoveBody = z.object({ source, itemIds: z.array(itemId).max(2000) });
+
+export const FileForgetBody = z.object({ source });

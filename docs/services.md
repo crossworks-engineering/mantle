@@ -63,8 +63,11 @@ ignored.
   **Off by default.** Since Sync plan M2 it links IMAP/SMTP mailboxes and
   ICS calendar feeds: it reads new mail every 5 minutes, sends mail for
   `email_send` and `email_page`, pulls each feed every 30 minutes, and
-  serves its own account screens (Settings > Sync, in a sandboxed frame).
-  Microsoft (M3) and Google (M5) come later.
+  serves its own account screens (Settings > Accounts, in a sandboxed
+  frame). Since M3 it also connects Microsoft 365 accounts: OneDrive and
+  SharePoint files every 5 minutes, Outlook mail through the contacts gate,
+  and Outlook send (`docs/microsoft-graph-ingest.md`). Google (M5) comes
+  later.
   - **No disk, no database login, no master key.** Its state (each
     mailbox's settings and app password, each feed, each cursor) lives in
     the brain's `service_state` table, sealed there with the master key
@@ -80,24 +83,31 @@ ignored.
     `POST /api/services/sync/frame-ticket` (the connectors area), shows the
     frame with no script allowed, and the route re-checks the ticket's login
     on every request.
-  - **One job at a time** (one mailbox or one feed in hand), so its memory
-    stays flat.
+  - **One job at a time** (one mailbox, feed or drive in hand), so its
+    memory stays flat. A drive job runs one short rclone command and ends.
+  - **Admin over MCP**: the `sync_*` tools (`sync_status`,
+    `sync_mailbox_set`, `sync_feed_set`, `sync_microsoft_app_set`,
+    `sync_microsoft_set`, `sync_drive_browse`, `sync_drive_set`,
+    `sync_remove`, `sync_run`) run the screens' actions for an admin's own
+    agent (the connectors area; hidden while Sync is off). Connecting a
+    Microsoft account stays a person's sign-in in the browser.
 
   While it is off:
-  - the client hides Email, Contacts and Settings > Sync (`/api/shell`
+  - the client hides Email, Contacts and Settings > Accounts (`/api/shell`
     `features.sync`), with their help topics (`service: sync` in the topic's
     frontmatter) and User Guide pages;
-  - agents and MCP get no email or contact tools (`registerToolService`),
-    so nothing sends;
-  - no mail or feed syncs, and a new contact starts no backfill.
+  - agents and MCP get no email, contact or `sync_*` tools
+    (`registerToolService`), so nothing sends;
+  - no mail, feed or drive syncs, and a new contact starts no backfill.
 
   Nothing is deleted: mail, contacts, events and synced files stay in the
   brain and in search, and the linked accounts stay sealed in
   `service_state`: on again goes on where it stopped. A box that linked
   mail or feeds before Sync runs the maintenance task `sync-copy-accounts`
-  once with Sync on: it copies the old accounts in, same ids, no new
-  password. The image also carries the rclone binary for the file sync of
-  M3: a file job runs one short rclone command, no rclone daemon runs.
+  once with Sync on: it copies the old accounts in (mailboxes, feeds, the
+  Microsoft app, accounts, drives and each drive's file map), same ids, no
+  new password or consent; the first drive run re-links the files it holds
+  and downloads none again.
 
 **Off never removes anything.** Switching sandboxes off stops the running
 sandbox containers (stop, not remove) and the supervisor. Every sandbox, its

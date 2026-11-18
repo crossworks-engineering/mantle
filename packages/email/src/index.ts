@@ -35,6 +35,7 @@ export {
   gateEnvelopes,
   ingestWireMessage,
   recordMailRun,
+  ensureBranchPath,
 } from './ingest';
 export * from './wire';
 export {
@@ -42,6 +43,8 @@ export {
   enqueueBackfills,
   SyncOffError,
   SyncSendError,
+  SyncAdminError,
+  syncAdmin,
   EmailSendPolicyOffError,
   EMAIL_SEND_POLICY_OFF_CODE,
   type SyncSendInput,

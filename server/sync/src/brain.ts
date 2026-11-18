@@ -25,6 +25,9 @@ export type Brain = {
   post<T>(path: string, body: unknown): Promise<T>;
   put<T>(path: string, body: unknown): Promise<T>;
   del<T>(path: string): Promise<T>;
+  /** POST a raw byte stream (a drive file, rclone cat): its JSON answer.
+   *  `signal` aborts it (the stream's source failed). */
+  stream<T>(path: string, body: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<T>;
 };
 
 function parseJson(text: string): unknown {
@@ -37,17 +40,7 @@ function parseJson(text: string): unknown {
 
 export function createBrain(opts: { url: string; token: string }): Brain {
   const base = opts.url.replace(/\/+$/, '');
-  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${base}${path}`, {
-      method,
-      headers: {
-        [TOKEN_HEADER]: opts.token,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: 'error',
-      signal: timeoutSignal(NET_TIMEOUTS.syncBrain),
-    });
+  async function answer<T>(res: Response): Promise<T> {
     const text = await res.text();
     const parsed = parseJson(text);
     if (!res.ok) {
@@ -59,7 +52,32 @@ export function createBrain(opts: { url: string; token: string }): Brain {
     }
     return parsed as T;
   }
+  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`${base}${path}`, {
+      method,
+      headers: {
+        [TOKEN_HEADER]: opts.token,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      redirect: 'error',
+      signal: timeoutSignal(NET_TIMEOUTS.syncBrain),
+    });
+    return answer<T>(res);
+  }
   return {
+    stream: async (path, body, signal) => {
+      const res = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/octet-stream' },
+        body,
+        // A streamed request body (Bun and undici both take it).
+        duplex: 'half',
+        redirect: 'error',
+        signal: AbortSignal.any([signal, timeoutSignal(NET_TIMEOUTS.syncFile)]),
+      } as RequestInit);
+      return answer(res);
+    },
     get: (path) => call('GET', path),
     post: (path, body) => call('POST', path, body),
     put: (path, body) => call('PUT', path, body),

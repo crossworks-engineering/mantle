@@ -139,6 +139,13 @@ export const PUBLIC_PATHS = [
   // no cookie reaches the frame; the credential is the screen ticket in `t`,
   // checked with its login's area on every request.
   '/api/services/sync/ui',
+  // A Microsoft sign-in for the Sync service (lib/sync-oauth.ts, plan M3):
+  // the start judges the screen ticket in `t` with its login's area; the
+  // callback is Microsoft's redirect, judged by the sign-in's own cookie and
+  // state (the sidecar checks the state and the PKCE verifier). The old
+  // callback path stays, so an app registered before M4 needs no change.
+  '/api/services/sync/oauth',
+  '/api/microsoft/oauth/callback',
   // SCIM user provisioning (docs/scim.md): no session; the credential is
   // the box's SCIM token, checked by each route (lib/scim/service.ts
   // scimGate), and with no token every path answers 404.

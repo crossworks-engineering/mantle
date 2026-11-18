@@ -39,6 +39,8 @@ export const BODY_READ_ALLOW = Object.freeze({
     'a multipart image upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/apps/import-package/route.ts':
     'streams the package (req.body) to disk under its own cap (spoolUpload)',
+  'server/web/app/api/sidecar/files/route.ts':
+    "streams a drive file from the Sync sidecar (req.body, rclone cat) to disk under its own cap (spoolUpload), at the loader's ceiling (body-limit.ts)",
   'server/web/app/api/oauth/token/route.ts':
     'an OAuth token request is a form post (RFC 6749), answered in its own error shape',
   'server/web/app/api/oauth/authorize/route.ts':

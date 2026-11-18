@@ -11,13 +11,17 @@
  *   POST /backfill   a new contact's last 90 days of mail, in the background
  *   GET|POST /ui/*   the account screens (ui.ts), through the brain's screen
  *                    route, which adds the base path and a fresh ticket
+ *   POST /admin/*    the brain's Sync admin tools (admin.ts)
+ *   POST /oauth/*    a Microsoft sign-in, started and finished by the brain
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { errorMessage } from '@mantle/std';
 import { TOKEN_HEADER } from './brain';
+import { adminReply } from './admin';
 import { backfill, runError } from './mail';
-import { SendRefusedError, senderFor, sendMail, type SendInput } from './send';
+import { sendOutlook } from './outlook';
+import { SendRefusedError, outlookSenderFor, senderFor, sendMail, type SendInput } from './send';
 import { uiReply, type UiDeps } from './ui';
 
 export type SyncState = {
@@ -28,7 +32,7 @@ export type SyncState = {
 export type SyncReply = { status: number; body: Record<string, unknown> };
 
 /** The providers this sidecar serves. */
-export const PROVIDERS = ['imap', 'ics'];
+export const PROVIDERS = ['imap', 'ics', 'microsoft'];
 
 /** The answer for /health and /status, pure (the tests call it directly). */
 export function syncReply(method: string, path: string, state: SyncState): SyncReply {
@@ -111,7 +115,21 @@ export function createSyncServer(state: SyncState, deps: SyncDeps | null): Serve
       const input = JSON.parse(await readBody(req)) as SendInput;
       let account;
       try {
-        account = senderFor(await deps.state.accounts(), input.from);
+        const mailboxes = await deps.state.accounts();
+        const outlook = outlookSenderFor(await deps.state.msAccounts(), input.from);
+        // Outlook when the sender is that account, or when no mailbox sends.
+        if (outlook && (input.from || !mailboxes.some((a) => a.enabled && a.smtp))) {
+          if (!input.text && !input.html)
+            throw new SendRefusedError('A message needs a text or HTML body.');
+          await sendOutlook(deps.state, outlook, input);
+          return json(res, 200, {
+            from: outlook.upn,
+            messageId: '',
+            accepted: [...input.to, ...(input.cc ?? []), ...(input.bcc ?? [])],
+            rejected: [],
+          });
+        }
+        account = senderFor(mailboxes, input.from);
         return json(res, 200, await sendMail(account, input));
       } catch (err) {
         if (err instanceof SendRefusedError) return json(res, 400, { error: err.message });
@@ -127,6 +145,17 @@ export function createSyncServer(state: SyncState, deps: SyncDeps | null): Serve
         void deps.lane.run('backfill', () => backfill(deps.brain, deps.state, targets));
       return json(res, 202, { queued: targets.length });
     }
+    if ((path.startsWith('/admin/') || path.startsWith('/oauth/')) && method === 'POST') {
+      let body: Record<string, unknown>;
+      try {
+        const parsed: unknown = JSON.parse((await readBody(req)) || '{}');
+        body = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+      } catch {
+        return json(res, 400, { error: 'send a JSON object' });
+      }
+      const reply = await adminReply(path, body, deps);
+      return json(res, reply.status, reply.body);
+    }
     if (path === '/ui' || path.startsWith('/ui/')) {
       const base = String(req.headers['x-mantle-ui-base'] ?? '');
       const ticket = String(req.headers['x-mantle-frame-ticket'] ?? '');
@@ -134,7 +163,12 @@ export function createSyncServer(state: SyncState, deps: SyncDeps | null): Serve
         return json(res, 400, { error: 'no screen base or ticket' });
       const form =
         method === 'POST' ? new URLSearchParams(await readBody(req)) : new URLSearchParams();
-      const reply = await uiReply({ method, path: path.slice(3) || '/', form, base, ticket }, deps);
+      const originHeader = String(req.headers['x-mantle-ui-origin'] ?? '');
+      const origin = /^https?:\/\/[^\s/]{1,300}$/.test(originHeader) ? originHeader : '';
+      const reply = await uiReply(
+        { method, path: path.slice(3) || '/', form, base, ticket, origin },
+        deps,
+      );
       return html(res, reply.status, reply.html);
     }
     return json(res, 404, { error: 'not found' });

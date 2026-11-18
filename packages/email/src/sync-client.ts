@@ -46,6 +46,25 @@ defineDomainError(SyncSendError, {
   body: (e) => ({ error: e.message, code: e.code }),
 });
 
+/** The sidecar refused an admin call with a text for the person (a bad
+ *  field, an account it does not hold, a failed sign-in or login), or
+ *  Microsoft answered with an error. The text is the sidecar's own. */
+export class SyncAdminError extends Error {
+  readonly code = 'sync_admin_refused';
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'SyncAdminError';
+  }
+}
+defineDomainError(SyncAdminError, {
+  reason: "the Sync sidecar refused an account action; the text is the sidecar's fixed summary",
+  status: (e) => (e.status === 400 ? 400 : 502),
+  body: (e) => ({ error: e.message, code: e.code }),
+});
+
 /** The code every email sending refusal carries (docs/policy.md). */
 export const EMAIL_SEND_POLICY_OFF_CODE = 'policy_email_send_off';
 
@@ -82,6 +101,20 @@ async function call(path: string, body: unknown, timeoutMs: number): Promise<Res
     redirect: 'error',
     signal: timeoutSignal(timeoutMs),
   });
+}
+
+/** One admin call to the sidecar (/admin/*, /oauth/*; Sync service plan M3):
+ *  its JSON answer. Throws SyncOffError, SyncAdminError. */
+export async function syncAdmin<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
+  const res = await call(path, body, NET_TIMEOUTS.syncAdmin);
+  const answer = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
+  if (!res.ok || !answer) {
+    throw new SyncAdminError(
+      answer?.error ?? `the Sync service answered ${res.status}`,
+      res.status,
+    );
+  }
+  return answer;
 }
 
 /** A message for the sidecar to send from one of the owner's mailboxes. */

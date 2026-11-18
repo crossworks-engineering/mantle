@@ -3,15 +3,18 @@
  * time, so memory stays flat (one mailbox or one feed in hand). A timer
  * looks once a minute for a mailbox due (every 5 minutes) or a feed due
  * (every 30 minutes); a backfill, a "Sync now" and a save join the same lane.
+ * M3: a Microsoft drive (every 5 minutes) and an Outlook inbox (every 5).
  */
 import { errorMessage } from '@mantle/std';
 import type { Brain } from './brain';
 import { runFeed } from './feeds';
-import { runMailbox } from './mail';
+import { runDrive } from './files';
+import { outlookAccounts, runMailbox, runOutlookMail } from './mail';
 import type { State } from './state';
 
 export const MAIL_EVERY_MS = 5 * 60_000;
 export const FEED_EVERY_MS = 30 * 60_000;
+export const DRIVE_EVERY_MS = 5 * 60_000;
 const TICK_MS = 60_000;
 
 export type Lane = {
@@ -69,8 +72,15 @@ export function createScheduler(brain: Brain, state: State, lane: Lane): Schedul
     const now = Date.now();
     let accounts;
     let feeds;
+    let drives;
+    let outlook;
     try {
-      [accounts, feeds] = await Promise.all([state.accounts(), state.feeds()]);
+      [accounts, feeds, drives, outlook] = await Promise.all([
+        state.accounts(),
+        state.feeds(),
+        state.msDrives(),
+        outlookAccounts(state),
+      ]);
     } catch (err) {
       console.warn(`[sync] could not read the accounts from the brain: ${errorMessage(err)}`);
       return;
@@ -84,6 +94,21 @@ export function createScheduler(brain: Brain, state: State, lane: Lane): Schedul
       if (!f.enabled || !due(f.id, FEED_EVERY_MS, now)) continue;
       lastRun.set(f.id, now);
       void lane.run('feed run', () => runFeed(brain, state, f));
+    }
+    for (const a of outlook) {
+      if (!due(a.mailboxId, MAIL_EVERY_MS, now)) continue;
+      lastRun.set(a.mailboxId, now);
+      void lane.run('Outlook run', () => runOutlookMail(brain, state, a));
+    }
+    for (const d of drives) {
+      if (!d.enabled || !due(d.id, DRIVE_EVERY_MS, now)) continue;
+      lastRun.set(d.id, now);
+      // Read again in the lane: a drive switched off or removed meanwhile
+      // does not run.
+      void lane.run('drive run', async () => {
+        const fresh = await state.msDrive(d.id);
+        if (fresh?.enabled) await runDrive(brain, state, fresh);
+      });
     }
   }
 

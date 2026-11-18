@@ -191,6 +191,8 @@ export const ADVISORY_LOCK_ALLOWED = {
 /** @type {AllowList} */
 export const TTL_AGE_CHECK_ALLOWED = {
   'packages/std/src/ttl-cache.ts': 'TtlCache itself',
+  'server/sync/src/microsoft.ts':
+    "a Microsoft access token held for its own lifetime and refreshed before its end, and a sign-in's ten minutes, both kept in the brain's state (the Sync sidecar holds no cache)",
   'packages/config/src/services.ts':
     'one slot keyed by its directory, in @mantle/config, which takes no @mantle/std dependency',
   'packages/embeddings/src/provider-outage.ts':

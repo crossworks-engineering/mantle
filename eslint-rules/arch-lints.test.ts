@@ -608,7 +608,11 @@ describe('the architecture ratchets (pinned counts)', () => {
     //   17 public rows that judge their own credential, no caller: GET, HEAD
     //   and POST /api/services/sync/ui (the screen ticket) and the 14 rows of
     //   /api/sidecar/* (the sidecar's token).
-    expect(rows.length).toBe(988);
+    // + the 12 public rows of Sync M3: GET, HEAD and POST /api/sidecar/files
+    //   and POST .../relink, .../remove, .../forget (the sidecar's token); GET
+    //   and HEAD of the sign-in start (the screen ticket) and of its two
+    //   callbacks (the sign-in's cookie and state).
+    expect(rows.length).toBe(1000);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

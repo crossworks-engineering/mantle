@@ -137,6 +137,9 @@ export function bodyCeilingFor(path: string): number | null {
   if (path === '/api/sidecar/mail/ingest') return MAIL_INGEST_BODY_BYTES;
   // One calendar feed's complete set (5000 events at most, each clipped).
   if (path === '/api/sidecar/events') return FEED_BODY_BYTES;
+  // One drive file the Sync sidecar streams (rclone cat): the buffered
+  // upload cap, the cap a drive file had before M4; the route spools it.
+  if (path === '/api/sidecar/files') return BUFFERED_UPLOAD_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }

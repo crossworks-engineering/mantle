@@ -17,6 +17,8 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
     "the service gateway's call log: written and reaped by the gateway process (server/gateway), outside every scope",
   'packages/db/src/service-state.ts':
     "an optional service's state (0380): read and written by the Sync sidecar's routes (/api/sidecar/state, its token), outside every scope",
+  'packages/db/src/sync-items.ts':
+    "the Sync service's file map (0382): read and written by the Sync sidecar's routes (/api/sidecar/files, its token), outside every scope",
   'packages/email/src/ingest.ts':
     "the brain's half of mail sync: the Sync sidecar's routes (/api/sidecar/mail/*, its token) as system(worker:sync), and a new mailbox's row at the spot mail-account",
   'server/api/src/bench/haystack.ts': 'the memory benchmark harness (a scratch brain, never a box)',

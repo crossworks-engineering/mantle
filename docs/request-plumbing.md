@@ -774,7 +774,7 @@ owner rows open to members (139):
   PUT /api/recall/maps/:id/cards/:card
   PUT /api/tables/:id/draft
   PUT /api/tree/items/:id/pin
-public (no credential, or its own) (37):
+public (no credential, or its own) (45):
   DELETE /api/auth/oidc/link
   DELETE /api/sidecar/mail/accounts/:id
   DELETE /api/sidecar/state/:key
@@ -789,8 +789,12 @@ public (no credential, or its own) (37):
   GET /api/auth/whoami
   GET /api/federation/node/:id
   GET /api/gateway/registry
+  GET /api/microsoft/oauth/callback
   GET /api/oauth/authorize
+  GET /api/services/sync/oauth/callback
+  GET /api/services/sync/oauth/start
   GET /api/services/sync/ui
+  GET /api/sidecar/files
   GET /api/sidecar/state
   GET /api/sidecar/state/:key
   GET /api/update-notice
@@ -807,6 +811,10 @@ public (no credential, or its own) (37):
   POST /api/sidecar/contacts
   POST /api/sidecar/contacts/unknown
   POST /api/sidecar/events
+  POST /api/sidecar/files
+  POST /api/sidecar/files/forget
+  POST /api/sidecar/files/relink
+  POST /api/sidecar/files/remove
   POST /api/sidecar/mail/accounts
   POST /api/sidecar/mail/gate
   POST /api/sidecar/mail/ingest

@@ -74,6 +74,9 @@ export async function serviceScreen(req: Request, service: string): Promise<Resp
         // A fresh ticket for the answer's links and forms.
         'x-mantle-frame-ticket': buildServiceFrameTicket(ticket),
         'x-mantle-actor': ticket.actorId,
+        // The brain's own address, for the redirect URI a provider app
+        // registers (the Microsoft app screen suggests it).
+        'x-mantle-ui-origin': requestOrigin(req),
         ...(body !== undefined ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
       },
       body,

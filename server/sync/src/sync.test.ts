@@ -161,6 +161,41 @@ describe('the screens', () => {
       ],
       status: async () => null,
       account: async () => evil,
+      msApp: async () => ({
+        clientId: 'client-id-1234',
+        clientSecret: 'secret-value-9999',
+        tenant: 'common',
+        redirectUri: 'https://brain.example/api/microsoft/oauth/callback',
+      }),
+      msAccounts: async () => [
+        {
+          id: '00000000-0000-4000-8000-0000000000bb',
+          upn: '<i>ms</i>@example.com',
+          displayName: null,
+          accessToken: 'at-secret',
+          refreshToken: 'rt-secret',
+          expiresAt: null,
+          scopes: [],
+          branchPath: 'microsoft.ms_0000',
+          mail: false,
+          mailboxId: null,
+          lastError: '<u>bad</u>',
+        },
+      ],
+      msDrives: async () => [
+        {
+          id: '00000000-0000-4000-8000-0000000000cc',
+          accountId: '00000000-0000-4000-8000-0000000000bb',
+          driveId: 'b!1',
+          driveType: 'business',
+          name: '<em>docs</em>',
+          siteName: null,
+          webUrl: null,
+          branchLabel: 'docs_0000',
+          enabled: true,
+          selections: [],
+        },
+      ],
     } as unknown as UiDeps['state'],
   } satisfies UiDeps;
   const req = (path: string) => ({
@@ -182,6 +217,15 @@ describe('the screens', () => {
     expect(form.html).not.toContain('<script>alert');
     // A feed's URL is never shown again.
     expect(list.html).not.toContain('example.com/a.ics');
+    // The Microsoft part: escaped, no token, and the Connect link carries
+    // the ticket to the brain's sign-in start.
+    expect(list.html).not.toMatch(/<i>|<u>|<em>/);
+    expect(list.html).not.toMatch(/at-secret|rt-secret|secret-value/);
+    expect(list.html).toContain('/api/services/sync/oauth/start?t=tk%22%3C');
+    const app = await uiReply(req('/microsoft/app'), deps);
+    expect(app.html).not.toContain('secret-value-9999');
+    expect(app.html).toContain('…9999');
+    expect(app.html).not.toContain('secr…');
   });
 
   it('answers 404 for a path it does not know, and never shows a password', async () => {

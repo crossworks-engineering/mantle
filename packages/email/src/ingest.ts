@@ -39,6 +39,7 @@ import { hashBuffer } from '@mantle/storage';
 import { stageFileObject } from '@mantle/files/broker';
 import { loadContactGate } from '@mantle/content';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { ConflictError } from '@mantle/std';
 import { accountBranchPath } from './accounts';
 import { redactSigninCodes, touchesClientCodeMail } from './client-code-mail';
 import { salienceForDeliveryKind } from './classify';
@@ -73,15 +74,38 @@ export async function mailboxOf(ownerId: string, accountId: string): Promise<Ema
  */
 export async function saveMailbox(
   ownerId: string,
-  input: { address: string; displayName?: string | null; enabled?: boolean },
+  input: {
+    address: string;
+    displayName?: string | null;
+    enabled?: boolean;
+    /** 'imap' (default) or 'microsoft' (an Outlook inbox, Sync plan M3). */
+    provider?: 'imap' | 'microsoft';
+    /** Where a new row's mail lands; default from the address. */
+    branchPath?: string;
+  },
 ): Promise<string> {
   const address = input.address.trim().toLowerCase();
+  const provider = input.provider ?? 'imap';
   const [existing] = await db
-    .select({ id: emailAccounts.id })
+    .select({
+      id: emailAccounts.id,
+      provider: emailAccounts.provider,
+      enabled: emailAccounts.enabled,
+    })
     .from(emailAccounts)
     .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.address, address)))
     .limit(1);
-  if (existing) {
+  // One address, one way in: a live IMAP mailbox and a live Outlook inbox
+  // never share a row (switching one off would switch the other off). A
+  // row that is off is taken over (its provider changes, its id and branch
+  // stay, so its stored mail stays linked), as before M4.
+  const takeOver = !!existing && existing.provider !== provider;
+  if (existing && takeOver && existing.enabled) {
+    throw new ConflictError(
+      `${address} is linked as ${existing.provider === 'microsoft' ? 'a Microsoft account' : 'a mailbox'} already. Remove that first.`,
+    );
+  }
+  if (existing && !takeOver) {
     await db
       .update(emailAccounts)
       .set({
@@ -92,33 +116,59 @@ export async function saveMailbox(
       .where(eq(emailAccounts.id, existing.id));
     return existing.id;
   }
-  // A mailbox made (its branch path and provider): the full-route spot
-  // mail-account (access-matrix.ts NARROW_NEVER_INSERT).
-  const [row] = await onFullSystemRoute('mail-account', () =>
-    db
+  // A mailbox made, or its provider changed (its branch path and provider):
+  // the full-route spot mail-account (access-matrix.ts NARROW_NEVER_INSERT;
+  // provider never changes on the narrow login).
+  const id = await onFullSystemRoute('mail-account', async () => {
+    if (existing) {
+      await db
+        .update(emailAccounts)
+        .set({
+          provider,
+          displayName: input.displayName ?? null,
+          enabled: input.enabled ?? true,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailAccounts.id, existing.id));
+      return existing.id;
+    }
+    const [row] = await db
       .insert(emailAccounts)
       .values({
         userId: ownerId,
-        provider: 'imap',
+        provider,
         address,
         displayName: input.displayName ?? null,
         ingestPolicy: 'approve_list',
-        branchPath: accountBranchPath(address),
+        branchPath: input.branchPath ?? accountBranchPath(address),
         enabled: input.enabled ?? true,
       })
-      .returning({ id: emailAccounts.id }),
-  );
-  if (!row) throw new Error('insert into email_accounts returned no row');
-  return row.id;
+      .returning({ id: emailAccounts.id });
+    return row?.id;
+  });
+  if (!id) throw new Error('insert into email_accounts returned no row');
+  return id;
 }
 
 /** Switch a mailbox off (the sidecar removed its account). Its stored mail
  *  stays, readable and searchable. */
-export async function disableMailbox(ownerId: string, accountId: string): Promise<boolean> {
+export async function disableMailbox(
+  ownerId: string,
+  accountId: string,
+  /** Only a row still of this kind: one taken over the other way (an IMAP
+   *  mailbox became an Outlook inbox, or back) is not the caller's any more. */
+  provider: 'imap' | 'microsoft',
+): Promise<boolean> {
   const rows = await db
     .update(emailAccounts)
     .set({ enabled: false, updatedAt: new Date() })
-    .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, ownerId)))
+    .where(
+      and(
+        eq(emailAccounts.id, accountId),
+        eq(emailAccounts.userId, ownerId),
+        eq(emailAccounts.provider, provider),
+      ),
+    )
     .returning({ id: emailAccounts.id });
   return rows.length > 0;
 }
@@ -316,8 +366,9 @@ export async function recordMailRun(account: EmailAccount, run: WireRun): Promis
     .where(eq(emailAccounts.id, account.id));
 }
 
-/** Make sure every ltree label on `path` has a branch node. Idempotent. */
-async function ensureBranchPath(ownerId: string, path: string): Promise<void> {
+/** Make sure every ltree label on `path` has a branch node. Idempotent.
+ *  The Sync service's file route places a drive's files with it too. */
+export async function ensureBranchPath(ownerId: string, path: string): Promise<void> {
   const segments = path.split('.');
   for (let i = 1; i <= segments.length; i++) {
     const prefix = segments.slice(0, i).join('.');

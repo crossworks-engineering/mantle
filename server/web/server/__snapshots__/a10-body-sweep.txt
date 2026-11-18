@@ -29,6 +29,7 @@
 # 2026-11-15 (Pipelines phase 3 P3-1, docs/pipelines.md, "Own pipelines"): POST /api/pipelines and DELETE /api/pipelines/:id had no route on main; their cells are the branch's own answers (POST: 400 or 413 at the body; DELETE reads no body and its remove needs the database, which this sweep has not: 500).
 # 2026-11-17 (Sync M4): the cells of the old sync's routes left with them (/api/microsoft, /api/calendar, /api/email/discover, POST /api/email/accounts and /api/email/accounts/:id).
 # 2026-11-18 (Sync M2): POST /api/services/:name/frame-ticket, POST /api/services/sync/ui and the /api/sidecar write rows had no route on main; their cells are the branch's own answers (Sync off in the sweep: the frame ticket 404; no ticket: the screen 401; no SYNC_TOKEN: the sidecar rows 401 before any body read).
+# 2026-11-18 (Sync M3): POST /api/sidecar/files and its relink, remove and forget rows had no route on main; their cells are the branch's own answers (no SYNC_TOKEN in the sweep: 401 before any body read).
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1727,6 +1728,30 @@ POST /api/sidecar/events none empty => 401 application/json {"error":"unauthoriz
 POST /api/sidecar/events none nul => 401 application/json {"error":"unauthorized"}
 POST /api/sidecar/events none array => 401 application/json {"error":"unauthorized"}
 POST /api/sidecar/events none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files none valid => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files none malformed => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files none empty => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files none nul => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files none array => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/forget none valid => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/forget none malformed => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/forget none empty => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/forget none nul => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/forget none array => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/forget none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/relink none valid => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/relink none malformed => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/relink none empty => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/relink none nul => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/relink none array => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/relink none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/remove none valid => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/remove none malformed => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/remove none empty => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/remove none nul => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/remove none array => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/remove none chunked => 401 application/json {"error":"unauthorized"}
 POST /api/sidecar/mail/accounts none valid => 401 application/json {"error":"unauthorized"}
 POST /api/sidecar/mail/accounts none malformed => 401 application/json {"error":"unauthorized"}
 POST /api/sidecar/mail/accounts none empty => 401 application/json {"error":"unauthorized"}

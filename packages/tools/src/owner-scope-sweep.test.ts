@@ -44,6 +44,24 @@ const OWNER_FREE: Record<string, string> = {
     "the box's service gateway registry: one per box, no owner column (0358); the connectors area gates it and the row records the acting login",
   service_set:
     "the box's optional services (Settings > Services): one switch per box, no owner's data; the settings area gates it",
+  sync_status:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_mailbox_set:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_feed_set:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_microsoft_app_set:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_microsoft_set:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_drive_browse:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_drive_set:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_remove:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
+  sync_run:
+    "the Sync service's accounts (Sync plan M3): the sidecar keeps them, its data lands under the brain owner it resolves itself; the connectors area gates it",
   diagram_types: 'a static list of diagram types, the same for every owner',
   canvas_library: 'a static library guide from the image, the same for every owner',
   design_guide: 'the design guide files from the image, the same for every owner',
@@ -127,8 +145,10 @@ describe('the OWNER_FREE list', () => {
     // 10 since the service gateway's two tools (0358): its registry is one
     // per box, with no owner column. 11 with design_guide: static files from
     // the image, like canvas_library. 12 with service_set: the box's
-    // service switch, one per box.
-    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(12);
+    // service switch, one per box. 21 with the nine sync_* tools (Sync plan
+    // M3): the Sync service's accounts, whose data the sidecar lands under
+    // the brain owner it resolves itself.
+    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(21);
     for (const [slug, why] of Object.entries(OWNER_FREE)) {
       expect(why.length, `${slug} needs a real reason, not a placeholder`).toBeGreaterThan(25);
     }

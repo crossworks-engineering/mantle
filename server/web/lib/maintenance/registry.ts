@@ -737,9 +737,9 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
   },
   {
     slug: 'sync-copy-accounts',
-    title: 'Copy old mailboxes and feeds into Sync',
+    title: 'Copy old accounts into Sync',
     description:
-      'Copies each IMAP mailbox (its settings and sealed app password) and each ICS calendar feed the old sync left on email_accounts and calendar_accounts into the Sync service (service_state), under the same id, so stored mail and events stay linked. No new password. Run once on a box that had mail or feeds before Sync, with Sync on. An account already in Sync is skipped. Output is numbers only.',
+      'Copies each IMAP mailbox (its settings and sealed app password), each ICS calendar feed, the Microsoft app, each Microsoft account (its tokens and Outlook mail switch), each drive (its switch and chosen folders) and each drive file map the old sync left behind into the Sync service (service_state, sync_items), under the same ids, so stored mail, events and synced files stay linked and no file is downloaded again. No new password or consent. Run once on a box that had accounts before Sync, with Sync on. One already in Sync is skipped. Output is numbers only.',
     kind: 'backfill',
     status: 'live',
     cost: 'sql',
@@ -748,8 +748,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
     applyFlag: '--apply',
     requiresEnv: ['MANTLE_MASTER_KEY'],
-    notes:
-      'The old rows stay as they are (a later release drops their credential columns). Microsoft accounts are not copied (Sync plan M3).',
+    notes: 'The old rows stay as they are (a later release drops their credential columns).',
   },
   {
     slug: 'purge-noncontact-emails',

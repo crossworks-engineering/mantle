@@ -203,6 +203,7 @@ GET /api/messenger/photo/:loginId class=self scope=- caller=loginAsset gone=fals
 GET /api/messenger/stream class=self scope=- caller=login gone=false
 GET /api/messenger/unread class=self scope=- caller=login gone=false
 GET /api/metrics/usage class=area scope=area:settings caller=owner gone=false
+GET /api/microsoft/oauth/callback class=public scope=- caller=- gone=false
 GET /api/model-combos class=area scope=area:settings caller=owner gone=false
 GET /api/model-context class=area scope=area:settings caller=owner gone=false
 GET /api/model-pools class=area scope=area:settings caller=owner gone=false
@@ -267,11 +268,14 @@ GET /api/secrets class=area scope=area:keys caller=owner gone=false
 GET /api/secrets/:id class=area scope=area:keys caller=owner gone=false
 GET /api/services class=area scope=area:settings caller=owner gone=false
 GET /api/services/status class=area scope=area:settings caller=owner gone=false
+GET /api/services/sync/oauth/callback class=public scope=- caller=- gone=false
+GET /api/services/sync/oauth/start class=public scope=- caller=- gone=false
 GET /api/services/sync/ui class=public scope=- caller=- gone=false
 GET /api/settings/worker-groups class=area scope=area:settings caller=owner gone=false
 GET /api/shares class=content scope=content caller=owner gone=false
 GET /api/shares/all class=content scope=content caller=owner gone=false
 GET /api/shell class=self scope=- caller=login gone=false
+GET /api/sidecar/files class=public scope=- caller=- gone=false
 GET /api/sidecar/state class=public scope=- caller=- gone=false
 GET /api/sidecar/state/:key class=public scope=- caller=- gone=false
 GET /api/skills class=area scope=area:assistants caller=owner gone=false
@@ -492,6 +496,7 @@ HEAD /api/messenger/photo/:loginId class=self scope=- caller=loginAsset gone=fal
 HEAD /api/messenger/stream class=self scope=- caller=login gone=false
 HEAD /api/messenger/unread class=self scope=- caller=login gone=false
 HEAD /api/metrics/usage class=area scope=area:settings caller=owner gone=false
+HEAD /api/microsoft/oauth/callback class=public scope=- caller=- gone=false
 HEAD /api/model-combos class=area scope=area:settings caller=owner gone=false
 HEAD /api/model-context class=area scope=area:settings caller=owner gone=false
 HEAD /api/model-pools class=area scope=area:settings caller=owner gone=false
@@ -556,11 +561,14 @@ HEAD /api/secrets class=area scope=area:keys caller=owner gone=false
 HEAD /api/secrets/:id class=area scope=area:keys caller=owner gone=false
 HEAD /api/services class=area scope=area:settings caller=owner gone=false
 HEAD /api/services/status class=area scope=area:settings caller=owner gone=false
+HEAD /api/services/sync/oauth/callback class=public scope=- caller=- gone=false
+HEAD /api/services/sync/oauth/start class=public scope=- caller=- gone=false
 HEAD /api/services/sync/ui class=public scope=- caller=- gone=false
 HEAD /api/settings/worker-groups class=area scope=area:settings caller=owner gone=false
 HEAD /api/shares class=content scope=content caller=owner gone=false
 HEAD /api/shares/all class=content scope=content caller=owner gone=false
 HEAD /api/shell class=self scope=- caller=login gone=false
+HEAD /api/sidecar/files class=public scope=- caller=- gone=false
 HEAD /api/sidecar/state class=public scope=- caller=- gone=false
 HEAD /api/sidecar/state/:key class=public scope=- caller=- gone=false
 HEAD /api/skills class=area scope=area:assistants caller=owner gone=false
@@ -890,6 +898,10 @@ POST /api/shares class=content scope=content caller=owner gone=false
 POST /api/sidecar/contacts class=public scope=- caller=- gone=false
 POST /api/sidecar/contacts/unknown class=public scope=- caller=- gone=false
 POST /api/sidecar/events class=public scope=- caller=- gone=false
+POST /api/sidecar/files class=public scope=- caller=- gone=false
+POST /api/sidecar/files/forget class=public scope=- caller=- gone=false
+POST /api/sidecar/files/relink class=public scope=- caller=- gone=false
+POST /api/sidecar/files/remove class=public scope=- caller=- gone=false
 POST /api/sidecar/mail/accounts class=public scope=- caller=- gone=false
 POST /api/sidecar/mail/gate class=public scope=- caller=- gone=false
 POST /api/sidecar/mail/ingest class=public scope=- caller=- gone=false

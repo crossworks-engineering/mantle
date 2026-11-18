@@ -57,6 +57,7 @@ import {
   VAULT_KEY_TOOLS,
   GATEWAY_SERVICE_TOOLS,
   SERVICE_TOOLS,
+  SYNC_TOOLS,
   PIPELINE_TOOLS,
   NOTE_TOOLS,
   TREE_TOOLS,
@@ -554,6 +555,14 @@ export function registerMantleTools(
   // reads and switches the box's optional services, as the screen does.
   // `mcpOnly`, the settings area.
   registerBuiltinTools(SERVICE_TOOLS);
+
+  // ─── The Sync service's accounts ─────────────────────────────────────────────
+  // sync_status / sync_mailbox_set / sync_feed_set / sync_microsoft_app_set /
+  // sync_microsoft_set / sync_drive_browse / sync_drive_set / sync_remove /
+  // sync_run (docs/services.md "Sync"): an Admin user's client runs the
+  // account screens' actions. `mcpOnly`, the connectors area; hidden while
+  // Sync is off.
+  registerBuiltinTools(SYNC_TOOLS);
 
   // ─── The pipelines ───────────────────────────────────────────────────────────
   // pipeline_list / pipeline_set / pipeline_test / pipeline_reread /

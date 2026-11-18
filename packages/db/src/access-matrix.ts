@@ -1520,6 +1520,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // feeds and cursors, read and written by the sidecar routes on the system
   // pool only.
   { ...none('public.service_state', 'system'), narrow: 'none' },
+  // The Sync service's file map (0382): which file node each drive item
+  // became, read and written by the sidecar routes on the system pool only.
+  none('public.sync_items', 'system'),
   // SCIM user provisioning (0359): the logins the identity provider
   // manages. Written at the full-route spot login-credential only.
   { ...none('public.scim_users'), narrow: 'read' },
@@ -1780,6 +1783,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.control_results', // 0364
   'public.control_service', // 0364
   'public.service_state', // 0380
+  'public.sync_items', // 0382
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

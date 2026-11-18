@@ -51,6 +51,9 @@ export const ACTOR_BINDER_PINS = {
   // by the gateway process, outside every scope.
   'packages/db/src/service-gateway-calls.ts': 2,
   'packages/db/src/service-state.ts': 2,
+  // The Sync service's file map (0382): written by the sidecar's routes,
+  // outside every scope.
+  'packages/db/src/sync-items.ts': 3,
   // The read of company sign-in's setup row (0371, 0372), at boot before any
   // scope and every 60 seconds.
   'packages/db/src/sso-row.ts': 1,
