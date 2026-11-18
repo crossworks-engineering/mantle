@@ -751,13 +751,20 @@ const NOT_APPLICABLE: Readonly<Record<string, number>> = {
 /** The narrowed tool cells (a deny the oracle cannot see), by reason.
  *  The MCP Admin tool cells are 120 since Pipelines phase 2 M4, 2026-11-14:
  *  pipeline_test is a settings area tool, so its 5 allowed read cells of a
- *  login outside Admin are refused there, over both modes. */
+ *  login outside Admin are refused there, over both modes. 116 and 12 with
+ *  shared items (0382, owner page d7313c67): the read grant's member, a
+ *  Moderator of R, now edits at the root, so the pairwise pick's negatives
+ *  moved (the same pick, salted with the tool's name, computed on main and
+ *  here): readGrant's root edit of recall_card_set_slug, recall_map_set_slug
+ *  and recall_cards_reorder left, recall_cards_reorder's edit homed in Admin
+ *  came in (Admin tools, -2 per mode), and process_extraction's root edit
+ *  left (not on MCP outside Admin, -1 per mode). No cell's answer moved. */
 const NARROWED: Readonly<Record<string, number>> = {
   'web-turn: the app data tools act for a login’s own MCP connection only': 44,
   'web-turn: an Admin tool: the scope holds no Admin': 70,
-  'mcp-oauth: an Admin tool: the scope holds no Admin': 120,
+  'mcp-oauth: an Admin tool: the scope holds no Admin': 116,
   'web-turn: a new app needs manage of its create home: the turn’s workspace': 6,
-  'mcp-oauth: not on the MCP surface of a login outside Admin': 14,
+  'mcp-oauth: not on the MCP surface of a login outside Admin': 12,
 };
 
 /** The allowed tool cells not run, by what they need: the content an item
