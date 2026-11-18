@@ -356,7 +356,8 @@ const F4_CHANGES: ReadonlyArray<{
       const w = JSON.parse(was) as L;
       const refused = new Set(['kr-adminall.txt', 'kr-adminnousers.txt']);
       w.body.files = (w.body.files ?? []).filter((f) => !refused.has(f.filename));
-      return JSON.stringify(w) === now;
+      // The caps' mayMove (0382, owner page d7313c67) is main's answer without it.
+      return JSON.stringify(w) === now.replace(/,"mayMove":(true|false)/g, '');
     },
   },
 ];

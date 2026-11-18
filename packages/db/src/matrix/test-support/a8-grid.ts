@@ -875,11 +875,10 @@ export function effectMade(
         return `landed in ${p.home}, the oracle says ${want.lands} (${lands})`;
       if (c.placement === 'folder') {
         const read = [...p.read].sort();
+        // The folder's grants and the home it lands in, once each (a create
+        // by R's Moderator lands in R, which the folder passes too: 0382).
         const folder = [
-          fx.ws.H,
-          fx.ws.W,
-          fx.ws.R,
-          ...(lands && ![fx.ws.H].includes(lands) ? [lands] : []),
+          ...new Set([fx.ws.H, fx.ws.W, fx.ws.R, ...(lands && lands !== fx.ws.H ? [lands] : [])]),
         ].sort();
         if (JSON.stringify(read) !== JSON.stringify(folder)) {
           return `read by ${read.join(',')}, not the folder's grants and its home`;
