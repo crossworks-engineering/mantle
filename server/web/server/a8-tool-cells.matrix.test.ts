@@ -740,9 +740,12 @@ describe.skipIf(!DB_URL)(
  *  person alone does left MCP, and their cells with them; 140 with
  *  pipeline_run, 2026-11-14: MCP only, its edit cells, 16 over both modes;
  *  154 with pipeline_test, Pipelines phase 2 M4, 2026-11-14: MCP only, its
- *  read cells, 14 over both modes, and no tool row for a turn). */
+ *  read cells, 14 over both modes, and no tool row for a turn; 150 with
+ *  shared items, 0382, owner page d7313c67: the read grant's member, a
+ *  Moderator of R, now edits and creates, so its MCP-only negative cells
+ *  left, and a Write grant's create in a folder came in as one). */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
-  'web-turn: no tool row (MCP only)': 154,
+  'web-turn: no tool row (MCP only)': 150,
 };
 
 /** The narrowed tool cells (a deny the oracle cannot see), by reason.
