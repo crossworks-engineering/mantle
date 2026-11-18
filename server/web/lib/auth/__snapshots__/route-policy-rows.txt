@@ -12,6 +12,7 @@ DELETE /api/draws/:id class=content scope=content caller=owner gone=false
 DELETE /api/events/:id class=content scope=content caller=owner gone=false
 DELETE /api/files/files class=content scope=content caller=owner gone=false
 DELETE /api/files/files/:id class=content scope=content caller=owner gone=false
+DELETE /api/files/files/:id/history/:sid class=content scope=content caller=owner gone=false
 DELETE /api/files/folders/:id class=content scope=content caller=owner gone=false
 DELETE /api/fleet/boxes/:id class=area scope=area:settings caller=owner gone=false
 DELETE /api/fleet/default-model class=area scope=area:settings caller=owner gone=false
@@ -160,6 +161,8 @@ GET /api/export/:id class=content scope=content caller=ownerAsset gone=false
 GET /api/federation/node/:id class=area scope=area:connectors caller=- gone=false
 GET /api/files/files class=content scope=content caller=owner gone=false
 GET /api/files/files/:id class=content scope=content caller=readerAsset gone=false
+GET /api/files/files/:id/history class=content scope=content caller=owner gone=false
+GET /api/files/files/:id/history/:sid/download class=content scope=content caller=readerAsset gone=false
 GET /api/files/folders class=content scope=content caller=owner gone=false
 GET /api/files/folders/:id class=content scope=content caller=owner gone=false
 GET /api/fleet class=area scope=area:settings caller=owner gone=false
@@ -453,6 +456,8 @@ HEAD /api/export/:id class=content scope=content caller=ownerAsset gone=false
 HEAD /api/federation/node/:id class=area scope=area:connectors caller=- gone=false
 HEAD /api/files/files class=content scope=content caller=owner gone=false
 HEAD /api/files/files/:id class=content scope=content caller=readerAsset gone=false
+HEAD /api/files/files/:id/history class=content scope=content caller=owner gone=false
+HEAD /api/files/files/:id/history/:sid/download class=content scope=content caller=readerAsset gone=false
 HEAD /api/files/folders class=content scope=content caller=owner gone=false
 HEAD /api/files/folders/:id class=content scope=content caller=owner gone=false
 HEAD /api/fleet class=area scope=area:settings caller=owner gone=false
@@ -796,6 +801,7 @@ POST /api/federation/query class=area scope=area:connectors caller=- gone=false
 POST /api/files/files class=content scope=content caller=owner gone=false
 POST /api/files/files/:id class=content scope=content caller=owner gone=false
 POST /api/files/files/:id/database class=content scope=content caller=owner gone=false
+POST /api/files/files/:id/history/:sid/restore class=content scope=content caller=owner gone=false
 POST /api/files/files/:id/run class=content scope=content caller=owner gone=false
 POST /api/files/folders class=content scope=content caller=owner gone=false
 POST /api/files/folders/:id class=content scope=content caller=owner gone=false

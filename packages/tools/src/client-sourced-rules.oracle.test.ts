@@ -213,6 +213,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   file_rename: onNodes('file_id'),
   file_set_indexing: onNodes('file_id'),
   file_delete: onNodes('file_id'),
+  // File history (added after main): a version of the file it names.
+  file_history_restore: onNodes('file_id'),
+  file_history_delete: onNodes('file_id'),
   folder_create: { ...creates(), paths: ['parent_path'] },
   folder_copy: { ...creates(), paths: ['dest_parent_path'] },
   folder_move: { ...onNodes('folder_id'), paths: ['dest_parent_path'] },

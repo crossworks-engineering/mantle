@@ -2004,6 +2004,60 @@
    "peerRisky": false
   }
  },
+ "file_history_delete": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": true
+  }
+ },
+ "file_history_list": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": false
+  }
+ },
+ "file_history_restore": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": true
+  }
+ },
  "file_list": {
   "readOnly": true,
   "peerRisky": false,
