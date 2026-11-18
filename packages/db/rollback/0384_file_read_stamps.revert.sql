@@ -1,10 +1,10 @@
--- Rollback of 0385_file_read_stamps: what an operator MAY run before pinning
+-- Rollback of 0384_file_read_stamps: what an operator MAY run before pinning
 -- the image one release back (plan v3.2 rule 2, a one-image rollback). Not a
 -- migration: nothing runs it on its own.
 --
 -- Optional: the older image never writes `read_by` or `pipeline_read`, and
 -- never reads the two indexes. This puts 0377's list back, drops the two
--- indexes, and takes 0385 off the ledger, so the next roll forward applies
+-- indexes, and takes 0384 off the ledger, so the next roll forward applies
 -- it again. Stamps already on nodes STAY; the older image does not know the
 -- keys, so an overwrite of a file does not drop them, and a newer image
 -- then reads a stamp of the old bytes (it shows the file as read, not as
@@ -16,7 +16,7 @@
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0385_file_read_stamps.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0384_file_read_stamps.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
 SET LOCAL lock_timeout = '30s';

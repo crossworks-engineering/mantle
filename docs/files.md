@@ -304,7 +304,7 @@ read better, and a person reads them again. Nothing reads a file again by
 itself (cost safety: no trigger, no timer).
 
 - **The stamps** (`packages/files/src/read-stamp.ts`), on the file node's
-  data, written by the brain only (derived keys, migration 0385):
+  data, written by the brain only (derived keys, migration 0384):
   `read_by` `{ reader, v }` when a read of the text completes (the extract,
   and the local read with no model: `server/api/src/agent/extractor.ts`,
   `extract/gates.ts`); `reader` is the core reader of the type (the parser
@@ -347,7 +347,7 @@ itself (cost safety: no trigger, no timer).
   page of file rows with their status, newest first, in the caller's read
   scope, `next` for the next page and `total`. `failed` and `partial` are
   the read states of `extractionOf`. The stale cut is found in two partial
-  indexes (migration 0385), not by a pass over every file's data.
+  indexes (migration 0384), not by a pass over every file's data.
 - **MCP `file_list`** rows carry `status` too, as the HTTP list.
 
 ---

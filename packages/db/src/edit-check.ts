@@ -67,7 +67,7 @@ export const NODE_DERIVED_KEYS: readonly string[] = Object.keys(DERIVED_KEY_WRIT
 
 /** What the extractor writes about a file's bytes (mantle_node_extractor_keys,
  *  0281; `parser_failures` since 0339; `agent_text` since 0377; `read_by`
- *  and `pipeline_read` since 0385): the read-only snapshot copy's list
+ *  and `pipeline_read` since 0384): the read-only snapshot copy's list
  *  (it may change on a copy) and the files' BYTE_DERIVED_DATA_KEYS. A part
  *  of NODE_DERIVED_KEYS. */
 export const NODE_EXTRACTOR_KEYS: readonly string[] = [

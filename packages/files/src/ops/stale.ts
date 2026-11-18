@@ -10,7 +10,7 @@
  *
  * One query for the page and one for the total, both in the caller's scope,
  * then the rows of the page by id. The stale cut finds its rows in the two
- * partial indexes of migration 0385 (no pass over every file's data): a
+ * partial indexes of migration 0384 (no pass over every file's data): a
  * reader's part only for a reader whose version was raised, a pipeline's
  * only for the files it read at another version than the installed one.
  * Every row of a
@@ -36,7 +36,7 @@ const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
 
 /** The stale cut: a reader's files below its version, a pipeline's files
  *  below the installed version. False when nothing can be stale. Each part
- *  names the predicate of its partial index (0385) in the text itself, so
+ *  names the predicate of its partial index (0384) in the text itself, so
  *  a generic plan still proves it; the keys and versions are parameters,
  *  the index's conditions. */
 function staleCut(installed: readonly { id: string; version: string }[]): SQL {

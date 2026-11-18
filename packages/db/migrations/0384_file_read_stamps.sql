@@ -25,7 +25,7 @@
 -- lock wait is capped at 5 s; on a timeout the migration fails and is
 -- re-runnable. No trigger, no notify, nothing that starts work.
 --
--- Rollback: packages/db/rollback/0385_file_read_stamps.revert.sql.
+-- Rollback: packages/db/rollback/0384_file_read_stamps.revert.sql.
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
 

@@ -85,13 +85,13 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     }
   });
 
-  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339, 0377 and 0385) is this list', () => {
+  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339, 0377 and 0384) is this list', () => {
     const m = migration('0281_edit_check_tables');
-    // The extractor's keys, last replaced in 0385 (the read stamps), before
+    // The extractor's keys, last replaced in 0384 (the read stamps), before
     // it in 0377 (the text of the Agents' tabs) and 0339 (the parser's
     // failure count).
     const extractor = sqlArrayAfter(
-      migration('0385_file_read_stamps'),
+      migration('0384_file_read_stamps'),
       'mantle_node_extractor_keys"()',
     );
     expect(extractor).toEqual([...NODE_EXTRACTOR_KEYS]);
@@ -126,7 +126,7 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     expect(copy).toHaveLength(13);
     // The copy's trigger now reads the named list (0281): the same 13, and
     // the parser's failure count since 0339, the Agents' text since 0377,
-    // the read stamps since 0385.
+    // the read stamps since 0384.
     expect([...copy, 'parser_failures', 'agent_text', 'read_by', 'pipeline_read'].sort()).toEqual(
       [...NODE_EXTRACTOR_KEYS].sort(),
     );
