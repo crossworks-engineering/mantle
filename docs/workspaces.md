@@ -192,7 +192,7 @@ every workspace it is granted to, each with a Write switch.
 | Switch Write off for T           | Moderator of its home, or Moderator of T                                  |
 | Open, change or close its link   | to be able to edit it (an app or a Present canvas: Moderator of its home) |
 | Close any public link            | to be an Admin user with the users area                                   |
-| Delete it                        | Moderator of its home (an app: Admin users too, see Apps)                 |
+| Delete it                        | Moderator of its home                                                     |
 | Delete an entry of its history   | Moderator of its home                                                     |
 | Move it to another home (H to T) | Moderator of H and Moderator of T                                         |
 | Move it to another folder        | Moderator of its home, or Moderator of a holder that holds the folder too |
@@ -206,8 +206,14 @@ every workspace it is granted to, each with a Write switch.
   more. Deleting it and moving it to another home stay with the Moderators
   of its home. An app is the exception: its code, data, snapshots and
   timers stay with its home's Moderators (and its data with its Write
-  grants), never a holder's Moderator. An Admin user gets this through a Moderator tick like anyone:
-  the Moderators of Admin hold everything homed in Admin.
+  grants), never a holder's Moderator.
+- **An Admin user** (owner's word, 2026-11-18) counts as a Moderator of
+  the home of every item it reads: wherever this table says "Moderator of
+  its home" (delete, a home move from H, grants, an app's or a canvas's
+  link, history, app code), an Admin user may too. A home move still needs
+  a Moderator of T, and editing the content is the edit rule above (an
+  Admin user who only reads the item through a plain seat does not edit
+  it).
 - A Recall map is narrower than the table: deleting it, confirming a
   prompt on it and reordering its cards stay with the Admin users, whoever
   else may edit it ([recall.md](./recall.md)).

@@ -30,8 +30,17 @@
 --     a move from a Moderator of the home, as before, or one inside a
 --     workspace the caller moderates: mantle_mod_holds(item, folder it lands
 --     in). The folder it lands in asks mantle_may_add.
--- Delete, grants, links of an app and app code keep manage (a Moderator of
--- the home). A home move keeps mantle_grant_move_home.
+--  4. manage (mantle_may_manage_in, so mantle_may_manage and
+--     mantle_may_manage_home too): a Moderator of the home, or (new, owner
+--     word 2026-11-18) a Moderator of the brain's Admin workspace, that is an
+--     Admin user (an Admin user's tick there is never cleared). One
+--     condition, in the one function the scope and the array forms share,
+--     so the caps (mayManage, mayMove) and the checks answer alike. It
+--     feeds every act manage decides: delete, a home move (from its home;
+--     the new home still needs a Moderator of it), grants, an app's and a
+--     canvas's link, app code, history.
+-- Delete, grants, links of an app and app code keep manage. A home move
+-- keeps mantle_grant_move_home.
 --
 -- Re-runnable.
 SET LOCAL lock_timeout = '30s';
@@ -58,6 +67,15 @@ CREATE OR REPLACE FUNCTION "public"."mantle_may_add"(home uuid, write_ws uuid[],
            home,
            CASE WHEN home IS NOT NULL AND home = ANY (write_ws) THEN ARRAY[home] ELSE '{}'::uuid[] END,
            read_ws, 'branch'), false)
+$$;
+--> statement-breakpoint
+-- 4. manage: a Moderator of the home, or of the brain's Admin workspace.
+-- STABLE (was IMMUTABLE): it names the Admin workspace by its definer. The
+-- scalar subqueries run once per query, not once per row.
+CREATE OR REPLACE FUNCTION "public"."mantle_may_manage_in"(mod_ws uuid[], home uuid)
+  RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT (home IS NOT NULL AND home = ANY (mod_ws))
+      OR coalesce((SELECT "public"."mantle_ws_admin_id"((SELECT "public"."mantle_brain_id"()))) = ANY (mod_ws), false)
 $$;
 --> statement-breakpoint
 -- 3. A workspace the scope moderates holds both a and b.

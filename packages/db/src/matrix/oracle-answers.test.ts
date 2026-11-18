@@ -41,9 +41,16 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // writeGrant and adminWriteGrant (users of W, Write on) allow to deny on a
   // create in the folder; the deny's words of others' folder creates. An
   // app's acts stay as they were. No other answer moved (--against).
+  // An Admin user manages every item it reads (owner's word, 2026-11-18,
+  // page d7313c67): 70 inputs moved, each deny to allow, all by
+  // adminWriteGrant or adminReadGrant (Admin users who read the item through
+  // W or R, no Moderator of H): both delete it and open an app's or a
+  // canvas's link; adminWriteGrant, who edits it too, also deletes its
+  // content row or an app's data row and writes an app's code (those ask
+  // edit as well). No other answer moved (checked with --against).
   a3a: {
     inputs: 33_120,
-    sha256: '7310baeb936e97b037e9d6add6a9a49a50d625e8eac1022f2281a12f6bf0a44f',
+    sha256: '1d50ae49f14f8da2eec249cc3c3351cd45909f434cedc37d8bf0067b09090b91',
   },
   'a3a-detail': {
     inputs: 1_104,

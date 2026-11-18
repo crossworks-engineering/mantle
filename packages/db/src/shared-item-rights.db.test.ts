@@ -7,13 +7,16 @@
  *  - a Moderator of W: read, create and upload in it (items and folders),
  *    write, move it inside W, Write on or off; no delete, no home move;
  *  - a user of W: read; write with Write on; nothing more;
- *  - a Moderator of its home: everything, as before.
+ *  - a Moderator of its home: everything, as before;
+ *  - an Admin user (a Moderator of Admin): manage of every item it reads,
+ *    delete and home move included (owner's word, 2026-11-18).
  *
  * The fixture is the real case: folders homed in Admin and granted to a
  * project workspace W, whose Moderators could not move or file into them.
  * The Admin user here is a Moderator of Admin (always) and a plain user of
  * W; its rights on these items come from the home. An item homed in another
- * workspace X shows what an Admin user does not get from Admin alone.
+ * workspace X shows what an Admin user gets from Admin alone: manage (delete,
+ * home move, a move anywhere), not the holder's add.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/db/src/shared-item-rights.db.test.ts
  */
@@ -450,13 +453,39 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
     expect(await create('modW')).toBe(1);
     expect(await moveIn('modW')).toBe(1);
     expect(await del('modW')).toBe(NO);
-    // An Admin user who is a plain user of W: a user of W here (Admin is
-    // not this item's home and does not hold it). Its users area may tick
-    // it a Moderator of W or of X.
+    // An Admin user who is a plain user of W (Admin is not this item's
+    // home and does not hold it): manage, from Admin (owner's word,
+    // 2026-11-18), so it deletes it and moves it anywhere it may add to;
+    // it edits through W's Write; it adds to X's folder only as the edit
+    // rule says (not a Moderator of a holder of it).
     expect(await edit('admin')).toBe(1);
     expect(await create('admin')).toBe(NO);
-    expect(await moveIn('admin')).toBe(NO);
-    expect(await del('admin')).toBe(NO);
+    expect(await moveIn('admin')).toBe(1);
+    expect(await del('admin')).toBe(1);
+  });
+
+  it('an Admin user deletes and moves home an item homed in X, which it does not moderate; a holder’s Moderator does not', async () => {
+    const del = (r: Role) =>
+      attempt(who[r], [n.x], async (tx) => (await tx`delete from nodes where id = ${n.x}`).count);
+    const moveHome = (r: Role, to: string) =>
+      attempt(who[r], [n.x], async (tx) => {
+        await tx`select mantle_grant_move_home(${n.x}::uuid, ${to}::uuid, false, ${who[r].login}::uuid)`;
+        const [h] = await tx<{ home: string }[]>`
+          select workspace_id::text as home from item_grants where node_id = ${n.x} and is_home`;
+        return h?.home === to ? 1 : 0;
+      });
+    expect(who.admin.mod).not.toContain(ws.X);
+    expect(who.admin.mod).toContain(ws.admin);
+    expect(await del('admin')).toBe(1);
+    // To T (it moderates T) and to Admin.
+    expect(await moveHome('admin', ws.T)).toBe(1);
+    expect(await moveHome('admin', ws.admin)).toBe(1);
+    // A Moderator of W, which holds it (Write on): neither.
+    expect(await del('modW')).toBe(NO);
+    expect(await moveHome('modW', ws.T)).toBe(NO);
+    // The new home still needs a Moderator of it: an Admin user to V, which
+    // it is not in, is refused.
+    expect(await moveHome('admin', ws.V)).toBe(NO);
   });
 
   it('a folder homed in W keeps today’s rules: a user of W with W’s Write on adds to it', async () => {
@@ -506,6 +535,17 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
       return out;
     };
     expect(await ask(who.admin)).toEqual({ edit: true, add: true, manage: true, move: true });
+    // An Admin user on an item homed in X it does not moderate: manage.
+    const [x] = await w.begin(async (tx) => {
+      await tx`select set_config('mantle.ws', ${`{${who.admin.ws.join(',')}}`}, true),
+                      set_config('mantle.mod_ws', ${`{${who.admin.mod.join(',')}}`}, true),
+                      set_config('mantle.login_id', ${who.admin.login}, true)`;
+      return tx<{ manage: boolean; m: boolean }[]>`
+        select coalesce(mantle_may_manage(n.home_ws), false) as manage,
+               mantle_may_manage_home(n.home_ws) as m
+          from nodes n where n.id = ${n.x}`;
+    });
+    expect(x).toEqual({ manage: true, m: true });
     expect(await ask(who.modW)).toEqual({ edit: true, add: true, manage: false, move: true });
     expect(await ask(who.userW)).toEqual({ edit: false, add: false, manage: false, move: false });
     // The array form: a preview's (a Moderator of a holder edits).
@@ -519,5 +559,13 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
     // An app is not edited by its holders' Moderators: its acts stay its
     // home's Moderators' and its Write grants'.
     expect(r).toEqual({ e: true, u: false, app: false });
+    // manage's array form: a Moderator of the home, or of Admin; a
+    // Moderator of a holder alone does not manage.
+    const [m] = await sql<{ home: boolean; admin: boolean; holder: boolean; none: boolean }[]>`
+      select mantle_may_manage_in(array[${ws.X}]::uuid[], ${ws.X}::uuid) as home,
+             mantle_may_manage_in(array[${ws.admin}]::uuid[], ${ws.X}::uuid) as admin,
+             mantle_may_manage_in(array[${ws.W}]::uuid[], ${ws.X}::uuid) as holder,
+             mantle_may_manage_in('{}'::uuid[], ${ws.X}::uuid) as none`;
+    expect(m).toEqual({ home: true, admin: true, holder: false, none: false });
   });
 });

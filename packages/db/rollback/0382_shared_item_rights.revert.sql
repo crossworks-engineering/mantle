@@ -4,9 +4,10 @@
 --
 -- Needed: the older image asks mantle_may_edit(home, write_ws) and
 -- mantle_may_edit_in(ws, mod_ws, home, write_ws), which 0382 drops. This puts
--- back the old rule (a Moderator of the home, or a grant with Write on), the
--- 0279/0280/0303/0305/0338/0352/0267 bodies 0382 replaced, the canvas data read
--- rule, and drops what 0382 added.
+-- back the old rule (a Moderator of the home, or a grant with Write on),
+-- manage as 0280 had it (a Moderator of the home, no Admin), the
+-- 0279/0280/0303/0305/0338/0352/0267 bodies 0382 replaced, the canvas data
+-- read rule, and drops what 0382 added.
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
@@ -18,6 +19,11 @@ SET LOCAL lock_timeout = '30s';
 CREATE OR REPLACE FUNCTION "public"."mantle_may_edit_in"(ws uuid[], mod_ws uuid[], home uuid, write_ws uuid[])
   RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT (home IS NOT NULL AND home = ANY (mod_ws)) OR coalesce(write_ws && ws, false)
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_may_manage_in"(mod_ws uuid[], home uuid)
+  RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT home IS NOT NULL AND home = ANY (mod_ws)
 $$;
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_may_edit"(home uuid, write_ws uuid[])

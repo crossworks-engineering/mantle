@@ -260,7 +260,7 @@ type Item = {
    *  array forms): a Moderator of the home, or a grant with Write
    *  on in one of them. */
   mayEdit: boolean;
-  /** A Moderator of the home. */
+  /** A Moderator of the home, or an Admin user (mantle_may_manage_in). */
   mayManage: boolean;
 };
 

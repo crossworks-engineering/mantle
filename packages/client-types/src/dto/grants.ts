@@ -54,7 +54,7 @@ export type GrantsResponse = {
   /** "Add workspace": live workspaces where the caller is a Moderator that
    *  the item is not granted to yet. Empty unless `mayManage`. */
   addable: GrantWorkspaceRef[];
-  /** The caller moderates the item's home. */
+  /** The caller moderates the item's home, or is an Admin user. */
   mayManage: boolean;
   /** The caller may open or close the item's public link: the item can
    *  carry one, and the caller may edit it (an app: home Moderator). */
@@ -255,9 +255,9 @@ export type ItemCaps = {
    *  Write on, in the caller's own workspaces); never for a read-only copy. */
   mayEdit?: boolean;
   /** The caller may delete it, share it, and move it anywhere (a Moderator
-   *  of its home). */
+   *  of its home, or an Admin user). */
   mayManage?: boolean;
-  /** The caller may move it: a Moderator of its home (mayManage), or a
+  /** The caller may move it: mayManage, or a
    *  Moderator of a workspace that holds it, to a folder that workspace
    *  holds too. Never on a read-only copy. Absent from a brain before it:
    *  read mayManage. */

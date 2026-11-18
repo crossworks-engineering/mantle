@@ -61,14 +61,16 @@ export function mayEditSql(alias?: string): SQL<boolean> {
 }
 
 /** The scope may manage the item (grants, links, delete, move): a
- *  Moderator of its home (mantle_may_manage). */
+ *  Moderator of its home, or an Admin user (a Moderator of the brain's
+ *  Admin workspace, 0382; mantle_may_manage). */
 export function mayManageSql(alias?: string): SQL<boolean> {
   return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')}), false)`;
 }
 
-/** The scope may move the item somewhere: a Moderator of its home (manage),
- *  or of a workspace that holds it, inside that workspace (0382: the move
- *  check asks the folder it lands in too). The item caps' `mayMove`. */
+/** The scope may move the item somewhere: manage (a Moderator of its home,
+ *  or an Admin user), or a Moderator of a workspace that holds it, inside
+ *  that workspace (0382: the move check asks the folder it lands in too).
+ *  The item caps' `mayMove`. */
 export function mayMoveSql(alias?: string): SQL<boolean> {
   return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')})
                        or "public"."mantle_mod_holds"(${column(alias, 'read_ws')}, ${column(alias, 'read_ws')}), false)`;
@@ -99,7 +101,8 @@ export function mayEditInSql(alias: string | undefined, ws: SQL, modWs: SQL): SQ
   return sql<boolean>`coalesce("public"."mantle_may_edit_in"(${ws}, ${modWs}, ${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}, ${column(alias, 'type')}), false)`;
 }
 
-/** A Moderator of `modWs` may manage the item (mantle_may_manage_in). */
+/** A Moderator of `modWs` may manage the item: `modWs` holds its home or
+ *  the brain's Admin workspace (mantle_may_manage_in, 0382). */
 export function mayManageInSql(alias: string | undefined, modWs: SQL): SQL<boolean> {
   return mayManageHomeInSql(column(alias, 'home_ws'), modWs);
 }
