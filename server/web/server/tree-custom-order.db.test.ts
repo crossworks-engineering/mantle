@@ -787,18 +787,21 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
         );
       });
 
-      it('at the top level, an item the Admin may not edit is refused first', async () => {
+      it('at the top level, the Admin orders an item it reads, homed where it is a plain user (decision A)', async () => {
         await setMode(mode);
         const top = await note(`top locked ${n()}`);
         // Homed in H, read by U (the owner a plain user there) with Write
-        // off: a grant to Admin would be the owner's to edit (0382).
+        // off. It was refused here (the owner might not edit it); an Admin
+        // user counts as a Moderator of the home of any item it reads
+        // (owner page d7313c67, decision A), so it edits it and places it.
+        // An item it does not read is not found (the cells above).
         await grantsOn(top, [{ ws: ws.H, home: true }, { ws: ws.U }]);
-        const o = await refused(
-          (id) => viaMcp('owner', 'tree_item_place', { kind: 'notes', item_id: id, after: null }),
-          top,
-          true,
-        );
-        expect(o.text).not.toMatch(/Only an Admin orders the top level/);
+        const o = await viaMcp('owner', 'tree_item_place', {
+          kind: 'notes',
+          item_id: top,
+          after: null,
+        });
+        expect(o.ok, o.text).toBe(true);
       });
 
       it("a member's place in an ordered folder leaves what it does not see where it was", async () => {

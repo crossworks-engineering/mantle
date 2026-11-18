@@ -25,7 +25,11 @@
  * the anchor, a Moderator of Admin; a run and the Admin turn (telegram)
  * read only what Admin holds, so they have no read-only note: their
  * read-only cells take one granted to Admin with Write off, and it is
- * edited. The TypeScript item pre-check (gate-prerun.ts,
+ * edited. Decision A (owner page d7313c67): an Admin user counts as a
+ * Moderator of the home of any item it reads, so stdio's login(owner) edits
+ * RO's note too: no way has a read-only note now, every cell is edited and
+ * none logs a miss (a member's misses: precheck-removal). The TypeScript
+ * item pre-check (gate-prerun.ts,
  * toolItemWriteRefusalOf) is bypassed where a cell says so, so only the
  * database stands:
  *
@@ -407,9 +411,11 @@ describe.skipIf(!DB_URL)(
           precheck: false,
         });
         // A run and the Admin turn: a Moderator of Admin edits what Admin
-        // holds.
-        expect(ro.ok, ro.text).toBe(way !== 'stdio');
-        expect(ro.changed).toBe(way !== 'stdio');
+        // holds. stdio (the owner, an Admin user, a plain user of RO): it
+        // reads the note, so it counts as a Moderator of its home and edits
+        // it (owner page d7313c67, decision A).
+        expect(ro.ok, ro.text).toBe(true);
+        expect(ro.changed).toBe(true);
         expect(ro.text).not.toMatch(RAW);
         const rw = await cell(`${way} on editable`, way, {
           write: true,
@@ -438,8 +444,8 @@ describe.skipIf(!DB_URL)(
           ro.who.some((w) => WRITER.test(w)),
           ro.who.join(','),
         ).toBe(true);
-        if (way !== 'stdio') expect(ro.misses).not.toContain(EDIT_MISS);
-        else expect(ro.misses).toContain(EDIT_MISS);
+        // Decision A: every way's login may edit it, so no miss.
+        expect(ro.misses).not.toContain(EDIT_MISS);
         const rw = await cell(`${way} warn editable`, way, {
           write: true,
           pool: true,
@@ -476,8 +482,7 @@ describe.skipIf(!DB_URL)(
           off.who.some((w) => WRITER.test(w)),
           off.who.join(','),
         ).toBe(true);
-        if (way !== 'stdio') expect(off.misses).not.toContain(EDIT_MISS);
-        else expect(off.misses).toContain(EDIT_MISS);
+        expect(off.misses).not.toContain(EDIT_MISS);
       }, 180_000);
     }
   },

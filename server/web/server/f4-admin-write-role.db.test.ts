@@ -20,7 +20,14 @@
  * it, Write on or off, owner page d7313c67), granted to Admin with Write on
  * (it may), or not granted to Admin at all (the scope does not read it). No route has the item
  * pre-check now (plan v3.2 S11b took its reader out), so only the database
- * and the handler stand, in every cell:
+ * and the handler stand, in every cell.
+ *
+ * Decision A (owner page d7313c67): an Admin user counts as a Moderator of
+ * the home of any item it reads, so the item RO holds is its to edit too:
+ * an Admin user's own request has no read-only item any more. Its
+ * read-only cells now expect the edit made on the write role, with no miss,
+ * in every mode; the refusals and misses below are a member's
+ * (worker-write-role, precheck-removal). What follows is as it was:
  *
  *   - on: the read-only edit and draft edit are refused by the database,
  *     the item unchanged, in the mapper's words; the editable ones are made
@@ -286,15 +293,16 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('on: the database refuses a read-only edit and draft edit; editable ones are made on the write role', async () => {
+  it('on: an Admin user edits what it reads (decision A), RO’s items and Admin’s, on the write role', async () => {
     await setMode('on');
     for (const who of ['admin', 'owner'] as const) {
       for (const what of ['edit', 'draft'] as const) {
+        // Decision A: the Admin user reads it through RO, so it edits it.
         const ro = await cell(`on ${who} ${what} read-only`, who, what, 'read-only');
-        expect(ro.status, ro.text).toBe(403);
-        expect(ro.changed).toBe(false);
-        expect(ro.text).not.toMatch(RAW);
-        expect(ro.text).toContain('item-workspace');
+        expect(ro.status, ro.text).toBe(200);
+        expect(ro.changed).toBe(true);
+        expect(ro.role).toBe('write');
+        expect(ro.misses).toEqual([]);
         const rw = await cell(`on ${who} ${what} editable`, who, what, 'editable');
         expect(rw.status, rw.text).toBe(200);
         expect(rw.changed).toBe(true);
@@ -316,13 +324,14 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     }
   }, 120_000);
 
-  it('warn makes the read-only edit on the write role and logs it as a miss', async () => {
+  it('warn: an Admin user’s edit of what it reads is made on the write role, no miss (decision A)', async () => {
     await setMode('warn');
+    // Decision A: the Admin user edits what it reads, so no miss.
     const ro = await cell('warn admin edit read-only', 'admin', 'edit', 'read-only');
     expect(ro.status, ro.text).toBe(200);
     expect(ro.changed).toBe(true);
     expect(ro.role).toBe('write');
-    expect(ro.misses).toContain(EDIT_MISS);
+    expect(ro.misses).not.toContain(EDIT_MISS);
     const rw = await cell('warn admin edit editable', 'admin', 'edit', 'editable');
     expect(rw.status, rw.text).toBe(200);
     expect(rw.misses).toEqual([]);
@@ -331,23 +340,24 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
   it('off runs on the write role too and reports as warn (plan v3 S3: the mode never picks the pool)', async () => {
     // Changed in S3: off was the rollout switch, the system pool unchecked.
     await setMode('off');
+    // Decision A: the Admin user edits what it reads, so no miss.
     const ro = await cell('off admin edit read-only', 'admin', 'edit', 'read-only');
     expect(ro.status, ro.text).toBe(200);
     expect(ro.changed).toBe(true);
     expect(ro.role).toBe('write');
-    expect(ro.misses).toContain(EDIT_MISS);
+    expect(ro.misses).not.toContain(EDIT_MISS);
   }, 120_000);
 
-  it('a link’s change, the handler’s item check: a read-only edit is its 403, an item the scope does not read the 404 (no existence leak)', async () => {
+  it('a link’s change, the handler’s item check: an item it reads is its to change (decision A), one it does not read the 404 (no existence leak)', async () => {
     // The handler's check holds in every mode (the database's alone only
     // reports below on).
     for (const mode of ['off', 'warn', 'on'] as const) {
       await setMode(mode);
       for (const who of ['admin', 'owner'] as const) {
+        // Decision A: the Admin user edits the page it reads, so it changes
+        // its link.
         const ro = await cell(`${mode} ${who} gated read-only`, who, 'gated', 'read-only');
-        expect(ro.status, ro.text).toBe(403);
-        expect(ro.text).toContain('You cannot change this item in your workspaces.');
-        expect(ro.changed).toBe(false);
+        expect(ro.status, ro.text).toBe(200);
         const hidden = await cell(`${mode} ${who} gated hidden`, who, 'gated', 'hidden');
         expect(hidden.status, hidden.text).toBe(404);
         expect(JSON.parse(hidden.text)).toEqual({ ok: false, error: 'not found' });
