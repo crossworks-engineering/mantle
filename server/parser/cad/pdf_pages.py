@@ -657,7 +657,7 @@ class Tables:
             self.close()
             return
         for i, t in enumerate(tables):
-            if i == 0 and self.joins(t):
+            if i == 0 and self.joins(t, page):
                 rows, confs = t["rows"], t["confs"]
                 if same_header(rows[0], self.open["header"]):
                     rows, confs = rows[1:], confs[1:]
@@ -696,13 +696,15 @@ class Tables:
         if not self.open["to_bottom"]:
             self.close()
 
-    def joins(self, t):
+    def joins(self, t, page):
         """The brief's rule (section 4.2): the open table ran to the bottom of
         its page, and this page's first table has its header, or no header
         and its column edges. One more: a new title over it starts a new
         table (TITLE_SCALE)."""
         o = self.open
-        if o is None or not o["to_bottom"]:
+        # The page right after its last: a window lost in between (the core
+        # goes on from the state before it) ends the table.
+        if o is None or not o["to_bottom"] or o["last"] != page - 1:
             return False
         if len(t["rows"][0]) != len(o["header"]):
             return False
@@ -813,14 +815,17 @@ def quality_of(rec):
 
 def window_of(request, pages_here):
     """Where this part sits in the file: its first page (1 for a whole
-    file), the file's page count, and whether it is the last part. The core
-    says the first page as `pageFrom`, and the file's page count as
-    `pageCount`, when it reads the file in windows; with neither, the part
-    is the whole file."""
-    first = request.get("pageFrom")
-    first = first if isinstance(first, int) and not isinstance(first, bool) and first >= 1 else 1
-    total = request.get("pageCount")
-    if isinstance(total, int) and not isinstance(total, bool) and total >= 1:
+    file), the file's page count, and whether it is the last part. In a
+    windowed run (`needs.window`) the core says `pageFrom`, `pageTo` and
+    `pagesTotal` (PipelineStepRequest); with none, the part is the whole
+    file."""
+
+    def whole(v):
+        return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else None
+
+    first = whole(request.get("pageFrom")) or 1
+    total = whole(request.get("pagesTotal"))
+    if total is not None:
         return first, total, first + pages_here - 1 >= total
     return first, first + pages_here - 1, True
 
@@ -1029,15 +1034,27 @@ def build(read, state):
         )
 
     methods = {m: sum(1 for p in pages.values() if p["method"] == m) for m in ("text", "ocr", "vision", "blank")}
-    tables_n = len(joined.done)
-    desc = "A book, pages %d to %d: %d text, %d OCR, %d for vision, %d blank; %d tables" % (
-        first, first + count - 1, methods["text"], methods["ocr"], methods["vision"], methods["blank"], tables_n)
-    if partial or text_only:
-        desc += " (%d partial, %d text only; see the tab Tables)" % (partial, len(text_only))
+    counts = dict(methods, pages=count, tables=len(joined.done), partial=partial, text_only=len(text_only),
+                  pictures=len(read["pictures"]))
+    # The run's totals so far: the windows before this one (the state), and
+    # this one. The last window's description stands for the file
+    # (mergeWindowWrite), so it says the whole book.
+    before = state.get("totals") if isinstance(state, dict) and isinstance(state.get("totals"), dict) else {}
+    totals = {k: v + int(before.get(k) or 0) for k, v in counts.items()}
+    desc = "A book of %d pages: %d text, %d OCR, %d for vision, %d blank; %d tables" % (
+        read["total"], totals["text"], totals["ocr"], totals["vision"], totals["blank"], totals["tables"])
+    if totals["partial"] or totals["text_only"]:
+        desc += " (%d partial, %d text only; see the tab Tables)" % (totals["partial"], totals["text_only"])
     desc += "."
+    if totals["pages"] < read["total"]:
+        desc += " %d pages of %d are in this read." % (totals["pages"], read["total"])
     text = "\n\n".join("## Page %d\n\n%s" % (n, pages[n]["text"]) if pages[n]["text"] else "## Page %d" % n for n in sorted(pages))
-    counts = dict(methods, pages=count, tables=tables_n, partial=partial, text_only=len(text_only), pictures=len(read["pictures"]))
-    return tabs, desc[:300], text, counts, carry
+    next_state = None
+    if not read["last_window"]:
+        next_state = {"totals": totals}
+        if carry is not None:
+            next_state["open"] = carry
+    return tabs, desc[:300], text, counts, next_state
 
 
 def step(request, path, job):
@@ -1055,7 +1072,7 @@ def step(request, path, job):
         return {"status": "failed", "warnings": ["a library of this Reader is missing: %s" % e.name]}
     except Exception as e:  # noqa: BLE001 - pdfium's own errors: the file is not a PDF it opens
         return {"status": "failed", "warnings": ["the PDF could not be opened: %s" % type(e).__name__]}
-    tabs, desc, text, counts, carry = build(read, state)
+    tabs, desc, text, counts, next_state = build(read, state)
     pictures = [{k: p[k] for k in ("file", "mime", "caption")} for p in read["pictures"]]
     result = {
         "status": "ok",
@@ -1069,8 +1086,8 @@ def step(request, path, job):
             }
         ],
     }
-    if carry is not None:
-        result["state"] = {"open": carry}
+    if next_state is not None:
+        result["state"] = next_state
     return result
 
 

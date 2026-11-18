@@ -354,6 +354,9 @@ export function readPdfDrawingInJob(
   bytes: Buffer,
   job: { deadline: number; pdfEye: EyeFn; pdfPictures: RenderFn },
   titleBlock?: TitleBlockMm,
+  /** The first pages only (the router's book sample): a row for each of
+   *  them, at most. */
+  maxPages?: number,
 ): Promise<PdfDrawing> {
   const left = job.deadline - DRAWING_BUDGETS.maxMs - Date.now();
   return readPdfDrawing(bytes, {
@@ -361,6 +364,7 @@ export function readPdfDrawingInJob(
     eye: job.pdfEye,
     render: job.pdfPictures,
     ...(titleBlock ? { titleBlock } : {}),
+    ...(maxPages !== undefined ? { maxPages } : {}),
   });
 }
 

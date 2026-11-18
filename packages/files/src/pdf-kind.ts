@@ -458,7 +458,9 @@ export type PageKind = (typeof PAGE_KINDS)[number];
  * drawing or form whose kind is not known), `other_drawing`, `document` and
  * `unsure`; the decider may also answer `pfd`, `equipment_drawing`,
  * `datasheet` and `table` (rows of data: an invoice, a list) for an unsure
- * file.
+ * file. `book` is named by a rule of its own, before the page rules
+ * ({@link bookOf}): a long run of office pages, read by the book reader
+ * `pdf-pages`.
  */
 export const PDF_KINDS = [
   'pid',
@@ -471,8 +473,56 @@ export const PDF_KINDS = [
   'other_drawing',
   'document',
   'unsure',
+  'book',
 ] as const;
 export type PdfKind = (typeof PDF_KINDS)[number];
+
+// ─── a book ───────────────────────────────────────────────────────────
+
+/**
+ * A book (the large-PDF plan, page 4ff4d4e5, section 3.1): more than this
+ * many pages (qpdf's count, no page decode) of office paper that are mostly
+ * scans or typed text. Such a file is read in page windows by `pdf-pages`,
+ * not page by page as a drawing set: the drawing reader would ask vision for
+ * the title block of a spec book's pages, the wrong question, paid for.
+ */
+export const BOOK_MIN_PAGES = 20;
+/** The pages of a long file the rules look at to name it a book: the first
+ *  ones, read as every page is (pageFacts). */
+export const BOOK_SAMPLE_PAGES = 20;
+/** The share of the sample's pages that must be scans or typed text. */
+export const BOOK_MIN_SHARE = 0.8;
+const BOOK_CLASSES: readonly PageClass[] = [
+  'text',
+  'blank',
+  'scan',
+  'scan_hidden_text',
+  'raster_with_text',
+];
+/** A page of one of these kinds in the sample is a drawing set's, never a
+ *  book's: the drawing reader and the sheet read stay its readers. */
+const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
+
+/**
+ * Whether a long PDF is a book, from the first pages' facts and kinds (the
+ * sample), with no model. Every page read of the sample is on office paper
+ * (A4, Letter or A3: `a4` or `a3`), none is a P&ID or an isometric, and
+ * BOOK_MIN_SHARE of them or more are scans or typed text. A sample with no
+ * page read is no book: the page rules decide. The page count is the
+ * caller's (qpdf): over BOOK_MIN_PAGES.
+ */
+export function bookOf(
+  pageCount: number | null,
+  sample: readonly { class?: PageClass; size?: PageSize; kind?: PageKind }[],
+): boolean {
+  if (pageCount === null || pageCount <= BOOK_MIN_PAGES) return false;
+  const read = sample.filter((p) => p.class !== undefined);
+  if (read.length === 0) return false;
+  if (!read.every((p) => p.size === 'a4' || p.size === 'a3')) return false;
+  if (read.some((p) => p.kind !== undefined && BOOK_NOT_KINDS.includes(p.kind))) return false;
+  const typed = read.filter((p) => BOOK_CLASSES.includes(p.class!)).length;
+  return typed >= BOOK_MIN_SHARE * read.length;
+}
 
 /**
  * The P&ID rule: a drawn page with text, larger than an A4 sheet, with this many
