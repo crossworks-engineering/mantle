@@ -212,8 +212,11 @@ every workspace it is granted to, each with a Write switch.
   not read: wherever this table says "Moderator of its home" (edit,
   delete, a home move from H, grants, an app's or a canvas's link,
   history, app code), an Admin user who reads the item may too, through
-  any seat. An item it does not read stays not found. A home move still
-  needs a Moderator of T.
+  any seat. An item it does not read stays not found, with one accepted
+  gap: a login's own item in a workspace (read only by that login) is
+  still reached by the grant functions of an Admin user of that
+  workspace (docs/agent-ui.md, "Shares and grants of per-login items").
+  A home move still needs a Moderator of T.
 - A Recall map is narrower than the table: deleting it, confirming a
   prompt on it and reordering its cards stay with the Admin users, whoever
   else may edit it ([recall.md](./recall.md)).

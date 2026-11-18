@@ -644,7 +644,10 @@ ALTER POLICY "canvas_data_user_read" ON "public"."canvas_data"
 --> statement-breakpoint
 -- Manage's other callers as 0279, 0291, 0307, 0310, 0302 and 0355 wrote
 -- them. The write role's rules on app_table_exports and app_timers are
--- dropped: the older image's migrate writes them again from the read rule.
+-- dropped: the older image's migrate writes them again from the read rule,
+-- together with the write and view roles' right to call
+-- mantle_may_manage_home(uuid). Until that migrate runs, write-role reads of
+-- those two tables fail (closed, not open).
 CREATE OR REPLACE FUNCTION "public"."mantle_app_trash_act"(app uuid, act text)
   RETURNS TABLE (outcome text, seq integer, code jsonb, db_path text,
                  schema_version integer, member_era boolean)
