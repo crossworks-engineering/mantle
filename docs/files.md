@@ -423,15 +423,22 @@ New bytes over a file keep the bytes they replace (owner's decisions,
   `MANTLE_FILES_ROOT/.file-history/<owner>/<file>/<version>.bin` (every part
   a server-made uuid; a dot folder the watcher and the sweeps never enter)
   and its `node_snapshots` row (`node_kind` 'file') is written in the
-  overwrite's own transaction. Same bytes keep nothing. The file row and
+  overwrite's own transaction. Whether the bytes are new, and the
+  version's record, are read under the file row's lock from what the row
+  names then (two overwrites at once each keep what they really replaced;
+  the size is the kept file's own). Same bytes keep nothing. The file row and
   each tree item carry `versions` (a count, one read per list) for a badge,
   and the row `replacedAt`.
 - **Limits.** The newest `FILE_HISTORY_KEEP` (10) versions stay per file,
   and the whole box keeps `FILE_HISTORY_MAX_MB` (2048) of them, oldest
   first, the newest always. The prune runs after each overwrite, and its
   files go at once, so a loop of overwrites never holds more than the cap.
-  A deleted file's history goes 30 days after its newest version, in the
-  nightly `app-trash-purge`. No new job, no model work.
+  A deleted file keeps its last bytes as a `pre_delete` version (linked
+  under the row's lock before the delete), and its history goes 30 days
+  after that delete, in the nightly `app-trash-purge`. A version file no
+  row names (a crash between its link and its commit, an overwrite that
+  never landed) goes in the store sweep an hour on (`filesnap`). No new
+  job, no model work.
 - **Rights.** Listing and downloading a version: whoever reads the file.
   Restore and delete of a version: a Moderator of the file's home, a
   Moderator of a workspace that holds the file, or an Admin user
@@ -440,10 +447,15 @@ New bytes over a file keep the bytes they replace (owner's decisions,
 - **Restore.** The version's bytes go back through the same overwrite (the
   same file id, every gate of a write), so the bytes they replace are kept
   as a `pre_restore` version: a restore is undone by restoring that one.
-  The bytes are copied (never linked) and checked against their sha256.
+  The bytes are copied (never linked) and hashed; a hash that differs from
+  the row's is logged, never a refusal (the bytes are the version).
 - **Derived items.** New bytes (a replace or a restore) are read again as an
-  upload is. Extracted images made before `replacedAt` belong to an older
-  version: the next image pass removes them and makes the new ones. An auto
+  upload is. Extracted images are never removed for new bytes (Pages embed
+  them by id): images of older bytes are marked `olderVersion` (an image
+  carries `sourceSha256`, the bytes it came from), and a new image pass
+  runs only when a person put the new bytes there (`replaced_by` owner or
+  member). An agent's, an export's or the system's save starts no image
+  pass and no vision work; its file keeps the older images, marked. An auto
   Table keeps its rows (people may have edited them); a Table made before
   its file's `replacedAt` is from an older version, which the client can
   show.

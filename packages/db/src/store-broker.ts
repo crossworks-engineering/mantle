@@ -450,6 +450,13 @@ export type SweepSpec = {
   stopWhenNoRows?: boolean;
   /** Clear the tombstones of files removed or found gone (absolute). */
   forget?: (abs: readonly string[]) => Promise<void>;
+  /** True: a file whose item has no row and no tombstone goes as an
+   *  unreferenced one does (a grace period old, by the later of its write
+   *  and change times: a hard link keeps the old bytes' write time), while
+   *  some row names a file (never against an empty or wrong database). The
+   *  file history's versions: a link a crash or a flip that never landed
+   *  left with no row. */
+  noRowGoes?: boolean;
   /** Remove a folder the sweep emptied (up to the root): the snapshot
    *  folders, one per item. */
   pruneEmptyDirs?: boolean;
@@ -760,7 +767,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     if (!named || named.length === 0) {
       // No row: reported, never removed, unless a tombstone says the row
       // that named it went (a deleted snapshot).
-      if (!tomb) {
+      if (!tomb && !(spec.noRowGoes && referenced.size > 0)) {
         report.noRow.push(rel);
         continue;
       }
@@ -770,7 +777,8 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     }
     let mtime: number;
     try {
-      mtime = statSync(join(root, rel)).mtimeMs;
+      const st = statSync(join(root, rel));
+      mtime = spec.noRowGoes ? Math.max(st.mtimeMs, st.ctimeMs) : st.mtimeMs;
     } catch {
       continue;
     }

@@ -13,13 +13,22 @@
  *  - listing and downloading: whoever reads the file;
  *  - the prune: FILE_HISTORY_KEEP per file and FILE_HISTORY_MAX_MB for the
  *    box, oldest first, the files removed;
- *  - the nightly purge: a deleted file's history 30 days after its newest
- *    version, not before.
+ *  - overwrites at the same time (a slow request and its retry, an
+ *    unchanged save beside a write, a restore beside a write): every
+ *    version's record is its bytes', and no bytes are lost;
+ *  - a delete keeps the file's bytes as a last `pre_delete` version, and the
+ *    nightly purge takes a deleted file's history 30 days after that
+ *    delete, not before;
+ *  - a version whose bytes differ from its row's hash is still restored
+ *    (the bytes are the version), logged;
+ *  - the MCP tools file_history_restore and file_history_delete: a plain
+ *    user with Write on refused, a holder's Moderator allowed, a read-only
+ *    login refused.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/server/file-history.db.test.ts
  */
 import { randomUUID, createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -142,6 +151,33 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     );
   const fileSha = async (id: string) =>
     (await raw<{ s: string }[]>`select data->>'sha256' as s from nodes where id = ${id}`)[0]!.s;
+  /** Every version's record matches its kept bytes; answers the shas kept
+   *  (the file's own and its versions'). */
+  const recordsMatch = async (id: string): Promise<Set<string>> => {
+    const rows = await raw<{ seq: number; p: string; s: string | null; b: number }[]>`
+      select seq, db_path as p, source_hash as s, db_bytes::int as b from node_snapshots
+       where node_id = ${id} and node_kind = 'file' order by seq`;
+    const kept = new Set<string>([await fileSha(id)]);
+    for (const r of rows) {
+      const bytes = readFileSync(path.join(dir, 'files', '.file-history', r.p));
+      const real = createHash('sha256').update(bytes).digest('hex');
+      expect(r.s, `v${r.seq}: its record`).toBe(real);
+      expect(r.b, `v${r.seq}: its size`).toBe(bytes.length);
+      kept.add(real);
+    }
+    return kept;
+  };
+  /** An overwrite as system work (an export's, a tool's). */
+  const put = (name: string, s: string) =>
+    sys(() =>
+      fl.upsertFile({
+        ownerId: owner,
+        parentPath: 'files',
+        filename: name,
+        bytes: Buffer.from(s),
+        overwrite: true,
+      }),
+    );
 
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
@@ -464,37 +500,145 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     }
   });
 
-  it('the nightly purge: a deleted file’s history after 30 days, not before', async () => {
-    const write = (name: string, s: string) =>
-      sys(() =>
-        fl.upsertFile({
-          ownerId: owner,
-          parentPath: 'files',
-          filename: name,
-          bytes: Buffer.from(s),
-          overwrite: true,
-        }),
-      );
-    const old = await write(`${tag}-gone-old.txt`, 'o1');
-    await write(`${tag}-gone-old.txt`, 'o2');
-    const fresh = await write(`${tag}-gone-new.txt`, 'n1');
-    await write(`${tag}-gone-new.txt`, 'n2');
-    const [oldPath] = await raw<{ p: string }[]>`select db_path as p from node_snapshots
-                                                   where node_id = ${old.id}`;
+  it('a delete keeps the bytes as pre_delete; the purge goes 30 days after the delete, not before', async () => {
+    const old = await put(`${tag}-gone-old.txt`, 'o1');
+    await put(`${tag}-gone-old.txt`, 'o2');
+    const fresh = await put(`${tag}-gone-new.txt`, 'n1');
+    await put(`${tag}-gone-new.txt`, 'n2');
     for (const f of [old, fresh]) {
       const res = await sys(() => fl.deleteFileById({ ownerId: owner, fileId: f.id }));
       expect(res.ok).toBe(true);
     }
-    await raw.begin(async (tx) => {
-      await tx`select set_config('mantle.actor', 'system:test', true)`;
-      await tx`update node_snapshots set created_at = now() - interval '31 days'
-                where node_id = ${old.id}`;
-    });
+    // The last bytes are kept, byte for byte, as the newest version.
+    const kept = await raw<{ t: string; s: string; p: string }[]>`
+      select trigger as t, source_hash as s, db_path as p from node_snapshots
+       where node_id = ${old.id} order by seq`;
+    expect(kept.map((k) => [k.t, k.s])).toEqual([
+      ['replace', sha('o1')],
+      ['pre_delete', sha('o2')],
+    ]);
+    const deletedBytes = path.join(dir, 'files', '.file-history', kept[1]!.p);
+    expect(readFileSync(deletedBytes, 'utf8')).toBe('o2');
+    const age = (where: 'all' | 'replace') =>
+      raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`update node_snapshots set created_at = now() - interval '31 days'
+                  where node_id = ${old.id} and (${where} = 'all' or trigger = 'replace')`;
+      });
+    // Its versions are old, its delete is not: kept.
+    await age('replace');
+    await sys(() => fl.purgeOrphanFileHistory());
+    expect(await versionCount(old.id)).toBe(2);
+    // 30 days after the delete: gone, rows and bytes.
+    await age('all');
     const dry = await sys(() => fl.purgeOrphanFileHistory({ dryRun: true }));
     expect(dry.files).toBeGreaterThanOrEqual(1);
     await sys(() => fl.purgeOrphanFileHistory());
     expect(await versionCount(old.id)).toBe(0);
-    expect(await versionCount(fresh.id)).toBe(1);
-    expect(existsSync(path.join(dir, 'files', '.file-history', oldPath!.p))).toBe(false);
+    expect(await versionCount(fresh.id)).toBe(2);
+    expect(existsSync(deletedBytes)).toBe(false);
+    for (const k of kept) {
+      expect(existsSync(path.join(dir, 'files', '.file-history', k.p))).toBe(false);
+    }
+  });
+
+  it('overwrites at the same time: every record is its bytes, and no bytes are lost', async () => {
+    for (let round = 0; round < 4; round++) {
+      const n = `${tag}-race${round}`;
+      // A slow upload and its retry: the same new bytes twice.
+      const twice = await put(`${n}-a.txt`, `x${round}`);
+      await Promise.all([put(`${n}-a.txt`, `y${round}`), put(`${n}-a.txt`, `y${round}`)]);
+      expect(await fileSha(twice.id)).toBe(sha(`y${round}`));
+      const k1 = await recordsMatch(twice.id);
+      expect(k1).toEqual(new Set([sha(`x${round}`), sha(`y${round}`)]));
+      // An unchanged save beside a write of other bytes.
+      const beside = await put(`${n}-b.txt`, `x${round}`);
+      await Promise.all([put(`${n}-b.txt`, `x${round}`), put(`${n}-b.txt`, `a${round}`)]);
+      const k2 = await recordsMatch(beside.id);
+      for (const b of [`x${round}`, `a${round}`]) expect(k2.has(sha(b)), b).toBe(true);
+      // Two writes of other bytes.
+      const two = await put(`${n}-c.txt`, `x${round}`);
+      await Promise.all([put(`${n}-c.txt`, `p${round}`), put(`${n}-c.txt`, `q${round}`)]);
+      const k3 = await recordsMatch(two.id);
+      for (const b of [`x${round}`, `p${round}`, `q${round}`]) expect(k3.has(sha(b)), b).toBe(true);
+      // A restore beside a write.
+      const r = await put(`${n}-d.txt`, `x${round}`);
+      await put(`${n}-d.txt`, `m${round}`);
+      const [v1] = await raw<{ id: string }[]>`select id::text as id from node_snapshots
+                                                 where node_id = ${r.id} and seq = 1`;
+      await Promise.all([
+        sys(() => fl.restoreFileVersion(owner, r.id, v1!.id)),
+        put(`${n}-d.txt`, `w${round}`),
+      ]);
+      const k4 = await recordsMatch(r.id);
+      for (const b of [`x${round}`, `m${round}`, `w${round}`]) expect(k4.has(sha(b)), b).toBe(true);
+    }
+  });
+
+  it('a version whose bytes differ from its hash is restored (the bytes are the version)', async () => {
+    const f = await put(`${tag}-drift.txt`, 'before');
+    await put(`${tag}-drift.txt`, 'after');
+    const [v] = await raw<{ id: string }[]>`select id::text as id from node_snapshots
+                                              where node_id = ${f.id} and seq = 1`;
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`update node_snapshots set source_hash = ${sha('not these bytes')}
+                where id = ${v!.id}`;
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await sys(() => fl.restoreFileVersion(owner, f.id, v!.id));
+      expect(res?.restored.seq).toBe(1);
+      expect(await fileSha(f.id)).toBe(sha('before'));
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('differ from the hash'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('the MCP tools: a Write user refused, a holder Moderator allowed, a read-only login refused', async () => {
+    const tools = await import('@mantle/tools');
+    const tool = (slug: string) => tools.FILE_HISTORY_TOOLS.find((t) => t.slug === slug)!;
+    /** The tool's handler in `login`'s own request, read-write or read-only
+     *  (a read-only connection: the login's read-only actor). */
+    const call = async (
+      login: string,
+      slug: string,
+      input: Record<string, unknown>,
+      mode: 'rw' | 'ro' = 'rw',
+    ) => {
+      const scope = await m.viewerScopeFor({ login });
+      return m.runInRequestSlot(
+        async () => {
+          if (!m.enterRequestScope(scope, { writes: mode === 'rw', drafts: true })) {
+            throw new Error('the request scope was not entered');
+          }
+          return tool(slug).handler(input, { ownerId: owner });
+        },
+        { startsAs: m.loginActor(login, mode) },
+      );
+    };
+    const { id, bodies } = await fileWithHistory();
+    const versions = (await history(owner, id)).body.versions;
+    const v1 = versions.find((v) => v.seq === 1)!;
+    const v2 = versions.find((v) => v.seq === 2)!;
+    const input = (v: { id: string }) => ({ file_id: id, version_id: v.id });
+
+    for (const slug of ['file_history_restore', 'file_history_delete']) {
+      const w = await call(L.writeUser, slug, input(v1));
+      expect(w.ok, `${slug} as a Write user`).toBe(false);
+      const ro = await call(L.holderMod, slug, input(v1), 'ro');
+      expect(ro.ok, `${slug} as a read-only login`).toBe(false);
+    }
+    expect(await versionCount(id)).toBe(2);
+    expect(await fileSha(id)).toBe(sha(bodies[2]!));
+
+    const restored = await call(L.holderMod, 'file_history_restore', input(v1));
+    expect(restored.ok, JSON.stringify(restored)).toBe(true);
+    expect(await fileSha(id)).toBe(sha(bodies[0]!));
+    expect(await versionCount(id)).toBe(3);
+    const deleted = await call(L.holderMod, 'file_history_delete', input(v2));
+    expect(deleted.ok, JSON.stringify(deleted)).toBe(true);
+    expect(await versionCount(id)).toBe(2);
   });
 });

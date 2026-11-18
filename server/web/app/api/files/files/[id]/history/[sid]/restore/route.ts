@@ -5,7 +5,7 @@
  * that one; the file is read again as for any new bytes. A Moderator of the
  * file's workspace, of a workspace that holds it, or an Admin; never a
  * plain user with Write on (restoreFileVersion asks it first). 409 when the
- * version's bytes are gone or do not match their record.
+ * version's bytes are gone.
  */
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';

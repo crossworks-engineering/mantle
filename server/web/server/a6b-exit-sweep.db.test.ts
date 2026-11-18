@@ -356,8 +356,12 @@ const F4_CHANGES: ReadonlyArray<{
       const w = JSON.parse(was) as L;
       const refused = new Set(['kr-adminall.txt', 'kr-adminnousers.txt']);
       w.body.files = (w.body.files ?? []).filter((f) => !refused.has(f.filename));
-      // The caps' mayMove (0383, owner page d7313c67) is main's answer without it.
-      return JSON.stringify(w) === now.replace(/,"mayMove":(true|false)/g, '');
+      // The caps' mayMove (0383, owner page d7313c67) and the file history's
+      // count (0384) are main's answer without them.
+      return (
+        JSON.stringify(w) ===
+        now.replace(/,"mayMove":(true|false)/g, '').replace(/,"versions":\d+/g, '')
+      );
     },
   },
 ];
@@ -407,6 +411,20 @@ const NAMED_CHANGES: Record<
         'a workspace that holds it moves it inside that workspace) beside mayEdit and mayManage. ' +
         "Without it the answer is main's.",
       back: (now) => now.replace(/,"mayMove":(true|false)/g, ''),
+    },
+    {
+      cells: /^(GET files root|POST same name at root) /,
+      reason:
+        'file history (0384, Files program P3): a file row carries `versions` (its kept ' +
+        'versions, 0 for none), and an upload to a name a file the caller reads holds answers ' +
+        "the 409 with reason 'name-taken' and that file (id, sha256, sizeBytes, name) for the " +
+        "client's Override / Skip. Without them (and the caps' mayMove above) the answer is " +
+        "main's.",
+      back: (now) =>
+        now
+          .replace(/,"mayMove":(true|false)/g, '')
+          .replace(/,"versions":\d+/g, '')
+          .replace(/,"reason":"name-taken","existing":\{[^}]*\}/g, ''),
     },
   ],
   'client-sourced': [

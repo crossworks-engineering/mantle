@@ -26,6 +26,7 @@ import {
   discardSpooled,
   discardStaged,
   fileIdentity,
+  keepBytesAt,
   type FileIdentity,
   overwritePlacement,
   placedBytesIntact,
@@ -78,6 +79,7 @@ import { ConflictError, defineDomainError, editCheckRefusalError, InputError } f
 import {
   fileHistoryKept,
   fileVersionAbsPath,
+  fileWriteActor,
   fileVersionRelPath,
   pruneFileHistory,
   recordFileVersion,
@@ -498,16 +500,10 @@ export async function upsertFile(args: {
   const home = raced ? currentCreateHome() : null;
   const stamp = home?.stamp && Object.keys(home.stamp).length > 0 ? home.stamp : null;
 
-  const oldData = { ...((target.data ?? {}) as Record<string, unknown>) };
   // A folded member file overwritten: its new bytes are in the tree now
   // (written above, at its folder and name), so it stops reading from its
   // old space's directory.
-  if (foldedFilePath(target)) delete oldData.space_file;
-  // Merge onto the node's data (as syncFileFromDisk does): rebuilding it
-  // from the storage fields would drop the per-file `indexing: 'metadata'`
-  // privacy flag on every editor save, so an excluded file would go to full
-  // indexing. On new bytes the extractor's output is cleared for a fresh run.
-  const sameContent = oldData.sha256 === written.sha256;
+  const folded = foldedFilePath(target) !== null;
   // Title: an explicit one wins; otherwise keep whatever the node already
   // carries when it differs from the filename (something deliberately
   // named it), and fall back to the filename. Resetting to the filename
@@ -521,22 +517,21 @@ export async function upsertFile(args: {
   // place (its stage went above).
   // New bytes over a file keep the old ones as a version (file-history.ts):
   // the overwrite's own link of them lands in the history folder, and the
-  // row is written in the flip once they are kept.
-  const versionId =
-    existing && !sameContent && fileHistoryKept(args.parentPath) ? randomUUID() : null;
+  // row is written in the flip once they are kept. Whether they are new is
+  // decided in the flip, under the row's lock, from the bytes the row names
+  // THEN (never from the read above: a write that landed in between is
+  // what is on disk when the link is made).
+  const versionId = existing && fileHistoryKept(args.parentPath) ? randomUUID() : null;
   const versionRel = versionId ? fileVersionRelPath(args.ownerId, row.id, versionId) : null;
+  const versionAbs = versionRel ? fileVersionAbsPath(versionRel) : undefined;
+  // Set by the flip before its place step: where the old bytes are kept.
+  let keepAt: string | undefined;
   const placement = existing
-    ? overwriteSteps(
-        row.id,
-        staged,
-        brokerLockTx,
-        versionRel ? fileVersionAbsPath(versionRel) : undefined,
-      )
+    ? overwriteSteps(row.id, staged, brokerLockTx, versionAbs ? () => keepAt : undefined)
     : null;
+  // What the row named when the old bytes were linked (the version's record).
+  let keptAs: { sha256: string | null; filename: string } | null = null;
   let versionKept = false;
-  // When new bytes replaced the file: a derived item (an extracted image, an
-  // auto Table) made before it is from an older version (file-history.ts).
-  const replacedAt = existing && !sameContent ? new Date().toISOString() : null;
   // Heads first: the chunk delete below needs them.
   const flip = (place: (() => Promise<void>) | null) =>
     withDeadlockRetry(() =>
@@ -552,6 +547,33 @@ export async function upsertFile(args: {
           if (stamp && !watcherRow) {
             throw new FileNameTakenError(filename);
           }
+          // The row as it is now, under its heads: what the bytes on disk
+          // are (a write that landed since the read above is in both).
+          const [locked] = await tx
+            .select({ data: nodes.data })
+            .from(nodes)
+            .where(eq(nodes.id, row.id))
+            .limit(1);
+          const oldData = { ...((locked?.data ?? target.data ?? {}) as Record<string, unknown>) };
+          if (folded) delete oldData.space_file;
+          // Merge onto the node's data (as syncFileFromDisk does): rebuilding
+          // it from the storage fields would drop the per-file `indexing:
+          // 'metadata'` privacy flag on every editor save, so an excluded file
+          // would go to full indexing. On new bytes the extractor's output is
+          // cleared for a fresh run.
+          const sameContent = oldData.sha256 === written.sha256;
+          // When new bytes replaced the file, and who: a derived item (an
+          // extracted image, an auto Table) made before it is from an older
+          // version (file-history.ts); a new image pass is a person's only.
+          const replaced =
+            existing && !sameContent
+              ? {
+                  replaced_at: new Date().toISOString(),
+                  replaced_by: args.exportSave ? 'export' : fileWriteActor(args.ownerId),
+                }
+              : null;
+          // The same bytes as the row names now keep no version.
+          keepAt = sameContent ? undefined : versionAbs;
           // The checked statement: exactly one row, else a refusal (a 404),
           // with the file untouched.
           const rows = await tx
@@ -560,7 +582,7 @@ export async function upsertFile(args: {
               title: nextTitle,
               data: {
                 ...fileDataAfterWrite(oldData, newData, !sameContent),
-                ...(replacedAt ? { replaced_at: replacedAt } : {}),
+                ...(replaced ?? {}),
               },
               // Only when the caller brings tags: a plain re-upsert leaves them
               // be, and the race path above must still land them on the
@@ -592,20 +614,30 @@ export async function upsertFile(args: {
           if (!sameContent) await tx.delete(contentChunks).where(eq(contentChunks.nodeId, u.id));
           const out = stamp ? await restampRacedCreate(tx, u.id, stamp, home?.createWs ?? null) : u;
           // The bytes, last: a rename over the file (its old bytes kept
-          // until the flip settles).
-          if (place) await place();
+          // until the flip settles). A retried flip places once: the record
+          // stays the one taken when the link was made.
+          if (place) {
+            if (!placement?.kept() && keepAt) {
+              keptAs = {
+                sha256: typeof oldData.sha256 === 'string' ? oldData.sha256 : null,
+                filename: typeof oldData.filename === 'string' ? oldData.filename : filename,
+              };
+            }
+            await place();
+          }
           // The kept bytes' version row, in this transaction: a flip that
           // does not land takes it back with the bytes. Old bytes that were
-          // not there (a row whose file was lost) keep no version.
-          if (versionId && versionRel && placement?.kept()) {
+          // not there (a row whose file was lost) keep no version. Its size
+          // is the kept file's own.
+          if (versionId && versionRel && versionAbs && keptAs && placement?.kept()) {
             await recordFileVersion(tx, {
               id: versionId,
               ownerId: args.ownerId,
               fileId: row.id,
               rel: versionRel,
-              sizeBytes: Number(oldData.size_bytes ?? 0),
-              sha256: typeof oldData.sha256 === 'string' ? oldData.sha256 : null,
-              filename: typeof oldData.filename === 'string' ? oldData.filename : filename,
+              sizeBytes: (await fsp.stat(versionAbs)).size,
+              sha256: keptAs.sha256,
+              filename: keptAs.filename,
               trigger: args.restoreOf ? 'pre_restore' : 'replace',
               restoredFrom: args.restoreOf?.seq ?? null,
             });
@@ -646,14 +678,14 @@ export function overwriteSteps(
   /** The put-back's lock transaction (tests stand in for it). */
   lockTx: typeof brokerLockTx = brokerLockTx,
   /** Where the old bytes are kept as a version (file-history.ts), if
-   *  they are. */
-  historyAt?: string,
+   *  they are: asked when the bytes are placed (overwritePlacement). */
+  historyAt?: () => string | undefined,
 ) {
   const placement = overwritePlacement(staged, historyAt);
   const putBack = async (why: string) => {
     if (!(await placedBytesIntact(staged))) {
       console.error(
-        `[files] ${why}: another write's bytes are in the file now; the old bytes stay under a staging name for the staged-leftover sweep`,
+        `[files] ${why}: another write's bytes are in the file now; the old bytes this write kept are left for a sweep (a staging name: the staged-leftover sweep; a history entry no row names: the store sweep, an hour on)`,
       );
       return;
     }
@@ -1121,9 +1153,35 @@ export async function deleteFileById(args: {
   // What the bytes are, read under the row's lock: the commit hook below
   // unlinks only these.
   let was: FileIdentity | null = null;
+  // A deleted file keeps its bytes as a last version (file history): the
+  // purge's clock starts at that delete, and nothing is lost before it.
+  const keepsHistory = !!filename && !foldedFilePath(node) && fileHistoryKept(node.path);
+  let kept = false;
   try {
     await withDeadlockRetry(() =>
       withNodeDeleteHeads([node.id], async (tx) => {
+        // Linked under the row's lock, the row written before its file's
+        // delete (the row needs the file there). A delete that does not
+        // land leaves a link no row names: the store sweep's.
+        const at = keepsHistory ? diskPathForFile(node.path, filename) : null;
+        if (at) {
+          const versionId = randomUUID();
+          const rel = fileVersionRelPath(args.ownerId, node.id, versionId);
+          const abs = fileVersionAbsPath(rel);
+          if (await keepBytesAt(at, abs)) {
+            await recordFileVersion(tx, {
+              id: versionId,
+              ownerId: args.ownerId,
+              fileId: node.id,
+              rel,
+              sizeBytes: (await fsp.stat(abs)).size,
+              sha256: typeof data.sha256 === 'string' ? data.sha256 : null,
+              filename,
+              trigger: 'pre_delete',
+            });
+            kept = true;
+          }
+        }
         const rows = await tx
           .delete(nodes)
           .where(eq(nodes.id, node.id))
@@ -1148,6 +1206,8 @@ export async function deleteFileById(args: {
   // same outer transaction is another inode and stays.
   const seen = was as FileIdentity | null;
   if (seen) await afterOuterCommit(() => deleteFileIfSame(node.path, filename, seen));
+  // The box's history cap holds the kept bytes too.
+  if (kept) await afterOuterCommit(() => pruneFileHistory(null));
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
   // deleted photo doesn't leave its preview behind. Best-effort.
   void deleteThumbnailsFor(typeof data.sha256 === 'string' ? (data.sha256 as string) : null);

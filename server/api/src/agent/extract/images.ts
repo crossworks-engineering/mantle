@@ -124,34 +124,56 @@ export async function maybeExtractEmbeddedImages(
   if (NEW_UPLOAD_ONLY_IMAGE_EXTS.has(ext) && !bytesUnread(data)) return;
 
   // Dedupe: if this document already produced images from its current
-  // bytes, do nothing. Images made before new bytes replaced the file
-  // (data.replaced_at: an upload with replace, an edit, a restore; file
-  // history) are of an older version: they go, and the new bytes' images
-  // are made as for a new upload (the normal path, no extra model work).
-  const prior = await db
-    .select({ id: nodes.id, createdAt: nodes.createdAt, tags: nodes.tags })
-    .from(nodes)
+  // bytes, do nothing. New bytes (a replace or a restore, data.replaced_at;
+  // file history) never remove the images of the older ones: Pages embed
+  // them by id, and data is never thrown away. They are marked
+  // `olderVersion` (an image made from these bytes again, a restore, loses
+  // the mark), and a new pass runs only when a person put the new bytes
+  // there: an agent's, an export's or the system's save keeps the older
+  // images and starts no vision work.
+  const sha = typeof data.sha256 === 'string' ? data.sha256 : null;
+  const replacedAt = typeof data.replaced_at === 'string' ? data.replaced_at : null;
+  // An image's bytes are its file's current ones: made from this sha256, or
+  // (an image from before the mark) made after the last replace.
+  const current = sql`(${nodes.data}->>'sourceSha256' = ${sha ?? ''}
+    or (${nodes.data}->>'sourceSha256' is null
+        and (${replacedAt}::timestamptz is null or ${nodes.createdAt} >= ${replacedAt}::timestamptz)))`;
+  const marked = await db
+    .update(nodes)
+    .set({
+      data: sql`case when ${current} then ${nodes.data} - 'olderVersion'
+                     else ${nodes.data} || '{"olderVersion": true}'::jsonb end`,
+    })
     .where(
       and(
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'file'),
         sql`${nodes.data}->>'sourceFileId' = ${node.id}`,
+        sql`((${nodes.data}->'olderVersion') is not null) = ${current}`,
       ),
     )
-    .limit(500);
-  if (prior.length > 0) {
-    const replacedAt = typeof data.replaced_at === 'string' ? Date.parse(data.replaced_at) : NaN;
-    const stale =
-      Number.isFinite(replacedAt) && prior.every((p) => p.createdAt.getTime() < replacedAt);
-    if (!stale) return;
-    for (const p of prior) {
-      if (!p.tags.includes(EXTRACTED_IMAGE_TAG)) continue;
-      await deleteFileById({ ownerId, fileId: p.id }).catch((err: unknown) => {
-        log('extractor').error(`an older version image was not removed: ${errorMessage(err)}`);
-      });
+    .returning({ id: nodes.id });
+  const prior = (await db.execute(sql`
+    select count(*) filter (where ${current})::int as now, count(*)::int as all
+      from ${nodes}
+     where ${nodes.ownerId} = ${ownerId} and ${nodes.type} = 'file'
+       and ${nodes.data}->>'sourceFileId' = ${node.id}`)) as unknown as {
+    now: number;
+    all: number;
+  }[];
+  if (Number(prior[0]?.now ?? 0) > 0) return;
+  const personStarted = data.replaced_by === 'owner' || data.replaced_by === 'member';
+  if (replacedAt && !personStarted) {
+    if (marked.length > 0) {
+      log('extractor').info(
+        `${marked.length} images marked as from an older version; no new image pass (the new bytes were not a person's save)`,
+      );
     }
+    return;
   }
-
+  // A folder of their own when older images are there (their names would
+  // clash): one per set of bytes.
+  const olderImages = Number(prior[0]?.all ?? 0) > 0;
   const loaded = await loadFileBytes(node);
   if (!loaded) {
     // A byte-load failure used to return silently, which made it
@@ -248,7 +270,7 @@ export async function maybeExtractEmbeddedImages(
       // One folder per file, named by its id only: a new revision has the old
       // file's name and must not hit its images, and the folder is Admin's, so
       // a file Admin cannot read must not show its name there.
-      const fileKey = `file ${node.id.slice(0, 8)}`;
+      const fileKey = `file ${node.id.slice(0, 8)}${olderImages && sha ? ` ${sha.slice(0, 8)}` : ''}`;
       const folderPath = await ensureExtractedImagesFolder({
         ownerId,
         sourceSlug: fileKey,
@@ -277,6 +299,9 @@ export async function maybeExtractEmbeddedImages(
             tags: [EXTRACTED_IMAGE_TAG, `from:${sourceSlug}`],
             data: {
               sourceFileId: node.id,
+              // The bytes it was made from: an image of another sha256 is of
+              // an older version (the dedupe above).
+              ...(sha ? { sourceSha256: sha } : {}),
               sourceOrdinal: img.ordinal,
               sourceTotal: result.images.length,
               ...(img.location ? { sourceLocation: img.location } : {}),

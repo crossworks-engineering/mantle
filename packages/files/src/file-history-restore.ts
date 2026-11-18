@@ -9,7 +9,9 @@
  *
  * The version's file is copied (never linked) into the upload spool, hashed
  * on the way: the history keeps its own bytes whatever later happens to the
- * file in the tree, and bytes that no longer match their row are refused.
+ * file in the tree. The bytes are the version: a hash that differs from its
+ * row (bytes changed on disk before the watcher read them, then replaced)
+ * is logged, never a refusal.
  *
  * Server-only (node:fs).
  */
@@ -29,7 +31,7 @@ const NO_CAP = Number.MAX_SAFE_INTEGER;
  * Put version `versionId` of file `fileId` back. Null when the file or the
  * version is not there for the caller's scope. Refused (the edit check's
  * 403) for a caller who reads the file but does not moderate it, and (409)
- * when the version's bytes are gone or do not match their row.
+ * when the version's bytes are gone.
  */
 export async function restoreFileVersion(
   ownerId: string,
@@ -47,7 +49,9 @@ export async function restoreFileVersion(
   const spooled = await spoolUpload(createReadStream(v.abs), { maxBytes: NO_CAP });
   try {
     if (v.sha256 && spooled.sha256 !== v.sha256) {
-      throw new ConflictError(`v${v.seq} of this file does not match its record on the server`);
+      console.warn(
+        `[files] restore of v${v.seq} of ${fileId}: its bytes differ from the hash on its row; the bytes are restored`,
+      );
     }
     const row = await upsertFile({
       ownerId,

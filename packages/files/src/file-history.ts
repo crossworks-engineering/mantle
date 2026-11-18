@@ -16,8 +16,10 @@
  *    keeps FILE_HISTORY_MAX_MB of them, oldest pruned first, the newest
  *    always (pruneFileHistory, after each overwrite). Pruned files go at
  *    once, so a loop of overwrites never holds more than the cap.
- *  - a deleted file's history goes FILE_HISTORY_ORPHAN_DAYS after its newest
- *    version, in the nightly purge (purgeOrphanFileHistory). No new job.
+ *  - a deleted file keeps its bytes as a last `pre_delete` version
+ *    (keepDeletedFileBytes), and its history goes FILE_HISTORY_ORPHAN_DAYS
+ *    after that delete, in the nightly purge (purgeOrphanFileHistory). No
+ *    new job.
  *
  * Paths: MANTLE_FILES_ROOT/.file-history/<owner>/<file>/<version>.bin, every
  * part a uuid the server made (no name a user gives is ever in it), under
@@ -61,7 +63,8 @@ type HistoryActor = NodeSnapshot['actor'];
 /** The history folder's name under the files root. */
 export const FILE_HISTORY_DIR = '.file-history';
 
-/** A deleted file's history goes this long after its newest version. */
+/** A deleted file's history goes this long after its delete (its
+ *  `pre_delete` version, the newest). */
 export const FILE_HISTORY_ORPHAN_DAYS = 30;
 
 /** The kinds of row a file's history holds. */
@@ -114,6 +117,12 @@ function actorNow(ownerId: string): { actor: HistoryActor; actorLoginId: string 
   };
 }
 
+/** Who writes new bytes over a file now, as a version's row names it
+ *  (data.replaced_by: a new image pass is a person's only, images.ts). */
+export function fileWriteActor(ownerId: string): HistoryActor {
+  return actorNow(ownerId).actor;
+}
+
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
@@ -132,7 +141,9 @@ export async function recordFileVersion(
     sizeBytes: number;
     sha256: string | null;
     filename: string | null;
-    trigger: FileVersionTrigger;
+    /** `pre_delete`: the bytes a deleted file had (deleteFileById); no
+     *  route lists it (a deleted file is read by none), the purge's clock. */
+    trigger: FileVersionTrigger | 'pre_delete';
     restoredFrom?: number | null;
   },
 ): Promise<void> {
@@ -337,30 +348,36 @@ async function removeVersionFiles(paths: readonly (string | null)[]): Promise<vo
 /**
  * Prune after new bytes replaced `fileId`: its versions past the newest
  * FILE_HISTORY_KEEP, then every file's versions past FILE_HISTORY_MAX_MB
- * for the whole box, oldest first (the newest version of the box always
+ * for the whole box (that part alone after a delete kept a file's bytes:
+ * `fileId` null), oldest first (the newest version of the box always
  * stays, whatever its size). Each one statement, so a version written
  * meanwhile is never removed. The named system step (the brain's
  * bookkeeping: the box cap removes versions of files the caller does not
  * read). Never fails the write it follows: a failure is logged, and the
  * next write prunes again.
  */
-export async function pruneFileHistory(fileId: string): Promise<void> {
+export async function pruneFileHistory(fileId: string | null): Promise<void> {
+  const check = fileId
+    ? ({ items: [fileId], need: 'edit' } as const)
+    : ({ items: 'none', why: 'the box cap, after a delete kept the bytes of a file' } as const);
   try {
-    await systemStep('file-history', { items: [fileId], need: 'edit' }, async () => {
+    await systemStep('file-history', check, async () => {
       const keep = envNum('FILE_HISTORY_KEEP');
       const maxBytes = envNum('FILE_HISTORY_MAX_MB') * 1024 * 1024;
-      const perFile = await db
-        .delete(nodeSnapshots)
-        .where(
-          sql`${nodeSnapshots.id} in (
+      const perFile = !fileId
+        ? []
+        : await db
+            .delete(nodeSnapshots)
+            .where(
+              sql`${nodeSnapshots.id} in (
             select id from (
               select id, row_number() over (order by seq desc) as rn
                 from node_snapshots
                where node_id = ${fileId} and node_kind = 'file'
             ) ranked
             where rn > ${keep})`,
-        )
-        .returning({ dbPath: nodeSnapshots.dbPath });
+            )
+            .returning({ dbPath: nodeSnapshots.dbPath });
       const boxWide = await db
         .delete(nodeSnapshots)
         .where(
@@ -388,8 +405,10 @@ export async function pruneFileHistory(fileId: string): Promise<void> {
 }
 
 /**
- * The history of files that are gone, FILE_HISTORY_ORPHAN_DAYS after its
- * newest version: rows and files. Part of the nightly `app-trash-purge`
+ * The history of files that are gone, FILE_HISTORY_ORPHAN_DAYS after the
+ * delete: its newest version, the `pre_delete` one the delete kept (a file
+ * whose delete kept none, its bytes gone or no history where it lived:
+ * after its newest version). Rows and files. Part of the nightly `app-trash-purge`
  * sweep (as purgeOrphanTableHistory). Plain SQL and file removal, no model.
  */
 export async function purgeOrphanFileHistory(

@@ -73,7 +73,7 @@ const SNAPSHOT_FILE =
  * hold is that root's. A file goes when a tombstone says the row that
  * named it went (0284), or (an accepted copy) when it is an old revision
  * of a table whose row names another; a file with neither a row nor a
- * tombstone is only reported.
+ * tombstone is only reported (a file version's goes: noRowGoes).
  */
 export function snapshotSweepSpecs(): SweepSpec[] {
   const roots = storeRoots();
@@ -119,7 +119,13 @@ export function snapshotSweepSpecs(): SweepSpec[] {
     part('tablesnap', roots.tables, '_snapshots', snapshotOf),
     // A file's kept versions (file history): <owner>/<file>/<version>.bin
     // under the files root's history folder.
-    part('filesnap', fileHistoryRoot(), '', (rel) => FILE_VERSION_FILE.exec(rel)?.[1] ?? null),
+    // A version file no row names (a crash between its link and its
+    // commit, an overwrite that never landed) goes an hour on: nothing
+    // else would ever take it, and the box cap does not count it.
+    {
+      ...part('filesnap', fileHistoryRoot(), '', (rel) => FILE_VERSION_FILE.exec(rel)?.[1] ?? null),
+      noRowGoes: true,
+    },
     part('accepted', roots.tables, SNAPSHOT_OWNER, (rel) =>
       rel.includes('/') || rel.endsWith('.draft.sqlite') ? null : revisionNode(rel, 'tables'),
     ),
