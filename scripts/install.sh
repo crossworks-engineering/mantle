@@ -893,6 +893,7 @@ ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated
 # brain. Never rotated on re-run. (The updater does the same on a roll.)
 ensure SANDBOXD_TOKEN      "gen_hex 32"
 ensure GOTENBERG_PASSWORD  "gen_hex 32"   # the documents engine's basic-auth password; never rotated
+ensure SYNC_TOKEN          "gen_hex 32"   # the Sync sidecar's bearer both ways with the brain; never rotated
 # The parser service's bearer token (core, always on; docs/parser.md).
 ensure PARSER_TOKEN        "gen_hex 32"
 # The service gateway's bearer token (core, always on; docs/gateway.md).

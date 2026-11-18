@@ -21,6 +21,7 @@
  * (MULTIPART_CEILINGS).
  */
 import { CACHE_CONTROL } from './cache-control';
+import { MAIL_INGEST_BODY_BYTES } from '@mantle/email/wire';
 
 const MB = 1024 * 1024;
 
@@ -130,6 +131,8 @@ export function bodyCeilingFor(path: string): number | null {
   if (path.startsWith('/s/')) return SHARE_BODY_CEILING_BYTES;
   if (path === '/api/livekit/webhook') return WEBHOOK_BODY_CEILING_BYTES;
   if (path === '/api/control/call') return CONTROL_BODY_CEILING_BYTES;
+  // One message the Sync sidecar fetched, attachments in base64 (wire.ts).
+  if (path === '/api/sidecar/mail/ingest') return MAIL_INGEST_BODY_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }

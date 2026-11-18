@@ -225,6 +225,11 @@ x-app-env: &app-env
   # with the profile off (or the token unset) they refuse cleanly.
   SANDBOXD_URL: ${SANDBOXD_URL:-http://sandboxd:8090}
   SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
+  # The Sync sidecar (compose profile `sync`, server/sync; docs/services.md,
+  # "Sync"). Always present, like the sandbox pair: the profile decides what
+  # runs. The token is the bearer both ways between the brain and the sidecar.
+  SYNC_URL: ${SYNC_URL:-http://sync:8099}
+  SYNC_TOKEN: ${SYNC_TOKEN:-}
   # Calls (compose profile `calls`, the livekit service below; calls plan
   # page 886126b4). Always present, like the sandbox pair: the profile decides
   # what runs and the brain reads the profile, so an unused key pair is inert.
@@ -792,6 +797,9 @@ services:
     environment:
       NODE_ENV: production
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0'
+      # The bearer both ways with the brain, and where it reaches the brain.
+      SYNC_TOKEN: ${SYNC_TOKEN:-}
+      SYNC_BRAIN_URL: http://web:3000
     labels: ['autoheal=true']
     healthcheck:
       test:

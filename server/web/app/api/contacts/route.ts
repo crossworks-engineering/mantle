@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { countContacts, createContact, listContacts } from '@/lib/contacts';
 import { recordIngest } from '@mantle/tracing';
+import { enqueueBackfills } from '@mantle/email';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const { contact } = await createContact(user.id, {
+  const { contact, addedEmails } = await createContact(user.id, {
     firstName: parsed.data.first_name,
     lastName: parsed.data.last_name,
     company: parsed.data.company,
@@ -65,6 +66,8 @@ export async function POST(req: Request) {
     description: parsed.data.description,
     tags: parsed.data.tags ?? [],
   });
+  // Each new address pulls its sender's recent mail in (Sync on only).
+  void enqueueBackfills(user.id, addedEmails);
   void recordIngest({
     source: 'contact_create',
     ownerId: user.id,

@@ -271,6 +271,16 @@ export {
   type GatewayCallEntry,
 } from './service-gateway-calls';
 export {
+  SERVICE_STATE_SERVICE_RE,
+  SERVICE_STATE_KEY_RE,
+  SERVICE_STATE_MAX_BYTES,
+  SERVICE_STATE_LIST_MAX,
+  getServiceState,
+  listServiceState,
+  putServiceState,
+  deleteServiceState,
+} from './service-state';
+export {
   READ_ONLY_CALLER_ERROR,
   GateNotReadyError,
   PreRunSideEffectError,

@@ -29,6 +29,7 @@ import {
   type ContactRow,
   type CreateContactInput,
 } from '@mantle/content';
+import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
@@ -206,7 +207,7 @@ const contact_create: BuiltinToolDef = {
   },
   name: 'Add a contact',
   description:
-    "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist:** when mail sync runs (the Sync service), only mail from a contact is kept in the brain." +
+    "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist:** when mail sync runs (the Sync service), only mail from a contact is kept in the brain, and a new contact's address pulls in that sender's last 90 days of mail." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
@@ -254,7 +255,10 @@ const contact_create: BuiltinToolDef = {
         : [],
     };
     try {
-      const { contact } = await createContact(ctx.ownerId, fields);
+      const { contact, addedEmails } = await createContact(ctx.ownerId, fields);
+      // Each new address pulls its sender's recent mail in (best effort,
+      // Sync on only; never fails the create).
+      await enqueueBackfills(ctx.ownerId, addedEmails);
       ctx.step?.setOutput({ id: contact.id, title: contact.title });
       return { ok: true, output: compact(contact) };
     } catch (err) {
@@ -281,7 +285,7 @@ const contact_update: BuiltinToolDef = {
   preconditions: CONTACT_ID_PRE,
   name: 'Update a contact',
   description:
-    "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards). Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'." +
+    "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards); a newly added entry pulls in its last 90 days of mail when Sync is on. Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
@@ -342,6 +346,7 @@ const contact_update: BuiltinToolDef = {
     try {
       const result = await updateContact(ctx.ownerId, id, patch);
       if (!result) return notFound('contact', id, 'contact_find / contact_list');
+      await enqueueBackfills(ctx.ownerId, result.addedEmails);
       ctx.step?.setOutput({ id: result.contact.id, title: result.contact.title });
       return { ok: true, output: compact(result.contact) };
     } catch (err) {

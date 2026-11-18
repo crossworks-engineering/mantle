@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { deleteContact, getContact, updateContact } from '@/lib/contacts';
+import { enqueueBackfills } from '@mantle/email';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
@@ -68,6 +69,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     tags: parsed.data.tags,
   });
   if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // Each new address pulls its sender's recent mail in (Sync on only).
+  void enqueueBackfills(user.id, result.addedEmails);
   return NextResponse.json({ contact: result.contact });
 }
 

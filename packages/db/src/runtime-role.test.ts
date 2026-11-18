@@ -640,7 +640,9 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // spots login-credential and control-center only).
 // pipeline_state all (0373: the state of a pipeline, upserted by the settings
 // area's route and pipeline_set; its write is the NARROW_WRITES line).
-const NARROW_COUNTS = { all: 108, read: 51, none: 10 };
+// service_state none (0380: the Sync sidecar's sealed accounts, feeds and
+// cursors, read and written by the sidecar routes on the system pool only).
+const NARROW_COUNTS = { all: 108, read: 51, none: 11 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
