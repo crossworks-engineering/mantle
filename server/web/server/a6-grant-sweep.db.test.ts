@@ -31,6 +31,17 @@
  * (NAMED_CHANGES below, each with its reason), whose new answer is in
  * __snapshots__/a6-grant-sweep-changes.txt.
  *
+ * Re-recorded for the owner's rule on shared items (owner-approved, dev-brain
+ * page d7313c67, 2026-11-18; migration 0382): 50 cells moved, each by the
+ * rule. A Moderator of a workspace that holds the item (modP through P,
+ * modQR through Q, the owner through P) gains edit, its link, the serve
+ * candidates and placesInto; an Admin user with the tick on Admin (the
+ * owner here; adminAll and adminNoUsers sit in Admin without it, a drift
+ * 0298 closed) gains manage: the panel's mayManage, mayLink of an app,
+ * addable, the previews and move previews, linkRights' manage; and the item
+ * caps carry the new mayMove (true for system work). The cells of removed
+ * code (REMOVED_CELLS) keep main's record.
+ *
  * Per-login items (A6 fix round 1, M1): an item with nodes.login_id set (a
  * chat summary note, a Telegram attachment) is its own login's only. Each
  * login's own per-login note and page, through the panel, its previews,
