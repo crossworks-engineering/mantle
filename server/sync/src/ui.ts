@@ -1,7 +1,7 @@
 /**
  * The Sync sidecar's own screens (Sync service plan M2, decision 3): plain
  * HTML forms, no script. The client shows them in a sandboxed frame through
- * the brain's one generic route (/api/services/sync/ui/*?t=<ticket>), which
+ * the brain's one generic route (/api/services/sync/ui?p=<path>&t=<ticket>), which
  * checks the frame ticket and hands each request here with the token, the
  * base path and a fresh ticket for the links and forms of the answer.
  *
@@ -48,8 +48,10 @@ function esc(v: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+/** A screen's address through the brain: the one route, the screen's path
+ *  in `p`, the ticket in `t`. */
 function href(req: UiRequest, path: string): string {
-  return `${req.base}${path}?t=${encodeURIComponent(req.ticket)}`;
+  return `${req.base}?p=${encodeURIComponent(path)}&t=${encodeURIComponent(req.ticket)}`;
 }
 
 const STYLE = `

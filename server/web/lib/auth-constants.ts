@@ -131,6 +131,14 @@ export const PUBLIC_PATHS = [
   // front door is refused (server/web/lib/gateway-internal.ts).
   '/api/gateway/registry',
   '/api/gateway/calls',
+  // The Sync sidecar's calls (Sync plan M2, lib/sidecar.ts): no session; the
+  // credential is the sidecar's token, and a request that came through the
+  // front door is refused, as the gateway's.
+  '/api/sidecar',
+  // The Sync service's own screens in a sandboxed frame (lib/service-screens.ts):
+  // no cookie reaches the frame; the credential is the screen ticket in `t`,
+  // checked with its login's area on every request.
+  '/api/services/sync/ui',
   // SCIM user provisioning (docs/scim.md): no session; the credential is
   // the box's SCIM token, checked by each route (lib/scim/service.ts
   // scimGate), and with no token every path answers 404.

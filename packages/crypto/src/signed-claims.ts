@@ -16,10 +16,11 @@ import { env } from '@mantle/config';
  *  app tool confirmation, company sign-in flow state ('o'), company sign-in
  *  ticket ('h', the short proof of a password sign-in that may start a
  *  link) and company sign-in start ticket ('s', a flow begun on a session,
- *  opened in a browser: server/web lib/oidc). 'c' (the retired team-chat
+ *  opened in a browser: server/web lib/oidc), and an optional service's
+ *  screen ticket ('u', the Sync account screens in a frame). 'c' (the retired team-chat
  *  credential), 't' (the retired team-visitor cookie) and 'v' (the retired
  *  contact visitor cookie, 0378) are reserved: no verifier takes them. */
-export type TokenKind = 'm' | 'a' | 'f' | 'r' | 'q' | 'o' | 'h' | 's';
+export type TokenKind = 'm' | 'a' | 'f' | 'r' | 'q' | 'o' | 'h' | 's' | 'u';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every

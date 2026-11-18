@@ -416,6 +416,34 @@ export function verifyAppFrameTicket(
   return out;
 }
 
+// ── Service screen tickets (`k:'u'`) ─────────────────────────────────────────
+// An optional service's own screens (the Sync account screens, Sync plan M2)
+// in a sandboxed frame: the frame's requests carry no cookie, so each link
+// and form of a screen carries this ticket (`?t=`), minted by the parent
+// (POST /api/services/:name/frame-ticket) and renewed by every screen the
+// brain hands back. It names one service and the login that opened it; the
+// screen route re-checks that the login still holds the connectors area. Its
+// own kind: an app or canvas frame never takes it, nor it theirs.
+
+const SERVICE_FRAME_TICKET_TTL_SECONDS = 15 * 60;
+
+export type ServiceFrameTicket = { ownerId: string; service: string; actorId: string };
+
+export function buildServiceFrameTicket(t: ServiceFrameTicket): string {
+  return signClaims(
+    { uid: t.ownerId, svc: t.service, act: t.actorId, k: 'u' },
+    SERVICE_FRAME_TICKET_TTL_SECONDS,
+  ).value;
+}
+
+export function verifyServiceFrameTicket(value: string): ServiceFrameTicket | null {
+  const c = verifySigned(value, 'u');
+  if (!c || typeof c.uid !== 'string' || typeof c.svc !== 'string' || typeof c.act !== 'string') {
+    return null;
+  }
+  return { ownerId: c.uid, service: c.svc, actorId: c.act };
+}
+
 /** Mint the frame ticket of a Present canvas: the app-frame ticket shape,
  *  bound to one present, marked as a canvas's. An Admin user's names the
  *  login (`actorId`); a member's names its login (`loginId`), and GET

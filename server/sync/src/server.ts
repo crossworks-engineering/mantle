@@ -9,7 +9,7 @@
  *
  *   POST /send       send a message from a linked mailbox (send.ts)
  *   POST /backfill   a new contact's last 90 days of mail, in the background
- *   GET|POST /ui/*   the account screens (ui.ts), through the brain's frame
+ *   GET|POST /ui/*   the account screens (ui.ts), through the brain's screen
  *                    route, which adds the base path and a fresh ticket
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
