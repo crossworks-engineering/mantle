@@ -221,6 +221,9 @@ export const ADMIN_PAST_GATE_SITES = Object.freeze({
       scopeOutsideAdmin: {
         'packages/tools/src/app-render/tool.ts': 1,
         'packages/tools/src/builtins-apps.ts': 4,
+        // A read decision: whether a file's entity mentions are counted
+        // (entity edges are read in an Admin scope only, 0265).
+        'packages/tools/src/files/processing.ts': 1,
         'packages/tools/src/outside-admin.ts': 1,
       },
       delegationTurnOf: {

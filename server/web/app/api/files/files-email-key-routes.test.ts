@@ -3,7 +3,7 @@
  * attachments of synced mail are file nodes, so for a key limited to Files
  * the Files routes (/api/v1/files aliases them) leave them out of the
  * recent list and a folder list, and answer 404 for one by id, its bytes
- * included. A session, an all-areas key and a key with Search see them as
+ * and its processing included. A session, an all-areas key and a key with Search see them as
  * before. The lookup itself is pinned by
  * packages/files/src/email-attachments.db.test.ts.
  */
@@ -33,7 +33,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ownerCallerAtRead: vi.fn(async () => ({ id: OWNER })),
 }));
 
-const row = (id: string) => ({ id, filename: `${id.slice(0, 4)}.pdf`, updatedAt: '2026-10-01' });
+const row = (id: string) => ({
+  id,
+  filename: `${id.slice(0, 4)}.pdf`,
+  updatedAt: '2026-10-01',
+  extraction: { state: 'indexed' as const },
+});
 
 vi.mock('@mantle/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -53,6 +58,8 @@ vi.mock('@mantle/files', async (importOriginal) => ({
 vi.mock('@mantle/content/pipeline-state', async (orig) => ({
   ...(await orig<typeof import('@mantle/content/pipeline-state')>()),
   ownManifests: async () => [],
+  // Off nowhere: the status's read of the off lists needs no database here.
+  offListsOf: async () => new Map(),
 }));
 
 vi.mock('@/lib/files', async (importOriginal) => ({
@@ -124,6 +131,11 @@ describe('Files routes and a key without the Search area', () => {
       GET(r, ctxOf(PLAIN)),
     );
     expect(plain.status).toBe(200);
+    const processing = (await import('./files/[id]/processing/route')).GET;
+    const proc = await as(filesOnly, `http://x/api/v1/files/${MAIL}/processing`, (r) =>
+      processing(r, ctxOf(MAIL)),
+    );
+    expect(proc.status).toBe(404);
   });
 
   it('leave a session, an all-areas key and a Search key as before', async () => {

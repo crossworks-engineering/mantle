@@ -18,14 +18,34 @@
  * are read at all, so the documents of a brain take no place in the scan.
  */
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
-import { fileDataExt, fileDataListKeys, fileDataRefusals, tableFileFilter } from './file-data';
+import { db, extractJobsFor, itemHomeSql, nodes, type ExtractJobState } from '@mantle/db';
+import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
+import {
+  fileDataExt,
+  fileDataListKeys,
+  fileDataRefusals,
+  tableFileFilter,
+  withDataView,
+} from './file-data';
+import type { FileExtraction } from './extraction-status';
+import { fileStatusOf, type FileStatus } from './file-status';
+import {
+  anyPipelineOff,
+  pipelineVersionsOf,
+  staleOf,
+  type InstalledPipeline,
+  type PipelineReadStamp,
+  type ReadByStamp,
+} from './read-stamp';
 import {
   fileDbPaths,
   fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
+  finishedFileDbNames,
   readFileDbNone,
   type FileDbNoneWord,
 } from './file-dbs';
@@ -63,7 +83,7 @@ const SCAN_PAGE = 500;
 const DISK_BATCH = 32;
 
 /** A row's state on disk: its database, its word, or neither. */
-async function stateOf(
+export async function fileDbStateOf(
   id: string,
   sha: unknown,
 ): Promise<{ state: DataFileState; bytes: number | null; named: boolean }> {
@@ -128,7 +148,9 @@ export async function listDataFiles(
     const page = rows.filter((row) => !refused.has(row.id));
     for (let i = 0; i < page.length && files.length <= limit; i += DISK_BATCH) {
       const batch = page.slice(i, i + DISK_BATCH);
-      const states = await Promise.all(batch.map((row) => stateOf(row.id, fileSha256Of(row))));
+      const states = await Promise.all(
+        batch.map((row) => fileDbStateOf(row.id, fileSha256Of(row))),
+      );
       batch.forEach((row, j) => {
         const { state, bytes, named } = states[j]!;
         const ext = fileDataExt(row);
@@ -154,4 +176,102 @@ export async function listDataFiles(
   const truncated = files.length > limit || (more && offset >= DATA_FILES_SCAN);
   files.length = Math.min(files.length, limit);
   return { files, truncated };
+}
+
+/** A row's state for its status, from the folder's names (one read for
+ *  the whole list): built or not is the name alone; only a `.none` is
+ *  opened, for its word. No size: that is the processing answer's. */
+async function rowDbState(id: string, sha: unknown, names: Set<string>): Promise<DataFileState> {
+  const own = fileDbPaths(id, sha);
+  if (!own) return 'not-built';
+  if (names.has(path.basename(own.sqlite))) return 'ready';
+  if (!names.has(path.basename(own.none))) return 'not-built';
+  return (await readFileDbNone(id, sha)) ?? 'not-built';
+}
+
+/** The queue's jobs of these rows, or none when the queue cannot be read:
+ *  the job is a side note of a row, and never breaks a list of files. The
+ *  fault is logged. */
+async function jobsOrNone(ids: readonly string[]): Promise<Map<string, ExtractJobState>> {
+  try {
+    return await extractJobsFor(ids);
+  } catch (err) {
+    log('files').warn(`file status: the read queue was not read: ${errorMessage(err)}`);
+    return new Map();
+  }
+}
+
+/** The home workspace of each of these rows that has a pipeline stamp, in
+ *  the caller's scope (rows it listed). Read only when a pipeline is off
+ *  somewhere: else no row's stale rule needs it. */
+async function homesOf(
+  rows: readonly { id: string; pipelineRead?: PipelineReadStamp }[],
+  installed: readonly InstalledPipeline[] | undefined,
+): Promise<Map<string, string | null>> {
+  const ids = rows.filter((r) => r.pipelineRead).map((r) => r.id);
+  if (!installed || ids.length === 0 || !anyPipelineOff(installed)) return new Map();
+  const got = await db
+    .select({ id: nodes.id, home: itemHomeSql() })
+    .from(nodes)
+    .where(sql`${nodes.id} = any (${`{${ids.join(',')}}`}::uuid[])`);
+  return new Map(got.map((r) => [r.id, r.home]));
+}
+
+/**
+ * File rows with their Data view (withDataView) and their compact `status`
+ * (file-status.ts): ONE read of the queue for the whole list
+ * (extractJobsFor; a queue that cannot be read gives rows with no `job`),
+ * and ONE read of the folder of databases when a row has a Data view
+ * (finishedFileDbNames); a `.none` is opened for its word, a few at a time.
+ * A folder of many built spreadsheets costs no look per file. The rows are
+ * what the caller's scope already read. `stale` and `pipeline` come from
+ * the row's own stamps (read-stamp.ts) and `installed`, the pipelines of the
+ * box that run with their off lists (fileStatusPipelines in
+ * @mantle/content): no read, but the rows' homes when a pipeline is off
+ * somewhere. Without `installed`, only the reader's stamp decides `stale`.
+ */
+export async function withFileStatus<
+  T extends {
+    id: string;
+    filename: string;
+    sha256: unknown;
+    extraction: FileExtraction;
+    readBy?: ReadByStamp;
+    pipelineRead?: PipelineReadStamp;
+  },
+>(
+  rows: readonly T[],
+  dbExts: ReadonlySet<string>,
+  installed?: readonly InstalledPipeline[],
+): Promise<(T & { dataView: boolean; status: FileStatus })[]> {
+  if (rows.length === 0) return [];
+  const versions = installed ? pipelineVersionsOf(installed) : undefined;
+  const [viewed, jobs, homes] = await Promise.all([
+    withDataView(rows, dbExts),
+    jobsOrNone(rows.map((r) => r.id)),
+    homesOf(rows, installed),
+  ]);
+  const names = viewed.some((row) => row.dataView)
+    ? await finishedFileDbNames()
+    : new Set<string>();
+  const out: (T & { dataView: boolean; status: FileStatus })[] = [];
+  for (let i = 0; i < viewed.length; i += DISK_BATCH) {
+    const batch = viewed.slice(i, i + DISK_BATCH);
+    const dbs = await Promise.all(
+      batch.map((row) => (row.dataView ? rowDbState(row.id, row.sha256, names) : undefined)),
+    );
+    batch.forEach((row, j) => {
+      out.push({
+        ...row,
+        status: fileStatusOf({
+          extraction: row.extraction.state,
+          job: jobs.get(row.id),
+          db: dbs[j],
+          stale: staleOf({ ...row, home: homes.get(row.id) ?? null }, versions),
+          pipeline: row.pipelineRead?.name,
+        }),
+      });
+    });
+  }
+  return out;
 }

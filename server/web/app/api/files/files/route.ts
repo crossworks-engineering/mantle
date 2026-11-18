@@ -16,11 +16,11 @@ import {
   maxStreamedUploadBytes,
   sweepSpool,
   FILES_ROOT_LABEL,
-  withDataView,
+  withFileStatus,
 } from '@mantle/files';
 import { EXTRACTION_STATES, type ExtractionState } from '@mantle/files/extraction-status';
 import { recordIngest } from '@mantle/tracing';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { fileStatusPipelines } from '@mantle/content/pipeline-registry';
 import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { firstIssue } from '@/lib/zod-issue';
@@ -84,7 +84,9 @@ export async function GET(req: Request) {
   // (access matrix M4): they are file nodes, so Files would list them.
   // Each brain row carries `dataView`: whether this kind of file has a Data
   // view (withDataView), so the client holds no list of its own; the view
-  // itself gives the answer or the refusal.
+  // itself gives the answer or the refusal. And `status`, the compact state
+  // its icon badge draws (withFileStatus, @mantle/client-types FileStatus):
+  // one read of the queue for the whole list.
   const withoutMail = async <T extends { id: string }>(rows: T[]): Promise<T[]> => {
     if (callerMayReadEmail() || rows.length === 0) return rows;
     const mail = await emailAttachmentIds(
@@ -94,7 +96,7 @@ export async function GET(req: Request) {
     return rows.filter((r) => !mail.has(r.id));
   };
   // The file types of the box that get a database (the registry).
-  const { dbExts } = await boxPipelines(user.id);
+  const { dbExts, installed } = await fileStatusPipelines(user.id);
   if ('data' in parsed.data) {
     // The private file and member email rules are inside (fileDataRefusals);
     // a key's email rule is this route's, as for the other lists.
@@ -113,7 +115,9 @@ export async function GET(req: Request) {
       state: parsed.data.extraction,
       under: parsed.data.under,
     });
-    const files = await withoutMail(list.files).then((rows) => withDataView(rows, dbExts));
+    const files = await withoutMail(list.files).then((rows) =>
+      withFileStatus(rows, dbExts, installed),
+    );
     return NextResponse.json({ files: await capped(files), truncated: list.truncated });
   }
   if ('recent' in parsed.data) {
@@ -123,7 +127,7 @@ export async function GET(req: Request) {
         ? []
         : listRecentFiles({ ownerId: user.id, limit })
             .then(withoutMail)
-            .then((rows) => withDataView(rows, dbExts)),
+            .then((rows) => withFileStatus(rows, dbExts, installed)),
       state === 'brain' ? [] : allPrivateRows(user, 'file', { cap: limit ?? 50 }),
     ]);
     const files = [...brain, ...own]
@@ -137,7 +141,7 @@ export async function GET(req: Request) {
       ? []
       : listFiles({ ownerId: user.id, parentPath: parsed.data.parent })
           .then(withoutMail)
-          .then((rows) => withDataView(rows, dbExts)),
+          .then((rows) => withFileStatus(rows, dbExts, installed)),
     state === 'brain' || !atRoot ? [] : allPrivateRows(user, 'file', { sort: 'title' }),
   ]);
   const files = [...brain, ...own].sort((a, b) =>

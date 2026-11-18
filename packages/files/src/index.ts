@@ -251,6 +251,7 @@ export {
   fileDataRow,
   fileDataRows,
   fileDataRowsIn,
+  keyWithoutSearch,
   tableFileFilter,
   tableNamingFile,
   withDataView,
@@ -261,9 +262,43 @@ export {
   DATA_FILES_MAX,
   DATA_FILES_UNDER,
   listDataFiles,
+  fileDbStateOf,
+  withFileStatus,
   type DataFileRow,
   type DataFileState,
 } from './file-db-list';
+export {
+  fileStatusOf,
+  ingestOf,
+  type FileIngest,
+  type FileJob,
+  type FileStatus,
+} from './file-status';
+export {
+  READER_VERSIONS,
+  anyPipelineOff,
+  currentReaderVersion,
+  pipelineReadStampOf,
+  pipelineVersionsOf,
+  readByOf,
+  readByStampOf,
+  readStampsOf,
+  readerKeyOf,
+  staleOf,
+  type InstalledPipeline,
+  type PipelineReadStamp,
+  type PipelineVersions,
+  type ReadByStamp,
+  type ReaderKey,
+} from './read-stamp';
+export {
+  STALE_LIST_DEFAULT,
+  STALE_LIST_MAX,
+  STALE_LIST_STATES,
+  listFilesNeedingAttention,
+  parseStaleCursor,
+  type StaleListState,
+} from './ops/stale';
 
 export {
   ensureRoot,

@@ -384,6 +384,8 @@ export {
   extractQueueBusy,
   extractionQueueCounts,
   type ExtractionQueueCounts,
+  extractJobsFor,
+  type ExtractJobState,
   getProviderAlert,
   isAlertShown,
   isProbedSubject,

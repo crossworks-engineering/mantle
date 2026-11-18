@@ -689,6 +689,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_read',
       // The rows of a table-type file, from its own database.
       'file_sql',
+      // What the brain did with a file, and the items made from it.
+      'file_processing',
+      // The files that need a read again: stale, failed or read in part.
+      // Reading them again (file_reindex) is a member's own act, by hand or
+      // from their MCP connection (mcpOnly, as pipeline_run): in no group.
+      'file_stale_list',
       'file_create',
       'file_rename',
       'folder_rename',

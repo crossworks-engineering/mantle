@@ -1,6 +1,7 @@
 {
  "admin/oauth/rw/null/[]/false:": {
   "sha256": "c51b1be27ae364eec4d53599ef8420816210f66ef13b0226436a857006376252",
+  "sha256": "6e6e6d823a47121aaa94f2e2cde62305347fa460196e3043622f6ca08d4bda6e",
   "names": [
    "app_build",
    "app_create",
@@ -34,6 +35,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -186,8 +188,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -242,6 +246,7 @@
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "7e67414c1a9e7a9c439bf8929f9e41ff40380d8ae0bcd3623faf6746f9c47119",
+  "sha256": "62d5a1e05d17c48701eeb97588ef62880ba0a27cca86018584545cb54d840fdb",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -290,6 +295,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -527,8 +533,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -614,6 +622,7 @@
  },
  "admin/oauth/rw/null/[]/true:settings": {
   "sha256": "1d606b64bbac7c3ef294fd1e4fed32a5f73d81cdb1e8af8f6d3830c11e46e94b",
+  "sha256": "598e24f30b77b104ce007a272b418efd3d774d1d0f70f836103da2d11abbcb11",
   "names": [
    "access_set",
    "app_build",
@@ -654,6 +663,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -853,8 +863,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -927,6 +939,7 @@
  },
  "admin/oauth/rw/null/[]/true:": {
   "sha256": "a2a6496dc98e6e1a054b32cac6e4f82e146abda3e7a77831f85ecdb5817ea8d2",
+  "sha256": "65f7b4104d08cf9cf1cb57316df5966a22aae8fe981f2f239045d840006fc93a",
   "names": [
    "access_set",
    "app_build",
@@ -967,6 +980,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -1144,8 +1158,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -1210,6 +1226,7 @@
  },
  "admin/key/rw/null/[]/false:": {
   "sha256": "dc82b8e1092af53245149c8b5a43328118e7afaca639b6d35c5a5473dec11ab0",
+  "sha256": "542c1cb125d7ed2663fb8bf6d87310e5b7f02dad7f43cc2b3200a0f6bb74cba7",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -1352,8 +1369,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -1406,6 +1425,7 @@
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "507e2210ed3e6e6628828b0b9983f481e0d30da7223002a7e173045963ea7729",
+  "sha256": "8119a58f097bd2d8e1a7fb80505df71a65730f440167c0aaca77009adb1d4e2f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1575,8 +1595,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -1647,6 +1669,7 @@
  },
  "admin/key/rw/null/[]/true:settings": {
   "sha256": "504e9761fe4522dbd16ee66e78e6dab57082cd1fc56797c8f2231eb2b4ced9a9",
+  "sha256": "88dc7caf66bf6c94b1de9799e253febc536495a2ae93a55b26f87131b51128ae",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1806,8 +1829,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -1872,6 +1897,7 @@
  },
  "admin/key/rw/null/[]/true:": {
   "sha256": "e46e8c14a1dab7b70c85e75552bdb19de26f610d2839cf73852df020bc68d198",
+  "sha256": "73e18747ce3a25fae229c6492df372cdd49e82c3e5dba894fb047d64e95da07f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2028,8 +2054,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -2266,6 +2294,7 @@
  },
  "admin/peer/rw/null/[]/false:": {
   "sha256": "dc82b8e1092af53245149c8b5a43328118e7afaca639b6d35c5a5473dec11ab0",
+  "sha256": "542c1cb125d7ed2663fb8bf6d87310e5b7f02dad7f43cc2b3200a0f6bb74cba7",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -2408,8 +2437,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -2462,6 +2493,7 @@
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "507e2210ed3e6e6628828b0b9983f481e0d30da7223002a7e173045963ea7729",
+  "sha256": "8119a58f097bd2d8e1a7fb80505df71a65730f440167c0aaca77009adb1d4e2f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2631,8 +2663,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -2703,6 +2737,7 @@
  },
  "admin/peer/rw/null/[]/true:settings": {
   "sha256": "504e9761fe4522dbd16ee66e78e6dab57082cd1fc56797c8f2231eb2b4ced9a9",
+  "sha256": "88dc7caf66bf6c94b1de9799e253febc536495a2ae93a55b26f87131b51128ae",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2862,8 +2897,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -2928,6 +2965,7 @@
  },
  "admin/peer/rw/null/[]/true:": {
   "sha256": "e46e8c14a1dab7b70c85e75552bdb19de26f610d2839cf73852df020bc68d198",
+  "sha256": "73e18747ce3a25fae229c6492df372cdd49e82c3e5dba894fb047d64e95da07f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3084,8 +3122,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -3146,6 +3186,7 @@
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
   "sha256": "dc82b8e1092af53245149c8b5a43328118e7afaca639b6d35c5a5473dec11ab0",
+  "sha256": "542c1cb125d7ed2663fb8bf6d87310e5b7f02dad7f43cc2b3200a0f6bb74cba7",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -3288,8 +3329,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -3342,6 +3385,7 @@
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
   "sha256": "d24256eafd22b040e534f7d81ca1a2485b79ae6d7f4c177da9f7bcb074bc5a78",
+  "sha256": "3c15fa35733c97337f1fb83d6b7c900a1781ecaea77b6dcb701bb8fa343f4584",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3514,8 +3558,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -3586,6 +3632,7 @@
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
   "sha256": "d55d7acf7c60ce32669af06e49cc1b087af7e42ef20610f9798630c6c9c57036",
+  "sha256": "f80ee8bc5362b8b99806e39b7e05014c55662fa6e8afdd26a74273d453bb4050",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3746,8 +3793,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -3812,6 +3861,7 @@
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
   "sha256": "d5207edba4e43617e77e1fdfc6c2b15f44a41a301673ce5c9e35cda99b91fcc7",
+  "sha256": "5e0b4fbf93b8bb0b1410e6a10135fac02086a81744105d0551ac860ae4c1de06",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3969,8 +4019,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -4031,6 +4083,7 @@
  },
  "admin/oauth/ro/null/[]/false:": {
   "sha256": "8adceb026dd531ae55f232ae755c84f57e580ba0de02b178afc75f064079b7a2",
+  "sha256": "a7c8ac9435148b93e6cc0665154c9b76451e37d2aec3be4d5a697a931c4aa7ba",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4072,8 +4125,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -4128,6 +4183,7 @@
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "d45eb469962daf15c9ba0ca5ec28ee232bc10f8ef011d6ba1363179ab31d6b26",
+  "sha256": "5544575fd5211d6f076dfbd5f49a812c018528dade4a5d51a6c2bce45a6c8464",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4181,8 +4237,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -4266,6 +4324,7 @@
  },
  "admin/oauth/ro/null/[]/true:settings": {
   "sha256": "6d8f4783e09f4a1d4fe12fde2145c5878d6ea8acfeea3c5fa41d8ec02d965b03",
+  "sha256": "8cbdae1805c94e877a65ab593650202956362b2842e593cb899c31c700005dc5",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4312,8 +4371,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -4384,6 +4445,7 @@
  },
  "admin/oauth/ro/null/[]/true:": {
   "sha256": "01521edb392de38beb4390a3a323f21b49d27c45f9f45eff4b7704a16af93328",
+  "sha256": "7f618e518dca1056510260e7c5f7b4a513dc1026a5c93e0652148bbbee9e7f52",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4427,8 +4489,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -4492,6 +4556,7 @@
  },
  "admin/key/ro/null/[]/false:": {
   "sha256": "fbedb9106781165b488db12d3623252541970470e37529f96b716df95ee81069",
+  "sha256": "5bfa39c8dfc7ba08a3076319cec8acc1ddd82b5132aa0efe726e1e9d1d398001",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4533,8 +4598,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -4587,6 +4654,7 @@
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "fbe3272354a45a28fe1f6c42fb07ee0ef72e3d0c608cd73e893dd050382494f3",
+  "sha256": "8550de02cfb603223a0c05b0bbdd39e81875cde3e62ff0284b340be256c4880c",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4638,8 +4706,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -4708,6 +4778,7 @@
  },
  "admin/key/ro/null/[]/true:settings": {
   "sha256": "66521d5cb695c50fe6cda56755a3d11bd80a93478d7595cba59d8015dbd652ce",
+  "sha256": "94ca63beea88eb111ae53fcab5ca70d63fd89d32255867af6e612abd72542891",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4752,8 +4823,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -4816,6 +4889,7 @@
  },
  "admin/key/ro/null/[]/true:": {
   "sha256": "228052c3e5aa6654ffdb84d548f20a9a4a598e4ed68a1be44aade36ce0beaba9",
+  "sha256": "268e9d20f7428292f0cd496196581addf91a1dd45fda37abebdd25ce784dfaf6",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4858,8 +4932,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -5027,6 +5103,7 @@
  },
  "admin/peer/ro/null/[]/false:": {
   "sha256": "fbedb9106781165b488db12d3623252541970470e37529f96b716df95ee81069",
+  "sha256": "5bfa39c8dfc7ba08a3076319cec8acc1ddd82b5132aa0efe726e1e9d1d398001",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -5068,8 +5145,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -5122,6 +5201,7 @@
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "fbe3272354a45a28fe1f6c42fb07ee0ef72e3d0c608cd73e893dd050382494f3",
+  "sha256": "8550de02cfb603223a0c05b0bbdd39e81875cde3e62ff0284b340be256c4880c",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5173,8 +5253,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -5243,6 +5325,7 @@
  },
  "admin/peer/ro/null/[]/true:settings": {
   "sha256": "66521d5cb695c50fe6cda56755a3d11bd80a93478d7595cba59d8015dbd652ce",
+  "sha256": "94ca63beea88eb111ae53fcab5ca70d63fd89d32255867af6e612abd72542891",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5287,8 +5370,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -5351,6 +5436,7 @@
  },
  "admin/peer/ro/null/[]/true:": {
   "sha256": "228052c3e5aa6654ffdb84d548f20a9a4a598e4ed68a1be44aade36ce0beaba9",
+  "sha256": "268e9d20f7428292f0cd496196581addf91a1dd45fda37abebdd25ce784dfaf6",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5393,8 +5479,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -5454,6 +5542,7 @@
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
   "sha256": "fbedb9106781165b488db12d3623252541970470e37529f96b716df95ee81069",
+  "sha256": "5bfa39c8dfc7ba08a3076319cec8acc1ddd82b5132aa0efe726e1e9d1d398001",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -5495,8 +5584,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -5549,6 +5640,7 @@
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
   "sha256": "fbe3272354a45a28fe1f6c42fb07ee0ef72e3d0c608cd73e893dd050382494f3",
+  "sha256": "8550de02cfb603223a0c05b0bbdd39e81875cde3e62ff0284b340be256c4880c",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5600,8 +5692,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -5670,6 +5764,7 @@
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
   "sha256": "66521d5cb695c50fe6cda56755a3d11bd80a93478d7595cba59d8015dbd652ce",
+  "sha256": "94ca63beea88eb111ae53fcab5ca70d63fd89d32255867af6e612abd72542891",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5714,8 +5809,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -5778,6 +5875,7 @@
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
   "sha256": "228052c3e5aa6654ffdb84d548f20a9a4a598e4ed68a1be44aade36ce0beaba9",
+  "sha256": "268e9d20f7428292f0cd496196581addf91a1dd45fda37abebdd25ce784dfaf6",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5820,8 +5918,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -5881,6 +5981,7 @@
  },
  "member/oauth/rw/null/[]/false:": {
   "sha256": "c51b1be27ae364eec4d53599ef8420816210f66ef13b0226436a857006376252",
+  "sha256": "6e6e6d823a47121aaa94f2e2cde62305347fa460196e3043622f6ca08d4bda6e",
   "names": [
    "app_build",
    "app_create",
@@ -5914,6 +6015,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -6066,8 +6168,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -6122,6 +6226,7 @@
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "7e67414c1a9e7a9c439bf8929f9e41ff40380d8ae0bcd3623faf6746f9c47119",
+  "sha256": "62d5a1e05d17c48701eeb97588ef62880ba0a27cca86018584545cb54d840fdb",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6170,6 +6275,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -6407,8 +6513,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -6494,6 +6602,7 @@
  },
  "member/oauth/rw/null/[]/true:settings": {
   "sha256": "1d606b64bbac7c3ef294fd1e4fed32a5f73d81cdb1e8af8f6d3830c11e46e94b",
+  "sha256": "598e24f30b77b104ce007a272b418efd3d774d1d0f70f836103da2d11abbcb11",
   "names": [
    "access_set",
    "app_build",
@@ -6534,6 +6643,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -6733,8 +6843,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -6807,6 +6919,7 @@
  },
  "member/oauth/rw/null/[]/true:": {
   "sha256": "a2a6496dc98e6e1a054b32cac6e4f82e146abda3e7a77831f85ecdb5817ea8d2",
+  "sha256": "65f7b4104d08cf9cf1cb57316df5966a22aae8fe981f2f239045d840006fc93a",
   "names": [
    "access_set",
    "app_build",
@@ -6847,6 +6960,7 @@
    "file_create",
    "file_history_restore",
    "file_move",
+   "file_reindex",
    "file_rename",
    "file_set_indexing",
    "file_upload",
@@ -7024,8 +7138,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -7090,6 +7206,7 @@
  },
  "member/key/rw/null/[]/false:": {
   "sha256": "dc82b8e1092af53245149c8b5a43328118e7afaca639b6d35c5a5473dec11ab0",
+  "sha256": "542c1cb125d7ed2663fb8bf6d87310e5b7f02dad7f43cc2b3200a0f6bb74cba7",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -7232,8 +7349,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -7286,6 +7405,7 @@
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "507e2210ed3e6e6628828b0b9983f481e0d30da7223002a7e173045963ea7729",
+  "sha256": "8119a58f097bd2d8e1a7fb80505df71a65730f440167c0aaca77009adb1d4e2f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7455,8 +7575,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -7527,6 +7649,7 @@
  },
  "member/key/rw/null/[]/true:settings": {
   "sha256": "504e9761fe4522dbd16ee66e78e6dab57082cd1fc56797c8f2231eb2b4ced9a9",
+  "sha256": "88dc7caf66bf6c94b1de9799e253febc536495a2ae93a55b26f87131b51128ae",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7686,8 +7809,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -7752,6 +7877,7 @@
  },
  "member/key/rw/null/[]/true:": {
   "sha256": "e46e8c14a1dab7b70c85e75552bdb19de26f610d2839cf73852df020bc68d198",
+  "sha256": "73e18747ce3a25fae229c6492df372cdd49e82c3e5dba894fb047d64e95da07f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7908,8 +8034,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -8146,6 +8274,7 @@
  },
  "member/peer/rw/null/[]/false:": {
   "sha256": "dc82b8e1092af53245149c8b5a43328118e7afaca639b6d35c5a5473dec11ab0",
+  "sha256": "542c1cb125d7ed2663fb8bf6d87310e5b7f02dad7f43cc2b3200a0f6bb74cba7",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -8288,8 +8417,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -8342,6 +8473,7 @@
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "507e2210ed3e6e6628828b0b9983f481e0d30da7223002a7e173045963ea7729",
+  "sha256": "8119a58f097bd2d8e1a7fb80505df71a65730f440167c0aaca77009adb1d4e2f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8511,8 +8643,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -8583,6 +8717,7 @@
  },
  "member/peer/rw/null/[]/true:settings": {
   "sha256": "504e9761fe4522dbd16ee66e78e6dab57082cd1fc56797c8f2231eb2b4ced9a9",
+  "sha256": "88dc7caf66bf6c94b1de9799e253febc536495a2ae93a55b26f87131b51128ae",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8742,8 +8877,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -8808,6 +8945,7 @@
  },
  "member/peer/rw/null/[]/true:": {
   "sha256": "e46e8c14a1dab7b70c85e75552bdb19de26f610d2839cf73852df020bc68d198",
+  "sha256": "73e18747ce3a25fae229c6492df372cdd49e82c3e5dba894fb047d64e95da07f",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8964,8 +9102,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -9026,6 +9166,7 @@
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
   "sha256": "dc82b8e1092af53245149c8b5a43328118e7afaca639b6d35c5a5473dec11ab0",
+  "sha256": "542c1cb125d7ed2663fb8bf6d87310e5b7f02dad7f43cc2b3200a0f6bb74cba7",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -9168,8 +9309,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -9222,6 +9365,7 @@
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
   "sha256": "d24256eafd22b040e534f7d81ca1a2485b79ae6d7f4c177da9f7bcb074bc5a78",
+  "sha256": "3c15fa35733c97337f1fb83d6b7c900a1781ecaea77b6dcb701bb8fa343f4584",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9394,8 +9538,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -9466,6 +9612,7 @@
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
   "sha256": "d55d7acf7c60ce32669af06e49cc1b087af7e42ef20610f9798630c6c9c57036",
+  "sha256": "f80ee8bc5362b8b99806e39b7e05014c55662fa6e8afdd26a74273d453bb4050",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9626,8 +9773,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -9692,6 +9841,7 @@
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
   "sha256": "d5207edba4e43617e77e1fdfc6c2b15f44a41a301673ce5c9e35cda99b91fcc7",
+  "sha256": "5e0b4fbf93b8bb0b1410e6a10135fac02086a81744105d0551ac860ae4c1de06",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9849,8 +9999,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -9911,6 +10063,7 @@
  },
  "member/oauth/ro/null/[]/false:": {
   "sha256": "8adceb026dd531ae55f232ae755c84f57e580ba0de02b178afc75f064079b7a2",
+  "sha256": "a7c8ac9435148b93e6cc0665154c9b76451e37d2aec3be4d5a697a931c4aa7ba",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -9952,8 +10105,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -10008,6 +10163,7 @@
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "d45eb469962daf15c9ba0ca5ec28ee232bc10f8ef011d6ba1363179ab31d6b26",
+  "sha256": "5544575fd5211d6f076dfbd5f49a812c018528dade4a5d51a6c2bce45a6c8464",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -10061,8 +10217,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -10146,6 +10304,7 @@
  },
  "member/oauth/ro/null/[]/true:settings": {
   "sha256": "6d8f4783e09f4a1d4fe12fde2145c5878d6ea8acfeea3c5fa41d8ec02d965b03",
+  "sha256": "8cbdae1805c94e877a65ab593650202956362b2842e593cb899c31c700005dc5",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -10192,8 +10351,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -10264,6 +10425,7 @@
  },
  "member/oauth/ro/null/[]/true:": {
   "sha256": "01521edb392de38beb4390a3a323f21b49d27c45f9f45eff4b7704a16af93328",
+  "sha256": "7f618e518dca1056510260e7c5f7b4a513dc1026a5c93e0652148bbbee9e7f52",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10307,8 +10469,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -10372,6 +10536,7 @@
  },
  "member/key/ro/null/[]/false:": {
   "sha256": "fbedb9106781165b488db12d3623252541970470e37529f96b716df95ee81069",
+  "sha256": "5bfa39c8dfc7ba08a3076319cec8acc1ddd82b5132aa0efe726e1e9d1d398001",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10413,8 +10578,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -10467,6 +10634,7 @@
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "fbe3272354a45a28fe1f6c42fb07ee0ef72e3d0c608cd73e893dd050382494f3",
+  "sha256": "8550de02cfb603223a0c05b0bbdd39e81875cde3e62ff0284b340be256c4880c",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10518,8 +10686,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -10588,6 +10758,7 @@
  },
  "member/key/ro/null/[]/true:settings": {
   "sha256": "66521d5cb695c50fe6cda56755a3d11bd80a93478d7595cba59d8015dbd652ce",
+  "sha256": "94ca63beea88eb111ae53fcab5ca70d63fd89d32255867af6e612abd72542891",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10632,8 +10803,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -10696,6 +10869,7 @@
  },
  "member/key/ro/null/[]/true:": {
   "sha256": "228052c3e5aa6654ffdb84d548f20a9a4a598e4ed68a1be44aade36ce0beaba9",
+  "sha256": "268e9d20f7428292f0cd496196581addf91a1dd45fda37abebdd25ce784dfaf6",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10738,8 +10912,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -10907,6 +11083,7 @@
  },
  "member/peer/ro/null/[]/false:": {
   "sha256": "fbedb9106781165b488db12d3623252541970470e37529f96b716df95ee81069",
+  "sha256": "5bfa39c8dfc7ba08a3076319cec8acc1ddd82b5132aa0efe726e1e9d1d398001",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10948,8 +11125,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -11002,6 +11181,7 @@
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
   "sha256": "fbe3272354a45a28fe1f6c42fb07ee0ef72e3d0c608cd73e893dd050382494f3",
+  "sha256": "8550de02cfb603223a0c05b0bbdd39e81875cde3e62ff0284b340be256c4880c",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11053,8 +11233,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -11123,6 +11305,7 @@
  },
  "member/peer/ro/null/[]/true:settings": {
   "sha256": "66521d5cb695c50fe6cda56755a3d11bd80a93478d7595cba59d8015dbd652ce",
+  "sha256": "94ca63beea88eb111ae53fcab5ca70d63fd89d32255867af6e612abd72542891",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11167,8 +11350,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -11231,6 +11416,7 @@
  },
  "member/peer/ro/null/[]/true:": {
   "sha256": "228052c3e5aa6654ffdb84d548f20a9a4a598e4ed68a1be44aade36ce0beaba9",
+  "sha256": "268e9d20f7428292f0cd496196581addf91a1dd45fda37abebdd25ce784dfaf6",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11273,8 +11459,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -11334,6 +11522,7 @@
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
   "sha256": "fbedb9106781165b488db12d3623252541970470e37529f96b716df95ee81069",
+  "sha256": "5bfa39c8dfc7ba08a3076319cec8acc1ddd82b5132aa0efe726e1e9d1d398001",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -11375,8 +11564,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "folder_get_by_path",
    "folder_list",
    "formula_evaluate",
@@ -11429,6 +11620,7 @@
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
   "sha256": "fbe3272354a45a28fe1f6c42fb07ee0ef72e3d0c608cd73e893dd050382494f3",
+  "sha256": "8550de02cfb603223a0c05b0bbdd39e81875cde3e62ff0284b340be256c4880c",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11480,8 +11672,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -11550,6 +11744,7 @@
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
   "sha256": "66521d5cb695c50fe6cda56755a3d11bd80a93478d7595cba59d8015dbd652ce",
+  "sha256": "94ca63beea88eb111ae53fcab5ca70d63fd89d32255867af6e612abd72542891",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11594,8 +11789,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",
@@ -11658,6 +11855,7 @@
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
   "sha256": "228052c3e5aa6654ffdb84d548f20a9a4a598e4ed68a1be44aade36ce0beaba9",
+  "sha256": "268e9d20f7428292f0cd496196581addf91a1dd45fda37abebdd25ce784dfaf6",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11700,8 +11898,10 @@
    "file_get",
    "file_history_list",
    "file_list",
+   "file_processing",
    "file_read",
    "file_sql",
+   "file_stale_list",
    "find_window",
    "folder_get_by_path",
    "folder_list",

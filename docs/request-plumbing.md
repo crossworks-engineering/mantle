@@ -664,8 +664,10 @@ owner rows open to members (142):
   GET /api/events/:id
   GET /api/files/files
   GET /api/files/files/:id/history
+  GET /api/files/files/:id/processing
   GET /api/files/folders
   GET /api/files/folders/:id
+  GET /api/files/stale
   GET /api/formulas
   GET /api/formulas/:id
   GET /api/home
@@ -740,6 +742,7 @@ owner rows open to members (142):
   POST /api/files/files/:id/run
   POST /api/files/folders
   POST /api/files/folders/:id/run
+  POST /api/files/reindex
   POST /api/formulas
   POST /api/formulas/:id/evaluate
   POST /api/notes

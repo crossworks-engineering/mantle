@@ -275,24 +275,118 @@ Surfaces: `file_move` / `file_copy` / `folder_move` / `folder_copy` builtins
 (`files` group); `PATCH {move}` and `POST {copy_to}` on the file/folder API
 routes; the two-pane view in the client.
 
+### 8c. Status and processing
+
+What the brain did with a file, derived live (nothing new is stored):
+
+- **Status** (`FileStatus`, `@mantle/client-types` `dto/file-status`): a
+  compact `status` on every file row of `GET /api/files/files` (a folder,
+  Recent, by read state), on `GET /api/files/files/:id`, and on a file's
+  `TreeItem`. `ingest` (`done`, `partial`, `waiting`, `failed`, `none`)
+  comes from the one read rule (`extractionOf`); `job` (`queued`,
+  `running`) is an extract job in the queue now, ONE read of pg-boss for
+  the whole list (`extractJobsFor`); `db` is the state of the file's own
+  database, for a file with a Data view, from ONE read of the folder of
+  databases (a `.none` is opened for its word; no size on a row).
+  `packages/files/src/file-status.ts` maps it; `withFileStatus`
+  (`file-db-list.ts`) fills a list.
+- **Processing** (`FileProcessing`): `GET /api/files/files/:id/processing`
+  and the `file_processing` tool, one answer (`fileProcessing` in
+  `@mantle/tools`): size, pages, whether it was embedded, the counts of
+  chunks, facts and mentions, its database (state, size, the pipeline that
+  read it and its tabs with their rows), the queue, the last error, and the
+  items made from it (`data.sourceFileId`: extracted images, auto Tables,
+  pages and notes). Its gate is the file's own: a file the caller does not
+  read is a 404, and every count is read in the caller's scope. Facts and
+  items are the current ones (a replaced fact or a superseded item is not
+  counted). `mentions` is null outside an Admin scope (entity edges are
+  read there only). A key limited to some areas sees the items of those
+  areas only, and an app no Table (`derivedReachSql`).
+
+### 8d. Reindex and stale indexes
+
+A file says what read it, so a better reader shows which files it would
+read better, and a person reads them again. Nothing reads a file again by
+itself (cost safety: no trigger, no timer).
+
+- **The stamps** (`packages/files/src/read-stamp.ts`), on the file node's
+  data, written by the brain only (derived keys, migration 0385):
+  `read_by` `{ reader, v }` when a read of the text completes (the extract,
+  and the local read with no model: `server/api/src/agent/extractor.ts`,
+  `extract/gates.ts`); `reader` is the core reader of the type (the parser
+  route: `pdf-parse`, `mammoth`, `exceljs`, `utf8`, ..., or `image` for a
+  picture read by vision). `pipeline_read` `{ id, name, version }` when a
+  Reader pipeline builds the file's database
+  (`packages/content/src/file-database.ts`). New bytes drop both; the next
+  read writes them again.
+- **Versions.** `READER_VERSIONS` in `read-stamp.ts` is the one list of the
+  core readers' versions (each starts at 1). Raise a number when a reader
+  reads better: the files it read at a lower number become stale. A
+  pipeline's version is its manifest's; an installed newer version makes
+  the files its older version read stale. Never lower a number.
+- **Stale** (`staleOf`): a stamp below the version in force. A file with no
+  stamp (read before the stamps, or not read) is NOT stale, so a roll paints
+  nothing stale. A pipeline's stamp decides nothing for a file homed in a
+  workspace where that pipeline is off (no Reader run would follow a
+  reindex there): the lists pass the off lists (`fileStatusPipelines` in
+  `@mantle/content`). The row status carries `stale: true` (only when true) and
+  `pipeline` (the name of the Reader pipeline that built its database);
+  the row carries the stamps as `readBy` and `pipelineRead`. The processing
+  answer has `stale` (true, false, or null for no stamp), `readBy` and
+  `pipelineRead`, each with the version in force (`current`).
+- **Reindex**: `POST /api/files/reindex` `{ ids }` (1 to 200 file ids) and
+  the `file_reindex` tool, one function (`reindexFiles` in `@mantle/tools`).
+  The tool is `mcpOnly` and `peerRisky`, as `pipeline_run`: a member runs it
+  by hand or from their own MCP connection (a key or peer must have it
+  named), and no tool group of an in-brain agent holds it.
+  Each file is read again through the whole pipeline on the existing extract
+  queue, under its caps. First the bytes of each are looked for (one small
+  read): a file whose bytes are in neither place keeps everything it has and
+  is skipped `bytes-missing`. Then the keys the extractor derived from the
+  bytes are dropped (the cached text, the summary, the reader's stamp, a
+  skip or parked verdict) and `markContentChanged` asks for the whole pass
+  (text, chunks, vector, facts, mentions). The old chunks and facts stay
+  until the new pass replaces them. A file with a database (or a word) for
+  its bytes also gets one run of the box's Reader of its type, unless the
+  Reader is off in its home workspace. The Reader asks no model; the
+  `after` chain that follows it may ask one, as at upload, within the box's
+  day cap. A file with none gets its database from the extract, as at
+  upload. Two checks: the edit of each file (`itemWriteVerdicts`: whoever
+  may change the file by hand), and the busy check of the queue (more than
+  50 waiting: nothing is queued). The answer `{ queued, databases, skipped }`
+  names every id not queued with its reason: `not-found`, `not-allowed`,
+  `in-queue`, `busy`, `bytes-missing`. More than 200 ids is a 400 and
+  queues nothing: send the rest in another call.
+- **The list**: `GET /api/files/stale?state=stale|failed|partial&cursor=&limit=`
+  and the `file_stale_list` tool (`fileStaleList` in `@mantle/tools`): one
+  page of file rows with their status, newest first, in the caller's read
+  scope, `next` for the next page and `total` (the page and the total use
+  one predicate, so they agree). `failed` and `partial` are the read states
+  of `extractionOf`. The stale cut is found in two partial
+  indexes (migration 0385), not by a pass over every file's data.
+- **MCP `file_list`** rows carry `status` too, as the HTTP list.
+
 ---
 
 ## 9. MCP tools
 
 Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 
-| Tool              | Purpose                                                      |
-| ----------------- | ------------------------------------------------------------ |
-| `folder_list`     | Children of a folder, or the whole tree                      |
-| `folder_create`   | Create folder + on-disk dir, optional description            |
-| `folder_describe` | Set/clear folder description                                 |
-| `folder_delete`   | Delete an empty folder (root cannot be deleted)              |
-| `file_list`       | Files in a folder                                            |
-| `file_upload`     | Create/overwrite a file (`content_text` or `content_base64`) |
-| `file_get`        | File metadata only                                           |
-| `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)    |
-| `file_delete`     | Delete a file (both DB row and disk)                         |
-| `screenshots`     | The area screenshots it reads: a list, or one with its image |
+| Tool              | Purpose                                                          |
+| ----------------- | ---------------------------------------------------------------- |
+| `folder_list`     | Children of a folder, or the whole tree                          |
+| `folder_create`   | Create folder + on-disk dir, optional description                |
+| `folder_describe` | Set/clear folder description                                     |
+| `folder_delete`   | Delete an empty folder (root cannot be deleted)                  |
+| `file_list`       | Files in a folder                                                |
+| `file_upload`     | Create/overwrite a file (`content_text` or `content_base64`)     |
+| `file_get`        | File metadata only                                               |
+| `file_processing` | What the brain did with a file, and the items made from it (§8c) |
+| `file_reindex`    | Read files again through the whole pipeline (§8d)                |
+| `file_stale_list` | The files that need attention: stale, failed, partial (§8d)      |
+| `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)        |
+| `file_delete`     | Delete a file (both DB row and disk)                             |
+| `screenshots`     | The area screenshots it reads: a list, or one with its image     |
 
 Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.
@@ -477,8 +571,9 @@ New bytes over a file keep the bytes they replace (owner's decisions,
 - **Host edits keep no version.** A file changed on disk outside Mantle
   (section 10) is read again, but its old bytes are not kept: file
   history keeps what a write through Mantle replaced.
-- **Scanned PDFs return empty text.** No OCR; they fall through the
-  20-char guard and get skipped.
+- **Scans are read in part.** A scanned PDF is read by OCR up to a page
+  cap; a file read in part shows `partial` (pages read of the total), and
+  the other pages are not in search.
 - **Concurrent writes**: two simultaneous saves on the same file
   race at the disk layer. Single-user system, fine for now.
 

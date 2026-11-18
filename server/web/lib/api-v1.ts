@@ -52,6 +52,12 @@ export async function hiddenFromKey(ownerId: string, ids: readonly string[]): Pr
   return emailAttachmentIds(ownerId, ids);
 }
 
+/** The areas of the key this request came in with: null for a session, a
+ *  device token and an all-areas key. */
+export function callerKeyAreas(): readonly AccessKeyArea[] | null {
+  return getRequestContext()?.accessKey?.areas ?? null;
+}
+
 /** Whether the gate let this request in with an API key. */
 export function isApiKeyRequest(): boolean {
   return !!getRequestContext()?.accessKey;

@@ -201,8 +201,10 @@ const NO_WRITE_FOUND: readonly string[] = [
   // The versions' rows and the Moderator check: no write.
   'file_history_list',
   'file_list',
+  'file_processing',
   'file_read',
   'file_sql',
+  'file_stale_list',
   'folder_get_by_path',
   'folder_list',
   'formula_evaluate',

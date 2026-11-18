@@ -51,6 +51,9 @@ describe('mcpOnly builtins', () => {
         // A file's kept version deleted for good (file history): an owner's
         // client only, as file_delete.
         'file_history_delete',
+        // Reading files again (docs/files.md 8d): a member's own client and
+        // MCP connection; no tool group holds it, as pipeline_run.
+        'file_reindex',
         // file_upload is no longer here (2026-11-03): seeded so a mini app
         // can declare it, held by the `app-files` group and no agent.
         'folder_create',

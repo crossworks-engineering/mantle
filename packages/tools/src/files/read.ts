@@ -6,7 +6,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { buildSectionOutline } from '@mantle/search';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { boxPipelines, fileStatusPipelines } from '@mantle/content/pipeline-registry';
 import {
   fileById,
   folderByPath,
@@ -18,6 +18,7 @@ import {
   listDataFiles,
   listFolders,
   readFileById,
+  withFileStatus,
 } from '@mantle/files';
 // A subpath: the schema reads it at import, and tests mock '@mantle/files'.
 import { EXTRACTION_STATES, type ExtractionState } from '@mantle/files/extraction-status';
@@ -115,11 +116,12 @@ export const file_list: BuiltinToolDef = {
           error: `parent_path must be a folder path from folder_list, e.g. 'files.work' (got '${under.slice(0, 80)}').`,
         };
       }
-      const list = await listFilesByExtraction({
+      const found = await listFilesByExtraction({
         ownerId: ctx.ownerId,
         state: state as ExtractionState,
         under,
       });
+      const list = { ...found, files: await withStatus(ctx.ownerId, found.files) };
       ctx.step?.setOutput({ count: list.files.length, truncated: list.truncated });
       return {
         ok: true,
@@ -172,11 +174,25 @@ export const file_list: BuiltinToolDef = {
           "parent_path required: pass a folder path from folder_list (e.g. 'files.work'), or data: true to list the files with a database.",
       };
     }
-    const rows = await listFiles({ ownerId: ctx.ownerId, parentPath });
+    const rows = await withStatus(
+      ctx.ownerId,
+      await listFiles({ ownerId: ctx.ownerId, parentPath }),
+    );
     ctx.step?.setOutput({ count: rows.length });
     return { ok: true, output: rows };
   },
 };
+
+/** File rows with their Data view and compact `status`, as the HTTP list
+ *  gives them (withFileStatus: one read of the queue for the list). */
+async function withStatus<T extends Parameters<typeof withFileStatus>[0][number]>(
+  ownerId: string,
+  rows: readonly T[],
+) {
+  if (rows.length === 0) return [];
+  const { dbExts, installed } = await fileStatusPipelines(ownerId);
+  return withFileStatus(rows, dbExts, installed);
+}
 
 /** A file's extracted text past this many chars is "large": dumping it whole
  *  overflows the 32KB tool-result ceiling, spills, and gets re-sent every loop

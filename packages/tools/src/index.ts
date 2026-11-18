@@ -125,6 +125,8 @@ export {
   SEARCH_TOOLS,
   ENTITY_TOOLS,
   FILE_TOOLS,
+  FILE_PROCESSING_TOOLS,
+  FILE_REINDEX_TOOLS,
   TELEGRAM_TOOLS,
   TELEGRAM_OPERATOR_TOOLS,
   PENDING_TOOLS,
@@ -213,6 +215,8 @@ export { DIAGRAM_TOOLS, DIAGRAM_TOOL_SLUGS } from './builtins-diagrams';
 export { CIRCUIT_TOOLS, CIRCUIT_TOOL_SLUGS } from './builtins-circuits';
 export { DRAWING_REDRAW_TOOLS } from './builtins-drawing-redraw';
 export { FILE_SQL_TOOLS, fileSqlAnswer } from './builtins-file-sql';
+export { fileProcessing } from './builtins-files';
+export { fileStaleList, reindexFiles, reindexIdsOf } from './builtins-files';
 export { FILE_SQL_FILES_MAX, fileSqlManyAnswer } from './file-sql-many';
 export type { FileSqlManyAnswer, FileSqlManyOutput } from './file-sql-many';
 export type { FileSqlAnswer, FileSqlTab } from './builtins-file-sql';

@@ -44,11 +44,12 @@ import {
   readerFor,
   readersByExt,
   routerFor,
+  type InstalledPipeline,
   type PipelineManifest,
   type PipelineSource,
 } from '@mantle/files';
 import type { PipelineProblemCode } from '@mantle/client-types';
-import { ownManifests } from './pipeline-state';
+import { offListsOf, ownManifests } from './pipeline-state';
 
 /** One pipeline of a box, with where it comes from. `draft`: the word of
  *  the draft folder a test runs a package from (pipeline_test with
@@ -241,4 +242,18 @@ export async function boxPipelines(
     }
   }
   return gone.size ? pipelinesOf(rows, undefined, gone) : box;
+}
+
+/** What the status of a file row needs of the box (withFileStatus,
+ *  @mantle/files): the file types that get a database, and the pipelines
+ *  that run with their versions and off lists, for `stale`. Two reads: the
+ *  box's pipelines and the off lists. */
+export async function fileStatusPipelines(
+  ownerId: string,
+): Promise<{ dbExts: ReadonlySet<string>; installed: InstalledPipeline[] }> {
+  const [box, off] = await Promise.all([boxPipelines(ownerId), offListsOf(ownerId)]);
+  return {
+    dbExts: box.dbExts,
+    installed: box.acted.map((p) => ({ id: p.id, version: p.version, offIn: off.get(p.id) ?? [] })),
+  };
 }

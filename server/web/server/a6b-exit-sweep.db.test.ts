@@ -218,8 +218,13 @@ const S3_OFF_CELLS: Readonly<Record<string, readonly string[]>> = {
  *  from the row's own data, no scope change. The records are from before it,
  *  so a cell is compared without it. One nesting level (`pages`). */
 const EXTRACTION_FIELD = /,\\?"extraction\\?":\{(?:[^{}]|\{[^{}]*\})*\}/g;
+/** A file's compact `status` (docs/files.md, "8c. Status and processing",
+ *  2026-11-18): derived from the row, the queue and the file's database, no
+ *  scope change. It always starts with `ingest`, so only that object is
+ *  taken out. */
+const FILE_STATUS_FIELD = /,\\?"status\\?":\{\\?"ingest\\?":[^{}]*\}/g;
 function withoutExtraction(line: string): string {
-  return line.replace(EXTRACTION_FIELD, '');
+  return line.replace(EXTRACTION_FIELD, '').replace(FILE_STATUS_FIELD, '');
 }
 
 const S3_CHANGES: ReadonlyArray<S3Change> = [

@@ -12,6 +12,7 @@
  */
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { systemDb } from './gateway/handles';
+import { pgErrorCode } from './pg-error';
 import { providerAlerts, type ProviderAlertRow } from './schema/provider-alerts';
 
 /** `model_policy` (0348): a call the box policy refused (@mantle/voice
@@ -305,6 +306,44 @@ export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
     doneLast10Min: q?.done_10m ?? 0,
     deadLettered: q?.dead ?? 0,
   };
+}
+
+/** An extract job for a file, as a file's status shows it: waiting
+ *  (created or retry) or running (active). */
+export type ExtractJobState = 'queued' | 'running';
+
+/**
+ * The extract jobs (both lanes) waiting or running for these node ids: ONE
+ * read for a whole list, never one per row (a file's status in Files,
+ * docs/files.md "Status and processing"). The ids are rows the caller's
+ * scope already read: this answers only for them. Running wins over
+ * queued. An empty map when pg-boss has no schema or job table yet (a
+ * fresh brain) or no database is reached; any other database error is
+ * thrown.
+ */
+export async function extractJobsFor(
+  ids: readonly string[],
+): Promise<Map<string, ExtractJobState>> {
+  const out = new Map<string, ExtractJobState>();
+  if (ids.length === 0) return out;
+  try {
+    const rows = (await systemDb.execute(sql`
+      SELECT data->>'nodeId' AS id, bool_or(state = 'active') AS running
+      FROM pgboss.job
+      WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+        AND state IN ('created', 'retry', 'active')
+        AND data->>'nodeId' = any(string_to_array(${ids.join(',')}, ','))
+      GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean }>;
+    for (const r of rows) out.set(r.id, r.running ? 'running' : 'queued');
+  } catch (err) {
+    // No pg-boss schema or job table yet (a fresh brain), or no database
+    // reached at all (no SQLSTATE): nothing is queued. Any other answer of
+    // the database (a refused grant, a bad query) is thrown, as
+    // extractionQueueCounts throws: a fault to see, not an empty queue.
+    const code = pgErrorCode(err);
+    if (code !== null && code !== '42P01' && code !== '3F000') throw err;
+  }
+  return out;
 }
 
 /** Whether the extract queue is busy: more than EXTRACT_BUSY_JOBS jobs

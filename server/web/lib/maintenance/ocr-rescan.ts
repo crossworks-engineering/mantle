@@ -228,8 +228,12 @@ export async function clearForRescan(
   opts: { stamp?: Record<string, string>; onlyIf?: SQL } = {},
 ): Promise<boolean> {
   // The text of the Agents' tabs stays: the bytes and their tabs do not
-  // change, and the re-extract queues no Agent run to write it again.
-  const keys = [...BYTE_DERIVED_DATA_KEYS.filter((k) => k !== 'agent_text'), 'extract_skipped'];
+  // change, and the re-extract queues no Agent run to write it again. So
+  // does the Reader pipeline's stamp: this rebuilds no database.
+  const keys = [
+    ...BYTE_DERIVED_DATA_KEYS.filter((k) => k !== 'agent_text' && k !== 'pipeline_read'),
+    'extract_skipped',
+  ];
   // The node's head first (workspaces plan U1).
   return withDeadlockRetry(() =>
     withHeads([id], 'update', async (tx) => {

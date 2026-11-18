@@ -711,7 +711,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(h.commits).toBe(0); // no Table
     });
 
-    it('writes nothing to the file row and adds no row or job anywhere', async () => {
+    it('writes nothing to the file row but the pipeline stamp, and adds no row or job anywhere', async () => {
       const [file] = await olds(v8Bytes());
       type Row = { data: unknown; updated_at: unknown; sha: string | null };
       const rowOf = async () =>
@@ -736,8 +736,13 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       const { code, text } = await run(scoped(file!.id), '--dgn-data', '--apply');
       expect(code).toBe(0);
       expect(text).toContain(`${file!.id}: built (`);
-      expect(await rowOf()).toEqual(row);
-      expect((await rowOf())!.sha).toBe(sha256(file!.bytes));
+      // The one key the build writes on the row: which Reader read it
+      // (data.pipeline_read, docs/files.md 8d), with updated_at kept.
+      const after = (await rowOf())!;
+      const { pipeline_read: stamp, ...rest } = after.data as Record<string, unknown>;
+      expect(stamp).toMatchObject({ id: 'drawing-cad', version: expect.any(String) });
+      expect({ ...after, data: rest }).toEqual(row);
+      expect(after.sha).toBe(sha256(file!.bytes));
       expect(await tally()).toEqual(before);
     });
 

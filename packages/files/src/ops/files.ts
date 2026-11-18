@@ -115,6 +115,10 @@ export const BYTE_DERIVED_DATA_KEYS = [
   'parser_failures',
   // The text of the tabs of the Agents (docs/pipelines.md, "Agents").
   'agent_text',
+  // What read the bytes: the core reader and the Reader pipeline, each with
+  // its version then (../read-stamp.ts). New bytes are not read yet.
+  'read_by',
+  'pipeline_read',
 ] as const;
 
 /**

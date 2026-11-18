@@ -564,8 +564,14 @@ describe('the architecture ratchets (pinned counts)', () => {
     // File history (Files program P3, +6 with a caller): GET (+HEAD)
     // /api/files/files/:id/history, GET (+HEAD) .../history/:sid/download,
     // POST .../history/:sid/restore and DELETE .../history/:sid (owner).
-    expect(rows.filter((r) => r.caller).length).toBe(889);
-    // 889 + the 13 call rows above + the public webhook + the 8 documents
+    // A file's processing (+2 with a caller): GET (+HEAD)
+    // /api/files/files/:id/processing (owner, the file's read).
+    // Reindex and stale indexes (+3 with a caller): GET (+HEAD)
+    // /api/files/stale and POST /api/files/reindex (owner, the files' read
+    // and edit).
+    // Files join (P3 + P4/P5): 883 + 6 + 5.
+    expect(rows.filter((r) => r.caller).length).toBe(894);
+    // 894 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
     // + the 2 rows of its second milestone + the 3 public rows of a Present
@@ -616,7 +622,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     //   and HEAD of the sign-in start (the screen ticket) and of its two
     //   callbacks (the sign-in's cookie and state).
     // + the 6 file history rows (Files program P3).
-    expect(rows.length).toBe(1006);
+    // + the 2 processing rows (GET and HEAD /api/files/files/:id/processing)
+    //   and the 3 reindex and stale rows (GET and HEAD /api/files/stale,
+    //   POST /api/files/reindex).
+    expect(rows.length).toBe(1011);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

@@ -11,10 +11,10 @@ import {
   setIndexingMode,
   upsertFile,
 } from '@/lib/files';
-import { copyFileById, emailAttachmentIds, moveFileById, withDataView } from '@mantle/files';
+import { copyFileById, emailAttachmentIds, moveFileById, withFileStatus } from '@mantle/files';
 import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { fileStatusPipelines } from '@mantle/content/pipeline-registry';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { firstIssue } from '@/lib/zod-issue';
 import { guardFileTo } from '@mantle/content/tree';
@@ -153,8 +153,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const found = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
   if (!found) return NextResponse.json({ error: 'not found' }, { status: 404 });
   // `dataView`: whether this kind of file has a Data view (withDataView); the
-  // view itself gives the answer or the refusal.
-  const file = (await withDataView([found], (await boxPipelines(user.id)).dbExts))[0]!;
+  // view itself gives the answer or the refusal. `status`: its compact state
+  // (withFileStatus); the full answer is GET .../processing.
+  const { dbExts, installed } = await fileStatusPipelines(user.id);
+  const file = (await withFileStatus([found], dbExts, installed))[0]!;
   // Include content for text files so the editor can open it without
   // a second round-trip.
   if (file.isText) {

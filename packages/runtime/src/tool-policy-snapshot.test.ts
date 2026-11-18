@@ -309,6 +309,7 @@ const LISTS: Record<string, readonly string[]> = {
     'api_tool_test',
     'api_tool_update',
     'circuit_verify',
+    'file_reindex',
     'file_upload',
     'gateway_service_list',
     'gateway_service_set',

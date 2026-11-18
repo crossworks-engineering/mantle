@@ -8,6 +8,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
 import { extractionOf, type FileExtraction } from '../extraction-status';
+import { readStampsOf, type PipelineReadStamp, type ReadByStamp } from '../read-stamp';
 import {
   db,
   isWriteRefused,
@@ -73,6 +74,11 @@ export type FileRow = {
    *  (an extracted image, an auto Table) made before this is from an older
    *  version. Absent when its bytes were never replaced. */
   replacedAt?: string;
+  /** What read the file's text (data.read_by, ../read-stamp.ts): the core
+   *  reader and its version then. Absent before the stamps, or not read. */
+  readBy?: ReadByStamp;
+  /** The Reader pipeline that built its database (data.pipeline_read). */
+  pipelineRead?: PipelineReadStamp;
   createdAt: string;
   updatedAt: string;
 };
@@ -229,6 +235,7 @@ export function fileRowFromNode(row: Node): FileRow {
           : null,
     extraction: extractionOf(data),
     ...(typeof data.replaced_at === 'string' ? { replacedAt: data.replaced_at } : {}),
+    ...readStampsOf(data),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

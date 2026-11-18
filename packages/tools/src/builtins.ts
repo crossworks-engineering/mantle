@@ -99,8 +99,9 @@ import { secret_create } from './builtins-secrets';
 import { telegram_send } from './builtins-telegram';
 import { TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 import { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
-import { FILE_OPERATOR_TOOLS } from './builtins-files';
+import { FILE_OPERATOR_TOOLS, FILE_PROCESSING_TOOLS } from './builtins-files';
 import { FILE_HISTORY_TOOLS } from './builtins-files';
+import { FILE_REINDEX_TOOLS } from './builtins-files';
 import { NOTE_OPERATOR_TOOLS } from './builtins-notes';
 import { invoke_agent } from './builtins-delegation';
 
@@ -250,6 +251,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // One drawing rebuilt as a Present canvas from its own file database.
   ...DRAWING_REDRAW_TOOLS,
   ...FILE_SQL_TOOLS,
+  // What the brain did with one file, and the items made from it.
+  ...FILE_PROCESSING_TOOLS,
+  // Read files again, and the files that need it.
+  ...FILE_REINDEX_TOOLS,
   ...DIAGRAM_RENDER_TOOLS,
   ...PRESENT_TOOLS,
   ...CANVAS_LIBRARY_TOOLS,
@@ -354,9 +359,11 @@ export {
   FILE_CREATE_TOOLS,
   FILE_MANAGE_TOOLS,
   FILE_OPERATOR_TOOLS,
+  FILE_PROCESSING_TOOLS,
   FILE_TOOLS,
 } from './builtins-files';
 export { FILE_HISTORY_TOOLS } from './builtins-files';
+export { FILE_REINDEX_TOOLS } from './builtins-files';
 export { TELEGRAM_TOOLS, TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 export { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
 export { DELEGATION_TOOLS } from './builtins-delegation';

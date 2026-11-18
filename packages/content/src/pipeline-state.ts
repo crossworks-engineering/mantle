@@ -119,21 +119,31 @@ function offListOf(stored: unknown): readonly string[] {
   return out;
 }
 
-/** The state of `manifest` on the brain of `ownerId`. */
-export async function pipelineStateOf(
-  ownerId: string,
-  manifest: PipelineManifest,
-): Promise<PipelineState> {
-  const [row] = await systemDb
+/** The state rows of the brain of `ownerId`: of one pipeline, or of all.
+ *  The one read of the table on the system pool. */
+function stateRows(ownerId: string, pipelineId?: string) {
+  return systemDb
     .select({
+      id: pipelineState.pipelineId,
       options: pipelineState.options,
       offIn: pipelineState.offIn,
       runs: pipelineState.runs,
       lastRunAt: pipelineState.lastRunAt,
     })
     .from(pipelineState)
-    .where(and(eq(pipelineState.ownerId, ownerId), eq(pipelineState.pipelineId, manifest.id)))
-    .limit(1);
+    .where(
+      pipelineId === undefined
+        ? eq(pipelineState.ownerId, ownerId)
+        : and(eq(pipelineState.ownerId, ownerId), eq(pipelineState.pipelineId, pipelineId)),
+    );
+}
+
+/** The state of `manifest` on the brain of `ownerId`. */
+export async function pipelineStateOf(
+  ownerId: string,
+  manifest: PipelineManifest,
+): Promise<PipelineState> {
+  const [row] = await stateRows(ownerId, manifest.id);
   const options = effectiveOptions(manifest, row?.options);
   return {
     offIn: isRouter(manifest) ? defaultState().offIn : offListOf(row?.offIn),
@@ -142,6 +152,13 @@ export async function pipelineStateOf(
     runs: Number(row?.runs ?? 0),
     lastRunAt: row?.lastRunAt ?? null,
   };
+}
+
+/** The off lists of every pipeline with a state row on the brain of
+ *  `ownerId`, by id: one read. A pipeline with no row is off nowhere. */
+export async function offListsOf(ownerId: string): Promise<Map<string, readonly string[]>> {
+  const rows = await stateRows(ownerId);
+  return new Map(rows.map((r) => [r.id, offListOf(r.offIn)]));
 }
 
 /**

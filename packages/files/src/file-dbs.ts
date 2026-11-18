@@ -210,6 +210,23 @@ async function namesOf(fileId: string): Promise<{ name: string; sha16: string }[
 }
 
 /**
+ * Every finished name in the folder (regular files only), from one read of
+ * it and no look at a file: a list's look at many rows at once (a file's
+ * status in Files), which then checks each row's own names against it.
+ * Empty with no folder, or no files mount in this process.
+ */
+export async function finishedFileDbNames(): Promise<Set<string>> {
+  try {
+    const entries = await fs.readdir(fileDbsDir(), { withFileTypes: true });
+    return new Set(
+      entries.filter((e) => e.isFile() && FINISHED_NAME.test(e.name)).map((e) => e.name),
+    );
+  } catch {
+    return new Set(); // no folder, or no files mount in this process
+  }
+}
+
+/**
  * The ids of the files that have a database on disk, at any bytes: one read
  * of the folder, no look at a file. The list of data files asks only for
  * the PDFs among these, so a PDF with no database costs it nothing. A name
