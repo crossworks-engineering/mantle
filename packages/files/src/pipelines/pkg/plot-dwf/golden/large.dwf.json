@@ -17,12 +17,20 @@
       "rows": 40
     },
     {
-      "columns": ["Layer:text", "Sheets:text", "Sheet count:number"],
+      "columns": [
+        "Layer:text",
+        "Sheets:text",
+        "Sheet count:number"
+      ],
       "name": "Layers",
       "rows": 3447
     },
     {
-      "columns": ["Label:text", "Total count:number", "Sheets:text"],
+      "columns": [
+        "Label:text",
+        "Total count:number",
+        "Sheets:text"
+      ],
       "name": "Labels",
       "rows": 20000
     }
