@@ -84,13 +84,17 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
    * row); the winner's bytes go into place before it commits, as upsertFile
    * does. `createWs` homes the winner there (a create that chose a
    * workspace); without it the database homes it in its folder's home, as it
-   * does the files watcher's insert.
+   * does the files watcher's insert. `removedHere` marks the folder's grant
+   * to that workspace "Removed here" on the winner: since 0382 a Moderator
+   * of a workspace that holds an item edits it, Write on or off (owner page
+   * d7313c67), so a winner the member may read but not change must not be
+   * held by Edit, which it moderates.
    */
   const raceAgainst = async (
     name: string,
     winner: Buffer,
     loser: () => Promise<unknown>,
-    opts: { createWs?: string } = {},
+    opts: { createWs?: string; removedHere?: string } = {},
   ): Promise<{ id: string; failure: unknown }> => {
     const id = randomUUID();
     let failure: unknown;
@@ -106,6 +110,11 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
           sha256: sha(winner),
           size_bytes: winner.byteLength,
         })}::jsonb, '{file}')`);
+      if (opts.removedHere) {
+        await tx.execute(sqlTag`select mantle_lock_heads_more(${`{${id}}`}::uuid[])`);
+        await tx.execute(sqlTag`update item_grants set excluded = true, write = false, via_folder_id = null
+                                 where node_id = ${id} and workspace_id = ${opts.removedHere}`);
+      }
       run = loser().catch((e: unknown) => {
         failure = e;
       });
@@ -371,7 +380,7 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
             loginId: mem,
           }),
         ),
-      { createWs: readWs },
+      { createWs: readWs, removedHere: editWs },
     );
     expect(failure).toBeInstanceOf(ops.FileNameTakenError);
     const row = await rowOf(id);
@@ -399,7 +408,7 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
             bytes: Buffer.from('MEMBER BYTES'),
           }),
         ),
-      { createWs: adminWs },
+      { createWs: adminWs, removedHere: editWs },
     );
     expect(failure).toBeInstanceOf(ops.FileNameTakenError);
     expect((await rowOf(id)).home).toBe(adminWs);
@@ -416,7 +425,7 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
         asMember(() =>
           ops.upsertFile({ ownerId: owner, parentPath: top, filename: same, bytes: body }),
         ),
-      { createWs: adminWs },
+      { createWs: adminWs, removedHere: editWs },
     );
     expect(r2.failure).toBeInstanceOf(ops.FileNameTakenError);
     expect((await rowOf(r2.id)).title).toBe(same);

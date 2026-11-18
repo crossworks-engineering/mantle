@@ -558,13 +558,15 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     // canvas's link, an adminWriteGrant login's open; at the root and in a folder).
     // The contact actors left (0378): 1104 cells, 2 allowed (a contact's
     // app data), 244 denied.
-    // Shared items (0382): readGrant moderates R, which holds the item: 142
-    // cells from denied to allowed (every edit-rule write, and a create in
-    // the folder); writeGrant's and adminWriteGrant's create in the folder,
-    // 24 cells from allowed to denied (a Write grant edits a folder, does
-    // not add to it). Net 118.
-    expect(tally.allowed).toBe(898);
-    expect(tally.denied).toBe(2082);
+    // Shared items (0382, owner page d7313c67): readGrant moderates R, which
+    // holds the item: 129 cells from denied to allowed (every edit-rule
+    // write of a kind that is not an app, an app's rank in the folder, and a
+    // create in the folder);
+    // writeGrant's and adminWriteGrant's create in the folder, 24 cells from
+    // allowed to denied (a Write grant edits a folder, does not add to it).
+    // Net 105.
+    expect(tally.allowed).toBe(885);
+    expect(tally.denied).toBe(2095);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });

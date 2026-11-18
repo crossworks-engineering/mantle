@@ -318,9 +318,9 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
   it('every role a draft read runs as may run the scope rule', async () => {
     const [r] = await x<{ view: boolean; write: boolean }>(sql`
       select has_function_privilege('mantle_view_user',
-               'public.mantle_may_edit_in(uuid[], uuid[], uuid, uuid[])', 'execute') as view,
+               'public.mantle_may_edit_in(uuid[], uuid[], uuid, uuid[], uuid[], node_type)', 'execute') as view,
              has_function_privilege('mantle_write_user',
-               'public.mantle_may_edit_in(uuid[], uuid[], uuid, uuid[])', 'execute') as write`);
+               'public.mantle_may_edit_in(uuid[], uuid[], uuid, uuid[], uuid[], node_type)', 'execute') as write`);
     expect(r).toEqual({ view: true, write: true });
   });
 

@@ -1109,8 +1109,21 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
 
   it('drafts: an Admin user reads the draft of an item it may edit, a member none', async () => {
     const a = JSON.parse((await call(`/api/pages/${teamPage}`, owner)).text) as Json;
-    const b = JSON.parse((await call(`/api/pages/${teamPage}`, mem)).text) as Json;
     expect(JSON.stringify(a)).toContain('paragraph');
-    expect(JSON.stringify(b)).not.toContain('paragraph');
+    // The member moderates Team, which holds the page (Write off): since
+    // 0382 a Moderator of a workspace that holds an item edits it (owner
+    // page d7313c67), so it reads the draft. As a plain user of Team it
+    // reads none.
+    const b = JSON.parse((await call(`/api/pages/${teamPage}`, mem)).text) as Json;
+    expect(JSON.stringify(b)).toContain('paragraph');
+    await su(sql`update workspace_users set moderator = false
+                  where workspace_id = ${team} and login_id = ${mem}`);
+    try {
+      const c = JSON.parse((await call(`/api/pages/${teamPage}`, mem)).text) as Json;
+      expect(JSON.stringify(c)).not.toContain('paragraph');
+    } finally {
+      await su(sql`update workspace_users set moderator = true
+                    where workspace_id = ${team} and login_id = ${mem}`);
+    }
   });
 });

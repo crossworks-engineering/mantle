@@ -14,9 +14,11 @@
  * on a migrated scratch database, as an Admin user (in Admin and a
  * Moderator there, as the guide makes every admin login, in no other
  * workspace) or the owner, on an
- * item homed in another workspace and granted to Admin with Write off (the
- * scope reads it, may not edit it), with Write on (it may), or not granted
- * to Admin at all (the scope does not read it). No route has the item
+ * item homed in another workspace and granted to a workspace where the
+ * login is a plain user, Write off (the scope reads it, may not edit it;
+ * not Admin: since 0382 a Moderator of a workspace that holds an item edits
+ * it, Write on or off, owner page d7313c67), granted to Admin with Write on
+ * (it may), or not granted to Admin at all (the scope does not read it). No route has the item
  * pre-check now (plan v3.2 S11b took its reader out), so only the database
  * and the handler stand, in every cell:
  *
@@ -78,7 +80,7 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
   let dir = '';
   const tag = `f4aw${randomUUID().slice(0, 6)}`;
   const L = { owner: randomUUID(), admin: randomUUID() };
-  const ws = { admin: '', other: '' };
+  const ws = { admin: '', other: '', ro: '' };
   const root: Record<'note' | 'page', { id: string; path: string }> = {
     note: { id: '', path: 'notes' },
     page: { id: '', path: 'pages' },
@@ -102,9 +104,11 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
       await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
       await tx`insert into item_grants (node_id, workspace_id, is_home, write)
                values (${id}, ${ws.other}, true, false)`;
+      // Read only: granted to RO, where the logins are plain users (a grant
+      // to Admin, whose Moderators they are, is theirs to edit since 0382).
       if (grant !== 'hidden') {
         await tx`insert into item_grants (node_id, workspace_id, is_home, write)
-                 values (${id}, ${ws.admin}, false, ${grant === 'editable'})`;
+                 values (${id}, ${grant === 'editable' ? ws.admin : ws.ro}, false, ${grant === 'editable'})`;
       }
       if (kind === 'page') await tx`insert into pages (node_id, doc) values (${id}, '{"v":0}')`;
     });
@@ -232,6 +236,15 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
         values (${L.owner}, ${`${tag} other`}) returning id::text as id`
     )[0]!.id;
     await raw`delete from workspace_users where workspace_id = ${ws.other}`;
+    // RO: the logins are its plain users, so what it holds with Write off is
+    // read only to them.
+    ws.ro = (
+      await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
+        values (${L.owner}, ${`${tag} ro`}) returning id::text as id`
+    )[0]!.id;
+    await raw`delete from workspace_users where workspace_id = ${ws.ro}`;
+    await raw`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${ws.ro}, ${L.admin}, false), (${ws.ro}, ${L.owner}, false)`;
     // The Admin user: in Admin and a Moderator there ("An admin login is
     // its user and a Moderator there", docs/workspaces.md).
     await raw`insert into workspace_users (workspace_id, login_id, moderator)

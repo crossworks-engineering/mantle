@@ -30,12 +30,13 @@ import { UUID_RE } from '@mantle/std';
 
 const ALIAS_RE = /^[a-z_][a-z0-9_]*$/i;
 
-type AclColumn = 'home_ws' | 'read_ws' | 'write_ws';
+type AclColumn = 'home_ws' | 'read_ws' | 'write_ws' | 'type';
 
 function column(alias: string | undefined, name: AclColumn): SQL {
   if (alias === undefined) {
     if (name === 'home_ws') return sql`${nodes.homeWs}`;
     if (name === 'read_ws') return sql`${nodes.readWs}`;
+    if (name === 'type') return sql`${nodes.type}`;
     return sql`${nodes.writeWs}`;
   }
   if (!ALIAS_RE.test(alias)) throw new Error(`item-acl: bad alias ${alias}`);
@@ -53,10 +54,10 @@ export function wsArraySql(ids: readonly string[]): SQL {
 // ── Scope forms ──────────────────────────────────────────────────────────────
 
 /** The scope may edit the item: a Moderator of its home, a grant with
- *  Write on in the scope, or a Moderator of a workspace that holds it
- *  (mantle_may_edit, 0382). */
+ *  Write on in the scope, or a Moderator of a workspace that holds it, an
+ *  app excepted (mantle_may_edit, 0382). */
 export function mayEditSql(alias?: string): SQL<boolean> {
-  return sql<boolean>`coalesce("public"."mantle_may_edit"(${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}), false)`;
+  return sql<boolean>`coalesce("public"."mantle_may_edit"(${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}, ${column(alias, 'type')}), false)`;
 }
 
 /** The scope may manage the item (grants, links, delete, move): a
@@ -95,7 +96,7 @@ export function mayReadInSql(alias: string | undefined, ws: SQL): SQL<boolean> {
 /** A login in the workspaces `ws`, a Moderator of `modWs`, may edit the
  *  item (mantle_may_edit_in, the one definition). */
 export function mayEditInSql(alias: string | undefined, ws: SQL, modWs: SQL): SQL<boolean> {
-  return sql<boolean>`coalesce("public"."mantle_may_edit_in"(${ws}, ${modWs}, ${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}), false)`;
+  return sql<boolean>`coalesce("public"."mantle_may_edit_in"(${ws}, ${modWs}, ${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}, ${column(alias, 'type')}), false)`;
 }
 
 /** A Moderator of `modWs` may manage the item (mantle_may_manage_in). */

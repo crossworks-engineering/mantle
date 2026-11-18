@@ -57,9 +57,13 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
   const noUsers = randomUUID(); // an Admin user without the users area
   const tag = `w6f${randomUUID().slice(0, 6)}`;
   const DRAFT = `${tag}draftmark`;
-  let team = '';
   let side = '';
   let ro = '';
+  /** A workspace where the Admin user and the member are plain users: its
+   *  Write-off grant is read only to both (Team would not be: they
+   *  moderate it, and since 0382 a Moderator of a workspace that holds an
+   *  item edits it, Write on or off, owner page d7313c67). */
+  let rd = '';
   let adminWs = '';
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -140,7 +144,6 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await x<{ id: string; key: string | null }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
-    team = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.key === 'admin')!.id;
     await su(sql`update workspace_users set limits = ${JSON.stringify({ areas: { users: false } })}::jsonb
                  where workspace_id = ${adminWs} and login_id = ${noUsers}`);
@@ -152,11 +155,13 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     answers = rowAnswers(manifest);
     side = json((await call('/api/workspaces', mem2, 'POST', { name: 'Side' })).text).id as string;
     ro = json((await call('/api/workspaces', mem2, 'POST', { name: 'Ro' })).text).id as string;
-    expect(side && ro).toBeTruthy();
+    rd = json((await call('/api/workspaces', mem2, 'POST', { name: 'Rd' })).text).id as string;
+    expect(side && ro && rd).toBeTruthy();
     // The Admin user reads Ro but moderates nothing there and has no Write
     // grant in it (Read only); the member reads Side.
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
-                values (${ro}, ${owner}, false), (${side}, ${mem}, false)`);
+                values (${ro}, ${owner}, false), (${side}, ${mem}, false),
+                       (${rd}, ${owner}, false), (${rd}, ${mem}, false)`);
   }, 240_000);
 
   afterAll(async () => {
@@ -200,9 +205,9 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     expect(json(mine.text).source).toBe('draft');
     expect((await call(`/api/tables/${tableId}`, owner)).text).toContain(DRAFT);
 
-    // Homed in Ro, also in Team: the Admin user has Read only, the member Read.
+    // Homed in Ro, also in Rd: the Admin user has Read only, the member Read.
     await homeIn(tableId, ro);
-    await alsoIn(tableId, team);
+    await alsoIn(tableId, rd);
     for (const who of [owner, mem]) {
       const rows = await call(`/api/tables/${tableId}/rows?draft=1`, who);
       expect(rows.status, rows.text.slice(0, 200)).toBe(200);
@@ -507,7 +512,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     const ids = [page, draw, appRow.id];
     for (const id of ids) {
       await homeIn(id, ro);
-      await alsoIn(id, team);
+      await alsoIn(id, rd);
     }
     const failures: string[] = [];
     let calls = 0;

@@ -300,8 +300,10 @@ describe('a pending call approved inside a turn names no home of its own (owner 
     expect([...returns].sort()).toEqual(['NULL', 'admin_ws', 'home', 'priv', 'req']);
     expect(body).toMatch(/req uuid := "public"\."mantle_setting_uuid"\('mantle\.create_ws'\)/);
     expect(body).toMatch(/priv uuid := "public"\."mantle_setting_uuid"\('mantle\.private_ws'\)/);
+    // The folder's home, its Write grants and its holders (0382: a Moderator
+    // of a workspace that holds the folder may add to it).
     expect(body).toMatch(
-      /SELECT f\."home_ws", f\."write_ws" INTO home, fw FROM "public"\."nodes" f/,
+      /SELECT f\."home_ws", f\."write_ws", f\."read_ws" INTO home, fw, fr FROM "public"\."nodes" f/,
     );
   });
 });

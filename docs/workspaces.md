@@ -204,7 +204,9 @@ every workspace it is granted to, each with a Write switch.
   off: the "Moderator of a holder" above. A user of W who is not a
   Moderator reads it, and writes it when the grant has Write on; nothing
   more. Deleting it and moving it to another home stay with the Moderators
-  of its home. An Admin user gets this through a Moderator tick like anyone:
+  of its home. An app is the exception: its code, data, snapshots and
+  timers stay with its home's Moderators (and its data with its Write
+  grants), never a holder's Moderator. An Admin user gets this through a Moderator tick like anyone:
   the Moderators of Admin hold everything homed in Admin.
 - A Recall map is narrower than the table: deleting it, confirming a
   prompt on it and reordering its cards stay with the Admin users, whoever

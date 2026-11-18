@@ -162,6 +162,9 @@ const NEGATIVES: readonly { role: GuideRole; placement: GuidePlacement; create?:
   { role: 'writeGrant', placement: 'admin' },
   { role: 'outsider', placement: 'folder', create: true },
   { role: 'readGrant', placement: 'folder', create: true },
+  // A user of W, Write on: it edits the folder and does not add to it (0382,
+  // owner page d7313c67), where readGrant, a Moderator of R, now does.
+  { role: 'writeGrant', placement: 'folder', create: true },
 ];
 
 /** The oracle's answer for a candidate, as a login on MCP: the one the

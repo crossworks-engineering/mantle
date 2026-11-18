@@ -492,7 +492,7 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
                           set_config('mantle.mod_ws', ${`{${p.mod.join(',')}}`}, true),
                           set_config('mantle.login_id', ${p.login}, true)`;
           const [r] = await tx<Record<string, boolean>[]>`
-            select coalesce(mantle_may_edit(n.home_ws, n.write_ws, n.read_ws), false) as edit,
+            select coalesce(mantle_may_edit(n.home_ws, n.write_ws, n.read_ws, n.type), false) as edit,
                    mantle_may_add(f.home_ws, f.write_ws, f.read_ws) as add,
                    coalesce(mantle_may_manage(n.home_ws), false) as manage,
                    coalesce(mantle_may_manage(n.home_ws) or mantle_mod_holds(n.read_ws, n.read_ws), false) as move
@@ -509,11 +509,15 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
     expect(await ask(who.modW)).toEqual({ edit: true, add: true, manage: false, move: true });
     expect(await ask(who.userW)).toEqual({ edit: false, add: false, manage: false, move: false });
     // The array form: a preview's (a Moderator of a holder edits).
-    const [r] = await sql<{ e: boolean; u: boolean }[]>`
+    const [r] = await sql<{ e: boolean; u: boolean; app: boolean }[]>`
       select mantle_may_edit_in(array[${ws.W}]::uuid[], array[${ws.W}]::uuid[], ${ws.admin}::uuid,
-                                '{}'::uuid[], array[${ws.admin}, ${ws.W}]::uuid[]) as e,
+                                '{}'::uuid[], array[${ws.admin}, ${ws.W}]::uuid[], 'note') as e,
              mantle_may_edit_in(array[${ws.W}]::uuid[], '{}'::uuid[], ${ws.admin}::uuid,
-                                '{}'::uuid[], array[${ws.admin}, ${ws.W}]::uuid[]) as u`;
-    expect(r).toEqual({ e: true, u: false });
+                                '{}'::uuid[], array[${ws.admin}, ${ws.W}]::uuid[], 'note') as u,
+             mantle_may_edit_in(array[${ws.W}]::uuid[], array[${ws.W}]::uuid[], ${ws.admin}::uuid,
+                                '{}'::uuid[], array[${ws.admin}, ${ws.W}]::uuid[], 'app') as app`;
+    // An app is not edited by its holders' Moderators: its acts stay its
+    // home's Moderators' and its Write grants'.
+    expect(r).toEqual({ e: true, u: false, app: false });
   });
 });

@@ -167,7 +167,7 @@ async function scopeRightsOf(
   const arr = `{${ids.join(',')}}`;
   const rows = (await conn.execute(sql`
     select n.id::text as id,
-           coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws, n.read_ws), false) as edit,
+           coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws, n.read_ws, n.type), false) as edit,
            coalesce("public"."mantle_may_manage"(n.home_ws), false) as manage,
            coalesce(n.data ? 'snapshot_of', false) as copy
       from nodes n where n.id = any(${arr}::uuid[])`)) as unknown as ({

@@ -5,7 +5,7 @@
 -- Needed: the older image asks mantle_may_edit(home, write_ws) and
 -- mantle_may_edit_in(ws, mod_ws, home, write_ws), which 0382 drops. This puts
 -- back the old rule (a Moderator of the home, or a grant with Write on), the
--- 0279/0280/0305/0338/0352/0267 bodies 0382 replaced, the canvas data read
+-- 0279/0280/0303/0305/0338/0352/0267 bodies 0382 replaced, the canvas data read
 -- rule, and drops what 0382 added.
 --
 -- Run it while the newer image is still up, as the superuser, in one
@@ -47,6 +47,114 @@ BEGIN
                            OR "public"."mantle_scope_has_area"('users')
     ELSE NULL
   END;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_write_check_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  kind text := TG_ARGV[0];
+  col text := TG_ARGV[1];
+  seen jsonb[] := ARRAY[]::jsonb[];
+  r jsonb;
+  item uuid;
+  n record;
+  f record;
+  ok boolean;
+  ws uuid[];
+  generated text[];
+  target uuid;
+BEGIN
+  IF kind = 'self' THEN
+    IF TG_OP = 'INSERT' THEN
+      IF NOT "public"."mantle_may_add_to_folder"(NEW."owner_id", NEW."type", NEW."path") THEN
+        RAISE EXCEPTION 'not allowed to add items to that folder' USING ERRCODE = '42501';
+      END IF;
+      IF NOT "public"."mantle_may_create_item"(NEW."owner_id", NEW."type", NEW."path")
+         AND "public"."mantle_scoped_write_refuses"('INSERT on nodes: no Moderator of the home') THEN
+        RAISE EXCEPTION 'not allowed to create an item in that workspace' USING ERRCODE = '42501';
+      END IF;
+      RETURN NEW;
+    ELSIF TG_OP = 'UPDATE' THEN
+      IF NEW."type" IS DISTINCT FROM OLD."type"
+         AND "public"."mantle_scoped_write_refuses"('UPDATE on nodes: a change of kind') THEN
+        RAISE EXCEPTION 'not allowed to change the kind of this item' USING ERRCODE = '42501';
+      END IF;
+      ok := "public"."mantle_check_row"(OLD."home_ws", OLD."write_ws", OLD."read_ws", 'edit');
+      IF NOT ok THEN
+        -- A change of the presentation keys alone (a board rank): edit of
+        -- the item or of its folder. Stored generated columns are not
+        -- computed yet in a BEFORE trigger's NEW: left out of the comparison.
+        generated := ARRAY(SELECT a."attname"::text FROM pg_attribute a
+                            WHERE a."attrelid" = TG_RELID AND a."attgenerated" <> '');
+        IF (to_jsonb(NEW) - generated - 'data' - 'updated_at')
+             = (to_jsonb(OLD) - generated - 'data' - 'updated_at')
+           AND (coalesce(NEW."data", '{}'::jsonb) - "public"."mantle_node_presentation_keys"())
+               = (coalesce(OLD."data", '{}'::jsonb) - "public"."mantle_node_presentation_keys"()) THEN
+          SELECT p."home_ws", p."write_ws", p."read_ws" INTO f FROM "public"."nodes" p
+           WHERE p."id" = "public"."mantle_parent_folder"(OLD."owner_id", OLD."type", OLD."path");
+          ok := FOUND AND "public"."mantle_check_row"(f."home_ws", f."write_ws", f."read_ws", 'edit');
+        END IF;
+      END IF;
+      IF NOT ok AND "public"."mantle_scoped_write_refuses"('UPDATE on nodes: no edit of the item') THEN
+        RAISE EXCEPTION 'not allowed to edit this item' USING ERRCODE = '42501';
+      END IF;
+      RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+      IF OLD."home_ws" IS NULL AND NOT "public"."mantle_may_manage_home"(NULL)
+         AND "public"."mantle_scoped_write_refuses"('DELETE on nodes: no home, no Admin scope') THEN
+        RAISE EXCEPTION 'not allowed to delete this item' USING ERRCODE = '42501';
+      END IF;
+      RETURN OLD;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN seen := seen || to_jsonb(OLD); END IF;
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN seen := seen || to_jsonb(NEW); END IF;
+  FOREACH r IN ARRAY seen LOOP
+    item := (r ->> col)::uuid;
+    IF item IS NULL THEN
+      -- A row of no item: inside the scope, and the caller's own.
+      IF kind = 'manage' OR NOT (r ? 'read_ws') THEN
+        ok := false;
+      ELSE
+        ws := ARRAY(SELECT jsonb_array_elements_text(r -> 'read_ws'))::uuid[];
+        ok := ws <@ "public"."mantle_scope_ws"()
+              AND coalesce((r ->> 'login_id')::uuid = "public"."mantle_login_id"(), false);
+      END IF;
+    ELSE
+      SELECT x."home_ws", x."write_ws", x."read_ws" INTO n FROM "public"."nodes" x WHERE x."id" = item;
+      IF NOT FOUND THEN
+        ok := true; -- no such item: its foreign key refuses the row
+      ELSE
+        ok := "public"."mantle_check_row"(n."home_ws", n."write_ws", n."read_ws",
+                                          CASE WHEN kind = 'manage' THEN 'manage' ELSE 'edit' END);
+      END IF;
+    END IF;
+    IF NOT ok AND "public"."mantle_scoped_write_refuses"(
+         format('%s on %s: no %s of the item', TG_OP, TG_TABLE_NAME, kind)) THEN
+      RAISE EXCEPTION 'not allowed to change this item' USING ERRCODE = '42501';
+    END IF;
+  END LOOP;
+
+  -- A new grant, one moved to another workspace, or one made the home: a
+  -- Moderator of its workspace. Grant rows only (S11a-7): a `manage` row
+  -- with no workspace_id (an export row) is decided by the loop above.
+  IF kind = 'manage' AND TG_OP IN ('INSERT', 'UPDATE') AND to_jsonb(NEW) ? 'workspace_id' THEN
+    target := (to_jsonb(NEW) ->> 'workspace_id')::uuid;
+    IF (TG_OP = 'INSERT'
+        OR target IS DISTINCT FROM (to_jsonb(OLD) ->> 'workspace_id')::uuid
+        OR (coalesce((to_jsonb(NEW) ->> 'is_home')::boolean, false)
+            AND NOT coalesce((to_jsonb(OLD) ->> 'is_home')::boolean, false)))
+       AND NOT coalesce(target = ANY ("public"."mantle_scope_mod_ws"()), false)
+       AND "public"."mantle_scoped_write_refuses"(
+             format('%s on %s: not a Moderator of the workspace', TG_OP, TG_TABLE_NAME)) THEN
+      RAISE EXCEPTION 'not allowed to grant to that workspace' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END
 $$;
 --> statement-breakpoint
@@ -511,9 +619,9 @@ ALTER POLICY "canvas_data_user_read" ON "public"."canvas_data"
             OR "canvas_data"."login_id" = (SELECT "public"."mantle_login_id"())
             OR coalesce("public"."mantle_may_edit"(n."home_ws", n."write_ws"), false))));
 --> statement-breakpoint
-DROP FUNCTION IF EXISTS "public"."mantle_may_edit"(uuid, uuid[], uuid[]);
+DROP FUNCTION IF EXISTS "public"."mantle_may_edit"(uuid, uuid[], uuid[], "public"."node_type");
 --> statement-breakpoint
-DROP FUNCTION IF EXISTS "public"."mantle_may_edit_in"(uuid[], uuid[], uuid, uuid[], uuid[]);
+DROP FUNCTION IF EXISTS "public"."mantle_may_edit_in"(uuid[], uuid[], uuid, uuid[], uuid[], "public"."node_type");
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_may_add"(uuid, uuid[], uuid[]);
 --> statement-breakpoint

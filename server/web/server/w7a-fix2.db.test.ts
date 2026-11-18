@@ -439,7 +439,11 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
     const pagesBefore = (
       await x<{ n: number }>(sql`select count(*)::int as n from nodes where type = 'page'`)
     )[0]!.n;
-    for (const login of [owner, second]) {
+    // L, a plain user of Admin, which holds them with Write off. The anchor
+    // moderates Admin: since 0382 a Moderator of a workspace that holds an
+    // item edits it, Write on or off (owner page d7313c67), so it is not
+    // asked here.
+    for (const login of [second]) {
       const res = await inAdminTurn(login, async () => ({
         note: await dispatchAs(login, 'page_from_note', { note_id: roNote }),
         notes: await dispatchAs(login, 'page_from_notes', {
@@ -475,16 +479,21 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
       Promise.all(forms.map((id) => m.itemWriteRefusal([id], 'edit'))),
     );
     for (const r of res) expect(r).toMatch(/is not written as a uuid is/);
-    // The canonical form is checked as before (Read only: refused).
-    const canonical = await inAdminTurn(owner, () => m.itemWriteRefusal([roNote], 'edit'));
+    // The canonical form is checked as before (Read only: refused), for L,
+    // a plain user of Admin (the anchor moderates Admin, which holds it, so
+    // it may edit it since 0382, owner page d7313c67).
+    const canonical = await inAdminTurn(second, () => m.itemWriteRefusal([roNote], 'edit'));
     expect(canonical).toMatch(/You cannot change this item/);
+    expect(await inAdminTurn(owner, () => m.itemWriteRefusal([roNote], 'edit'))).toBeNull();
     // Not a uuid at all: left to the tool's own error.
     expect(await inAdminTurn(owner, () => m.itemWriteRefusal(['notes.x'], 'edit'))).toBeNull();
   });
 
   it('N3: api_docs_set onto a file the scope cannot edit is refused; api_docs_get never reads it', async () => {
     const before = await nodeState(docsFile);
-    for (const login of [owner, second]) {
+    // L, a plain user of Admin (the anchor moderates Admin, which holds the
+    // file: it may edit it since 0382, owner page d7313c67).
+    for (const login of [second]) {
       const res = await inAdminTurn(login, () =>
         dispatchAs(login, 'api_docs_set', {
           group_slug: groupSlug,

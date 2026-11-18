@@ -63,12 +63,13 @@ write calls none of them.
 
 ## The rule, written once
 
-- `mantle_may_edit_in(ws, mod_ws, home, write_ws, read_ws)` and
+- `mantle_may_edit_in(ws, mod_ws, home, write_ws, read_ws, kind)` and
   `mantle_may_manage_in(mod_ws, home)` are the array forms, pure, for a
   preview that asks about any set of workspaces (plan 5.1).
   `mantle_may_edit` and `mantle_may_manage` call them with the scope.
 - Shared items (0382): a Moderator of a workspace that holds an item (its
-  `read_ws`) edits it, Write on or off. Adding to a folder (a create in it,
+  `read_ws`) edits it, Write on or off, an app excepted (the rule takes the
+  item's kind). Adding to a folder (a create in it,
   a move into it) is `mantle_may_add(home, write_ws, read_ws)`: the edit
   rule counting only the folder's home's Write, so a user of a shared
   Write grant edits the folder and does not add to it. A move is manage of

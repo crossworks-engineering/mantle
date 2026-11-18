@@ -332,8 +332,8 @@ function readsForWrite(role: OracleWriteRole): boolean {
   return standingOf(role).reads;
 }
 
-function editsForWrite(role: OracleWriteRole): boolean {
-  return GUIDE_RULES.edit(standingOf(role));
+function editsForWrite(role: OracleWriteRole, kind?: string): boolean {
+  return GUIDE_RULES.edit(standingOf(role), kind);
 }
 
 function adminForWrite(role: OracleWriteRole): boolean {
@@ -389,8 +389,15 @@ export function expectedWrite(
   const standing = standingOf(role, context.placement);
   const deny = (why: string): OracleAnswer => ({ allow: false, why });
   switch (action) {
-    case 'edit':
     case 'rank':
+      // "Its board rank: ... or of its folder": a folder's order is the
+      // folder's, so a holder's Moderator orders an app in it (0382, owner
+      // page d7313c67: an app's own acts stay its home's).
+      return editsForWrite(role, kind) ||
+        (context.placement === 'folder' && editsForWrite(role, 'branch'))
+        ? { allow: true }
+        : deny('may not edit it');
+    case 'edit':
     case 'recallCard':
     case 'recallCardNew':
     case 'recallCardDelete':
@@ -399,13 +406,13 @@ export function expectedWrite(
     case 'historyDelete':
     case 'appData':
     case 'appLower':
-      return editsForWrite(role) ? { allow: true } : deny('may not edit it');
+      return editsForWrite(role, kind) ? { allow: true } : deny('may not edit it');
     case 'createDerived':
       // "To place an item in folder F you may add to F"; what only the brain
       // sets is dropped (the cell checks it).
       return GUIDE_RULES.add(standing) ? { allow: true } : deny('may not add to the folder');
     case 'appDataInformational':
-      return editsForWrite(role) && adminForWrite(role)
+      return editsForWrite(role, kind) && adminForWrite(role)
         ? { allow: true }
         : deny('Informational: nobody outside Admin writes its data');
     case 'derived':
@@ -427,7 +434,7 @@ export function expectedWrite(
         ? { allow: true }
         : deny('may not close its link');
     case 'appSwitch':
-      return adminForWrite(role) && editsForWrite(role)
+      return adminForWrite(role) && editsForWrite(role, kind)
         ? { allow: true }
         : deny('an Admin user sets it');
   }
@@ -448,7 +455,7 @@ export function expectedRefusalDetail(
   if (
     actor === 'login' &&
     action === 'appDataInformational' &&
-    editsForWrite(role) &&
+    editsForWrite(role, 'app') &&
     !adminForWrite(role)
   ) {
     return 'read_only';

@@ -40,8 +40,11 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
 }));
 
 type Mode = 'warn' | 'on';
-/** wr: a user of W, which has Write on the folder; rd: a Moderator of R,
- *  Write off; out: a Moderator of O, granted nothing. */
+/** wr: a user of W, which has Write on the folder; rd: a plain user of R,
+ *  Write off (a Moderator of R would order it: since 0382 a Moderator of a
+ *  workspace that holds an item edits it, Write on or off, owner page
+ *  d7313c67); out: a Moderator of O, granted nothing. The owner is a plain
+ *  user of U, for an item it reads and may not edit. */
 type Who = 'owner' | 'wr' | 'rd' | 'out';
 type Outcome = { ok: boolean; text: string };
 type Reply = { isError?: boolean; content?: { text?: string }[] };
@@ -66,7 +69,7 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     rd: randomUUID(),
     out: randomUUID(),
   };
-  const ws = { admin: '', H: '', W: '', R: '', O: '' };
+  const ws = { admin: '', H: '', W: '', R: '', O: '', U: '' };
   const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
   const owner = L.owner;
   const n = () => randomUUID().slice(0, 8);
@@ -325,7 +328,7 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
       await raw<{ id: string }[]>`select id::text as id from workspaces
                                   where owner_id = ${owner} and is_admin`
     )[0]!.id;
-    for (const key of ['H', 'W', 'R', 'O'] as const) {
+    for (const key of ['H', 'W', 'R', 'O', 'U'] as const) {
       ws[key] = (
         await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
           values (${owner}, ${`${tag} ${key}`}) returning id::text as id`
@@ -335,7 +338,8 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
     await raw`delete from workspace_users where workspace_id = ${ws.admin}
                and login_id in ${raw(members)}`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${ws.W}, ${L.wr}, false), (${ws.R}, ${L.rd}, true), (${ws.O}, ${L.out}, true)`;
+      values (${ws.W}, ${L.wr}, false), (${ws.R}, ${L.rd}, false), (${ws.O}, ${L.out}, true),
+             (${ws.U}, ${owner}, false)`;
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     await sys(() => tree.ensureKindRoot(owner, 'notes'));
     m.takeActorMisses();
@@ -786,8 +790,9 @@ describe.skipIf(!DB_URL)('the tree custom order', () => {
       it('at the top level, an item the Admin may not edit is refused first', async () => {
         await setMode(mode);
         const top = await note(`top locked ${n()}`);
-        // Homed in H, read by the Admin workspace with Write off.
-        await grantsOn(top, [{ ws: ws.H, home: true }, { ws: ws.admin }]);
+        // Homed in H, read by U (the owner a plain user there) with Write
+        // off: a grant to Admin would be the owner's to edit (0382).
+        await grantsOn(top, [{ ws: ws.H, home: true }, { ws: ws.U }]);
         const o = await refused(
           (id) => viaMcp('owner', 'tree_item_place', { kind: 'notes', item_id: id, after: null }),
           top,

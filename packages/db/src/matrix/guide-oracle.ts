@@ -320,6 +320,9 @@ export type GuideStanding = {
   /** "Edit its content: Moderator of its home, a grant with Write on, or
    *  Moderator of a holder". */
   edits: boolean;
+  /** The same for an app: "Moderator of a holder" does not count (an
+   *  app's acts stay its home's Moderators' and its Write grants'). */
+  editsApp: boolean;
   /** "Folders": "To place an item in folder F you may add to F: Moderator
    *  of a workspace that holds F (its home too), or a user of F's home with
    *  Write on there" (the item is F, in the folder placement). */
@@ -350,6 +353,7 @@ export function guideStanding(
   return {
     reads: g.read.some((w) => seats.users.includes(w)),
     edits: homeMod || g.write.some((w) => seats.users.includes(w)) || holderMod,
+    editsApp: homeMod || g.write.some((w) => seats.users.includes(w)),
     adds: homeMod || holderMod || (g.write.includes(g.home) && seats.users.includes(g.home)),
     homeMod,
     modOf: (w) => seats.mods.includes(w),
@@ -366,7 +370,7 @@ export function guideStanding(
 export const GUIDE_RULES = {
   /** "Edit its content: Moderator of its home, a grant with Write on, or
    *  Moderator of a holder". */
-  edit: (s: GuideStanding) => s.edits,
+  edit: (s: GuideStanding, kind?: string) => (kind === 'app' ? s.editsApp : s.edits),
   /** "Folders": "To place an item in folder F you may add to F". */
   add: (s: GuideStanding) => s.adds,
   /** "Delete it: Moderator of its home" (an app: Admin users too,
@@ -379,7 +383,7 @@ export const GUIDE_RULES = {
   link: (kind: string, s: GuideStanding) =>
     kind === 'app' || kind === 'present' ? s.homeMod : s.edits,
   /** "Apps": "A user writes the app's data when they may edit the app". */
-  appData: (s: GuideStanding) => s.edits,
+  appData: (s: GuideStanding) => s.editsApp,
 } as const;
 
 /** The why of a key's or a linked brain's change to a page or a note others
@@ -564,13 +568,13 @@ function narrowedAnswer(
       // "Edit its content: Moderator of its home, a grant with Write on, or
       // Moderator of a holder".
       if (snapshot) return readOnlyCopy;
-      return GUIDE_RULES.edit(s) ? { allow: true } : deny('may not edit it');
+      return GUIDE_RULES.edit(s, kind) ? { allow: true } : deny('may not edit it');
     case 'editDraft':
       if (snapshot) return readOnlyCopy;
       // "Apps": "Code. A Moderator of the app's home builds and edits it."
       if (kind === 'app')
         return GUIDE_RULES.appCode(s) ? { allow: true } : deny('app code: Moderator of its home');
-      return GUIDE_RULES.edit(s) ? { allow: true } : deny('may not edit it');
+      return GUIDE_RULES.edit(s, kind) ? { allow: true } : deny('may not edit it');
     case 'delete':
       // An app: its home Moderator, Admin users and the owner delete it. A
       // delete is an archive: the app goes to Recently deleted with a
