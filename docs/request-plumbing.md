@@ -774,8 +774,10 @@ owner rows open to members (139):
   PUT /api/recall/maps/:id/cards/:card
   PUT /api/tables/:id/draft
   PUT /api/tree/items/:id/pin
-public (no credential, or its own) (23):
+public (no credential, or its own) (37):
   DELETE /api/auth/oidc/link
+  DELETE /api/sidecar/mail/accounts/:id
+  DELETE /api/sidecar/state/:key
   GET /.well-known/oauth-authorization-server
   GET /.well-known/oauth-protected-resource
   GET /api/appearance
@@ -788,6 +790,9 @@ public (no credential, or its own) (23):
   GET /api/federation/node/:id
   GET /api/gateway/registry
   GET /api/oauth/authorize
+  GET /api/services/sync/ui
+  GET /api/sidecar/state
+  GET /api/sidecar/state/:key
   GET /api/update-notice
   GET /api/version
   GET /pair
@@ -798,6 +803,15 @@ public (no credential, or its own) (23):
   POST /api/federation/query
   POST /api/gateway/calls
   POST /api/oauth/authorize
+  POST /api/services/sync/ui
+  POST /api/sidecar/contacts
+  POST /api/sidecar/contacts/unknown
+  POST /api/sidecar/events
+  POST /api/sidecar/mail/accounts
+  POST /api/sidecar/mail/gate
+  POST /api/sidecar/mail/ingest
+  POST /api/sidecar/mail/run
+  PUT /api/sidecar/state/:key
 telegram logins (5):
   DELETE /api/telegram/my-chats/:id
   GET /api/telegram/moderated-chats
