@@ -591,6 +591,9 @@ async function main(): Promise<void> {
       () => import('@mantle/files/pipelines/pkg').then((m) => m.loadEveryStep()),
       // And the file of every Python built-in (drawing-raster), in the CAD tier.
       () => import('./pipeline-job').then((m) => m.pythonBuiltinsThere()),
+      // In the image (PARSER_PYTHON is named there): qpdf, the cutter of
+      // page windows, and Tesseract with its English data, the local OCR.
+      () => import('./pipeline-job').then((m) => m.ocrToolsThere()),
     ]);
   }
   // A job directory left by a killed server is garbage now (in the

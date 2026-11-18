@@ -37,6 +37,7 @@
     "./file-database": "./src/file-database.ts",
     "./pdf-read": "./src/pdf-read.ts",
     "./pipeline-state": "./src/pipeline-state.ts",
+    "./page-passages": "./src/page-passages.ts",
     "./pipeline-registry": "./src/pipeline-registry.ts",
     "./pipeline-agent": "./src/pipeline-agent.ts",
     "./pipeline-runner": "./src/pipeline-runner.ts",
