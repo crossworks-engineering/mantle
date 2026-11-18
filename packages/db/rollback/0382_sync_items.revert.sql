@@ -18,4 +18,4 @@ SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 DROP TABLE IF EXISTS "public"."sync_items";
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792130000000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792140000000;
