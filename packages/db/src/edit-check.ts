@@ -21,7 +21,10 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
     'server/api/src/agent/extract/gates.ts',
     'packages/db/src/extract-skip-backfill.ts',
   ],
-  extract_completed_at: ['server/api/src/agent/extractor.ts'],
+  extract_completed_at: [
+    'server/api/src/agent/extractor.ts',
+    'server/api/src/agent/extract/gates.ts',
+  ],
   extract_incomplete: ['server/api/src/agent/extract/facts.ts'],
   extract_parked: ['server/api/src/agent/extract-heads-park.ts'],
   indexing_applied: ['server/api/src/agent/extract/gates.ts'],

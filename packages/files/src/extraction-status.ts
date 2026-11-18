@@ -75,7 +75,7 @@ const HINTS: Readonly<Record<string, string>> = {
   local_only:
     'Read on this box with no model (its workspace has no assistant): its text is in search, with no summary.',
   not_read_no_model:
-    'Not read: its workspace has no assistant, and this file (a scan) needs a model to read. Only its name is in search.',
+    'Not read: only its name is in search. A full read needs an assistant in its workspace.',
 };
 
 const PARTIAL_HINT = (read: number, total: number) =>

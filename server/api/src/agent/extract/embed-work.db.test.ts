@@ -871,6 +871,8 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
        ${JSON.stringify({ filename: 'spec-book.pdf', sha256: 'f'.repeat(64), indexing_applied: 'full' })}::jsonb)`);
     await extractNode(id, owner);
     expect(h.modelCalls).toBe(0);
+    // The cost guard's path, not an earlier stop.
+    expect(await lastDisposition(id)).toBe('no_assistant_workspace');
     const [d] = await x<{
       skipped: string | null;
       done: string | null;
