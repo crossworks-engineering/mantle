@@ -307,6 +307,37 @@ export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
   };
 }
 
+/** An extract job for a file, as a file's status shows it: waiting
+ *  (created or retry) or running (active). */
+export type ExtractJobState = 'queued' | 'running';
+
+/**
+ * The extract jobs (both lanes) waiting or running for these node ids: ONE
+ * read for a whole list, never one per row (a file's status in Files,
+ * docs/files.md "Status and processing"). The ids are rows the caller's
+ * scope already read: this answers only for them. Running wins over
+ * queued. An empty map when pg-boss has no schema yet (a fresh brain).
+ */
+export async function extractJobsFor(
+  ids: readonly string[],
+): Promise<Map<string, ExtractJobState>> {
+  const out = new Map<string, ExtractJobState>();
+  if (ids.length === 0) return out;
+  try {
+    const rows = (await systemDb.execute(sql`
+      SELECT data->>'nodeId' AS id, bool_or(state = 'active') AS running
+      FROM pgboss.job
+      WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+        AND state IN ('created', 'retry', 'active')
+        AND data->>'nodeId' = any(string_to_array(${ids.join(',')}, ','))
+      GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean }>;
+    for (const r of rows) out.set(r.id, r.running ? 'running' : 'queued');
+  } catch {
+    // No pg-boss schema yet: nothing is queued.
+  }
+  return out;
+}
+
 /** Whether the extract queue is busy: more than EXTRACT_BUSY_JOBS jobs
  *  waiting or retrying (scripts/box-maintain.sh holds the same rule). A
  *  count that cannot be read (no pg-boss schema yet on a fresh brain)

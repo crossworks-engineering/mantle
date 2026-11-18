@@ -165,6 +165,15 @@ export type {
   FileDatabaseTab,
 } from './dto/file-databases';
 export type {
+  FileDerivedItem,
+  FileIngest,
+  FileJob,
+  FileProcessing,
+  FileProcessingExtraction,
+  FileStatus,
+} from './dto/file-status';
+export { FILE_DERIVED_MAX } from './dto/file-status';
+export type {
   PipelineList,
   PipelineOptionSpec,
   PipelineRereadBody,

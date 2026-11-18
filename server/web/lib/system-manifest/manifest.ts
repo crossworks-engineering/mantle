@@ -689,6 +689,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_read',
       // The rows of a table-type file, from its own database.
       'file_sql',
+      // What the brain did with a file, and the items made from it.
+      'file_processing',
       'file_create',
       'file_rename',
       'folder_rename',

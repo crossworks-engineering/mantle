@@ -237,6 +237,7 @@
     },
     "GET /api/files/files": { "tool": "file_list", "gap": "no recent view across folders" },
     "GET /api/files/files/:id": ["file_get", "file_read"],
+    "GET /api/files/files/:id/processing": "file_processing",
     "GET /api/files/folders": "folder_list",
     "GET /api/files/folders/:id": { "tool": "folder_get_by_path", "gap": "by path, not by id" },
     "GET /api/fleet": {
@@ -305,7 +306,9 @@
     "GET /api/messenger/stream": { "none": "machinery: a live stream for an open window" },
     "GET /api/messenger/unread": "messenger_list",
     "GET /api/metrics/usage": { "planned": "usage_report" },
-    "GET /api/microsoft/oauth/callback": { "none": "outside: Microsoft's redirect after a person's sign-in" },
+    "GET /api/microsoft/oauth/callback": {
+      "none": "outside: Microsoft's redirect after a person's sign-in"
+    },
     "GET /api/model-combos": { "planned": "model_combo_list" },
     "GET /api/model-context": {
       "none": "Screen data: it only draws a screen, and other tools hold the facts"
@@ -396,9 +399,15 @@
     "GET /api/secrets/:id": { "planned": "secret_get" },
     "GET /api/services": "service_list",
     "GET /api/services/status": "service_list",
-    "GET /api/services/sync/oauth/callback": { "none": "outside: Microsoft's redirect after a person's sign-in" },
-    "GET /api/services/sync/oauth/start": { "none": "a person's sign-in in their own browser (the consent at Microsoft); sync_status names where a person connects" },
-    "GET /api/services/sync/ui": { "none": "a person's screen in a frame; its actions are the sync_* tools (sync_status, sync_mailbox_set, sync_feed_set, sync_microsoft_app_set, sync_microsoft_set, sync_drive_browse, sync_drive_set, sync_remove, sync_run)" },
+    "GET /api/services/sync/oauth/callback": {
+      "none": "outside: Microsoft's redirect after a person's sign-in"
+    },
+    "GET /api/services/sync/oauth/start": {
+      "none": "a person's sign-in in their own browser (the consent at Microsoft); sync_status names where a person connects"
+    },
+    "GET /api/services/sync/ui": {
+      "none": "a person's screen in a frame; its actions are the sync_* tools (sync_status, sync_mailbox_set, sync_feed_set, sync_microsoft_app_set, sync_microsoft_set, sync_drive_browse, sync_drive_set, sync_remove, sync_run)"
+    },
     "GET /api/settings/worker-groups": "worker_group_list",
     "GET /api/shares": { "planned": "link_list" },
     "GET /api/shares/all": { "planned": "link_list" },
@@ -941,8 +950,12 @@
     },
     "POST /api/secrets/:id/reveal": { "people": "the secret value would enter the model" },
     "POST /api/services/:name": "service_set",
-    "POST /api/services/:name/frame-ticket": { "none": "a person's screen in a frame; its actions are the sync_* tools (sync_status, sync_mailbox_set, sync_feed_set, sync_microsoft_app_set, sync_microsoft_set, sync_drive_browse, sync_drive_set, sync_remove, sync_run)" },
-    "POST /api/services/sync/ui": { "none": "a person's screen in a frame; its actions are the sync_* tools (sync_status, sync_mailbox_set, sync_feed_set, sync_microsoft_app_set, sync_microsoft_set, sync_drive_browse, sync_drive_set, sync_remove, sync_run)" },
+    "POST /api/services/:name/frame-ticket": {
+      "none": "a person's screen in a frame; its actions are the sync_* tools (sync_status, sync_mailbox_set, sync_feed_set, sync_microsoft_app_set, sync_microsoft_set, sync_drive_browse, sync_drive_set, sync_remove, sync_run)"
+    },
+    "POST /api/services/sync/ui": {
+      "none": "a person's screen in a frame; its actions are the sync_* tools (sync_status, sync_mailbox_set, sync_feed_set, sync_microsoft_app_set, sync_microsoft_set, sync_drive_browse, sync_drive_set, sync_remove, sync_run)"
+    },
     "POST /api/settings/worker-groups": "worker_group_ensure",
     "POST /api/shares": "node_share",
     "POST /api/sidecar/contacts": { "none": "outside: the Sync sidecar calls this" },

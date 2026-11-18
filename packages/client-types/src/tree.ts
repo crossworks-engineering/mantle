@@ -15,6 +15,7 @@ import type { AccessLevel } from './dto/access';
 import type { GrantWorkspaceRef, ListWorkspace } from './dto/grants';
 import type { TaskStatus } from './dto/rows';
 import type { ElsewhereCount, HitWorkspaceField } from './dto/workspace-hits';
+import type { FileStatus } from './dto/file-status';
 import type { AppTint } from './app-nav';
 import {
   ITEM_KINDS,
@@ -175,6 +176,10 @@ export type TreeItem = {
   state: TreeItemState | null;
   updatedAt: string;
   meta?: TreeItemMeta;
+  /** A file's compact status (the corner badge of its icon): was it read
+   *  into the brain, a job in the queue, its database (dto/file-status).
+   *  Files only; absent on every other kind, and from a brain before it. */
+  status?: FileStatus;
   /** The workspaces that read the item (ListChips): filled by the owner's
    *  tree routes. */
   workspaces: ListWorkspace[];

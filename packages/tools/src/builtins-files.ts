@@ -19,6 +19,7 @@ import {
 } from './files/write';
 import { file_move, file_copy, folder_move, folder_copy } from './files/organise';
 import { folder_create, folder_delete, file_upload, file_delete } from './files/operator';
+import { file_processing } from './files/processing';
 export { folder_list, file_list, file_read, file_get, folder_get_by_path } from './files/read';
 export {
   file_create,
@@ -30,6 +31,7 @@ export {
 } from './files/write';
 export { file_move, file_copy, folder_move, folder_copy } from './files/organise';
 export { folder_create, folder_delete, file_upload, file_delete } from './files/operator';
+export { file_processing, fileProcessing } from './files/processing';
 
 /** File-tree reads + renames (the writes/moves are FILE_MANAGE_TOOLS, creation FILE_CREATE_TOOLS). */
 export const FILE_TOOLS: readonly BuiltinToolDef[] = [
@@ -41,6 +43,10 @@ export const FILE_TOOLS: readonly BuiltinToolDef[] = [
   folder_rename,
   folder_describe,
 ];
+
+/** What the brain did with one file and where its content went (the
+ *  Details panel's answer, GET /api/files/files/:id/processing). */
+export const FILE_PROCESSING_TOOLS: readonly BuiltinToolDef[] = [file_processing];
 
 /** Create a file from text, and resolve a folder by its path. */
 export const FILE_CREATE_TOOLS: readonly BuiltinToolDef[] = [file_create, folder_get_by_path];

@@ -19,8 +19,16 @@
  */
 import { promises as fs } from 'node:fs';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
-import { fileDataExt, fileDataListKeys, fileDataRefusals, tableFileFilter } from './file-data';
+import { db, extractJobsFor, nodes } from '@mantle/db';
+import {
+  fileDataExt,
+  fileDataListKeys,
+  fileDataRefusals,
+  tableFileFilter,
+  withDataView,
+} from './file-data';
+import type { FileExtraction } from './extraction-status';
+import { fileStatusOf, type FileStatus } from './file-status';
 import {
   fileDbPaths,
   fileIdsWithDatabase,
@@ -63,7 +71,7 @@ const SCAN_PAGE = 500;
 const DISK_BATCH = 32;
 
 /** A row's state on disk: its database, its word, or neither. */
-async function stateOf(
+export async function fileDbStateOf(
   id: string,
   sha: unknown,
 ): Promise<{ state: DataFileState; bytes: number | null; named: boolean }> {
@@ -128,7 +136,9 @@ export async function listDataFiles(
     const page = rows.filter((row) => !refused.has(row.id));
     for (let i = 0; i < page.length && files.length <= limit; i += DISK_BATCH) {
       const batch = page.slice(i, i + DISK_BATCH);
-      const states = await Promise.all(batch.map((row) => stateOf(row.id, fileSha256Of(row))));
+      const states = await Promise.all(
+        batch.map((row) => fileDbStateOf(row.id, fileSha256Of(row))),
+      );
       batch.forEach((row, j) => {
         const { state, bytes, named } = states[j]!;
         const ext = fileDataExt(row);
@@ -154,4 +164,44 @@ export async function listDataFiles(
   const truncated = files.length > limit || (more && offset >= DATA_FILES_SCAN);
   files.length = Math.min(files.length, limit);
   return { files, truncated };
+}
+
+/**
+ * File rows with their Data view (withDataView) and their compact `status`
+ * (file-status.ts): ONE read of the queue for the whole list
+ * (extractJobsFor), and a look on disk only for the rows with a Data view,
+ * a few at a time, as the list of data files does. The rows are what the
+ * caller's scope already read.
+ */
+export async function withFileStatus<
+  T extends { id: string; filename: string; sha256: unknown; extraction: FileExtraction },
+>(
+  rows: readonly T[],
+  dbExts: ReadonlySet<string>,
+): Promise<(T & { dataView: boolean; status: FileStatus })[]> {
+  if (rows.length === 0) return [];
+  const [viewed, jobs] = await Promise.all([
+    withDataView(rows, dbExts),
+    extractJobsFor(rows.map((r) => r.id)),
+  ]);
+  const out: (T & { dataView: boolean; status: FileStatus })[] = [];
+  for (let i = 0; i < viewed.length; i += DISK_BATCH) {
+    const batch = viewed.slice(i, i + DISK_BATCH);
+    const dbs = await Promise.all(
+      batch.map((row) =>
+        row.dataView ? fileDbStateOf(row.id, row.sha256).then((s) => s.state) : undefined,
+      ),
+    );
+    batch.forEach((row, j) => {
+      out.push({
+        ...row,
+        status: fileStatusOf({
+          extraction: row.extraction.state,
+          job: jobs.get(row.id),
+          db: dbs[j],
+        }),
+      });
+    });
+  }
+  return out;
 }

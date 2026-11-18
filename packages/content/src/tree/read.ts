@@ -42,6 +42,8 @@ import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
 import { itemMeta, itemState, itemSubtype, kindItemFilter } from './kinds';
 import { RANK_RE } from '../rank';
+import { extractionOf, withFileStatus } from '@mantle/files';
+import { boxPipelines } from '../pipeline-registry';
 
 type FolderSqlRow = {
   id: string;
@@ -105,6 +107,38 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
     workspaces: [],
     hasLink: false,
   };
+}
+
+/**
+ * A page of file items with their compact `status` (the corner badge of a
+ * file's icon, @mantle/client-types dto/file-status): withFileStatus, ONE
+ * read of the queue and one of the box's pipelines for the page. Every
+ * other kind comes back as it is.
+ */
+async function withTreeFileStatus<T extends TreeItem>(
+  ownerId: string,
+  kind: TreeKind,
+  rows: readonly ItemSqlRow[],
+  items: T[],
+): Promise<T[]> {
+  if (kind !== 'files' || items.length === 0) return items;
+  const files = rows.map((r) => {
+    const data = r.data ?? {};
+    return {
+      id: r.id,
+      filename: typeof data.filename === 'string' ? data.filename : r.title,
+      sha256: data.sha256,
+      extraction: extractionOf(data),
+    };
+  });
+  const { dbExts } = await boxPipelines(ownerId);
+  const status = new Map(
+    (await withFileStatus(files, dbExts)).map((f) => [f.id, f.status] as const),
+  );
+  return items.map((item) => {
+    const s = status.get(item.id);
+    return s ? { ...item, status: s } : item;
+  });
 }
 
 /** Folder rows matching `where`, with the reader's counts and parent id,
@@ -447,7 +481,12 @@ export async function itemPage(
   const page = more ? rows.slice(0, limit) : rows;
   const last = page.at(-1);
   return {
-    items: page.map((r) => treeItemFromRow(kind, r)),
+    items: await withTreeFileStatus(
+      ownerId,
+      kind,
+      page,
+      page.map((r) => treeItemFromRow(kind, r)),
+    ),
     nextCursor:
       more && last ? encodeTreeCursor({ sort, key: String(last.sort_key), id: last.id }) : null,
   };
@@ -738,7 +777,12 @@ export async function searchTree(
   return {
     kind,
     folders: folders.map((f) => ({ ...f, crumbs: crumbs.get(treeParentPath(f.path)) ?? [] })),
-    items: page.map((r) => ({ ...treeItemFromRow(kind, r), crumbs: crumbs.get(r.path) ?? [] })),
+    items: await withTreeFileStatus(
+      ownerId,
+      kind,
+      page,
+      page.map((r) => ({ ...treeItemFromRow(kind, r), crumbs: crumbs.get(r.path) ?? [] })),
+    ),
     nextCursor:
       more && last
         ? encodeTreeCursor({ sort: 'name', key: String(last.sort_key), id: last.id })

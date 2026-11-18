@@ -261,9 +261,18 @@ export {
   DATA_FILES_MAX,
   DATA_FILES_UNDER,
   listDataFiles,
+  fileDbStateOf,
+  withFileStatus,
   type DataFileRow,
   type DataFileState,
 } from './file-db-list';
+export {
+  fileStatusOf,
+  ingestOf,
+  type FileIngest,
+  type FileJob,
+  type FileStatus,
+} from './file-status';
 
 export {
   ensureRoot,
