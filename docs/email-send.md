@@ -32,5 +32,11 @@ clears it per tool in Settings > Tools.
 server's address as for IMAP, and sends with nodemailer. A refusal (no
 mailbox can send, the server refused) comes back as the tool's error.
 
-A mailbox sends only when it has SMTP settings (Settings > Sync, the
+A mailbox sends only when it has SMTP settings (Settings > Accounts, the
 mailbox's "Sending" part).
+
+A Microsoft 365 account sends through Outlook (Sync plan M3,
+[microsoft-graph-ingest.md](./microsoft-graph-ingest.md)) when its mail is
+on and it granted `Mail.Send`: it is picked when `from` names it, or when
+no IMAP mailbox can send. Graph `/me/sendMail` takes at most 2.5 MB of
+attachments in one message and no In-Reply-To.
