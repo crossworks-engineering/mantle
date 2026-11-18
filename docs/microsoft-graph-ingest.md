@@ -44,21 +44,24 @@ Mail.Read Mail.Send Calendars.Read`.
   2. The list is compared with the brain's file map, `sync_items` (0382):
      service, source (the drive), item id, node, provider hash, size.
      The same id and hash: nothing to do. An id from the copied old map (no
-     hash yet) with the same size: re-linked (`POST
-/api/sidecar/files/relink`), no download. Anything else is fetched.
+     hash yet) with the same size, not changed since the old sync's last
+     run: re-linked (`POST /api/sidecar/files/relink`), no download.
+     Anything else is fetched, at most 300 files a run (the rest next run).
   3. Each fetch is one `rclone cat`, its bytes streamed straight into
      `POST /api/sidecar/files`. The brain spools it to disk with its sha256,
      refuses a file cut short, and makes an ordinary `file` node: one per
      owner and sha256 (among the nodes a drive sync made), bytes in the
      object store, flat under `<account branch>.<drive label>`. A changed
-     file's old node is retired when no other row holds it.
+     file's old node is retired when no other row holds it. A file Microsoft
+     will not hand out is left for the next run, and the status names it.
   4. Only after a listing that ran to its end: each item gone from the
      drive, or out of its selections, leaves the map, and its node when no
      other row holds it (`POST /api/sidecar/files/remove`). A node a person
      uploaded, an attachment or a drawing holds is never removed.
 - A file over 64 MB (the buffered upload cap) is skipped and counted.
 - Selections: none chosen is the whole drive; a folder holds its path and
-  everything below; a file matches by id or path.
+  everything below; a file matches by id or path. Each run reads every
+  choice's path again by its id, so a renamed or moved folder keeps syncing.
 - Switching a drive off keeps its files and its map. Disconnecting an
   account drops its maps (`POST /api/sidecar/files/forget`); every file
   stays.
@@ -67,6 +70,8 @@ Mail.Read Mail.Send Calendars.Read`.
 
 - The mail switch makes (or switches on) one `email_accounts` row with
   provider `microsoft` and no credential, under `<account branch>.mail`.
+  An address linked as an IMAP mailbox cannot also be an Outlook inbox
+  (409): remove one first.
 - Every 5 minutes the inbox is read from a `receivedDateTime` watermark
   (`server/sync/src/outlook.ts`), a page at a time: the envelopes go through
   the brain's one gate (`/api/sidecar/mail/gate`), and only the wanted
