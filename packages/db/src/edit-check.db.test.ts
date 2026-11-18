@@ -1101,7 +1101,8 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     const [f] = await sql<{ e: boolean; m: boolean }[]>`
       select mantle_may_edit_in(array[${ws.W}]::uuid[], '{}'::uuid[], ${ws.H}::uuid, array[${ws.W}]::uuid[],
                                 array[${ws.H}, ${ws.W}]::uuid[], 'note') as e,
-             mantle_may_manage_in(array[${ws.H}]::uuid[], ${ws.H}::uuid) as m`;
+             mantle_may_manage_in(array[${ws.H}]::uuid[], array[${ws.H}]::uuid[], ${ws.H}::uuid,
+                                  array[${ws.H}]::uuid[]) as m`;
     expect(f).toEqual({ e: true, m: true });
   });
 });

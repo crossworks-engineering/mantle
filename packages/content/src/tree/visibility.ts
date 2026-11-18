@@ -370,7 +370,8 @@ export async function assertManagesNewItemHome(
   if (!currentWorkspaceScope()) return;
   const { home } = await newItemHomeSql(db, ownerId, nodeType, destPath);
   const [row] = (await db.execute(
-    sql`select coalesce("public"."mantle_may_manage"(${home}), false) as ok`,
+    // No row yet: its home holds it, the one read known (0382).
+    sql`select coalesce("public"."mantle_may_manage"(${home}::uuid, array[${home}::uuid]), false) as ok`,
   )) as unknown as Array<{ ok: boolean }>;
   if (!row?.ok) throw editCheckRefusalError('no_edit');
 }

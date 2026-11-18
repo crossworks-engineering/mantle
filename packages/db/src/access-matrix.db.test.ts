@@ -360,9 +360,10 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
        where schemaname = 'public' and tablename = 'app_table_exports' and cmd = 'SELECT'`;
     expect(reads).toHaveLength(1);
     expect([...reads[0]!.roles].sort()).toEqual(['mantle_view_user', 'mantle_write_user']);
-    // Fix round 4: manage of the app is mantle_may_manage_home (0279), the
-    // one place its test is written (assertManageOrAdmin asks it too).
-    expect(reads[0]!.qual).toContain('mantle_may_manage_home(a.home_ws)');
+    // Fix round 4: manage of the app is mantle_may_manage_home (0279; with
+    // the item's read_ws since 0382), the one place its test is written
+    // (assertManageOrAdmin asks it too).
+    expect(reads[0]!.qual).toContain('mantle_may_manage_home(a.home_ws, a.read_ws)');
     // Both functions are the workspace role's and the write role's to run,
     // never PUBLIC's.
     const run = await sql<{ fn: string; pub: boolean; view: boolean; write: boolean }[]>`
@@ -370,10 +371,10 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
              has_function_privilege('public', f::regprocedure, 'EXECUTE') as pub,
              has_function_privilege('mantle_view_user', f::regprocedure, 'EXECUTE') as view,
              has_function_privilege('mantle_write_user', f::regprocedure, 'EXECUTE') as write
-        from unnest(array['public.mantle_may_manage_home(uuid)',
+        from unnest(array['public.mantle_may_manage_home(uuid,uuid[])',
                           'public.mantle_profile_writable(uuid)']) f order by 1`;
     expect(run.map((r) => [r.fn, r.pub, r.view, r.write])).toEqual([
-      ['public.mantle_may_manage_home(uuid)', false, true, true],
+      ['public.mantle_may_manage_home(uuid,uuid[])', false, true, true],
       ['public.mantle_profile_writable(uuid)', false, true, true],
     ]);
   });

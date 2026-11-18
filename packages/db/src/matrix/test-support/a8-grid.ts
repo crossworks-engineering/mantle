@@ -777,7 +777,7 @@ async function act(
       // assertItemRight, this read). System work is not checked.
       if (!onSystemPool(c)) {
         const [may] = await tx<{ ok: boolean }[]>`
-          select coalesce(mantle_may_manage(n.home_ws), false) as ok
+          select coalesce(mantle_may_manage(n.home_ws, n.read_ws), false) as ok
             from nodes n where n.id = ${id}`;
         if (!may?.ok) throw Object.assign(new Error('may not manage it'), { code: '42501' });
       }

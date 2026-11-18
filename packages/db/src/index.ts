@@ -569,7 +569,6 @@ export {
   itemHomeSql,
   mayEditInSql,
   mayEditSql,
-  mayManageHomeInSql,
   mayManageInSql,
   mayManageSql,
   mayMoveSql,

@@ -11,45 +11,87 @@
 -- One new check: "the login is a Moderator of a workspace that holds the
 -- item". For a move, that workspace holds the folder it lands in too.
 --  1. mantle_may_edit_in and mantle_may_edit take the item's read_ws and
---     kind: edit is a Moderator of its home, a grant with Write on in the
---     scope, or (new) a Moderator of a workspace that holds it, an app
---     excepted (an app's acts stay its home's Moderators' and its Write
---     grants'). The old forms are dropped, so no caller keeps the old rule.
---     mantle_check_row, the write check (mantle_write_check_trg: the row's
---     kind), the two canvas data definers, mantle_default_home, the move
---     check's rename and the canvas data read rule pass them.
+--     kind: edit is manage (4), a grant with Write on in the scope, or (new)
+--     a Moderator of a workspace that holds it, an app excepted (an app's
+--     acts stay its managers' and its Write grants'). The old forms are
+--     dropped, so no caller keeps the old rule. mantle_check_row, the write
+--     check (mantle_write_check_trg: the row's kind), the two canvas data
+--     definers, mantle_default_home, the move check's rename and the canvas
+--     data read rule pass them.
 --  2. mantle_may_add(home, write_ws, read_ws): adding to a folder (a new item
 --     or folder in it, an item moved into it). The edit rule, counting only
 --     the folder's home's Write switch: a Moderator of a workspace that holds
---     the folder, a Moderator of its home, or a user of its home with Write
---     on. A user who writes the folder through a shared grant no longer adds
---     to it (the owner accepted this). mantle_may_add_to_folder and
+--     the folder, a manager of it, or a user of its home with Write on. A
+--     user who writes the folder through a shared grant no longer adds to
+--     it (the owner accepted this). mantle_may_add_to_folder and
 --     mantle_may_create_item ask it.
 --  3. mantle_mod_holds(a, b): a workspace the scope moderates holds both. The
 --     move check (mantle_nodes_acl_path_trg) and mantle_subtree_rewrite take
---     a move from a Moderator of the home, as before, or one inside a
+--     a move from a manager of the item, as before, or one inside a
 --     workspace the caller moderates: mantle_mod_holds(item, folder it lands
 --     in). The folder it lands in asks mantle_may_add.
---  4. manage (mantle_may_manage_in, so mantle_may_manage and
---     mantle_may_manage_home too): a Moderator of the home, or (new, owner
---     word 2026-11-18) a Moderator of the brain's Admin workspace, that is an
---     Admin user (an Admin user's tick there is never cleared). One
---     condition, in the one function the scope and the array forms share,
---     so the caps (mayManage, mayMove) and the checks answer alike. It
---     feeds every act manage decides: delete, a home move (from its home;
---     the new home still needs a Moderator of it), grants, an app's and a
---     canvas's link, app code, history.
+--  4. manage: mantle_may_manage_in(ws, mod_ws, home, read_ws), and its scope
+--     forms mantle_may_manage(home, read_ws) and
+--     mantle_may_manage_home(home, read_ws), take the item's read_ws. It is
+--     a Moderator of the home, or (new, owner's word 2026-11-18, page
+--     d7313c67, decision A) an Admin user who reads the item: a Moderator of
+--     the brain's Admin workspace (an Admin user's tick there is never
+--     cleared) in a scope that reads it (read_ws meets ws, the row rule).
+--     "An Admin user counts as a Moderator of the home of any item it can
+--     read", and of nothing it does not read. One condition, in the one
+--     function every form shares, and edit asks it for its home Moderator
+--     (1), so the caps (mayManage, mayMove, the grants panel, linkRights)
+--     and the checks answer alike. It feeds every act manage decides:
+--     delete, a home move (from its home; the new home still needs a
+--     Moderator of it), grants, an app's and a canvas's link, app code,
+--     history, an app's exports and timers. The old one-argument forms are
+--     dropped; every caller passes the row's read_ws. Where no row is left
+--     or made yet (a deleted app's snapshot home, a new item's home), the
+--     caller passes ARRAY[home]: the home holds its item, so that read is
+--     known, and nothing more is assumed.
 -- Delete, grants, links of an app and app code keep manage. A home move
 -- keeps mantle_grant_move_home.
 --
 -- Re-runnable.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
--- 1. The edit rule, with the workspaces that hold the item.
+-- 4. manage: a Moderator of the home, or an Admin user who reads the item
+-- (the scope's workspaces meet its read_ws, as the row rule asks). STABLE
+-- (was IMMUTABLE): it names the Admin workspace by its definer. The scalar
+-- subqueries run once per query, not once per row.
+CREATE OR REPLACE FUNCTION "public"."mantle_may_manage_in"(
+  ws uuid[], mod_ws uuid[], home uuid, read_ws uuid[])
+  RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT (home IS NOT NULL AND home = ANY (mod_ws))
+      OR (coalesce(read_ws && ws, false)
+          AND coalesce((SELECT "public"."mantle_ws_admin_id"((SELECT "public"."mantle_brain_id"()))) = ANY (mod_ws), false))
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_may_manage"(home uuid, read_ws uuid[])
+  RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT "public"."mantle_may_manage_in"("public"."mantle_scope_ws"(), "public"."mantle_scope_mod_ws"(),
+                                         home, read_ws)
+$$;
+--> statement-breakpoint
+-- An item with no home: an Admin scope (0279, unchanged).
+CREATE OR REPLACE FUNCTION "public"."mantle_may_manage_home"(home uuid, read_ws uuid[])
+  RETURNS boolean LANGUAGE sql STABLE
+  SET search_path = "public", pg_temp AS $$
+  SELECT CASE WHEN home IS NULL THEN "public"."mantle_scope_has_admin"()
+              ELSE coalesce("public"."mantle_may_manage"(home, read_ws), false) END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_may_manage_home"(uuid, uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_may_manage_home"(uuid, uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+-- 1. The edit rule, with the workspaces that hold the item: manage (its
+-- home Moderators, an Admin user who reads it), a grant with Write on, or
+-- a Moderator of a holder (an app excepted). STABLE (was IMMUTABLE): manage is.
 CREATE OR REPLACE FUNCTION "public"."mantle_may_edit_in"(
   ws uuid[], mod_ws uuid[], home uuid, write_ws uuid[], read_ws uuid[], kind "public"."node_type")
-  RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-  SELECT (home IS NOT NULL AND home = ANY (mod_ws)) OR coalesce(write_ws && ws, false)
+  RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT "public"."mantle_may_manage_in"(ws, mod_ws, home, read_ws) OR coalesce(write_ws && ws, false)
          OR (kind IS DISTINCT FROM 'app' AND coalesce(read_ws && mod_ws, false))
 $$;
 --> statement-breakpoint
@@ -69,15 +111,6 @@ CREATE OR REPLACE FUNCTION "public"."mantle_may_add"(home uuid, write_ws uuid[],
            read_ws, 'branch'), false)
 $$;
 --> statement-breakpoint
--- 4. manage: a Moderator of the home, or of the brain's Admin workspace.
--- STABLE (was IMMUTABLE): it names the Admin workspace by its definer. The
--- scalar subqueries run once per query, not once per row.
-CREATE OR REPLACE FUNCTION "public"."mantle_may_manage_in"(mod_ws uuid[], home uuid)
-  RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
-  SELECT (home IS NOT NULL AND home = ANY (mod_ws))
-      OR coalesce((SELECT "public"."mantle_ws_admin_id"((SELECT "public"."mantle_brain_id"()))) = ANY (mod_ws), false)
-$$;
---> statement-breakpoint
 -- 3. A workspace the scope moderates holds both a and b.
 CREATE OR REPLACE FUNCTION "public"."mantle_mod_holds"(a uuid[], b uuid[])
   RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
@@ -94,15 +127,15 @@ BEGIN
   RETURN CASE need
     WHEN 'read' THEN coalesce(read_ws && "public"."mantle_scope_ws"(), false)
     WHEN 'edit' THEN coalesce("public"."mantle_may_edit"(home, write_ws, read_ws, kind), false)
-    WHEN 'manage' THEN "public"."mantle_may_manage_home"(home)
+    WHEN 'manage' THEN "public"."mantle_may_manage_home"(home, read_ws)
     WHEN 'admin' THEN "public"."mantle_scope_has_admin"()
     WHEN 'appdata' THEN coalesce("public"."mantle_may_edit"(home, write_ws, read_ws, kind), false)
                         AND (NOT coalesce(informational, false) OR "public"."mantle_scope_has_admin"())
     WHEN 'link' THEN CASE WHEN "public"."mantle_link_needs_manage"(kind)
-                          THEN "public"."mantle_may_manage_home"(home)
+                          THEN "public"."mantle_may_manage_home"(home, read_ws)
                           ELSE coalesce("public"."mantle_may_edit"(home, write_ws, read_ws, kind), false) END
     WHEN 'link_close' THEN (CASE WHEN "public"."mantle_link_needs_manage"(kind)
-                                 THEN "public"."mantle_may_manage_home"(home)
+                                 THEN "public"."mantle_may_manage_home"(home, read_ws)
                                  ELSE coalesce("public"."mantle_may_edit"(home, write_ws, read_ws, kind), false) END)
                            OR "public"."mantle_scope_has_area"('users')
     ELSE NULL
@@ -162,7 +195,7 @@ BEGIN
       END IF;
       RETURN NEW;
     ELSIF TG_OP = 'DELETE' THEN
-      IF OLD."home_ws" IS NULL AND NOT "public"."mantle_may_manage_home"(NULL)
+      IF OLD."home_ws" IS NULL AND NOT "public"."mantle_may_manage_home"(NULL, OLD."read_ws")
          AND "public"."mantle_scoped_write_refuses"('DELETE on nodes: no home, no Admin scope') THEN
         RAISE EXCEPTION 'not allowed to delete this item' USING ERRCODE = '42501';
       END IF;
@@ -485,7 +518,8 @@ DECLARE
   home uuid := "public"."mantle_default_home"(o, t, p);
   f record;
 BEGIN
-  IF "public"."mantle_may_manage_home"(home) THEN RETURN true; END IF;
+  -- No row yet: its home holds it, so that read is known (4).
+  IF "public"."mantle_may_manage_home"(home, ARRAY[home]) THEN RETURN true; END IF;
   IF home IS NULL THEN RETURN false; END IF;
   SELECT n."home_ws", n."write_ws", n."read_ws" INTO f FROM "public"."nodes" n
    WHERE n."id" = "public"."mantle_parent_folder"(o, t, p);
@@ -579,7 +613,7 @@ BEGIN
       END IF;
       -- A Moderator of its home, or of a workspace that holds both the item
       -- and the folder it lands in (a move inside that workspace, 0382).
-      IF NOT ("public"."mantle_may_manage"(m."home_ws")
+      IF NOT ("public"."mantle_may_manage"(m."home_ws", m."read_ws")
               OR (m.folder IS NOT NULL AND "public"."mantle_mod_holds"(m."read_ws", m.f_read))) THEN
         RAISE EXCEPTION 'not allowed to move this item' USING ERRCODE = '42501';
       END IF;
@@ -689,6 +723,390 @@ ALTER POLICY "canvas_data_user_read" ON "public"."canvas_data"
             OR "canvas_data"."login_id" = (SELECT "public"."mantle_login_id"())
             OR coalesce("public"."mantle_may_edit"(n."home_ws", n."write_ws", n."read_ws", n."type"), false))));
 --> statement-breakpoint
+-- 4. The other callers of manage, each passing its row's read_ws: the
+-- grant definers (0279, 0291, 0307), the scope's delete check (0279), a
+-- deleted app's purge and restore (0310: no row is left, so its snapshot's
+-- home, ARRAY[home]), and an app's exports and timers (0302, 0355). The
+-- write role's rules on those two are its read rule, which
+-- mantle_write_role_sync_table writes after the migrations (a new database
+-- has none yet): dropped here, so the old manage can go, and written again
+-- from the new read rule by that sync.
+CREATE OR REPLACE FUNCTION "public"."mantle_app_trash_act"(app uuid, act text)
+  RETURNS TABLE (outcome text, seq integer, code jsonb, db_path text,
+                 schema_version integer, member_era boolean)
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+#variable_conflict use_variable
+DECLARE
+  brain uuid := "public"."mantle_admin_act_brain"('mantle_app_trash_act');
+  owner boolean := "public"."mantle_scope_login_id"() = brain;
+  s_seq integer;
+  s_code jsonb;
+  s_db text;
+  s_schema integer;
+  home text;
+  held boolean;
+  may boolean;
+BEGIN
+  IF act IS NULL OR act NOT IN ('purge', 'restore') THEN
+    RAISE EXCEPTION 'mantle_app_trash_act: act % is neither purge nor restore', act
+      USING ERRCODE = '22023';
+  END IF;
+  SELECT s."seq", s."code", s."db_path", s."schema_version",
+         nullif(s."code" -> 'meta' ->> 'homeWs', ''),
+         coalesce((s."code" -> 'meta' ->> 'keepForOwner')::boolean, false)
+    INTO s_seq, s_code, s_db, s_schema, home, held
+    FROM "public"."node_snapshots" s
+   WHERE s."owner_id" = brain AND s."node_id" = app AND s."node_kind" = 'app'
+     AND s."trigger" = 'pre_delete'
+     AND NOT EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n."id" = s."node_id")
+   ORDER BY s."seq" DESC LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'not-found'::text, NULL::integer, NULL::jsonb, NULL::text,
+                        NULL::integer, NULL::boolean;
+    RETURN;
+  END IF;
+  -- The owner purges an app another login deleted, whatever its home.
+  IF NOT (act = 'purge' AND held AND owner) THEN
+    may := owner AND home IS NULL;
+    IF home IS NOT NULL THEN
+      -- No row is left: its home held it, the one read known (0382).
+      may := coalesce("public"."mantle_may_manage"(home::uuid, ARRAY[home::uuid]), false);
+    END IF;
+    IF NOT may THEN
+      RETURN QUERY SELECT 'not-found'::text, NULL::integer, NULL::jsonb, NULL::text,
+                          NULL::integer, NULL::boolean;
+      RETURN;
+    END IF;
+    IF act = 'purge' AND held THEN
+      RETURN QUERY SELECT 'held'::text, NULL::integer, NULL::jsonb, NULL::text,
+                          NULL::integer, NULL::boolean;
+      RETURN;
+    END IF;
+  END IF;
+  IF act = 'purge' THEN
+    DELETE FROM "public"."node_snapshots" x WHERE x."owner_id" = brain AND x."node_id" = app;
+    RETURN QUERY SELECT 'purged'::text, NULL::integer, NULL::jsonb, NULL::text,
+                        NULL::integer, NULL::boolean;
+    RETURN;
+  END IF;
+  RETURN QUERY SELECT 'restore'::text, s_seq, s_code, s_db, s_schema,
+    EXISTS (SELECT 1 FROM "public"."node_snapshots" m
+             WHERE m."node_id" = app AND m."actor" = 'member');
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_grant_change"(
+  op text, node uuid, ws uuid, w boolean, actor uuid)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  home uuid;
+  rd uuid[];
+  row_home boolean;
+  manage boolean;
+  moderates boolean;
+  ok boolean;
+  who uuid := coalesce("public"."mantle_login_id"(), actor);
+BEGIN
+  IF op IS NULL OR op NOT IN ('add', 'exclude', 'hand', 'write', 'remove', 'restore') THEN
+    RAISE EXCEPTION 'mantle_grant_change: unknown op %', op USING ERRCODE = '22023';
+  END IF;
+  SELECT n."home_ws", n."read_ws" INTO home, rd FROM "public"."nodes" n
+   WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'not allowed to change this item' USING ERRCODE = '42501';
+  END IF;
+  SELECT g."is_home" INTO row_home FROM "public"."item_grants" g
+   WHERE g."node_id" = node AND g."workspace_id" = ws;
+  manage := "public"."mantle_may_manage_home"(home, rd);
+  moderates := coalesce(ws = ANY ("public"."mantle_scope_mod_ws"()), false);
+  ok := CASE
+          WHEN op IN ('exclude', 'remove') THEN manage OR moderates
+          WHEN op = 'write' AND coalesce(row_home, false) THEN manage
+          WHEN op = 'write' AND NOT coalesce(w, false) THEN manage OR moderates
+          ELSE manage AND moderates
+        END;
+  PERFORM "public"."mantle_grant_refuses"(ok, format('%s on item_grants: no right to change this grant', op),
+    CASE WHEN manage THEN 'not allowed to grant to that workspace' ELSE 'not allowed to change this item' END);
+  IF op = 'add' THEN
+    IF row_home IS NULL THEN
+      INSERT INTO "public"."item_grants" ("node_id", "workspace_id", "write", "granted_by")
+      VALUES (node, ws, coalesce(w, false), who);
+    ELSE
+      UPDATE "public"."item_grants"
+         SET "excluded" = false, "via_folder_id" = NULL, "write" = coalesce(w, false),
+             "granted_by" = who, "granted_at" = now()
+       WHERE "node_id" = node AND "workspace_id" = ws;
+    END IF;
+  ELSIF op = 'exclude' THEN
+    UPDATE "public"."item_grants"
+       SET "excluded" = true, "write" = false, "via_folder_id" = NULL,
+           "granted_by" = who, "granted_at" = now()
+     WHERE "node_id" = node AND "workspace_id" = ws;
+  ELSIF op = 'hand' THEN
+    UPDATE "public"."item_grants"
+       SET "via_folder_id" = NULL, "granted_by" = who, "granted_at" = now()
+     WHERE "node_id" = node AND "workspace_id" = ws;
+  ELSIF op = 'write' THEN
+    UPDATE "public"."item_grants" SET "write" = coalesce(w, false)
+     WHERE "node_id" = node AND "workspace_id" = ws;
+  ELSE
+    DELETE FROM "public"."item_grants" WHERE "node_id" = node AND "workspace_id" = ws;
+  END IF;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_grant_move_home"(
+  node uuid, to_ws uuid, keep_old boolean, actor uuid)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  from_ws uuid;
+  rd uuid[];
+  who uuid := coalesce("public"."mantle_login_id"(), actor);
+BEGIN
+  SELECT n."read_ws" INTO rd FROM "public"."nodes" n
+   WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'not allowed to move this item' USING ERRCODE = '42501';
+  END IF;
+  SELECT g."workspace_id" INTO from_ws FROM "public"."item_grants" g
+   WHERE g."node_id" = node AND g."is_home";
+  PERFORM "public"."mantle_grant_refuses"("public"."mantle_may_manage_home"(from_ws, rd),
+    'UPDATE on item_grants: a home move, no manage of the home', 'not allowed to move this item');
+  PERFORM "public"."mantle_grant_refuses"(coalesce(to_ws = ANY ("public"."mantle_scope_mod_ws"()), false),
+    'UPDATE on item_grants: a home move, not a Moderator of the workspace',
+    'not allowed to grant to that workspace');
+  IF from_ws IS NOT DISTINCT FROM to_ws THEN RETURN; END IF;
+  -- The old home row first: the one-home index is not deferrable.
+  UPDATE "public"."item_grants" SET "is_home" = false
+   WHERE "node_id" = node AND "workspace_id" = from_ws;
+  IF EXISTS (SELECT 1 FROM "public"."item_grants" g
+              WHERE g."node_id" = node AND g."workspace_id" = to_ws) THEN
+    UPDATE "public"."item_grants"
+       SET "is_home" = true, "via_folder_id" = NULL,
+           "write" = CASE WHEN "excluded" THEN false ELSE "write" END,
+           "excluded" = false, "granted_by" = who, "granted_at" = now()
+     WHERE "node_id" = node AND "workspace_id" = to_ws;
+  ELSE
+    INSERT INTO "public"."item_grants" ("node_id", "workspace_id", "write", "is_home", "granted_by")
+    VALUES (node, to_ws, false, true, who);
+  END IF;
+  IF from_ws IS NOT NULL THEN
+    IF keep_old THEN
+      UPDATE "public"."item_grants" SET "write" = false
+       WHERE "node_id" = node AND "workspace_id" = from_ws;
+    ELSE
+      DELETE FROM "public"."item_grants" WHERE "node_id" = node AND "workspace_id" = from_ws;
+    END IF;
+  END IF;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_nodes_scope_delete_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF pg_trigger_depth() > 1 OR NOT "public"."mantle_scope_active"() THEN
+    RETURN OLD;
+  END IF;
+  IF OLD."home_ws" IS NOT NULL AND NOT "public"."mantle_may_manage"(OLD."home_ws", OLD."read_ws") THEN
+    RAISE EXCEPTION 'not allowed to delete this item' USING ERRCODE = '42501';
+  END IF;
+  RETURN OLD;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_grant_counts"(
+  node uuid, add_ws uuid, remove_ws uuid, mine uuid[])
+  RETURNS TABLE ("total" integer, "gain" integer, "gain_apps" integer, "lose" integer,
+                 "hidden" integer, "exports" integer)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH x AS (
+    SELECT n."id", n."owner_id", n."path", n."type",
+           CASE WHEN "public"."mantle_scope_active"() THEN "public"."mantle_scope_ws"()
+                ELSE coalesce(mine, '{}'::uuid[]) END AS ws
+      FROM "public"."nodes" n
+     WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"()
+       AND (NOT "public"."mantle_scope_active"()
+            OR (n."read_ws" && "public"."mantle_scope_ws"()
+                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_scope_login_id"())
+                AND (add_ws IS NULL
+                     OR (coalesce("public"."mantle_may_manage"(n."home_ws", n."read_ws"), false)
+                         AND add_ws = ANY ("public"."mantle_scope_mod_ws"())))
+                AND (remove_ws IS NULL
+                     OR coalesce("public"."mantle_may_manage"(n."home_ws", n."read_ws"), false)
+                     OR remove_ws = ANY ("public"."mantle_scope_mod_ws"()))
+                AND (add_ws IS NOT NULL OR remove_ws IS NOT NULL
+                     OR coalesce("public"."mantle_may_manage"(n."home_ws", n."read_ws"), false)
+                     OR n."read_ws" && "public"."mantle_scope_mod_ws"())))
+  ),
+  sub AS (
+    SELECT d."id", d."type", d."path", d."read_ws" FROM "public"."nodes" d, x
+     WHERE d."owner_id" = x."owner_id"
+       AND (d."id" = x."id" OR (x."type" = 'branch' AND d."path" <@ x."path"))
+  )
+  SELECT
+    CASE WHEN x."type" = 'branch' AND x."path" IS NOT NULL
+         THEN (SELECT count(*)::int FROM "public"."nodes" t
+                WHERE t."owner_id" = x."owner_id" AND t."path" <@ x."path")
+         ELSE 1 END,
+    CASE WHEN add_ws IS NULL THEN 0 ELSE (
+      SELECT count(*)::int FROM sub d
+       WHERE NOT EXISTS (SELECT 1 FROM "public"."item_grants" g
+                          WHERE g."node_id" = d."id" AND g."workspace_id" = add_ws
+                            AND NOT g."excluded")
+         AND (d."id" = x."id" OR (
+               NOT EXISTS (SELECT 1 FROM "public"."item_grants" g
+                            WHERE g."node_id" = d."id" AND g."workspace_id" = add_ws)
+               AND "public"."mantle_grant_kind_ok"(d."type", add_ws, true)
+               AND NOT EXISTS (
+                 SELECT 1 FROM "public"."nodes" a
+                   JOIN "public"."item_grants" ag ON ag."node_id" = a."id"
+                                                 AND ag."workspace_id" = add_ws AND ag."excluded"
+                  WHERE a."owner_id" = x."owner_id" AND a."type" = 'branch'
+                    AND a."path" <@ x."path" AND a."id" <> x."id" AND a."id" <> d."id"
+                    AND d."path" <@ a."path")))) END,
+    CASE WHEN add_ws IS NULL THEN 0 ELSE (
+      SELECT count(*)::int FROM sub d
+       WHERE d."type" = 'app'
+         AND NOT EXISTS (SELECT 1 FROM "public"."item_grants" g
+                          WHERE g."node_id" = d."id" AND g."workspace_id" = add_ws
+                            AND NOT g."excluded")
+         AND (d."id" = x."id" OR (
+               NOT EXISTS (SELECT 1 FROM "public"."item_grants" g
+                            WHERE g."node_id" = d."id" AND g."workspace_id" = add_ws)
+               AND "public"."mantle_grant_kind_ok"(d."type", add_ws, true)
+               AND NOT EXISTS (
+                 SELECT 1 FROM "public"."nodes" a
+                   JOIN "public"."item_grants" ag ON ag."node_id" = a."id"
+                                                 AND ag."workspace_id" = add_ws AND ag."excluded"
+                  WHERE a."owner_id" = x."owner_id" AND a."type" = 'branch'
+                    AND a."path" <@ x."path" AND a."id" <> x."id" AND a."id" <> d."id"
+                    AND d."path" <@ a."path")))) END,
+    CASE WHEN remove_ws IS NULL THEN 0 ELSE (
+      SELECT count(*)::int FROM sub d
+       WHERE EXISTS (SELECT 1 FROM "public"."item_grants" g
+                      WHERE g."node_id" = d."id" AND g."workspace_id" = remove_ws
+                        AND NOT g."excluded"
+                        AND ((d."id" = x."id" AND NOT g."is_home")
+                             OR (d."id" <> x."id" AND g."via_folder_id" IS NOT NULL)))
+         AND (d."id" = x."id" OR NOT EXISTS (
+               SELECT 1 FROM "public"."nodes" a
+                 JOIN "public"."item_grants" ag ON ag."node_id" = a."id"
+                                               AND ag."workspace_id" = remove_ws
+                                               AND NOT ag."excluded" AND ag."via_folder_id" IS NULL
+                WHERE a."owner_id" = x."owner_id" AND a."type" = 'branch'
+                  AND a."path" <@ x."path" AND a."id" <> x."id" AND a."id" <> d."id"
+                  AND d."path" <@ a."path"))) END,
+    CASE WHEN x."type" = 'branch' AND x."path" IS NOT NULL
+         THEN (SELECT count(*)::int FROM "public"."nodes" h
+                WHERE h."owner_id" = x."owner_id" AND h."path" <@ x."path"
+                  AND NOT coalesce(h."read_ws" && x.ws, false))
+         ELSE 0 END,
+    CASE WHEN x."type" = 'app'
+         THEN (SELECT count(*)::int FROM "public"."app_table_exports" e
+                WHERE e."app_node_id" = x."id")
+         ELSE 0 END
+    FROM x
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_item_grants"(node uuid)
+  RETURNS TABLE ("workspace_id" uuid, "name" text, "write" boolean, "is_home" boolean,
+                 "via_folder_id" uuid, "excluded" boolean, "archived" boolean,
+                 "derivable" boolean, "parent_folder" uuid)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH i AS (
+    SELECT n."id", n."type",
+           "public"."mantle_parent_folder"(n."owner_id", n."type", n."path") AS parent,
+           (NOT "public"."mantle_scope_active"()
+            OR coalesce("public"."mantle_may_manage"(n."home_ws", n."read_ws"), false)
+            OR "public"."mantle_scope_has_area"('users')) AS wide
+      FROM "public"."nodes" n
+     WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"()
+       AND (NOT "public"."mantle_scope_active"()
+            OR (n."read_ws" && "public"."mantle_scope_ws"()
+                AND (n."login_id" IS NULL OR n."login_id" = "public"."mantle_scope_login_id"())))
+  )
+  SELECT g."workspace_id", w."name", g."write", g."is_home", g."via_folder_id", g."excluded",
+         w."archived_at" IS NOT NULL,
+         (i.parent IS NOT NULL
+          AND EXISTS (SELECT 1 FROM "public"."item_grants" fg
+                       WHERE fg."node_id" = i.parent AND fg."workspace_id" = g."workspace_id"
+                         AND NOT fg."excluded")
+          AND "public"."mantle_grant_kind_ok"(i."type", g."workspace_id", true)),
+         i.parent
+    FROM i
+    JOIN "public"."item_grants" g ON g."node_id" = i."id"
+    JOIN "public"."workspaces" w ON w."id" = g."workspace_id"
+   WHERE NOT g."excluded" OR i.wide OR g."workspace_id" = ANY ("public"."mantle_scope_ws"())
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_workspace_event"(
+  ws uuid, actor uuid, action text, subject jsonb)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  node uuid;
+BEGIN
+  IF "public"."mantle_scope_login_id"() IS NULL
+     AND NOT "public"."mantle_ws_system_work"('mantle_workspace_event') THEN
+    RAISE EXCEPTION 'mantle_workspace_event: no acting login, and not system work'
+      USING ERRCODE = '42501';
+  END IF;
+  IF action IS NULL OR action NOT LIKE 'grant.%' THEN
+    RAISE EXCEPTION 'mantle_workspace_event: only grant.* actions' USING ERRCODE = '22023';
+  END IF;
+  -- Held to the scope (L5; fix round 2, L3): a workspace of the scope, or
+  -- one that holds a grant row on the subject's item (`node`) whose home
+  -- the scope manages (a home's manager may exclude a grant of a workspace
+  -- it is not in; a removal is logged before its row goes, grants.ts). An
+  -- event in any other workspace is refused: never a forged one.
+  IF "public"."mantle_scope_active"() AND NOT coalesce(ws = ANY ("public"."mantle_scope_ws"()), false) THEN
+    node := CASE WHEN jsonb_typeof(subject) = 'object' AND subject ->> 'node' ~ '^[0-9a-fA-F-]{36}$'
+                 THEN (subject ->> 'node')::uuid END;
+    PERFORM "public"."mantle_grant_refuses"(
+      node IS NOT NULL
+      AND EXISTS (SELECT 1 FROM "public"."item_grants" g
+                   WHERE g."node_id" = node AND g."workspace_id" = ws)
+      AND coalesce((
+        SELECT "public"."mantle_may_manage_home"(n."home_ws", n."read_ws") FROM "public"."nodes" n
+         WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"()), false),
+      'workspace_events: a workspace outside the scope',
+      'not allowed to grant to that workspace');
+  END IF;
+  INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+  VALUES (ws, coalesce("public"."mantle_login_id"(), actor), action, subject);
+END
+$$;
+--> statement-breakpoint
+ALTER POLICY "app_table_exports_user_read" ON "public"."app_table_exports"
+  USING (EXISTS (
+    SELECT 1 FROM "public"."nodes" a
+     WHERE a."id" = "app_table_exports"."app_node_id"
+       AND "public"."mantle_may_manage_home"(a."home_ws", a."read_ws")));
+--> statement-breakpoint
+DROP POLICY IF EXISTS "app_table_exports_write_insert" ON "public"."app_table_exports";
+--> statement-breakpoint
+DROP POLICY IF EXISTS "app_table_exports_write_update" ON "public"."app_table_exports";
+--> statement-breakpoint
+DROP POLICY IF EXISTS "app_table_exports_write_delete" ON "public"."app_table_exports";
+--> statement-breakpoint
+ALTER POLICY "app_timers_user_read" ON "public"."app_timers"
+  USING (EXISTS (
+    SELECT 1 FROM "public"."nodes" a
+     WHERE a."id" = "app_timers"."app_node_id"
+       AND "public"."mantle_may_manage_home"(a."home_ws", a."read_ws")));
+--> statement-breakpoint
+DROP POLICY IF EXISTS "app_timers_write_insert" ON "public"."app_timers";
+--> statement-breakpoint
+DROP POLICY IF EXISTS "app_timers_write_update" ON "public"."app_timers";
+--> statement-breakpoint
+DROP POLICY IF EXISTS "app_timers_write_delete" ON "public"."app_timers";
+--> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_check_row"(uuid, uuid[], uuid[], text, "public"."node_type", boolean) FROM PUBLIC;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_may_add_to_folder"(uuid, "public"."node_type", ltree) FROM PUBLIC;
@@ -698,3 +1116,9 @@ REVOKE ALL ON FUNCTION "public"."mantle_may_create_item"(uuid, "public"."node_ty
 DROP FUNCTION IF EXISTS "public"."mantle_may_edit"(uuid, uuid[]);
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_may_edit_in"(uuid[], uuid[], uuid, uuid[]);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_may_manage_home"(uuid);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_may_manage"(uuid);
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "public"."mantle_may_manage_in"(uuid[], uuid);

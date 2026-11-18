@@ -494,7 +494,7 @@ export async function mayOrderFolder(
   if (!currentWorkspaceScope()) return true;
   if (path === TREE_KIND_SPECS[kind].root) {
     const [row] = (await db.execute(
-      sql`select "public"."mantle_may_manage_home"(NULL) as ok`,
+      sql`select "public"."mantle_may_manage_home"(NULL, NULL) as ok`,
     )) as unknown as Array<{ ok: boolean | null }>;
     return row?.ok === true;
   }

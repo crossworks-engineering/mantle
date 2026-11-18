@@ -8,15 +8,18 @@
  *    write, move it inside W, Write on or off; no delete, no home move;
  *  - a user of W: read; write with Write on; nothing more;
  *  - a Moderator of its home: everything, as before;
- *  - an Admin user (a Moderator of Admin): manage of every item it reads,
- *    delete and home move included (owner's word, 2026-11-18).
+ *  - an Admin user (a Moderator of Admin): a Moderator of the home of every
+ *    item it reads, so manage and edit, delete and home move included, and
+ *    nothing on an item it does not read (owner page d7313c67, decision A,
+ *    2026-11-18).
  *
  * The fixture is the real case: folders homed in Admin and granted to a
  * project workspace W, whose Moderators could not move or file into them.
  * The Admin user here is a Moderator of Admin (always) and a plain user of
- * W; its rights on these items come from the home. An item homed in another
- * workspace X shows what an Admin user gets from Admin alone: manage (delete,
- * home move, a move anywhere), not the holder's add.
+ * W; its rights on these items come from the home. Items homed in another
+ * workspace X show what an Admin user gets from Admin alone: on one it reads
+ * through W (Write on or off), what X's Moderator gets; on one X alone
+ * holds, which it does not read, nothing (not found, no manage).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/db/src/shared-item-rights.db.test.ts
  */
@@ -51,8 +54,18 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
   type Role = Exclude<keyof typeof L, 'owner'>;
   const ws = { admin: '', W: '', X: '', T: '', V: '' };
   /** Folders (in the notes tree) and one note in each of the first four. */
-  const f = { on: '', onDest: '', off: '', offDest: '', out: '', x: '', home: '' };
-  const n = { on: '', off: '', x: '', home: '' };
+  const f = {
+    on: '',
+    onDest: '',
+    off: '',
+    offDest: '',
+    out: '',
+    x: '',
+    xoff: '',
+    xonly: '',
+    home: '',
+  };
+  const n = { on: '', off: '', x: '', xoff: '', xonly: '', home: '' };
   /** A subfolder of `on` and of `off`, for a folder move. */
   const sub = { on: '', off: '' };
   const who = {} as Record<Role, Who>;
@@ -273,11 +286,20 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
       [ws.X, true, false],
       [ws.W, false, true],
     ]);
+    // Homed in X, granted to W with Write off; and X's alone (the Admin
+    // user does not read it).
+    f.xoff = await node('branch', path('xoff'), [
+      [ws.X, true, false],
+      [ws.W, false, false],
+    ]);
+    f.xonly = await node('branch', path('xonly'), [[ws.X, true, false]]);
     // W's own folder, its home's Write on: today's rules.
     f.home = await node('branch', path('home'), [[ws.W, true, true]]);
     n.on = await node('note', path('on'), null);
     n.off = await node('note', path('off'), null);
     n.x = await node('note', path('x'), null);
+    n.xoff = await node('note', path('xoff'), null);
+    n.xonly = await node('note', path('xonly'), null);
     n.home = await node('note', path('home'), null);
     sub.on = await node('branch', `${path('on')}.s`, null);
     sub.off = await node('branch', `${path('off')}.s`, null);
@@ -454,12 +476,12 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
     expect(await moveIn('modW')).toBe(1);
     expect(await del('modW')).toBe(NO);
     // An Admin user who is a plain user of W (Admin is not this item's
-    // home and does not hold it): manage, from Admin (owner's word,
-    // 2026-11-18), so it deletes it and moves it anywhere it may add to;
-    // it edits through W's Write; it adds to X's folder only as the edit
-    // rule says (not a Moderator of a holder of it).
+    // home and does not hold it): it reads the item and the folder through
+    // W, so it counts as a Moderator of their home X (owner page d7313c67,
+    // decision A): it edits, adds to X's folder, deletes it and moves it
+    // anywhere it may add to.
     expect(await edit('admin')).toBe(1);
-    expect(await create('admin')).toBe(NO);
+    expect(await create('admin')).toBe(1);
     expect(await moveIn('admin')).toBe(1);
     expect(await del('admin')).toBe(1);
   });
@@ -486,6 +508,122 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
     // The new home still needs a Moderator of it: an Admin user to V, which
     // it is not in, is refused.
     expect(await moveHome('admin', ws.V)).toBe(NO);
+  });
+
+  it('decision A: an Admin user edits and manages an item homed in X it reads with Write off; a holder’s Moderator still does not delete', async () => {
+    const edit = (r: Role) =>
+      attempt(
+        who[r],
+        [n.xoff],
+        async (tx) =>
+          (await tx`update nodes set title = ${`${tag} xo`} where id = ${n.xoff}`).count,
+      );
+    const create = (r: Role) =>
+      attempt(
+        who[r],
+        [f.xoff],
+        async (tx) =>
+          (
+            await tx`insert into nodes (owner_id, type, title, path)
+                   values (${L.owner}, 'note', ${`${tag} xonew`}, ${path('xoff')}::ltree)`
+          ).count,
+      );
+    const del = (r: Role) =>
+      attempt(
+        who[r],
+        [n.xoff],
+        async (tx) => (await tx`delete from nodes where id = ${n.xoff}`).count,
+      );
+    const grantRemove = (r: Role) =>
+      attempt(who[r], [n.xoff], async (tx) => {
+        await tx`select mantle_grant_change('remove', ${n.xoff}::uuid, ${ws.W}::uuid, false, ${who[r].login}::uuid)`;
+        return 1;
+      });
+    expect(who.admin.mod).not.toContain(ws.X);
+    expect(who.admin.mod).not.toContain(ws.W);
+    // W's grant has Write off and the Admin user is a plain user of W: its
+    // rights are the home Moderator's, from the one manage condition.
+    expect(await edit('admin')).toBe(1);
+    expect(await create('admin')).toBe(1);
+    expect(await del('admin')).toBe(1);
+    // A Moderator of W (it holds the item): edit and create, no delete.
+    expect(await edit('modW')).toBe(1);
+    expect(await create('modW')).toBe(1);
+    expect(await del('modW')).toBe(NO);
+    // A user of W, Write off: neither edit nor delete.
+    expect(await edit('userW')).toBe(NO);
+    expect(await del('userW')).toBe(NO);
+    // A grant's removal: the home's manage; W's Moderators remove their own.
+    expect(await grantRemove('admin')).toBe(1);
+    expect(await grantRemove('userW')).toBe(NO);
+  });
+
+  it('decision A: an Admin user gets nothing on an item it does not read (homed in X, held by X alone)', async () => {
+    const p = who.admin;
+    expect(p.ws).not.toContain(ws.X);
+    // Not found: the row rule hides it, so a write matches no row.
+    expect(
+      await attempt(
+        p,
+        [],
+        async (tx) => (await tx`select 1 from nodes where id = ${n.xonly}`).count,
+      ),
+    ).toBe(0);
+    expect(
+      await attempt(
+        p,
+        [n.xonly],
+        async (tx) =>
+          (await tx`update nodes set title = ${`${tag} xn`} where id = ${n.xonly}`).count,
+      ),
+    ).toBe(0);
+    expect(
+      await attempt(
+        p,
+        [n.xonly],
+        async (tx) => (await tx`delete from nodes where id = ${n.xonly}`).count,
+      ),
+    ).toBe(0);
+    // No manage through the definers, which find the row whatever the scope
+    // reads: a grant's removal, a home move, a new grant.
+    expect(
+      await attempt(p, [n.xonly], async (tx) => {
+        await tx`select mantle_grant_change('remove', ${n.xonly}::uuid, ${ws.X}::uuid, false, ${p.login}::uuid)`;
+        return 1;
+      }),
+    ).toBe(NO);
+    expect(
+      await attempt(p, [n.xonly], async (tx) => {
+        await tx`select mantle_grant_move_home(${n.xonly}::uuid, ${ws.T}::uuid, false, ${p.login}::uuid)`;
+        return 1;
+      }),
+    ).toBe(NO);
+    expect(
+      await attempt(p, [n.xonly], async (tx) => {
+        await tx`select mantle_grant_change('add', ${n.xonly}::uuid, ${ws.T}::uuid, false, ${p.login}::uuid)`;
+        return 1;
+      }),
+    ).toBe(NO);
+    // Nor a new item in X's folder.
+    expect(
+      await attempt(
+        p,
+        [f.xonly],
+        async (tx) =>
+          (
+            await tx`insert into nodes (owner_id, type, title, path)
+                   values (${L.owner}, 'note', ${`${tag} xnnew`}, ${path('xonly')}::ltree)`
+          ).count,
+      ),
+    ).toBe(NO);
+    // X's Moderator: everything, as before.
+    expect(
+      await attempt(
+        who.modX,
+        [n.xonly],
+        async (tx) => (await tx`delete from nodes where id = ${n.xonly}`).count,
+      ),
+    ).toBe(1);
   });
 
   it('a folder homed in W keeps today’s rules: a user of W with W’s Write on adds to it', async () => {
@@ -523,8 +661,8 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
           const [r] = await tx<Record<string, boolean>[]>`
             select coalesce(mantle_may_edit(n.home_ws, n.write_ws, n.read_ws, n.type), false) as edit,
                    mantle_may_add(f.home_ws, f.write_ws, f.read_ws) as add,
-                   coalesce(mantle_may_manage(n.home_ws), false) as manage,
-                   coalesce(mantle_may_manage(n.home_ws) or mantle_mod_holds(n.read_ws, n.read_ws), false) as move
+                   coalesce(mantle_may_manage(n.home_ws, n.read_ws), false) as manage,
+                   coalesce(mantle_may_manage(n.home_ws, n.read_ws) or mantle_mod_holds(n.read_ws, n.read_ws), false) as move
               from nodes n, nodes f where n.id = ${n.off} and f.id = ${f.off}`;
           out = r ?? {};
           throw new Rollback();
@@ -535,17 +673,26 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
       return out;
     };
     expect(await ask(who.admin)).toEqual({ edit: true, add: true, manage: true, move: true });
-    // An Admin user on an item homed in X it does not moderate: manage.
-    const [x] = await w.begin(async (tx) => {
+    // An Admin user on items homed in X it does not moderate: manage and
+    // edit of the one it reads (through W), none of the one it does not
+    // (asked as a definer would, with the rows read past the row rule).
+    const xs = await w.begin(async (tx) => {
       await tx`select set_config('mantle.ws', ${`{${who.admin.ws.join(',')}}`}, true),
                       set_config('mantle.mod_ws', ${`{${who.admin.mod.join(',')}}`}, true),
                       set_config('mantle.login_id', ${who.admin.login}, true)`;
-      return tx<{ manage: boolean; m: boolean }[]>`
-        select coalesce(mantle_may_manage(n.home_ws), false) as manage,
-               mantle_may_manage_home(n.home_ws) as m
-          from nodes n where n.id = ${n.x}`;
+      return tx<{ id: string; manage: boolean; m: boolean; edit: boolean }[]>`
+        select x.id, coalesce(mantle_may_manage(x.home, x.rd), false) as manage,
+               mantle_may_manage_home(x.home, x.rd) as m,
+               coalesce(mantle_may_edit(x.home, '{}'::uuid[], x.rd, 'note'), false) as edit
+          from (values (${n.xoff}::text, ${ws.X}::uuid, array[${ws.X}, ${ws.W}]::uuid[]),
+                       (${n.xonly}::text, ${ws.X}::uuid, array[${ws.X}]::uuid[])) x(id, home, rd)`;
     });
-    expect(x).toEqual({ manage: true, m: true });
+    expect(new Map(xs.map((r) => [r.id, { manage: r.manage, m: r.m, edit: r.edit }]))).toEqual(
+      new Map([
+        [n.xoff, { manage: true, m: true, edit: true }],
+        [n.xonly, { manage: false, m: false, edit: false }],
+      ]),
+    );
     expect(await ask(who.modW)).toEqual({ edit: true, add: true, manage: false, move: true });
     expect(await ask(who.userW)).toEqual({ edit: false, add: false, manage: false, move: false });
     // The array form: a preview's (a Moderator of a holder edits).
@@ -559,13 +706,16 @@ describe.skipIf(!URL)('shared items in a workspace (0382)', () => {
     // An app is not edited by its holders' Moderators: its acts stay its
     // home's Moderators' and its Write grants'.
     expect(r).toEqual({ e: true, u: false, app: false });
-    // manage's array form: a Moderator of the home, or of Admin; a
-    // Moderator of a holder alone does not manage.
-    const [m] = await sql<{ home: boolean; admin: boolean; holder: boolean; none: boolean }[]>`
-      select mantle_may_manage_in(array[${ws.X}]::uuid[], ${ws.X}::uuid) as home,
-             mantle_may_manage_in(array[${ws.admin}]::uuid[], ${ws.X}::uuid) as admin,
-             mantle_may_manage_in(array[${ws.W}]::uuid[], ${ws.X}::uuid) as holder,
-             mantle_may_manage_in('{}'::uuid[], ${ws.X}::uuid) as none`;
-    expect(m).toEqual({ home: true, admin: true, holder: false, none: false });
+    // manage's array form: a Moderator of the home, or of Admin in
+    // workspaces that read the item; a Moderator of a holder alone does not
+    // manage, nor one of Admin who does not read it.
+    const xw = sql`array[${ws.X}, ${ws.W}]::uuid[]`;
+    const [m] = await sql<Record<string, boolean>[]>`
+      select mantle_may_manage_in(array[${ws.X}]::uuid[], array[${ws.X}]::uuid[], ${ws.X}::uuid, ${xw}) as home,
+             mantle_may_manage_in(array[${ws.admin}, ${ws.W}]::uuid[], array[${ws.admin}]::uuid[], ${ws.X}::uuid, ${xw}) as admin,
+             mantle_may_manage_in(array[${ws.admin}]::uuid[], array[${ws.admin}]::uuid[], ${ws.X}::uuid, ${xw}) as admin_unread,
+             mantle_may_manage_in(array[${ws.W}]::uuid[], array[${ws.W}]::uuid[], ${ws.X}::uuid, ${xw}) as holder,
+             mantle_may_manage_in('{}'::uuid[], '{}'::uuid[], ${ws.X}::uuid, ${xw}) as none`;
+    expect(m).toEqual({ home: true, admin: true, admin_unread: false, holder: false, none: false });
   });
 });

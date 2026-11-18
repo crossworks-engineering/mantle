@@ -149,7 +149,7 @@ export async function assertManageOrAdmin(id: string, message: string): Promise<
   if (!UUID_RE.test(key)) throw editCheckRefusalError('no_read');
   // mantle_may_manage_home (0279): the row rule's own test (0302), one place.
   const rows = (await db.execute(sql`
-    select "public"."mantle_may_manage_home"(n.home_ws) as ok
+    select "public"."mantle_may_manage_home"(n.home_ws, n.read_ws) as ok
       from nodes n where n.id = ${key}::uuid`)) as unknown as { ok: boolean | null }[];
   const row = rows[0];
   if (!row) throw editCheckRefusalError('no_read');
@@ -168,7 +168,7 @@ async function scopeRightsOf(
   const rows = (await conn.execute(sql`
     select n.id::text as id,
            coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws, n.read_ws, n.type), false) as edit,
-           coalesce("public"."mantle_may_manage"(n.home_ws), false) as manage,
+           coalesce("public"."mantle_may_manage"(n.home_ws, n.read_ws), false) as manage,
            coalesce(n.data ? 'snapshot_of', false) as copy
       from nodes n where n.id = any(${arr}::uuid[])`)) as unknown as ({
     id: string;
@@ -251,7 +251,7 @@ export async function itemMoveVerdicts(
     // (mantle_parent_folder_path): none at a kind's top level.
     const rows = (await conn.execute(sql`
       select n.id::text as id,
-             coalesce("public"."mantle_may_manage"(n.home_ws)
+             coalesce("public"."mantle_may_manage"(n.home_ws, n.read_ws)
                       or "public"."mantle_mod_holds"(n.read_ws, d.read_ws), false) as move
         from nodes n
         left join nodes d

@@ -333,8 +333,8 @@ export type GuideStanding = {
   /** A Moderator of its home. */
   homeMod: boolean;
   /** Manages it: a Moderator of its home, or an Admin user (a Moderator of
-   *  Admin): "An Admin user counts as a Moderator of the home of every item
-   *  it reads" (owner's word, 2026-11-18). */
+   *  Admin) who reads it: "An Admin user counts as a Moderator of the home
+   *  of any item it can read" (owner page d7313c67, decision A). */
   manages: boolean;
   /** A Moderator of workspace `w`. */
   modOf: (w: GuideWorkspace) => boolean;
@@ -357,13 +357,18 @@ export function guideStanding(
   // "A shared item": a Moderator of a workspace that holds it (its home is
   // one of them).
   const holderMod = g.read.some((w) => seats.mods.includes(w));
+  const reads = g.read.some((w) => seats.users.includes(w));
+  // "An Admin user counts as a Moderator of the home of any item it can
+  // read" (owner page d7313c67, decision A): one condition, which edit and
+  // add ask for their home Moderator too.
+  const manages = homeMod || (reads && seats.mods.includes('admin'));
   return {
-    reads: g.read.some((w) => seats.users.includes(w)),
-    edits: homeMod || g.write.some((w) => seats.users.includes(w)) || holderMod,
-    editsApp: homeMod || g.write.some((w) => seats.users.includes(w)),
-    adds: homeMod || holderMod || (g.write.includes(g.home) && seats.users.includes(g.home)),
+    reads,
+    edits: manages || g.write.some((w) => seats.users.includes(w)) || holderMod,
+    editsApp: manages || g.write.some((w) => seats.users.includes(w)),
+    adds: manages || holderMod || (g.write.includes(g.home) && seats.users.includes(g.home)),
     homeMod,
-    manages: homeMod || seats.mods.includes('admin'),
+    manages,
     modOf: (w) => seats.mods.includes(w),
     admin: SEATS[role].users.includes('admin'),
     owner: role === 'owner',

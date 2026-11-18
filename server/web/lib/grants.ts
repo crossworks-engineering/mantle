@@ -295,7 +295,7 @@ async function loadItem(ctx: Ctx, id: string, q: Exec = db): Promise<Item> {
                ${itemHomeSql('n')} as home, ${itemHoldersSql('n')} as holders,
                ${mayReadInSql('n', mineSql(ctx))} as readable,
                ${mayEditInSql('n', mineSql(ctx), modsSql(ctx))} as may_edit,
-               ${mayManageInSql('n', modsSql(ctx))} as may_manage
+               ${mayManageInSql('n', mineSql(ctx), modsSql(ctx))} as may_manage
           from nodes n
          where n.id = ${itemId(id)} and n.owner_id = ${ctx.caller.anchorId}`,
   );

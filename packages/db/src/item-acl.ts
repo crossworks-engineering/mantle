@@ -11,8 +11,8 @@
  *    (the row rule on nodes);
  *  - array forms (a preview, or a rule asked for a login on the system
  *    pool, with that login's workspaces as arrays): mayReadInSql,
- *    mayEditInSql, mayManageInSql, mayManageHomeInSql (mantle_may_edit_in,
- *    mantle_may_manage_in of 0280; the scope forms call them).
+ *    mayEditInSql, mayManageInSql (mantle_may_edit_in, mantle_may_manage_in
+ *    of 0382; the scope forms call them).
  *
  * Facts (what holds the item, its home), for answers that show them or
  * compare one item's holders with another's: itemHomeSql, itemHoldersSql,
@@ -62,17 +62,17 @@ export function mayEditSql(alias?: string): SQL<boolean> {
 
 /** The scope may manage the item (grants, links, delete, move): a
  *  Moderator of its home, or an Admin user (a Moderator of the brain's
- *  Admin workspace, 0382; mantle_may_manage). */
+ *  Admin workspace) who reads it (0382; mantle_may_manage). */
 export function mayManageSql(alias?: string): SQL<boolean> {
-  return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')}), false)`;
+  return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')}, ${column(alias, 'read_ws')}), false)`;
 }
 
 /** The scope may move the item somewhere: manage (a Moderator of its home,
- *  or an Admin user), or a Moderator of a workspace that holds it, inside
+ *  or an Admin user who reads it), or a Moderator of a workspace that holds it, inside
  *  that workspace (0382: the move check asks the folder it lands in too).
  *  The item caps' `mayMove`. */
 export function mayMoveSql(alias?: string): SQL<boolean> {
-  return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')})
+  return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')}, ${column(alias, 'read_ws')})
                        or "public"."mantle_mod_holds"(${column(alias, 'read_ws')}, ${column(alias, 'read_ws')}), false)`;
 }
 
@@ -101,16 +101,11 @@ export function mayEditInSql(alias: string | undefined, ws: SQL, modWs: SQL): SQ
   return sql<boolean>`coalesce("public"."mantle_may_edit_in"(${ws}, ${modWs}, ${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}, ${column(alias, 'type')}), false)`;
 }
 
-/** A Moderator of `modWs` may manage the item: `modWs` holds its home or
- *  the brain's Admin workspace (mantle_may_manage_in, 0382). */
-export function mayManageInSql(alias: string | undefined, modWs: SQL): SQL<boolean> {
-  return mayManageHomeInSql(column(alias, 'home_ws'), modWs);
-}
-
-/** The same rule for a home that is not on a row (a deleted item's, as its
- *  snapshot keeps it). */
-export function mayManageHomeInSql(home: SQL, modWs: SQL): SQL<boolean> {
-  return sql<boolean>`coalesce("public"."mantle_may_manage_in"(${modWs}, ${home}), false)`;
+/** A login in the workspaces `ws`, a Moderator of `modWs`, may manage the
+ *  item: `modWs` holds its home, or holds the brain's Admin workspace and
+ *  `ws` reads the item (mantle_may_manage_in, 0382). */
+export function mayManageInSql(alias: string | undefined, ws: SQL, modWs: SQL): SQL<boolean> {
+  return sql<boolean>`coalesce("public"."mantle_may_manage_in"(${ws}, ${modWs}, ${column(alias, 'home_ws')}, ${column(alias, 'read_ws')}), false)`;
 }
 
 // ── Facts ────────────────────────────────────────────────────────────────────

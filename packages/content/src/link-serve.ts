@@ -130,7 +130,7 @@ export async function linkRights(
     migrated as (select ${migratedSql(ownerId)} as yes)
     select n.id::text as id, n.type::text as type, n.path::text as path,
            (not m.yes or ${mayReadInSql('n', sql`me.ws`)}) as read,
-           (not m.yes or ${mayManageInSql('n', sql`me.mods`)}) as manage,
+           (not m.yes or ${mayManageInSql('n', sql`me.ws`, sql`me.mods`)}) as manage,
            (not m.yes or ${mayEditInSql('n', sql`me.ws`, sql`me.mods`)}) as edit,
            coalesce(n.data ? 'snapshot_of', false) as copy
       from nodes n cross join migrated m cross join mine me
