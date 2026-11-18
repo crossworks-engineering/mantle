@@ -484,6 +484,12 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [login('member-canvas-frame-ticket', 30)],
   },
+  // An optional service's screen ticket (Sync M2): per login, an Admin's too.
+  {
+    row: 'POST /api/services/:name/frame-ticket',
+    cred: 'owner',
+    limits: [login('service-frame-ticket', 30)],
+  },
   // A canvas's data store (DWG phase 7a): reads and writes, per login.
   ...getHead('/api/presents/:id/data', {
     cred: 'member',

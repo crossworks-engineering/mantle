@@ -884,7 +884,7 @@
 "POST /api/secrets": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
 "POST /api/secrets/:id/reveal": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
 "POST /api/services/:name": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","audit":"own","caller":"owner"},
-"POST /api/services/:name/frame-ticket": {"class":"area","scope":{"kind":"area","area":"connectors"},"area":"connectors","effect":"write","caller":"owner"},
+"POST /api/services/:name/frame-ticket": {"class":"area","scope":{"kind":"area","area":"connectors"},"area":"connectors","effect":"write","caller":"owner","rateLimit":["serviceFrameTicket"]},
 "POST /api/services/sync/ui": {"class":"public","scope":null,"public":true,"effect":"write","actor":"http:no-login"},
 "POST /api/settings/worker-groups": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/shares": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","caller":"owner"},
