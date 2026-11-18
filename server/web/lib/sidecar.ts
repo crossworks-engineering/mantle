@@ -8,17 +8,15 @@
  * Every route here runs as the system actor `worker:sync`, as the old mail
  * and calendar workers did, after the token check.
  */
-import { openJSON, sealJSON } from '@mantle/crypto';
 import { resolveSingleOwnerId, runAsSystem } from '@mantle/db';
 import { env, serviceEnabled } from '@mantle/config';
 import { NextResponse } from '@/server/http-compat';
 import { internalTokenRefusal } from '@/lib/gateway-internal';
 
+export { SIDECAR_SERVICE, openState, sealState } from '@/lib/sidecar-state';
+
 /** The header the sidecar's token travels in, both ways. */
 export const SYNC_TOKEN_HEADER = 'x-mantle-sync-token';
-
-/** The service every sidecar route serves (one today). */
-export const SIDECAR_SERVICE = 'sync';
 
 /** Null when the request is the Sync sidecar's, else the answer to send. A
  *  box with Sync off answers 404: nothing there may call. */
@@ -32,19 +30,6 @@ export function sidecarRequestRefusal(req: Request): Response | null {
 /** Run a sidecar route's work as the sync worker. */
 export function asSidecar<T>(fn: () => Promise<T>): Promise<T> {
   return runAsSystem('worker:sync', fn);
-}
-
-/** The AAD a state value is sealed under: its service and key. */
-const aad = (key: string) => `${SIDECAR_SERVICE}:${key}`;
-
-/** Seal a state value for storage. */
-export function sealState(key: string, value: unknown): Buffer {
-  return sealJSON(value, aad(key)).ciphertext;
-}
-
-/** Open a stored state value. */
-export function openState(key: string, sealed: Buffer): unknown {
-  return openJSON(sealed, aad(key));
 }
 
 /** The brain's owner: every sidecar account's data lands under it (Sync
