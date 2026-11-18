@@ -182,7 +182,7 @@ export async function agentStep(
   body: Buffer,
   file: NonNullable<PipelineStepRequest['file']>,
   options: Readonly<Record<string, unknown>>,
-  from: { kind?: string; state?: unknown } = {},
+  from: { kind?: string; state?: unknown; window?: WindowPages } = {},
 ): Promise<{
   status: 'ok' | 'not_mine';
   asks: (PipelineCall & { call: 'worker' })[];
@@ -197,6 +197,7 @@ export async function agentStep(
     asks: true,
     ...(from.kind !== undefined ? { kind: from.kind } : {}),
     ...(from.state !== undefined ? { state: from.state } : {}),
+    ...from.window,
   };
   const { result, pictures } = await parserPipelineRun(body, pipeline, request);
   if (result.status !== 'ok' && result.status !== 'not_mine') {
@@ -235,8 +236,7 @@ export type PdfWindowPart = {
 /** One step of {@link pdfWindows}: a window, or the pages of one the parser
  *  could not cut. */
 export type PdfWindowStep =
-  | { part: PdfWindowPart }
-  | { part: null; from: number; to: number; pagesTotal: number };
+  { part: PdfWindowPart } | { part: null; from: number; to: number; pagesTotal: number };
 
 /**
  * The page windows of a PDF, one at a time and in page order
@@ -479,9 +479,7 @@ export function routedRunKey(
  *  (a PDF's book reader) and says `produces.text`. Then the core reads no
  *  text, runs no native read and no OCR of its own for the file, and the
  *  Reader's text is the file's text. */
-export function readerStandsOver(
-  pipeline: Pick<PipelineManifest, 'produces' | 'match'>,
-): boolean {
+export function readerStandsOver(pipeline: Pick<PipelineManifest, 'produces' | 'match'>): boolean {
   return pipeline.produces.text === true && (pipeline.match.kind?.length ?? 0) > 0;
 }
 

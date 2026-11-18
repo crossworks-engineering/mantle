@@ -101,7 +101,10 @@ export async function runPdfSplitJob(
   const total = await qpdfPageCount(p.input, p.dir, left());
   if (total === null) throw new JobFailure('failed', 'qpdf could not read the PDF');
   if (from > total) {
-    throw new JobFailure('bad_request', `the PDF has ${total} pages, so no window starts at ${from}`);
+    throw new JobFailure(
+      'bad_request',
+      `the PDF has ${total} pages, so no window starts at ${from}`,
+    );
   }
   const maxBytes = mb * 1024 * 1024;
   let count = Math.min(pages, total - from + 1);

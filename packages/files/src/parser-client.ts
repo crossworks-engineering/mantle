@@ -753,7 +753,12 @@ export async function parserPdfSplit(
   const pageFrom = whole(meta.pageFrom);
   const pageTo = whole(meta.pageTo);
   const pagesTotal = whole(meta.pagesTotal);
-  if (pageFrom !== opts.from || pageTo < pageFrom || pagesTotal < pageTo || answer.body.length === 0) {
+  if (
+    pageFrom !== opts.from ||
+    pageTo < pageFrom ||
+    pagesTotal < pageTo ||
+    answer.body.length === 0
+  ) {
     throw new ParserError('failed', 'the parser cut a window that is not the one asked for', {
       retryable: false,
       terminal: false,

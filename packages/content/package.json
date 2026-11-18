@@ -38,6 +38,7 @@
     "./pdf-read": "./src/pdf-read.ts",
     "./pipeline-state": "./src/pipeline-state.ts",
     "./page-passages": "./src/page-passages.ts",
+    "./pdf-picture-windows": "./src/pdf-picture-windows.ts",
     "./pipeline-registry": "./src/pipeline-registry.ts",
     "./pipeline-agent": "./src/pipeline-agent.ts",
     "./pipeline-runner": "./src/pipeline-runner.ts",

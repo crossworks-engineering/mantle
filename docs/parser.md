@@ -252,6 +252,7 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/grid`            | `grid`         | 120 s      | workbook to grids                                |
 | `/pdf/rasterize`   | `pdfRasterize` | 180 s      | PDF pages to PNG for OCR                         |
 | `/pdf/info`        | `pdfInfo`      | 60 s       | PDF page count                                   |
+| `/pdf/split`       | `pdfSplit`     | 120 s      | one page window of a PDF, cut by qpdf (bytes)    |
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
 | `/pdf/drawing`     | `pdfDrawing`   | 240 s      | a PDF's page facts, for the sketch read (kit)    |
 | `/pdf/pieces`      | `pdfPieces`    | 240 s      | scan pages cut into numbered pieces of text      |
@@ -1287,6 +1288,40 @@ embedding to the extractor again, not only these. A file with a `no_parser`
 stamp then gets the default text, at one extract each. A scan or a picture
 that had no text gets its OCR or vision read again, and that costs. Start
 with `--limit=<n>`.
+
+## Page windows: qpdf and the local OCR
+
+A PDF of any size the parser takes (`PARSER_MAX_UPLOAD_MB`, 512 MB) is cut
+into page windows by qpdf (Apache-2.0, Debian's `qpdf`), with no page decode
+and no pdfjs, so a 600-page scan of 343 MB, past the 256 MB pdfjs opens
+(`PDF_MAX_BYTES`), is read all the same (task 8d40932a). The job `pdfSplit`
+(`/pdf/split`, `server/parser/src/pdf-split.ts`) cuts ONE window: the pages
+from `from` on, at most `pages` of them and at most `mb` MB (`qpdf --empty
+--pages`). A window past `mb` is cut again with fewer pages, at most four
+times; a single page past `mb` is a window of its own, so no page is ever
+left out. The answer is the window's bytes, with `{ pageFrom, pageTo,
+pagesTotal }` in the meta header. One window a job, not every window in one:
+the scratch tmpfs is counted in the parser's memory and holds the body and
+one window, never the body and all its parts, and one window is one answer
+under the 96 MB cap. The brain sends the file for each window (a local copy
+of about a second for 343 MB) and keeps no part longer than its step. A
+failure counts per window (its first page in the ledger key), so one bad
+window never makes the next one terminal. qpdf's exit 3 (done, with
+warnings: a repaired xref) is a window taken.
+
+A step's job handle has `pdfPageCount()`: qpdf's `--show-npages` on the body,
+for a router that must name a file past the size pdfjs opens.
+
+The local OCR is Tesseract 5 with its English data (Apache-2.0, Debian's
+`tesseract-ocr` and `tesseract-ocr-eng`), read with `--psm 3` (the default:
+`--psm 6` read 30% of a ruled spec table, so never on tables), and the CAD
+venv has pdfplumber (MIT, on pdfminer.six, MIT) for a text layer and its
+tables, and pypdfium2 (Apache-2.0 or BSD-3) to draw a page for the OCR. No
+PyMuPDF and no Ghostscript (AGPL). The boot smoke fails the image when qpdf,
+Tesseract's English data or the two Python packages do not load
+(`ocrToolsThere`), and `/healthz` lists the `qpdf`, `tesseract`,
+`pdfplumber` and `pypdfium2` versions. The Readers that use them are the
+built-ins' (`docs/pipelines.md`, "Page windows").
 
 ## The PDF page reader
 

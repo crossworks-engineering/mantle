@@ -77,9 +77,10 @@ export const PDF_MAX_IMAGE_PIXELS = 75_000_000;
  */
 export const PDF_WINDOW_MAX_IMAGE_PIXELS = 100_000_000;
 
-/** The largest PDF any open accepts, in bytes. The old renderer
- *  (pdf-to-png-converter) refused past the same size. */
-export const PDF_MAX_BYTES = 256 * 1024 * 1024;
+/** The largest PDF any open accepts, in bytes (./parser-wire.ts, where the
+ *  brain reads it too: a PDF past it is read by page windows). */
+import { PDF_MAX_BYTES } from './parser-wire';
+export { PDF_MAX_BYTES };
 
 /** pdfjs `getDocument` parameters every open in this package uses. */
 export const SAFE_PDF_PARAMS = {

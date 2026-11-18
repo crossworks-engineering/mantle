@@ -2255,6 +2255,84 @@ packages only. A package can read the image's code (public), the other
 packages on the mount (the Admins' own), and call the web port on the inner
 network with no session, as any file read can: accepted, by the trust rule.
 
+## Page windows
+
+A book of 1,679 scanned pages (two files of 347 MB and 249 MB) is read by a
+pipeline, not by the core's PDF read (task 8d40932a; Jason, 2026-11-18: "go
+with B, add local OCR"). Five platform parts make that work for any Reader
+and Agent; the built-ins on them (the router's kind `book`, the Reader
+`pdf-pages`, the Agent `pdf-page-read`) are their own step.
+
+**P1, the windows.** A pipeline that says `needs.window: { pages, mb }` (1 to
+500 pages, 1 to 64 MB; a `.pdf` pipeline only) reads a PDF one window at a
+time: each window a PDF of at most `pages` pages and `mb` MB of the
+original, cut by qpdf in the parser (the job `pdfSplit`, docs/parser.md
+"Page windows"). Every file, whatever its size: there is no size threshold
+and no second path for a small book (Jason's word: 50 pages or 50 MB,
+whichever comes first, `PIPELINE_WINDOW_DEFAULT`). Each window is one parser
+job of the step, with the window's PDF as its body and three more fields in
+the request: `pageFrom`, `pageTo` (1-based, both in) and `pagesTotal`. The
+request's `file` is still the original file. A page a step names (a `Page`
+cell, an ask's `page`, a `page-<N>` key) is a page of the ORIGINAL file: page
+`i` of the window is page `pageFrom + i - 1`. The `state` of window 1 is the
+core's; of each later window, the `state` the window before returned (a
+table that runs over the edge hands its open table on). A Reader's windows
+merge into one write (`mergeWindowWrite`): a tab an earlier window wrote
+gets the later rows after its own, by column name (a column the first
+window's tab lacks is left out, with a warning); a new tab is added; the
+texts join with a blank line; the pictures add up, each window's renamed
+`w<first page>-<name>`; the last description stands. A window the parser
+cannot cut or the step cannot read is left out with a warning and the run
+goes on from the last good state; the database's `_meta` keeps `pages_read`
+and `pages_total`, so the file's status says `partial` with the pages read.
+`not_mine` on window 1 is the run's answer. A busy parser fails the run, and
+the extract tries again.
+
+A step's job handle has `pdfPageCount()` (qpdf, no pdfjs), so a router names
+a file past the 256 MB pdfjs opens.
+
+**P2, the Reader's text stands.** A Reader that claims a router's kinds and
+says `produces.text` (`readerStandsOver`) stands over the core's PDF read:
+for a PDF its database was written by such a Reader, the extract reads no text
+of its own, runs no native read, no sketch read and no OCR, and stamps no
+`document_unreadable` (server/api/src/agent/extract/load-body.ts). The
+Reader's text is the file's text: from the run of this extract's database
+pass, kept for the extract (`routedReaderRun`, no second job), else, for a
+Reader that says `produces.pages`, from its pages in the database. The pages
+it read are stamped as the scan OCR stamps them (`ocr`). A Reader that gave
+no text leaves the file to the core's read, as before. Such a Reader writes
+the `File` tab (`pdf-file-v1`) with its kind: a read again of a PDF finds its
+kind there, and a database with no `File` tab is kept as it is (`kept`).
+
+**P3, page passages.** A pipeline that says `produces.pages` gives text by
+page. A Reader writes the tab `Pages` (`PAGES_TAB`): one row a page, `Page`
+(the page of the original file) and `Text`. An Agent keys its asks
+`page-<N>` (`PAGE_ASK_KEY_PREFIX`) with the field `Text`, and its text of a
+page stands over the Reader's. The file's passages are built from these, one
+section `Page N` a page (`packages/content/src/page-passages.ts`,
+`filePagesOf`), with no length cap and for a file with no stored text too,
+so `read_section` and `search_chunks` cite the true page of the original
+file. `data.text` keeps its 1 M cap. An Agent of page text puts no copy of
+its tab in `data.agent_text`; its new answers build the passages again.
+
+**P4, write in parts.** An Agent that says `needs.window` runs the money
+rule window by window: one parser job gives the window's asks, the core
+answers them (from the tab by hash, else one paid call), and the rows so far
+are written with one patch before the next window, so a kill loses one
+window's calls at most and the next run takes the written rows by their hash.
+The cap of `needs.workers` holds for the whole file (an ask past it is not
+made: `stopped: cap`). The stamp entry is set only when every ask of every
+window has its answer.
+
+**P5, a stored file.** `process_extraction` takes a file (its `node_id`): a
+file the core could not read, or never read, is read again, and with P2 its
+Reader's text stands, so a book costs only the summary and the embedding. A
+file already indexed in full is skipped as before. `pipeline_run` runs a
+Reader that claims kinds on a file of its type (the build names the kind).
+
+**P6, local OCR.** qpdf, Tesseract with its English data, pdfplumber and
+pypdfium2 are in the parser image (docs/parser.md, "Page windows").
+
 ## Text and pictures from every Reader
 
 The owner's decision of 2026-11-15 ("pick 1"): the `text` and `pictures`

@@ -189,24 +189,41 @@ always happens; only survivors of the deterministic filters earn a vision call:
 - ≥ 1 KB. Deliberately LOW: flat line art compresses to ~2 KB, and an initial
   8 KB floor rejected exactly the diagrams this feature exists for
 - sha256 dedupe collapses the logo repeated on every slide
-- 30 per document (`MAX_EMBEDDED_IMAGES_PER_DOC`), **configurable**: see below
+- 500 per document (`MAX_EMBEDDED_IMAGES_PER_DOC`, 30 before 2026-11-18), **configurable**: see below
 
-**The per-document cap is a setting, and its default is wrong for manuals.**
-The ceiling is applied _after_ the gate, keeping the first N in reading order
-and counting the rest as `over_cap`. Thirty suits a mixed personal corpus. It is
-badly wrong for a screenshot-heavy product manual: a 259-screenshot user guide
-keeps images 1-30 and silently drops the other ~229, so any answer living past
-the opening chapters is invisible no matter how good retrieval is. Raise it per
-brain in **Settings → AI workers → Extractor → "Embedded images per document"**
+**The per-document cap is a setting.** The ceiling is applied _after_ the
+gate, keeping the first N in reading order and counting the rest as
+`over_cap`. The default is 500 (Jason, 2026-11-18: "if it is there, why not
+extract it"; it was 30, which kept images 1-30 of a 259-screenshot user guide
+and dropped the rest). Set it per brain in **Settings → AI workers →
+Extractor → "Embedded images per document"**
 (`ExtractorParams.max_embedded_images_per_doc`; blank or 0 means the default
-30). Each image kept is one vision call, so the number is a real spend decision.
+500). Each image kept is one vision call, so the number is a real spend
+decision. A PDF read counts the pictures past the cap for up to 60 s of the
+job, so the count is exact on all but a very long file (then it is a floor).
 
-⚠️ **Set the cap BEFORE backfilling.** A document that has produced _any_ image
-is skipped forever after, by the backfill's candidate query and again by
-`maybeExtractEmbeddedImages`'s own `sourceFileId` dedupe. Raising the cap later
-does **not** go back for the images a low first pass left behind; recovering
-them means deleting that document's extracted images so it becomes a candidate
-again.
+**A file that leaves pictures out says so** (task 8d40932a, G4). The picture
+pass stamps `data.images = { kept, found }` when the cap left pictures out or
+a page window of the file could not be read (each such window counts as one
+picture found at least). `extractionOf` then gives the file `partial` with
+the hint "N of M pictures kept", and `file_list` with `extraction: partial`
+lists it. A file that left none out stamps nothing, and a later read that
+kept every picture takes the stamp off.
+
+**A raised cap fetches the rest** (G5). A file whose `data.images` says
+`kept < found` is a candidate of the picture pass again, for a re-notify
+(`process_extraction` on it) and for the backfill (`extract:images-backfill`).
+The pictures it has stay by their sha256; only the new ones are saved, so only
+they cost a vision call. Nothing re-reads a file by itself: a person or an
+agent starts it (the cost-safety rule).
+
+**Large and long PDFs are read by page windows** (G2). A PDF past the 256 MB
+pdfjs opens (`PDF_MAX_BYTES`) has its pictures read window by window: the
+parser cuts each window with qpdf (`/pdf/split`, docs/parser.md) and reads its
+pictures, with the cap left over; the reading order, each picture's page on
+the original file and the sha256 dedupe hold across windows. A PDF of more
+than 100 pages (`MAX_PDF_PAGES_SCANNED`) has its first 100 read whole and the
+rest by windows, so no page of a long manual is left unread.
 
 **Scanned PDFs are excluded by shape detection** (one image per page across the
 document); those belong to the rasterize + OCR path above; extracting them

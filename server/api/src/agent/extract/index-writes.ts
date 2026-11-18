@@ -39,6 +39,7 @@ import {
   hasSheetMarkers,
   isSpreadsheetTitle,
 } from '@mantle/content';
+import { filePagesOf, pageHeading } from '@mantle/content/page-passages';
 import { AGENT_TEXT_HEADING, agentTextNow } from './agent-text';
 import { EntityMention } from './entities';
 import { errorMessage } from '@mantle/std';
@@ -323,14 +324,27 @@ export async function writeRetrievalChunks(
         node.type === 'file' && !tableProfilePieces && !gridProfile
           ? await agentTextNow(node.id)
           : '';
+      // A file whose Reader gave its text by page (P3, `produces.pages`):
+      // its passages are the pages, one section `Page N` a page, read from
+      // its database with no length cap, so a citation names the true page
+      // of the original file. The stored text (1 M at most) is not cut.
+      const pages =
+        node.type === 'file' && !tableProfilePieces && !gridProfile
+          ? await filePagesOf({
+              id: node.id,
+              ownerId,
+              sha256: (node.data as Record<string, unknown> | null)?.sha256,
+            })
+          : null;
+      const body =
+        pages && pages.pages.length > 0
+          ? pages.pages.flatMap((p) => chunkDocText(`${pageHeading(p.page)}\n${p.text}`))
+          : chunkDocText(rawBody);
       const pieces = clampPieces(
         tableProfilePieces ??
           (gridProfile
             ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
-            : [
-                ...chunkDocText(rawBody),
-                ...(agentText ? chunkDocText(`${AGENT_TEXT_HEADING}\n${agentText}`) : []),
-              ]),
+            : [...body, ...(agentText ? chunkDocText(`${AGENT_TEXT_HEADING}\n${agentText}`) : [])]),
       );
       if (pieces.length === 0) {
         // Heads first (workspaces plan U1): a grant change on this node

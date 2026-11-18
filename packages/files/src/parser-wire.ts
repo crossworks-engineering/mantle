@@ -244,3 +244,9 @@ export const MAX_OPTS_BYTES = 512 * 1024;
 export const META_HEADER = 'x-parser-meta';
 
 export const PARSER_DEFAULT_PORT = 8095;
+
+/** The largest PDF pdfjs opens in the parser, in bytes (./pdf-open.ts). The
+ *  old renderer (pdf-to-png-converter) refused past the same size. A PDF
+ *  past it is read by page windows (qpdf, the job `pdfSplit`): the picture
+ *  pass and a Reader that says `needs.window` (docs/pipelines.md). */
+export const PDF_MAX_BYTES = 256 * 1024 * 1024;

@@ -85,17 +85,17 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     }
   });
 
-  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339, 0377 and 0385) is this list', () => {
+  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339, 0377, 0385 and 0386) is this list', () => {
     const m = migration('0281_edit_check_tables');
-    // The extractor's keys, last replaced in 0385 (the read stamps), before
-    // it in 0377 (the text of the Agents' tabs) and 0339 (the parser's
-    // failure count).
-    const extractor = sqlArrayAfter(
-      migration('0385_file_read_stamps'),
-      'mantle_node_extractor_keys"()',
-    );
+    // The extractor's keys, last replaced in 0386 (the pictures a file left
+    // out), before it in 0385 (the read stamps), 0377 (the text of the
+    // Agents' tabs) and 0339 (the parser's failure count).
+    const extractor = sqlArrayAfter(migration('0386_images_key'), 'mantle_node_extractor_keys"()');
     expect(extractor).toEqual([...NODE_EXTRACTOR_KEYS]);
-    const stamps = ['read_by', 'pipeline_read'];
+    expect(
+      sqlArrayAfter(migration('0385_file_read_stamps'), 'mantle_node_extractor_keys"()'),
+    ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => k !== 'images'));
+    const stamps = ['read_by', 'pipeline_read', 'images'];
     expect(
       sqlArrayAfter(migration('0377_agent_text_key'), 'mantle_node_extractor_keys"()'),
     ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => !stamps.includes(k)));
@@ -126,8 +126,10 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     expect(copy).toHaveLength(13);
     // The copy's trigger now reads the named list (0281): the same 13, and
     // the parser's failure count since 0339, the Agents' text since 0377,
-    // the read stamps since 0385.
-    expect([...copy, 'parser_failures', 'agent_text', 'read_by', 'pipeline_read'].sort()).toEqual(
+    // the read stamps since 0385, the pictures left out since 0386.
+    expect(
+      [...copy, 'parser_failures', 'agent_text', 'read_by', 'pipeline_read', 'images'].sort(),
+    ).toEqual(
       [...NODE_EXTRACTOR_KEYS].sort(),
     );
     const files = read('packages/files/src/ops/files.ts');
@@ -135,7 +137,7 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     const bytes = [...files.slice(at, files.indexOf('] as const', at)).matchAll(/'([^']+)'/g)].map(
       (m) => m[1]!,
     );
-    expect(bytes).toHaveLength(17);
+    expect(bytes).toHaveLength(18);
     for (const k of [...copy, ...bytes]) expect(NODE_DERIVED_KEYS, k).toContain(k);
   });
 

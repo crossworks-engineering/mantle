@@ -38,7 +38,7 @@ describe('extractionOf: did the brain read the content', () => {
       ocr: { pages_read: 10, pages_total: 679 },
     });
     expect(x).toMatchObject({ state: 'partial', pages: { read: 10, total: 679 } });
-    expect(x.hint).toMatch(/1 to 10 of 679/);
+    expect(x.hint).toMatch(/10 of 679 pages were read/);
   });
 
   it('a whole read is indexed; a local read says so', () => {
@@ -72,5 +72,26 @@ describe('the read failures are one list', () => {
         'skipped',
       );
     }
+  });
+
+  it('pictures left out make a read file partial, N of M pictures kept (G4)', () => {
+    const x = extractionOf({ extract_completed_at: LATER, images: { kept: 500, found: 520 } });
+    expect(x).toMatchObject({ state: 'partial', pictures: { kept: 500, found: 520 } });
+    expect(x.hint).toMatch(/^500 of 520 pictures kept\./);
+    // Every picture kept: no badge.
+    expect(
+      extractionOf({ extract_completed_at: LATER, images: { kept: 520, found: 520 } }).state,
+    ).toBe('indexed');
+  });
+
+  it('a book with a page window not read and pictures left out says both', () => {
+    const x = extractionOf({
+      extract_completed_at: LATER,
+      ocr: { pages_read: 950, pages_total: 1000 },
+      images: { kept: 3, found: 4 },
+    });
+    expect(x).toMatchObject({ state: 'partial', pages: { read: 950, total: 1000 } });
+    expect(x.hint).toMatch(/950 of 1000 pages were read/);
+    expect(x.hint).toMatch(/3 of 4 pictures kept/);
   });
 });

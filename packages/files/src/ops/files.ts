@@ -119,6 +119,8 @@ export const BYTE_DERIVED_DATA_KEYS = [
   // its version then (../read-stamp.ts). New bytes are not read yet.
   'read_by',
   'pipeline_read',
+  // The pictures a file left out, `{ kept, found }` (G4, migration 0386).
+  'images',
 ] as const;
 
 /**
