@@ -862,4 +862,54 @@ describe.skipIf(!URL)('an embed stamp is never a model call (A10 #7 fix round 1)
     expect(d?.applied).toBe('local');
     expect(d?.model).toBe('m');
   });
+  it('task 8d40932a: a file no model may read, read locally as its name only, is not read: no completed read', async () => {
+    h.llmAllowed = false;
+    // A scan with no bytes on this disk: the local read gives its name only.
+    const id = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path, data) values
+      (${id}, ${owner}, 'file', 'spec-book.pdf', 'files',
+       ${JSON.stringify({ filename: 'spec-book.pdf', sha256: 'f'.repeat(64), indexing_applied: 'full' })}::jsonb)`);
+    await extractNode(id, owner);
+    expect(h.modelCalls).toBe(0);
+    const [d] = await x<{
+      skipped: string | null;
+      done: string | null;
+      applied: string | null;
+      vec: boolean;
+    }>(sql`
+      select data->'extract_skipped'->>'reason' as skipped, data->>'extract_completed_at' as done,
+             data->>'indexing_applied' as applied, embedding is not null as vec
+        from nodes where id = ${id}`);
+    expect(d).toMatchObject({
+      skipped: 'not_read_no_model',
+      done: null,
+      applied: 'local',
+      vec: true,
+    });
+    const { extractionOf } = await import('@mantle/files/extraction-status');
+    const [n] = await x<{ data: Record<string, unknown> }>(
+      sql`select data from nodes where id = ${id}`,
+    );
+    expect(extractionOf(n!.data)).toMatchObject({ state: 'skipped', reason: 'not_read_no_model' });
+  });
+
+  it('task 8d40932a: an item no model may read whose text was read locally is a completed read', async () => {
+    h.llmAllowed = false;
+    const note = await c.createNote(owner, {
+      title: 'Shift notes',
+      content: 'The north pump was overhauled on the night shift and passed its test.',
+    });
+    await extractNode(note.id, owner);
+    const [d] = await x<{
+      skipped: string | null;
+      done: string | null;
+      applied: string | null;
+    }>(sql`
+      select data->'extract_skipped'->>'reason' as skipped, data->>'extract_completed_at' as done,
+             data->>'indexing_applied' as applied
+        from nodes where id = ${note.id}`);
+    expect(d?.skipped).toBeNull();
+    expect(d?.done).not.toBeNull();
+    expect(d?.applied).toBe('local');
+  });
 });

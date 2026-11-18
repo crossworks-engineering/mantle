@@ -17,6 +17,8 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
   // The extractor.
   extract_skipped: [
     'server/api/src/agent/extract/terminal.ts',
+    // The cost guard's local index of a file it could read no text of.
+    'server/api/src/agent/extract/gates.ts',
     'packages/db/src/extract-skip-backfill.ts',
   ],
   extract_completed_at: ['server/api/src/agent/extractor.ts'],

@@ -439,6 +439,7 @@ export {
   TERMINAL_EXTRACT_SKIPS,
   READ_FAILURE_SKIPS,
   FILE_READ_FAILED_CHANNEL,
+  NOT_READ_NO_MODEL,
   extractSkippedStamp,
   extractSkippedSql,
   EXTRACT_PARKED_KEY,

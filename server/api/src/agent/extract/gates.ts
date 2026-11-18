@@ -59,6 +59,8 @@ import {
   nodes,
   contentChunks,
   dropIndexWork,
+  extractSkippedStamp,
+  NOT_READ_NO_MODEL,
   hasSummary,
   hasSummarySql,
   indexWorkIs,
@@ -113,13 +115,20 @@ async function indexLocalOnly(
   const body = (await readNodeBodyLocal(node)).trim();
   if (body) await writeRetrievalChunks(node, ownerId, body, null);
   const vec = await embed(ownerId, [node.title, body.slice(0, 2000)].filter(Boolean).join('\n\n'));
+  // A file whose local read gave its name only (a scan: no OCR without a
+  // model; a file the parser refused) was not read: its verdict says so
+  // (FileRow.extraction 'skipped'), never a completed read (task 8d40932a).
+  const notRead = node.type === 'file' && (!body || body === node.title.trim());
+  const done = sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'extract_skipped' - 'extract_parked' - 'extract_completed_at')`;
   await db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
     await tx
       .update(nodes)
       .set({
         embedding: vec,
-        data: sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'extract_skipped' - 'extract_parked') || ${JSON.stringify({ ...extra, indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
+        data: notRead
+          ? sql`${done} || ${extractSkippedStamp(NOT_READ_NO_MODEL)} || ${JSON.stringify({ ...extra, indexing_applied: 'local' })}::jsonb`
+          : sql`${done} || ${JSON.stringify({ ...extra, indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
       })
       .where(eq(nodes.id, node.id));
   });

@@ -118,6 +118,13 @@ export const READ_FAILURE_SKIPS: readonly string[] = [
   'bytes_unavailable',
 ];
 
+/** The verdict of a file indexed with no model (no assistant reads its
+ *  workspace) whose local read gave its name only: a scan, which needs a
+ *  model to read. Not a read failure (the admins hear nothing): the file
+ *  is `skipped`, and its first read once an assistant reads the workspace
+ *  is an explicit one (no trigger reads it again by itself). */
+export const NOT_READ_NO_MODEL = 'not_read_no_model';
+
 /** The NOTIFY channel of a new read failure (payload: the owner id). The
  *  push worker sends the box admins' devices one notice, at most one in
  *  READ_FAILED_PUSH_EVERY_MS (server/web/lib/push/notify.ts). Notify only:
