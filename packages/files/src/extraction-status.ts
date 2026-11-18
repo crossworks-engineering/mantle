@@ -73,7 +73,7 @@ const HINTS: Readonly<Record<string, string>> = {
   no_text_layer: 'The scan gave no text. Only its name is in search.',
   no_vision_text: 'The image gave no text to read. Only its name is in search.',
   local_only:
-    'Read on this box with no model: its text is in search, with no summary (the workspace has no assistant).',
+    'Read on this box with no model (its workspace has no assistant): only a text layer is read, with no summary, and a scanned page is not read.',
 };
 
 const PARTIAL_HINT = (read: number, total: number) =>
