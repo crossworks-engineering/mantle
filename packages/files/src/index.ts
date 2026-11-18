@@ -510,7 +510,15 @@ export {
 } from './move-copy';
 
 export type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
-export { PDF_KINDS, PAGE_KINDS, type PdfKind, type PageKind, type PageFacts } from './pdf-kind';
+export {
+  BOOK_MIN_PAGES,
+  PDF_KINDS,
+  PAGE_KINDS,
+  bookOf,
+  type PdfKind,
+  type PageKind,
+  type PageFacts,
+} from './pdf-kind';
 export {
   CLOCK_COLUMNS,
   PDF_KIND_RULES_VERSION,

@@ -30,8 +30,9 @@ const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
  *  a rule changes, so a database says which rules made it. 2 (2026-11-17):
  *  a fill's slanted lines are left out of the axes, a file of typed pages
  *  but for a few is a document, a file of blank pages that holds an image
- *  too large to open is a scan. */
-export const PDF_KIND_RULES_VERSION = 2;
+ *  too large to open is a scan. 3 (2026-11-18): a long run of office pages,
+ *  mostly scans or typed text, is a `book` (bookOf, ./pdf-kind.ts). */
+export const PDF_KIND_RULES_VERSION = 3;
 
 /** The clock columns of a reader's tabs, by tab name: a time a read took,
  *  another number on every read of the same bytes. `Read ms` of `Pages` is
@@ -472,6 +473,7 @@ const KIND_NOTE: Record<PdfKind, string> = {
   other_drawing: 'A drawing; what kind is not known.',
   document: 'A document, not a drawing.',
   unsure: 'A drawing-like PDF whose kind the rules could not decide.',
+  book: 'A long run of office pages, scanned or typed: a book, a spec or a manual.',
 };
 
 /** The one sentence of a kind (`A piping isometric.`), or null for a word
