@@ -320,6 +320,36 @@ describe('an Agent run on a file database', () => {
     expect(rowsOf('Drawing')).toEqual(before);
   });
 
+  it("a long answer (a page's text) is not cut by a Reader's new read or a run again (M3)", async () => {
+    const long = 'MADE-UP-PAGE-TEXT.'.repeat(600);
+    const cellOf = () => {
+      let got = '';
+      tdb.scanTabColumns(
+        sqlite(),
+        'Title block',
+        ['Key', 'Line number'],
+        { maxRows: 10, cellMaxChars: 50_000 },
+        (r) => {
+          if (r.Key === 'sheet') got = String(r['Line number']);
+          return true;
+        },
+      );
+      return got;
+    };
+    fail = (a) =>
+      a.key === 'sheet'
+        ? { ok: true, output: { values: { 'Line number': long, Revision: 'A' }, model: 'm' } }
+        : null;
+    expect(await run()).toMatchObject({ status: 'asked', made: 2 });
+    expect(cellOf()).toBe(long);
+    expect(long.length).toBeGreaterThan(4096);
+    expect(await read([['Format', 'made-up, read again']])).toMatchObject({ status: 'built' });
+    expect(cellOf()).toBe(long);
+    fail = undefined;
+    expect(await run()).toMatchObject({ status: 'asked', made: 0, reused: 2 });
+    expect(cellOf()).toBe(long);
+  });
+
   it('a second run of the same file makes ZERO paid calls and leaves the tab equal', async () => {
     await run();
     const first = rowsOf('Title block');

@@ -931,7 +931,10 @@ def read_pages(path, job, opts, request):
                 lines = lines_of(words)
                 grids_by_page[n] = len(grids)
                 if want_tables and method == "ocr":
-                    tables_by_page[n] = scan_page_tables(arr.shape, grids, words, lines, n, "ocr")
+                    try:
+                        tables_by_page[n] = scan_page_tables(arr.shape, grids, words, lines, n, "ocr")
+                    except Exception:  # noqa: BLE001 - its text stands; its tables are not found
+                        note(TABLES_FAILED)
             if pages[n]["method"] == "vision":
                 keep_picture(n, arr, drawn)
 
