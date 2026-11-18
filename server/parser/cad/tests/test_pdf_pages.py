@@ -219,10 +219,10 @@ class TextLayer(unittest.TestCase):
         b = os.path.join(self.dir, "w2.pdf")
         book_pdfs.write_pdf(a, self.pages[0:3], scan=set())
         book_pdfs.write_pdf(b, self.pages[3:7], scan=set())
-        r1, _ = run(a, {"pageFrom": 1, "pageCount": 7})
+        r1, _ = run(a, {"pageFrom": 1, "pageTo": 3, "pagesTotal": 7})
         self.assertIn("state", r1)
         self.assertLess(len(json.dumps(r1["state"])), 256 * 1024)
-        r2, _ = run(b, {"pageFrom": 4, "pageCount": 7, "state": r1["state"]})
+        r2, _ = run(b, {"pageFrom": 4, "pageTo": 7, "pagesTotal": 7, "state": r1["state"]})
         self.assertNotIn("state", r2)
         t1, _ = tabs_of(r1)
         t2, _ = tabs_of(r2)
@@ -236,6 +236,23 @@ class TextLayer(unittest.TestCase):
         self.assertIn("File", t1)
         self.assertNotIn("File", t2)
         self.assertEqual([r[0] for r in t2["Pages"]["rows"]], [4, 5, 6, 7])
+        # The last window says the whole book: its description stands.
+        self.assertTrue(tabs_of(r2)[1]["description"].startswith("A book of 7 pages: 7 text, 0 OCR"))
+        self.assertEqual(r1["state"]["totals"]["text"], 3)
+
+    def test_a_lost_window_ends_the_open_table(self):
+        """The core goes on from the state before a window it lost: the next
+        window does not join a table over the missing pages."""
+        a = os.path.join(self.dir, "g1.pdf")
+        b = os.path.join(self.dir, "g2.pdf")
+        book_pdfs.write_pdf(a, self.pages[0:3], scan=set())
+        book_pdfs.write_pdf(b, self.pages[4:7], scan=set())
+        r1, _ = run(a, {"pageFrom": 1, "pageTo": 3, "pagesTotal": 7})
+        r2, _ = run(b, {"pageFrom": 5, "pageTo": 7, "pagesTotal": 7, "state": r1["state"]})
+        t2, _ = tabs_of(r2)
+        names = [r[0] for r in t2["Tables"]["rows"]]
+        self.assertIn("PIPING MATERIAL SPECIFICATION A2C3 REV 1 p2 on", names)
+        self.assertIn("VALVE DATA SHEET B1 REV 2 p5-6", names)
 
     def test_not_a_pdf_and_bad_bytes(self):
         r, _ = run(self.pdf, {"file": {"name": "x.tif", "ext": "tif", "size": 0, "sha256": "0" * 64}})
