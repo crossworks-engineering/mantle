@@ -23,6 +23,7 @@ import {
 import { type BuiltinToolDef } from '../types';
 import { str } from '../coerce';
 import { FILE_ID_PRE } from '../builtins-common';
+import { fileSqlAnswer } from '../builtins-file-sql';
 
 type StatsRow = {
   embedded: boolean;
@@ -48,6 +49,28 @@ function imagesOf(raw: unknown): { kept: number; found: number } | null {
 function pagesOf(ocr: unknown): number | null {
   const total = (ocr as { pages_total?: unknown } | null)?.pages_total;
   return typeof total === 'number' ? total : null;
+}
+
+/** What a pipeline extracted into the file's database: its tabs and their
+ *  rows, the Data view's own describe (file_sql with no `sql`: the same
+ *  rights). Undefined when it is refused or cannot be read: the rest of the
+ *  answer stands. One file only; never a list. */
+async function tablesOf(
+  ownerId: string,
+  fileId: string,
+): Promise<Array<{ name: string; rows: number }> | undefined> {
+  try {
+    const got = await fileSqlAnswer(
+      ownerId,
+      { fileId, sql: '', cap: undefined },
+      { tableHint: false },
+    );
+    return got.kind === 'describe'
+      ? got.output.tabs.map((t) => ({ name: t.name, rows: t.row_count }))
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function readModeOf(raw: string | null): FileProcessing['readMode'] {
@@ -90,7 +113,10 @@ export async function fileProcessing(
   const stats = (statsRows as unknown as StatsRow[])[0];
   const derived = derivedRows as unknown as FileDerivedItem[];
   const dbState = file!.dataView ? await fileDbStateOf(row.id, row.sha256) : null;
-  const stamp = dbState?.state === 'ready' ? await readFileDbStamp(row.id, row.sha256) : null;
+  const ready = dbState?.state === 'ready';
+  const [stamp, tables] = ready
+    ? await Promise.all([readFileDbStamp(row.id, row.sha256), tablesOf(ownerId, row.id)])
+    : [null, undefined];
   const ex = row.extraction;
   const failed = ex.state === 'failed' || ex.state === 'skipped';
   return {
@@ -121,6 +147,7 @@ export async function fileProcessing(
           state: dbState.state,
           bytes: dbState.bytes,
           readBy: stamp ? { pipeline: stamp.pipeline_id, version: stamp.pipeline_version } : null,
+          ...(tables ? { tables } : {}),
         }
       : null,
     job: file!.status.job ?? null,

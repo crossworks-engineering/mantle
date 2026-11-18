@@ -103,11 +103,13 @@ export type FileProcessing = {
   mentions: number;
   /** The file's database, for a file with a Data view; null otherwise.
    *  `readBy`: the pipeline and version that built it (null before stamps
-   *  or when not built). */
+   *  or when not built). `tables`: what it extracted, each tab and its
+   *  rows; only when built and readable by the caller (as the Data view). */
   database: {
     state: DataFileState;
     bytes: number | null;
     readBy: FileDatabaseReadBy | null;
+    tables?: Array<{ name: string; rows: number }>;
   } | null;
   /** An extract job in the queue now, or null. */
   job: FileJob | null;
