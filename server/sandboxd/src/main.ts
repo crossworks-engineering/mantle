@@ -203,7 +203,8 @@ const markActive = (id: string) => lastActivity.set(id, Date.now());
 async function usedBytes(): Promise<number> {
   const [{ stdout }, layers] = await Promise.all([
     execFileP('du', ['-sb', SANDBOXES_DIR]),
-    docker.containerLayerBytes([`${LABEL}=true`]),
+    // A failed size count must not drop the folders' count with it.
+    docker.containerLayerBytes([`${LABEL}=true`]).catch(() => 0),
   ]);
   return (Number(stdout.split('\t')[0]) || 0) + layers;
 }

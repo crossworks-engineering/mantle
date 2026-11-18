@@ -569,7 +569,8 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
   it("L and the anchor each work in every sandbox, the other login's too", async () => {
     // Owner, 2026-11-18: an Admin user works in every sandbox (the maker rule
     // is gone; every sandbox tool needs the settings area). The daemon is
-    // offline here, so each call fails later, never on whose sandbox it is.
+    // offline here, so each call reaches it and fails there, never before on
+    // whose sandbox it is.
     const calls: Array<[string, Record<string, unknown>]> = [
       ['sandbox_exec', { command: 'cat /mnt/inbox/x' }],
       ['sandbox_ls', {}],
@@ -582,7 +583,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
           const res = await inAdminTurn(login, () =>
             dispatchAs(login, slug, { sandbox: box, ...args }),
           );
-          expect(errorOf(res), `${slug} ${box}`).not.toMatch(/made by another login/);
+          expect(errorOf(res), `${slug} ${box}`).toMatch(/offline in the W7a test/);
         }
       }
     }

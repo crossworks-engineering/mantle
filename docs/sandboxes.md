@@ -69,7 +69,8 @@ stray root-owned directory on every box that never sets the variable.
 Optional: `SANDBOX_DEFAULT_IMAGE` (pin a different base image),
 `SANDBOX_MAX_COUNT` (running sandboxes at once, default 100; a stopped one does
 not count, the disk budget bounds those), `SANDBOX_IDLE_STOP_MINUTES` (default 60),
-`SANDBOX_DISK_BUDGET_BYTES` (default 10 GB), `SANDBOX_EGRESS_ALLOW`
+`SANDBOX_DISK_BUDGET_BYTES` (default 10 GB; it counts the `/files` folders and
+what each container wrote outside them, stopped sandboxes included), `SANDBOX_EGRESS_ALLOW`
 (extra balanced-tier hosts, comma-separated), `SANDBOX_PULL_MIN_FREE_BYTES`
 (default 10 GB: sandboxd refuses to download an image that is not local
 while the disk under the sandboxes dir has less free; 0 turns it off). A local

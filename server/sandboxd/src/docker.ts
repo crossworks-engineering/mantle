@@ -186,8 +186,8 @@ export const listContainers = (labelFilters: string[]): Promise<ContainerSummary
 
 /** Bytes each sandbox container wrote outside its /files folder (its
  *  writable layer: apt installs, global packages), by docker's own count.
- *  `size=true` makes docker sum each layer, so it is asked only where the
- *  disk budget is checked. */
+ *  `size=true` makes docker sum each layer: asked for the disk budget (a
+ *  create, an import) and the status list. */
 export const containerLayerBytes = async (labelFilters: string[]): Promise<number> => {
   const list: Array<{ SizeRw?: number }> = await json(
     'GET',

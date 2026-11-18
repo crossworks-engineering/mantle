@@ -14,5 +14,5 @@ export function sandboxLimitRefusal(
 ): string | null {
   const running = containers.filter((c) => c.State === 'running').length;
   if (running < max) return null;
-  return `sandbox limit reached (${max} running): stop one with sandbox_stop, or remove one with sandbox_rm, before creating another`;
+  return `sandbox limit reached (${max} running): stop one with sandbox_stop, or remove one with sandbox_rm, then try again`;
 }
