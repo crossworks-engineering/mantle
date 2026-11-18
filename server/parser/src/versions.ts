@@ -26,7 +26,7 @@ function packageVersion(name: string): string | null {
 const PY_VERSIONS = [
   'import sys, importlib.metadata as m',
   "print('python', sys.version.split()[0])",
-  "for p in ('ezdxf', 'ezdwf', 'ezdwg', 'ezdgn', 'matplotlib'):",
+  "for p in ('ezdxf', 'ezdwf', 'ezdwg', 'ezdgn', 'matplotlib', 'pdfplumber', 'pypdfium2'):",
   '    try: print(p, m.version(p))',
   '    except Exception: pass',
   'sys.path.insert(0, sys.argv[1])',
@@ -52,6 +52,14 @@ async function probe(): Promise<Record<string, string>> {
   // "ffmpeg version 7.1.1-1 Copyright ..." -> "7.1.1-1"
   const ffv = ff.code === 0 ? ff.stdout.split('\n')[0]?.split(/\s+/)[2] : undefined;
   if (ffv) out.ffmpeg = ffv;
+  // The page windows' cutter and the local OCR (docs/parser.md).
+  // "qpdf version 11.3.0" -> "11.3.0"; "tesseract 5.3.0" -> "5.3.0".
+  const qp = await runGroup('qpdf', ['--version'], { timeoutMs: 10_000, stdout: true });
+  const qpv = qp.code === 0 ? qp.stdout.split('\n')[0]?.split(/\s+/)[2] : undefined;
+  if (qpv) out.qpdf = qpv;
+  const ts = await runGroup('tesseract', ['--version'], { timeoutMs: 10_000, stdout: true });
+  const tsv = ts.code === 0 ? ts.stdout.split('\n')[0]?.split(/\s+/)[1] : undefined;
+  if (tsv) out.tesseract = tsv;
   return out;
 }
 

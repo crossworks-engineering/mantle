@@ -93,9 +93,14 @@ import {
 import {
   afterBodyOf,
   agentStep,
+  pagesReadOf,
+  pdfWindows,
   PipelineRunError,
   readerGivesText,
   readerRun,
+  readerStandsOver,
+  readsInWindows,
+  routedReaderRun,
   runPackaged,
   stepFileOf,
   type PipelineRunResult,
@@ -123,6 +128,9 @@ export type ParsedFile =
        *  the file's (readerGivesText) and not empty: with no tabs, its stamp
        *  goes in the file's word (writeRowsOrWord). */
       readerText?: number;
+      /** A Reader that read the file in page windows: the pages read and
+       *  the pages of the file, kept in the database's `_meta`. */
+      pages?: { read: number; total: number };
     }
   | { kind: 'none'; word: FileDbNoneWord }
   | { kind: 'not-plan' }
@@ -255,6 +263,16 @@ async function readRouted(
   const { kind, decision } = named;
   const reader = opts.pipelines.readerFor(ext, kind);
   if (!reader) return { kind: 'not-drawing' };
+  // A Reader whose text stands over the core's PDF read (a book), or one
+  // that reads in page windows: its run reads the file (never the facts)
+  // and is kept for the extract, so the text pass takes the same run.
+  if (readerStandsOver(reader) || readsInWindows(reader, ext)) {
+    const run = await routedReaderRun(reader, bytes, ext, options, {
+      kind,
+      state: readerStateOf(decision, false, opts.pdfNodeVision === true),
+    });
+    return withRunFacts(reader, run, parsedFileOfRun(reader, run));
+  }
   // The router's page facts go to a reader that claims the kind (a
   // built-in: an own Reader claims none), as the body of its job: the file
   // is read one time. A reader by extension alone gets the file.
@@ -294,16 +312,32 @@ async function packagedSheets(
   const passes = pipeline.produces.text === true || pipeline.produces.pictures === true;
   if (!named && (pipeline.id === 'drawing-cad' || pipeline.source === 'own' || passes)) {
     const run = await readerRun(pipeline, bytes, ext, options);
-    const parsed = parsedFileOfRun(pipeline, run);
-    return parsed.kind === 'sheets' && run.write?.text && readerGivesText(pipeline, ext)
-      ? { ...parsed, readerText: run.write.text.length }
-      : parsed;
+    return withRunFacts(pipeline, run, parsedFileOfRun(pipeline, run), readerGivesText(pipeline, ext));
   }
   const run = await runPackaged(pipeline, named?.body ?? bytes, stepFileOf(bytes, ext), {
     options,
     ...(named ? { kind: named.kind, state: named.state } : {}),
   });
   return parsedFileOfRun(pipeline, run);
+}
+
+/** A Reader's sheets with what else its run says: the length of its text
+ *  when that text is the file's (`gives`: readerGivesText, or a Reader that
+ *  stands over the core's PDF read), and the pages of a windowed run. */
+function withRunFacts(
+  pipeline: Pick<PipelineManifest, 'produces' | 'match'>,
+  run: PipelineRunResult,
+  parsed: ParsedFile,
+  gives = readerStandsOver(pipeline),
+): ParsedFile {
+  if (parsed.kind !== 'sheets') return parsed;
+  return {
+    ...parsed,
+    ...(run.write?.text && gives ? { readerText: run.write.text.length } : {}),
+    ...(run.windows
+      ? { pages: { read: pagesReadOf(run.windows), total: run.windows.pagesTotal } }
+      : {}),
+  };
 }
 
 /**
@@ -582,6 +616,7 @@ async function writeRowsOrWord(
     ...(parsed.description ? { description: parsed.description } : {}),
     ...(ftsSkipColumns.length > 0 ? { ftsSkipColumns } : {}),
     ...(file.since !== undefined ? { since: file.since } : {}),
+    ...(parsed.pages ? { pages: parsed.pages } : {}),
     ...(file.pipeline
       ? {
           stamp: pipelineStampOf(

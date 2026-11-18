@@ -27,6 +27,9 @@ export const PARSER_ROUTES = {
   pdfRasterize: '/pdf/rasterize',
   /** PDF → page count. */
   pdfInfo: '/pdf/info',
+  /** PDF → one page window of it, cut by qpdf (docs/pipelines.md, "Page
+   *  windows"): the window's bytes, its pages in the meta header. */
+  pdfSplit: '/pdf/split',
   /** Password-protected PDF → text, with one candidate password. */
   pdfUnlock: '/pdf/unlock',
   /** PDF → page facts and its kind as a drawing, with no model. */
@@ -59,6 +62,9 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   grid: 120_000,
   pdfRasterize: 180_000,
   pdfInfo: 60_000,
+  // qpdf copies the pages of one window with no decode: about a second for
+  // 50 pages of a 343 MB scan; up to four cuts when a window is past its MB.
+  pdfSplit: 120_000,
   pdfUnlock: 60_000,
   // The page reader takes about 0.2 s a P&ID page and has its own file
   // budget of 150 s (pdf-drawing.ts); the rest is for the pictures of up

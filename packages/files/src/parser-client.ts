@@ -588,10 +588,23 @@ export async function parserImages(
       if (typeof v === 'number' && Number.isFinite(v)) rejected[k] = v;
     }
   }
+  const pdf = (body.pdf ?? null) as Record<string, unknown> | null;
+  const count = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null);
+  const pagesTotal = count(pdf?.pagesTotal);
+  const pagesScanned = count(pdf?.pagesScanned);
   return {
     images,
     rejected,
     candidates: typeof body.candidates === 'number' ? body.candidates : images.length,
+    ...(pagesTotal !== null && pagesScanned !== null
+      ? {
+          pdf: {
+            pagesTotal,
+            pagesScanned,
+            ...(pdf?.countCut === true ? { countCut: true as const } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -655,7 +668,9 @@ export async function parserPipelineRun(
       body,
       named,
       PARSER_ANSWER_MAX_BYTES,
-      `${id}@${version}`,
+      // A window counts on its own (its first page), so one bad window
+      // never makes the next one terminal.
+      request.pageFrom !== undefined ? `${id}@${version}#p${request.pageFrom}` : `${id}@${version}`,
       request.file?.sha256,
     ),
   );
@@ -701,6 +716,50 @@ export async function parserRasterizePdf(
     });
   }
   return out;
+}
+
+/** One page window of a PDF (docs/pipelines.md, "Page windows"). */
+export type PdfWindow = {
+  bytes: Buffer;
+  /** The pages of the original file the window holds, 1-based, both in. */
+  pageFrom: number;
+  pageTo: number;
+  /** The pages of the original file. */
+  pagesTotal: number;
+};
+
+/**
+ * One page window of a PDF, cut by qpdf in the parser (the job
+ * `pdfSplit`): the pages from `from` on, at most `pages` of them and at
+ * most `mb` MB (a single page past `mb` is a window of its own). Any size
+ * the parser takes: qpdf decodes no page. Counted per window (the failure
+ * ledger's part is the window's first page), so one bad window never makes
+ * the next one terminal. Throws a ParserError.
+ */
+export async function parserPdfSplit(
+  bytes: Buffer,
+  opts: { from: number; pages: number; mb: number; sha256?: string },
+): Promise<PdfWindow> {
+  const answer = await exchange(
+    'pdfSplit',
+    bytes,
+    { from: opts.from, pages: opts.pages, mb: opts.mb },
+    PARSER_ANSWER_MAX_BYTES,
+    `from-${opts.from}`,
+    opts.sha256,
+  );
+  const meta = metaOf(answer);
+  const whole = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : 0);
+  const pageFrom = whole(meta.pageFrom);
+  const pageTo = whole(meta.pageTo);
+  const pagesTotal = whole(meta.pagesTotal);
+  if (pageFrom !== opts.from || pageTo < pageFrom || pagesTotal < pageTo || answer.body.length === 0) {
+    throw new ParserError('failed', 'the parser cut a window that is not the one asked for', {
+      retryable: false,
+      terminal: false,
+    });
+  }
+  return { bytes: answer.body, pageFrom, pageTo, pagesTotal };
 }
 
 /** A PDF's page count, or null when it cannot be read. */

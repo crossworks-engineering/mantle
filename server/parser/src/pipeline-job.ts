@@ -61,6 +61,7 @@ import {
 } from './cad';
 import { JobFailure } from './job-failure';
 import type { JobPaths } from './jobs';
+import { qpdfPageCount, qpdfThere } from './pdf-split';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
 import { ownPipelineOf, pipelineIndex } from './pipeline-index';
 import { childEnv, runChild } from './proc';
@@ -79,6 +80,7 @@ export function jobHandle(p: JobPaths, jobEnd: number): StepJob {
     pdfEye: pdfEye(p.dir, end),
     pdfPictures: pdfPictures(p.input, p.dir, jobEnd),
     pdfPagePieces: (png, widthMm, name) => pdfPagePieces(png, widthMm, p.dir, name, end),
+    pdfPageCount: () => qpdfPageCount(p.input, p.dir, end - Date.now()),
     cadRender: async (opts) => {
       const out = path.join(p.dir, 'cad-render.json');
       await dwgRender(p.input, { ...opts }, p.dir, out, end - Date.now());
@@ -185,6 +187,32 @@ export async function pythonBuiltinsThere(): Promise<number> {
     if (ended.code !== 0) throw childFailure(ended, 'the raster reader');
   }
   return python.length;
+}
+
+/** The boot smoke's check, in the image (PARSER_PYTHON is named there):
+ *  qpdf, the cutter of page windows, and Tesseract with its English data,
+ *  the local OCR of the CAD tier's Readers (docs/parser.md). Outside the
+ *  image (a dev box, the gate) there is nothing to check. */
+export async function ocrToolsThere(): Promise<number> {
+  if (!env('PARSER_PYTHON')) return 0;
+  const tmp = os.tmpdir();
+  await qpdfThere(tmp);
+  const langs = await runChild('tesseract', ['--list-langs'], {
+    timeoutMs: 30_000,
+    cwd: tmp,
+    env: childEnv(tmp),
+    stdout: true,
+  });
+  if (langs.code !== 0 || !/^eng$/m.test(langs.stdout)) {
+    throw childFailure(langs, 'tesseract with its English data');
+  }
+  const py = await runChild(pythonOf(), ['-c', 'import pdfplumber, pypdfium2'], {
+    timeoutMs: 60_000,
+    cwd: tmp,
+    env: childEnv(tmp, { PYTHONDONTWRITEBYTECODE: '1' }),
+  });
+  if (py.code !== 0) throw childFailure(py, 'pdfplumber and pypdfium2');
+  return 3;
 }
 
 /**

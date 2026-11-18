@@ -67,8 +67,24 @@ export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
 // ─── embedded images ──────────────────────────────────────────────────
 
 /** Pages we'll scan for figures. The per-document image cap bounds the
- *  output; this bounds the *work* on a long document. */
-const MAX_PDF_PAGES_SCANNED = 100;
+ *  output; this bounds the *work* on a long document. A PDF of more pages
+ *  has the rest read by page windows (the brain's picture pass,
+ *  server/api/src/agent/extract/images.ts), so no page is left unread. */
+export const MAX_PDF_PAGES_SCANNED = 100;
+
+/** How long one job reads on past the cap to count the pictures it leaves
+ *  out. Past it the count is a floor (`countCut`). */
+const OVER_CAP_COUNT_MS = 60_000;
+
+/** What a picture read counts beside its pictures: the pictures past the
+ *  cap (gated, not kept), whether that count was cut short, and the pages
+ *  of the PDF and how many of them were scanned. */
+export type PdfPicturesCounted = {
+  overCap: number;
+  countCut?: boolean;
+  pagesTotal?: number;
+  pagesScanned?: number;
+};
 
 /** Refuse to materialise an image beyond this many pixels. RGBA expansion is
  *  4 bytes a pixel, so 30 MP is already a 120 MB buffer — past this we're
@@ -211,14 +227,20 @@ const bunGc = (globalThis as { Bun?: { gc: (sync: boolean) => void } }).Bun?.gc;
  */
 export async function extractPdfImages(
   bytes: Buffer,
-  opts?: { maxImages?: number },
+  opts?: { maxImages?: number; counted?: PdfPicturesCounted },
 ): Promise<EmbeddedImage[]> {
   const maxImages = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
+  const counted = opts?.counted;
+  const countUntil = Date.now() + OVER_CAP_COUNT_MS;
   return withPdf(
     bytes,
     { useSystemFonts: true, maxImagePixels: MAX_IMAGE_PIXELS },
     async ({ pdfjs, doc }) => {
       const pageCount = Math.min(doc.numPages, MAX_PDF_PAGES_SCANNED);
+      if (counted) {
+        counted.pagesTotal = doc.numPages;
+        counted.pagesScanned = pageCount;
+      }
       const out: EmbeddedImage[] = [];
       const seen = new Set<string>();
       let kept = 0;
@@ -273,7 +295,24 @@ export async function extractPdfImages(
           }
 
           for (const name of wanted) {
-            if (kept >= maxImages) break;
+            if (kept >= maxImages) {
+              // Past the cap: counted, not kept (G4: the file says how many
+              // were left out), while the count's time lasts.
+              if (counted && Date.now() < countUntil) {
+                const raw = await resolveImage(page, name);
+                const png = raw ? await toPngBytes(raw).catch(() => null) : null;
+                if (png && png.length > 0) {
+                  const img = { bytes: png, ordinal: 0, ...describeImageBytes(png, 'png') };
+                  if (passesGate(img, seen).keep) {
+                    seen.add(img.sha256);
+                    counted.overCap += 1;
+                  }
+                }
+              } else if (counted) {
+                counted.countCut = true;
+              }
+              continue;
+            }
             const raw = await resolveImage(page, name);
             if (!raw) continue;
             const png = await toPngBytes(raw).catch(() => null);
@@ -311,7 +350,10 @@ export async function extractPdfImages(
       let droppedLeft = deferred
         ? countOversizeImages(bytes, MAX_IMAGE_PIXELS, MAX_PDF_PAGES_SCANNED)
         : 0;
-      for (let p = 1; p <= pageCount && kept < maxImages; p++) {
+      // With a count asked for, the pages past the cap are read on to count
+      // what is left out, while the count's time lasts.
+      const more = () => kept < maxImages || (counted !== undefined && Date.now() < countUntil);
+      for (let p = 1; p <= pageCount && more(); p++) {
         if (!deferred) {
           await readPage(p, true);
           continue;
@@ -325,11 +367,12 @@ export async function extractPdfImages(
         const earlier = deferred;
         deferred = null;
         for (const d of earlier) {
-          if (kept >= maxImages) break;
+          if (!more()) break;
           await readPage(d, true);
         }
-        if (kept < maxImages) await readPage(p, true);
+        if (more()) await readPage(p, true);
       }
+      if (counted && kept >= maxImages && Date.now() >= countUntil) counted.countCut = true;
       // Every page held exactly one image: a scan, left to the OCR path.
       return deferred ? [] : out;
     },

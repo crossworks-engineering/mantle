@@ -252,11 +252,18 @@ export function writeFileDatabaseDoc(
     /** A conditional write: refused (ConflictError) when the file is not
      *  the one the caller read (null: there was none). */
     since?: { ino: number; size: number; mtimeMs: number } | null;
+    /** A Reader that read the file in page windows: the pages its windows
+     *  read and the pages of the file, as `_meta` `pages_read` and
+     *  `pages_total` (docs/pipelines.md, "Page windows"). */
+    pages?: { read: number; total: number };
   },
 ): WriteRes {
   const extraMeta: Record<string, string> = {
     ...(meta.description ? { description: meta.description } : {}),
     ...meta.stamp,
+    ...(meta.pages
+      ? { pages_read: String(meta.pages.read), pages_total: String(meta.pages.total) }
+      : {}),
   };
   return writeDocFile(abs, doc, {
     nodeId: meta.fileId,

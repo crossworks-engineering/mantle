@@ -26,8 +26,10 @@ import {
   PIPELINE_API,
   PIPELINE_STEPS_MAX,
   SHAPES,
+  isParserError,
   memoReaderRun,
   optionsHash,
+  parserPdfSplit,
   parserPipelineRun,
   parserRouteForExt,
   readerRunKey,
@@ -60,7 +62,15 @@ export type PipelineRunResult = {
   counts: Readonly<Record<string, number>>;
   /** A router's facts, from the step that read them (`facts`). */
   facts?: Record<string, unknown>;
+  /** The `state` the last step returned: a window's, for the next window. */
+  state?: unknown;
+  /** A windowed run (`needs.window`): the pages of the file and the windows
+   *  that could not be read, each by its pages (both in). */
+  windows?: { pagesTotal: number; failed: { from: number; to: number }[] };
 };
+
+/** The pages of a request of one window (PipelineStepRequest). */
+type WindowPages = Pick<PipelineStepRequest, 'pageFrom' | 'pageTo' | 'pagesTotal'>;
 
 /** The error of a run that broke the contract (too many steps): a reader's
  *  `failed`, never retried. */
@@ -92,6 +102,9 @@ export async function runPackaged(
      *  of a decision (pdf-read.ts). A step uses it for those and nothing
      *  else; its result is checked as every one. */
     state?: unknown;
+    /** One window of a windowed run (runWindowed): its pages, in every
+     *  request of the run. */
+    window?: WindowPages;
   },
 ): Promise<PipelineRunResult> {
   const max = pipeline.router ? PIPELINE_STEPS_MAX.router : PIPELINE_STEPS_MAX.pipeline;
@@ -117,6 +130,7 @@ export async function runPackaged(
       ...(opts.kind !== undefined ? { kind: opts.kind } : {}),
       ...(answers ? { answers } : {}),
       ...(state !== undefined ? { state } : {}),
+      ...opts.window,
     };
     const { result, pictures } = await parserPipelineRun(body, pipeline, request);
     if (result.facts !== undefined) facts = result.facts;
@@ -137,6 +151,7 @@ export async function runPackaged(
         warnings: [...(result.warnings ?? [])],
         counts: result.counts ?? {},
         ...(facts ? { facts } : {}),
+        ...(result.state !== undefined ? { state: result.state } : {}),
       };
     }
     if (step >= max) {
@@ -199,6 +214,209 @@ export async function agentStep(
   };
 }
 
+/** Whether a pipeline reads a file of this extension in page windows. */
+export function readsInWindows(
+  pipeline: Pick<PipelineManifest, 'needs'>,
+  ext: string,
+): pipeline is Pick<PipelineManifest, 'needs'> & {
+  needs: { window: { pages: number; mb: number } };
+} {
+  return pipeline.needs.window !== undefined && ext === 'pdf';
+}
+
+/** One window of a PDF, as the parser cut it, with its pages. */
+export type PdfWindowPart = {
+  bytes: Buffer;
+  pageFrom: number;
+  pageTo: number;
+  pagesTotal: number;
+};
+
+/** One step of {@link pdfWindows}: a window, or the pages of one the parser
+ *  could not cut. */
+export type PdfWindowStep =
+  | { part: PdfWindowPart }
+  | { part: null; from: number; to: number; pagesTotal: number };
+
+/**
+ * The page windows of a PDF, one at a time and in page order
+ * (docs/pipelines.md, "Page windows"): each one parser job (`pdfSplit`,
+ * qpdf), so the brain holds the file and one window, never every part. A
+ * window the parser cannot cut comes as `part: null` with the pages it was
+ * to hold (`pages` of them from its first), so the caller counts them as
+ * not read and goes on; the first window must be cut, or there is no page
+ * count and the run throws. A busy or unavailable parser throws, as for
+ * every job. `startPage`: the first page (a picture pass that read the
+ * first pages whole starts after them).
+ */
+export async function* pdfWindows(
+  bytes: Buffer,
+  sha256: string,
+  window: { pages: number; mb: number },
+  startPage = 1,
+): AsyncGenerator<PdfWindowStep> {
+  let from = startPage;
+  let total: number | null = null;
+  for (;;) {
+    let part: PdfWindowPart;
+    try {
+      part = await parserPdfSplit(bytes, { from, pages: window.pages, mb: window.mb, sha256 });
+    } catch (err) {
+      if (total === null || !isParserError(err) || err.retryable) throw err;
+      const to = Math.min(total, from + window.pages - 1);
+      yield { part: null, from, to, pagesTotal: total };
+      if (to >= total) return;
+      from = to + 1;
+      continue;
+    }
+    total = part.pagesTotal;
+    yield { part };
+    if (part.pageTo >= part.pagesTotal) return;
+    from = part.pageTo + 1;
+  }
+}
+
+/** Merge one window's write into the run's (the rule of FileTabsWriteInput):
+ *  rows of a tab already there go after its rows by column name, a new tab
+ *  is added, texts join with a blank line, pictures add up, and the last
+ *  description stands. A column the first tab does not have is a warning. */
+export function mergeWindowWrite(
+  into: FileTabsWriteInput | undefined,
+  next: FileTabsWriteInput,
+  warnings: string[],
+): FileTabsWriteInput {
+  if (!into) return { ...next, tabs: next.tabs.map((t) => ({ ...t, rows: [...t.rows] })) };
+  const tabs = into.tabs;
+  for (const tab of next.tabs) {
+    const have = tabs.find((t) => t.name === tab.name);
+    if (!have) {
+      tabs.push({ ...tab, rows: [...tab.rows] });
+      continue;
+    }
+    const at = have.columns.map((c) => tab.columns.findIndex((n) => n.name === c.name));
+    const lost = tab.columns.filter((c) => !have.columns.some((h) => h.name === c.name));
+    if (lost.length > 0) {
+      warnings.push(
+        `The tab ${tab.name} of a later window has columns the first does not (${lost
+          .map((c) => c.name)
+          .join(', ')
+          .slice(0, 200)}); they were left out.`,
+      );
+    }
+    for (const row of tab.rows) have.rows.push(at.map((i) => (i < 0 ? null : (row[i] ?? null))));
+  }
+  const text = [into.text, next.text].filter((t): t is string => !!t).join('\n\n');
+  const pictures = [...(into.pictures ?? []), ...(next.pictures ?? [])];
+  const description = next.description ?? into.description;
+  const fts = [...new Set([...(into.ftsSkipColumns ?? []), ...(next.ftsSkipColumns ?? [])])];
+  const source = next.sourceSha256 ?? into.sourceSha256;
+  return {
+    tabs,
+    ...(description ? { description } : {}),
+    ...(fts.length > 0 ? { ftsSkipColumns: fts } : {}),
+    ...(source ? { sourceSha256: source } : {}),
+    ...(text ? { text } : {}),
+    ...(pictures.length > 0 ? { pictures } : {}),
+  };
+}
+
+/**
+ * A Reader's run in page windows (docs/pipelines.md, "Page windows"): the
+ * pipeline says `needs.window` and the file is a PDF. Every window, whatever
+ * the file's size: there is no second path for a small book (Jason's word,
+ * 2026-11-18). Each window is one run of the step (runPackaged) on the
+ * window's PDF, with its pages in the request; the state of window 1 is the
+ * core's (`opts.state`), of each later window the one the window before
+ * returned. The writes merge into one (mergeWindowWrite), each window's
+ * pictures renamed `w<first page>-<name>` so two windows never share a name.
+ *
+ * Nothing is lost silently: a window the parser cannot cut or the step
+ * cannot read (a typed failure that is not `busy` or `unavailable`, a
+ * broken contract) is kept in `windows.failed` with a warning, and the run
+ * goes on with the next window from the last good state; so is a window
+ * past the first that ends with any status but `ok`. `not_mine` on window
+ * 1 is the run's answer. A busy parser throws: the extract tries again.
+ */
+export async function runWindowed(
+  pipeline: PipelineManifest & { needs: { window: { pages: number; mb: number } } },
+  bytes: Buffer,
+  file: NonNullable<PipelineStepRequest['file']>,
+  opts: { options: Readonly<Record<string, unknown>>; kind?: string; state?: unknown },
+): Promise<PipelineRunResult> {
+  let write: FileTabsWriteInput | undefined;
+  const pictures = new Map<string, Buffer>();
+  const warnings: string[] = [];
+  const counts: Record<string, number> = {};
+  const failed: { from: number; to: number }[] = [];
+  let state = opts.state;
+  let pagesTotal = 0;
+  let first = true;
+  const lose = (from: number, to: number, why: string) => {
+    failed.push({ from, to });
+    warnings.push(`Pages ${from} to ${to} ${why}.`);
+    first = false;
+  };
+  for await (const w of pdfWindows(bytes, file.sha256, pipeline.needs.window)) {
+    if (!w.part) {
+      pagesTotal = w.pagesTotal;
+      lose(w.from, w.to, 'could not be cut from the file');
+      continue;
+    }
+    const { part } = w;
+    pagesTotal = part.pagesTotal;
+    let run: PipelineRunResult;
+    try {
+      run = await runPackaged(pipeline, part.bytes, file, {
+        options: opts.options,
+        ...(opts.kind !== undefined ? { kind: opts.kind } : {}),
+        ...(state !== undefined ? { state } : {}),
+        window: { pageFrom: part.pageFrom, pageTo: part.pageTo, pagesTotal: part.pagesTotal },
+      });
+    } catch (err) {
+      if (isParserError(err) && err.retryable) throw err;
+      if (!isParserError(err) && !(err instanceof PipelineRunError)) throw err;
+      lose(part.pageFrom, part.pageTo, 'could not be read');
+      continue;
+    }
+    if (run.status === 'not_mine' && first) return { ...run, windows: { pagesTotal, failed } };
+    if (run.status !== 'ok') {
+      lose(part.pageFrom, part.pageTo, `ended ${run.status}`);
+      continue;
+    }
+    first = false;
+    warnings.push(...run.warnings);
+    for (const [k, v] of Object.entries(run.counts)) counts[k] = (counts[k] ?? 0) + v;
+    if (run.state !== undefined) state = run.state;
+    if (!run.write) continue;
+    // Each window's pictures under names of their own.
+    const prefix = `w${part.pageFrom}-`;
+    for (const [name, b] of run.pictures) pictures.set(prefix + name, b);
+    const renamed: FileTabsWriteInput = {
+      ...run.write,
+      ...(run.write.pictures
+        ? { pictures: run.write.pictures.map((p) => ({ ...p, file: prefix + p.file })) }
+        : {}),
+    };
+    write = mergeWindowWrite(write, renamed, warnings);
+  }
+  return {
+    status: 'ok',
+    ...(opts.kind !== undefined ? { kind: opts.kind } : {}),
+    ...(write ? { write } : {}),
+    pictures,
+    warnings,
+    counts,
+    windows: { pagesTotal, failed },
+  };
+}
+
+/** The pages a windowed run read: every page but those of its failed
+ *  windows. */
+export function pagesReadOf(windows: NonNullable<PipelineRunResult['windows']>): number {
+  const lost = windows.failed.reduce((n, w) => n + (w.to - w.from + 1), 0);
+  return Math.max(0, windows.pagesTotal - lost);
+}
+
 /** Whether a Reader's text is a file's text: the Reader says it gives text
  *  (`produces.text`) and the core has no text route for the extension
  *  (`parserRouteForExt`, @mantle/files slug.ts). Where the core has one, the
@@ -237,7 +455,58 @@ export async function readerRun(
   }
   const file = stepFileOf(bytes, ext);
   const key = readerRunKey(pipeline, file.sha256, ext, optionsHash(pipeline, options));
-  return memoReaderRun(key, () => runPackaged(pipeline, bytes, file, { options }));
+  return memoReaderRun(key, () =>
+    readsInWindows(pipeline, ext)
+      ? runWindowed(pipeline, bytes, file, { options })
+      : runPackaged(pipeline, bytes, file, { options }),
+  );
+}
+
+/** The memo key of a routed Reader's run (routedReaderRun): a file's
+ *  router names one kind, so the kind is not in it, and the text pass finds
+ *  the run by the Reader, the bytes and the options alone. */
+export function routedRunKey(
+  pipeline: PipelineManifest & { draft?: string },
+  sha256: string,
+  ext: string,
+  options: Readonly<Record<string, unknown>>,
+): string {
+  return readerRunKey(pipeline, sha256, ext, `${optionsHash(pipeline, options)}:routed`);
+}
+
+/** Whether a Reader's text stands over the core's PDF read (P2,
+ *  docs/pipelines.md, "Page windows"): it claims the kinds a router names
+ *  (a PDF's book reader) and says `produces.text`. Then the core reads no
+ *  text, runs no native read and no OCR of its own for the file, and the
+ *  Reader's text is the file's text. */
+export function readerStandsOver(
+  pipeline: Pick<PipelineManifest, 'produces' | 'match'>,
+): boolean {
+  return pipeline.produces.text === true && (pipeline.match.kind?.length ?? 0) > 0;
+}
+
+/**
+ * The run of a Reader that claims the kind the router named (a PDF's book
+ * reader), kept for the extract as readerRun keeps a run, by the kind too:
+ * the database pass makes it, and the text pass of the same extract
+ * (load-body.ts, the Reader's text stands over the core's PDF read) takes
+ * the same run, with no second job. A windowed Reader reads in windows
+ * (runWindowed); its body is the file, never the router's facts.
+ */
+export async function routedReaderRun(
+  pipeline: PipelineManifest & { source?: PipelineSource; draft?: string },
+  bytes: Buffer,
+  ext: string,
+  options: Readonly<Record<string, unknown>>,
+  named: { kind: string; state: unknown },
+): Promise<PipelineRunResult> {
+  const file = stepFileOf(bytes, ext);
+  const key = routedRunKey(pipeline, file.sha256, ext, options);
+  return memoReaderRun(key, () =>
+    readsInWindows(pipeline, ext)
+      ? runWindowed(pipeline, bytes, file, { options, kind: named.kind, state: named.state })
+      : runPackaged(pipeline, bytes, file, { options, kind: named.kind, state: named.state }),
+  );
 }
 
 /** The most rows of a tab an `after` pipeline reads. */

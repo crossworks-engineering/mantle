@@ -118,10 +118,16 @@ export const MIN_IMAGE_BYTES = 1_024;
 export const MIN_IMAGE_BYTES_WITHOUT_DIMENSIONS = 16_384;
 
 /** Ceiling on images kept per source document, applied AFTER gating so it
- *  bounds *real* images rather than being spent on icons. Mirrors
- *  MAX_AUTO_TABLE_TABLES (20) in intent: bound the fan-out, log the excess,
- *  never silently truncate. */
-export const MAX_EMBEDDED_IMAGES_PER_DOC = 30;
+ *  bounds *real* images rather than being spent on icons: bound the
+ *  fan-out (one vision call a kept picture), never silently truncate. 500
+ *  since 2026-11-18 (from 30, Jason: "if it is there, why not extract it");
+ *  a file that leaves pictures out says so (`data.images`, G4). */
+export const MAX_EMBEDDED_IMAGES_PER_DOC = 500;
+
+/** The most pictures one parser job keeps, whatever the setting asks: the
+ *  bound of the parser's `maxImages` option (server/parser/src/jobs.ts).
+ *  The answer's 64 MB picture budget bounds a job's bytes besides. */
+export const MAX_EMBEDDED_IMAGES_CEILING = 2_000;
 
 /** Containers we drop on sight. EMF/WMF/EMZ/WMZ are Windows metafiles: no
  *  browser renders them, so storing one produces a file node that can never
@@ -212,6 +218,10 @@ export type ExtractEmbeddedImagesResult = {
   rejected: Partial<Record<GateRejection | 'over_cap', number>>;
   /** Total candidates seen before gating. */
   candidates: number;
+  /** A PDF's pages: how many it has and how many the read scanned
+   *  (MAX_PDF_PAGES_SCANNED, ./pdf.ts), and whether the count of the
+   *  pictures past the cap was cut short (then `over_cap` is a floor). */
+  pdf?: { pagesTotal: number; pagesScanned: number; countCut?: true };
 };
 
 /** What the picture pass takes of a Reader's run: its end, its write's

@@ -17,6 +17,7 @@ import {
 } from '@mantle/files/parser-wire';
 import { SKETCH_MAX_PAGES, SKETCH_SCALE } from '@mantle/files/pdf-sketch';
 import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
+import { MAX_EMBEDDED_IMAGES_CEILING } from '@mantle/files/embedded-images';
 import { dwfRenderer, dwgCrop, extractAudio, pdfEye, pdfPagePieces } from './cad';
 import { errorMessage } from '@mantle/std';
 import { JobFailure } from './job-failure';
@@ -49,6 +50,7 @@ export const BYTE_JOBS: ReadonlySet<ParserJob> = new Set([
   'extractAudio',
   'thumbnail',
   'visionImage',
+  'pdfSplit',
 ]);
 
 function str(v: unknown, name: string): string {
@@ -81,7 +83,7 @@ export async function runJob(
     case 'images': {
       const { readEmbeddedImages } = await import('@mantle/files/readers/images');
       const result = await readEmbeddedImages(await fs.readFile(p.input), str(opts.ext, 'ext'), {
-        maxImages: int(opts.maxImages, 30, 0, 200),
+        maxImages: int(opts.maxImages, 30, 0, MAX_EMBEDDED_IMAGES_CEILING),
         ...(typeof opts.dpi === 'number' ? { dpi: int(opts.dpi, 300, 50, 600) } : {}),
         render: dwfRenderer(p.dir, timeoutMs),
       });
@@ -102,6 +104,7 @@ export async function runJob(
         ok: true,
         candidates: result.candidates,
         rejected,
+        ...(result.pdf ? { pdf: result.pdf } : {}),
         images: kept.map((img) => ({
           bytes_base64: img.bytes.toString('base64'),
           ext: img.ext,
@@ -247,6 +250,10 @@ export async function runJob(
     case 'pipelineRun': {
       const { runPipelineJob } = await import('./pipeline-job');
       return runPipelineJob(opts, p);
+    }
+    case 'pdfSplit': {
+      const { runPdfSplitJob } = await import('./pdf-split');
+      return runPdfSplitJob(opts, p, jobEndOf(timeoutMs));
     }
     case 'visionImage': {
       const mime = str(opts.mimeType, 'mimeType');

@@ -14,7 +14,12 @@ import {
 } from '@mantle/files/parser-wire';
 import { JobFailure } from './job-failure';
 
-const BYTE_JOBS: ReadonlySet<ParserJob> = new Set(['extractAudio', 'thumbnail', 'visionImage']);
+const BYTE_JOBS: ReadonlySet<ParserJob> = new Set([
+  'extractAudio',
+  'thumbnail',
+  'visionImage',
+  'pdfSplit',
+]);
 
 /**
  * Send a job's answer from its directory: the JSON (`out.json`), or the
