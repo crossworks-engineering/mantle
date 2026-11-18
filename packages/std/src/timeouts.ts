@@ -102,6 +102,13 @@ export const NET_TIMEOUTS = {
   openRouterData: 25_000,
   /** The toolsmith's web fetch. */
   webFetch: 25_000,
+  /** One send through the Sync sidecar: its SMTP answer included. */
+  syncSend: 120_000,
+  /** Handing the Sync sidecar a new contact's backfill (it runs later). */
+  syncBackfill: 10_000,
+  /** One Sync account screen, through the brain (a save logs in to the
+   *  mail server first). */
+  syncScreen: 120_000,
   /** One job of the documents engine (Gotenberg): its own API_TIMEOUT is
    *  60 s, plus the upload and the answer. */
   documentsJob: 90_000,

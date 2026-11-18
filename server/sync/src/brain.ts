@@ -27,6 +27,14 @@ export type Brain = {
   del<T>(path: string): Promise<T>;
 };
 
+function parseJson(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createBrain(opts: { url: string; token: string }): Brain {
   const base = opts.url.replace(/\/+$/, '');
   async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -41,12 +49,7 @@ export function createBrain(opts: { url: string; token: string }): Brain {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const text = await res.text();
-    let parsed: unknown = null;
-    try {
-      parsed = text ? JSON.parse(text) : null;
-    } catch {
-      parsed = null;
-    }
+    const parsed = parseJson(text);
     if (!res.ok) {
       const error =
         parsed && typeof parsed === 'object' && 'error' in parsed

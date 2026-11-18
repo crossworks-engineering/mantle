@@ -25,7 +25,12 @@ export type SendInput = {
   attachments?: { filename?: string; contentType?: string; cid?: string; contentB64: string }[];
 };
 
-export type SendResult = { from: string; messageId: string; accepted: string[]; rejected: string[] };
+export type SendResult = {
+  from: string;
+  messageId: string;
+  accepted: string[];
+  rejected: string[];
+};
 
 /** A refusal the person can act on (its text is shown). */
 export class SendRefusedError extends Error {
@@ -69,9 +74,12 @@ async function transportFor(smtp: HostPort, user: string, pass: string) {
 
 export async function sendMail(account: MailAccount, input: SendInput): Promise<SendResult> {
   if (!account.smtp) throw new SendRefusedError('This mailbox has no SMTP settings.');
-  if (!input.text && !input.html) throw new SendRefusedError('A message needs a text or HTML body.');
+  if (!input.text && !input.html)
+    throw new SendRefusedError('A message needs a text or HTML body.');
   const transport = await transportFor(account.smtp, account.address, account.password);
-  const from = account.displayName ? `${account.displayName} <${account.address}>` : account.address;
+  const from = account.displayName
+    ? `${account.displayName} <${account.address}>`
+    : account.address;
   const info = await transport.sendMail({
     from,
     to: input.to,

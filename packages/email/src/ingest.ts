@@ -134,9 +134,7 @@ export async function gateEnvelopes(
 ): Promise<string[]> {
   if (envelopes.length === 0) return [];
   const gate = await loadContactGate(account.userId);
-  const candidates = envelopes.filter(
-    (e) => gate.allows(e.fromAddr) && !touchesClientCodeMail(e),
-  );
+  const candidates = envelopes.filter((e) => gate.allows(e.fromAddr) && !touchesClientCodeMail(e));
   if (candidates.length === 0) return [];
 
   const providerIds = candidates.map((e) => e.providerMsgId);

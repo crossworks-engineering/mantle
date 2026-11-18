@@ -7,13 +7,15 @@
  * While Sync is off a backfill is skipped (no mailbox syncs) and a send is
  * refused with SyncOffError (the tool says so).
  */
-import { EMAIL_SEND_POLICY_OFF_MESSAGE, emailSendAllowed, env, serviceEnabled } from '@mantle/config';
-import { defineDomainError, errorMessage } from '@mantle/std';
+import {
+  EMAIL_SEND_POLICY_OFF_MESSAGE,
+  emailSendAllowed,
+  env,
+  serviceEnabled,
+} from '@mantle/config';
+import { NET_TIMEOUTS, defineDomainError, errorMessage, timeoutSignal } from '@mantle/std';
 
 const TOKEN_HEADER = 'x-mantle-sync-token';
-/** A send waits this long for the sidecar's SMTP answer. */
-const SEND_TIMEOUT_MS = 120_000;
-const BACKFILL_TIMEOUT_MS = 10_000;
 
 /** Sync is off on this box, or not wired (no token). */
 export class SyncOffError extends Error {
@@ -78,7 +80,7 @@ async function call(path: string, body: unknown, timeoutMs: number): Promise<Res
     headers: { 'content-type': 'application/json', [TOKEN_HEADER]: w.token },
     body: JSON.stringify(body),
     redirect: 'error',
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: timeoutSignal(timeoutMs),
   });
 }
 
@@ -110,10 +112,8 @@ export type SyncSendResult = {
  *  Throws EmailSendPolicyOffError, SyncOffError, SyncSendError. */
 export async function sendViaSync(input: SyncSendInput): Promise<SyncSendResult> {
   if (!emailSendAllowed()) throw new EmailSendPolicyOffError();
-  const res = await call('/send', input, SEND_TIMEOUT_MS);
-  const body = (await res.json().catch(() => null)) as
-    | (SyncSendResult & { error?: string })
-    | null;
+  const res = await call('/send', input, NET_TIMEOUTS.syncSend);
+  const body = (await res.json().catch(() => null)) as (SyncSendResult & { error?: string }) | null;
   if (!res.ok || !body || body.error) {
     throw new SyncSendError(body?.error ?? `the Sync service answered ${res.status}`);
   }
@@ -134,7 +134,7 @@ export async function sendViaSync(input: SyncSendInput): Promise<SyncSendResult>
 export async function enqueueBackfills(_ownerId: string, targets: string[]): Promise<void> {
   if (targets.length === 0 || !wiring()) return;
   try {
-    const res = await call('/backfill', { targets }, BACKFILL_TIMEOUT_MS);
+    const res = await call('/backfill', { targets }, NET_TIMEOUTS.syncBackfill);
     if (!res.ok) console.warn(`[sync] backfill not started: the sidecar answered ${res.status}`);
   } catch (err) {
     console.warn(`[sync] backfill not started: ${errorMessage(err)}`);

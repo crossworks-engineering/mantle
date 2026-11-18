@@ -1186,7 +1186,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'email',
     name: 'Email',
-    description: 'Send + read email (sending goes through the Sync service; gated by the contacts allowlist).',
+    description:
+      'Send + read email (sending goes through the Sync service; gated by the contacts allowlist).',
     toolSlugs: ['email_send', 'email_page', 'email_list', 'email_get'],
   },
   {

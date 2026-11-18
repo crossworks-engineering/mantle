@@ -118,7 +118,9 @@ export async function backfill(brain: Brain, state: State, targets: string[]): P
           ingestFor(brain, account.id, counter),
         );
       } catch (err) {
-        console.warn(`[sync] backfill on ${mask(account.address)} failed: ${runError(err, account)}`);
+        console.warn(
+          `[sync] backfill on ${mask(account.address)} failed: ${runError(err, account)}`,
+        );
       }
       ingested += counter.ingested;
     }
@@ -146,7 +148,8 @@ export async function discover(brain: Brain, state: State): Promise<DiscoveredSe
       const prev = merged.get(s.fromAddr);
       if (prev) {
         prev.count += s.count;
-        if (at > prev.at) Object.assign(prev, { at, lastDate: s.lastDate.toISOString(), subject: s.subject });
+        if (at > prev.at)
+          Object.assign(prev, { at, lastDate: s.lastDate.toISOString(), subject: s.subject });
       } else {
         merged.set(s.fromAddr, {
           fromAddr: s.fromAddr,

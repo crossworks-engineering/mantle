@@ -25,8 +25,14 @@ export const policy = routePolicy({
   // No rate limit, as the gateway's routes (gateway/registry/route.ts says
   // why): the token is checked first and a refusal does no work.
   GET: { class: 'public' },
-  PUT: { class: 'public', item: { none: "a public route: it judges its own credential (the Sync sidecar's token)" } },
-  DELETE: { class: 'public', item: { none: "a public route: it judges its own credential (the Sync sidecar's token)" } },
+  PUT: {
+    class: 'public',
+    item: { none: "a public route: it judges its own credential (the Sync sidecar's token)" },
+  },
+  DELETE: {
+    class: 'public',
+    item: { none: "a public route: it judges its own credential (the Sync sidecar's token)" },
+  },
 });
 
 type Ctx = { params: Promise<{ key: string }> };

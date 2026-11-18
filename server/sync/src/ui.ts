@@ -85,7 +85,10 @@ function postButton(req: UiRequest, path: string, label: string, cls = ''): stri
   return `<form class="inline" method="post" action="${esc(href(req, path))}"><button type="submit"${cls ? ` class="${cls}"` : ''}>${esc(label)}</button></form>`;
 }
 
-function statusLine(s: { at: string; ok: boolean; error?: string; count?: number } | null, unit: string): string {
+function statusLine(
+  s: { at: string; ok: boolean; error?: string; count?: number } | null,
+  unit: string,
+): string {
   if (!s) return '<span class="muted">Not run yet.</span>';
   const at = esc(new Date(s.at).toISOString().replace('T', ' ').slice(0, 16));
   return s.ok
@@ -105,30 +108,32 @@ async function listScreen(req: UiRequest, deps: UiDeps, notice?: string): Promis
   const mailboxes = accounts.length
     ? accounts
         .map(
-          (a) => `<div class="card"><div class="row"><div><strong>${esc(a.address)}</strong>${
-            a.enabled ? '' : ' <span class="muted">(off)</span>'
-          }${a.smtp ? '' : ' <span class="muted">(does not send)</span>'}<br>${statusLine(statuses.get(a.id) ?? null, 'stored')}</div><div class="actions">${postButton(
-            req,
-            `/mailbox/${a.id}/run`,
-            'Sync now',
-          )}<a class="btn" href="${esc(href(req, `/mailbox/${a.id}`))}">Edit</a><a class="btn" href="${esc(
-            href(req, `/mailbox/${a.id}/folders`),
-          )}">Folders</a><a class="btn" href="${esc(href(req, `/mailbox/${a.id}/remove`))}">Remove</a></div></div></div>`,
+          (a) =>
+            `<div class="card"><div class="row"><div><strong>${esc(a.address)}</strong>${
+              a.enabled ? '' : ' <span class="muted">(off)</span>'
+            }${a.smtp ? '' : ' <span class="muted">(does not send)</span>'}<br>${statusLine(statuses.get(a.id) ?? null, 'stored')}</div><div class="actions">${postButton(
+              req,
+              `/mailbox/${a.id}/run`,
+              'Sync now',
+            )}<a class="btn" href="${esc(href(req, `/mailbox/${a.id}`))}">Edit</a><a class="btn" href="${esc(
+              href(req, `/mailbox/${a.id}/folders`),
+            )}">Folders</a><a class="btn" href="${esc(href(req, `/mailbox/${a.id}/remove`))}">Remove</a></div></div></div>`,
         )
         .join('')
     : '<p class="muted">No mailbox linked yet.</p>';
   const feedList = feeds.length
     ? feeds
         .map(
-          (f) => `<div class="card"><div class="row"><div><strong>${esc(f.name)}</strong>${
-            f.enabled ? '' : ' <span class="muted">(off)</span>'
-          }<br>${statusLine(statuses.get(f.id) ?? null, 'events')}</div><div class="actions">${postButton(
-            req,
-            `/feed/${f.id}/run`,
-            'Sync now',
-          )}<a class="btn" href="${esc(href(req, `/feed/${f.id}`))}">Edit</a><a class="btn" href="${esc(
-            href(req, `/feed/${f.id}/remove`),
-          )}">Remove</a></div></div></div>`,
+          (f) =>
+            `<div class="card"><div class="row"><div><strong>${esc(f.name)}</strong>${
+              f.enabled ? '' : ' <span class="muted">(off)</span>'
+            }<br>${statusLine(statuses.get(f.id) ?? null, 'events')}</div><div class="actions">${postButton(
+              req,
+              `/feed/${f.id}/run`,
+              'Sync now',
+            )}<a class="btn" href="${esc(href(req, `/feed/${f.id}`))}">Edit</a><a class="btn" href="${esc(
+              href(req, `/feed/${f.id}/remove`),
+            )}">Remove</a></div></div></div>`,
         )
         .join('')
     : '<p class="muted">No calendar feed yet.</p>';
@@ -228,7 +233,8 @@ async function saveMailbox(req: UiRequest, deps: UiDeps, id: string | null): Pro
   const imapPort = portOf(f.imapPort);
   const smtpPort = f.smtpHost ? portOf(f.smtpPort) : null;
   const days = Number(f.firstScanDays || '365');
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.address)) return mailboxForm(req, id, f, 'Enter an email address.');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.address))
+    return mailboxForm(req, id, f, 'Enter an email address.');
   if (!f.imapHost || !imapPort) return mailboxForm(req, id, f, 'Enter the IMAP server and port.');
   if (f.smtpHost && !smtpPort) return mailboxForm(req, id, f, 'Enter the SMTP port.');
   if (!Number.isInteger(days) || days < 1 || days > DAYS_MAX) {
@@ -238,17 +244,28 @@ async function saveMailbox(req: UiRequest, deps: UiDeps, id: string | null): Pro
   if (!secret) return mailboxForm(req, id, f, 'Enter the app password.');
 
   const imap = { host: f.imapHost, port: imapPort, secure: f.imapSecure };
-  const smtp = f.smtpHost && smtpPort ? { host: f.smtpHost, port: smtpPort, secure: f.smtpSecure } : null;
+  const smtp =
+    f.smtpHost && smtpPort ? { host: f.smtpHost, port: smtpPort, secure: f.smtpSecure } : null;
   try {
     await probe({ imap, address: f.address, password: secret });
   } catch (err) {
-    return mailboxForm(req, id, f, `IMAP login failed: ${runError(err, { address: f.address, password: secret })}`);
+    return mailboxForm(
+      req,
+      id,
+      f,
+      `IMAP login failed: ${runError(err, { address: f.address, password: secret })}`,
+    );
   }
   if (smtp) {
     try {
       await probeSmtp(smtp, f.address, secret);
     } catch (err) {
-      return mailboxForm(req, id, f, `SMTP login failed: ${runError(err, { address: f.address, password: secret })}`);
+      return mailboxForm(
+        req,
+        id,
+        f,
+        `SMTP login failed: ${runError(err, { address: f.address, password: secret })}`,
+      );
     }
   }
   const { id: mailboxId } = await deps.brain.post<{ id: string }>('/api/sidecar/mail/accounts', {
@@ -273,7 +290,12 @@ async function saveMailbox(req: UiRequest, deps: UiDeps, id: string | null): Pro
   return listScreen(req, deps, `Saved ${account.address}. The first sync starts now.`);
 }
 
-async function foldersScreen(req: UiRequest, deps: UiDeps, id: string, notice?: string): Promise<UiReply> {
+async function foldersScreen(
+  req: UiRequest,
+  deps: UiDeps,
+  id: string,
+  notice?: string,
+): Promise<UiReply> {
   const account = await deps.state.account(id);
   if (!account) return notFound(req);
   let folders: string[];
@@ -285,7 +307,11 @@ async function foldersScreen(req: UiRequest, deps: UiDeps, id: string, notice?: 
       await client.logout().catch(() => {});
     }
   } catch (err) {
-    return listScreen(req, deps, `Could not read the folders of ${account.address}: ${runError(err, account)}`);
+    return listScreen(
+      req,
+      deps,
+      `Could not read the folders of ${account.address}: ${runError(err, account)}`,
+    );
   }
   const included = new Set(account.includedFolders ?? []);
   const excluded = new Set(account.excludedFolders);
@@ -311,9 +337,18 @@ async function foldersScreen(req: UiRequest, deps: UiDeps, id: string, notice?: 
 async function saveFolders(req: UiRequest, deps: UiDeps, id: string): Promise<UiReply> {
   const account = await deps.state.account(id);
   if (!account) return notFound(req);
-  const chosen = req.form.getAll('folder').map((v) => v.trim()).filter(Boolean).slice(0, 500);
+  const chosen = req.form
+    .getAll('folder')
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .slice(0, 500);
   await deps.state.putAccount({ ...account, includedFolders: chosen.length > 0 ? chosen : null });
-  return foldersScreen(req, deps, id, chosen.length > 0 ? 'Saved.' : 'Saved: every folder but the excluded ones syncs.');
+  return foldersScreen(
+    req,
+    deps,
+    id,
+    chosen.length > 0 ? 'Saved.' : 'Saved: every folder but the excluded ones syncs.',
+  );
 }
 
 function confirmScreen(req: UiRequest, title: string, text: string, action: string): UiReply {
@@ -337,7 +372,12 @@ async function removeMailbox(req: UiRequest, deps: UiDeps, id: string): Promise<
   return listScreen(req, deps, `Removed ${account.address}. Its stored mail stays in the brain.`);
 }
 
-function feedForm(req: UiRequest, id: string | null, f: { name: string; url: string; enabled: boolean }, error?: string): UiReply {
+function feedForm(
+  req: UiRequest,
+  id: string | null,
+  f: { name: string; url: string; enabled: boolean },
+  error?: string,
+): UiReply {
   const isNew = id === null;
   return {
     status: error ? 400 : 200,
@@ -387,7 +427,8 @@ async function discoverScreen(req: UiRequest, deps: UiDeps, notice?: string): Pr
     rows = senders.length
       ? senders
           .map(
-            (s) => `<div class="card"><div class="row"><div><strong>${esc(s.fromName ?? s.fromAddr)}</strong> <span class="muted">${esc(s.fromAddr)}</span><br><span class="muted">${esc(s.count)} in the last 30 days. Last: ${esc(s.subject ?? '(no subject)')}</span></div><form class="inline" method="post" action="${esc(href(req, '/discover/add'))}"><input type="hidden" name="address" value="${esc(s.fromAddr)}"><input type="hidden" name="name" value="${esc(s.fromName ?? '')}"><button type="submit">Add as contact</button></form></div></div>`,
+            (s) =>
+              `<div class="card"><div class="row"><div><strong>${esc(s.fromName ?? s.fromAddr)}</strong> <span class="muted">${esc(s.fromAddr)}</span><br><span class="muted">${esc(s.count)} in the last 30 days. Last: ${esc(s.subject ?? '(no subject)')}</span></div><form class="inline" method="post" action="${esc(href(req, '/discover/add'))}"><input type="hidden" name="address" value="${esc(s.fromAddr)}"><input type="hidden" name="name" value="${esc(s.fromName ?? '')}"><button type="submit">Add as contact</button></form></div></div>`,
           )
           .join('')
       : '<p class="muted">Every recent sender is a contact already, or no mailbox is linked.</p>';
@@ -419,7 +460,10 @@ async function addSender(req: UiRequest, deps: UiDeps): Promise<UiReply> {
 function notFound(req: UiRequest): UiReply {
   return {
     status: 404,
-    html: page('Not found', `<h1>Not found</h1><p><a class="btn" href="${esc(href(req, '/'))}">Back</a></p>`),
+    html: page(
+      'Not found',
+      `<h1>Not found</h1><p><a class="btn" href="${esc(href(req, '/'))}">Back</a></p>`,
+    ),
   };
 }
 
@@ -427,7 +471,8 @@ function notFound(req: UiRequest): UiReply {
 export async function uiReply(req: UiRequest, deps: UiDeps): Promise<UiReply> {
   const p = req.path.replace(/\/+$/, '') || '/';
   const post = req.method === 'POST';
-  if (!post && req.method !== 'GET') return { status: 405, html: page('Not allowed', '<h1>Not allowed</h1>') };
+  if (!post && req.method !== 'GET')
+    return { status: 405, html: page('Not allowed', '<h1>Not allowed</h1>') };
 
   if (p === '/' && !post) return listScreen(req, deps);
   if (p === '/mailbox/new' && !post) return mailboxForm(req, null, fieldsOf(null));
@@ -439,7 +484,12 @@ export async function uiReply(req: UiRequest, deps: UiDeps): Promise<UiReply> {
 
   const m = /^\/(mailbox|feed)\/([0-9a-f-]{36})(?:\/(save|run|remove|folders))?$/.exec(p);
   if (!m || !UUID_RE.test(m[2]!)) return notFound(req);
-  const [, kind, id, action] = m as unknown as [string, 'mailbox' | 'feed', string, string | undefined];
+  const [, kind, id, action] = m as unknown as [
+    string,
+    'mailbox' | 'feed',
+    string,
+    string | undefined,
+  ];
 
   if (kind === 'mailbox') {
     if (!action && !post) {
@@ -451,12 +501,18 @@ export async function uiReply(req: UiRequest, deps: UiDeps): Promise<UiReply> {
       deps.scheduler.runNow(id);
       return listScreen(req, deps, 'A sync of the mailbox starts now.');
     }
-    if (action === 'folders') return post ? saveFolders(req, deps, id) : foldersScreen(req, deps, id);
+    if (action === 'folders')
+      return post ? saveFolders(req, deps, id) : foldersScreen(req, deps, id);
     if (action === 'remove') {
       if (post) return removeMailbox(req, deps, id);
       const a = await deps.state.account(id);
       return a
-        ? confirmScreen(req, `Remove ${a.address}?`, 'The mailbox stops syncing and its password is deleted. Mail already stored stays in the brain.', `/mailbox/${id}/remove`)
+        ? confirmScreen(
+            req,
+            `Remove ${a.address}?`,
+            'The mailbox stops syncing and its password is deleted. Mail already stored stays in the brain.',
+            `/mailbox/${id}/remove`,
+          )
         : notFound(req);
     }
     return notFound(req);
@@ -474,7 +530,12 @@ export async function uiReply(req: UiRequest, deps: UiDeps): Promise<UiReply> {
     if (post) return removeFeed(req, deps, id);
     const f = await deps.state.feed(id);
     return f
-      ? confirmScreen(req, `Remove ${f.name}?`, 'The feed stops syncing and its events leave the calendar.', `/feed/${id}/remove`)
+      ? confirmScreen(
+          req,
+          `Remove ${f.name}?`,
+          'The feed stops syncing and its events leave the calendar.',
+          `/feed/${id}/remove`,
+        )
       : notFound(req);
   }
   return notFound(req);

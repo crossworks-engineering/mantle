@@ -21,6 +21,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { env } from '@mantle/config';
 import { open } from '@mantle/crypto';
+import { errorMessage } from '@mantle/std';
 import {
   calendarAccounts,
   closeDb,
@@ -29,7 +30,7 @@ import {
   putServiceState,
   resolveSingleOwnerId,
   runAsSystem,
-  systemDb,
+  db,
 } from '@mantle/db';
 import { SIDECAR_SERVICE, sealState } from '../lib/sidecar-state';
 
@@ -38,7 +39,9 @@ if (!env('DATABASE_URL')) {
   process.exit(1);
 }
 if (!env('MANTLE_MASTER_KEY')) {
-  console.error('sync-copy-accounts: MANTLE_MASTER_KEY must be set (the old passwords are sealed with it)');
+  console.error(
+    'sync-copy-accounts: MANTLE_MASTER_KEY must be set (the old passwords are sealed with it)',
+  );
   process.exit(1);
 }
 
@@ -61,7 +64,7 @@ type MailAccountState = {
 type Counts = { found: number; copied: number; already: number; skipped: number };
 
 async function copyMailboxes(ownerId: string): Promise<Counts> {
-  const rows = await systemDb
+  const rows = await db
     .select()
     .from(emailAccounts)
     .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.provider, 'imap')));
@@ -78,9 +81,9 @@ async function copyMailboxes(ownerId: string): Promise<Counts> {
     }
     let password: string;
     try {
-      ({ password } = JSON.parse(
-        open(row.imapConfigEnc, `imap:${row.userId}:${row.address}`),
-      ) as { password: string });
+      ({ password } = JSON.parse(open(row.imapConfigEnc, `imap:${row.userId}:${row.address}`)) as {
+        password: string;
+      });
     } catch {
       c.skipped += 1;
       continue;
@@ -98,7 +101,9 @@ async function copyMailboxes(ownerId: string): Promise<Counts> {
       firstScanDays: row.firstScanDays,
       excludedFolders: row.imapExcludedFolders,
       includedFolders:
-        row.imapIncludedFolders && row.imapIncludedFolders.length > 0 ? row.imapIncludedFolders : null,
+        row.imapIncludedFolders && row.imapIncludedFolders.length > 0
+          ? row.imapIncludedFolders
+          : null,
       enabled: row.enabled,
     };
     // The old cursor, so the first run goes on where the old sync stopped.
@@ -116,7 +121,7 @@ async function copyMailboxes(ownerId: string): Promise<Counts> {
 }
 
 async function copyFeeds(ownerId: string): Promise<Counts> {
-  const rows = await systemDb
+  const rows = await db
     .select()
     .from(calendarAccounts)
     .where(
@@ -172,6 +177,6 @@ main()
     process.exit(0);
   })
   .catch((err) => {
-    console.error('[sync-copy-accounts] failed:', err instanceof Error ? err.message : err);
+    console.error('[sync-copy-accounts] failed:', errorMessage(err));
     process.exit(1);
   });

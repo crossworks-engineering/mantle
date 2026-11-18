@@ -55,7 +55,8 @@ export async function fetchFeed(url: string): Promise<string> {
   try {
     return await res.text();
   } catch (err) {
-    if (err instanceof EgressTooLargeError) throw new Error('the feed is too large', { cause: err });
+    if (err instanceof EgressTooLargeError)
+      throw new Error('the feed is too large', { cause: err });
     throw err;
   }
 }
@@ -122,7 +123,12 @@ export function parseFeed(text: string, now = Date.now()): CalEvent[] {
         if (startMs > windowEnd) break;
         if (startMs >= windowStart) {
           const det = ev.getOccurrenceDetails(next);
-          const mapped = mapOne(`${baseUid}:${toIso(det.startDate)}`, det.startDate, det.endDate, ev);
+          const mapped = mapOne(
+            `${baseUid}:${toIso(det.startDate)}`,
+            det.startDate,
+            det.endDate,
+            ev,
+          );
           if (mapped) events.push(mapped);
           count++;
         }

@@ -6,6 +6,7 @@
  * route only). The service builds every link and form through this route.
  */
 import { env, serviceEnabled } from '@mantle/config';
+import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { loginHasArea } from '@mantle/db';
 import { buildServiceFrameTicket, verifyServiceFrameTicket } from '@/lib/auth';
 import { SYNC_TOKEN_HEADER } from '@/lib/sidecar';
@@ -17,7 +18,6 @@ export const SCREEN_SERVICES = ['sync'] as const;
 const PATH_RE = /^\/[a-z0-9/-]{0,200}$/;
 /** The largest form a screen posts. */
 const FORM_MAX_BYTES = 256 * 1024;
-const TIMEOUT_MS = 120_000;
 
 const CSP = [
   "default-src 'none'",
@@ -25,13 +25,13 @@ const CSP = [
   "img-src 'none'",
   "form-action 'self'",
   "base-uri 'none'",
-  "frame-ancestors *",
+  'frame-ancestors *',
 ].join('; ');
 
 function plain(status: number, text: string): Response {
   return new Response(text, {
     status,
-    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
   });
 }
 
@@ -41,7 +41,8 @@ export async function serviceScreen(req: Request, service: string): Promise<Resp
   const url = new URL(req.url);
   const ticket = verifyServiceFrameTicket(url.searchParams.get('t') ?? '');
   // The ticket, and its login still holding the area: the two checks.
-  if (!ticket || ticket.service !== service) return plain(401, 'This screen has expired. Open it again.');
+  if (!ticket || ticket.service !== service)
+    return plain(401, 'This screen has expired. Open it again.');
   if (!(await loginHasArea(ticket.actorId, 'connectors'))) return plain(403, 'not allowed');
   if (!serviceEnabled(service as never)) return plain(404, 'Sync is turned off on this box.');
   const path = url.searchParams.get('p') ?? '/';
@@ -70,7 +71,7 @@ export async function serviceScreen(req: Request, service: string): Promise<Resp
       },
       body,
       redirect: 'error',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: timeoutSignal(NET_TIMEOUTS.syncScreen),
     });
   } catch {
     return plain(502, 'The Sync service did not answer. It may still be starting; try again.');
@@ -84,7 +85,6 @@ export async function serviceScreen(req: Request, service: string): Promise<Resp
     status: res.status,
     headers: {
       'content-type': 'text/html; charset=utf-8',
-      'cache-control': 'no-store',
       'content-security-policy': CSP,
       'referrer-policy': 'no-referrer',
       'x-content-type-options': 'nosniff',

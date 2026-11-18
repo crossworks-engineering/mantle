@@ -70,7 +70,10 @@ async function readBody(req: IncomingMessage): Promise<string> {
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
-  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) });
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    'content-length': Buffer.byteLength(text),
+  });
   res.end(text);
 }
 
@@ -103,7 +106,8 @@ export function createSyncServer(state: SyncState, deps: SyncDeps | null): Serve
       return json(res, reply.status, reply.body);
     }
     if (!deps) return json(res, 503, { error: 'the Sync service has no token' });
-    if (!tokenOk(req.headers[TOKEN_HEADER], deps.token)) return json(res, 401, { error: 'unauthorized' });
+    if (!tokenOk(req.headers[TOKEN_HEADER], deps.token))
+      return json(res, 401, { error: 'unauthorized' });
 
     if (path === '/send' && method === 'POST') {
       const input = JSON.parse(await readBody(req)) as SendInput;
@@ -121,19 +125,18 @@ export function createSyncServer(state: SyncState, deps: SyncDeps | null): Serve
       const targets = Array.isArray(body.targets)
         ? body.targets.filter((t): t is string => typeof t === 'string').slice(0, 100)
         : [];
-      if (targets.length > 0) void deps.lane.run('backfill', () => backfill(deps.brain, deps.state, targets));
+      if (targets.length > 0)
+        void deps.lane.run('backfill', () => backfill(deps.brain, deps.state, targets));
       return json(res, 202, { queued: targets.length });
     }
     if (path === '/ui' || path.startsWith('/ui/')) {
       const base = String(req.headers['x-mantle-ui-base'] ?? '');
       const ticket = String(req.headers['x-mantle-frame-ticket'] ?? '');
-      if (!BASE_RE.test(base) || !ticket) return json(res, 400, { error: 'no screen base or ticket' });
+      if (!BASE_RE.test(base) || !ticket)
+        return json(res, 400, { error: 'no screen base or ticket' });
       const form =
         method === 'POST' ? new URLSearchParams(await readBody(req)) : new URLSearchParams();
-      const reply = await uiReply(
-        { method, path: path.slice(3) || '/', form, base, ticket },
-        deps,
-      );
+      const reply = await uiReply({ method, path: path.slice(3) || '/', form, base, ticket }, deps);
       return html(res, reply.status, reply.html);
     }
     return json(res, 404, { error: 'not found' });

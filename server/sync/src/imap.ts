@@ -156,7 +156,9 @@ export function parseHeaderBlock(buf: Buffer | string | undefined): Record<strin
 
 /** Connect to the mailbox's IMAP server (the checked address, the typed
  *  name for TLS). */
-export async function connect(account: Pick<MailAccount, 'imap' | 'address' | 'password'>): Promise<ImapFlow> {
+export async function connect(
+  account: Pick<MailAccount, 'imap' | 'address' | 'password'>,
+): Promise<ImapFlow> {
   const address = await checkedAddress(account.imap.host);
   const client = new ImapFlow({
     host: address,
@@ -503,10 +505,18 @@ export async function syncMailbox(
           if (!sameVal) await saveCursor(cursor);
           continue;
         }
-        scanned += await walk(client, uids, folder, uidvalidity, wantedOf, onMessage, async (maxUid) => {
-          cursor.folders[folder] = { uidvalidity, lastUid: maxUid };
-          await saveCursor(cursor);
-        });
+        scanned += await walk(
+          client,
+          uids,
+          folder,
+          uidvalidity,
+          wantedOf,
+          onMessage,
+          async (maxUid) => {
+            cursor.folders[folder] = { uidvalidity, lastUid: maxUid };
+            await saveCursor(cursor);
+          },
+        );
       } finally {
         lock.release();
       }

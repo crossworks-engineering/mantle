@@ -30,7 +30,11 @@ export async function POST(_req: Request, ctx: { params: Promise<{ name: string 
   if (!SCREEN_SERVICES.includes(name as never) || !serviceEnabled(name as never)) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  const ticket = buildServiceFrameTicket({ ownerId: user.id, service: name, actorId: user.actor.id });
+  const ticket = buildServiceFrameTicket({
+    ownerId: user.id,
+    service: name,
+    actorId: user.actor.id,
+  });
   return NextResponse.json({
     ticket,
     url: `/api/services/${name}/ui?p=%2F&t=${encodeURIComponent(ticket)}`,
