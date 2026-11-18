@@ -268,7 +268,8 @@ describe('a Python built-in (drawing-raster)', () => {
     expect(path.dirname(builtinPythonEntry('../../x/drawing_raster.py'))).toBe(
       path.dirname(builtinPythonEntry('drawing_raster.py')),
     );
-    expect(await pythonBuiltinsThere()).toBe(1);
+    // drawing-raster and the book reader pdf-pages.
+    expect(await pythonBuiltinsThere()).toBe(2);
   });
 
   // With the CAD tier's venv only (Pillow, numpy): the image, or a bench

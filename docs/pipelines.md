@@ -2347,9 +2347,10 @@ only for the pages OCR could not read well.
 **The kind `book`** (`bookOf`, `packages/files/src/pdf-kind.ts`;
 `PDF_KIND_RULES_VERSION` 3). The router names a PDF a book, before its page
 rules and with no ask, when the file is past the 256 MB pdfjs opens, or when
-it has more than 20 pages (`job.pdfPageCount`, qpdf) and its first 20 pages,
-read as every page is, are all on office paper (A4, Letter, A3), none is a
-P&ID or an isometric, and 80% or more are scans or typed text. A book hands
+it has more than 20 pages (`job.pdfPageCount`, qpdf) and of its first 20
+pages, read as every page is, 80% or more are on office paper (A4, Letter,
+A3; a fold-out sheet makes no drawing set), none is a P&ID or an isometric,
+and 80% or more are scans or typed text. A book hands
 the Reader no facts: the Reader reads the file, window by window. A stored
 kind from older rules is named again with no ask on a read again, as for
 every rules version. `drawing-pdf` does not claim `book`, so `pdf-sheet-read`
@@ -2367,19 +2368,31 @@ window of 50 pages or 50 MB a job). For each page:
   its own 200 dots 96%;
 - `vision`: the OCR's mean confidence is under `ocr_min_confidence` (70) or
   it gave under 40 characters (a figure, a bad copy): the Agent reads the
-  page. Its PNG (150 dpi, gray) is one of the file's pictures (G1), named
-  `page-<NNNNN>.png` in its window, captioned with its page and its first
-  heading line;
-- `blank`: no text layer and almost no ink: nothing to read, and no paid ask
-  for a white page.
+  page. A page pdfium cannot draw, or Tesseract cannot read, is `vision` too;
+- `blank`: no text layer and no ink, or under 0.1% ink and OCR found under
+  40 characters (a speck, a stamp): no paid ask for a white page. What OCR
+  read is kept in its row.
 
-A window stops its OCR after 180 s (the job ends at 240 s and would lose the
-whole window): the pages after it are `vision`, with their pictures, and a
-warning says so. A page Tesseract could not read is `vision` too. The tab
+G1, the PNG of each `vision` page (150 dpi, gray) as one of the file's
+pictures, `page-<NNNNN>.png` in its window, captioned with its page and its
+first heading line: built in the Reader and OFF (`PAGE_PICTURES`, the
+step's option `page_pictures`, not in the manifest). The core's picture pass
+reads a PDF's pictures itself and takes no Reader's (`images.ts`), and a
+windowed run holds every window's pictures in memory until the write, so a
+bad photocopy of 1,679 pages would hold about a gigabyte for pictures
+nothing keeps. It goes on when the core keeps a book Reader's pictures,
+streamed to disk, with the Agent's text as their description (no second
+vision call).
+
+A window stops its OCR after 180 s, and stops a Tesseract run at 225 s (the
+job ends at 240 s and would lose the whole window): the pages after it are
+`vision`, and a warning says so. A window whose text layer pdfminer cannot
+parse is read by OCR, page by page. The tab
 `Pages` holds one row a page: `Page` (of the original file), `Paper`,
 `Method`, `Confidence` (OCR's mean, none for a text page), `Chars`, `Text`.
 The text is the pages with a `## Page N` line before each. The tab `File`
-(window 1 only) holds the kind `book`, the rules version and the page count.
+holds the kind `book`, the rules version and the page count, written by the
+first window read (a lost window 1 does not lose the kind).
 `produces.table: false`: the upload makes no Table of these tabs.
 
 **Tables** (the brief, section 4). On a text page, pdfplumber's
@@ -2398,14 +2411,17 @@ footer), it is the first table of the next page, and its header is the same
 and the same column edges (within 2% of the page width). A new title over it
 (a line in larger type than the table's own, `TITLE_SCALE`) starts a new
 table though its header is the same: a spec book has one spec a page, each
-with the same columns. Over a window edge the open table goes on through the
+with the same columns. A new table's first row is its header when it reads
+as one (letters, under 15% digits, no sentence); else its columns are
+`Column N` and every row is data, so the run on of a table that did not join
+loses no row. Over a window edge the open table goes on through the
 step's `state` (`{ open, totals }`, a few KB): the next window writes its
 rows to the same tab, and the window that closes it writes its row of
 `Tables`; a window lost in between ends it.
 
 A table's tab is named by its nearest heading above it and its pages
-(`A2 Rev 3 p12-14`, `Table p7` with no heading; a table still open at the
-end of a window is `A2 Rev 3 p48 on`), cut to 48 characters of heading; a second of
+(`SPEC X1 REV 0 p12-14`, `Table p7` with no heading; a table still open at the
+end of a window is `SPEC X1 REV 0 p48 on`), cut to 48 characters of heading; a second of
 a name gets ` (2)`. Every row starts with the column `Page`, the page of the
 original file it came from. The tab `Tables` indexes them: `Tab`, `Title`,
 `Pages`, `Rows`, `Columns`, `Method` (`text`, `ocr`), `Quality`, `Note`.
@@ -2418,15 +2434,28 @@ partial or text only. Libraries: MIT, Apache-2.0 or BSD only; no Camelot
 (Ghostscript), Tabula or PyMuPDF.
 
 **The Agent `pdf-page-read`** (`./pkg/pdf-page-read`). It claims the kind
-`book` and reads in the same page windows (P4). The core gives its step the
+`book` (`match.kind`: `runAgentOnFile` cuts no window and runs no job on a
+PDF of another kind, or on a book with no page left to vision) and reads in
+windows of 15 pages (P4), so its pictures (4 MB at most each) stay under
+the 64 MB of one answer; a window past it fails, and its stored rows stay. The core gives its step the
 pages the Reader marked `vision` (`state.visionPages`, read from the tab
 `Pages` by `bookVisionPagesOf`, `packages/content/src/book-pages.ts`), so a
 page the Reader read well is never asked. One ask a page, keyed `page-<N>`,
 with the one field `Text`; its text stands over the Reader's for the
-page's passage (P3), and is the description of the page's picture (G1). The
-option `pages` (2,000) is the most marked pages of a file it reads, from the
-first; the box's day cap bounds a run. A marked page that cannot be drawn
-ends the run `failed` (no ask, no write); a blank picture is not read.
+page's passage (P3). An Agent that says `produces.pages` asks with the token
+cap of a list ask (12,000) and keeps up to 60,000 characters of a page
+(`PAGE_TEXT_ANSWER_MAX_CHARS`), not a cell's 4,096: a dense page's JSON cut
+at 1,500 tokens would be a failed ask that stops the run. The option `pages`
+(2,000) is the most marked pages of a file it reads, from the first; a
+marked page past it is said in a warning. The box's day cap bounds a run. A
+marked page that cannot be drawn ends the window `failed` (no ask); a blank
+picture is not read.
+
+Not built (a deviation from the brief, section 4.1): the vision ask of a
+table page that both table reads failed, with the header the Reader found
+as its fields. Every ask of one step names the same fields, and the list
+part of an ask holds identifiers, not rows; the page's text is read by
+vision as every `vision` page is, and the table is `text only` in `Tables`.
 
 **Tests** (made-up PDFs only). `server/parser/cad/tests/test_pdf_pages.py`
 draws a book (`tests/book_pdfs.py`): prose, a table over three pages with
@@ -2434,7 +2463,7 @@ its header on each, a table over two pages with its header on the first
 only, a table with no ruled lines, a figure and a blank page, as a scan and
 as a text twin. The scan: every page gets its method, each table is one tab
 with the right pages, 95% or more of the cells right, every row's page
-right, one picture (the figure's). The twin: every page is `text`, nothing
+right, and with the option on one picture (the figure's). The twin: every page is `text`, nothing
 is asked or drawn, the cells are exact. Two windows carry a table over
 their edge.
 

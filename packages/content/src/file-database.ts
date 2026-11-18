@@ -1141,6 +1141,16 @@ export async function runAgentOnFile(args: {
   if (!before || before.sha256 !== sha256) return { status: 'skipped', reason: 'stale' };
   if (before.isPrivate) return { status: 'skipped', reason: 'private' };
   if (!readDocMeta(names.sqlite, [])) return { status: 'skipped', reason: 'no-database' };
+  // An Agent that claims kinds (pdf-page-read: `book`) cuts no window and
+  // runs no parser job on a file of another kind, nor on a book with no page
+  // left to vision (M3).
+  if (pipeline.match.kind) {
+    const input = await agentInputOf(ownerId, ext, pipelines, names.sqlite);
+    if (input.kind === undefined || !pipeline.match.kind.includes(input.kind)) {
+      return { status: 'skipped', reason: 'no-match' };
+    }
+    if (input.state.visionPages?.length === 0) return { status: 'skipped', reason: 'no-match' };
+  }
 
   const state = await pipelineStateOf(ownerId, pipeline);
   if (readsInWindows(pipeline, ext)) {
