@@ -137,6 +137,14 @@ class PureParts(unittest.TestCase):
         self.assertEqual((t2.done[0]["first"], t2.done[0]["last"], t2.done[0]["rows"]), (1, 2, 2))
         self.assertEqual(t2.done[0]["data"], [[2, "4", "5", "6"]])
 
+    def test_a_header_with_no_rows_is_no_table(self):
+        e = [0.1, 0.4, 0.7, 0.9]
+        t = pdf_pages.Tables(None)
+        t.page(1, [self._t([["A", "B", "C"]], e, to_bottom=False)], 70)
+        t.page(2, [self._t([["A", "B", "C"], ["1", "2", "3"]], e)], 70)
+        t.end(True)
+        self.assertEqual([r["tab"] for r in t.done], ["Table p2"])
+
     def test_quality(self):
         rec = {"odd": 0, "rows": 10, "header": ["a", "b"], "cells": 20, "empty": 0, "low": 0}
         self.assertEqual(pdf_pages.quality_of(rec), ("ok", ""))
