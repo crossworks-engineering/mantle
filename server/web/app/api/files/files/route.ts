@@ -7,10 +7,8 @@ import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
   DATA_FILES_UNDER,
-  EXTRACTION_STATES,
   listDataFiles,
   listFilesByExtraction,
-  type ExtractionState,
   emailAttachmentIds,
   reachesEmailAttachment,
   diskPathForFile,
@@ -20,6 +18,7 @@ import {
   FILES_ROOT_LABEL,
   withDataView,
 } from '@mantle/files';
+import { EXTRACTION_STATES, type ExtractionState } from '@mantle/files/extraction-status';
 import { recordIngest } from '@mantle/tracing';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { promises as fs } from 'node:fs';

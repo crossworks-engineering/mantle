@@ -13,14 +13,14 @@ import {
   listAllFolders,
   listFiles,
   listFilesByExtraction,
-  EXTRACTION_STATES,
-  type ExtractionState,
   DATA_FILES_UNDER,
   filesRootMounted,
   listDataFiles,
   listFolders,
   readFileById,
 } from '@mantle/files';
+// A subpath: the schema reads it at import, and tests mock '@mantle/files'.
+import { EXTRACTION_STATES, type ExtractionState } from '@mantle/files/extraction-status';
 import {
   APP_BYTES_BUSY,
   APP_BYTES_MAX,

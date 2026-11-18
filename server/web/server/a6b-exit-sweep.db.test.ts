@@ -214,6 +214,14 @@ const S3_OFF_CELLS: Readonly<Record<string, readonly string[]>> = {
 /** S3's changes, and off's: a scoped write runs on the write role in off
  *  as in warn (the mode never picks the pool), so an off cell answers as
  *  main's warn cell did, with S3's own changes to warn. */
+/** A file row's `extraction` (task 8d40932a, 2026-11-18): a field derived
+ *  from the row's own data, no scope change. The records are from before it,
+ *  so a cell is compared without it. One nesting level (`pages`). */
+const EXTRACTION_FIELD = /,\\?"extraction\\?":\{(?:[^{}]|\{[^{}]*\})*\}/g;
+function withoutExtraction(line: string): string {
+  return line.replace(EXTRACTION_FIELD, '');
+}
+
 const S3_CHANGES: ReadonlyArray<S3Change> = [
   ...S3_WARN_CHANGES,
   {
@@ -778,7 +786,9 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
               .map((l) => [l.slice(0, l.indexOf(' => ')), l]),
           )
         : new Map();
-    const now = new Map(cells.map((l) => [l.slice(0, l.indexOf(' => ')), l]));
+    const now = new Map(
+      cells.map((l) => withoutExtraction(l)).map((l) => [l.slice(0, l.indexOf(' => ')), l]),
+    );
     const problems: string[] = [];
     for (const [k, line] of was) {
       const cur = now.get(k);

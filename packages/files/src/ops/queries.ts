@@ -22,27 +22,38 @@ import {
 export const EXTRACTION_LIST_MAX = 500;
 
 /** The keys a file in each state holds, as SQL: a cheap first cut, which
- *  `extractionOf` (the one rule) then settles row by row. */
-const READ_FAILED_REASON = sql`${nodes.data}->'extract_skipped'->>'reason' in (${sql.join(
-  READ_FAILURE_SKIPS.map((r) => sql`${r}`),
-  sql`, `,
-)})`;
-const EXTRACTION_CUT: Readonly<Record<ExtractionState, ReturnType<typeof sql>>> = {
-  failed: sql`(${READ_FAILED_REASON} or ${nodes.data} ? 'extract_parked')`,
-  skipped: sql`(${nodes.data} ? 'extract_skipped' and not ${READ_FAILED_REASON})`,
-  partial: sql`jsonb_typeof(${nodes.data}->'ocr') = 'object'`,
-  pending: sql`not (${nodes.data} ?| array['extract_completed_at', 'extract_skipped', 'extract_parked']) and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`,
-  indexed: sql`${nodes.data} ? 'extract_completed_at'`,
-  name_only: sql`${nodes.data}->>'indexing_applied' = 'metadata'`,
-};
+ *  `extractionOf` (the one rule) then settles row by row. Built at the call,
+ *  not at import: a test that mocks @mantle/db loads this module too. */
+function extractionCut(state: ExtractionState): ReturnType<typeof sql> {
+  const failedReason = sql`${nodes.data}->'extract_skipped'->>'reason' in (${sql.join(
+    READ_FAILURE_SKIPS.map((r) => sql`${r}`),
+    sql`, `,
+  )})`;
+  switch (state) {
+    case 'failed':
+      return sql`(${failedReason} or ${nodes.data} ? 'extract_parked')`;
+    case 'skipped':
+      return sql`(${nodes.data} ? 'extract_skipped' and not ${failedReason})`;
+    case 'partial':
+      return sql`jsonb_typeof(${nodes.data}->'ocr') = 'object'`;
+    case 'pending':
+      return sql`not (${nodes.data} ?| array['extract_completed_at', 'extract_skipped', 'extract_parked']) and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`;
+    case 'indexed':
+      return sql`${nodes.data} ? 'extract_completed_at'`;
+    case 'name_only':
+      return sql`${nodes.data}->>'indexing_applied' = 'metadata'`;
+  }
+}
 
 /** A file row with no vector, and its data without the long text the
  *  listing never shows (up to 1 M characters each). */
-const { embedding: _embedding, ...LIST_COLUMNS } = getTableColumns(nodes);
-const LIST_SELECT = {
-  ...LIST_COLUMNS,
-  data: sql<unknown>`${nodes.data} - 'text' - 'agent_text' - 'entities'`.as('data'),
-};
+function listSelect() {
+  const { embedding: _embedding, ...columns } = getTableColumns(nodes);
+  return {
+    ...columns,
+    data: sql<unknown>`${nodes.data} - 'text' - 'agent_text' - 'entities'`.as('data'),
+  };
+}
 
 /**
  * The files in one extraction state (failed, partial, ...), in the whole
@@ -58,7 +69,7 @@ export async function listFilesByExtraction(args: {
   under?: string;
 }): Promise<{ files: FileRow[]; truncated: boolean }> {
   const rows = await db
-    .select(LIST_SELECT)
+    .select(listSelect())
     .from(nodes)
     .where(
       and(
@@ -66,7 +77,7 @@ export async function listFilesByExtraction(args: {
         eq(nodes.type, 'file'),
         isNull(nodes.supersededBy),
         args.under ? sql`${nodes.path} <@ ${args.under}::ltree` : undefined,
-        EXTRACTION_CUT[args.state],
+        extractionCut(args.state),
       ),
     )
     .orderBy(sql`${nodes.updatedAt} desc`)
