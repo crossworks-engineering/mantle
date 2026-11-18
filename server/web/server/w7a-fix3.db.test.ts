@@ -9,8 +9,8 @@
  *  2. sandbox_publish never repoints a group that is not the sandbox's own
  *     (a connector's), and writes the proxy key to the vault only for a
  *     caller with the keys area.
- *  3. The Sandboxes routes (GET, DELETE ?purge=1, stop) apply the maker rule
- *     with the signed-in login: L gets 404 on the anchor's sandbox.
+ *  3. The Sandboxes routes (GET, stop) find every sandbox for an Admin
+ *     user: L reaches the anchor's sandbox (owner, 2026-11-18).
  *  6. Without the keys area L cannot write, update or test a tool that
  *     sends a vault key (tools and Tools routes), nor point an OAuth2 group
  *     elsewhere; a tool L wrote resolves its secret refs only while L holds
@@ -443,23 +443,14 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
 
   // ── 3. the Sandboxes routes ────────────────────────────────────────────
 
-  it('3: L gets 404 on the anchor’s sandbox from GET, stop and DELETE ?purge=1', async () => {
+  it('3: L reaches the anchor’s sandbox and its own from GET and stop', async () => {
     as(second);
     const one = await import('@/app/api/sandboxes/[id]/route');
     const stop = await import('@/app/api/sandboxes/[id]/stop/route');
-    expect((await one.GET(new Request('http://x/'), params(ownerBox))).status).toBe(404);
-    expect((await stop.POST(new Request('http://x/'), params(ownerBox))).status).toBe(404);
-    const del = await one.DELETE(
-      new Request(`http://x/api/sandboxes/${ownerBox}?purge=1`, { method: 'DELETE' }),
-      params(ownerBox),
-    );
-    expect(del.status).toBe(404);
-    expect(outbound).toEqual([]);
-    const rows = await x(sql`select 1 from sandboxes where id = ${ownerBoxId}`);
-    expect(rows.length).toBe(1);
-    // Its own sandbox: found.
-    expect((await one.GET(new Request('http://x/'), params(lBox))).status).toBe(200);
-    expect((await stop.POST(new Request('http://x/'), params(lBox))).status).toBe(200);
+    for (const box of [ownerBox, lBox]) {
+      expect((await one.GET(new Request('http://x/'), params(box))).status, box).toBe(200);
+      expect((await stop.POST(new Request('http://x/'), params(box))).status, box).toBe(200);
+    }
   });
 
   it('3: the anchor reaches every sandbox from the routes', async () => {

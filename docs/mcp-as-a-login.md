@@ -77,9 +77,8 @@ normal checks. Only its own system tables (sandbox rows, peers, mail
 accounts, tool groups) are read on the system pool; the tools that touch
 nothing else (`AREA_SYSTEM_TOOLS` in admin-gate.ts, each checked handler by
 handler in fix round 2) run there whole, and a turn one of them starts (a
-heartbeat fired) answers the calling login, never the brain owner. A login
-works only in the sandboxes it made; only the brain owner mounts a folder
-into one. A heartbeat answers the login that set it up
+heartbeat fired) answers the calling login, never the brain owner. An Admin
+login works in every sandbox; only the brain owner mounts a folder into one. A heartbeat answers the login that set it up
 (heartbeats.created_by): only that login fires it now (Fire now and
 `heartbeat_fire`; anyone else is refused), in its own scope, and the tick
 fires a heartbeat another Admin login set up or edited in that

@@ -107,7 +107,7 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
   ['run_append', 'a run, not an item: the runs scope check'],
   ['run_audit', 'a run, not an item: the runs scope check'],
   ['run_cancel', 'a run, not an item: the runs scope check'],
-  ['sandbox_create', 'only the brain owner mounts a folder (the sandbox maker rule)'],
+  ['sandbox_create', 'only the brain owner mounts a folder (the sandbox mount rule)'],
   ['sandbox_import', 'reads the file it imports into a sandbox'],
   ['show_image', 'reads the image it shows'],
   ['table_from_file', 'reads the source; the table is a create'],

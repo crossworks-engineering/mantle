@@ -1,9 +1,8 @@
 /**
  * Sandbox lifecycle: create, exec, list, stop, remove, autostart.
  *
- * In a workspace scope a sandbox records the login that
- * made it, and exec, stop, rm and autostart work only on the caller's own
- * sandboxes (the brain owner's login: on every one). Only the brain owner's
+ * In a workspace scope a sandbox records the login that made it. Every
+ * Admin user works in every sandbox (common.ts). Only the brain owner's
  * login mounts a Files folder.
  */
 
@@ -31,7 +30,6 @@ import {
   MOUNT_OWNER_ONLY_ERROR,
   sandboxCaller,
   sandboxd,
-  sandboxRefusal,
 } from './common';
 import { CS } from '../client-sourced-rule';
 
@@ -126,8 +124,7 @@ export const sandbox_create: BuiltinToolDef = {
     // host-absolute root, which is the only path the docker daemon can resolve.
     let inboxSub: string | undefined;
     const inboxId = typeof input.inbox_folder_id === 'string' ? input.inbox_folder_id.trim() : '';
-    // The login that makes it: recorded on the row, so in
-    // a workspace scope only it (and the brain owner) works in the sandbox.
+    // The login that makes it: recorded on the row, to show who made it.
     const maker = sandboxCaller();
     if (inboxId) {
       // A mount shows the sandbox the folder's whole directory, files the
@@ -262,8 +259,6 @@ export const sandbox_exec: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
     const command = typeof input.command === 'string' ? input.command : '';
     if (!command.trim()) return { ok: false, error: 'command is required' };
     const timeoutSeconds = Math.min(
@@ -377,8 +372,6 @@ export const sandbox_stop: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
     const res = await sandboxd('POST', `/sandboxes/${row.id}/stop`);
     if (!res.ok) return res;
     await setSandboxStatus(row.id, 'stopped');
@@ -423,8 +416,6 @@ export const sandbox_rm: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
     const purge = input.purge_files === true;
     const res = await sandboxd('DELETE', `/sandboxes/${row.id}${purge ? '?purge=1' : ''}`);
     if (!res.ok) return res;
@@ -478,8 +469,6 @@ export const sandbox_autostart: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
     const command = typeof input.command === 'string' ? input.command.trim() : '';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, cleared: !command });
 

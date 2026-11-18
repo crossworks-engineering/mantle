@@ -33,8 +33,8 @@ what a mistake can cost, so grant them to other agents with care.
 ## Technical
 
 Each sandbox is a container with no route to your data, and it holds no
-database password or master key. A brain allows three sandboxes by default
-(`SANDBOX_MAX_COUNT`). A sandbox idle for an hour is stopped
+database password or master key. A brain runs up to 100 sandboxes at once by default
+(`SANDBOX_MAX_COUNT`); a stopped one does not count. A sandbox idle for an hour is stopped
 (`SANDBOX_IDLE_STOP_MINUTES`); its files and installed packages survive, and
 the next command starts it again.
 

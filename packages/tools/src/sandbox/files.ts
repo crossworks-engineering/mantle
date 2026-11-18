@@ -6,8 +6,7 @@
  * read through areaSystem. ls and publish read no item and run whole on
  * the system pool (their policy's `systemWhole`).
  *
- * In a workspace scope each works only on a sandbox its caller made, or, for
- * the brain owner, on any (sandboxRefusal).
+ * Each works on any sandbox: only Admin users call them (common.ts).
  *
  * Publish binds only a sandbox's own tool group: an
  * existing group whose integration is not this sandbox's (a connector's
@@ -32,7 +31,6 @@ import {
   sandboxd,
   sandboxdBinary,
   sandboxdUpload,
-  sandboxRefusal,
 } from './common';
 import { CS } from '../client-sourced-rule';
 
@@ -83,8 +81,6 @@ export const sandbox_export: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await areaSystem('settings', () => getSandboxByRef(ctx.ownerId, ref));
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
     const relPath = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '.';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath });
 
@@ -187,8 +183,6 @@ export const sandbox_import: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await areaSystem('settings', () => getSandboxByRef(ctx.ownerId, ref));
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
 
     const fileId = typeof input.file_id === 'string' ? input.file_id : '';
     // Read in the caller's scope: a file the scope does not read is not
@@ -253,8 +247,6 @@ export const sandbox_ls: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
     const relPath = typeof input.path === 'string' ? input.path.trim() : '';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath || '/files' });
 
@@ -316,8 +308,6 @@ export const sandbox_publish: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
-    const notYours = sandboxRefusal(row, ctx.ownerId);
-    if (notYours) return { ok: false, error: notYours };
     const port = Number(input.port);
     const rawSlug =
       typeof input.group_slug === 'string' && input.group_slug.trim()
