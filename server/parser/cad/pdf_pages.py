@@ -698,7 +698,7 @@ class Tables:
             }
             self.add(rec, page, t["rows"][1:], t["confs"][1:], t, min_conf)
             self.open = rec
-        if not self.open["to_bottom"]:
+        if self.open is not None and not self.open["to_bottom"]:
             self.close()
 
     def joins(self, t, page):
