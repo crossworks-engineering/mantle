@@ -31,6 +31,27 @@
  * (NAMED_CHANGES below, each with its reason), whose new answer is in
  * __snapshots__/a6-grant-sweep-changes.txt.
  *
+ * Re-recorded for the owner's rule on shared items (owner-approved, dev-brain
+ * page d7313c67, 2026-11-18; migration 0383): 50 cells moved, each by the
+ * rule. A Moderator of a workspace that holds the item (modP through P,
+ * modQR through Q, the owner through P) gains edit, its link, the serve
+ * candidates and placesInto; an Admin user with the tick on Admin (the
+ * owner here; adminAll and adminNoUsers sit in Admin without it, a drift
+ * 0298 closed) gains manage: the panel's mayManage, mayLink of an app,
+ * addable, the previews and move previews, linkRights' manage; and the item
+ * caps carry the new mayMove (true for system work). The cells of removed
+ * code (REMOVED_CELLS) keep main's record.
+ *
+ * Decision A (owner page d7313c67): an Admin user counts as a Moderator of
+ * the home of an item it reads, and of nothing it does not read. 11 cells
+ * moved, all the owner's: linkRights' manage of nR, nPriv and fQ (items it
+ * does not read) back to main's false; and aQ (an app homed in Q that the
+ * owner reads through P, Write off) is now its to edit: the chips' and
+ * caps' mayEdit, linkRights' edit, assertMayLink's edit, the link serve
+ * candidates of pg and its served-list check (+aQ), the launcher's data
+ * access (read_write, three cells), the scope's edit refusal (none), and
+ * the grants panel's serve candidates of pg.
+ *
  * Per-login items (A6 fix round 1, M1): an item with nodes.login_id set (a
  * chat summary note, a Telegram attachment) is its own login's only. Each
  * login's own per-login note and page, through the panel, its previews,

@@ -26,6 +26,7 @@ import {
   isBusy,
   isPoolBusy,
   isScopeWriteRefusal,
+  itemMoveVerdicts,
   itemWriteVerdicts,
   nodes,
   systemStep,
@@ -493,7 +494,7 @@ export async function mayOrderFolder(
   if (!currentWorkspaceScope()) return true;
   if (path === TREE_KIND_SPECS[kind].root) {
     const [row] = (await db.execute(
-      sql`select "public"."mantle_may_manage_home"(NULL) as ok`,
+      sql`select "public"."mantle_may_manage_home"(NULL, NULL) as ok`,
     )) as unknown as Array<{ ok: boolean | null }>;
     return row?.ok === true;
   }
@@ -852,8 +853,10 @@ export async function moveTreeItems(
   // The whole list asked first (pre-check removal Part 3): each item moves on its own and
   // the database refuses item by item, so one the caller may not move would
   // leave the others moved. One it may not move refuses the call, nothing
-  // moved, before the visibility question (it names workspaces).
-  const verdicts = await itemWriteVerdicts(ids, 'manage');
+  // moved, before the visibility question (it names workspaces). The move
+  // check: manage, or a Moderator of a workspace that holds the item and
+  // the destination.
+  const verdicts = await itemMoveVerdicts(ids, ownerId, dest);
   for (const id of ids) {
     const v = verdicts.get(id) ?? 'no_read';
     if (v !== 'ok') throw editCheckRefusalError(v);

@@ -410,8 +410,22 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     // A Moderator of Admin: the page homes in Admin, the folder passes Team.
     expect(await createIn(admin, owner, [admin], folder!.id), 'owner').toBe(admin);
     expect(await grantsOf(admin)).toContain(team);
-    // An Admin user who does not moderate Admin: the folder's home.
-    expect(await createIn(admin, adm2, [], folder!.id), 'adm2').toBe(team);
+    // A login of Admin with no Moderator seat: Admin's Write grant lets it
+    // edit the folder, not add to it (0383, owner page d7313c67: a user of
+    // a shared Write grant does not create there). Refused, nothing made.
+    const title = `${tag} ${randomUUID().slice(0, 8)}`;
+    const res = await m.withTurnScope(
+      { kind: 'assistant', loginId: adm2, ws: [admin], modWs: [] },
+      () =>
+        tools.dispatchTool(
+          builtin('page_create'),
+          { title, markdown: 'x', folder_id: folder!.id },
+          { ownerId: owner, surface: { kind: 'web', loginId: adm2 } },
+        ),
+      { writes: true },
+    );
+    expect(res.ok, res.ok ? '' : res.error).toBe(false);
+    expect(await x(sql`select 1 from nodes where title = ${title}`)).toEqual([]);
   });
 });
 

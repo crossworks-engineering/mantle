@@ -554,11 +554,13 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
           () => inTurn(surface, who, 'task_delete', { id: hwDel }),
           [hwDel],
         );
-        // Write off: read only.
+        // Write off: read only to a plain user of W; W's Moderator edits it
+        // (since 0383 a Moderator of a workspace that holds an item edits
+        // it, Write on or off, owner page d7313c67).
         const hr = await makeItem('task', ws.H, [{ ws: ws.W, write: false }]);
         await check(
           c('edit task granted to W with Write off'),
-          false,
+          isMod,
           () => inTurn(surface, who, 'task_update', { id: hr, title: `${tag} e3` }),
           [hr],
         );
@@ -585,10 +587,12 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
             }),
           [mv],
         );
+        // Homed in H, held by W: W's Moderator moves it inside W, F being
+        // W's (0383, owner page d7313c67); a plain user of W does not.
         const mvH = await makeItem('task', ws.H, [{ ws: ws.W, write: true }]);
         await check(
           c('move task homed in H into F'),
-          false,
+          isMod && OWNER_SIDE.has(surface),
           () =>
             inTurn(surface, who, 'tree_item_move', {
               kind: 'tasks',

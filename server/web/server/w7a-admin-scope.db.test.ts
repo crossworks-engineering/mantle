@@ -443,24 +443,34 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       });
       expect(mail.isError, mail.text).toBe(true);
       expect(mail.text).toMatch(/not found/);
-      // A page it reads but may not link: refused before anything is sent.
+      // A page it reads but may not link (L: a plain user of Admin, which
+      // holds it with Write off): refused before anything is sent. The
+      // anchor moderates Admin, so it may link it (0383, owner page
+      // d7313c67): the unknown recipient refuses its mail all the same.
       const roMail = await mcpCall(login, 'email_page', {
         pageId: roPage,
         to: 'nobody@example.invalid',
         includeLink: true,
       });
       expect(roMail.isError, roMail.text).toBe(true);
-      expect(roMail.text).toMatch(/Nothing was sent: You cannot change this item/);
+      if (login === second) {
+        expect(roMail.text).toMatch(/Nothing was sent: You cannot change this item/);
+      }
       // Nothing left the box: no import, no peer, no mail transport.
       expect(outbound.filter((u) => !u.includes('embed'))).toEqual([]);
-      // sandbox_export onto the member's same-named file: refused, unchanged.
-      const exp = await mcpCall(login, 'sandbox_export', {
-        sandbox: box,
-        path: takenName,
-        raw: true,
-      });
-      expect(exp.isError, exp.text).toBe(true);
-      expect(exp.text).toMatch(/already exists/);
+      // sandbox_export onto the member's same-named file: refused, unchanged,
+      // for L. The file sits in Admin's exports folder, so Admin holds it:
+      // the anchor moderates Admin and since 0383 may write it (owner page
+      // d7313c67), so it is not asked here.
+      if (login === second) {
+        const exp = await mcpCall(login, 'sandbox_export', {
+          sandbox: box,
+          path: takenName,
+          raw: true,
+        });
+        expect(exp.isError, exp.text).toBe(true);
+        expect(exp.text).toMatch(/already exists/);
+      }
     }
     expect(await nodeState(memFile)).toBe(before.file);
     expect(await nodeState(privatePage)).toBe(before.page);
@@ -513,6 +523,18 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
 
   it('M2: update tools on a Read-only shared item are refused; on an editable one they work', async () => {
     const before = { page: await nodeState(roPage), note: await nodeState(roNote) };
+    // L reads Admin and moderates nothing: the Read-only items are read only
+    // to it. The anchor moderates Admin, which holds them: since 0383 a
+    // Moderator of a workspace that holds an item edits it, Write on or off
+    // (owner page d7313c67), so its turn and its MCP edit them.
+    const page = await mcpCall(second, 'page_update', { id: roPage, title: 'changed' });
+    expect(page.isError, page.text).toBe(true);
+    expect(page.text).toMatch(/You cannot change this item/);
+    const note = await mcpCall(second, 'note_update', { id: roNote, content: 'changed' });
+    expect(note.isError, note.text).toBe(true);
+    expect(note.text).toMatch(/You cannot change this item/);
+    expect(await nodeState(roPage)).toBe(before.page);
+    expect(await nodeState(roNote)).toBe(before.note);
     const inTurn = await inAdminTurn(
       async () => ({
         page: await dispatchAs('page_update', { id: roPage, title: 'changed' }),
@@ -522,19 +544,12 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       }),
       owner,
     );
-    expect(inTurn.page.ok).toBe(false);
-    expect(String(inTurn.page.ok ? '' : inTurn.page.error)).toMatch(/You cannot change this item/);
-    expect(inTurn.note.ok).toBe(false);
-    expect(inTurn.block.ok).toBe(false);
+    expect(inTurn.page.ok, JSON.stringify(inTurn.page).slice(0, 200)).toBe(true);
+    expect(inTurn.note.ok, JSON.stringify(inTurn.note).slice(0, 200)).toBe(true);
+    expect(inTurn.block.ok, JSON.stringify(inTurn.block).slice(0, 200)).toBe(true);
     expect(inTurn.own.ok, JSON.stringify(inTurn.own).slice(0, 200)).toBe(true);
-    for (const login of [owner, second]) {
-      const page = await mcpCall(login, 'page_update', { id: roPage, title: 'changed' });
-      expect(page.isError, page.text).toBe(true);
-      expect(page.text).toMatch(/You cannot change this item/);
-      const note = await mcpCall(login, 'note_update', { id: roNote, content: 'changed' });
-      expect(note.isError, note.text).toBe(true);
-      expect(note.text).toMatch(/You cannot change this item/);
-    }
+    const ownRo = await mcpCall(owner, 'note_update', { id: roNote, content: 'changed on MCP' });
+    expect(ownRo.isError, ownRo.text.slice(0, 200)).toBe(false);
     // The anchor moderates Admin: its own Admin page it edits on MCP.
     const own = await mcpCall(owner, 'page_update', {
       id: adminPage,
@@ -544,8 +559,6 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     // L reads Admin but moderates nothing: the same edit is refused.
     const notMod = await mcpCall(second, 'page_update', { id: adminPage, title: 'by L' });
     expect(notMod.isError, notMod.text).toBe(true);
-    expect(await nodeState(roPage)).toBe(before.page);
-    expect(await nodeState(roNote)).toBe(before.note);
   });
 
   it('M3: run_terminal needs the settings area', async () => {

@@ -39,7 +39,8 @@ export type OracleRole =
   | 'homeModerator'
   /** A user (no Moderator tick) of W, which holds a grant with Write on. */
   | 'writeGrant'
-  /** A user (no Moderator tick) of R, which holds a grant with Write off. */
+  /** A Moderator of R, which holds a grant with Write off (the guide
+   *  oracle's seat; a Moderator of a workspace that holds the item, 0383). */
   | 'readGrant'
   /** In none of the item's workspaces. */
   | 'outsider';
@@ -96,7 +97,7 @@ const standingOf = (role: OracleWriteRole, placement: OraclePlacement = 'root') 
  * workspaces it is granted to.
  *
  * create, with no current workspace named (the home rule):
- *  - in folder F: "To place an item in folder F you may edit F"; it lands
+ *  - in folder F: "To place an item in folder F you may add to F"; it lands
  *    in F's home ("when you make it in a folder you may edit: the folder's
  *    home") and takes F's grants;
  *  - at the root: "your private workspace. An Admin user has no private
@@ -331,8 +332,8 @@ function readsForWrite(role: OracleWriteRole): boolean {
   return standingOf(role).reads;
 }
 
-function editsForWrite(role: OracleWriteRole): boolean {
-  return GUIDE_RULES.edit(standingOf(role));
+function editsForWrite(role: OracleWriteRole, kind?: string): boolean {
+  return GUIDE_RULES.edit(standingOf(role), kind);
 }
 
 function adminForWrite(role: OracleWriteRole): boolean {
@@ -388,8 +389,15 @@ export function expectedWrite(
   const standing = standingOf(role, context.placement);
   const deny = (why: string): OracleAnswer => ({ allow: false, why });
   switch (action) {
-    case 'edit':
     case 'rank':
+      // "Its board rank: ... or of its folder": a folder's order is the
+      // folder's, so a holder's Moderator orders an app in it (0383, owner
+      // page d7313c67: an app's own acts stay its home's).
+      return editsForWrite(role, kind) ||
+        (context.placement === 'folder' && editsForWrite(role, 'branch'))
+        ? { allow: true }
+        : deny('may not edit it');
+    case 'edit':
     case 'recallCard':
     case 'recallCardNew':
     case 'recallCardDelete':
@@ -398,23 +406,30 @@ export function expectedWrite(
     case 'historyDelete':
     case 'appData':
     case 'appLower':
-      return editsForWrite(role) ? { allow: true } : deny('may not edit it');
+      return editsForWrite(role, kind) ? { allow: true } : deny('may not edit it');
     case 'createDerived':
-      // "To place an item in folder F you may edit F"; what only the brain
+      // "To place an item in folder F you may add to F"; what only the brain
       // sets is dropped (the cell checks it).
-      return editsForWrite(role) ? { allow: true } : deny('may not edit the folder');
+      return GUIDE_RULES.add(standing) ? { allow: true } : deny('may not add to the folder');
     case 'appDataInformational':
-      return editsForWrite(role) && adminForWrite(role)
+      return editsForWrite(role, kind) && adminForWrite(role)
         ? { allow: true }
         : deny('Informational: nobody outside Admin writes its data');
     case 'derived':
       return deny('only the brain sets that value');
     case 'delete':
+      // "Delete it: Moderator of its home" (an app too: a delete is an
+      // archive), or an Admin user (owner's word, 2026-11-18).
+      return GUIDE_RULES.delete(standing) ? { allow: true } : deny('not a Moderator of its home');
     case 'deleteContent':
     case 'appDataDelete':
-      // "Delete it: Moderator of its home" (an app too: a delete is an
-      // archive; Admin users who read it besides are expectedAccess's).
-      return GUIDE_RULES.delete(standing) ? { allow: true } : deny('not a Moderator of its home');
+      // Its content row, an app's data row: the delete rule, and the row is
+      // the item's content, so its write check asks edit of the item too
+      // (a home Moderator has both; an Admin user who only reads the item
+      // has manage and not edit).
+      return GUIDE_RULES.delete(standing) && editsForWrite(role, kind)
+        ? { allow: true }
+        : deny('not a Moderator of its home');
     case 'appCode':
     case 'appCreate':
       return GUIDE_RULES.appCode(standing) ? { allow: true } : deny('not a Moderator of its home');
@@ -426,7 +441,7 @@ export function expectedWrite(
         ? { allow: true }
         : deny('may not close its link');
     case 'appSwitch':
-      return adminForWrite(role) && editsForWrite(role)
+      return adminForWrite(role) && editsForWrite(role, kind)
         ? { allow: true }
         : deny('an Admin user sets it');
   }
@@ -447,7 +462,7 @@ export function expectedRefusalDetail(
   if (
     actor === 'login' &&
     action === 'appDataInformational' &&
-    editsForWrite(role) &&
+    editsForWrite(role, 'app') &&
     !adminForWrite(role)
   ) {
     return 'read_only';

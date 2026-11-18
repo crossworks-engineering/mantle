@@ -88,7 +88,8 @@ export type LinkRights = {
   /** A Moderator of the home, or a Write grant in one of the caller's
    *  workspaces. */
   edit: boolean;
-  /** A Moderator of the home. */
+  /** A Moderator of the home, or an Admin user who reads it
+   *  (mantle_may_manage_in). */
   manage: boolean;
   /** A read-only snapshot copy: it never carries a link. */
   snapshotCopy?: boolean;
@@ -130,7 +131,7 @@ export async function linkRights(
     migrated as (select ${migratedSql(ownerId)} as yes)
     select n.id::text as id, n.type::text as type, n.path::text as path,
            (not m.yes or ${mayReadInSql('n', sql`me.ws`)}) as read,
-           (not m.yes or ${mayManageInSql('n', sql`me.mods`)}) as manage,
+           (not m.yes or ${mayManageInSql('n', sql`me.ws`, sql`me.mods`)}) as manage,
            (not m.yes or ${mayEditInSql('n', sql`me.ws`, sql`me.mods`)}) as edit,
            coalesce(n.data ? 'snapshot_of', false) as copy
       from nodes n cross join migrated m cross join mine me

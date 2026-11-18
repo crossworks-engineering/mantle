@@ -23,7 +23,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import {
-  assertItemRight,
+  assertItemMove,
   carrySpaceRows,
   db,
   flipThenPlace,
@@ -143,9 +143,10 @@ export async function moveFileById(args: {
       'moveFileById: file not found — find the id with file_list / search_nodes',
     );
   }
-  // Manage first: a caller that may not move the file learns nothing of the destination (a name taken there by a
-  // file it does not read). The database's refusal stays the authority.
-  await assertItemRight(node.id, 'manage');
+  // The move check first (manage, or a Moderator of a workspace that holds the file and the destination): a caller
+  // that may not move the file there learns nothing of the destination (a name taken there by a file it does not
+  // read). The database's refusal stays the authority.
+  await assertItemMove(node.id, args.ownerId, args.destPath);
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
   if (!filename) throw new Error('moveFileById: file row has no filename');
@@ -280,9 +281,10 @@ export async function moveFolderById(args: {
   if (!node || node.type !== 'branch') {
     throw new InputError('moveFolderById: folder not found — find the id with folder_list');
   }
-  // Manage first: a caller that may not move the folder learns nothing of what it holds (hidden rows) or of the
-  // destination. The database's refusal below stays the authority.
-  await assertItemRight(node.id, 'manage');
+  // The move check first (manage, or a Moderator of a workspace that holds the folder and the destination): a
+  // caller that may not move the folder there learns nothing of what it holds (hidden rows) or of the destination.
+  // The database's refusal below stays the authority.
+  await assertItemMove(node.id, args.ownerId, args.destParentPath);
   if (node.path === FILES_ROOT_LABEL) {
     throw new InputError('moveFolderById: cannot move the files root');
   }

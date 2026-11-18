@@ -356,7 +356,8 @@ const F4_CHANGES: ReadonlyArray<{
       const w = JSON.parse(was) as L;
       const refused = new Set(['kr-adminall.txt', 'kr-adminnousers.txt']);
       w.body.files = (w.body.files ?? []).filter((f) => !refused.has(f.filename));
-      return JSON.stringify(w) === now;
+      // The caps' mayMove (0383, owner page d7313c67) is main's answer without it.
+      return JSON.stringify(w) === now.replace(/,"mayMove":(true|false)/g, '');
     },
   },
 ];
@@ -398,6 +399,16 @@ const NAMED_CHANGES: Record<
     was?: RegExp;
   }>
 > = {
+  'kind-root': [
+    {
+      cells: /^GET files root /,
+      reason:
+        "shared items (0383, owner page d7313c67): an item's caps carry mayMove (a Moderator of " +
+        'a workspace that holds it moves it inside that workspace) beside mayEdit and mayManage. ' +
+        "Without it the answer is main's.",
+      back: (now) => now.replace(/,"mayMove":(true|false)/g, ''),
+    },
+  ],
   'client-sourced': [
     {
       cells: /^removeAppTableExport (written|team) (read|write|turn):\S+$/,

@@ -248,6 +248,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
       hasLink: false,
       mayEdit: true,
       mayManage: true,
+      mayMove: true,
     });
     await grant(ids.alpha, P);
     expect((await lw.workspaceChips(owner, mem, [ids.alpha])).get(ids.alpha)).toEqual({
@@ -255,6 +256,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
       hasLink: false,
       mayEdit: true,
       mayManage: true,
+      mayMove: true,
     });
     const req = (w: string) => new Request(`http://brain.test/api/pages?ws=${w}`);
     expect(await lw.parseWsFilter(req(P), owner, mem)).toBe(P);

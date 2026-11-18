@@ -14,10 +14,11 @@
  *    caller's scope (which may not read node_embeds). The move's own rule
  *    is unchanged: a Write grant's member (no Moderator) may not move it.
  *
- * Member negatives of each (plan rule 5): the outsider, the read grant's
- * member and a member with Write on a sibling item are refused, nothing
- * changes, and a caller that does not read the item gets a random uuid's
- * answer, byte for byte (the id aside).
+ * Member negatives of each (plan rule 5): the outsider and a member with
+ * Write on a sibling item are refused, nothing changes, and a caller that
+ * does not read the item gets a random uuid's answer, byte for byte (the id
+ * aside). The read grant's member moderates R, which holds the items: since
+ * 0383 (shared items) it renames and moves them inside R.
  *
  * The grants panel's move (/api/grants/move, in the login's scope since F4)
  * reached the same follow-up: a cell runs it in a member's request scope.
@@ -472,7 +473,6 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         const rename = (who: Who) => (id: string) =>
           viaMcp(who, 'tree_folder_update', { kind: 'notes', folder_id: id, name: `x ${n()}` });
         await refused(mode, 'rename mcp out', rename('out'), g, false);
-        await refused(mode, 'rename mcp rd', rename('rd'), g, true);
         await refused(mode, 'rename mcp sib', rename('sib'), g, false);
         await refused(
           mode,
@@ -517,6 +517,11 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
         await grantsOn(system, shared());
         await markSystem(system);
         await refused(mode, 'rename mcp wr system', rename('wr'), system, true);
+        // The read grant's member moderates R, which holds g (Write off): a
+        // shared folder's Moderator edits it, so it renames it (0383).
+        const rd = await rename('rd')(g);
+        note1(mode, 'rename mcp rd', rd);
+        expect(rd.ok, rd.text).toBe(true);
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
 
@@ -592,16 +597,37 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
             await tx`select mantle_subtree_rewrite(${owner}, ${gp}::ltree, ${`${parent(gp)}.zz${n()}`}::ltree)`;
           }),
         ).toBe('ok');
-        // The read grant's member (R, Write off): a rename is refused.
-        expect(
-          await errOf(async (tx) => {
+        // The read grant's member moderates R, which holds g (Write off): a
+        // Moderator of a workspace that holds it edits it, so it renames it
+        // (0383), and moves it into dest, which R holds too.
+        const asReader = (fn: (tx: postgres.TransactionSql) => Promise<unknown>) =>
+          errOf(async (tx) => {
             await tx`select set_config('mantle.ws', ${`{${ws.R}}`}, true),
                             set_config('mantle.mod_ws', ${`{${ws.R}}`}, true),
                             set_config('mantle.actor', ${`login:rw:${L.rd}`}, true),
                             set_config('mantle.login_id', ${L.rd}, true)`;
+            await fn(tx);
+          });
+        expect(
+          await asReader(async (tx) => {
             const now = await pathOf(g);
+            await tx`select mantle_lock_heads(array[${g}]::uuid[], 'update')`;
             await tx`select mantle_subtree_rewrite(${owner}, ${now}::ltree, ${`${parent(now)}.zz${n()}`}::ltree)`;
           }),
+        ).toBe('ok');
+        expect(
+          await asReader(async (tx) => {
+            const now = await pathOf(g);
+            await tx`select mantle_lock_subtree_heads(${g}::uuid, array[${dest}]::uuid[])`;
+            await tx`select mantle_subtree_rewrite(${owner}, ${now}::ltree, ${`${dp}.${label(now)}`}::ltree)`;
+          }),
+        ).toBe('ok');
+        // A system folder stays manage: refused to R's Moderator too.
+        expect(
+          await asReader(
+            (tx) =>
+              tx`select mantle_subtree_rewrite(${owner}, ${sp}::ltree, ${`${parent(sp)}.zz${n()}`}::ltree)`,
+          ),
         ).toBe('42501 not allowed to move this item');
       }, 300_000);
 
@@ -786,9 +812,8 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
             confirm: true,
           });
         await refused(mode, 'move mcp out', move('out'), item, false);
-        await refused(mode, 'move mcp rd', move('rd'), item, true);
         await refused(mode, 'move mcp sib', move('sib'), item, false);
-        // Write on the item and on the destination is not manage of it.
+        // Write on the item and on the destination is not a move of it.
         await refused(mode, 'move mcp wr', move('wr'), item, true);
         await refused(
           mode,
@@ -797,6 +822,12 @@ describe.skipIf(!DB_URL)('the tree bugs: a Write rename, a cross-workspace move'
           item,
           false,
         );
+        // The read grant's member moderates R, which holds the item and the
+        // destination: a move inside R (0383), made.
+        const rd = await move('rd')(item);
+        note1(mode, 'move mcp rd (inside R)', rd);
+        expect(rd.ok, rd.text).toBe(true);
+        expect((await rowOf(item))!.path).toBe((await rowOf(nto))!.path);
         expect(m.takeActorMisses()).toEqual([]);
       }, 300_000);
     });

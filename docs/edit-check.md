@@ -63,13 +63,23 @@ write calls none of them.
 
 ## The rule, written once
 
-- `mantle_may_edit_in(ws, mod_ws, home, write_ws)` and
+- `mantle_may_edit_in(ws, mod_ws, home, write_ws, read_ws, kind)` and
   `mantle_may_manage_in(mod_ws, home)` are the array forms, pure, for a
   preview that asks about any set of workspaces (plan 5.1).
   `mantle_may_edit` and `mantle_may_manage` call them with the scope.
+- Shared items (0383): a Moderator of a workspace that holds an item (its
+  `read_ws`) edits it, Write on or off, an app excepted (the rule takes the
+  item's kind). Adding to a folder (a create in it,
+  a move into it) is `mantle_may_add(home, write_ws, read_ws)`: the edit
+  rule counting only the folder's home's Write, so a user of a shared
+  Write grant edits the folder and does not add to it. A move is manage of
+  the item's home, or `mantle_mod_holds(item read_ws, folder read_ws)`: a
+  workspace the caller moderates holds both (the move check and
+  `mantle_subtree_rewrite`; TypeScript asks it first, `itemMoveVerdicts`).
 - `mantle_check_row(home, write_ws, read_ws, need, kind, informational)` and
   `mantle_check_item(node, need)` answer for every table. The needs: `read`,
-  `edit` (a Moderator of the home, or a grant with Write on), `manage` (a
+  `edit` (a Moderator of the home, a grant with Write on, or a Moderator of
+  a workspace that holds it), `manage` (a
   Moderator of the home; an Admin scope for an item with no home), `admin`
   (the scope holds the Admin workspace: an Admin user), `appdata` (edit, and
   while the app is Informational an Admin user too: D6), `link` (edit; an

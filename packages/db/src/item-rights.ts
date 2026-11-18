@@ -2,9 +2,11 @@
  * What the current workspace scope may do to items: the one edit check of a
  * write to an item made from a tool, in a turn or on MCP, as the item routes
  * ask it (the session's item write gate): mantle_may_edit for a content
- * change or a link, mantle_may_manage for a delete or a move (an app's
- * link: assertMayLink), a read for a write that only needs to see the
- * item. A read-only snapshot copy (data.snapshot_of) is never edited.
+ * change or a link, mantle_may_manage for a delete (an app's link:
+ * assertMayLink), the move check for a move (itemMoveVerdicts: manage, or
+ * a Moderator of a workspace that holds the item and the folder it lands
+ * in, 0383), a read for a write that only needs to see the item. A
+ * read-only snapshot copy (data.snapshot_of) is never edited.
  *
  * A login's typed write in a scope runs on the write role in every check
  * mode, where the database checks it (gateway/write-route.ts,
@@ -147,7 +149,7 @@ export async function assertManageOrAdmin(id: string, message: string): Promise<
   if (!UUID_RE.test(key)) throw editCheckRefusalError('no_read');
   // mantle_may_manage_home (0279): the row rule's own test (0302), one place.
   const rows = (await db.execute(sql`
-    select "public"."mantle_may_manage_home"(n.home_ws) as ok
+    select "public"."mantle_may_manage_home"(n.home_ws, n.read_ws) as ok
       from nodes n where n.id = ${key}::uuid`)) as unknown as { ok: boolean | null }[];
   const row = rows[0];
   if (!row) throw editCheckRefusalError('no_read');
@@ -165,8 +167,8 @@ async function scopeRightsOf(
   const arr = `{${ids.join(',')}}`;
   const rows = (await conn.execute(sql`
     select n.id::text as id,
-           coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit,
-           coalesce("public"."mantle_may_manage"(n.home_ws), false) as manage,
+           coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws, n.read_ws, n.type), false) as edit,
+           coalesce("public"."mantle_may_manage"(n.home_ws, n.read_ws), false) as manage,
            coalesce(n.data ? 'snapshot_of', false) as copy
       from nodes n where n.id = any(${arr}::uuid[])`)) as unknown as ({
     id: string;
@@ -218,6 +220,67 @@ export async function itemWriteVerdicts(
     out.set(id, v === 'copy' ? 'no_edit' : v);
   }
   return out;
+}
+
+/**
+ * The move check of items `ids` into the folder at `destPath` of `ownerId`'s
+ * brain (a Files folder, or a tree folder; for a folder, its new parent),
+ * one verdict per id as itemWriteVerdicts gives them: the database's move
+ * check (mantle_nodes_acl_path_trg, 0383), asked first. A Moderator of the
+ * item's home moves it (manage), and a Moderator of a workspace that holds
+ * the item and that folder moves it inside that workspace. A kind's top
+ * level is in no folder: manage only. Outside a workspace scope every id is
+ * 'ok'.
+ */
+export async function itemMoveVerdicts(
+  ids: readonly string[],
+  ownerId: string,
+  destPath: string | null,
+  conn: Pick<typeof db, 'execute'> = db,
+): Promise<Map<string, 'ok' | 'no_read' | 'no_edit'>> {
+  const out = new Map<string, 'ok' | 'no_read' | 'no_edit'>();
+  if (!currentWorkspaceScope()) {
+    for (const id of ids) out.set(id, 'ok');
+    return out;
+  }
+  const key = (id: string) => id.trim().toLowerCase();
+  const canonical = [...new Set(ids.map(key).filter((i) => UUID_RE.test(i)))];
+  const byId = new Map<string, boolean>();
+  if (canonical.length && UUID_RE.test(ownerId)) {
+    // The folder it lands in, as the move check finds it
+    // (mantle_parent_folder_path): none at a kind's top level.
+    const rows = (await conn.execute(sql`
+      select n.id::text as id,
+             coalesce("public"."mantle_may_manage"(n.home_ws, n.read_ws)
+                      or "public"."mantle_mod_holds"(n.read_ws, d.read_ws), false) as move
+        from nodes n
+        left join nodes d
+          on d.owner_id = ${ownerId}::uuid and d.type = 'branch'
+         and d.path::text = ${destPath ?? ''} and nlevel(d.path) >= 2
+       where n.id = any(${`{${canonical.join(',')}}`}::uuid[])`)) as unknown as {
+      id: string;
+      move: boolean;
+    }[];
+    for (const r of rows) byId.set(r.id, r.move === true);
+  }
+  for (const id of ids) {
+    const k = key(id);
+    const may = UUID_RE.test(k) ? byId.get(k) : undefined;
+    out.set(id, may === undefined ? 'no_read' : may ? 'ok' : 'no_edit');
+  }
+  return out;
+}
+
+/** itemMoveVerdicts for one item: throws the edit check's refusal (the 404
+ *  of none for an item the scope does not read, the 403 for one it may not
+ *  move there), as assertItemRight does. System work is not checked. */
+export async function assertItemMove(
+  id: string,
+  ownerId: string,
+  destPath: string | null,
+): Promise<void> {
+  const v = (await itemMoveVerdicts([id], ownerId, destPath)).get(id);
+  if (v !== 'ok') throw editCheckRefusalError(v ?? 'no_read');
 }
 
 /**

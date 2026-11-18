@@ -185,19 +185,38 @@ every workspace it is granted to, each with a Write switch.
 | To do this                       | You need                                                                  |
 | -------------------------------- | ------------------------------------------------------------------------- |
 | Read the item                    | to be a user of a workspace it is granted to                              |
-| Edit its content                 | Moderator of its home, or a grant with Write on                           |
+| Edit its content                 | Moderator of its home, a grant with Write on, or Moderator of a holder    |
 | Add a grant to workspace T       | Moderator of its home and Moderator of T                                  |
 | Remove a grant from T            | Moderator of its home, or Moderator of T                                  |
 | Switch Write on for T            | Moderator of its home and Moderator of T                                  |
 | Switch Write off for T           | Moderator of its home, or Moderator of T                                  |
 | Open, change or close its link   | to be able to edit it (an app or a Present canvas: Moderator of its home) |
 | Close any public link            | to be an Admin user with the users area                                   |
-| Delete it                        | Moderator of its home (an app: Admin users too, see Apps)                 |
+| Delete it                        | Moderator of its home                                                     |
 | Delete an entry of its history   | Moderator of its home                                                     |
 | Move it to another home (H to T) | Moderator of H and Moderator of T                                         |
+| Move it to another folder        | Moderator of its home, or Moderator of a holder that holds the folder too |
 
-- A Moderator of a workspace that is not the item's home edits the item
-  only when that grant has Write on.
+- **A shared item** (owner's rule, 2026-11-18): an item granted to a
+  workspace W that is not its home is held by W. A Moderator of W reads
+  it, writes it, makes items and folders in it (a shared folder), and
+  moves it to another folder W holds, whether W's grant has Write on or
+  off: the "Moderator of a holder" above. A user of W who is not a
+  Moderator reads it, and writes it when the grant has Write on; nothing
+  more. Deleting it and moving it to another home stay with the Moderators
+  of its home. An app is the exception: its code, data, snapshots and
+  timers stay with its home's Moderators (and its data with its Write
+  grants), never a holder's Moderator.
+- **An Admin user** (owner's word, 2026-11-18, decision A) counts as a
+  Moderator of the home of any item it can read, and of nothing it does
+  not read: wherever this table says "Moderator of its home" (edit,
+  delete, a home move from H, grants, an app's or a canvas's link,
+  history, app code), an Admin user who reads the item may too, through
+  any seat. An item it does not read stays not found, with one accepted
+  gap: a login's own item in a workspace (read only by that login) is
+  still reached by the grant functions of an Admin user of that
+  workspace (docs/agent-ui.md, "Shares and grants of per-login items").
+  A home move still needs a Moderator of T.
 - A Recall map is narrower than the table: deleting it, confirming a
   prompt on it and reordering its cards stay with the Admin users, whoever
   else may edit it ([recall.md](./recall.md)).
@@ -234,7 +253,8 @@ is made, and only a move changes it.
    workspace is the one picked in the switcher. In a chat it is the
    assistant's workspace. A folder you make the item in then only passes
    its grants.
-2. Else, when you make it in a folder you may edit: the folder's home.
+2. Else, when you make it in a folder you may edit: the folder's home
+   (to make it there you may add to the folder: Folders, below).
 3. Else your private workspace. An Admin user has no private fallback:
    the item lands in Admin.
 
@@ -297,8 +317,10 @@ A folder is an item with a home and grants like any other.
   confirm. A new item (an upload, a new file or page, a copy) asks
   nothing: it simply takes the folder's sharing (owner's word,
   2026-11-12).
-- To place an item in folder F you may edit F (Moderator of its home, or F
-  granted to you with Write on), and you may manage the item.
+- To place an item in folder F you may add to F: Moderator of a workspace
+  that holds F (its home too), or a user of F's home with Write on there. A
+  grant with Write on to another workspace lets its users edit F, not add
+  to it. A move needs the move right as well (the table above).
 - A folder passes its grants, never its home. An item in a folder keeps
   its own home.
 - When a folder's grants change, the items below it follow. A grant set by
@@ -324,7 +346,7 @@ A folder is an item with a home and grants like any other.
   in other workspaces. Its memory (digests, facts learned from chat) stays
   in that workspace.
 - **It writes only for a user who could do it by hand**: a Moderator of the
-  home, or a grant with Write on.
+  home, a grant with Write on, or a Moderator of a workspace that holds it.
 - **Canvases (Present) are a content kind like pages and tables.** Every
   enabled workspace assistant, the team responder aside, holds the
   Present tools: list, read and look, make, change, bring back a version,

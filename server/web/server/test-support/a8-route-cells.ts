@@ -12,7 +12,10 @@
  * cell on a fresh item, in the checks' warn and on (plan rule 5). A route
  * open to Admin users only also runs as an Admin user with Write on the
  * item and no Moderator seat of its home (adminWriteGrant), where edit and
- * manage part. A cell passes on the oracle's answer: allowed is the route's
+ * manage part. Every route also runs as a plain user of R (Write off, no
+ * Moderator tick: readUser), who reads the item and may not edit it, where
+ * read and edit part (a Moderator of R edits, 0383). A cell passes on the
+ * oracle's answer: allowed is the route's
  * success; refused is a 403 or a 404 that changes no row and makes no node,
  * and, for a caller that does not read the item, the answer a random uuid
  * gets (status, body with the id aside, content type and cache control).
@@ -68,8 +71,15 @@ export const A8_ADMIN_WRITE_GRANT = 'adminWriteGrant' as const;
 /** The placements where it reads the item through W's grant. */
 const ADMIN_WRITE_GRANT_PLACEMENTS: readonly GuidePlacement[] = ['folder', 'root'];
 
+/** A plain user of R (Write off, no Moderator tick): it reads the item and
+ *  may not edit it (guide-oracle.ts SEATS readUser), where read and edit
+ *  part: a Moderator of R edits a shared item (0383). Every route runs it. */
+export const A8_READ_USER = 'readUser' as const;
+/** The placements where it reads the item through R's grant. */
+const READ_USER_PLACEMENTS: readonly GuidePlacement[] = ['folder', 'root'];
+
 /** Who a route cell runs as. */
-export type A8RouteRole = GuideRole | typeof A8_ADMIN_WRITE_GRANT;
+export type A8RouteRole = GuideRole | typeof A8_ADMIN_WRITE_GRANT | typeof A8_READ_USER;
 
 /** The check modes the route cells run in (plan rule 5): warn, where the
  *  edit check reports a write it would refuse (a box below on is an
@@ -108,6 +118,12 @@ export type A8RouteHigher = {
   /** The query its request carries in place of the route's. */
   query?: (c: A8RouteCtx) => string;
   refusedStatus?: A8RouteSpec['refusedStatus'];
+  /** Why no cell can tell it from the right below, when every caller the
+   *  route admits holds both or neither (a route open to Admin users only,
+   *  whose higher right is manage: an Admin user manages every item it
+   *  reads, 0383). The plan then asks no parting cell, and fails if one
+   *  parts after all. */
+  noPart?: string;
 };
 
 /** The request a route takes in a cell, and the guide action it is. */
@@ -133,6 +149,9 @@ export type A8RouteSpec = {
   /** The route's handler leaves it to an Admin user, why: a member the
    *  guide would allow is refused (a narrowed deny the oracle cannot see). */
   adminOnly?: string;
+  /** Roles the guide action would allow that the route refuses, why (a
+   *  narrowed deny the oracle cannot see, as adminOnly's, for named roles). */
+  narrow?: { roles: readonly A8RouteRole[]; why: string };
   /** A query the request carries, from the ctx. */
   query?: (c: A8RouteCtx) => string;
   /** SQL run on the fresh item before the request ($1: its id), as the
@@ -325,11 +344,24 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   // A move within its home, into the folder it is in (its root at the
   // root): its home's Moderator, the guide's standing of a delete. A move to
   // another home is the page_move tool cells'.
+  // A move to another folder (0383): manage, or a Moderator of a workspace
+  // that holds the page and the folder it lands in. The route declares
+  // edit, the lowest right that takes; the cells move the page into the
+  // folder it is in, so a holder's Moderator may (R holds F), and a user
+  // with Write on may not (the move rule is not the edit rule).
   'POST /api/pages/:id/move': {
     kind: 'page',
-    action: 'delete',
+    action: 'edit',
     body: (c) => ({ folderId: c.folderId, confirm: true }),
     stays: 'a move into the folder it is in',
+    placements: {
+      only: ['folder'],
+      why: 'at a kind’s top level no folder holds it, so a move there is manage’s (the delete rule), not the edit rule',
+    },
+    narrow: {
+      roles: ['writeGrant'],
+      why: 'a move is manage, or a Moderator of a workspace that holds the page and its folder: a user with Write on edits it and does not move it',
+    },
   },
   'PATCH /api/tables/:id': { kind: 'table', action: 'edit', body: title, warnMade: true },
   'DELETE /api/tables/:id': { kind: 'table', action: 'delete' },
@@ -490,6 +522,8 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     },
     higher: {
       why: 'a code restore asks manage (an app’s code is its home Moderator’s)',
+      noPart:
+        'open to Admin users only, and an Admin user manages every item it reads (owner’s word, 2026-11-18): every caller it admits who may edit the app may restore its code',
       action: 'editDraft',
       seed: 'app_snapshot_restore',
       params: (c) => ({ sid: String(c.input.snapshot_id) }),
@@ -777,9 +811,9 @@ export const allows = (w: GuideAnswer): boolean => 'allow' in w && w.allow;
 
 const surfaceOf = (s: Pick<A8RouteSpec, 'key'>): GuideSurface => (s.key ? 'api-v1' : 'web');
 
-/** The oracle's answer of a route cell. adminWriteGrant is a seat role of
- *  the guide (guideStanding reads it); expectedAccess types the grid's
- *  roles only, so it is passed through. */
+/** The oracle's answer of a route cell. adminWriteGrant and readUser are
+ *  seat roles of the guide (guideStanding reads them); expectedAccess types
+ *  the grid's roles only, so they are passed through. */
 export function a8RouteWant(
   spec: Pick<A8RouteSpec, 'kind' | 'action' | 'key'>,
   role: A8RouteRole,
@@ -804,7 +838,7 @@ export function a8CellSpec(cell: Pick<A8RouteCell, 'key' | 'higher'>): A8RouteSp
   const spec = A8_ROUTE_SPECS[cell.key]!;
   const higher = cell.higher ? a8Highers(spec)[cell.higher - 1] : undefined;
   if (!higher) return spec;
-  const { why: _why, ...h } = higher;
+  const { why: _why, noPart: _noPart, ...h } = higher;
   const { allowedStatus: _a, higher: _h, ...base } = spec;
   return { ...base, body: undefined, ...h };
 }
@@ -864,7 +898,11 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
       below = higher;
     }
     const open = memberOpen(r.key);
-    const roles: A8RouteRole[] = [...A8_ROUTE_ROLES, ...(open ? [] : [A8_ADMIN_WRITE_GRANT])];
+    const roles: A8RouteRole[] = [
+      ...A8_ROUTE_ROLES,
+      A8_READ_USER,
+      ...(open ? [] : [A8_ADMIN_WRITE_GRANT]),
+    ];
     const cells: A8RouteCell[] = [];
     for (let higher = 0; higher <= highers.length; higher++) {
       const action = higher ? highers[higher - 1]!.action : spec.action;
@@ -873,6 +911,7 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
           if (role === A8_ADMIN_WRITE_GRANT && !ADMIN_WRITE_GRANT_PLACEMENTS.includes(placement)) {
             continue;
           }
+          if (role === A8_READ_USER && !READ_USER_PLACEMENTS.includes(placement)) continue;
           if (spec.placements && !spec.placements.only.includes(placement)) continue;
           let want = a8RouteWant({ ...spec, action }, role, placement);
           if ('na' in want) continue;
@@ -880,6 +919,7 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
           if (!ADMIN_USERS.has(role) && allows(want)) {
             if (!open) narrowed = 'the route is open to Admin users only';
             else if (spec.adminOnly) narrowed = spec.adminOnly;
+            else if (spec.narrow?.roles.includes(role)) narrowed = spec.narrow.why;
             if (narrowed) want = { allow: false, why: narrowed };
           }
           if (spec.refusedOnly && allows(want)) continue;
@@ -921,7 +961,14 @@ export function a8RoutePlan(manifest: readonly A8ManifestEntry[]): A8RoutePlan {
           allows(c.want) &&
           parts(h).some((d) => d.role === c.role && d.placement === c.placement && !allows(d.want)),
       );
-      if (!tells) plan.uncovered[r.key] = 'no cell where its right and its higher right part';
+      const noPart = highers[h - 1]!.noPart;
+      if (!tells && !noPart) {
+        plan.uncovered[r.key] = 'no cell where its right and its higher right part';
+      }
+      if (tells && noPart) {
+        plan.mismatched[r.key] =
+          `a cell parts its right and its higher one: drop noPart (${noPart})`;
+      }
     }
   }
   return plan;

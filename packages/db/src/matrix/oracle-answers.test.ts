@@ -16,7 +16,12 @@ import { ORACLES, oracleAnswerDiff, oracleAnswerHash } from './oracle-answers';
 const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256: string }>> = {
   // Present (a new workspace kind): its inputs added, every earlier answer
   // unchanged (checked with --against before taking the hashes).
-  a1: { inputs: 360, sha256: 'ed3e8588ce99cad2e14175e9374362ca922c1549940632b45ad9f602304a2d78' },
+  // Shared items (0383, owner's rule 2026-11-18): 60 inputs moved, all a
+  // create in the folder: readGrant (a Moderator of R, which holds it, Write
+  // off) deny to allow, writeGrant (a user of W, Write on) allow to deny,
+  // and the deny's words of the others ("may not add to the folder"). No
+  // other answer moved (checked with --against).
+  a1: { inputs: 360, sha256: '2e6abb054430f3fe83f56647e76264983bd16af74ce98a7b5829a736fd9a987d' },
   'a1-folders': {
     inputs: 18,
     sha256: 'b7cb517807e2bbd8f7fca9c4955ca46fbafc30ad8a1646c6507ec983c4b05461',
@@ -28,9 +33,33 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // Contact shares gone (0378): the contact-ro and contact-rw actors and
   // the contact-share surface went, with their inputs; every other answer
   // the same (checked with --against on the base's lines without them).
+  // Shared items (0383, owner page d7313c67): 153 inputs moved allow or
+  // deny. readGrant (a Moderator of R, Write off) deny to allow on every
+  // edit-rule write of a kind that is not an app (edit, rank, a link but a
+  // canvas's, a Recall card, a history row), an app's rank in the folder
+  // (the folder's order), and a create in the folder;
+  // writeGrant and adminWriteGrant (users of W, Write on) allow to deny on a
+  // create in the folder; the deny's words of others' folder creates. An
+  // app's acts stay as they were. No other answer moved (--against).
+  // An Admin user manages every item it reads (owner's word, 2026-11-18,
+  // page d7313c67): 70 inputs moved, each deny to allow, all by
+  // adminWriteGrant or adminReadGrant (Admin users who read the item through
+  // W or R, no Moderator of H): both delete it and open an app's or a
+  // canvas's link; adminWriteGrant, who edits it too, also deletes its
+  // content row or an app's data row and writes an app's code (those ask
+  // edit as well). No other answer moved (checked with --against).
+  // Decision A (owner page d7313c67): an Admin user counts as a Moderator of
+  // the home of any item it reads, so edit and add follow manage: 132 inputs
+  // moved, each deny to allow, all a login's: adminReadGrant (an Admin user
+  // who reads through R, Write off) on every edit-rule write (edit, rank, a
+  // link, a content row's delete, history, a Recall card, an app's code,
+  // data, switch and lowering, an app's create) and a create in the folder;
+  // adminWriteGrant on a create in the folder (12). No other answer moved
+  // (checked with --against). An Admin user who does not read the item gets
+  // nothing more (the a8 grid's admin seat on H's items).
   a3a: {
     inputs: 33_120,
-    sha256: '28017690574b261b7b5792530870b99d552e75f946a7cb89f7ed52e8f8c72918',
+    sha256: '8aa497cff103f6b98244aaefe35b1120adc5d4461837153ae84e8f5bf1fc801c',
   },
   'a3a-detail': {
     inputs: 1_104,
@@ -53,9 +82,18 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // action's answer moved (checked with --against).
   // Contact shares gone (0378): 48,720 inputs went with the two contact
   // actors and the contact-share surface; no other answer moved.
+  // Shared items (0383, owner page d7313c67): 2,430 inputs moved allow or
+  // deny, on every way in. readGrant (a Moderator of R, which holds the
+  // item, Write off) deny to allow on edit, editDraft and link of a kind
+  // that is not an app (a canvas's link stays its home's), and a create in
+  // the folder (a key's or a peer's edit of a page or a note others read
+  // stays denied, its words now the key rule's); writeGrant (a user of W,
+  // Write on) allow to deny on a create in the folder; other roles' create
+  // denials have new words. An app's acts stay as they were. No other
+  // answer moved (checked with --against).
   a8: {
     inputs: 314_160,
-    sha256: '13a5385d71cec9f5fcbb0b0552236d7b4aab30c5119c2cb197889f255865be84',
+    sha256: '43ca1cbb36bde1684c1a22abb059605367e9c6f33fc0b1ed70cea9e860ddde6b',
   },
 };
 

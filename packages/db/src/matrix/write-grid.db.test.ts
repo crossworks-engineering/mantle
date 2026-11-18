@@ -192,7 +192,9 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       [
         'R',
         [
-          [L.readGrant, false],
+          // A Moderator of R, as the guide oracle seats it (0383); the Admin
+          // user is a plain user of R.
+          [L.readGrant, true],
           [L.adminReadGrant, false],
         ],
       ],
@@ -556,8 +558,24 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     // canvas's link, an adminWriteGrant login's open; at the root and in a folder).
     // The contact actors left (0378): 1104 cells, 2 allowed (a contact's
     // app data), 244 denied.
-    expect(tally.allowed).toBe(780);
-    expect(tally.denied).toBe(2200);
+    // Shared items (0383, owner page d7313c67): readGrant moderates R, which
+    // holds the item: 129 cells from denied to allowed (every edit-rule
+    // write of a kind that is not an app, an app's rank in the folder, and a
+    // create in the folder);
+    // writeGrant's and adminWriteGrant's create in the folder, 24 cells from
+    // allowed to denied (a Write grant edits a folder, does not add to it).
+    // Net 105.
+    // An Admin user manages every item it reads (owner's word, 2026-11-18):
+    // 70 cells from denied to allowed, the 70 inputs the a3a pin names
+    // (adminWriteGrant and adminReadGrant: delete, an app's or a canvas's
+    // link; adminWriteGrant also a content row's and an app's data row's
+    // delete and an app's code).
+    // Decision A (owner page d7313c67): an Admin user counts as a Moderator
+    // of the home of any item it reads: 132 cells from denied to allowed, the
+    // 132 inputs the a3a pin names (adminReadGrant's edit-rule writes and
+    // both Admin seats' create in the folder).
+    expect(tally.allowed).toBe(1087);
+    expect(tally.denied).toBe(1893);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });

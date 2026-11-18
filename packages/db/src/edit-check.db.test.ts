@@ -682,6 +682,8 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
   };
 
   it('M1: a new node’s brain-only values (derived keys, an embedding) are dropped when on, reported in warn, kept in off and for the brain', async () => {
+    // A Moderator of the folder's home adds to it (a user of a grant with
+    // Write on edits the folder, does not add to it: 0383).
     const folder = await folderAt('ins');
     const make = (p: Who, pool = w) =>
       attempt(
@@ -701,15 +703,15 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
       );
     const kept = { summary: true, text: true, rank: 'a1', emb: true };
     await setMode('off');
-    let r = (await make(who.member)) as Result & Record<string, unknown>;
+    let r = (await make(who.homeMod)) as Result & Record<string, unknown>;
     expect(r).toMatchObject({ rows: 1 });
     expect(editMisses(r)).toEqual([]);
     await setMode('warn');
-    r = (await make(who.member)) as Result & Record<string, unknown>;
+    r = (await make(who.homeMod)) as Result & Record<string, unknown>;
     expect(editMisses(r).length).toBe(1);
     await setMode('on');
     const stripped = await attempt(
-      who.member,
+      who.homeMod,
       async (tx) => {
         const [row] = await tx<{ summary: boolean; text: boolean; rank: string; emb: boolean }[]>`
           insert into nodes (owner_id, type, title, path, data, embedding)
@@ -1097,8 +1099,10 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     expect([...k!.keys].sort()).toEqual([...NODE_DERIVED_KEYS].sort());
     // The rule written once: the scope forms are the array forms.
     const [f] = await sql<{ e: boolean; m: boolean }[]>`
-      select mantle_may_edit_in(array[${ws.W}]::uuid[], '{}'::uuid[], ${ws.H}::uuid, array[${ws.W}]::uuid[]) as e,
-             mantle_may_manage_in(array[${ws.H}]::uuid[], ${ws.H}::uuid) as m`;
+      select mantle_may_edit_in(array[${ws.W}]::uuid[], '{}'::uuid[], ${ws.H}::uuid, array[${ws.W}]::uuid[],
+                                array[${ws.H}, ${ws.W}]::uuid[], 'note') as e,
+             mantle_may_manage_in(array[${ws.H}]::uuid[], array[${ws.H}]::uuid[], ${ws.H}::uuid,
+                                  array[${ws.H}]::uuid[]) as m`;
     expect(f).toEqual({ e: true, m: true });
   });
 });

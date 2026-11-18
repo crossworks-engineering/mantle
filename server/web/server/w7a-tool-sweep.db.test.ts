@@ -600,11 +600,6 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const writes = t
       .listBuiltins()
       .filter((d) => targetsOf(d.slug) !== null && otherTypeFor(d.slug) !== null);
-    /** A write that only needs to read its item (process_extraction, an
-     *  app's copy) runs on a Read-only item; refused only when private. */
-    const needsRead = new Set(
-      writes.filter((d) => targetsOf(d.slug)!.every((x) => x.need === 'read')).map((d) => d.slug),
-    );
     expect(writes.length).toBeGreaterThan(40);
     const argsAt = (def: { slug: string; inputSchema?: unknown }, id: string): Json => {
       const input = argsFor((def.inputSchema ?? {}) as Schema, def.slug);
@@ -635,7 +630,11 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
         [privateItems, PRIVATE_WANT, 'turn private'],
       ] as const) {
         const id = items.get(type);
-        if (!id || (items === readOnly && needsRead.has(def.slug))) continue;
+        // A Read-only item (granted to Admin, Write off) is no longer read
+        // only here: the anchor moderates Admin, and since 0383 a Moderator
+        // of a workspace that holds an item edits it, Write on or off
+        // (owner page d7313c67). The private items stay refused.
+        if (!id || items === readOnly) continue;
         const res = await timed(
           rt.withAgentScope(
             { workspaceId: adminWs },
@@ -675,7 +674,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
           [privateItems, PRIVATE_WANT, 'mcp private'],
         ] as const) {
           const id = items.get(type);
-          if (!id || (items === readOnly && needsRead.has(def.slug))) continue;
+          // Read-only items: as the turn above (both logins moderate Admin).
+          if (!id || items === readOnly) continue;
           const reply = await timed(
             c.callTool({ name: def.slug, arguments: argsAt(def, id) }).catch((err: unknown) => ({
               isError: true,

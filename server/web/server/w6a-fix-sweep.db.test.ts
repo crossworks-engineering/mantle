@@ -57,9 +57,13 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
   const noUsers = randomUUID(); // an Admin user without the users area
   const tag = `w6f${randomUUID().slice(0, 6)}`;
   const DRAFT = `${tag}draftmark`;
-  let team = '';
   let side = '';
   let ro = '';
+  /** A workspace where the Admin user and the member are plain users: its
+   *  Write-off grant is read only to both (Team would not be: they
+   *  moderate it, and since 0383 a Moderator of a workspace that holds an
+   *  item edits it, Write on or off, owner page d7313c67). */
+  let rd = '';
   let adminWs = '';
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -140,7 +144,6 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
     const ws = await x<{ id: string; key: string | null }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
-    team = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.key === 'admin')!.id;
     await su(sql`update workspace_users set limits = ${JSON.stringify({ areas: { users: false } })}::jsonb
                  where workspace_id = ${adminWs} and login_id = ${noUsers}`);
@@ -152,11 +155,13 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     answers = rowAnswers(manifest);
     side = json((await call('/api/workspaces', mem2, 'POST', { name: 'Side' })).text).id as string;
     ro = json((await call('/api/workspaces', mem2, 'POST', { name: 'Ro' })).text).id as string;
-    expect(side && ro).toBeTruthy();
+    rd = json((await call('/api/workspaces', mem2, 'POST', { name: 'Rd' })).text).id as string;
+    expect(side && ro && rd).toBeTruthy();
     // The Admin user reads Ro but moderates nothing there and has no Write
     // grant in it (Read only); the member reads Side.
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
-                values (${ro}, ${owner}, false), (${side}, ${mem}, false)`);
+                values (${ro}, ${owner}, false), (${side}, ${mem}, false),
+                       (${rd}, ${owner}, false), (${rd}, ${mem}, false)`);
   }, 240_000);
 
   afterAll(async () => {
@@ -200,10 +205,14 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     expect(json(mine.text).source).toBe('draft');
     expect((await call(`/api/tables/${tableId}`, owner)).text).toContain(DRAFT);
 
-    // Homed in Ro, also in Team: the Admin user has Read only, the member Read.
+    // Homed in Ro, also in Rd: the member reads it and may not edit it. The
+    // Admin user (a plain user of Ro) reads it too, so it counts as a
+    // Moderator of its home and edits it (owner page d7313c67, decision A):
+    // it still reads the draft.
     await homeIn(tableId, ro);
-    await alsoIn(tableId, team);
-    for (const who of [owner, mem]) {
+    await alsoIn(tableId, rd);
+    expect((await call(`/api/tables/${tableId}/rows?draft=1`, owner)).text).toContain(DRAFT);
+    for (const who of [mem]) {
       const rows = await call(`/api/tables/${tableId}/rows?draft=1`, who);
       expect(rows.status, rows.text.slice(0, 200)).toBe(200);
       expect(rows.text).not.toContain(DRAFT);
@@ -218,12 +227,12 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     }
     // The package reads ask the row too (getTable, the tools' window file).
     const content = await import('@mantle/content');
-    await m.withViewer({ login: owner }, async () => {
+    await m.withViewer({ login: mem }, async () => {
       const t = await content.getTable(owner, tableId);
       expect(JSON.stringify(t)).not.toContain(DRAFT);
     });
     const storage = await import('@mantle/content/table-storage');
-    await m.withViewer({ login: owner }, async () => {
+    await m.withViewer({ login: mem }, async () => {
       // windowFile (the tools) reads the draft file only when draftOk.
       const surface = await storage.tableSqlSurface(owner, tableId);
       expect(surface?.draftOk).toBe(false);
@@ -399,9 +408,12 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await homeIn(app.id, side);
     await grantWrite(app.id);
     const appLink = await linkOn(app.id, 'app');
+    // An app's link is its managers'. The Admin user reads the app (through
+    // Ro), so it counts as a Moderator of its home and manages it (owner page
+    // d7313c67, decision A); a Write grant alone still manages nothing
+    // (w6a-route-sweep M-b, the a3a oracle's writeGrant).
     const appChange = await call(`/api/shares/${appLink}`, owner, 'PATCH', { serve: [] });
-    expect(appChange.status, appChange.text.slice(0, 200)).toBe(403);
-    expect(appChange.text).toContain('item-workspace');
+    expect(appChange.status, appChange.text.slice(0, 200)).toBe(200);
   }, 60_000);
 
   // ── M2 ────────────────────────────────────────────────────────────────────
@@ -507,7 +519,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     const ids = [page, draw, appRow.id];
     for (const id of ids) {
       await homeIn(id, ro);
-      await alsoIn(id, team);
+      await alsoIn(id, rd);
     }
     const failures: string[] = [];
     let calls = 0;
@@ -528,7 +540,11 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
           )
         : [segs.map((s) => (s === ':kind' ? 'pages' : s.startsWith(':') ? 'x' : s)).join('/')];
       for (const p of paths) {
-        for (const who of [owner, mem]) {
+        // The member reads these items and may not edit them. The Admin user
+        // (a plain user of Ro and Rd) reads them too, so it counts as a
+        // Moderator of their home and edits them (owner page d7313c67,
+        // decision A): an editor, it is not asked here.
+        for (const who of [mem]) {
           const r = await call(`${p}${p.includes('?') ? '&' : '?'}draft=1`, who);
           calls += 1;
           if (r.text.includes(DRAFT)) failures.push(`${who === owner ? 'admin' : 'member'} ${p}`);

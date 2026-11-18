@@ -17,9 +17,19 @@
  *             queue path), approved by the Telegram poller's handler
  *             (lib/telegram-approval.ts)
  *
- * The item: a note homed in another workspace, granted to Admin with
- * Write off (the Admin scope reads it, may not edit it), and one granted
- * with Write on (it may). The TypeScript item pre-check (gate-prerun.ts,
+ * The item: a note homed in another workspace, read only (granted with
+ * Write off to RO, where the anchor is a plain user: the scope reads it,
+ * may not edit it), and one granted to Admin with Write on (it may). Since
+ * 0383 (owner page d7313c67) a Moderator of a workspace that holds an item
+ * edits it, Write on or off, so a grant to Admin is no longer read only to
+ * the anchor, a Moderator of Admin; a run and the Admin turn (telegram)
+ * read only what Admin holds, so they have no read-only note: their
+ * read-only cells take one granted to Admin with Write off, and it is
+ * edited. Decision A (owner page d7313c67): an Admin user counts as a
+ * Moderator of the home of any item it reads, so stdio's login(owner) edits
+ * RO's note too: no way has a read-only note now, every cell is edited and
+ * none logs a miss (a member's misses: precheck-removal). The TypeScript
+ * item pre-check (gate-prerun.ts,
  * toolItemWriteRefusalOf) is bypassed where a cell says so, so only the
  * database stands:
  *
@@ -101,11 +111,15 @@ describe.skipIf(!DB_URL)(
     const adminAgent = randomUUID();
     let adminWs = '';
     let otherWs = '';
+    let roWs = '';
     let noteRoot = '';
     const recorded: string[] = [];
 
-    /** A note homed in the other workspace, granted to Admin with `write`. */
-    const makeNote = async (write: boolean): Promise<string> => {
+    /** A note homed in the other workspace: granted to Admin with Write on
+     *  (`write`), else read only (granted to RO, or for a run and an Admin
+     *  turn to Admin, with Write off). */
+    const makeNote = async (write: boolean, way: Way): Promise<string> => {
+      const to = write || way !== 'stdio' ? adminWs : roWs;
       const id = randomUUID();
       await raw.begin(async (tx) => {
         await tx`select set_config('mantle.actor', 'system:test', true)`;
@@ -119,7 +133,7 @@ describe.skipIf(!DB_URL)(
         await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
         await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
         await tx`insert into item_grants (node_id, workspace_id, is_home, write)
-               values (${id}, ${otherWs}, true, false), (${id}, ${adminWs}, false, ${write})`;
+               values (${id}, ${otherWs}, true, false), (${id}, ${to}, false, ${write})`;
       });
       return id;
     };
@@ -278,7 +292,7 @@ describe.skipIf(!DB_URL)(
       way: Way,
       opts: { write: boolean; pool: boolean; precheck: boolean },
     ) => {
-      const id = await makeNote(opts.write);
+      const id = await makeNote(opts.write, way);
       const before = await titleOf(id);
       setPool(opts.pool);
       pre.on = opts.precheck;
@@ -345,6 +359,15 @@ describe.skipIf(!DB_URL)(
         values (${owner}, ${`${tag} other`}) returning id::text as id`
       )[0]!.id;
       await raw`delete from workspace_users where workspace_id = ${otherWs}`;
+      // RO: the anchor is its plain user, so its Write-off notes are read
+      // only to the anchor's own scope.
+      roWs = (
+        await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
+        values (${owner}, ${`${tag} ro`}) returning id::text as id`
+      )[0]!.id;
+      await raw`delete from workspace_users where workspace_id = ${roWs}`;
+      await raw`insert into workspace_users (workspace_id, login_id, moderator)
+        values (${roWs}, ${owner}, false)`;
       await raw`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
       values (${adminAgent}, ${owner}, ${`${tag}-admin`}, 'Admin', 'fake/model', 'p', 'responder',
               ${adminWs})`;
@@ -387,8 +410,12 @@ describe.skipIf(!DB_URL)(
           pool: true,
           precheck: false,
         });
-        expect(ro.ok, ro.text).toBe(false);
-        expect(ro.changed).toBe(false);
+        // A run and the Admin turn: a Moderator of Admin edits what Admin
+        // holds. stdio (the owner, an Admin user, a plain user of RO): it
+        // reads the note, so it counts as a Moderator of its home and edits
+        // it (owner page d7313c67, decision A).
+        expect(ro.ok, ro.text).toBe(true);
+        expect(ro.changed).toBe(true);
         expect(ro.text).not.toMatch(RAW);
         const rw = await cell(`${way} on editable`, way, {
           write: true,
@@ -417,7 +444,8 @@ describe.skipIf(!DB_URL)(
           ro.who.some((w) => WRITER.test(w)),
           ro.who.join(','),
         ).toBe(true);
-        expect(ro.misses).toContain(EDIT_MISS);
+        // Decision A: every way's login may edit it, so no miss.
+        expect(ro.misses).not.toContain(EDIT_MISS);
         const rw = await cell(`${way} warn editable`, way, {
           write: true,
           pool: true,
@@ -454,7 +482,7 @@ describe.skipIf(!DB_URL)(
           off.who.some((w) => WRITER.test(w)),
           off.who.join(','),
         ).toBe(true);
-        expect(off.misses).toContain(EDIT_MISS);
+        expect(off.misses).not.toContain(EDIT_MISS);
       }, 180_000);
     }
   },

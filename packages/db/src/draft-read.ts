@@ -27,7 +27,7 @@ function wsParam(ids: readonly string[]): SQL {
 function scopeMayEdit(): SQL<boolean> | null {
   const scope = currentWorkspaceScope();
   if (!scope) return null;
-  return sql<boolean>`"public"."mantle_may_edit_in"(${wsParam(scope.ws)}, ${wsParam(scope.modWs)}, ${nodes.homeWs}, ${nodes.writeWs})`;
+  return sql<boolean>`"public"."mantle_may_edit_in"(${wsParam(scope.ws)}, ${wsParam(scope.modWs)}, ${nodes.homeWs}, ${nodes.writeWs}, ${nodes.readWs}, ${nodes.type})`;
 }
 
 /**

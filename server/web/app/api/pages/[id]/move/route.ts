@@ -15,10 +15,13 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
+  // The lowest right a move takes: edit (a Moderator of a workspace that
+  // holds the page moves it inside that workspace, 0383); the move check,
+  // with the folder it lands in, is moveTreeItems'.
   POST: {
     class: 'content',
     open: 'owner',
-    item: { param: 'id', need: 'manage' },
+    item: { param: 'id', need: 'edit' },
   },
 });
 
@@ -68,10 +71,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, user.id), eq(nodes.type, 'page')))
     .limit(1);
   if (!page) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  // A move manages the page: the caller's right first (pre-check removal
-  // part 2), after the scoped read above (a page it does not read is the
-  // 404 of none), then the database's move check. Asked in a scope only.
-  await assertItemRight(id, 'manage');
+  // The caller's right first (pre-check removal part 2), after the scoped
+  // read above (a page it does not read is the 404 of none): edit, the
+  // lowest a move takes. moveTreeItems asks the move check with the folder
+  // it lands in, then the database's. Asked in a scope only.
+  await assertItemRight(id, 'edit');
 
   let folderId: string | null;
   if (body.folderId !== undefined) folderId = body.folderId;

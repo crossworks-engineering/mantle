@@ -349,6 +349,11 @@ these apart, and they are accepted as they are:
   where the item sits, may share another login's own item (a per-login
   item, `nodes.login_id`) with a link, or grant it to a
   workspace, as any item; a share made of one stays live.
+- **A shared item moved inside a workspace** (0383). A Moderator of a
+  workspace W that holds an item moves it to another folder W holds. The
+  item takes that folder's grants and leaves the old folder's, so other
+  workspaces may gain or lose it, though its home's Moderators did not
+  move it. They could copy it there by hand all the same.
 - **Folder moves carrying another login's private item.** A move or
   delete of a folder that holds another login's own item takes it along,
   as it does any item in the folder.

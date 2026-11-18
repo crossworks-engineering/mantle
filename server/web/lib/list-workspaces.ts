@@ -25,6 +25,7 @@ import {
   liveWorkspaceSql,
   mayEditSql,
   mayManageSql,
+  mayMoveSql,
   nodeAliasHomeIs,
   nodeAliasReadBy,
   sql,
@@ -37,19 +38,28 @@ import { WS_LOOK_PAIRS, workspaceLook } from '@/lib/workspace-look';
 import { UUID_RE } from '@mantle/std';
 
 /** No workspace and no link: a row the lookup did not find (a private row). */
-const NONE: ListChips = { workspaces: [], hasLink: false, mayEdit: false, mayManage: false };
+const NONE: ListChips = {
+  workspaces: [],
+  hasLink: false,
+  mayEdit: false,
+  mayManage: false,
+  mayMove: false,
+};
 
 /**
  * The caps columns of `n` (ItemCaps): in a workspace scope
- * the database's own rule (mantle_may_edit, mantle_may_manage); on the
- * system pool (the brain's owner) everything. Never edit for a read-only copy.
+ * the database's own rule (mantle_may_edit, mantle_may_manage, the move
+ * check's mantle_mod_holds); on the system pool (the brain's owner)
+ * everything. Never edit or move for a read-only copy.
  */
 function capsColumns() {
   const scoped = currentWorkspaceScope() !== null;
   const edit = scoped ? mayEditSql('n') : sql`true`;
   const manage = scoped ? mayManageSql('n') : sql`true`;
+  const move = scoped ? mayMoveSql('n') : sql`true`;
   return sql`(${edit} and not coalesce(n.data ? 'snapshot_of', false)) as may_edit,
              ${manage} as may_manage,
+             (${move} and not coalesce(n.data ? 'snapshot_of', false)) as may_move,
              nullif(n.data->>'snapshot_of', '') as snapshot_of,
              coalesce((n.data->>'trashedBeforeFold')::boolean, false) as trashed_before_fold`;
 }
@@ -57,6 +67,7 @@ function capsColumns() {
 type CapsRow = {
   may_edit: boolean;
   may_manage: boolean;
+  may_move: boolean;
   snapshot_of: string | null;
   trashed_before_fold: boolean;
 };
@@ -65,6 +76,7 @@ function capsOf(r: CapsRow): ItemCaps {
   return {
     mayEdit: r.may_edit === true,
     mayManage: r.may_manage === true,
+    mayMove: r.may_move === true,
     ...(r.snapshot_of ? { readOnly: true as const, snapshotOf: r.snapshot_of } : {}),
     ...(r.trashed_before_fold === true ? { trashedBeforeFold: true as const } : {}),
   };
@@ -85,7 +97,7 @@ export async function itemCaps(nodeIds: readonly string[]): Promise<Map<string, 
   return out;
 }
 
-const NO_CAPS: ItemCaps = { mayEdit: false, mayManage: false };
+const NO_CAPS: ItemCaps = { mayEdit: false, mayManage: false, mayMove: false };
 
 /** `rows` with their caps, read for the caller in one query. */
 export async function capped<T extends { id: string }>(

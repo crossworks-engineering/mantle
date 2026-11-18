@@ -14,7 +14,8 @@
  *   editOnly  may edit, not manage (homed in X, granted to W or to Admin
  *             with Write on)
  *   noEdit    reads it, may not edit (the member: homed in R; the owner:
- *             homed in X, granted to Admin with Write off)
+ *             homed in X, granted to R with Write off, where it is a plain
+ *             user: a Moderator of Admin edits whatever Admin holds, 0383)
  *   noRead    does not read it (the member: homed in O; the owner: homed
  *             in X, no grant to Admin)
  *
@@ -78,6 +79,24 @@ const ALLOWED: Record<Need, Place[]> = {
   edit: ['allowed', 'editOnly'],
   manage: ['allowed'],
 };
+/** The same for the Admin seat: an Admin user counts as a Moderator of the
+ *  home of any item it reads (owner page d7313c67, decision A), so its
+ *  editOnly and noEdit items, homed in X and read through Admin's or R's
+ *  grant, are its to edit and manage on its own MCP surface; noRead stays
+ *  not found. Its turn on a noEdit item runs in R's assistant (turnWs),
+ *  whose scope holds no Admin: a plain user of R there, as before. */
+const ADMIN_ALLOWED: Record<Need, Place[]> = {
+  read: ['allowed', 'editOnly', 'noEdit'],
+  edit: ['allowed', 'editOnly', 'noEdit'],
+  manage: ['allowed', 'editOnly', 'noEdit'],
+};
+const ADMIN_TURN_ALLOWED: Record<Need, Place[]> = {
+  read: ['allowed', 'editOnly', 'noEdit'],
+  edit: ['allowed', 'editOnly'],
+  manage: ['allowed', 'editOnly'],
+};
+const allowedOf = (who: Who, way: Way = 'mcp') =>
+  who === 'admin' ? (way === 'turn' ? ADMIN_TURN_ALLOWED : ADMIN_ALLOWED) : ALLOWED;
 const PLACES: readonly Place[] = ['noRead', 'noEdit', 'editOnly', 'allowed'];
 
 /** What a store root holds: every file but SQLite's journals, its size,
@@ -159,10 +178,12 @@ describe.skipIf(!DB_URL)(
         return [[ws.O, true, false]];
       }
       if (place === 'allowed') return [[ws.admin, true, false]];
+      // R, where the owner is a plain user: a grant to Admin with Write off
+      // is no longer read only to its Moderators (0383).
       if (place === 'noEdit')
         return [
           [ws.X, true, false],
-          [ws.admin, false, false],
+          [ws.R, false, false],
         ];
       if (place === 'editOnly')
         return [
@@ -242,7 +263,15 @@ describe.skipIf(!DB_URL)(
     /** The workspace whose assistant runs `who`'s turn on a `p` item: one
      *  that reads it where the login does. */
     const turnWs = (who: Who, p: Place) =>
-      who === 'admin' ? ws.admin : p === 'allowed' ? ws.H : p === 'editOnly' ? ws.W : ws.R;
+      who === 'admin'
+        ? p === 'noEdit'
+          ? ws.R
+          : ws.admin
+        : p === 'allowed'
+          ? ws.H
+          : p === 'editOnly'
+            ? ws.W
+            : ws.R;
 
     /** One call in an assistant turn, as `who`, the builtin's row (or one
      *  made for an MCP-only builtin, as /api/v1 makes it). */
@@ -342,10 +371,22 @@ describe.skipIf(!DB_URL)(
 
     type Cell = Outcome & { changed: boolean };
 
+    /** A move's own: the owner moderates Admin, which holds its editOnly
+     *  item (Write on) and the folder it lands in (placed as its allowed,
+     *  homed in Admin): a move inside Admin (0383). */
+    const MOVE_INSIDE: Tool['nowBy'] = { admin: { editOnly: 'ok' } };
+
+    /** The placements a tool runs on for `who`: all, or with `places` (a
+     *  write whose success needs more than the fixture holds) the ones the
+     *  login is refused on, so the Admin seat's editOnly and noEdit, its own
+     *  since decision A, leave such a tool's list. */
+    const placesOf = (tool: Tool, who: Who, way: Way): readonly Place[] =>
+      tool.places ? tool.places.filter((p) => !allowedOf(who, way)[tool.need].includes(p)) : PLACES;
+
     /** One cell: was (pre-check on) and now (bypassed) on fresh items. */
     const runCell = async (family: string, tool: Tool, who: Who, p: Place, way: Way) => {
       const effective: Place = tool.adminKind ? (who === 'admin' ? 'allowed' : 'noRead') : p;
-      const allowed = ALLOWED[tool.need].includes(effective);
+      const allowed = allowedOf(who, way)[tool.need].includes(effective);
       const wantNow =
         tool.nowBy?.[who]?.[effective] ?? tool.now?.[effective] ?? (allowed ? 'ok' : 'refused');
       const once = async (precheck: boolean): Promise<Cell> => {
@@ -729,8 +770,9 @@ describe.skipIf(!DB_URL)(
             who: ADMIN,
             make: note,
             input: (it) => ({ node_id: it.id }),
-            // It writes nothing since the levels went: every call is refused.
-            now: { allowed: 'refused' },
+            // It writes nothing since the levels went: every call is refused
+            // (the Admin user manages editOnly and noEdit too, decision A).
+            now: { allowed: 'refused', editOnly: 'refused', noEdit: 'refused' },
           },
         ],
       },
@@ -781,6 +823,7 @@ describe.skipIf(!DB_URL)(
             slug: 'tree_folder_update',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: async (w, p) => {
               const dest = await notesFolder(w, 'allowed');
               const it = await notesFolder(w, p);
@@ -847,6 +890,7 @@ describe.skipIf(!DB_URL)(
             slug: 'page_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: async (w, p) => {
               const pageDest = idIn(
                 await sysTool('tree_folder_create', { kind: 'pages', name: `${tag} pf ${n()}` }),
@@ -862,9 +906,12 @@ describe.skipIf(!DB_URL)(
             // workspaces it adds (the destination's, the caller's own) and
             // waits for confirm; a scope that may not move the page hears
             // that first now, then the database's refusal once confirmed.
+            // The Admin user manages its noEdit page (decision A): a move
+            // into Admin's folder adds Admin, so it waits for confirm.
             slug: 'page_move',
             need: 'manage',
             who: BOTH,
+            nowBy: { admin: { editOnly: 'ok', noEdit: 'refused' } },
             make: async (w, p) => {
               const pageDest = idIn(
                 await sysTool('tree_folder_create', { kind: 'pages', name: `${tag} pf ${n()}` }),
@@ -1096,6 +1143,7 @@ describe.skipIf(!DB_URL)(
             slug: 'file_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: withDest(filesFile),
             input: (it) => ({ file_id: it.id, dest_path: it.extra.dest, confirm: true }),
             disk: filesDisk,
@@ -1104,6 +1152,7 @@ describe.skipIf(!DB_URL)(
             slug: 'folder_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: withDest(filesFolder),
             input: (it) => ({ folder_id: it.id, dest_parent_path: it.extra.dest, confirm: true }),
             disk: filesDisk,
@@ -1286,6 +1335,7 @@ describe.skipIf(!DB_URL)(
             slug: 'tree_item_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: async (w, p) => {
               const dest = await notesFolder(w, 'allowed');
               const it = await note(w, p);
@@ -1372,6 +1422,9 @@ describe.skipIf(!DB_URL)(
             // member that may manage the app lowers it to team rules first
             // (the author ceiling), as with the pre-check: its own app.
             now: { allowed: 'refused' },
+            // The Admin user manages the app on editOnly and noEdit too
+            // (decision A): the publish refuses there as on allowed.
+            nowBy: { admin: { editOnly: 'refused', noEdit: 'refused' } },
             partial: { member: ['allowed'] },
           },
           { slug: 'node_share', need: 'edit', who: BOTH, make: page, input: byId },
@@ -1510,7 +1563,8 @@ describe.skipIf(!DB_URL)(
                where w.id = u.workspace_id and not w.is_admin
                  and u.login_id in (${owner}, ${mem})`;
       await raw`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.W}, ${mem}, false)`;
+      values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.W}, ${mem}, false),
+             (${ws.R}, ${owner}, false)`;
       for (const [key, wsId] of Object.entries(ws)) {
         const id = randomUUID();
         agentOf[wsId] = id;
@@ -1575,7 +1629,9 @@ describe.skipIf(!DB_URL)(
           for (const who of tool.who) {
             for (const way of tool.ways ?? ['mcp']) {
               it(`${tool.slug} (${tool.need}) as ${who} (${way}): refused by the database where the pre-check refused`, async () => {
-                for (const p of tool.adminKind ? (['allowed'] as const) : (tool.places ?? PLACES)) {
+                for (const p of tool.adminKind
+                  ? (['allowed'] as const)
+                  : placesOf(tool, who, way)) {
                   const c = await runCell(family.name, tool, who, p, way);
                   check(c, `${tool.slug} ${way} ${who}/${p}`);
                 }
@@ -1597,7 +1653,7 @@ describe.skipIf(!DB_URL)(
         const mismatched: string[] = [];
         for (const tool of family.tools) {
           for (const who of tool.who) {
-            for (const p of tool.adminKind ? (['allowed'] as const) : (tool.places ?? PLACES)) {
+            for (const p of tool.adminKind ? (['allowed'] as const) : placesOf(tool, who, 'turn')) {
               const it0 = await tool.make(who, p);
               const input = tool.input(it0);
               const queued = await queueInTurn(who, p, tool.slug, input);
@@ -1676,7 +1732,10 @@ describe.skipIf(!DB_URL)(
     }, 300_000);
 
     it('tree_item_move: a list with one item the scope may not move moves none of them', async () => {
-      for (const who of BOTH) {
+      // The member only: an Admin user counts as a Moderator of the home of
+      // any item it reads (owner page d7313c67, decision A), so on its own
+      // MCP surface no item it reads is one it may not move or manage.
+      for (const who of ['member'] as const) {
         for (const precheck of [true, false]) {
           const dest = await notesFolder(who, 'allowed');
           const mine = await note(who, 'allowed');
@@ -1745,7 +1804,10 @@ describe.skipIf(!DB_URL)(
       async (mode) => {
         await editCheck(mode);
         try {
-          for (const who of BOTH) {
+          // The member only: an Admin user counts as a Moderator of the home of
+          // any item it reads (owner page d7313c67, decision A), so on its own
+          // MCP surface no item it reads is one it may not move or manage.
+          for (const who of ['member'] as const) {
             /** A folder the caller reads and may not manage, holding `what`. */
             const folder = async (what: 'empty' | 'visible' | 'hidden' | 'untracked') => {
               const it = await filesFolder(who, 'noEdit');
@@ -1806,7 +1868,10 @@ describe.skipIf(!DB_URL)(
       async (mode) => {
         await editCheck(mode);
         try {
-          for (const who of BOTH) {
+          // The member only: the Admin user edits every item it reads
+          // (owner page d7313c67, decision A), so none is a reader that may
+          // not edit on its own MCP surface.
+          for (const who of ['member'] as const) {
             const cells: [
               string,
               (w: Who, p: Place) => Promise<Item>,
@@ -1857,7 +1922,10 @@ describe.skipIf(!DB_URL)(
     );
 
     it('names (edit check on): a caller that may not move or rename a file is not told a name is taken by a file it does not read', async () => {
-      for (const who of BOTH) {
+      // The member only: an Admin user counts as a Moderator of the home of
+      // any item it reads (owner page d7313c67, decision A), so on its own
+      // MCP surface no item it reads is one it may not move or manage.
+      for (const who of ['member'] as const) {
         const answers: Record<string, string[]> = { file_move: [], file_rename: [] };
         for (const clash of [false, true]) {
           // file_move: a file the caller may not move, to a folder of its own

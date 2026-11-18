@@ -42,8 +42,9 @@ const PINS = join(__dirname, '../../../scripts/arch-scoreboard.pins.json');
 const A8_TOOL_RUN_CEILING = 9000;
 
 /** The route cells' size ceiling: cells x check modes (each a request, a
- *  hidden one two). */
-const A8_ROUTE_RUN_CEILING = 3000;
+ *  hidden one two). 3000 to 3500 for the plain user of R (readUser, 0383
+ *  fix round 1): 3328 runs, a reader that may not edit on every route. */
+const A8_ROUTE_RUN_CEILING = 3500;
 
 /** The A8 counts (a8Uncovered, a8Exempt), and what makes them. */
 function a8Counts() {

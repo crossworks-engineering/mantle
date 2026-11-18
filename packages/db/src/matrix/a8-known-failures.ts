@@ -10,54 +10,10 @@
  * list only shrinks). The suites: docs/actors.md, "Proof".
  */
 
-/** P1. Below on (an emergency only: the checks' floor, migration 0301,
- *  docs/actors.md, "Checks and modes"): a tool's edit of an item the scope
- *  reads and may not change is made, because no TypeScript item pre-check
- *  runs and the database refuses it only with the checks on (warn logs it
- *  as a miss, off makes it silently). The same cells pass in `on`, the only
- *  mode a box runs in. The owner accepted it as a known limit of the
- *  emergency modes. */
-const P1 = 'P1 below on: a tool edit the database refuses only when on';
-
-/** The surface cells P1 fails (the pairwise pick is stable: a8-grid.ts),
- *  in off and in warn. Not `pending turn/readGrant edit task @root`: a call
- *  that waits for approval on an item its scope may not change is refused
- *  before it is queued, in every mode, as the oracle answers. */
-const BELOW_ON_TOOL_EDITS: readonly string[] = [
-  'peer login/readGrant edit formula @folder',
-  'recipe turn/readGrant edit formula @root',
-  'recipe turn/readGrant edit note @folder',
-  'recipe turn/readGrant edit note @root',
-  'team-turn turn/readGrant edit note @folder',
-  'team-turn turn/readGrant edit task @folder',
-  'team-turn turn/readGrant edit task @root',
-  'web-turn turn/readGrant edit note @folder',
-];
-
-/** The tool cells (a8-tool-cells.matrix.test.ts) P1 fails in warn,
- *  where both checks report and refuse nothing: the read grant's member's
- *  edit through a turn and over MCP is made. The same cells pass in `on`. */
-const BELOW_ON_TOOL_CELLS: readonly string[] = [
-  'formula_update edit formula @root',
-  'recall_map_update edit recall @root',
-  'recall_card_delete edit recall @root',
-  'recall_card_put edit recall @root',
-  'task_update edit task @root',
-  'note_update edit note @root',
-  'event_update edit event @root',
-  'page_update edit page @root',
-  'table_update edit table @root',
-  'present_update edit present @root',
-  // A folder's description (the seeded item's probe reads the node's data).
-  'folder_describe edit branch @root',
-  'folder_describe edit branch @folder',
-].flatMap((c) => {
-  const [tool, ...rest] = c.split(' ');
-  return [
-    `tool:${tool} web-turn turn/readGrant ${rest.join(' ')}`,
-    `tool:${tool} mcp-oauth login/readGrant ${rest.join(' ')}`,
-  ];
-});
+/* P1 (below on: a tool edit the database refuses only when on) is gone:
+ * every cell it listed was the read grant's member, a Moderator of R, and
+ * since 0383 a Moderator of a workspace that holds an item edits it, Write
+ * on or off (owner page d7313c67), so those cells pass in every mode. */
 
 /** A hidden folder path shows to an Admin user: file_create makes
  *  the missing folders of its path (makesFolders), so a free path is made
@@ -94,21 +50,12 @@ const known = (
 ): KnownFailure => (modes ? { finding, reason, modes } : { finding, reason });
 
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
-  // The tool cells: P1 in warn, the findings in both modes.
-  ...Object.fromEntries(
-    BELOW_ON_TOOL_CELLS.map((name) => [name, known(P1, 'changed, the oracle denies', ['warn'])]),
-  ),
+  // The tool cells: the findings in both modes.
   ...Object.fromEntries(
     HIDDEN_PATH_SHOWS.map((name) => [name, known(S11A_1, "not a random uuid's answer")]),
   ),
   // The grid (SQL): none.
-  // The surface cells (all three check modes unless named).
-  ...Object.fromEntries(
-    BELOW_ON_TOOL_EDITS.map((name) => [
-      name,
-      known(P1, 'changed, the oracle denies', ['off', 'warn']),
-    ]),
-  ),
+  // The surface cells: none.
 };
 
 /**
