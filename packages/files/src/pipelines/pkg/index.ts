@@ -19,6 +19,7 @@ export const PIPELINE_PACKAGES: StepLoaders = {
   'drawing-cad': () => import('./drawing-cad/step'),
   'drawing-pdf': () => import('./drawing-pdf/step'),
   'iso-title-block': () => import('./iso-title-block/step'),
+  'pdf-page-read': () => import('./pdf-page-read/step'),
   'pdf-router': () => import('./pdf-router/step'),
   'pdf-sheet-read': () => import('./pdf-sheet-read/step'),
   'plan-mspdi': () => import('./plan-mspdi/step'),

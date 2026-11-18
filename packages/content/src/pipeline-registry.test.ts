@@ -51,10 +51,10 @@ describe('the registry of a box with the built-ins only', () => {
     for (const ext of ['docx', 'txt', 'xlsm', '']) expect(pipelines.readerFor(ext), ext).toBeNull();
   });
 
-  it('the reader of a PDF for each kind the router names: drawing-pdf, none for a document', () => {
+  it('the reader of a PDF for each kind the router names: drawing-pdf, pdf-pages for a book, none for a document', () => {
     for (const kind of PDF_KINDS) {
       expect(pipelines.readerFor('pdf', kind)?.id ?? null, kind).toBe(
-        kind === 'document' ? null : 'drawing-pdf',
+        kind === 'document' ? null : kind === 'book' ? 'pdf-pages' : 'drawing-pdf',
       );
     }
     // A kind on a type with no router: the reader of the extension.

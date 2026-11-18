@@ -89,6 +89,11 @@ OCR_IN_FLIGHT = 3
 PICTURES_MAX_BYTES = 60 * 1024 * 1024
 
 OCR_FAILED = "Tesseract could not read some pages; they are marked for vision."
+# The time a window spends drawing pages for OCR, at most (seconds): the
+# job's end is 240 s (PARSER_JOB_TIMEOUT_MS.pipelineRun), and a job that
+# ends loses its whole window. A page after it goes to vision.
+OCR_BUDGET_S = 180
+OCR_LATE = "The OCR time of this window ran out; its last pages are marked for vision."
 
 # Tables.
 EDGE_TOLERANCE = 0.02  # column edges of a continued table, share of the page width
@@ -852,11 +857,11 @@ def read_pages(path, job, opts, request):
     try:
         count = len(pdf)
         first, total, last_window = window_of(request, count)
+        deadline = time.monotonic() + OCR_BUDGET_S
         pool = ThreadPoolExecutor(max_workers=OCR_WORKERS)
         waiting = deque()
 
         def finish(item):
-            nonlocal pics_bytes, pics_left_out
             n, arr, drawn, png, paper, grids, fut = item
             got = fut.result()
             try:
@@ -879,17 +884,23 @@ def read_pages(path, job, opts, request):
                 if want_tables and method == "ocr":
                     tables_by_page[n] = scan_page_tables(arr.shape, grids, words, lines, n, "ocr")
             if pages[n]["method"] == "vision":
-                name = "page-%05d.png" % n
-                at = os.path.join(job, name)
-                size = picture_of(arr, drawn, pic_dpi, at)
-                if pics_bytes + size > PICTURES_MAX_BYTES:
-                    os.remove(at)
-                    pics_left_out += 1
-                else:
-                    pics_bytes += size
-                    head = heading_of_text(pages[n]["text"])
-                    caption = "Page %d%s" % (n, ": " + head if head else "")
-                    pics.append({"file": name, "mime": "image/png", "caption": caption[:200], "page": n})
+                keep_picture(n, arr, drawn)
+
+        def keep_picture(n, arr, drawn):
+            """G1: the PNG of a page marked for vision, one of the file's
+            pictures, while the answer's picture budget lasts."""
+            nonlocal pics_bytes, pics_left_out
+            name = "page-%05d.png" % n
+            at = os.path.join(job, name)
+            size = picture_of(arr, drawn, pic_dpi, at)
+            if pics_bytes + size > PICTURES_MAX_BYTES:
+                os.remove(at)
+                pics_left_out += 1
+                return
+            pics_bytes += size
+            head = heading_of_text(pages[n]["text"])
+            caption = "Page %d%s" % (n, ": " + head if head else "")
+            pics.append({"file": name, "mime": "image/png", "caption": caption[:200], "page": n})
 
         with pdfplumber.open(path) as doc:
             for i in range(count):
@@ -914,12 +925,22 @@ def read_pages(path, job, opts, request):
                 native = native_dpi(pl) if pl is not None else None
                 if pl is not None:
                     pl.close()
-                arr, drawn = render(pdf, i, ocr_dpi_of(native, dpi))
+                late = time.monotonic() > deadline
+                arr, drawn = render(pdf, i, pic_dpi if late else ocr_dpi_of(native, dpi))
                 if float((arr < INK_LEVEL).mean()) < BLANK_INK_SHARE:
                     pages[n] = {"paper": paper, "method": "blank", "conf": None, "text": ""}
                     continue
+                if late:
+                    # Past the OCR budget of a window: the page goes to vision
+                    # with its picture, never lost (the job's end would lose
+                    # the whole window).
+                    pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
+                    keep_picture(n, arr, drawn)
+                    if OCR_LATE not in warnings:
+                        warnings.append(OCR_LATE)
+                    continue
                 # The ruled lines first: their grid places the words, and the
-                # picture Tesseract reads leaves them out.
+                # picture Tesseract reads leaves out the row lines.
                 if want_tables:
                     grids, ruled = ruled_grids(arr)
                     ocr_arr = np.where(ruled > 0, np.uint8(255), arr)
