@@ -32,7 +32,7 @@ const ORIGIN_RE = /^https?:\/\/[^\s;,'"*]+$/;
  *  list, not through it. Whether WebKit matches a custom-scheme source in
  *  frame-ancestors is for the app to confirm: if it does not, the frame is
  *  refused, never opened wider. */
-function frameAncestors(): string[] {
+export function frameAncestors(): string[] {
   const named = namedCorsOrigins().filter((s) => ORIGIN_RE.test(s));
   const client = (env('MANTLE_CLIENT_ORIGIN') ?? '').trim().replace(/\/+$/, '');
   return [

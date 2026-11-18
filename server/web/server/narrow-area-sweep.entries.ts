@@ -232,6 +232,9 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'DELETE /api/secrets/:id': {},
   'POST /api/secrets/:id/reveal': {},
   'POST /api/services/:name': { path: '/api/services/sandboxes', body: { enable: true } },
+  'POST /api/services/:name/frame-ticket': {
+    skip: 'writes no row: it signs a screen ticket; and Sync is off in the sweep, so it answers 404 (lib/service-screens.test.ts drives the ticket)',
+  },
   'POST /api/settings/worker-groups': {},
   'PATCH /api/settings/worker-groups/:id': { body: { name: 'sweep2', enabled: true } },
   'DELETE /api/settings/worker-groups/:id': {},

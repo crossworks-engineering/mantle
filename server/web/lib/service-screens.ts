@@ -10,6 +10,8 @@ import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 import { loginHasArea } from '@mantle/db';
 import { buildServiceFrameTicket, verifyServiceFrameTicket } from '@/lib/auth';
 import { SYNC_TOKEN_HEADER } from '@/lib/sidecar';
+import { requestOrigin } from '@/lib/auth-constants';
+import { frameAncestors } from '@/lib/canvas-frame';
 
 /** The services that serve screens. */
 export const SCREEN_SERVICES = ['sync'] as const;
@@ -19,14 +21,19 @@ const PATH_RE = /^\/[a-z0-9/-]{0,200}$/;
 /** The largest form a screen posts. */
 const FORM_MAX_BYTES = 256 * 1024;
 
-const CSP = [
-  "default-src 'none'",
-  "style-src 'unsafe-inline'",
-  "img-src 'none'",
-  "form-action 'self'",
-  "base-uri 'none'",
-  'frame-ancestors *',
-].join('; ');
+/** No script, no outside resource; forms post back to this brain only; the
+ *  frame may sit in the brain's own pages and its named clients (the canvas
+ *  frame's list). */
+function csp(req: Request): string {
+  return [
+    "default-src 'none'",
+    "style-src 'unsafe-inline'",
+    "img-src 'none'",
+    `form-action 'self' ${requestOrigin(req)}`,
+    "base-uri 'none'",
+    `frame-ancestors 'self' ${frameAncestors().join(' ')}`,
+  ].join('; ');
+}
 
 function plain(status: number, text: string): Response {
   return new Response(text, {
@@ -85,7 +92,7 @@ export async function serviceScreen(req: Request, service: string): Promise<Resp
     status: res.status,
     headers: {
       'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': CSP,
+      'content-security-policy': csp(req),
       'referrer-policy': 'no-referrer',
       'x-content-type-options': 'nosniff',
     },
