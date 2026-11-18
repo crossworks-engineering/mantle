@@ -18,6 +18,7 @@
  * are read at all, so the documents of a brain take no place in the scan.
  */
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { db, extractJobsFor, nodes } from '@mantle/db';
 import {
@@ -34,6 +35,7 @@ import {
   fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
+  finishedFileDbNames,
   readFileDbNone,
   type FileDbNoneWord,
 } from './file-dbs';
@@ -166,12 +168,24 @@ export async function listDataFiles(
   return { files, truncated };
 }
 
+/** A row's state for its status, from the folder's names (one read for
+ *  the whole list): built or not is the name alone; only a `.none` is
+ *  opened, for its word. No size: that is the processing answer's. */
+async function rowDbState(id: string, sha: unknown, names: Set<string>): Promise<DataFileState> {
+  const own = fileDbPaths(id, sha);
+  if (!own) return 'not-built';
+  if (names.has(path.basename(own.sqlite))) return 'ready';
+  if (!names.has(path.basename(own.none))) return 'not-built';
+  return (await readFileDbNone(id, sha)) ?? 'not-built';
+}
+
 /**
  * File rows with their Data view (withDataView) and their compact `status`
  * (file-status.ts): ONE read of the queue for the whole list
- * (extractJobsFor), and a look on disk only for the rows with a Data view,
- * a few at a time, as the list of data files does. The rows are what the
- * caller's scope already read.
+ * (extractJobsFor), and ONE read of the folder of databases when a row has
+ * a Data view (finishedFileDbNames); a `.none` is opened for its word, a
+ * few at a time. A folder of many built spreadsheets costs no look per
+ * file. The rows are what the caller's scope already read.
  */
 export async function withFileStatus<
   T extends { id: string; filename: string; sha256: unknown; extraction: FileExtraction },
@@ -184,13 +198,14 @@ export async function withFileStatus<
     withDataView(rows, dbExts),
     extractJobsFor(rows.map((r) => r.id)),
   ]);
+  const names = viewed.some((row) => row.dataView)
+    ? await finishedFileDbNames()
+    : new Set<string>();
   const out: (T & { dataView: boolean; status: FileStatus })[] = [];
   for (let i = 0; i < viewed.length; i += DISK_BATCH) {
     const batch = viewed.slice(i, i + DISK_BATCH);
     const dbs = await Promise.all(
-      batch.map((row) =>
-        row.dataView ? fileDbStateOf(row.id, row.sha256).then((s) => s.state) : undefined,
-      ),
+      batch.map((row) => (row.dataView ? rowDbState(row.id, row.sha256, names) : undefined)),
     );
     batch.forEach((row, j) => {
       out.push({

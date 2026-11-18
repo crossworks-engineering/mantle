@@ -12,12 +12,16 @@
  *    queue) and the state of its database.
  *  - A read failure is `failed` with the reason; a scan read in part is
  *    `partial` with its pages.
+ *  - Mentions are counted in an Admin scope only (null elsewhere); facts and
+ *    items made from the file are the current ones; a key limited to some
+ *    areas and an app see only the derived kinds of their reach.
+ *  - A row's database state comes from one read of the folder of databases.
  *
  * No owner session is made: the logins are rows of the scratch database.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/app/api/files/file-processing-route.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -43,6 +47,7 @@ describe.skipIf(!URL)('file status and processing: the file read gate is the one
   let folderId = '';
   let folderPath = '';
   let derivedId = '';
+  let adminWsId = '';
   /** A job row could be put in the queue (a minimal pgboss.job here). */
   let queued = false;
 
@@ -89,6 +94,7 @@ describe.skipIf(!URL)('file status and processing: the file read gate is the one
         from workspaces where owner_id = ${owner}`);
     const teamWs = ws.find((w) => w.key === 'team')!.id;
     const adminWs = ws.find((w) => w.key === 'admin')!.id;
+    adminWsId = adminWs;
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${admin}, false) on conflict do nothing`);
     await su(
@@ -213,6 +219,8 @@ describe.skipIf(!URL)('file status and processing: the file read gate is the one
     expect(got.status, got.text).toBe(200);
     expect(got.body!.file.id).toBe(fileId);
     expect(got.body!.derived).toEqual({ items: [], truncated: false });
+    // Entity edges are read in an Admin scope only: not counted, never a false 0.
+    expect(got.body!.mentions).toBeNull();
   });
 
   it('a member who does not read the file gets the 404 of the file route', async () => {
@@ -271,5 +279,63 @@ describe.skipIf(!URL)('file status and processing: the file read gate is the one
       error: null,
       images: { kept: 3, found: 5 },
     });
+  });
+
+  it('counts current facts only and lists no superseded item', async () => {
+    await su(sql`insert into facts (owner_id, content, kind, source_node_id, valid_to) values
+      (${owner}, ${`${tag} now`}, 'factual', ${fileId}, null),
+      (${owner}, ${`${tag} replaced`}, 'factual', ${fileId}, now())`);
+    const older = await m.runAsSystem('test:file-processing-route', () =>
+      m.withCreateHome({ createWs: adminWsId, privateWs: null, quiet: true }, async () =>
+        (await import('@mantle/content')).createTable(owner, {
+          title: `${tag} older`,
+          sourceFileId: fileId,
+          data: { columns: [], rows: [] },
+        }),
+      ),
+    );
+    await m.withHeads([older.id], 'update', async (tx) => {
+      await tx.execute(sql`update nodes set superseded_by = ${derivedId} where id = ${older.id}`);
+    });
+    const got = await processing(admin);
+    expect(got.status, got.text).toBe(200);
+    expect(got.body!.facts).toBe(1);
+    expect(got.body!.mentions).toBe(0);
+    expect(got.body!.derived.items.map((i) => i.id)).toEqual([derivedId]);
+  });
+
+  it('a key limited to Files and an app see no Table made from the file', async () => {
+    const { fileProcessing } = await import('@mantle/tools');
+    const as = (reach: Parameters<typeof fileProcessing>[2]) =>
+      m.runAsSystem('test:file-processing-route', () => fileProcessing(owner, fileId, reach));
+    const ids = (p: FileProcessing | null) => p!.derived.items.map((i) => i.id);
+    expect(ids(await as({ areas: null }))).toEqual([derivedId]);
+    expect(ids(await as({ areas: ['files', 'tables'] }))).toEqual([derivedId]);
+    expect(ids(await as({ areas: ['files'] }))).toEqual([]);
+    expect(ids(await as({ areas: null, app: true }))).toEqual([]);
+  });
+
+  it("a row's database state is read from the folder's names", async () => {
+    const sha = (await processing(admin)).body!.file.sha256!;
+    const dbs = path.join(dir, 'files', '.file-dbs');
+    const base = path.join(dbs, `${fileId}.${sha.slice(0, 16)}`);
+    const rowDb = async () => {
+      const res = await get(admin, `/api/files/files?parent=${encodeURIComponent(folderPath)}`);
+      expect(res.status).toBe(200);
+      const rows = ((await res.json()) as { files: Array<{ id: string; status?: FileStatus }> })
+        .files;
+      return rows.find((r) => r.id === fileId)?.status?.db;
+    };
+    await mkdir(dbs, { recursive: true });
+    try {
+      expect(await rowDb()).toBe('not-built');
+      await writeFile(`${base}.none`, 'too-large\n');
+      expect(await rowDb()).toBe('too-large');
+      await writeFile(`${base}.sqlite`, '');
+      expect(await rowDb()).toBe('ready');
+    } finally {
+      await rm(`${base}.none`, { force: true });
+      await rm(`${base}.sqlite`, { force: true });
+    }
   });
 });

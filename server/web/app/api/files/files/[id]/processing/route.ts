@@ -3,7 +3,7 @@ import { emailAttachmentIds } from '@mantle/files';
 import { fileProcessing } from '@mantle/tools';
 import type { FileProcessing } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
-import { callerMayReadEmail } from '@/lib/api-v1';
+import { callerKeyAreas, callerMayReadEmail } from '@/lib/api-v1';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -24,7 +24,8 @@ export const policy = routePolicy({
  * @mantle/tools). The read gate is the file's own: it is read in the
  * caller's scope, and a file the caller does not read is a 404, as on
  * GET /api/files/files/:id; an API key without the Search area does not
- * reach an email attachment (access matrix M4), as there.
+ * reach an email attachment (access matrix M4), as there. The items made
+ * from the file are held to the key's areas, as the tool holds them.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
@@ -32,7 +33,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!callerMayReadEmail() && (await emailAttachmentIds(user.id, [id])).has(id)) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  const answer = await fileProcessing(user.id, id);
+  const answer = await fileProcessing(user.id, id, { areas: callerKeyAreas() });
   if (!answer) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json(answer satisfies FileProcessing);
 }
