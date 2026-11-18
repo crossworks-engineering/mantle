@@ -245,10 +245,13 @@ export async function maybeExtractEmbeddedImages(
   // The pictures a file leaves out are stamped on it once the new ones are
   // saved (a save that failed is a picture not kept), and a stamp of an
   // earlier read that left none out goes (G4). Never fatal.
+  const foundTotal = keptTotal + picturesLeftOutOf(result);
   const stamp = (notSaved: number) =>
-    stampPicturesLeftOut(node, ownerId, result, keptTotal - notSaved).catch((err: unknown) => {
-      log('extractor').warn(`picture count not stamped: ${errorMessage(err)}`);
-    });
+    stampPicturesLeftOut(node, ownerId, result, keptTotal - notSaved, foundTotal).catch(
+      (err: unknown) => {
+        log('extractor').warn(`picture count not stamped: ${errorMessage(err)}`);
+      },
+    );
   // The pictures this file has from an earlier read keep their nodes (G5).
   if (have.size > 0) {
     result.images = result.images.filter((img) => !have.has(img.sha256));
@@ -874,8 +877,8 @@ async function stampPicturesLeftOut(
   ownerId: string,
   result: PdfPicturesRead,
   saved: number,
+  found: number,
 ): Promise<void> {
-  const found = result.images.length + picturesLeftOutOf(result);
   const kept = Math.max(0, Math.min(saved, found));
   const data = (node.data ?? {}) as Record<string, unknown>;
   if (kept === found && data.images === undefined) return;
