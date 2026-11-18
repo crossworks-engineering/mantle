@@ -105,8 +105,11 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
     expect(bookOf(null, sample(20))).toBe(false);
   });
 
-  it('a large sheet, a P&ID or an isometric in the sample is a drawing set', () => {
-    expect(bookOf(40, [...sample(19), { class: 'scan', size: 'a1' }])).toBe(false);
+  it('large sheets past a fifth of the sample, a P&ID or an isometric make a drawing set', () => {
+    const large: SamplePage = { class: 'scan', size: 'a1' };
+    // One fold-out sheet in a spec book: still a book.
+    expect(bookOf(40, [...sample(19), large])).toBe(true);
+    expect(bookOf(40, [...sample(15), ...sample(5, large)])).toBe(false);
     expect(bookOf(40, [...sample(19), { class: 'vector_text', size: 'a3', kind: 'pid' }])).toBe(
       false,
     );
@@ -195,6 +198,10 @@ describe('the step of pdf-page-read', () => {
     );
     expect(inputs(r.calls).map((c) => c.key)).toEqual(['page-2', 'page-3']);
     expect(drawn).toEqual([[2, 3]]);
+    // The marked page past the option is said, not cut in silence.
+    expect(r.warnings).toEqual([
+      '1 marked pages of this window are past the option pages (2), and are not read.',
+    ]);
   });
 
   it('another kind, or no marked page in the window, asks nothing', async () => {

@@ -18,16 +18,8 @@
       ],
       "name": "Orders",
       "rows": [
-        [
-          "Widget",
-          3,
-          12.5
-        ],
-        [
-          "Gadget",
-          10,
-          4.25
-        ]
+        ["Widget", 3, 12.5],
+        ["Gadget", 10, 4.25]
       ]
     },
     {
@@ -38,11 +30,7 @@
         }
       ],
       "name": "Notes",
-      "rows": [
-        [
-          "second sheet"
-        ]
-      ]
+      "rows": [["second sheet"]]
     }
   ]
 }

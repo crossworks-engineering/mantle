@@ -18,21 +18,9 @@
       ],
       "name": "Sheet1",
       "rows": [
-        [
-          "P-101",
-          "a note, with a comma",
-          50
-        ],
-        [
-          "P-102",
-          "a \"quoted\" word",
-          80
-        ],
-        [
-          "P-103",
-          "two\r\nlines in one cell",
-          90
-        ]
+        ["P-101", "a note, with a comma", 50],
+        ["P-102", "a \"quoted\" word", 80],
+        ["P-103", "two\r\nlines in one cell", 90]
       ]
     }
   ]
