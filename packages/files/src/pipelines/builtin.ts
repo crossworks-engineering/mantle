@@ -34,7 +34,14 @@
  */
 import { TITLE_BLOCK_MM } from '../pdf-rows';
 import { CAD_EXTS } from '../slug';
-import { PIPELINE_API, type PipelineManifest, type PipelineStamp, type ShapeId } from './contract';
+import {
+  PIPELINE_API,
+  PIPELINE_ASK_PAGE_MAX,
+  PIPELINE_WINDOW_DEFAULT,
+  type PipelineManifest,
+  type PipelineStamp,
+  type ShapeId,
+} from './contract';
 import { shapesOf } from './shapes';
 
 // The match keeps its own type, so an `after` built-in (one with
@@ -151,10 +158,12 @@ export const BUILTIN_PIPELINES = [
     description:
       'Names the kind of a PDF from its pages: a P&ID, an isometric, a scan, another drawing or a document. When its rules are unsure it asks the decider once, at most. The reader that claims the kind reads the file. It writes no tabs.',
     // 1.0.1 (2026-11-17): the kind rules of PDF_KIND_RULES_VERSION 2.
-    version: '1.0.1',
+    // 1.1.0 (2026-11-18): the kind `book` (PDF_KIND_RULES_VERSION 3).
+    version: '1.1.0',
     match: { ext: ['pdf'] },
-    // The ten kinds of PDF_KINDS (../pdf-kind.ts). The rules name six; the
-    // decider may also answer the four marked, for an unsure file.
+    // The eleven kinds of PDF_KINDS (../pdf-kind.ts). The rules name seven
+    // (`book` by its own rule, bookOf); the decider may also answer the four
+    // marked, for an unsure file.
     produces: {
       kinds: [
         { kind: 'pid' },
@@ -167,6 +176,7 @@ export const BUILTIN_PIPELINES = [
         { kind: 'other_drawing' },
         { kind: 'document' },
         { kind: 'unsure' },
+        { kind: 'book' },
       ],
     },
     // The deadline of the old path's job (PARSER_JOB_TIMEOUT_MS.pdfDrawing).
@@ -180,11 +190,13 @@ export const BUILTIN_PIPELINES = [
     // 1.1.0 (2026-11-17): a code in a table is no tag (column In a table),
     // the words of every page, the tab Segments, the column Vision text,
     // and the kind rules of PDF_KIND_RULES_VERSION 2.
-    version: '1.1.0',
-    // Every kind the router names but `document`: a document gets no
-    // database. An unsure PDF gets one, as before the router. A new claim
-    // changes the pin and no row, so the version stays (docs/pipelines.md,
-    // "The router").
+    // 1.1.1 (2026-11-18): the kind rules of PDF_KIND_RULES_VERSION 3 (the
+    // File tab's Rules version).
+    version: '1.1.1',
+    // Every kind the router names but `document` and `book`: a document gets
+    // no database, and a book is the book reader's (`pdf-pages`). An unsure
+    // PDF gets one, as before the router. A new claim changes the pin and
+    // no row, so the version stays (docs/pipelines.md, "The router").
     match: {
       ext: ['pdf'],
       kind: [
@@ -392,6 +404,94 @@ export const BUILTIN_PIPELINES = [
     // cap of a file.
     needs: { weight: 'heavy', timeMs: 240_000, workers: { vision: 31 } },
   }),
+  // The book reader (the large-PDF plan, page 4ff4d4e5, sections 3.2 and
+  // 4): a PDF the router named a `book`, read in page windows of 50 pages
+  // or 50 MB (Jason's word, 2026-11-18). Model-free, in Python
+  // (server/parser/cad/pdf_pages.py): the text layer (pdfplumber), else
+  // local OCR (pypdfium2 and Tesseract), the tables into tabs of their own,
+  // and a PNG of each page it leaves to vision (G1). Its text stands over
+  // the core's PDF read (P2: it claims a kind and gives text).
+  pkgPython({
+    id: 'pdf-pages',
+    entry: 'pdf_pages.py',
+    name: 'PDF book',
+    description:
+      'Reads a long PDF the router names a book, page by page: the text layer, else local OCR. It writes the tabs Pages and Tables, one tab for each table with the page of each row, and the text by page. It asks no model.',
+    version: '1.0.0',
+    match: { ext: ['pdf'], kind: ['book'] },
+    produces: { text: true, pictures: true, table: false, pages: true },
+    // The lane comes from the extension (extractWeightOfExt): light, as
+    // every reader of a type. One window a job: Tesseract takes about 1.8 s
+    // a page on one CPU, two at once, so a window of 50 scanned pages takes
+    // about a minute; the step stops its OCR at 180 s (OCR_BUDGET_S) and
+    // leaves the pages after it to vision.
+    needs: { weight: 'light', timeMs: 240_000, window: { ...PIPELINE_WINDOW_DEFAULT } },
+    options: {
+      text_min_chars: {
+        type: 'number',
+        label: 'Characters of a text page',
+        help: 'A page whose text layer holds this many characters (spaces left out) is read from it, with no OCR.',
+        default: 40,
+        min: 1,
+        max: 10_000,
+      },
+      ocr_min_confidence: {
+        type: 'number',
+        label: 'OCR confidence floor',
+        help: 'A scanned page whose mean OCR confidence is under this is read by the Agent pdf-page-read with vision.',
+        default: 70,
+        min: 0,
+        max: 100,
+      },
+      ocr_dpi: {
+        type: 'number',
+        label: 'OCR dots per inch, at most',
+        help: 'A scan is read at its own dots, up to this; a scan of fewer than 200 dots is drawn at this.',
+        default: 300,
+        min: 100,
+        max: 600,
+      },
+      tables: {
+        type: 'bool',
+        label: 'Tables',
+        help: 'Find the tables of the pages and write each into a tab of its own, with the tab Tables.',
+        default: true,
+      },
+    },
+  }),
+  // The book's Agent: vision for the pages the book reader marked
+  // `vision` (OCR read them badly, or a figure), one ask a page, keyed
+  // `page-<N>` (./pkg/pdf-page-read). Its text of a page stands over the
+  // Reader's (P3, `produces.pages`). It reads in the same page windows.
+  pkgAgent({
+    id: 'pdf-page-read',
+    name: 'PDF page read',
+    description:
+      'Reads by vision the pages of a PDF book that OCR read badly, or that hold a figure, one ask a page, into the tab Page text. It runs after an upload and on demand, and reads no page the book reader read well.',
+    version: '1.0.0',
+    match: { ext: ['pdf'] },
+    options: {
+      pages: {
+        type: 'number',
+        label: 'Pages to read',
+        help: 'The most pages of a file to read with vision, from its first marked page. One ask a page.',
+        default: 2000,
+        min: 1,
+        max: 10_000,
+      },
+    },
+    produces: { tabs: ['Page text'], pages: true },
+    // One step a window and no model in it: the pictures of the window's
+    // marked pages, drawn in the parser's pdfjs child. The cap of a file is
+    // the page cap of an ask (PIPELINE_ASK_PAGE_MAX); the option and the
+    // box's day cap bound a run.
+    needs: {
+      weight: 'heavy',
+      timeMs: 240_000,
+      workers: { vision: PIPELINE_ASK_PAGE_MAX },
+      window: { ...PIPELINE_WINDOW_DEFAULT },
+    },
+  }),
 ] as const;
 
 /** A built-in, with its id as a literal. */
@@ -460,13 +560,18 @@ export function isReader(manifest: Pick<PipelineManifest, 'match' | 'router' | '
   return roleOf(manifest) === 'reader';
 }
 
-/** Extension -> its reader. An `after` pipeline or a router is never one. */
+/** Extension -> its reader. An `after` pipeline or a router is never one.
+ *  The first reader of an extension in the list is its reader: a second
+ *  one of a routed type claims only a kind its router names (`pdf-pages`
+ *  claims `book`), and is found by readerFor with that kind. */
 export function readersByExt<P extends PipelineManifest>(
   pipelines: readonly P[],
 ): ReadonlyMap<string, P> {
-  return new Map(
-    pipelines.filter(isReader).flatMap((p) => p.match.ext.map((ext) => [ext, p] as const)),
-  );
+  const out = new Map<string, P>();
+  for (const p of pipelines.filter(isReader)) {
+    for (const ext of p.match.ext) if (!out.has(ext)) out.set(ext, p);
+  }
+  return out;
 }
 
 /** The extensions the readers of this list read: the file types that get a

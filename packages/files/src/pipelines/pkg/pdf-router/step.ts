@@ -3,9 +3,17 @@
  * the kind of a PDF and writes no tabs. The rules are kit (../../../pdf-kind.ts,
  * read through ../../../pdf-drawing.ts); this file is only the step.
  *
- * Step 1: read the page facts with no model, as the reader does, and name
- * the kind by the rules. A file the rules leave `unsure`, in a run that may
- * ask (`request.asks`), asks the worker `decider` once: its input is the
+ * Step 1, first the book rule (bookOf, the large-PDF plan section 3.1): a
+ * file past the size pdfjs opens (PDF_MAX_BYTES) is a `book`, read by the
+ * book reader in page windows; so is a file of more than BOOK_MIN_PAGES
+ * pages (qpdf's count, `job.pdfPageCount`, no page decode) whose first
+ * pages (BOOK_SAMPLE_PAGES, read as every page is) are office pages, mostly
+ * scans or typed text. A book is named with no ask and hands no facts: the
+ * book reader reads the file itself, window by window.
+ *
+ * Else read the page facts with no model, as the reader does, and name the
+ * kind by the rules. A file the rules leave `unsure`, in a run that may ask
+ * (`request.asks`), asks the worker `decider` once: its input is the
  * decider's state (counts and the text sample).
  *
  * The page facts go back as `facts` (at most PIPELINE_FACTS_MAX_BYTES as
@@ -24,6 +32,8 @@ import type { PipelineStep } from '../../contract';
 import { PIPELINE_FACTS_MAX_BYTES } from '../../contract';
 import { readPdfDrawingInJob, type PdfDrawing } from '../../../pdf-drawing';
 import { decidedKind, pdfKindAskFrom, pdfKindDecisionOf } from '../../../pdf-drawing-sheets';
+import { BOOK_MIN_PAGES, BOOK_SAMPLE_PAGES, bookOf } from '../../../pdf-kind';
+import { PDF_MAX_BYTES } from '../../../pdf-open';
 import { titleBlockOf } from '../../../pdf-rows';
 
 /** The facts as the reader takes them, or none: past the cap, or for a
@@ -38,7 +48,16 @@ function factsOf(drawing: PdfDrawing): { facts?: Record<string, unknown> } {
 
 export const step: PipelineStep = async (req, job) => {
   if (req.step === 1) {
-    const drawing = await readPdfDrawingInJob(await job.bytes(), job, titleBlockOf(req.options));
+    // Past the size pdfjs opens: no page rule can read it, the book reader
+    // can (qpdf cuts it in windows).
+    if ((req.file?.size ?? 0) > PDF_MAX_BYTES) return { status: 'ok', kind: 'book' };
+    const box = titleBlockOf(req.options);
+    const pages = await job.pdfPageCount();
+    if (pages !== null && pages > BOOK_MIN_PAGES) {
+      const sample = await readPdfDrawingInJob(await job.bytes(), job, box, BOOK_SAMPLE_PAGES);
+      if (bookOf(pages, sample.pages)) return { status: 'ok', kind: 'book' };
+    }
+    const drawing = await readPdfDrawingInJob(await job.bytes(), job, box);
     if (drawing.kind !== 'unsure' || req.asks !== true) {
       return { status: 'ok', kind: drawing.kind, ...factsOf(drawing) };
     }

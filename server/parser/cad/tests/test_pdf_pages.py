@@ -337,3 +337,22 @@ class Scans(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE, "pdfplumber, pypdfium2 or OpenCV is missing")
+class OcrBudget(unittest.TestCase):
+    def test_pages_past_the_ocr_budget_go_to_vision_with_their_picture(self):
+        d = tempfile.mkdtemp(prefix="pdf-pages-late-")
+        pages, _, _ = book_pdfs.book()
+        pdf = os.path.join(d, "late.pdf")
+        book_pdfs.write_pdf(pdf, pages[1:3], scan={1, 2})
+        old = pdf_pages.OCR_BUDGET_S
+        pdf_pages.OCR_BUDGET_S = -1
+        try:
+            r, job = run(pdf)
+        finally:
+            pdf_pages.OCR_BUDGET_S = old
+        tabs, inp = tabs_of(r)
+        self.assertEqual([row[2] for row in tabs["Pages"]["rows"]], ["vision", "vision"])
+        self.assertEqual([p["file"] for p in inp["pictures"]], ["page-00001.png", "page-00002.png"])
+        self.assertIn(pdf_pages.OCR_LATE, r["warnings"])
