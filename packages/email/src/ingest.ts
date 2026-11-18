@@ -87,19 +87,25 @@ export async function saveMailbox(
   const address = input.address.trim().toLowerCase();
   const provider = input.provider ?? 'imap';
   const [existing] = await db
-    .select({ id: emailAccounts.id, provider: emailAccounts.provider })
+    .select({
+      id: emailAccounts.id,
+      provider: emailAccounts.provider,
+      enabled: emailAccounts.enabled,
+    })
     .from(emailAccounts)
     .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.address, address)))
     .limit(1);
-  // One address, one way in: an IMAP mailbox and an Outlook inbox never
-  // share a row (switching one off would switch the other off). An old row
-  // of the same kind comes back, so its stored mail stays linked.
-  if (existing && existing.provider !== provider) {
+  // One address, one way in: a live IMAP mailbox and a live Outlook inbox
+  // never share a row (switching one off would switch the other off). A
+  // row that is off is taken over (its provider changes, its id and branch
+  // stay, so its stored mail stays linked), as before M4.
+  const takeOver = !!existing && existing.provider !== provider;
+  if (existing && takeOver && existing.enabled) {
     throw new ConflictError(
       `${address} is linked as ${existing.provider === 'microsoft' ? 'a Microsoft account' : 'a mailbox'} already. Remove that first.`,
     );
   }
-  if (existing) {
+  if (existing && !takeOver) {
     await db
       .update(emailAccounts)
       .set({
@@ -110,10 +116,23 @@ export async function saveMailbox(
       .where(eq(emailAccounts.id, existing.id));
     return existing.id;
   }
-  // A mailbox made (its branch path and provider): the full-route spot
-  // mail-account (access-matrix.ts NARROW_NEVER_INSERT).
-  const [row] = await onFullSystemRoute('mail-account', () =>
-    db
+  // A mailbox made, or its provider changed (its branch path and provider):
+  // the full-route spot mail-account (access-matrix.ts NARROW_NEVER_INSERT;
+  // provider never changes on the narrow login).
+  const id = await onFullSystemRoute('mail-account', async () => {
+    if (existing) {
+      await db
+        .update(emailAccounts)
+        .set({
+          provider,
+          displayName: input.displayName ?? null,
+          enabled: input.enabled ?? true,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailAccounts.id, existing.id));
+      return existing.id;
+    }
+    const [row] = await db
       .insert(emailAccounts)
       .values({
         userId: ownerId,
@@ -124,10 +143,11 @@ export async function saveMailbox(
         branchPath: input.branchPath ?? accountBranchPath(address),
         enabled: input.enabled ?? true,
       })
-      .returning({ id: emailAccounts.id }),
-  );
-  if (!row) throw new Error('insert into email_accounts returned no row');
-  return row.id;
+      .returning({ id: emailAccounts.id });
+    return row?.id;
+  });
+  if (!id) throw new Error('insert into email_accounts returned no row');
+  return id;
 }
 
 /** Switch a mailbox off (the sidecar removed its account). Its stored mail

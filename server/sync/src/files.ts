@@ -334,7 +334,12 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
     }
     let failed = 0;
     let lastFailure = '';
-    for (const item of plan.fetch.slice(0, FETCH_MAX)) {
+    let tried = 0;
+    for (const item of plan.fetch) {
+      // The cap counts stored files: a file refused every run never holds
+      // back the ones after it.
+      if (run.fetched >= FETCH_MAX) break;
+      tried += 1;
       const got = await fetchOne(brain, state, drive, path, item);
       if (got.kind === 'stored') run.fetched += 1;
       else if (got.kind === 'skipped') run.skipped += 1;
@@ -361,11 +366,11 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
     } else {
       // A listing that stopped early removes nothing: a file it missed is
       // not gone.
-      error = listing.error;
+      error = [error, listing.error].filter(Boolean).join('; ').slice(0, ERROR_MAX);
     }
-    if (plan.fetch.length > FETCH_MAX) {
+    if (tried < plan.fetch.length) {
       console.warn(
-        `[sync] drive ${drive.id}: ${plan.fetch.length - FETCH_MAX} file(s) left for the next run`,
+        `[sync] drive ${drive.id}: ${plan.fetch.length - tried} file(s) left for the next run`,
       );
     }
   } catch (err) {

@@ -506,13 +506,26 @@ export async function currentSelections(state: State, drive: MsDrive): Promise<D
         now.push({ ...sel, path, name: it.name ?? sel.name });
       } else now.push(sel);
     } catch (err) {
-      if (err instanceof GraphError && err.status === 404) now.push(sel);
+      // Gone (404) or out of reach now (403): its old path stays; its files
+      // are gone from the listing too.
+      if (err instanceof GraphError && (err.status === 404 || err.status === 403)) now.push(sel);
       else throw err;
     }
   }
   if (moved) {
+    // Only the moved paths, by id, onto the choices as they are now (a
+    // person may have changed them meanwhile).
     const fresh = await state.msDrive(drive.id);
-    if (fresh) await state.putMsDrive({ ...fresh, selections: now });
+    if (fresh) {
+      const pathOf = new Map(now.map((s) => [s.itemId, s]));
+      await state.putMsDrive({
+        ...fresh,
+        selections: fresh.selections.map((s) => {
+          const m = pathOf.get(s.itemId);
+          return m ? { ...s, path: m.path, name: m.name ?? s.name } : s;
+        }),
+      });
+    }
   }
   return now;
 }

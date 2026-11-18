@@ -70,8 +70,9 @@ Mail.Read Mail.Send Calendars.Read`.
 
 - The mail switch makes (or switches on) one `email_accounts` row with
   provider `microsoft` and no credential, under `<account branch>.mail`.
-  An address linked as an IMAP mailbox cannot also be an Outlook inbox
-  (409): remove one first.
+  An address cannot be a live IMAP mailbox and a live Outlook inbox at
+  once (409). A removed one is taken over: its row, and its stored mail,
+  stay.
 - Every 5 minutes the inbox is read from a `receivedDateTime` watermark
   (`server/sync/src/outlook.ts`), a page at a time: the envelopes go through
   the brain's one gate (`/api/sidecar/mail/gate`), and only the wanted
