@@ -9,7 +9,7 @@
  */
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { env } from '@mantle/config';
+import { envFlag } from '@mantle/config';
 import { isBlockedIp } from '@mantle/std/egress';
 
 export class HostRefusedError extends Error {
@@ -37,5 +37,5 @@ export async function checkedAddress(host: string): Promise<string> {
  *  TLS. Unset, a mailbox with its TLS box off must upgrade with STARTTLS, so
  *  the app password never crosses in plain text. */
 export function plaintextMailAllowed(): boolean {
-  return env('SYNC_PLAINTEXT_MAIL') === '1';
+  return envFlag('SYNC_PLAINTEXT_MAIL');
 }
