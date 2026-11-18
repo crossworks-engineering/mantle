@@ -983,16 +983,21 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     },
   );
 
-  it("a new item in a folder the scope may edit takes the folder's home; a reader of the folder is refused", async () => {
+  it("a new item in a folder the scope may add to takes the folder's home; a user of a Write grant and a reader are refused", async () => {
     const insert = newNote(`notes.${tag}f`, () => n.f);
-    // E has Write on F (home H): the item lands in H, no Moderator seat.
-    const editor = await asKind(member(), insert);
-    expect(editor.code, editor.message).toBeUndefined();
-    expect(editor.value![0]!.home).toBe(ws.H);
+    // E holds F (home H) with Write on. A Moderator of E adds to it (a
+    // shared folder, 0382): the item lands in H, no Moderator seat of H.
+    const holderMod: Kind = { ...member(), name: 'E moderator', mod: () => [ws.E] };
+    const adder = await asKind(holderMod, insert);
+    expect(adder.code, adder.message).toBeUndefined();
+    expect(adder.value![0]!.home).toBe(ws.H);
     // Naming F's home as the create home is the same.
-    const named = await asKind(member(), insert, ws.H);
+    const named = await asKind(holderMod, insert, ws.H);
     expect(named.code, named.message).toBeUndefined();
     expect(named.value![0]!.home).toBe(ws.H);
+    // E's plain user edits F (Write on), and does not add to it.
+    const editor = await asKind(member(), insert);
+    expect(editor.code, editor.message).toBe('42501');
     // H only reads F.
     const reader = await asKind({ ...member(), name: 'H only', ws: () => [ws.H] }, insert);
     expect(reader.code, reader.message).toBe('42501');

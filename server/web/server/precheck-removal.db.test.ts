@@ -14,7 +14,8 @@
  *   editOnly  may edit, not manage (homed in X, granted to W or to Admin
  *             with Write on)
  *   noEdit    reads it, may not edit (the member: homed in R; the owner:
- *             homed in X, granted to Admin with Write off)
+ *             homed in X, granted to R with Write off, where it is a plain
+ *             user: a Moderator of Admin edits whatever Admin holds, 0382)
  *   noRead    does not read it (the member: homed in O; the owner: homed
  *             in X, no grant to Admin)
  *
@@ -159,10 +160,12 @@ describe.skipIf(!DB_URL)(
         return [[ws.O, true, false]];
       }
       if (place === 'allowed') return [[ws.admin, true, false]];
+      // R, where the owner is a plain user: a grant to Admin with Write off
+      // is no longer read only to its Moderators (0382).
       if (place === 'noEdit')
         return [
           [ws.X, true, false],
-          [ws.admin, false, false],
+          [ws.R, false, false],
         ];
       if (place === 'editOnly')
         return [
@@ -242,7 +245,15 @@ describe.skipIf(!DB_URL)(
     /** The workspace whose assistant runs `who`'s turn on a `p` item: one
      *  that reads it where the login does. */
     const turnWs = (who: Who, p: Place) =>
-      who === 'admin' ? ws.admin : p === 'allowed' ? ws.H : p === 'editOnly' ? ws.W : ws.R;
+      who === 'admin'
+        ? p === 'noEdit'
+          ? ws.R
+          : ws.admin
+        : p === 'allowed'
+          ? ws.H
+          : p === 'editOnly'
+            ? ws.W
+            : ws.R;
 
     /** One call in an assistant turn, as `who`, the builtin's row (or one
      *  made for an MCP-only builtin, as /api/v1 makes it). */
@@ -341,6 +352,11 @@ describe.skipIf(!DB_URL)(
     type Family = { name: string; tools: Tool[] };
 
     type Cell = Outcome & { changed: boolean };
+
+    /** A move's own: the owner moderates Admin, which holds its editOnly
+     *  item (Write on) and the folder it lands in (placed as its allowed,
+     *  homed in Admin): a move inside Admin (0382). */
+    const MOVE_INSIDE: Tool['nowBy'] = { admin: { editOnly: 'ok' } };
 
     /** One cell: was (pre-check on) and now (bypassed) on fresh items. */
     const runCell = async (family: string, tool: Tool, who: Who, p: Place, way: Way) => {
@@ -781,6 +797,7 @@ describe.skipIf(!DB_URL)(
             slug: 'tree_folder_update',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: async (w, p) => {
               const dest = await notesFolder(w, 'allowed');
               const it = await notesFolder(w, p);
@@ -847,6 +864,7 @@ describe.skipIf(!DB_URL)(
             slug: 'page_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: async (w, p) => {
               const pageDest = idIn(
                 await sysTool('tree_folder_create', { kind: 'pages', name: `${tag} pf ${n()}` }),
@@ -865,6 +883,7 @@ describe.skipIf(!DB_URL)(
             slug: 'page_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: async (w, p) => {
               const pageDest = idIn(
                 await sysTool('tree_folder_create', { kind: 'pages', name: `${tag} pf ${n()}` }),
@@ -1096,6 +1115,7 @@ describe.skipIf(!DB_URL)(
             slug: 'file_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: withDest(filesFile),
             input: (it) => ({ file_id: it.id, dest_path: it.extra.dest, confirm: true }),
             disk: filesDisk,
@@ -1104,6 +1124,7 @@ describe.skipIf(!DB_URL)(
             slug: 'folder_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: withDest(filesFolder),
             input: (it) => ({ folder_id: it.id, dest_parent_path: it.extra.dest, confirm: true }),
             disk: filesDisk,
@@ -1286,6 +1307,7 @@ describe.skipIf(!DB_URL)(
             slug: 'tree_item_move',
             need: 'manage',
             who: BOTH,
+            nowBy: MOVE_INSIDE,
             make: async (w, p) => {
               const dest = await notesFolder(w, 'allowed');
               const it = await note(w, p);
@@ -1510,7 +1532,8 @@ describe.skipIf(!DB_URL)(
                where w.id = u.workspace_id and not w.is_admin
                  and u.login_id in (${owner}, ${mem})`;
       await raw`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.W}, ${mem}, false)`;
+      values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.W}, ${mem}, false),
+             (${ws.R}, ${owner}, false)`;
       for (const [key, wsId] of Object.entries(ws)) {
         const id = randomUUID();
         agentOf[wsId] = id;

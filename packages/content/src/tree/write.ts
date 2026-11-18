@@ -26,6 +26,7 @@ import {
   isBusy,
   isPoolBusy,
   isScopeWriteRefusal,
+  itemMoveVerdicts,
   itemWriteVerdicts,
   nodes,
   systemStep,
@@ -852,8 +853,10 @@ export async function moveTreeItems(
   // The whole list asked first (pre-check removal Part 3): each item moves on its own and
   // the database refuses item by item, so one the caller may not move would
   // leave the others moved. One it may not move refuses the call, nothing
-  // moved, before the visibility question (it names workspaces).
-  const verdicts = await itemWriteVerdicts(ids, 'manage');
+  // moved, before the visibility question (it names workspaces). The move
+  // check: manage, or a Moderator of a workspace that holds the item and
+  // the destination.
+  const verdicts = await itemMoveVerdicts(ids, ownerId, dest);
   for (const id of ids) {
     const v = verdicts.get(id) ?? 'no_read';
     if (v !== 'ok') throw editCheckRefusalError(v);

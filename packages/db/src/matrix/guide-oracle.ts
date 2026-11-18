@@ -317,8 +317,13 @@ const deny = (why: string): GuideAnswer => ({ allow: false, why });
 export type GuideStanding = {
   /** "Read the item: to be a user of a workspace it is granted to". */
   reads: boolean;
-  /** "Edit its content: Moderator of its home, or a grant with Write on". */
+  /** "Edit its content: Moderator of its home, a grant with Write on, or
+   *  Moderator of a holder". */
   edits: boolean;
+  /** "Folders": "To place an item in folder F you may add to F: Moderator
+   *  of a workspace that holds F (its home too), or a user of F's home with
+   *  Write on there" (the item is F, in the folder placement). */
+  adds: boolean;
   /** A Moderator of its home. */
   homeMod: boolean;
   /** A Moderator of workspace `w`. */
@@ -339,9 +344,13 @@ export function guideStanding(
   const seats = seatsFor(role, placement, narrowTo);
   const g = grantsOf(placement);
   const homeMod = seats.mods.includes(g.home);
+  // "A shared item": a Moderator of a workspace that holds it (its home is
+  // one of them).
+  const holderMod = g.read.some((w) => seats.mods.includes(w));
   return {
     reads: g.read.some((w) => seats.users.includes(w)),
-    edits: homeMod || g.write.some((w) => seats.users.includes(w)),
+    edits: homeMod || g.write.some((w) => seats.users.includes(w)) || holderMod,
+    adds: homeMod || holderMod || (g.write.includes(g.home) && seats.users.includes(g.home)),
     homeMod,
     modOf: (w) => seats.mods.includes(w),
     admin: SEATS[role].users.includes('admin'),
@@ -355,8 +364,11 @@ export function guideStanding(
  * call them): who deletes, who changes an app's code, who opens a link.
  */
 export const GUIDE_RULES = {
-  /** "Edit its content: Moderator of its home, or a grant with Write on". */
+  /** "Edit its content: Moderator of its home, a grant with Write on, or
+   *  Moderator of a holder". */
   edit: (s: GuideStanding) => s.edits,
+  /** "Folders": "To place an item in folder F you may add to F". */
+  add: (s: GuideStanding) => s.adds,
   /** "Delete it: Moderator of its home" (an app: Admin users too,
    *  expectedAccess's delete). */
   delete: (s: GuideStanding) => s.homeMod,
@@ -549,7 +561,8 @@ function narrowedAnswer(
   const readOnlyCopy = deny('a snapshot copy is read only for everyone');
   switch (action) {
     case 'edit':
-      // "Edit its content: Moderator of its home, or a grant with Write on".
+      // "Edit its content: Moderator of its home, a grant with Write on, or
+      // Moderator of a holder".
       if (snapshot) return readOnlyCopy;
       return GUIDE_RULES.edit(s) ? { allow: true } : deny('may not edit it');
     case 'editDraft':
@@ -611,7 +624,7 @@ function narrowedAnswer(
 
 /**
  * "The home rule" ("Where a new item lands") and "Folders" ("To place an
- * item in folder F you may edit F"):
+ * item in folder F you may add to F"):
  *  1. the current workspace, when you moderate it (in a chat: the
  *     assistant's workspace; the grid's login writes name none);
  *  2. else, in a folder you may edit, the folder's home;
@@ -625,7 +638,7 @@ function createAnswer(
   const here = guideStanding(role, placement, narrowTo);
   const current = narrowTo && here.modOf(narrowTo) ? narrowTo : null;
   if (placement === 'folder') {
-    if (!GUIDE_RULES.edit(here)) return deny('may not edit the folder');
+    if (!GUIDE_RULES.add(here)) return deny('may not add to the folder');
     return { allow: true, lands: current ? landing(current) : 'H' };
   }
   if (current) return { allow: true, lands: landing(current) };

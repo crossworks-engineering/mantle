@@ -2668,6 +2668,13 @@
       "when": 1792120000000,
       "tag": "0381_email_send_back",
       "breakpoints": true
+    },
+    {
+      "idx": 382,
+      "version": "7",
+      "when": 1792130000000,
+      "tag": "0382_shared_item_rights",
+      "breakpoints": true
     }
   ]
 }

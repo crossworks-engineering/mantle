@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { assertItemRight } from '@mantle/db';
+import { assertItemMove, assertItemRight } from '@mantle/db';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import {
@@ -101,9 +101,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   if ('move' in parsed.data) {
-    // A move manages the folder: asked before the guard reads what it holds
-    // and the destination (moveFolderById asks it again).
-    await assertItemRight(idParsed.data.id, 'manage');
+    // The move check (manage, or a Moderator of a workspace that holds the
+    // folder and the destination): asked before the guard reads what it
+    // holds and the destination (moveFolderById asks it again).
+    await assertItemMove(idParsed.data.id, user.id, parsed.data.move);
     await guardFolderTo(user.id, idParsed.data.id, parsed.data.move, {
       confirm: parsed.data.confirm === true,
       seen: parsed.data.seen,

@@ -572,6 +572,7 @@ export {
   mayManageHomeInSql,
   mayManageInSql,
   mayManageSql,
+  mayMoveSql,
   mayReadInSql,
   missesAnySql,
   readsInScopeSql,
@@ -580,9 +581,11 @@ export {
   wsArraySql,
 } from './item-acl';
 export {
+  assertItemMove,
   assertItemRight,
   assertManageOrAdmin,
   foldersReadOf,
+  itemMoveVerdicts,
   itemWriteRefusal,
   itemWriteRefusalOf,
   itemWriteVerdicts,

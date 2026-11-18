@@ -996,16 +996,25 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       { nodeId: e4, title: null },
     ]);
     // A caller who reads the page (Q, Write off) but may not edit it sees
-    // neither.
+    // neither: mem2 as a plain user of Q. A Moderator of Q edits it (a
+    // Moderator of a workspace that holds it, 0382).
     await m.withHeads([pg], 'update', async (tx) => {
       await tx.execute(sql`insert into item_grants (node_id, workspace_id) values (${pg}, ${Q})`);
     });
     await as(mem2);
-    const other = await get(pg);
-    expect(other.status).toBe(200);
-    expect(other.body.mayLink).toBe(false);
-    expect(other.body.link).toBeNull();
-    expect(other.body.serveCandidates).toEqual([]);
+    expect((await get(pg)).body.mayLink).toBe(true);
+    await su(sql`update workspace_users set moderator = false
+                  where workspace_id = ${Q} and login_id = ${mem2}`);
+    try {
+      const other = await get(pg);
+      expect(other.status).toBe(200);
+      expect(other.body.mayLink).toBe(false);
+      expect(other.body.link).toBeNull();
+      expect(other.body.serveCandidates).toEqual([]);
+    } finally {
+      await su(sql`update workspace_users set moderator = true
+                    where workspace_id = ${Q} and login_id = ${mem2}`);
+    }
     await x(sql`delete from shares where token = ${token}`);
   });
 
@@ -1014,7 +1023,13 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     const folder = await node('branch', 'serve cap', path);
     await homeIn(folder, Q);
     // 500 items it may not edit sort first by id (homed in P, where mem2 is
-    // nobody; the folder's Q row passes on with Write off), then one it may.
+    // nobody; the folder's Q row taken out and S, where mem2 is a plain
+    // user, granted Write off: a Moderator of Q would edit what Q holds,
+    // 0382), then one it may.
+    const S = randomUUID();
+    await su(sql`insert into workspaces (id, owner_id, name) values (${S}, ${owner}, 'Sill')`);
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+                  values (${S}, ${mem2}, false)`);
     const head = `00000000-${randomUUID().slice(9, 24)}`;
     const low = Array.from({ length: 500 }, (_, i) => `${head}${String(i).padStart(12, '0')}`);
     const high = `ffffffff-${randomUUID().slice(9)}`;
@@ -1033,11 +1048,25 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
         select x.id, ${P}, true from unnest(${`{${low.join(',')}}`}::uuid[]) as x(id)
         on conflict (node_id, workspace_id)
         do update set is_home = true, via_folder_id = null, excluded = false`);
+      await tx.execute(sql`update item_grants set excluded = true, write = false, via_folder_id = null
+        where node_id = any (${`{${low.join(',')}}`}::uuid[]) and workspace_id = ${Q}`);
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id)
+        select x.id, ${S} from unnest(${`{${low.join(',')}}`}::uuid[]) as x(id)`);
     });
     await as(mem2);
-    const res = await get(folder);
-    expect(res.body.mayLink).toBe(true);
-    expect(res.body.serveCandidates).toEqual([{ nodeId: high, title: 'editable', kind: 'file' }]);
+    try {
+      const res = await get(folder);
+      expect(res.body.mayLink).toBe(true);
+      expect(res.body.serveCandidates).toEqual([{ nodeId: high, title: 'editable', kind: 'file' }]);
+    } finally {
+      await m.withHeads(low, 'update', async (tx) => {
+        await tx.execute(
+          sql`delete from item_grants where node_id = any (${`{${low.join(',')}}`}::uuid[]) and workspace_id = ${S}`,
+        );
+      });
+      await su(sql`delete from workspace_users where workspace_id = ${S}`);
+      await su(sql`delete from workspaces where id = ${S}`);
+    }
   });
 
   it('a member in none of the workspaces reads nothing', async () => {
@@ -1117,7 +1146,14 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       { wsId: P, name: 'Proj' },
       { wsId: Q, name: 'Quay' },
     ]);
+    // mem2 moderates Q, which holds F: it adds to F too (0382).
     await as(mem2);
+    expect((await get(F)).body.placesInto).toEqual([
+      { wsId: P, name: 'Proj' },
+      { wsId: Q, name: 'Quay' },
+    ]);
+    // mem3 is in none of its workspaces.
+    await as(mem3);
     expect((await get(F)).body.placesInto).toBeUndefined();
 
     // L3: the tree move runs the guard under each item's heads; a refusal

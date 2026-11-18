@@ -6,8 +6,9 @@
  *
  * Rules, one definition each, in the database:
  *  - scope forms (the code runs in a workspace scope, or with the scope set
- *    on its transaction): mayEditSql, mayManageSql (mantle_may_edit,
- *    mantle_may_manage), readsInScopeSql (the row rule on nodes);
+ *    on its transaction): mayEditSql, mayManageSql, mayMoveSql
+ *    (mantle_may_edit, mantle_may_manage, mantle_mod_holds), readsInScopeSql
+ *    (the row rule on nodes);
  *  - array forms (a preview, or a rule asked for a login on the system
  *    pool, with that login's workspaces as arrays): mayReadInSql,
  *    mayEditInSql, mayManageInSql, mayManageHomeInSql (mantle_may_edit_in,
@@ -51,16 +52,25 @@ export function wsArraySql(ids: readonly string[]): SQL {
 
 // ── Scope forms ──────────────────────────────────────────────────────────────
 
-/** The scope may edit the item: a Moderator of its home, or a grant with
- *  Write on in the scope (mantle_may_edit). */
+/** The scope may edit the item: a Moderator of its home, a grant with
+ *  Write on in the scope, or a Moderator of a workspace that holds it
+ *  (mantle_may_edit, 0382). */
 export function mayEditSql(alias?: string): SQL<boolean> {
-  return sql<boolean>`coalesce("public"."mantle_may_edit"(${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}), false)`;
+  return sql<boolean>`coalesce("public"."mantle_may_edit"(${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}), false)`;
 }
 
 /** The scope may manage the item (grants, links, delete, move): a
  *  Moderator of its home (mantle_may_manage). */
 export function mayManageSql(alias?: string): SQL<boolean> {
   return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')}), false)`;
+}
+
+/** The scope may move the item somewhere: a Moderator of its home (manage),
+ *  or of a workspace that holds it, inside that workspace (0382: the move
+ *  check asks the folder it lands in too). The item caps' `mayMove`. */
+export function mayMoveSql(alias?: string): SQL<boolean> {
+  return sql<boolean>`coalesce("public"."mantle_may_manage"(${column(alias, 'home_ws')})
+                       or "public"."mantle_mod_holds"(${column(alias, 'read_ws')}, ${column(alias, 'read_ws')}), false)`;
 }
 
 /** The workspace role's read rule on nodes, over the scope's settings
@@ -85,7 +95,7 @@ export function mayReadInSql(alias: string | undefined, ws: SQL): SQL<boolean> {
 /** A login in the workspaces `ws`, a Moderator of `modWs`, may edit the
  *  item (mantle_may_edit_in, the one definition). */
 export function mayEditInSql(alias: string | undefined, ws: SQL, modWs: SQL): SQL<boolean> {
-  return sql<boolean>`coalesce("public"."mantle_may_edit_in"(${ws}, ${modWs}, ${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}), false)`;
+  return sql<boolean>`coalesce("public"."mantle_may_edit_in"(${ws}, ${modWs}, ${column(alias, 'home_ws')}, ${column(alias, 'write_ws')}, ${column(alias, 'read_ws')}), false)`;
 }
 
 /** A Moderator of `modWs` may manage the item (mantle_may_manage_in). */

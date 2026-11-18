@@ -39,7 +39,8 @@ export type OracleRole =
   | 'homeModerator'
   /** A user (no Moderator tick) of W, which holds a grant with Write on. */
   | 'writeGrant'
-  /** A user (no Moderator tick) of R, which holds a grant with Write off. */
+  /** A Moderator of R, which holds a grant with Write off (the guide
+   *  oracle's seat; a Moderator of a workspace that holds the item, 0382). */
   | 'readGrant'
   /** In none of the item's workspaces. */
   | 'outsider';
@@ -96,7 +97,7 @@ const standingOf = (role: OracleWriteRole, placement: OraclePlacement = 'root') 
  * workspaces it is granted to.
  *
  * create, with no current workspace named (the home rule):
- *  - in folder F: "To place an item in folder F you may edit F"; it lands
+ *  - in folder F: "To place an item in folder F you may add to F"; it lands
  *    in F's home ("when you make it in a folder you may edit: the folder's
  *    home") and takes F's grants;
  *  - at the root: "your private workspace. An Admin user has no private
@@ -400,9 +401,9 @@ export function expectedWrite(
     case 'appLower':
       return editsForWrite(role) ? { allow: true } : deny('may not edit it');
     case 'createDerived':
-      // "To place an item in folder F you may edit F"; what only the brain
+      // "To place an item in folder F you may add to F"; what only the brain
       // sets is dropped (the cell checks it).
-      return editsForWrite(role) ? { allow: true } : deny('may not edit the folder');
+      return GUIDE_RULES.add(standing) ? { allow: true } : deny('may not add to the folder');
     case 'appDataInformational':
       return editsForWrite(role) && adminForWrite(role)
         ? { allow: true }

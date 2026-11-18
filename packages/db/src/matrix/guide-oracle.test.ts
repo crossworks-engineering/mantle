@@ -39,11 +39,14 @@ describe('the A8 oracle', () => {
     }
   });
 
-  it('"Edit its content: Moderator of its home, or a grant with Write on"', () => {
+  it('"Edit its content: Moderator of its home, a grant with Write on, or Moderator of a holder"', () => {
     expect(expectedAccess(at('root'), 'homeModerator', 'note', 'edit')).toEqual(allow);
     expect(expectedAccess(at('folder'), 'writeGrant', 'task', 'edit')).toEqual(allow);
-    // A Moderator of a workspace that is not the home, with Write off.
-    expect(expectedAccess(at('root'), 'readGrant', 'note', 'edit')).toMatchObject(denied);
+    // A Moderator of a workspace that holds it, not its home, with Write
+    // off: a shared item (0382).
+    expect(expectedAccess(at('root'), 'readGrant', 'note', 'edit')).toEqual(allow);
+    // A user who is in none of its workspaces.
+    expect(expectedAccess(at('root'), 'outsider', 'note', 'edit')).toMatchObject(denied);
   });
 
   it('"Code. A Moderator of the app\'s home builds and edits it."', () => {
@@ -90,12 +93,14 @@ describe('the A8 oracle', () => {
     expect(expectedAccess(at('root'), 'homeModerator', 'present', 'link')).toEqual(allow);
   });
 
-  it('the home rule: a folder you may edit, else private; Admin users land in Admin', () => {
-    expect(expectedAccess(at('folder'), 'writeGrant', 'note', 'create')).toEqual({
+  it('the home rule: a folder you may add to, else private; Admin users land in Admin', () => {
+    // A shared folder (0382): a Moderator of a workspace that holds it adds
+    // to it, Write off too; a user of a grant with Write on does not.
+    expect(expectedAccess(at('folder'), 'readGrant', 'note', 'create')).toEqual({
       allow: true,
       lands: 'H',
     });
-    expect(expectedAccess(at('folder'), 'readGrant', 'note', 'create')).toMatchObject(denied);
+    expect(expectedAccess(at('folder'), 'writeGrant', 'note', 'create')).toMatchObject(denied);
     expect(expectedAccess(at('root'), 'outsider', 'note', 'create')).toEqual({
       allow: true,
       lands: 'private',

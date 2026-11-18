@@ -10,6 +10,7 @@
  */
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import {
+  assertItemMove,
   assertItemRight,
   carrySpaceRows,
   db,
@@ -296,8 +297,9 @@ export async function moveNodeFolder(
   destParentPath: string,
 ): Promise<void> {
   const folder = await branchById(ownerId, folderId);
-  // Manage first (the cheap rights read), before the locks.
-  await assertItemRight(folder.id, 'manage');
+  // The move check first (manage, or a Moderator of a workspace that holds
+  // the folder and the destination: the cheap rights read), before the locks.
+  await assertItemMove(folder.id, ownerId, destParentPath);
   if (destParentPath === folder.path || destParentPath.startsWith(`${folder.path}.`)) {
     throw new NodeOpRefusal('invalid', 'a folder cannot move inside itself');
   }

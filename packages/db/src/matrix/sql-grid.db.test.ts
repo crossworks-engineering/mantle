@@ -116,10 +116,12 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
       select id::text as id from workspaces where owner_id = ${L.owner} and is_admin`
     )[0]!.id;
     // The fixture's workspaces: H (the home), W (Write on), R (Write off), O.
+    // readGrant moderates R, as the guide oracle seats it (a Moderator of a
+    // workspace that holds the item: 0382).
     for (const [key, who, mod] of [
       ['H', L.homeModerator, true],
       ['W', L.writeGrant, false],
-      ['R', L.readGrant, false],
+      ['R', L.readGrant, true],
       ['O', L.outsider, true],
     ] as const) {
       const [row] = await sql<{ id: string }[]>`

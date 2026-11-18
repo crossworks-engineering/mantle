@@ -16,7 +16,12 @@ import { ORACLES, oracleAnswerDiff, oracleAnswerHash } from './oracle-answers';
 const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256: string }>> = {
   // Present (a new workspace kind): its inputs added, every earlier answer
   // unchanged (checked with --against before taking the hashes).
-  a1: { inputs: 360, sha256: 'ed3e8588ce99cad2e14175e9374362ca922c1549940632b45ad9f602304a2d78' },
+  // Shared items (0382, owner's rule 2026-11-18): 60 inputs moved, all a
+  // create in the folder: readGrant (a Moderator of R, which holds it, Write
+  // off) deny to allow, writeGrant (a user of W, Write on) allow to deny,
+  // and the deny's words of the others ("may not add to the folder"). No
+  // other answer moved (checked with --against).
+  a1: { inputs: 360, sha256: '2e6abb054430f3fe83f56647e76264983bd16af74ce98a7b5829a736fd9a987d' },
   'a1-folders': {
     inputs: 18,
     sha256: 'b7cb517807e2bbd8f7fca9c4955ca46fbafc30ad8a1646c6507ec983c4b05461',
@@ -28,13 +33,21 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // Contact shares gone (0378): the contact-ro and contact-rw actors and
   // the contact-share surface went, with their inputs; every other answer
   // the same (checked with --against on the base's lines without them).
+  // Shared items (0382): 178 inputs moved. readGrant (a Moderator of R,
+  // Write off) deny to allow on every edit-rule write (edit, rank, a link
+  // but an app's or a canvas's, app data, a Recall card, a history row) and
+  // a create in the folder; writeGrant and adminWriteGrant (users of W,
+  // Write on) allow to deny on a create in the folder; the deny's words of
+  // adminReadGrant's. No other answer moved (checked with --against).
   a3a: {
     inputs: 33_120,
-    sha256: '28017690574b261b7b5792530870b99d552e75f946a7cb89f7ed52e8f8c72918',
+    sha256: '98e97c78ff5888901db17d47ffdc127f62c3e4f46c9fa8657c5cc9b021a975eb',
   },
+  // Shared items (0382): one input moved, readGrant's Informational app
+  // data, any refusal to read_only (it may edit the app now).
   'a3a-detail': {
     inputs: 1_104,
-    sha256: 'c071744094f49e02381d612ea5ee0de5549c70845fe5a87147504067684ea912',
+    sha256: '3f6a8b408eb9a381723ff44e1a034a9ddffa670816bf5cc804d209d66a2ae11e',
   },
   // F6 (the guide names the rule now): 54 inputs moved, each allow to deny
   // "a key or a peer may not change a page or a note others read": the
@@ -53,9 +66,17 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // action's answer moved (checked with --against).
   // Contact shares gone (0378): 48,720 inputs went with the two contact
   // actors and the contact-share surface; no other answer moved.
+  // Shared items (0382): 3,808 inputs moved, on every way in. readGrant (a
+  // Moderator of R, which holds the item, Write off) deny to allow on edit,
+  // editDraft (not an app's code), link (not an app's or a canvas's),
+  // appData and a create in the folder (a key's or a peer's edit of a page
+  // or a note others read stays denied, its words now the key rule's);
+  // writeGrant (a user of W, Write on) allow to deny on a create in the
+  // folder; the other roles' create denials have new words. No other answer
+  // moved (checked with --against).
   a8: {
     inputs: 314_160,
-    sha256: '13a5385d71cec9f5fcbb0b0552236d7b4aab30c5119c2cb197889f255865be84',
+    sha256: '24e0b0fefe28698eb772b79e1a7f4af69d78ffb31828b5f667700f71e4c7eeaa',
   },
 };
 

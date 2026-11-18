@@ -53,16 +53,18 @@ describe('the access oracle', () => {
     });
   });
 
-  it('the home rule: a folder you may edit, else private, Admin users land in Admin', () => {
+  it('the home rule: a folder you may add to, else private, Admin users land in Admin', () => {
     expect(expectedReadCreate(at('folder'), 'homeModerator', 'file', 'create')).toEqual({
       allow: true,
       lands: 'home',
     });
-    expect(expectedReadCreate(at('folder'), 'writeGrant', 'formula', 'create')).toEqual({
+    // A shared folder (0382): its holders' Moderators add to it, Write on or
+    // off; a user of a grant with Write on edits it, does not add to it.
+    expect(expectedReadCreate(at('folder'), 'readGrant', 'page', 'create')).toEqual({
       allow: true,
       lands: 'home',
     });
-    expect(expectedReadCreate(at('folder'), 'readGrant', 'page', 'create')).toMatchObject({
+    expect(expectedReadCreate(at('folder'), 'writeGrant', 'formula', 'create')).toMatchObject({
       allow: false,
     });
     expect(expectedReadCreate(at('folder'), 'owner', 'page', 'create')).toMatchObject({

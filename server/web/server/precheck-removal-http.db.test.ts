@@ -8,7 +8,7 @@
  * the gate, the route's ROUTE_POLICY row, the session guard, the handler)
  * on a migrated scratch database, in the database's checks `on` and in
  * `warn`, as a member (a Moderator of H, a user of R and of W) and as an
- * Admin user (a user and Moderator of Admin, in no other workspace; not the
+ * Admin user (a user and Moderator of Admin, a plain user of R; not the
  * owner). Each item is placed so the login:
  *
  *   allowed   may manage it (the member: homed in H; the Admin user: in
@@ -16,7 +16,8 @@
  *   editOnly  may edit, not manage (homed in X, granted to W or to Admin
  *             with Write on)
  *   noEdit    reads it, may not edit (the member: homed in R; the Admin
- *             user: homed in X, granted to Admin with Write off)
+ *             user: homed in X, granted to R with Write off: a Moderator
+ *             of Admin edits whatever Admin holds, 0382)
  *   noRead    does not read it (the member: homed in O; the Admin user:
  *             homed in X, no grant to Admin)
  *
@@ -230,10 +231,12 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       return [[ws.O, true, false]];
     }
     if (place === 'allowed') return [[ws.admin, true, false]];
+    // R, where the Admin user is a plain user: a grant to Admin with Write
+    // off is no longer read only to its Moderators (0382).
     if (place === 'noEdit')
       return [
         [ws.X, true, false],
-        [ws.admin, false, false],
+        [ws.R, false, false],
       ];
     if (place === 'editOnly')
       return [
@@ -314,7 +317,15 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     /** A read write's answer to a login that reads the item (checked on
      *  every readable placement, before and now). */
     readAnswer?: (status: number, text: string) => void;
+    /** Placements the need does not allow that a login may write all the
+     *  same, looser than the old pre-check on purpose: a move inside a
+     *  workspace the login moderates that holds the item and the folder it
+     *  lands in (0382). */
+    allowedFor?: Partial<Record<Who, Place[]>>;
   };
+  /** A move's own: the Admin user moderates Admin, which holds its
+   *  editOnly item (Write on) and the folder it lands in (homed in Admin). */
+  const MOVE_INSIDE: Route['allowedFor'] = { admin: ['editOnly'] };
   type Family = {
     name: string;
     /** Its entry is gone: the lists name no item for its routes. */
@@ -863,6 +874,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           body: (id) => ({ folderId: folderOf.get(id) ?? randomUUID(), confirm: true }),
           make: page({ folder: true }),
           warnMade: false,
+          allowedFor: MOVE_INSIDE,
         },
       ],
     },
@@ -1007,6 +1019,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           'PATCH',
           (id) => ({ move: dest(id), confirm: true }),
           file({ dest: true }),
+          { allowedFor: MOVE_INSIDE },
         ),
         fileRoute(
           'copy',
@@ -1043,6 +1056,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
           'PATCH',
           (id) => ({ move: dest(id), confirm: true }),
           folder({ dest: true }),
+          { allowedFor: MOVE_INSIDE },
         ),
         folderRoute(
           'copy',
@@ -1330,7 +1344,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                  and u.login_id in (${owner}, ${L.admin}, ${L.member})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.H}, ${L.member}, true), (${ws.R}, ${L.member}, false),
-             (${ws.W}, ${L.member}, false), (${ws.admin}, ${L.admin}, true)
+             (${ws.W}, ${L.member}, false), (${ws.admin}, ${L.admin}, true),
+             (${ws.R}, ${L.admin}, false)
       on conflict (workspace_id, login_id) do update set moderator = excluded.moderator`;
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     const keys = await import('../lib/access-keys');
@@ -1442,6 +1457,8 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
               }
               for (const p of PLACES) {
                 const name = `${route.name} ${mode} ${who}/${p}`;
+                const looser = route.allowedFor?.[who]?.includes(p) === true;
+                const allowedHere = ALLOWED[route.need].includes(p) || looser;
                 const was = await once(route, who, p, true);
                 const now = await once(route, who, p, false);
                 recorded.push(
@@ -1473,10 +1490,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                   );
                   route.readAnswer?.(now.status, now.text);
                   route.readAnswer?.(was.status, was.text);
-                } else if (ALLOWED[route.need].includes(p) && route.noWrite) {
+                } else if (allowedHere && route.noWrite) {
                   expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
                   expect(now.changed, `${name} changed the item`).toBe(false);
-                } else if (ALLOWED[route.need].includes(p)) {
+                } else if (allowedHere) {
                   expect(now.status, `${name}: ${now.text}`).toBeLessThan(300);
                   expect(now.changed, `${name} made no write`).toBe(true);
                   expect(now.misses, name).toEqual([]);
@@ -1492,7 +1509,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
                 }
                 // Never looser than the pre-check in on: the same writes made,
                 // the same refused (warn: the named change above).
-                if (mode === 'on' || p === 'noRead' || !route.warnMade) {
+                if ((mode === 'on' || p === 'noRead' || !route.warnMade) && !looser) {
                   expect(
                     { ok: now.status < 300, changed: now.changed },
                     `${name}: was ${line(was)}`,

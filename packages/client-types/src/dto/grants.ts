@@ -254,8 +254,14 @@ export type ItemCaps = {
   /** The caller may change it (a Moderator of its home, or a grant with
    *  Write on, in the caller's own workspaces); never for a read-only copy. */
   mayEdit?: boolean;
-  /** The caller may delete or move it (a Moderator of its home). */
+  /** The caller may delete it, share it, and move it anywhere (a Moderator
+   *  of its home). */
   mayManage?: boolean;
+  /** The caller may move it: a Moderator of its home (mayManage), or a
+   *  Moderator of a workspace that holds it, to a folder that workspace
+   *  holds too. Never on a read-only copy. Absent from a brain before it:
+   *  read mayManage. */
+  mayMove?: boolean;
   /** A read-only snapshot copy of an accepted item (data.snapshot_of):
    *  nobody edits it, moves it out of its private workspace or shares it;
    *  its author may delete it. Absent on every other item. */

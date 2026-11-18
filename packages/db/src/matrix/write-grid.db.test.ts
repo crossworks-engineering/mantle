@@ -192,7 +192,9 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       [
         'R',
         [
-          [L.readGrant, false],
+          // A Moderator of R, as the guide oracle seats it (0382); the Admin
+          // user is a plain user of R.
+          [L.readGrant, true],
           [L.adminReadGrant, false],
         ],
       ],
@@ -556,8 +558,13 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     // canvas's link, an adminWriteGrant login's open; at the root and in a folder).
     // The contact actors left (0378): 1104 cells, 2 allowed (a contact's
     // app data), 244 denied.
-    expect(tally.allowed).toBe(780);
-    expect(tally.denied).toBe(2200);
+    // Shared items (0382): readGrant moderates R, which holds the item: 142
+    // cells from denied to allowed (every edit-rule write, and a create in
+    // the folder); writeGrant's and adminWriteGrant's create in the folder,
+    // 24 cells from allowed to denied (a Write grant edits a folder, does
+    // not add to it). Net 118.
+    expect(tally.allowed).toBe(898);
+    expect(tally.denied).toBe(2082);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });

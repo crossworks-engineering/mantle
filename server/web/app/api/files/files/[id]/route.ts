@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { assertItemRight } from '@mantle/db';
+import { assertItemMove, assertItemRight } from '@mantle/db';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
 import { ownerCaller, readerAssetCaller } from '@/lib/auth';
@@ -182,9 +182,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   if ('move' in parsed.data) {
-    // A move manages the file: asked before the guard reads the
+    // The move check (manage, or a Moderator of a workspace that holds the
+    // file and the destination): asked before the guard reads the
     // destination (moveFileById asks it again).
-    await assertItemRight(existing.id, 'manage');
+    await assertItemMove(existing.id, user.id, parsed.data.move);
     await guardFileTo(user.id, idParsed.data.id, parsed.data.move, {
       confirm: parsed.data.confirm === true,
       seen: parsed.data.seen,
