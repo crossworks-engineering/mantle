@@ -106,7 +106,7 @@ export function needsYouMessage(first: NeedsYouArrival): {
         first.count === 1
           ? 'One file could not be read: its content is not in search. See Files.'
           : `${first.count} files could not be read: their content is not in search. See Files.`,
-      deepLink: '/files',
+      deepLink: '/files?unread=1',
     };
   }
   if (first.kind === 'parked') {

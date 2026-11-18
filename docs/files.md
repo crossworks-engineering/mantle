@@ -222,7 +222,8 @@ extractor already writes, so there is no new state:
 `file_list` with `extraction: 'failed'` (or another state) lists the files in
 that state in every folder, or under `parent_path`, newest first; the route
 is `GET /api/files/files?extraction=failed[&under=]`. A new read failure
-sends the box admins' devices one "needs you" push (`failedFileReads`,
+sends the box admins' devices one "needs you" push, which opens Files' Not read list
+(`/files?unread=1`; `failedFileReads`,
 `@mantle/db`; the event is the extractor's `needs_you_changed` notify). A
 partial read sends none: every scan past 10 pages is one.
 

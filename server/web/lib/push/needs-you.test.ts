@@ -86,7 +86,7 @@ describe('files the brain could not read (task 8d40932a)', () => {
     const m = needsYouMessage(a[0]!);
     expect(m.title).toBe('A file could not be read');
     expect(m.body).toContain('2 files');
-    expect(m.deepLink).toBe('/files');
+    expect(m.deepLink).toBe('/files?unread=1');
     rememberArrivals(seen, a);
     expect(needsYouArrivals([], seen, NOW, null, { count: 2, newest: ago(60_000) })).toEqual([]);
   });
