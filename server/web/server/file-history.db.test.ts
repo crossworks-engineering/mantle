@@ -420,9 +420,8 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     expect((await del(L.writeUser)).status).toBe(403);
     expect((await del(L.reader)).status).toBe(403);
     expect((await del(L.outsider)).status).toBe(404);
-    // The read-only key is live (it reads the history), and refused the write.
-    const roRead = await runRoute({ key: roKey }, 'GET', `/api/files/files/${id}/history`);
-    expect(roRead.status, await roRead.clone().text()).toBe(200);
+    // A key does not sign in to the owner's routes (caller owner): the
+    // gate's 401, before any handler (its tools are the MCP path).
     const ro = await runRoute({ key: roKey }, 'DELETE', `/api/files/files/${id}/history/${v.id}`);
     expect(ro.status, `read-only key: ${await ro.clone().text()}`).toBe(401);
     expect(await versionCount(id)).toBe(2);
