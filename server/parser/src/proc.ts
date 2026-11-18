@@ -69,6 +69,16 @@ export function childEnv(tmpdir: string, extra: Record<string, string> = {}): No
  * config and font cache (MPLCONFIGDIR). Bun keeps no transpiler cache
  * (BUN_RUNTIME_TRANSPILER_CACHE_PATH=0): a cache one job wrote could hand
  * a module to the next.
+ *
+ * The garbage collector of a job runs in step with the job, not beside it
+ * (BUN_JSC_useConcurrentGC=0). With one CPU (compose `cpus`, `PARSER_CPUS`)
+ * a collector beside the job falls behind a large decode: the pictures of
+ * a page that is one image of 99.8 M pixels peaked past the 2 GB limit and
+ * the kernel killed the child that drew them, every time.
+ * In step, the same pictures peak at about 1.4 GB, with one CPU or many,
+ * in the same time; the Agent's pictures of 19 other drawings took 3
+ * percent more in all (bench, one CPU). The pictures child (./pictures.ts)
+ * and every other child that takes the job's environment get it too.
  */
 export function jobEnv(scratch: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -80,6 +90,7 @@ export function jobEnv(scratch: string): NodeJS.ProcessEnv {
     XDG_CACHE_HOME: path.join(scratch, '.cache'),
     MPLCONFIGDIR: path.join(scratch, '.mpl'),
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+    BUN_JSC_useConcurrentGC: '0',
   };
 }
 

@@ -211,7 +211,7 @@ describe('a job and what it leaves', () => {
 });
 
 describe('jobEnv', () => {
-  it('keeps a job’s state in its own directory, with no token and no transpiler cache', () => {
+  it('keeps a job’s state in its own directory, with no token, no transpiler cache and a collector in step', () => {
     process.env.PARSER_TOKEN = 'secret-token';
     try {
       const env = jobEnv('/work/job-1/tmp');
@@ -222,6 +222,7 @@ describe('jobEnv', () => {
         XDG_CACHE_HOME: '/work/job-1/tmp/.cache',
         MPLCONFIGDIR: '/work/job-1/tmp/.mpl',
         BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+        BUN_JSC_useConcurrentGC: '0',
       });
     } finally {
       delete process.env.PARSER_TOKEN;

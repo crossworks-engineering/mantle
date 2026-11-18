@@ -1156,7 +1156,17 @@ job can kill. The Reader's eye and pieces, and every other open, keep 75 M.
 so the image is decoded one time for the page, not for each half. Bench
 (2026-11-17, the parser image of this build under a 2 GB limit, the whole
 job through the parser service): such a sheet gave its 4 pictures with a
-peak of 1,486 MB for the container, in 18.4 s, none blank. The other 19 PDFs
+peak of 1,486 MB for the container, in 18.4 s, none blank. That bench had
+no CPU limit. A box gave the parser one CPU, and there the garbage
+collector, which ran beside the job, fell behind the decode: the child
+passed 2 GB and the kernel killed it, every time (dev, v0.702.1: "Page 1
+could not be drawn."). Each job now runs its collector in step
+(`BUN_JSC_useConcurrentGC=0`, `jobEnv` in `server/parser/src/proc.ts`):
+with one CPU the child alone peaks at about 1.4 GB, in the same time.
+`scripts/probe-parser-large-image.sh <parser image>` holds it: a made-up
+sheet of one 99.8 M pixel image, two jobs sent at once to the image under
+the old limits (2 GB, one CPU; the defaults are 3 GB and 2 CPUs since),
+both ok, no memory kill. The other 19 PDFs
 of the set (1 to 6 pages, 3 to 19 asks): at most 512 MB and 4.6 s a file;
 a dense flow diagram 2.1 s. So a run of 10 such large-image pages would be
 about 180 s; the child has about 215 s (the job's 240 s, less the 20 s kept
@@ -2129,7 +2139,10 @@ contract's types, which `packages/files/src/pipelines/template.test.ts`
 holds to the contract) and in Python (`python/`), with `sample.lx9`.
 `scripts/probe-own-python-pipeline.sh <parser image>` runs the Python one
 in a built parser image from a read-only mount, as a box does: run it on
-every round that builds the image.
+every round that builds the image, with
+`scripts/probe-parser-large-image.sh <parser image>` (the pictures of a
+page that is one very large image, under 2 GB and one CPU, stricter than
+the defaults).
 
 **A Bun step** exports `step(request, job)`, as a built-in's: it gets the
 job handle (`bytes()`, `dir`, `deadline`, and the parser's native helpers).

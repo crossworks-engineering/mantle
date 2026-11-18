@@ -38,9 +38,10 @@
 #   parser                                    reads every file the brain
 #                                             receives (docs/parser.md); a
 #                                             brain that ingests cannot shed it.
-#                                             Its defaults suit a core as they
-#                                             are: 1 CPU, 2g (no swap past it),
-#                                             one job at a time, a 1g tmpfs
+#                                             Defaults: 2 CPUs, 3g (no swap past
+#                                             it), one job at a time, a 1g tmpfs;
+#                                             on a 4 GB box set
+#                                             PARSER_MEM_LIMIT=2g in .env
 #   worker_files, worker_docs                 file + documentation ingest
 #   gateway                                   the one door to the box's own
 #                                             services (docs/gateway.md); tiny

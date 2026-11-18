@@ -292,7 +292,8 @@ class Plot:
     def picture(self, part, max_side, dpi_cap):
         import cv2
 
-        # One thread: the parser has one CPU by default (docs/parser.md).
+        # One thread: a box may give the parser one CPU (docs/parser.md), and
+        # one thread holds the least memory.
         cv2.setNumThreads(1)
         pw, ph = self.w_mm * (part[2] - part[0]), self.h_mm * (part[3] - part[1])
         px_mm = max_side / max(pw, ph)

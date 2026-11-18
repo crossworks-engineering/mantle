@@ -196,7 +196,8 @@ MAX_SC_DEPTH = 8  # shared cells inside shared cells (5 seen on test data)
 # expanded, and is counted (`too_large`). Measured on made-up drawings, the
 # full parser child on one CPU, every op kind at its usual element size:
 # circles and arcs cost the most per weight (125,100: 48 s and 0.77 GB;
-# 400,320: 156 s and 2.2 GB, past the parser's 2 GB); lines, ellipses,
+# 400,320: 156 s and 2.2 GB, past 2 GB, the parser's limit then, the
+# default until v0.702.1); lines, ellipses,
 # polylines, splines, texts, attributes and nested inserts cost less. ONE
 # element far larger than usual costs more than its weight says, in ezdxf,
 # with or without this reader: a text of 16,000 characters takes 54 s, one

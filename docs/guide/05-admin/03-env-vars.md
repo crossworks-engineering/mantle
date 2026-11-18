@@ -40,7 +40,7 @@ To change the domain, run `scripts/install.sh --domain <host>` instead of editin
 | `MANTLE_CLIENT_IMAGE_TAG` | Web app version. The updater sets it.                                                                        |
 | `MANTLE_CLIENT_ENABLED`   | `0` runs no web app on the box. Missing means on.                                                            |
 | `COMPOSE_PROFILES`        | Optional services. Prefer **Settings > Services** ([Optional services](04-services.md)).                     |
-| `PARSER_MEM_LIMIT`        | Memory for the parser, which reads every uploaded file (default `2g`). Raise it for very large drawing sets. |
+| `PARSER_MEM_LIMIT`        | Memory for the parser, which reads every uploaded file (default `3g`). Raise it for very large drawing sets. |
 
 ## Company sign-in (optional)
 

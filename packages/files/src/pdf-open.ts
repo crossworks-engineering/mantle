@@ -41,7 +41,8 @@ import path from 'node:path';
  * 75 M keeps a 600 dpi scan readable, a real scanner setting: about 70 M
  * pixels for a 297 x 420 mm sheet, 35 M for A4 paper or US Letter. It is
  * also the largest round value whose render stays under a 1.2 GB rise, which
- * fits a job in the parser's default 2 GB limit.
+ * fits a job in the parser's 2 GB limit (the default until v0.702.1; 3 GB
+ * since).
  *
  * Measured on Linux, rendering a one-page scan holding one image, peak RSS
  * rise: 70 M +1.05 GB, 75 M +1.13 GB, 80 M +1.19 to +1.21 GB (Flate; JPEG is

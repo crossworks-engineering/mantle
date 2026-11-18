@@ -25,18 +25,19 @@ gigabytes, a spreadsheet that declares a billion cells, a PDF with a
 inside a process cannot reliably stop that, so the guarantee is the
 operating system's:
 
-- **Memory, one job at a time.** `mem_limit` (default `2g`,
+- **Memory, one job at a time.** `mem_limit` (default `3g`,
   `PARSER_MEM_LIMIT`) with `memswap_limit` equal to it (no swap past it),
   and always one job at a time (there is no setting to raise it), so a job
   has the whole memory and a healthy file is never killed for its
   neighbour. A document that blows the limit is killed by the kernel
   inside the parser, never in a brain process.
-- **CPU.** `cpus` (default `1`, `PARSER_CPUS`): every box can grant it, a
-  1-vCPU box included. Raise it on a box with cores to spare. `cpu_shares`
+- **CPU.** `cpus` (default `2`, `PARSER_CPUS`): every box shape can grant
+  it (the smallest has 2 vCPU). A 1-vCPU box sets `PARSER_CPUS=1`; raise it
+  on a box with cores to spare. `cpu_shares`
   (default `512`, `PARSER_CPU_SHARES`) is the parser's weight when the box
   is short of CPU: the other services have Docker's 1024, so a long read
   gives way to the web, the api and Postgres. On an idle box it changes
-  nothing: the parser still gets its whole core.
+  nothing: the parser still gets its whole share.
 - **Disk.** The root filesystem is read-only (`read_only: true`). The job
   user can write only to tmpfs mounts: the scratch space (`/tmp`, where a
   job's files live, `PARSER_TMP_SIZE`, default `1g`), `/dev/shm` and
@@ -53,6 +54,14 @@ operating system's:
   server or the healthcheck (`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`, set in
   the image), so the server itself writes nothing to `/tmp` but the empty
   job root.
+- **Memory of a job.** A job's garbage collector runs in step with it
+  (`BUN_JSC_useConcurrentGC=0`, `jobEnv`). With one CPU (`cpus` was `1`
+  until v0.702.1), a collector beside the job fell behind a large decode:
+  the pictures of a page that is one image of 99.8 M pixels passed 2 GB and
+  the kernel killed the child. In step they peak at about 1.4 GB, in the same time; the
+  pictures of 19 other drawings took 3 percent more in all (bench, one
+  CPU). Other job types were not timed.
+  `scripts/probe-parser-large-image.sh` checks it on a built image.
 - **Network.** The parser sits only on the compose network `parser`
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
   `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.
@@ -171,8 +180,8 @@ checked: the host's processes and its `/tmp` are not the parser's.
 
 | Setting                     | Default | What it bounds                                                           |
 | --------------------------- | ------- | ------------------------------------------------------------------------ |
-| `PARSER_MEM_LIMIT`          | `2g`    | the container's memory, no swap past it (compose)                        |
-| `PARSER_CPUS`               | `1`     | the container's CPU share (compose)                                      |
+| `PARSER_MEM_LIMIT`          | `3g`    | the container's memory, no swap past it (compose)                        |
+| `PARSER_CPUS`               | `2`     | the container's CPU share (compose)                                      |
 | `PARSER_CPU_SHARES`         | `512`   | its weight when the box is short of CPU; other services 1024 (compose)   |
 | `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)            |
 | (jobs)                      | 1       | jobs at once, always; each its own process                               |
@@ -354,7 +363,7 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   work is linear in what the reader returns). The picture and the bones are
   not linear: they draw nested blocks and a MINSERT's grid in full, so a
   crafted file can cost far more than its size. The real bound is the
-  parser's: one job slot, 240 s, one retry, 2 GB. Each saved picture is
+  parser's: one job slot, 240 s, one retry, its memory limit. Each saved picture is
   bounded by its own record; records can overlap, so the pictures of a
   file together are not bounded by the file's size. No budget of its own.
 
@@ -549,7 +558,7 @@ image of both wheel stages is pinned by its multi-arch index digest.
     measured on made-up drawings, the whole parser child on one CPU, for
     every kind at its usual element size: circles and arcs cost the most a
     unit (at 125,100, 48 s and 0.77 GB; at 400,320, 156 s and 2.2 GB,
-    past the parser's 2 GB); lines, ellipses, polylines, splines, texts,
+    past 2 GB, the parser's limit then, the default until v0.702.1); lines, ellipses, polylines, splines, texts,
     attributes and nested inserts cost less. One element far larger than
     usual costs more than its weight says, in ezdxf, with this reader or
     without it: a text of 16,000 characters takes 54 s, one polyline of
