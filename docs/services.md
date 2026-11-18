@@ -1,7 +1,8 @@
 # Optional services: start and stop from Settings
 
-Five parts of a box are optional, and an admin can switch each one on or off
-from **Settings > Services** (`/settings/services`, admins only). The System
+Six parts of a box are optional, and an admin can switch each one on or off
+from **Settings > Services** (`/settings/services`, admins only), or over MCP
+with `service_list` and `service_set` (an Admin login's own client). The System
 vitals pills on the dashboard show each one's state and link there:
 
 | service            | what it does                                                                                                                                             | download                                                                                        | memory                                                         |
@@ -11,9 +12,10 @@ vitals pills on the dashboard show each one's state and link there:
 | **Helpers**        | Core boxes only: the headless browser (PDF export, drawing pictures in exports).                                                                         | about 1 GB                                                                                      | up to 1.5 GB                                                   |
 | **Documents**      | The documents engine (Gotenberg): Office files to PDF, page and HTML prints with headers and page numbers, the PDF tools ([documents.md](documents.md)). | about 700 MB (2.4 GB on disk)                                                                   | up to 2 GB (about 300 MB resident after the first job)         |
 | **Calls**          | LiveKit, the media server for voice calls between people in Messages ([messenger.md](messenger.md), "Calls"; `infra/livekit/README.md`). Off by default. | about 45 MB                                                                                     | up to 512 MB                                                   |
+| **Sync**           | The home of everything that syncs with an outside account; today the Email reader and Contacts. Off by default. See "Sync" below.                        | about 150 MB (the rest of its image is the server image's layers)                               | up to 512 MB                                                   |
 
-All five are compose **profiles**, and each service name is its profile
-(`sandboxes`, `local-embedder`, `helpers`, `calls`, `documents`). A switch changes the box's `.env`
+All six are compose **profiles**, and each service name is its profile
+(`sandboxes`, `local-embedder`, `helpers`, `calls`, `documents`, `sync`). A switch changes the box's `.env`
 and starts or stops that service's container; the rest of the brain keeps
 running.
 
@@ -54,6 +56,25 @@ ignored.
   switch there; nor on a core box with the `full` profile active, which runs
   them whatever their own profile says. This replaces
   `scripts/install.sh --helpers` for a running box.
+
+- **Sync** (the `sync` service, `server/sync`, image `mantle-sync`) has no
+  token: "on" is its profile. It is the one place for everything that syncs
+  with an outside account (the standing rule: anything that syncs goes
+  there). **Off by default.** The old in-brain mail, calendar-feed and
+  Microsoft sync, their workers and their account screens were removed in
+  Sync plan M4; mail, feeds and Microsoft come back inside this service.
+  Today Sync gates the Email reader (the mail already stored) and Contacts.
+  While it is off:
+  - the client hides Email and Contacts (`/api/shell` `features.sync`), with
+    their help topics (`service: sync` in the topic's frontmatter) and User
+    Guide pages;
+  - agents and MCP get no email or contact tools (`registerToolService`);
+  - contact share codes admit nobody.
+
+  Nothing is deleted: mail, contacts, events and synced files stay in the
+  brain and in search. The sidecar itself answers `/health` and `/status`
+  only so far. Its image carries the rclone binary: a file job runs one
+  short rclone command, no rclone daemon runs.
 
 **Off never removes anything.** Switching sandboxes off stops the running
 sandbox containers (stop, not remove) and the supervisor. Every sandbox, its
@@ -109,8 +130,10 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
   (`packages/runtime/src/agent/skills.ts`) leaves `sandbox_*` out of an
   agent's tools while the sandboxes service is off. The
   grant stays, so they come back the moment the service is on. The MCP
-  surface keeps listing the sandbox tools on purpose; they answer that the
-  service is switched off and that an admin can switch it on.
+  surface follows the same rule for every optional service: a tool whose
+  service is switched off is not listed (a session sees a switch at its next
+  connect), and a call that races a switch is refused with how to switch the
+  service on (`packages/tools/src/dispatch.ts`).
 - **The updater verb** (`infra/updater/updater.sh`, `handle_service_request`)
   takes a service name from a fixed list and a boolean, nothing else. It
   uses a request file of its own, so an older updater that does not know the

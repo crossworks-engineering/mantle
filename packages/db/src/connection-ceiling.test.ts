@@ -229,19 +229,6 @@ const SITES: Site[] = [
     why: 'the run-actions send boss: run tools and pending approvals (web MCP, api turns), the runs worker',
   },
   {
-    file: 'packages/email/src/backfill-queue.ts',
-    kind: 'pgboss',
-    processes: ['web', 'api', 'worker_email', 'worker_microsoft'],
-    runs: ['worker_runs'],
-    why: 'contact backfills: contact routes (web), the contact tools (api turns, web MCP, run tool items), the email and microsoft workers',
-  },
-  {
-    file: 'packages/email/src/accounts.ts',
-    kind: 'pgboss',
-    processes: ['web'],
-    why: 'setIncludedFolders: the email folders route',
-  },
-  {
     file: 'server/api/src/agent/extract-queue.ts',
     kind: 'pgboss',
     processes: ['api'],
@@ -277,7 +264,6 @@ const ONE_SHOT: Record<string, string> = {
   'packages/db/src/migrator-connection.ts':
     'the workspaces switch as the migrator (arch A9): one connection at boot or the first owner, closed after',
   'server/api/src/provision.ts': 'the migrate gate (provision)',
-  'packages/email/src/backfill-rfc-message-id.ts': 'operator script (maintain)',
 };
 /** Whole directories of operator scripts (pgboss:init of the migrate gate
  *  among them) and benchmarks. */
@@ -534,7 +520,7 @@ describe('Postgres connection ceiling', () => {
   it('finds the box processes and the core shape', () => {
     expect(DB_PROCESSES).toEqual(expect.arrayContaining(['web', 'api', 'worker_files']));
     expect(DB_PROCESSES).not.toContain('migrate');
-    expect(CORE_OFF).toEqual(expect.arrayContaining(['worker_email', 'worker_runs']));
+    expect(CORE_OFF).toEqual(expect.arrayContaining(['worker_telegram', 'worker_runs']));
     expect(compose).toMatch(/x-app-env: &app-env[\s\S]*?\n {2}DATABASE_URL:/);
   });
 
@@ -590,13 +576,15 @@ describe('Postgres connection ceiling', () => {
     const per = sizeOf(narrowCall!);
     const box = per * DB_PROCESSES.length;
     const headroom = per * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);
-    // The sum runtime-role.ts writes beside NARROW_CONNECTION_LIMIT.
+    // The sum runtime-role.ts writes beside NARROW_CONNECTION_LIMIT. 13
+    // processes to 10: worker_email, worker_microsoft and worker_calendar
+    // left with the old sync (Sync M4); the limit keeps its 38.
     expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
       per: 2,
-      processes: 13,
-      box: 26,
+      processes: 10,
+      box: 20,
       headroom: 12,
-      sum: 38,
+      sum: 32,
     });
     expect(box + headroom).toBeLessThanOrEqual(NARROW_LIMIT);
     const stdioWrite = writePoolSizeOf('server/mcp/src/server.ts') * STDIO_MCP_PROCESSES;
@@ -612,13 +600,15 @@ describe('Postgres connection ceiling', () => {
     const per = VIEWER_POOL_MAX;
     const box = per * DB_PROCESSES.length;
     const headroom = per * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);
-    // The sum viewer-roles.ts writes beside ROLE_CONNECTION_LIMIT.
+    // The sum viewer-roles.ts writes beside ROLE_CONNECTION_LIMIT. 13
+    // processes to 10 with the old sync's three workers gone (Sync M4); the
+    // limit keeps its 57.
     expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
       per: 3,
-      processes: 13,
-      box: 39,
+      processes: 10,
+      box: 30,
       headroom: 18,
-      sum: 57,
+      sum: 48,
     });
     const user = ROLE_LIMITS.find((r) => r.role === 'user');
     expect(user?.limit).toBe(57);

@@ -7,7 +7,6 @@ DELETE /api/apps/:id/draft class=content scope=content caller=owner gone=false
 DELETE /api/apps/:id/snapshots/:sid class=content scope=content caller=owner gone=false
 DELETE /api/apps/deleted/:id class=content scope=content caller=owner gone=false
 DELETE /api/auth/oidc/link class=self scope=self caller=publicLogin gone=false
-DELETE /api/calendar/:id class=area scope=area:connectors caller=owner gone=false
 DELETE /api/contacts/:id class=content scope=content caller=owner gone=false
 DELETE /api/draws/:id class=content scope=content caller=owner gone=false
 DELETE /api/events/:id class=content scope=content caller=owner gone=false
@@ -31,8 +30,6 @@ DELETE /api/messenger/c/:id/call/participants/:loginId class=self scope=- caller
 DELETE /api/messenger/c/:id/messages/:seq class=self scope=- caller=login gone=false
 DELETE /api/messenger/c/:id/participants/:loginId class=self scope=- caller=login gone=false
 DELETE /api/messenger/favourites/:kind/:id class=self scope=- caller=login gone=false
-DELETE /api/microsoft/accounts/:id class=area scope=area:connectors caller=owner gone=false
-DELETE /api/microsoft/config class=area scope=area:connectors caller=owner gone=false
 DELETE /api/model-pools/:id class=area scope=area:settings caller=owner gone=false
 DELETE /api/network/key class=area scope=area:settings caller=owner gone=false
 DELETE /api/notes/:id class=content scope=content caller=owner gone=false
@@ -116,7 +113,6 @@ GET /api/auth/pair/:id class=self scope=self caller=publicLogin gone=false
 GET /api/auth/whoami class=self scope=self caller=publicLogin gone=false
 GET /api/backups class=area scope=area:settings caller=owner gone=false
 GET /api/box-status class=area scope=area:settings caller=owner gone=false
-GET /api/calendar class=area scope=area:connectors caller=owner gone=false
 GET /api/changelog class=self scope=self caller=owner gone=false
 GET /api/config class=area scope=area:settings caller=owner gone=false
 GET /api/contacts class=content scope=content caller=owner gone=false
@@ -148,10 +144,7 @@ GET /api/draws class=content scope=content caller=owner gone=false
 GET /api/draws/:id class=content scope=content caller=owner gone=false
 GET /api/draws/:id/svg class=content scope=content caller=readerAsset gone=false
 GET /api/email/accounts class=area scope=area:connectors caller=owner gone=false
-GET /api/email/accounts/:id class=area scope=area:connectors caller=owner gone=false
-GET /api/email/accounts/:id/folders class=area scope=area:connectors caller=owner gone=false
 GET /api/email/contact-gate class=area scope=area:connectors caller=owner gone=false
-GET /api/email/discover class=area scope=area:connectors caller=owner gone=false
 GET /api/email/folders class=area scope=area:connectors caller=owner gone=false
 GET /api/email/messages class=area scope=area:connectors caller=owner gone=false
 GET /api/email/messages/:id class=area scope=area:connectors caller=owner gone=false
@@ -208,14 +201,6 @@ GET /api/messenger/photo/:loginId class=self scope=- caller=loginAsset gone=fals
 GET /api/messenger/stream class=self scope=- caller=login gone=false
 GET /api/messenger/unread class=self scope=- caller=login gone=false
 GET /api/metrics/usage class=area scope=area:settings caller=owner gone=false
-GET /api/microsoft/accounts class=area scope=area:connectors caller=owner gone=false
-GET /api/microsoft/accounts/:id/drives class=area scope=area:connectors caller=owner gone=false
-GET /api/microsoft/accounts/:id/mail class=area scope=area:connectors caller=owner gone=false
-GET /api/microsoft/config class=area scope=area:connectors caller=owner gone=false
-GET /api/microsoft/drives/:id/browse class=area scope=area:connectors caller=owner gone=false
-GET /api/microsoft/drives/:id/scopes class=area scope=area:connectors caller=owner gone=false
-GET /api/microsoft/oauth/callback class=area scope=area:connectors caller=owner gone=false
-GET /api/microsoft/oauth/start class=area scope=area:connectors caller=owner gone=false
 GET /api/model-combos class=area scope=area:settings caller=owner gone=false
 GET /api/model-context class=area scope=area:settings caller=owner gone=false
 GET /api/model-pools class=area scope=area:settings caller=owner gone=false
@@ -414,7 +399,6 @@ HEAD /api/auth/pair/:id class=self scope=self caller=publicLogin gone=false
 HEAD /api/auth/whoami class=self scope=self caller=publicLogin gone=false
 HEAD /api/backups class=area scope=area:settings caller=owner gone=false
 HEAD /api/box-status class=area scope=area:settings caller=owner gone=false
-HEAD /api/calendar class=area scope=area:connectors caller=owner gone=false
 HEAD /api/changelog class=self scope=self caller=owner gone=false
 HEAD /api/config class=area scope=area:settings caller=owner gone=false
 HEAD /api/contacts class=content scope=content caller=owner gone=false
@@ -446,10 +430,7 @@ HEAD /api/draws class=content scope=content caller=owner gone=false
 HEAD /api/draws/:id class=content scope=content caller=owner gone=false
 HEAD /api/draws/:id/svg class=content scope=content caller=readerAsset gone=false
 HEAD /api/email/accounts class=area scope=area:connectors caller=owner gone=false
-HEAD /api/email/accounts/:id class=area scope=area:connectors caller=owner gone=false
-HEAD /api/email/accounts/:id/folders class=area scope=area:connectors caller=owner gone=false
 HEAD /api/email/contact-gate class=area scope=area:connectors caller=owner gone=false
-HEAD /api/email/discover class=area scope=area:connectors caller=owner gone=false
 HEAD /api/email/folders class=area scope=area:connectors caller=owner gone=false
 HEAD /api/email/messages class=area scope=area:connectors caller=owner gone=false
 HEAD /api/email/messages/:id class=area scope=area:connectors caller=owner gone=false
@@ -506,14 +487,6 @@ HEAD /api/messenger/photo/:loginId class=self scope=- caller=loginAsset gone=fal
 HEAD /api/messenger/stream class=self scope=- caller=login gone=false
 HEAD /api/messenger/unread class=self scope=- caller=login gone=false
 HEAD /api/metrics/usage class=area scope=area:settings caller=owner gone=false
-HEAD /api/microsoft/accounts class=area scope=area:connectors caller=owner gone=false
-HEAD /api/microsoft/accounts/:id/drives class=area scope=area:connectors caller=owner gone=false
-HEAD /api/microsoft/accounts/:id/mail class=area scope=area:connectors caller=owner gone=false
-HEAD /api/microsoft/config class=area scope=area:connectors caller=owner gone=false
-HEAD /api/microsoft/drives/:id/browse class=area scope=area:connectors caller=owner gone=false
-HEAD /api/microsoft/drives/:id/scopes class=area scope=area:connectors caller=owner gone=false
-HEAD /api/microsoft/oauth/callback class=area scope=area:connectors caller=owner gone=false
-HEAD /api/microsoft/oauth/start class=area scope=area:connectors caller=owner gone=false
 HEAD /api/model-combos class=area scope=area:settings caller=owner gone=false
 HEAD /api/model-context class=area scope=area:settings caller=owner gone=false
 HEAD /api/model-pools class=area scope=area:settings caller=owner gone=false
@@ -670,11 +643,9 @@ PATCH /api/agents/:id class=area scope=area:assistants caller=owner gone=false
 PATCH /api/ai-workers/:id class=area scope=area:settings caller=owner gone=false
 PATCH /api/apps/:id class=content scope=content caller=owner gone=false
 PATCH /api/apps/:id/snapshots/:sid class=content scope=content caller=owner gone=false
-PATCH /api/calendar/:id class=area scope=area:connectors caller=owner gone=false
 PATCH /api/contacts/:id class=content scope=content caller=owner gone=false
 PATCH /api/docs/collections/:id class=area scope=area:settings caller=owner gone=false
 PATCH /api/draws/:id class=content scope=content caller=owner gone=false
-PATCH /api/email/accounts/:id class=area scope=area:connectors caller=owner gone=false
 PATCH /api/email/messages/:id class=area scope=area:connectors caller=owner gone=false
 PATCH /api/embedding/extraction class=area scope=area:settings caller=owner gone=false
 PATCH /api/events/:id class=content scope=content caller=owner gone=false
@@ -690,8 +661,6 @@ PATCH /api/mcp-connectors/:slug class=area scope=area:connectors caller=owner go
 PATCH /api/mcp-settings class=area scope=area:settings caller=owner gone=false
 PATCH /api/messenger/c/:id class=self scope=- caller=login gone=false
 PATCH /api/messenger/c/:id/messages/:seq class=self scope=- caller=login gone=false
-PATCH /api/microsoft/accounts/:id/mail class=area scope=area:connectors caller=owner gone=false
-PATCH /api/microsoft/drives/:id class=area scope=area:connectors caller=owner gone=false
 PATCH /api/model-pools/:id class=area scope=area:settings caller=owner gone=false
 PATCH /api/notes/:id class=content scope=content caller=owner gone=false
 PATCH /api/openapi-connectors/:slug class=area scope=area:connectors caller=owner gone=false
@@ -783,7 +752,6 @@ POST /api/auth/token class=self scope=self caller=- gone=false
 POST /api/auth/token/refresh class=self scope=self caller=- gone=false
 POST /api/backups class=area scope=area:settings caller=owner gone=false
 POST /api/backups/run class=area scope=area:settings caller=owner gone=false
-POST /api/calendar class=area scope=area:connectors caller=owner gone=false
 POST /api/config/adopt class=area scope=area:settings caller=owner gone=false
 POST /api/config/adopt-all class=area scope=area:settings caller=owner gone=false
 POST /api/contacts class=content scope=content caller=owner gone=false
@@ -800,8 +768,6 @@ POST /api/docs/collections/all class=area scope=area:settings caller=owner gone=
 POST /api/draws class=content scope=content caller=owner gone=false
 POST /api/draws/:id/commit class=content scope=content caller=owner gone=false
 POST /api/draws/:id/discard-draft class=content scope=content caller=owner gone=false
-POST /api/email/accounts class=area scope=area:connectors caller=owner gone=false
-POST /api/email/discover/contacts class=area scope=area:connectors caller=owner gone=false
 POST /api/embedding class=area scope=area:settings caller=owner gone=false
 POST /api/embedding/rebuild class=area scope=area:settings caller=owner gone=false
 POST /api/embedding/recover class=area scope=area:settings caller=owner gone=false
@@ -868,7 +834,6 @@ POST /api/messenger/c/:id/participants class=self scope=- caller=login gone=fals
 POST /api/messenger/c/:id/read class=self scope=- caller=login gone=false
 POST /api/messenger/c/:id/typing class=self scope=- caller=login gone=false
 POST /api/messenger/conversations class=self scope=- caller=login gone=false
-POST /api/microsoft/accounts/:id/drives class=area scope=area:connectors caller=owner gone=false
 POST /api/model-combos/apply class=area scope=area:settings caller=owner gone=false
 POST /api/model-pools class=area scope=area:settings caller=owner gone=false
 POST /api/network/activate class=area scope=area:settings caller=owner gone=false
@@ -973,12 +938,9 @@ POST /scim/v2/Users class=public scope=- caller=- gone=false
 PUT /api/app-nav/pins class=content scope=content caller=owner gone=false
 PUT /api/apps/:id/draft class=content scope=content caller=owner gone=false
 PUT /api/draws/:id/draft class=content scope=content caller=owner gone=false
-PUT /api/email/accounts/:id/folders class=area scope=area:connectors caller=owner gone=false
 PUT /api/fleet/default-model class=area scope=area:settings caller=owner gone=false
 PUT /api/member/push/preferences class=self scope=self caller=member gone=false
 PUT /api/messenger/favourites/:kind/:id class=self scope=- caller=login gone=false
-PUT /api/microsoft/config class=area scope=area:connectors caller=owner gone=false
-PUT /api/microsoft/drives/:id/scopes class=area scope=area:connectors caller=owner gone=false
 PUT /api/pages/:id/draft class=content scope=content caller=owner gone=false
 PUT /api/presents/:id/data class=content scope=content caller=owner gone=false
 PUT /api/profile class=self scope=self caller=owner gone=false

@@ -34,7 +34,7 @@ export interface MaintenanceTask {
   /** Script path relative to `cwd`. */
   script: string;
   /** Repo-relative working directory to spawn in. */
-  cwd: 'server/web' | 'packages/email';
+  cwd: 'server/web';
   /** The task cannot mutate or spend — it only reads and reports. Such a task
    *  has no dry-run/apply split to opt into, so it satisfies the schedulable
    *  guardrail without an `applyFlag`. Set this ONLY when the script provably
@@ -647,31 +647,6 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     notes: 'Follow the documented env-swap procedure. No dry-run.',
   },
   {
-    slug: 'sync-now',
-    title: 'Synchronous IMAP sync (bypass pg-boss)',
-    description:
-      'Runs an IMAP sync of every enabled account in-process — a manual re-trigger after config changes. The recurring path is the pg-boss scheduler.',
-    kind: 'ops',
-    status: 'live',
-    cost: 'imap',
-    schedulable: false,
-    script: 'scripts/sync-now.ts',
-    cwd: 'server/web',
-    notes: 'First scan of newly-discovered folders covers 12 months — can be slow.',
-  },
-  {
-    slug: 'imap-folders',
-    title: 'Probe IMAP folders (read-only)',
-    description:
-      'Prints every IMAP folder per account and marks which are in scope vs excluded. Diagnostic; writes nothing.',
-    kind: 'ops',
-    status: 'live',
-    cost: 'imap',
-    schedulable: false,
-    script: 'scripts/imap-folders.ts',
-    cwd: 'server/web',
-  },
-  {
     slug: 'pgboss-init',
     title: 'Materialise the pg-boss schema',
     description:
@@ -761,37 +736,6 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     requiresEnv: ['ALLOWED_USER_ID'],
   },
   {
-    slug: 'backfill-email-salience',
-    title: 'Heuristic bulk-email salience lowering',
-    description:
-      'Lowers retrieval salience on legacy unknown-delivery emails that look bulk by body heuristics. Superseded by classify-backfill (the precise IMAP-header version).',
-    kind: 'backfill',
-    status: 'retired',
-    cost: 'sql',
-    schedulable: false,
-    script: 'scripts/backfill-email-salience.ts',
-    cwd: 'server/web',
-    applyFlag: '--apply',
-    extraFlags: ['--salience=<0..1>'],
-    requiresEnv: ['ALLOWED_USER_ID'],
-  },
-  {
-    slug: 'classify-backfill',
-    title: 'Reclassify legacy unknown-delivery emails',
-    description:
-      'Re-fetches classification headers over IMAP for legacy unknown emails, re-runs classifyDelivery, and rewrites delivery_kind + node salience.',
-    kind: 'backfill',
-    status: 'retired',
-    cost: 'imap',
-    schedulable: false,
-    script: 'scripts/classify-backfill.ts',
-    cwd: 'server/web',
-    applyFlag: '--apply',
-    extraFlags: ['--limit=<n>', '--account=<uuid>'],
-    requiresEnv: ['ALLOWED_USER_ID', 'MANTLE_MASTER_KEY'],
-    notes: 'Read-only against the mailbox (FETCH only, never marks read).',
-  },
-  {
     slug: 'purge-noncontact-emails',
     title: 'Purge emails from non-contacts',
     description:
@@ -860,19 +804,6 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     script: 'scripts/retire-table-blobs.ts',
     cwd: 'server/web',
     applyFlag: '--apply',
-  },
-  {
-    slug: 'backfill-rfc-msg-id',
-    title: 'Backfill emails.rfc_message_id',
-    description:
-      'Populates rfc_message_id on emails ingested before migration 0045 via header-only IMAP fetches. All post-0045 ingests populate the column at write time.',
-    kind: 'backfill',
-    status: 'retired',
-    cost: 'imap',
-    schedulable: false,
-    script: 'src/backfill-rfc-message-id.ts',
-    cwd: 'packages/email',
-    notes: 'No flags; no dry-run. Idempotent (WHERE rfc_message_id IS NULL guard).',
   },
 
   // ── Workspaces ───────────────────────────────────────────────────────────

@@ -490,10 +490,12 @@ export function narrowDatabaseUrl(): string | null {
 
 /** The narrow role's CONNECTION LIMIT, sized to every narrow pool a box
  *  can open at once, each at NARROW_POOL_MAX (2, gateway/pools.ts): the 13
- *  compose processes that take the app env (26; the control service runs
+ *  compose processes that took the app env (26; the control service runs
  *  on a Control Center only), up to 4 stdio MCP servers (8, the count the
  *  write role's limit leaves room for) and 2 operator runs (a maintain run
- *  and one more CLI, 4). 26 + 8 + 4 = 38.
+ *  and one more CLI, 4). 26 + 8 + 4 = 38. Since the old sync's three
+ *  workers left (Sync M4) the processes are 10 (20 + 8 + 4 = 32); the
+ *  limit stays 38.
  *  connection-ceiling.test.ts reads the compose file and fails when that
  *  sum outgrows this limit, or the box's pools outgrow 90% of
  *  max_connections. */

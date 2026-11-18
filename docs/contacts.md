@@ -15,8 +15,8 @@ people whose mail Mantle will ingest. It does **two** jobs at once:
 
 Companion docs:
 
-- [`email-send.md`](./email-send.md), the send half; its gate reads from here.
-- [`email-ingest.md`](./email-ingest.md), the inbound half; its `ContactGate`
+- [`email-send.md`](./_archive/email-send.md), the send half; its gate reads from here.
+- [`email-ingest.md`](./_archive/email-ingest.md), the inbound half; its `ContactGate`
   reads from here (`§3a`, `§6`).
 - [`memory.md`](./memory.md), the brain layers a contact node's `description`
   feeds into (summary / embedding / facts / entities).
@@ -109,7 +109,7 @@ No tool-loop side effects, no surprise sends.
 `syncAccount`. Mail is ingested iff `From` matches a contact address, a contact
 `@domain` wildcard, or one of the user's own account addresses. Empty contacts ⇒
 nothing inbound (an empty allowlist is an empty inbox). Full detail in
-[`email-ingest.md` §3a](./email-ingest.md#3a-the-gate--loadcontactgate).
+[`email-ingest.md` §3a](./_archive/email-ingest.md#3a-the-gate--loadcontactgate).
 
 **The deliberate asymmetry:** domains are **inbound-only**. A `@domain` wildcard
 means "trust mail _from_ this domain"; it does **not** let Saskia send to an

@@ -323,7 +323,7 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: the rows of the manifest', () => {
   });
 
   it('A4 step 3b: a connector OAuth callback is a write, run as the login its guard names', () => {
-    for (const pattern of ['/api/mcp-connectors/oauth/callback', '/api/microsoft/oauth/callback']) {
+    for (const pattern of ['/api/mcp-connectors/oauth/callback']) {
       for (const method of ['GET', 'HEAD']) {
         const row = table.get(`${method} ${pattern}`)!;
         expect(row.effect, row.key).toBe('write');

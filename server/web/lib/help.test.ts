@@ -4,7 +4,8 @@ import path from 'node:path';
 import { allHelpTopics, helpTopicForPath } from '@mantle/share-ui/help-topics';
 import { ALL_NAV_ITEMS } from '@mantle/share-ui/nav-items';
 import { MANIFEST_TOOL_GROUPS } from './system-manifest/manifest';
-import { parseFrontmatter, splitSections } from './help';
+import { helpServiceOn, parseFrontmatter, splitSections } from './help';
+import { docHiddenNow, SYNC_GUIDE_PAGES } from './docs-reader';
 
 /**
  * Drift guard for per-screen help, in the same spirit as manifest.test.ts: the
@@ -141,5 +142,36 @@ describe('nav help coverage', () => {
     const hrefs = new Set(ALL_NAV_ITEMS.map((i) => i.href));
     const stale = [...NO_HELP].filter((href) => !hrefs.has(href));
     expect(stale, 'NO_HELP names a route that is no longer in the nav').toEqual([]);
+  });
+});
+
+describe('help for the screens of an optional service', () => {
+  it('reads `service:` from the frontmatter', () => {
+    const { data } = parseFrontmatter(
+      '---\ntitle: Email\ntoolGroups: [email]\nservice: sync\n---\nbody',
+    );
+    expect(data.service).toBe('sync');
+  });
+
+  it('a name that is no optional service hides nothing', () => {
+    expect(helpServiceOn('not-a-service')).toBe(true);
+  });
+
+  it('marks the Sync screens, and the guide reader hides the same pages', () => {
+    const marked = files.filter((t) => {
+      const raw = fs.readFileSync(path.join(HELP_DIR, `${t}.md`), 'utf8');
+      return parseFrontmatter(raw).data.service === 'sync';
+    });
+    expect(marked.sort()).toEqual(['contacts', 'inbox']);
+    for (const t of marked) expect(SYNC_GUIDE_PAGES.has(`06-help/${t}.md`)).toBe(true);
+    for (const rel of SYNC_GUIDE_PAGES) {
+      expect(fs.existsSync(path.join(HELP_DIR, '..', rel)), rel).toBe(true);
+    }
+  });
+
+  it('the reader leaves a Sync page out only while Sync is off', () => {
+    expect(docHiddenNow('06-help/inbox.md', false)).toBe(true);
+    expect(docHiddenNow('06-help/inbox.md', true)).toBe(false);
+    expect(docHiddenNow('06-help/pages.md', false)).toBe(false);
   });
 });

@@ -18,7 +18,7 @@ import type { StoredFleetDefaultModel } from './fleet-default-model';
 import type { TaskSubmission } from '../task-submissions';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
-// Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
+// Sources: @mantle/content, @mantle/email, @mantle/runtime/agent
 // re-export these names, so server code keeps its original import paths.
 
 export type TaskRow = {
@@ -807,21 +807,6 @@ export type ProviderAlertsAnswer = {
   otherAlerts: ProviderAlert[];
 };
 
-export type AccountFoldersResult =
-  | {
-      ok: true;
-      address: string;
-      /** Every folder the server reports right now (the pick list). */
-      allFolders: string[];
-      /** The current explicit allow-list, or null = "scan all non-excluded". */
-      included: string[] | null;
-      /** Folders the operator opted OUT of (rendered disabled). */
-      excluded: string[];
-      /** Folders the sync has actually touched (per the cursor). */
-      scanned: string[];
-    }
-  | { ok: false; error: string };
-
 export interface FolderFacet {
   folder: string;
   count: number;
@@ -836,18 +821,6 @@ export interface MessageListItem {
   snippet: string | null;
   internalDate: Date;
   isRead: boolean;
-}
-
-export interface MsConfigStatus {
-  configured: boolean;
-  /** Where the active config comes from — drives the UI ("set here" vs "from
-   *  environment, read-only"). */
-  source: 'db' | 'env' | null;
-  clientId: string | null;
-  tenant: string;
-  redirectUri: string | null;
-  /** Masked secret for display; never the plaintext. */
-  secretMasked: string | null;
 }
 
 /** One retrieved (or near-miss) item: capped text + its ranking distance. */
@@ -1262,26 +1235,4 @@ export interface SyncRun {
   scanned: number;
   ingested: number;
   error: string | null;
-}
-
-/** Mirrors @mantle/microsoft `PublicMsAccount` (an `ms_accounts` row with the
- *  sealed OAuth tokens replaced by presence flags). */
-export interface PublicMsAccount {
-  id: string;
-  userId: string;
-  upn: string;
-  displayName: string | null;
-  tenantId: string | null;
-  tokenExpiresAt: string | null;
-  scopes: string[];
-  branchPath: string;
-  surfaces: Record<string, boolean>;
-  syncState: Record<string, unknown>;
-  lastSyncAt: string | null;
-  lastSyncError: string | null;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-  hasAccessToken: boolean;
-  hasRefreshToken: boolean;
 }

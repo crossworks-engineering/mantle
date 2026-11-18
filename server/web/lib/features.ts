@@ -11,6 +11,8 @@
  * all, so `features?.recallV2` is the shape a client should test.
  */
 
+import { serviceEnabled } from '@mantle/config';
+
 /**
  * Recall v2: the native authoring path: a map is a `recall` node and its
  * cards are rows written directly, rather than a page tree compiled into the
@@ -42,9 +44,17 @@ export const TREE_CUSTOM_ORDER = true;
 export type ShellFeatures = {
   recallV2: boolean;
   treeCustomOrder: boolean;
+  /** The Sync service is on (Settings > Services, profile `sync`). Off, the
+   *  client hides Email, Contacts and the account screens. Live from the
+   *  updater's services.json, read at every shell request. */
+  sync: boolean;
 };
 
 /** The flags for the owner shell. One object, so adding a flag is one line. */
 export function shellFeatures(): ShellFeatures {
-  return { recallV2: RECALL_V2, treeCustomOrder: TREE_CUSTOM_ORDER };
+  return {
+    recallV2: RECALL_V2,
+    treeCustomOrder: TREE_CUSTOM_ORDER,
+    sync: serviceEnabled('sync'),
+  };
 }

@@ -90,7 +90,6 @@ describe('owner surface for a peer', () => {
       expect(tools).toContain(s);
     }
     for (const s of [
-      'email_send',
       'app_publish',
       'node_share',
       'telegram_send',
@@ -105,7 +104,6 @@ describe('owner surface for a peer', () => {
       // deletes, live app code, third-brain egress, model routing
       'run_plan',
       'run_append',
-      'email_page',
       'contact_create',
       'page_delete',
       'app_source_set',
@@ -119,9 +117,9 @@ describe('owner surface for a peer', () => {
   });
 
   it('a risky tool comes back only when the owner names it', () => {
-    const tools = registered({ write: true, riskyAllowed: ['email_send'] });
-    expect(tools).toContain('email_send');
-    expect(tools).not.toContain('telegram_send');
+    const tools = registered({ write: true, riskyAllowed: ['telegram_send'] });
+    expect(tools).toContain('telegram_send');
+    expect(tools).not.toContain('telegram_edit');
   });
 
   it('every spending or confirm-gated builtin counts as risky', () => {
@@ -184,7 +182,7 @@ describe('one surface for every login (W7b): what a scope lists', () => {
     'run_plan',
     'peer_call',
     'secret_create',
-    'email_send',
+    'email_list',
   ];
 
   it('a scope without Admin: item tools listed, adminOnly and Admin-area tools not', () => {
@@ -386,8 +384,8 @@ describe('one surface for every login (W7b): what a scope lists', () => {
       return out.indexOf(n);
     };
     expect(at('note_create')).toBeLessThan(at('note_delete'));
-    expect(at('note_delete')).toBeLessThan(at('email_send'));
-    expect(at('email_send')).toBeLessThan(at('mcp_crm_contacts_list'));
+    expect(at('note_delete')).toBeLessThan(at('api_tool_test'));
+    expect(at('api_tool_test')).toBeLessThan(at('mcp_crm_contacts_list'));
     expect(at('mcp_crm_contacts_list')).toBeLessThan(at('mcp_crm_contacts_update'));
     expect(at('mcp_crm_contacts_update')).toBeLessThan(at('note_list'));
   });

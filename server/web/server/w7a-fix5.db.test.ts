@@ -418,44 +418,6 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
 
   // ── 3. mail accounts ───────────────────────────────────────────────────
 
-  it('3: a mail host or port move with a blank password needs the password or the keys area', async () => {
-    const [acct] = await x<{ id: string }>(sql`insert into email_accounts
-        (user_id, provider, address, branch_path, imap_config_enc, imap_host, imap_port,
-         smtp_host, smtp_port)
-      values (${owner}, 'imap', ${`${tag}@example.invalid`}, ${`inbox.${tag}`}, '\\x00'::bytea,
-              '127.0.0.1', 1, '127.0.0.1', 2)
-      returning id::text`);
-    const route = await import('@/app/api/email/accounts/[id]/route');
-    const edit = (body: Record<string, unknown>) =>
-      route.PATCH(
-        json({ host: '127.0.0.1', port: 1, smtpHost: '127.0.0.1', smtpPort: 2, ...body }, 'PATCH'),
-        params('id', acct!.id),
-      );
-    as(second);
-    for (const moved of [
-      { host: '1.0.0.1' },
-      { port: 993 },
-      { smtpHost: '1.0.0.1' },
-      { smtpPort: 465 },
-      { host: '1.0.0.1', intent: 'test' },
-    ]) {
-      const res = await edit(moved);
-      expect(res.status, JSON.stringify(moved)).toBe(403);
-      expect(await res.text()).toMatch(/app password/);
-    }
-    // The stored host and port, or a typed password: the gate lets it by
-    // (the probe then fails on the closed local port).
-    expect((await edit({})).status).not.toBe(403);
-    expect((await edit({ host: '127.0.0.2', password: 'typed-again' })).status).not.toBe(403);
-    // With the keys area L may move it.
-    await setKeys(true);
-    expect((await edit({ host: '127.0.0.2' })).status).not.toBe(403);
-    const stored = (
-      await x<{ h: string }>(sql`select imap_host as h from email_accounts where id = ${acct!.id}`)
-    )[0]!.h;
-    expect(stored).toBe('127.0.0.1');
-  });
-
   // ── 4. run-time: the configurer answers ────────────────────────────────
 
   it('4: an agent or AI worker route L paired resolves its key only while L holds the keys area', async () => {

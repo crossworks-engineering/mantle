@@ -760,11 +760,7 @@ export function storesReached(text) {
 
 /** The packages whose fetches take outside URLs (eslint-rules/no-bare-fetch.mjs
  *  sweeps the same ones). */
-export const BARE_FETCH_PACKAGES = [
-  'packages/tools/src/',
-  'packages/calendar/src/',
-  'packages/content/src/',
-];
+export const BARE_FETCH_PACKAGES = ['packages/tools/src/', 'packages/content/src/'];
 
 /** Bare fetch call sites in `text` (comments exempt): `fetch(` not reached
  *  through an object, and `globalThis.fetch(`. No space before the paren

@@ -56,6 +56,7 @@ import {
   TOOLSMITH_TOOLS,
   VAULT_KEY_TOOLS,
   GATEWAY_SERVICE_TOOLS,
+  SERVICE_TOOLS,
   PIPELINE_TOOLS,
   NOTE_TOOLS,
   TREE_TOOLS,
@@ -304,10 +305,9 @@ export function registerMantleTools(
 
   // ─── Contacts ────────────────────────────────────────────────────────────────
   // The email allowlist (nodes of type='contact'). Exposing these closes the gap
-  // where an MCP client could read the brain but not extend the assistant's reach:
-  // contact_create is what lets email_send target a new recipient (and kicks off
-  // the 90-day inbound history backfill). Bridged from the in-app CONTACT_TOOLS so
-  // both surfaces share one tested handler (incl. the enqueueBackfills side effect).
+  // where an MCP client could read the brain but not extend which senders' mail
+  // it keeps. Bridged from the in-app CONTACT_TOOLS so both surfaces share one
+  // tested handler.
   registerBuiltinTools(CONTACT_TOOLS);
 
   // ─── Workers (modality delegation) ───────────────────────────────────────────
@@ -326,8 +326,8 @@ export function registerMantleTools(
   // Renders a page/note → .docx or a table → .xlsx where an export lands (saveExport) and returns
   // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
   registerBuiltinTools(EXPORT_TOOLS);
-  // The documents engine (Gotenberg): off, each answers that the service is
-  // switched off and that an admin switches it on.
+  // The documents engine (Gotenberg): listed only while the service is on
+  // (registerBuiltinTools skips a tool whose service is off).
   registerBuiltinTools(DOCUMENT_TOOLS);
   // Who reads an item (its grants); access_set only explains that nothing
   // has a level any more.
@@ -370,10 +370,10 @@ export function registerMantleTools(
   // `sandbox_exec` runs inside a container on an egress-only network with no
   // route to postgres, the object store or the web tier (docs/sandboxes.md).
   //
-  // Bridged unconditionally, exactly as the in-app coder agent holds them: the
-  // handlers already answer "sandboxes are not enabled on this box" when the
-  // `sandboxes` compose profile is off, so a box without sandboxd gives the
-  // client a clear reason instead of a missing tool it cannot ask about.
+  // Listed only while the `sandboxes` service is on, exactly as the in-app
+  // coder agent holds them (one rule for every optional service:
+  // registerBuiltinTools skips a tool whose service is off). A call that
+  // races a switch still gets the handlers' "sandboxes are not enabled".
   registerBuiltinTools(SANDBOX_TOOLS);
 
   // ─── Full parity: the rest of the in-app catalog ─────────────────────────────
@@ -548,6 +548,12 @@ export function registerMantleTools(
   // `mcpOnly` (a row decides where calls go; no agent is granted them), the
   // connectors area.
   registerBuiltinTools(GATEWAY_SERVICE_TOOLS);
+
+  // ─── Settings > Services ─────────────────────────────────────────────────────
+  // service_list / service_set (docs/services.md): an Admin user's client
+  // reads and switches the box's optional services, as the screen does.
+  // `mcpOnly`, the settings area.
+  registerBuiltinTools(SERVICE_TOOLS);
 
   // ─── The pipelines ───────────────────────────────────────────────────────────
   // pipeline_list / pipeline_set / pipeline_test / pipeline_reread /

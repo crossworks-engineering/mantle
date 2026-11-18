@@ -296,8 +296,3 @@ export function lowersAccessSet(input: Record<string, unknown>): boolean {
   const level = normalLevel(input.level);
   return level === 'client' || level === 'public';
 }
-
-/** email_page's lowering: with a link. Its policy's `lowering`. */
-export function lowersEmailPage(input: Record<string, unknown>): boolean {
-  return input.includeLink === true || input.includeLink === 'true';
-}

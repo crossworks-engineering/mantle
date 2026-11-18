@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { countContacts, createContact, listContacts } from '@/lib/contacts';
-import { enqueueBackfills } from '@mantle/email';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
@@ -55,7 +54,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const { contact, addedEmails } = await createContact(user.id, {
+  const { contact } = await createContact(user.id, {
     firstName: parsed.data.first_name,
     lastName: parsed.data.last_name,
     company: parsed.data.company,
@@ -66,8 +65,6 @@ export async function POST(req: Request) {
     description: parsed.data.description,
     tags: parsed.data.tags ?? [],
   });
-  // Pull each newly-added sender's/domain's recent history into the brain.
-  await enqueueBackfills(user.id, addedEmails);
   void recordIngest({
     source: 'contact_create',
     ownerId: user.id,

@@ -9,8 +9,9 @@
  *
  * Policy like export_node: effect write (a file lands by the export rules),
  * spends none, not mcpOnly (the `documents` manifest group grants them).
- * The `documents` service gates them: off, an agent's list leaves them out
- * (toolServiceAvailable) and MCP answers that the service is switched off.
+ * The `documents` service gates them: off, an agent's list and MCP leave
+ * them out (toolServiceAvailable); a call that races a switch answers that
+ * the service is switched off.
  * A page print carries a render cookie for the acting login (the print
  * surface asks an Admin login of it); a call with no login actor converts
  * files and inline text only.

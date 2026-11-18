@@ -29,8 +29,8 @@ import {
   completeMcpOAuth,
   setMcpOAuthClient,
   startMcpOAuth,
+  setEntraHostsForTests,
   type McpOAuthStore,
-  type MicrosoftOAuthApp,
 } from './mcp-oauth';
 
 const OWNER = 'owner-1';
@@ -77,7 +77,6 @@ function buildRemoteServer(): Server {
 let httpServer: http.Server;
 let origin: string;
 let binding: ToolGroupMcpBinding;
-let msApp: MicrosoftOAuthApp | null;
 
 function memoryStore(): McpOAuthStore & { secrets: Map<string, string> } {
   const secrets = new Map<string, string>();
@@ -95,7 +94,6 @@ function memoryStore(): McpOAuthStore & { secrets: Map<string, string> } {
     deleteSecret: async (l) => {
       secrets.delete(l);
     },
-    microsoftApp: async () => msApp,
   };
 }
 let store: ReturnType<typeof memoryStore>;
@@ -220,6 +218,8 @@ beforeAll(async () => {
   origin = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
   store = memoryStore();
   setMcpOAuthStoreFactoryForTests(() => store);
+  // The local server stands in for Entra.
+  setEntraHostsForTests([new URL(origin).host]);
 });
 
 afterAll(async () => {
@@ -228,17 +228,25 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  msApp = {
-    clientId: 'ms-app',
-    clientSecret: 'ms-secret',
-    authorizationServer: `${origin}/tenant-1/v2.0`,
-  };
   as.tokenError = null;
 });
 
 const fresh = (oauth: Partial<NonNullable<ToolGroupMcpBinding['oauth']>> = {}) => {
   binding = { url: `${origin}/mcp`, oauth: { enabled: true, status: 'pending', ...oauth } };
   store.secrets.clear();
+};
+
+/** A fresh connector on a manual app at an Entra tenant authority. */
+const entraApp = async (authority = `${origin}/tenant-1/v2.0`) => {
+  fresh();
+  await setMcpOAuthClient(store, {
+    client: {
+      source: 'manual',
+      clientId: 'ms-app',
+      clientSecret: 'ms-secret',
+      authorizationServer: authority,
+    },
+  });
 };
 
 describe('a server without dynamic registration', () => {
@@ -254,9 +262,9 @@ describe('a server without dynamic registration', () => {
   });
 });
 
-describe('the Microsoft app', () => {
+describe('a manual app at an Entra authority', () => {
   it('start: tenant authority, no registration, offline_access, account picker, no resource', async () => {
-    fresh({ client: { source: 'microsoft' } });
+    await entraApp();
     const genericBefore = as.genericHits;
     const flow = await startMcpOAuth(store, { redirectUri: REDIRECT });
     if (!('authorizeUrl' in flow)) throw new Error('expected a redirect flow');
@@ -269,7 +277,14 @@ describe('the Microsoft app', () => {
     expect(u.searchParams.get('code_challenge_method')).toBe('S256');
     expect(as.genericHits).toBe(genericBefore);
     expect(as.registerHits).toBe(0);
-    expect(store.secrets.has('oauth-client')).toBe(false); // borrowed, never copied
+    // The sealed app, with the SDK's issuer stamp (SEP-2352) of the tenant
+    // authority it was used at.
+    expect(JSON.parse(store.secrets.get('oauth-client')!)).toEqual({
+      client_id: 'ms-app',
+      client_secret: 'ms-secret',
+      token_endpoint_auth_method: 'client_secret_post',
+      issuer: `${origin}/tenant-1/v2.0`,
+    });
     expect(binding.oauth?.pending?.state).toBe(flow.state);
   });
 
@@ -282,7 +297,10 @@ describe('the Microsoft app', () => {
     expect(req.params.has('resource')).toBe(false);
     expect(binding.oauth?.status).toBe('connected');
     expect(binding.oauth?.pending).toBeUndefined();
-    expect(binding.oauth?.client).toEqual({ source: 'microsoft' });
+    expect(binding.oauth?.client).toEqual({
+      source: 'manual',
+      authorizationServer: `${origin}/tenant-1/v2.0`,
+    });
     expect(store.secrets.has('oauth-verifier')).toBe(false);
   });
 
@@ -321,42 +339,20 @@ describe('the Microsoft app', () => {
   });
 
   it('a tenant given by its domain still signs in (the issuer names the GUID tenant)', async () => {
-    fresh({ client: { source: 'microsoft' } });
-    msApp = { ...msApp!, authorizationServer: `${origin}/contoso.example/v2.0` };
+    await entraApp(`${origin}/contoso.example/v2.0`);
     const flow = await startMcpOAuth(store, { redirectUri: REDIRECT });
     if (!('authorizeUrl' in flow)) throw new Error('expected a redirect flow');
     expect(new URL(flow.authorizeUrl).pathname).toBe('/tenant-1/oauth2/v2.0/authorize');
     await completeMcpOAuth(store, { code: AUTH_CODE });
     expect(binding.oauth?.status).toBe('connected');
-    expect(store.secrets.has('oauth-client')).toBe(false);
   });
 
   it('`common`: a literal {tenantid} issuer, and an iss on the callback, still sign in', async () => {
-    fresh({ client: { source: 'microsoft' } });
-    msApp = { ...msApp!, authorizationServer: `${origin}/common/v2.0` };
+    await entraApp(`${origin}/common/v2.0`);
     const flow = await startMcpOAuth(store, { redirectUri: REDIRECT });
     if (!('authorizeUrl' in flow)) throw new Error('expected a redirect flow');
     await completeMcpOAuth(store, { code: AUTH_CODE, iss: `${origin}/tenant-1/v2.0` });
     expect(binding.oauth?.status).toBe('connected');
-  });
-
-  it('with no Microsoft app configured: teaching error, no silent pending', async () => {
-    fresh({ client: { source: 'microsoft' } });
-    msApp = null;
-    await expect(startMcpOAuth(store, { redirectUri: REDIRECT })).rejects.toThrow(
-      /Settings → Microsoft has none configured/,
-    );
-    expect(binding.oauth?.pending).toBeUndefined();
-    expect(binding.oauth?.lastError).toMatch(/Settings → Microsoft/);
-  });
-
-  it('refuses to switch to the Microsoft app while none is configured', async () => {
-    fresh();
-    msApp = null;
-    await expect(setMcpOAuthClient(store, { client: { source: 'microsoft' } })).rejects.toThrow(
-      /Settings → Microsoft/,
-    );
-    expect(binding.oauth?.client).toBeUndefined();
   });
 });
 
@@ -374,6 +370,7 @@ describe('a manual app', () => {
     expect(JSON.parse(store.secrets.get('oauth-client')!)).toEqual({
       client_id: 'man-1',
       client_secret: 's3',
+      token_endpoint_auth_method: 'client_secret_post',
     });
     expect(binding.oauth?.clientId).toBe('man-1');
     expect(binding.oauth?.client).toEqual({
@@ -401,21 +398,18 @@ describe('a manual app', () => {
     expect(store.secrets.has('oauth-tokens')).toBe(true);
     expect(binding.oauth?.status).toBe('connected');
 
-    await setMcpOAuthClient(store, { client: { source: 'microsoft' } });
+    await setMcpOAuthClient(store, { client: { source: 'dynamic' } });
     expect(store.secrets.has('oauth-tokens')).toBe(false);
-    expect(store.secrets.has('oauth-client')).toBe(false); // no stale app shadows the borrowed one
+    expect(store.secrets.has('oauth-client')).toBe(false); // no stale app short-circuits registration
     expect(binding.oauth?.clientId).toBeUndefined();
     expect(binding.oauth?.status).toBe('needs_reconnect');
-    expect(binding.oauth?.client).toEqual({ source: 'microsoft' });
-
-    await setMcpOAuthClient(store, { client: { source: 'dynamic' } });
     expect(binding.oauth?.client).toBeUndefined();
   });
 });
 
 describe('a provider error on the callback', () => {
   it('clears pending and records the reason with its cure', async () => {
-    fresh({ client: { source: 'microsoft' } });
+    await entraApp();
     await startMcpOAuth(store, { redirectUri: REDIRECT });
     const msg = await abandonMcpOAuth(
       store,
@@ -430,7 +424,7 @@ describe('a provider error on the callback', () => {
 
 describe('a failed code exchange', () => {
   it('keeps the real Entra reason past the SDK retry, with its cure', async () => {
-    fresh({ client: { source: 'microsoft' } });
+    await entraApp();
     await startMcpOAuth(store, { redirectUri: REDIRECT });
     // What Entra says when the callback URL sits under "Mobile and desktop".
     as.tokenError = {

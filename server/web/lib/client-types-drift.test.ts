@@ -76,12 +76,12 @@ import { ACCESS_KEY_AREAS } from './access-keys';
  *
  * ## Not the only pins in the repo
  *
- * The three redacted ACCOUNT DTOs (PublicEmailAccount, PublicMsAccount,
- * SyncRun) are already pinned at their source, by the `AssertSameKeys` consts
- * in packages/email/src/accounts.ts and packages/microsoft/src/accounts.ts.
+ * The two redacted ACCOUNT DTOs (PublicEmailAccount, SyncRun) are already
+ * pinned at their source, by the `AssertSameKeys` consts in
+ * packages/email/src/accounts.ts.
  * They are deliberately NOT repeated here: two pins on one type is two things
  * to update and a licence for each to assume the other one covers it. Those
- * three compare KEY SETS rather than types, because a row's `Date` is a string
+ * two compare KEY SETS rather than types, because a row's `Date` is a string
  * on the wire — the same reason the task vocabulary below goes through an
  * array's element type instead of the array.
  *
@@ -111,7 +111,7 @@ import { ACCESS_KEY_AREAS } from './access-keys';
 /**
  * `true` when two unions have exactly the same members, otherwise an object
  * naming what each side is missing. Deliberately the same shape as the
- * `AssertSameKeys` guards in packages/email and packages/microsoft, so a drift
+ * `AssertSameKeys` guards in packages/email, so a drift
  * failure reads the same wherever in the repo it fires.
  */
 type SameUnion<Source, Dto> = [Exclude<Source, Dto>, Exclude<Dto, Source>] extends [never, never]

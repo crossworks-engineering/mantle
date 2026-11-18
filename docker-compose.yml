@@ -766,6 +766,47 @@ services:
       retries: 3
       start_period: 30s
 
+  # The Sync sidecar (server/sync; docs/services.md, "Sync"): the optional
+  # service for everything that syncs with an outside account (mail,
+  # contacts, calendar feeds, Microsoft; later Google, Dropbox, Box). Off by
+  # default (profile `sync`, Settings > Services). While it is off the brain
+  # hides those screens and tools and their sync pauses; nothing is deleted.
+  # Its own image (Dockerfile target `sync`) carries the rclone binary for
+  # short file jobs; no rclone daemon runs. M1 is the skeleton: a health check
+  # and a status answer, no secret, no database. On the default network: the
+  # outside accounts it will reach need a road out.
+  sync:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-sync:${MANTLE_IMAGE_TAG:-latest}
+    command: ['scripts/run-service.sh', 'server/sync', 'src/main.ts']
+    container_name: mantle_sync
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    profiles: ['sync']
+    mem_limit: 512m
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      NODE_ENV: production
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0'
+    labels: ['autoheal=true']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '--no-env-file',
+          '-e',
+          "fetch('http://127.0.0.1:8099/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   # Browser sidecar (browserless/chromium), the PDF-export render engine: a
   # stateless, self-hosted service with its own memory
   # space, session queue, and per-session hard timeout. server/web connects with
@@ -1429,40 +1470,13 @@ services:
       # Personal-space file bytes: the my-space agent tools read them here.
       - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
 
-  worker_email:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['scripts/run-service.sh', 'server/web', 'workers/email-sync.ts']
-    container_name: mantle_worker_email
-    restart: unless-stopped
-    init: true
-    # A stop waits for the worker's exit deadline (15 s, the workers'
-    # runner) before Docker sends SIGKILL; Docker's default is 10 s.
-    stop_grace_period: 20s
-    logging: *default-logging
-    mem_limit: 1g
-    healthcheck: *worker-healthcheck
-    # Flag this container for the autoheal sidecar: when the heartbeat probe
-    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
-    # would leave a wedged worker unhealthy-but-running forever).
-    labels:
-      - autoheal=true
-    depends_on:
-      postgres: { condition: service_healthy }
-      objectstore: { condition: service_healthy }
-      migrate: { condition: service_completed_successfully }
-    volumes:
-      # Live optional-service state, read-only (see api).
-      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
-    environment:
-      <<: *app-env
-
   worker_telegram:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ['scripts/run-service.sh', 'server/web', 'workers/telegram-poll.ts']
     container_name: mantle_worker_telegram
     restart: unless-stopped
     init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    # The worker's 15 s exit deadline, before SIGKILL (the workers' runner).
     stop_grace_period: 20s
     logging: *default-logging
     networks: *app-networks
@@ -1482,35 +1496,6 @@ services:
     environment:
       <<: *app-env
 
-  # Microsoft drive sync: delta-syncs enabled OneDrive / SharePoint document
-  # libraries into the brain as file nodes. Needs the object store (file bytes → storage)
-  # like the email worker.
-  worker_microsoft:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['scripts/run-service.sh', 'server/web', 'workers/microsoft-sync.ts']
-    container_name: mantle_worker_microsoft
-    restart: unless-stopped
-    init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
-    stop_grace_period: 20s
-    logging: *default-logging
-    mem_limit: 1g
-    healthcheck: *worker-healthcheck
-    # Flag this container for the autoheal sidecar: when the heartbeat probe
-    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
-    # would leave a wedged worker unhealthy-but-running forever).
-    labels:
-      - autoheal=true
-    depends_on:
-      postgres: { condition: service_healthy }
-      objectstore: { condition: service_healthy }
-      migrate: { condition: service_completed_successfully }
-    volumes:
-      # Live optional-service state, read-only (see api).
-      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
-    environment:
-      <<: *app-env
-
   # External-edit watcher: chokidar over MANTLE_FILES_ROOT mirrors host file
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
@@ -1519,7 +1504,7 @@ services:
     container_name: mantle_worker_files
     restart: unless-stopped
     init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    # The worker's 15 s exit deadline, before SIGKILL (the workers' runner).
     stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
@@ -1551,7 +1536,7 @@ services:
     container_name: mantle_worker_docs
     restart: unless-stopped
     init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    # The worker's 15 s exit deadline, before SIGKILL (the workers' runner).
     stop_grace_period: 20s
     logging: *default-logging
     mem_limit: 1g
@@ -1578,7 +1563,7 @@ services:
     container_name: mantle_worker_events
     restart: unless-stopped
     init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    # The worker's 15 s exit deadline, before SIGKILL (the workers' runner).
     stop_grace_period: 20s
     logging: *default-logging
     networks: *app-networks
@@ -1644,33 +1629,6 @@ services:
       # brain's own files store, as web writes it).
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
-  # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
-  # later) into the brain as event nodes. No volume — events live in Postgres.
-  worker_calendar:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ['scripts/run-service.sh', 'server/web', 'workers/calendar-sync.ts']
-    container_name: mantle_worker_calendar
-    restart: unless-stopped
-    init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
-    stop_grace_period: 20s
-    logging: *default-logging
-    mem_limit: 1g
-    healthcheck: *worker-healthcheck
-    # Flag this container for the autoheal sidecar: when the heartbeat probe
-    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
-    # would leave a wedged worker unhealthy-but-running forever).
-    labels:
-      - autoheal=true
-    depends_on:
-      postgres: { condition: service_healthy }
-      migrate: { condition: service_completed_successfully }
-    volumes:
-      # Live optional-service state, read-only (see api).
-      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
-    environment:
-      <<: *app-env
-
   # Maintenance worker — nightly pg-boss cron ('30 3 * * *') running the
   # schedulable registry sweeps (docs/maintenance-runner.md; today just
   # entities-dedupe auto tier, pure SQL). Records into maintenance_runs, the
@@ -1685,7 +1643,7 @@ services:
     container_name: mantle_worker_maintenance
     restart: unless-stopped
     init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    # The worker's 15 s exit deadline, before SIGKILL (the workers' runner).
     stop_grace_period: 20s
     logging: *default-logging
     networks: *app-networks
@@ -1731,7 +1689,7 @@ services:
     container_name: mantle_worker_runs
     restart: unless-stopped
     init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    # The worker's 15 s exit deadline, before SIGKILL (the workers' runner).
     stop_grace_period: 20s
     logging: *default-logging
     networks: *app-networks
@@ -1757,7 +1715,7 @@ services:
     container_name: mantle_worker_push
     restart: unless-stopped
     init: true
-    # The worker's 15 s exit deadline, before SIGKILL (see worker_email).
+    # The worker's 15 s exit deadline, before SIGKILL (the workers' runner).
     stop_grace_period: 20s
     logging: *default-logging
     networks: *app-networks

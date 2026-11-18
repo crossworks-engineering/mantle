@@ -1,0 +1,19 @@
+{
+  "name": "@mantle/sync",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch --env-file=../web/.env.local src/main.ts",
+    "start": "bun --env-file=../web/.env.local src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mantle/config": "workspace:*",
+    "@mantle/std": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3"
+  }
+}

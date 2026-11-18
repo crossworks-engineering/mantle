@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { OPTIONAL_SERVICES, serviceEnabled, type OptionalService } from '@mantle/config';
 import { docsRoot, readMarkdownFile } from '@mantle/files';
 import { MANIFEST_TOOL_GROUPS } from './system-manifest/manifest';
 
@@ -49,12 +50,13 @@ export type HelpTopic = {
 /** Topic slugs are file names; keep them boring so path joins stay safe. */
 const TOPIC_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-type Frontmatter = { title?: string; toolGroups: string[] };
+type Frontmatter = { title?: string; toolGroups: string[]; service?: string };
 
 /**
- * Minimal frontmatter reader — `title:` and a `toolGroups: [a, b]` inline list
- * are the only keys help files use, so a real YAML dependency would be dead
- * weight. Returns the body with the block stripped.
+ * Minimal frontmatter reader — `title:`, a `toolGroups: [a, b]` inline list
+ * and `service:` (the optional service the screen needs, e.g. `sync`) are the
+ * only keys help files use, so a real YAML dependency would be dead weight.
+ * Returns the body with the block stripped.
  */
 export function parseFrontmatter(raw: string): { data: Frontmatter; body: string } {
   const empty: Frontmatter = { toolGroups: [] };
@@ -77,6 +79,8 @@ export function parseFrontmatter(raw: string): { data: Frontmatter; body: string
         .split(',')
         .map((s) => s.trim().replace(/^["']|["']$/g, ''))
         .filter(Boolean);
+    } else if (key === 'service') {
+      data.service = value.replace(/^["']|["']$/g, '');
     }
   }
   return { data, body };
@@ -107,6 +111,14 @@ export function splitSections(body: string): HelpSection[] {
   }
   flush();
   return out;
+}
+
+/** Whether the optional service a help page names is on. A name that is no
+ *  optional service hides nothing. */
+export function helpServiceOn(name: string): boolean {
+  return !(OPTIONAL_SERVICES as readonly string[]).includes(name)
+    ? true
+    : serviceEnabled(name as OptionalService);
 }
 
 /** Absolute path to a topic's markdown, or null for a malformed slug. */
@@ -148,6 +160,9 @@ export async function loadHelpTopic(
   if (raw === null) return null;
 
   const { data, body } = parseFrontmatter(raw);
+  // A topic about a screen of an optional service (Sync: Email, Contacts,
+  // the account screens) is not there while that service is off.
+  if (data.service && !helpServiceOn(data.service)) return null;
   const sections = splitSections(body);
   if (sections.length < 3) return null; // malformed ⇒ better no panel than a broken one
 

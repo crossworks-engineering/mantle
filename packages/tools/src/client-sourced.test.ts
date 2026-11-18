@@ -75,12 +75,9 @@ describe('a lowering call (the policy)', () => {
     expect(isLoweringCall('access_set', { level: ' team ' })).toBe(false);
     expect(isLoweringCall('access_set', { level: 3 })).toBe(false);
   });
-  it('every share link; email_page only with a link', () => {
+  it('every share link', () => {
     expect(isLoweringCall('node_share', {})).toBe(true);
     expect(isLoweringCall('page_share', { id: 'p' })).toBe(true);
-    expect(isLoweringCall('email_page', { includeLink: true })).toBe(true);
-    expect(isLoweringCall('email_page', { includeLink: 'true' })).toBe(true);
-    expect(isLoweringCall('email_page', {})).toBe(false);
   });
   it('anything else is not', () => {
     expect(isLoweringCall('page_update', { level: 'public' })).toBe(false);

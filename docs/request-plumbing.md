@@ -259,13 +259,12 @@ nothing could tell a refusal the caller should hear from a fault.
   - The commit with no draft (`tables/[id]/commit`): the first tranche
     turned its plain `Error` into the opaque 500; it is an `InputError` now,
     400 with its text, as on main.
-- **The Microsoft callback**
-  (`server/web/app/api/microsoft/oauth/callback/route.ts`): a failed token
+- **The Microsoft callback** (removed with the Microsoft code, Sync plan
+  M4): a failed token
   exchange or account write redirects to `/settings/microsoft?error=` with
   the fixed sentence "Connecting your Microsoft account failed. The details
   are in the server log." where it carried the error's text (cut at 200
-  characters); the error is logged
-  (`server/web/app/api/microsoft/oauth/callback/callback-error.test.ts`).
+  characters); the error is logged.
 
 ### The proof
 

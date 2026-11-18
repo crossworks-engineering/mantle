@@ -1683,46 +1683,6 @@
    "peerRisky": false
   }
  },
- "email_page": {
-  "readOnly": false,
-  "peerRisky": true,
-  "spendsOwnerKeys": false,
-  "keyArea": null,
-  "keySharedContent": false,
-  "keyEmailList": false,
-  "adminKindCreate": false,
-  "adminOnly": false,
-  "gate": {
-   "effect": "write",
-   "scope": {
-    "area": "connectors"
-   },
-   "spends": "none",
-   "creates": false,
-   "keyArea": null,
-   "peerRisky": true
-  }
- },
- "email_send": {
-  "readOnly": false,
-  "peerRisky": true,
-  "spendsOwnerKeys": false,
-  "keyArea": null,
-  "keySharedContent": false,
-  "keyEmailList": false,
-  "adminKindCreate": false,
-  "adminOnly": false,
-  "gate": {
-   "effect": "write",
-   "scope": {
-    "area": "connectors"
-   },
-   "spends": "none",
-   "creates": false,
-   "keyArea": null,
-   "peerRisky": true
-  }
- },
  "entity_facts": {
   "readOnly": true,
   "peerRisky": false,
@@ -5193,6 +5153,46 @@
    "effect": "write",
    "scope": {
     "area": "keys"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
+ "service_list": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": false
+  }
+ },
+ "service_set": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "settings"
    },
    "spends": "none",
    "creates": false,

@@ -1111,7 +1111,7 @@ full file read every turn; a per-agent override still wins.
 `nodes.salience` (0..1, default 1.0; migration 0073) is a retrieval weight, blended
 into every ranker. For email it's derived from the header classifier
 (`emails.delivery_kind`: `marketing→0.25, list→0.5, automated→0.75, direct→1.0`,
-see [`email-ingest.md`](./email-ingest.md)). It is **never** a filter: a marketing
+see [`email-ingest.md`](./_archive/email-ingest.md)). It is **never** a filter: a marketing
 email is still found by an explicit `search`. Set at ingest; legacy mail
 reclassified by `pnpm -C server/web classify:backfill`. The audit caught newsletters
 crowding out personal notes; this fixes it without losing anything.

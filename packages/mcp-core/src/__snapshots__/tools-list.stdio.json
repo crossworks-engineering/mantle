@@ -1633,7 +1633,7 @@
  },
  {
   "name": "contact_create",
-  "description": "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their inbound mail be ingested into the brain (a 90-day history backfill kicks off automatically). Use ONLY when the user explicitly asks to save / update / remove a contact (e.g. \"add this business card as a contact\", \"save Modular as orders@example.co.za\"). Never add contacts on your own initiative just because someone's name came up in conversation.",
+  "description": "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist:** when mail sync runs (the Sync service), only mail from a contact is kept in the brain. Use ONLY when the user explicitly asks to save / update / remove a contact (e.g. \"add this business card as a contact\", \"save Modular as orders@example.co.za\"). Never add contacts on your own initiative just because someone's name came up in conversation.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1692,7 +1692,7 @@
  },
  {
   "name": "contact_update",
-  "description": "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards); newly-added entries trigger a 90-day history backfill. Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'. Use ONLY when the user explicitly asks to save / update / remove a contact (e.g. \"add this business card as a contact\", \"save Modular as orders@example.co.za\"). Never add contacts on your own initiative just because someone's name came up in conversation.",
+  "description": "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards). Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'. Use ONLY when the user explicitly asks to save / update / remove a contact (e.g. \"add this business card as a contact\", \"save Modular as orders@example.co.za\"). Never add contacts on your own initiative just because someone's name came up in conversation.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5803,6 +5803,43 @@
   }
  },
  {
+  "name": "service_set",
+  "description": "Ask the updater to switch one optional service on or off (Settings > Services). It returns at once: the updater pulls and starts the service, or stops it, within a few minutes; follow it in `service_list`'s `run`. Off never deletes anything: data, tokens and images stay. Turning `sync` off hides Email, Contacts and the account screens and their tools, and pauses their sync. Refused while an update or another switch runs, or when this box cannot switch services.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "enum": [
+      "sandboxes",
+      "local-embedder",
+      "helpers",
+      "calls",
+      "documents",
+      "sync"
+     ],
+     "description": "The service, e.g. 'sync'."
+    },
+    "enable": {
+     "type": "boolean",
+     "description": "true switches it on, false off."
+    }
+   },
+   "required": [
+    "name",
+    "enable"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "service_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "set_timezone",
   "description": "Change the user's profile timezone. Use when the user is in — or travelling to — a different timezone and the 'Current time:' context line is wrong for where they actually are, or when they ask. If you know their location (the Current location line / a reverse-geocoded city), derive the correct IANA zone yourself and set it. PERSISTENT — all times, event scheduling, reminders, and quiet hours follow it until it's changed back — so say what you changed and offer to switch it back when they head home. Returns the new timezone and the current local time in it so you can confirm.",
   "inputSchema": {
@@ -8106,7 +8143,7 @@
  },
  {
   "name": "contact_delete",
-  "description": "Remove a contact. NOTE: this also removes them from the email allowlist — Saskia can no longer email them after deletion. Returns ok=true on success; ok=false if the contact wasn't found. Use ONLY when the user explicitly asks to save / update / remove a contact (e.g. \"add this business card as a contact\", \"save Modular as orders@example.co.za\"). Never add contacts on your own initiative just because someone's name came up in conversation.",
+  "description": "Remove a contact. NOTE: this also removes them from the email allowlist: their mail is no longer kept when mail sync runs. Returns ok=true on success; ok=false if the contact wasn't found. Use ONLY when the user explicitly asks to save / update / remove a contact (e.g. \"add this business card as a contact\", \"save Modular as orders@example.co.za\"). Never add contacts on your own initiative just because someone's name came up in conversation.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8798,101 +8835,6 @@
   },
   "annotations": {
    "title": "api_tool_test",
-   "readOnlyHint": false,
-   "destructiveHint": false,
-   "idempotentHint": false,
-   "openWorldHint": true
-  }
- },
- {
-  "name": "email_page",
-  "description": "Send one of the user's pages as a richly-formatted HTML email: the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also add a 'View online' footer with the page's public link (see `page_share`). The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account can send the call fails with a clear message.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "pageId": {
-     "type": "string",
-     "description": "The page's id (UUID) — from `page_list` / `search_nodes`."
-    },
-    "to": {
-     "type": "string",
-     "description": "recipient email (comma-separate for multiple)"
-    },
-    "subject": {
-     "type": "string",
-     "description": "optional — defaults to the page title"
-    },
-    "cc": {
-     "type": "string",
-     "description": "optional cc (comma-separate for multiple)"
-    },
-    "bcc": {
-     "type": "string",
-     "description": "optional bcc (comma-separate for multiple)"
-    },
-    "from": {
-     "type": "string",
-     "description": "optional: which of the user's account addresses to send from"
-    },
-    "includeLink": {
-     "type": "boolean",
-     "description": "optional: also open (or reuse) the page's public read-only link and add a 'View online' footer. Refused before sending when you may not open the page's link."
-    }
-   },
-   "required": [
-    "pageId",
-    "to"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "email_page",
-   "readOnlyHint": false,
-   "destructiveHint": false,
-   "idempotentHint": false,
-   "openWorldHint": true
-  }
- },
- {
-  "name": "email_send",
-  "description": "Send an email FROM the user's own mailbox via their provider (SMTP, or Microsoft Graph for connected Microsoft accounts). Provide `to`, `subject`, and a plain-text `body`. Optional `cc`/`bcc`, and `from` to choose which of the user's accounts sends it (defaults to the first send-enabled account). Use only when the user explicitly asks to send or email something. The message goes out under the user's real address, so write it accurately and professionally; when relaying research, include the source links in the body. If no account can send the call fails with a clear message.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "to": {
-     "type": "string",
-     "description": "recipient email (comma-separate for multiple)"
-    },
-    "subject": {
-     "type": "string",
-     "description": "subject line, e.g. \"Quote request: aluminium profiles\""
-    },
-    "body": {
-     "type": "string",
-     "description": "plain-text body"
-    },
-    "cc": {
-     "type": "string",
-     "description": "optional cc (comma-separate for multiple)"
-    },
-    "bcc": {
-     "type": "string",
-     "description": "optional bcc (comma-separate for multiple)"
-    },
-    "from": {
-     "type": "string",
-     "description": "optional: which of the user's account addresses to send from"
-    }
-   },
-   "required": [
-    "to",
-    "subject",
-    "body"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "email_send",
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
@@ -10678,7 +10620,7 @@
  },
  {
   "name": "contact_find",
-  "description": "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell so you can pass them to email_send / sms_send. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
+  "description": "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell for the next step. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -13321,6 +13263,22 @@
   },
   "annotations": {
    "title": "search_chunks",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "service_list",
+  "description": "List this box's optional services (Settings > Services): each one's state (`off`, `up` or `down`), its container and health, what stops while it is off and its memory; whether this box can switch them now, and the latest switch run with its outcome. Read-only. To switch one use `service_set`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "service_list",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

@@ -20,7 +20,6 @@ import {
   FolderTree,
   GitCompare,
   GitMerge,
-  Cloud,
   Hammer,
   Layers,
   HeartPulse,
@@ -42,13 +41,11 @@ import {
   ScrollText,
   MessagesSquare,
   ServerCog,
-  Settings,
   Sparkles,
   Table2,
   Sigma,
   TerminalSquare,
   User,
-  UserCheck,
   Users,
   UsersRound,
   Waypoints,
@@ -128,7 +125,6 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Review',
     items: [
       { name: 'Models', href: '/models', icon: Boxes },
-      { name: 'Discover', href: '/settings/discover', icon: UserCheck },
       { name: 'Team', href: '/team-admin', icon: MessagesSquare },
       { name: 'Pending', href: '/pending', icon: ClipboardCheck },
       // Was its own 'External' group for this one item — a header earning a row
@@ -146,7 +142,7 @@ export const NAV_GROUPS: NavGroup[] = [
     collapsible: true,
     headSize: 5,
     defaultHead: [
-      '/settings/accounts',
+      '/settings/services',
       '/settings/profile',
       '/settings/appearance',
       '/settings/agents',
@@ -154,9 +150,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
     items: [
       { name: 'Appearance', href: '/settings/appearance', icon: Palette },
-      { name: 'Accounts', href: '/settings/accounts', icon: Settings },
-      { name: 'Microsoft', href: '/settings/microsoft', icon: Cloud },
-      { name: 'Calendars', href: '/settings/calendar', icon: CalendarDays },
       { name: 'Profile', href: '/settings/profile', icon: User },
       { name: 'API keys', href: '/settings/keys', icon: Key },
       { name: 'MCP', href: '/settings/mcp', icon: Plug },

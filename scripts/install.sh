@@ -1069,7 +1069,7 @@ if [[ -n "$CORE" ]]; then
     # explicitly overrides its profile gate, so this works post-COMPOSE_FILE.
     # The PDF browser is only shed when the helpers profile isn't active:
     # the --helpers block below runs after this one.
-    SHED="worker_email worker_telegram worker_microsoft worker_calendar worker_push worker_runs"
+    SHED="worker_telegram worker_push worker_runs"
     if [[ "$HELPERS" != 1 && "$(getval COMPOSE_PROFILES)" != *helpers* ]]; then SHED="browser $SHED"; fi
     # shellcheck disable=SC2086  # word-splitting $SHED into args is intended
     docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \

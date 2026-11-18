@@ -101,18 +101,6 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'fixed provider host',
     why: 'the OpenRouter models list: the host is a constant (OPENROUTER_MODELS_URL)',
   },
-  'packages/microsoft/src/client.ts': {
-    kind: 'fixed provider host',
-    why: "Microsoft Graph: the host is a constant, and an absolute URL from Graph's own answer (@odata.nextLink, a stored @odata.deltaLink) is followed only on that host (graphFetchRaw refuses any other origin)",
-  },
-  'packages/microsoft/src/oauth.ts': {
-    kind: 'fixed provider host',
-    why: 'the Microsoft identity platform token endpoint and Graph /me: constant hosts',
-  },
-  'packages/microsoft/src/drives/sync.ts': {
-    kind: 'provider-returned',
-    why: "the pre-authenticated download URL in Graph's own drive item answer",
-  },
   'packages/telegram/src/outbound.ts': {
     kind: 'fixed provider host',
     why: 'the Telegram file CDN: the host is a constant (api.telegram.org)',

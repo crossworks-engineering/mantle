@@ -10,7 +10,7 @@ Companion docs:
 - [`replay.md`](./replay.md), the inward twin (memory recall).
 - [`architecture.md` §9b'](./architecture.md#9b-agent-delegation-invoke_agent)
 , the `invoke_agent` delegation path both agents ride on.
-- [`email-send.md`](./email-send.md), the send half of "research X and email it to me".
+- [`email-send.md`](./_archive/email-send.md), the send half of "research X and email it to me".
 
 ---
 

@@ -70,6 +70,9 @@ export const EXTRA = [
     name: 'parser',
     command: ['env', '-C', 'server/parser', 'bun', '--no-env-file', 'src/main.ts'],
   },
+  // The Sync sidecar runs on its own image (Dockerfile target `sync`), so the
+  // compose scan above, which takes the server image's services, skips it.
+  { name: 'sync', command: ['scripts/run-service.sh', 'server/sync', 'src/main.ts'] },
 ];
 
 /** The image every app service runs. */

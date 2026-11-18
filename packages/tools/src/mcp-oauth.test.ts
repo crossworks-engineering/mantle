@@ -99,7 +99,6 @@ function memoryStore(): McpOAuthStore & { secrets: Map<string, string> } {
     deleteSecret: async (l) => {
       secrets.delete(l);
     },
-    microsoftApp: async () => null,
   };
 }
 let store: ReturnType<typeof memoryStore>;

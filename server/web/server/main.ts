@@ -73,6 +73,11 @@ registerAppRenderer(renderApp);
 const { installBoxStatusProvider } = await import('../lib/box-status');
 installBoxStatusProvider();
 
+// Settings > Services over MCP (service_list, service_set): the view and the
+// switch live in server/web (packages/tools services-bridge.ts).
+const { installServicesProvider } = await import('../lib/services');
+installServicesProvider();
+
 // The one gate: every narrower registered, or the process stops here at
 // boot, not at its first request (every routed request runs through the
 // gate). AWAITED like the imports above (env first). gate-boot.test.ts pins this call in every

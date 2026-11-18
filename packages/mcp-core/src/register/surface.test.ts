@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { resetServicesFileCache } from '@mantle/config';
 
 vi.mock('@mantle/runtime/assistant', () => ({
   runSimulatedResponderTurn: vi.fn(),
@@ -158,6 +159,7 @@ const HTTP_SURFACE = [
   'sandbox_stop',
   'screenshot_render',
   'secret_create',
+  'service_set',
   'set_timezone',
   'sheet_build',
   'show_image',
@@ -229,8 +231,6 @@ const HTTP_SURFACE = [
   'tree_folder_delete',
   'api_key_test',
   'api_tool_test',
-  'email_page',
-  'email_send',
   'node_share',
   'openrouter_benchmarks',
   'openrouter_rankings',
@@ -362,6 +362,7 @@ const HTTP_SURFACE = [
   'screenshots',
   'search',
   'search_chunks',
+  'service_list',
   'summarize_text',
   'table_aggregate',
   'table_get',
@@ -395,6 +396,37 @@ function surface(transport: 'stdio' | 'http'): string[] {
 }
 
 describe('MCP tool surface', () => {
+  it('leaves out the tools of a service that is off, as the agent list does', () => {
+    const saved = process.env.MANTLE_COMPOSE_PROFILES;
+    const savedDir = process.env.MANTLE_UPDATE_SIGNAL_DIR;
+    // The switches known, every optional service off.
+    process.env.MANTLE_UPDATE_SIGNAL_DIR = '/nonexistent-signal-dir';
+    process.env.MANTLE_COMPOSE_PROFILES = '';
+    resetServicesFileCache();
+    try {
+      const off = surface('http');
+      const gone = HTTP_SURFACE.filter((s) => !off.includes(s));
+      for (const slug of [
+        'sandbox_exec',
+        'pdf_tools',
+        'office_to_pdf',
+        'email_list',
+        'contact_find',
+        'contact_create',
+      ]) {
+        expect(gone, slug).toContain(slug);
+      }
+      expect(off.filter((s) => !HTTP_SURFACE.includes(s))).toEqual([]);
+      expect(off).toContain('service_set');
+    } finally {
+      if (saved === undefined) delete process.env.MANTLE_COMPOSE_PROFILES;
+      else process.env.MANTLE_COMPOSE_PROFILES = saved;
+      if (savedDir === undefined) delete process.env.MANTLE_UPDATE_SIGNAL_DIR;
+      else process.env.MANTLE_UPDATE_SIGNAL_DIR = savedDir;
+      resetServicesFileCache();
+    }
+  });
+
   it('registers exactly the pinned list, in order, over http', () => {
     expect(surface('http')).toEqual(HTTP_SURFACE);
   });

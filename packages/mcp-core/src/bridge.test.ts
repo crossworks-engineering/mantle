@@ -103,19 +103,12 @@ describe('bridging the content groups changed the implementation, not the surfac
   });
 
   it('now exposes the rest of those groups too', () => {
-    // These five were held back while bridging was a pure deduplication. The
+    // These were held back while bridging was a pure deduplication. The
     // widening has since been made deliberately (full parity — see the header
-    // of build-server.ts), so they ship. email_send is the one worth naming:
-    // it can send mail as the owner, and its boundary is the contacts
-    // allowlist, which applies identically on every surface.
+    // of build-server.ts), so they ship. (email_send and email_page were two
+    // of them; they left with the old sync, Sync M4.)
     const registered = surface();
-    const nowInvited = [
-      'email_send',
-      'email_page',
-      'note_from_file',
-      'note_from_page',
-      'peer_search_chunks',
-    ];
+    const nowInvited = ['note_from_file', 'note_from_page', 'peer_search_chunks'];
     expect(nowInvited.filter((slug) => !registered.has(slug))).toEqual([]);
   });
 });

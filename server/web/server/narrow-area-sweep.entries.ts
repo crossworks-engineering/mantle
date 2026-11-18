@@ -91,11 +91,6 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/ai-workers/:id/test/vision': workerTest('vision'),
   'POST /api/backups': {},
   'POST /api/backups/run': {},
-  'POST /api/calendar': {
-    body: { displayName: 'Sweep cal', url: 'https://example.invalid/c.ics' },
-  },
-  'PATCH /api/calendar/:id': {},
-  'DELETE /api/calendar/:id': {},
   'POST /api/config/adopt': {},
   'POST /api/config/adopt-all': {},
   'POST /api/debug/integrity/landed/delete': { body: { nodeId: LANDED_NODE } },
@@ -110,20 +105,6 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/docs/collections': {},
   'POST /api/docs/collections/all': {},
   'PATCH /api/docs/collections/:id': {},
-  'POST /api/email/accounts': {
-    body: {
-      address: 'sweep@example.invalid',
-      host: '127.0.0.1',
-      port: 1,
-      secure: false,
-      password: 'x',
-    },
-  },
-  'PATCH /api/email/accounts/:id': {
-    body: { host: '127.0.0.1', port: 1, secure: false, password: 'x' },
-  },
-  'PUT /api/email/accounts/:id/folders': { body: { folders: ['INBOX'] } },
-  'POST /api/email/discover/contacts': {},
   'PATCH /api/email/messages/:id': {},
   'POST /api/embedding': { body: { model: 'embeddinggemma:latest' } },
   'PATCH /api/embedding/extraction': {},
@@ -199,21 +180,6 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/mcp-connectors/:slug/sync': { path: '/api/mcp-connectors/mcp-sweepfix/sync' },
   'PATCH /api/mcp-settings': { body: { enabled: true } },
   'POST /api/mcp-status': {},
-  'DELETE /api/microsoft/accounts/:id': {},
-  'POST /api/microsoft/accounts/:id/drives': {},
-  'PATCH /api/microsoft/accounts/:id/mail': {},
-  'PUT /api/microsoft/config': {},
-  'DELETE /api/microsoft/config': {},
-  'PATCH /api/microsoft/drives/:id': {},
-  // One scope, so the scope set's insert is reached (ms_drive_scopes'
-  // narrow INSERT: the sweep's per-row record shows the narrow login makes it).
-  'PUT /api/microsoft/drives/:id/scopes': {
-    body: { scopes: [{ itemId: 'sweep-item', path: '/Sweep', isFolder: true, name: 'Sweep' }] },
-  },
-  'GET /api/microsoft/oauth/callback': {},
-  'HEAD /api/microsoft/oauth/callback': {
-    skip: "the GET row's handler (Hono answers HEAD with GET's): driven as GET",
-  },
   'POST /api/model-combos/apply': {},
   'POST /api/model-pools': {
     body: { pool: 'agents', name: 'Sweep model', routes: [{ provider: 'sweep', model: 'sweep' }] },

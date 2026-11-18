@@ -198,6 +198,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `VIDEO_INGEST_MAX_FILE_BYTES` | 1073741824 | whole, above 0 | largest uploaded recording video_ingest reads (old name `MEDIA_MAX_VIDEO_BYTES`) |
 | `PARSER_PORT` | 8095 | whole, min 1, max 65535 | the parser listens here |
 | `GATEWAY_PORT` | 8097 | whole, min 1, max 65535 | the service gateway listens here ([gateway.md](./gateway.md)) |
+| `SYNC_PORT` | 8099 | whole, min 1, max 65535 | the Sync sidecar (server/sync) listens here, in a dev process only: compose runs it on 8099 ([services.md](./services.md)) |
 | `GATEWAY_MAX_BODY_BYTES` | 67108864 | whole, min 1 | the largest request body one gateway call may send, bytes |
 | `GATEWAY_UPSTREAM_IDLE_MS` | 120000 | whole, min 1000 | an upstream connection of the gateway idle this long is cut, ms |
 | `PARSER_QUEUE_MAX` | 16 | whole, min 0 | requests that may wait for the parser job slot |

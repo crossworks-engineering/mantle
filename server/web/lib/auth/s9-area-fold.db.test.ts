@@ -217,7 +217,7 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
     ['GET', '/api/agents'],
     ['PATCH', `/api/agents/${'0'.repeat(8)}-0000-4000-8000-${'0'.repeat(12)}`, {}],
     ['GET', '/api/email/accounts'],
-    ['GET', '/api/calendar'],
+    // GET /api/calendar left with the old sync (Sync M4).
   ];
   const ATTACHMENT = `/api/attachments/${'1'.repeat(8)}-1111-4111-8111-${'1'.repeat(12)}`;
 

@@ -17,7 +17,6 @@ import {
   type ToolGroupMcpBinding,
 } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
-import { getConfigStatus } from '@mantle/microsoft';
 import {
   clearConnectorExternalAccess,
   closeMcpClient,
@@ -48,7 +47,6 @@ export function connectorOAuthCallbackUrl(req: Request): string {
 /** Request body for a connector's OAuth app (create + patch). */
 export const McpOAuthClientBody = z.discriminatedUnion('source', [
   z.object({ source: z.literal('dynamic') }),
-  z.object({ source: z.literal('microsoft') }),
   z.object({
     source: z.literal('manual'),
     clientId: z.string().trim().min(1, 'a manual app needs its client id').max(300),
@@ -103,10 +101,10 @@ function toDTO(g: ToolGroup, grantedTo: string[], tokenServices: Set<string>): M
   };
 }
 
-/** The Settings → Microsoft app as the connectors screen needs it: whether a
- *  connector can borrow it, and which app / tenant that would be. Non-secret. */
-export type MicrosoftAppSummary =
-  { configured: false } | { configured: true; clientId: string; tenant: string };
+/** Always `{ configured: false }`: the Settings → Microsoft app a connector
+ *  could borrow left with the Microsoft code (Sync plan, M4). Still sent so a
+ *  client from before reads "not configured" instead of failing. */
+export type MicrosoftAppSummary = { configured: false };
 
 export async function listMcpConnectors(
   ownerId: string,
@@ -118,11 +116,10 @@ export async function listMcpConnectors(
   oauthRedirectUri: string;
   microsoftApp: MicrosoftAppSummary;
 }> {
-  const [rows, backrefs, tokenServices, ms] = await Promise.all([
+  const [rows, backrefs, tokenServices] = await Promise.all([
     db.select().from(toolGroups).where(eq(toolGroups.ownerId, ownerId)),
     listToolGroupBackrefs(ownerId),
     oauthTokenServices(ownerId),
-    getConfigStatus(ownerId),
   ]);
   const connectors = rows
     .filter((g) => g.integration?.mcp)
@@ -133,10 +130,7 @@ export async function listMcpConnectors(
     ...s,
     connected: have.has(mcpGroupSlug(s.slug)),
   }));
-  const microsoftApp: MicrosoftAppSummary =
-    ms.configured && ms.clientId
-      ? { configured: true, clientId: ms.clientId, tenant: ms.tenant ?? 'common' }
-      : { configured: false };
+  const microsoftApp: MicrosoftAppSummary = { configured: false };
   return { connectors, catalog, oauthRedirectUri: opts.oauthRedirectUri, microsoftApp };
 }
 

@@ -51,8 +51,8 @@ const CreateBody = z.object({
    *  response then carries `authorizeUrl` for the owner's browser. */
   oauth: z.boolean().optional(),
   /** The OAuth app (implies `oauth`): 'dynamic' (default) registers itself;
-   *  'microsoft' borrows the Settings → Microsoft app; 'manual' is an app
-   *  registered by hand. Needed for servers behind Microsoft Entra ID. */
+   *  'manual' is an app registered by hand, needed for servers behind
+   *  Microsoft Entra ID (its authorization server the tenant authority). */
   oauthClient: McpOAuthClientBody.optional(),
   /** OAuth scope override (implies `oauth`). */
   scope: McpOAuthScopeBody.optional(),

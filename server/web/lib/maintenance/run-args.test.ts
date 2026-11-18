@@ -47,7 +47,7 @@ describe('planRun', () => {
   });
 
   it('no-dry-run tasks can only run live', () => {
-    const t = getTask('sync-now')!;
+    const t = getTask('deps-drift')!;
     const dry = planRun(t, { apply: false }, ENV);
     expect(dry.ok).toBe(false);
     const live = planRun(t, { apply: true }, ENV);

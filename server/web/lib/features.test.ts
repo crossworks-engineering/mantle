@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { resetServicesFileCache } from '@mantle/config';
 import { RECALL_V2, TREE_CUSTOM_ORDER, shellFeatures } from './features';
 import { routeManifest } from '../server/route-manifest.gen';
 
@@ -21,12 +22,31 @@ import { routeManifest } from '../server/route-manifest.gen';
 describe('shell features', () => {
   it('reports recallV2 true (from R2, and for good since R5 retired v1), so a client builds the v2 screen', () => {
     expect(RECALL_V2).toBe(true);
-    expect(shellFeatures()).toEqual({ recallV2: true, treeCustomOrder: true });
+    expect(shellFeatures()).toMatchObject({ recallV2: true, treeCustomOrder: true });
   });
 
   it('is reached through one function, so a flag is one line', () => {
     expect(typeof shellFeatures).toBe('function');
-    expect(Object.keys(shellFeatures())).toEqual(['recallV2', 'treeCustomOrder']);
+    expect(Object.keys(shellFeatures())).toEqual(['recallV2', 'treeCustomOrder', 'sync']);
+  });
+
+  it('reports sync from the live service switch, so the client hides Email and Contacts', () => {
+    const saved = process.env.MANTLE_COMPOSE_PROFILES;
+    const savedDir = process.env.MANTLE_UPDATE_SIGNAL_DIR;
+    process.env.MANTLE_UPDATE_SIGNAL_DIR = join(import.meta.dirname, 'no-such-signal-dir');
+    resetServicesFileCache();
+    try {
+      process.env.MANTLE_COMPOSE_PROFILES = 'documents';
+      expect(shellFeatures().sync).toBe(false);
+      process.env.MANTLE_COMPOSE_PROFILES = 'documents,sync';
+      expect(shellFeatures().sync).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.MANTLE_COMPOSE_PROFILES;
+      else process.env.MANTLE_COMPOSE_PROFILES = saved;
+      if (savedDir === undefined) delete process.env.MANTLE_UPDATE_SIGNAL_DIR;
+      else process.env.MANTLE_UPDATE_SIGNAL_DIR = savedDir;
+      resetServicesFileCache();
+    }
   });
 
   it('is actually served by the owner shell route', () => {

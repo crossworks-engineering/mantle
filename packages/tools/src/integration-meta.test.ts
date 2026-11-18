@@ -295,20 +295,21 @@ describe('apiDocsHeader', () => {
 describe('parseMcpBinding: OAuth app + scope', () => {
   const url = 'https://api.fabric.microsoft.com/v1/mcp/powerbi';
 
-  it('keeps a Microsoft app and a normalised scope through a round trip', () => {
+  it('keeps a manual app at an Entra authority and a normalised scope through a round trip', () => {
+    const authority = 'https://login.microsoftonline.com/t1/v2.0';
     const r = parseMcpBinding({
       url,
       oauth: {
         enabled: true,
         status: 'pending',
-        client: { source: 'microsoft' },
+        client: { source: 'manual', authorizationServer: authority },
         scope: '  https://api.fabric.microsoft.com/.default   offline_access ',
       },
     });
     expect(r.ok && r.value.oauth).toEqual({
       enabled: true,
       status: 'pending',
-      client: { source: 'microsoft' },
+      client: { source: 'manual', authorizationServer: authority },
       scope: 'https://api.fabric.microsoft.com/.default offline_access',
     });
   });
@@ -329,10 +330,12 @@ describe('parseMcpBinding: OAuth app + scope', () => {
     expect(r.ok && r.value.oauth?.clientId).toBe('man-1');
   });
 
-  it('refuses an unknown app source', () => {
-    const r = parseMcpBinding({ url, oauth: { enabled: true, client: { source: 'google' } } });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/microsoft \| manual/);
+  it('refuses an unknown app source, and the Settings > Microsoft borrow that left (Sync M4)', () => {
+    for (const source of ['google', 'microsoft']) {
+      const r = parseMcpBinding({ url, oauth: { enabled: true, client: { source } } });
+      expect(r.ok, source).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/must be manual/);
+    }
   });
 
   it('refuses a non-https authorization server', () => {

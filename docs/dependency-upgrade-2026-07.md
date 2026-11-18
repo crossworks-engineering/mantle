@@ -461,7 +461,7 @@ Two things to know for later:
 Two majors on the job queue. This is the only item on the list that can lose data.
 
 - **30+ touchpoints** across `server/api`, `server/web/workers`, `packages/runs`,
-  `packages/email`, `packages/telegram`, `packages/microsoft`.
+  `packages/email`, `packages/telegram` (and the Microsoft package, since removed).
 - **It owns and migrates its own `pgboss` schema on boot.** Once a box starts on
   v12 the schema is migrated; rolling back the image does _not_ roll back the
   schema.

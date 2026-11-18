@@ -15,6 +15,7 @@ import {
   serviceSwitchable,
   toolService,
   toolServiceAvailable,
+  toolServiceSwitchedOff,
 } from './services';
 
 const KEYS = [
@@ -102,7 +103,12 @@ describe('parseServicesFile', () => {
             restarts: 0,
             started_at: '2026-11-04T05:01:02Z',
           },
-          worker_email: { container: 'running', health: 'unhealthy', restarts: 3, started_at: '' },
+          worker_telegram: {
+            container: 'running',
+            health: 'unhealthy',
+            restarts: 3,
+            started_at: '',
+          },
           gotenberg: {
             container: 'Running <b>',
             health: 42,
@@ -123,7 +129,7 @@ describe('parseServicesFile', () => {
         restarts: 0,
         startedAt: '2026-11-04T05:01:02Z',
       },
-      worker_email: { container: 'running', health: 'unhealthy', restarts: 3, startedAt: null },
+      worker_telegram: { container: 'running', health: 'unhealthy', restarts: 3, startedAt: null },
       gotenberg: { container: 'unknown', health: 'unknown', restarts: 0, startedAt: null },
       caddy: { container: 'unknown', health: 'unknown', restarts: 0, startedAt: null },
       api: { container: 'exited', health: 'none', restarts: 0, startedAt: null },
@@ -202,6 +208,44 @@ describe('serviceEnabled', () => {
   it('with no way to know the profile, the token alone decides (pre-switch behaviour)', () => {
     wire();
     expect(serviceEnabled('sandboxes')).toBe(true);
+  });
+});
+
+describe('sync: no token, on is its profile', () => {
+  it('follows the live file, then the compose env', () => {
+    servicesJson('sandboxes');
+    expect(serviceEnabled('sync')).toBe(false);
+    servicesJson('sandboxes,sync');
+    resetServicesFileCache();
+    expect(serviceEnabled('sync')).toBe(true);
+  });
+
+  it('the compose env decides when there is no file', () => {
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents';
+    expect(serviceEnabled('sync')).toBe(false);
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents,sync';
+    expect(serviceEnabled('sync')).toBe(true);
+  });
+
+  it('MCP leaves a tool out only when its switch is known to be off', () => {
+    registerToolService('email_list', 'sync');
+    expect(toolServiceSwitchedOff('email_list')).toBe(false); // unknown: listed
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents';
+    expect(toolServiceSwitchedOff('email_list')).toBe(true);
+    process.env.MANTLE_COMPOSE_PROFILES = 'documents,sync';
+    expect(toolServiceSwitchedOff('email_list')).toBe(false);
+    expect(toolServiceSwitchedOff('page_get')).toBe(false); // needs no service
+    resetToolServicesForTests();
+  });
+
+  it('a tool that needs it is unavailable while it is off', () => {
+    registerToolService('email_list', 'sync');
+    process.env.MANTLE_COMPOSE_PROFILES = '';
+    expect(toolService('email_list')).toBe('sync');
+    expect(toolServiceAvailable('email_list')).toBe(false);
+    process.env.MANTLE_COMPOSE_PROFILES = 'sync';
+    expect(toolServiceAvailable('email_list')).toBe(true);
+    resetToolServicesForTests();
   });
 });
 

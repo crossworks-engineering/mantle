@@ -15,13 +15,14 @@
  * dynamic registration at all — Microsoft Entra ID, which fronts every
  * Microsoft MCP server (Power BI, Fabric), is the big one. There the owner
  * registers an app by hand and the connector uses it:
- * - `microsoft` borrows the Settings → Microsoft app (id, secret, tenant),
- *   resolved fresh on every flow. Sign-in goes to that TENANT's authority,
- *   not the `organizations` endpoint the server advertises: a single-tenant
- *   app cannot use the latter (AADSTS50194).
- * - `manual` is any other app: its registration JSON is sealed in
- *   `oauth-client` up front, so the SDK finds it and skips registration.
- * Both plug into the SDK's own provider hooks (`clientInformation`,
+ * - `manual`: its registration JSON is sealed in `oauth-client` up front,
+ *   so the SDK finds it and skips registration. With an Entra authority
+ *   (https://login.microsoftonline.com/<tenant>/v2.0) it gets the Entra
+ *   touch-ups (`entraApp`): sign-in at that TENANT's authority, not the
+ *   `organizations` endpoint the server advertises (a single-tenant app
+ *   cannot use the latter, AADSTS50194), no `resource` parameter, the
+ *   advertised scopes plus `offline_access`, `client_secret_post`.
+ * It plugs into the SDK's own provider hooks (`clientInformation`,
  * `discoveryState`, `validateResourceURL`), no fork.
  *
  * Two provider modes:
@@ -57,7 +58,6 @@ import {
   onFullSystemRoute,
 } from '@mantle/db';
 import { deleteApiKey, getApiKey, listApiKeys, setApiKey } from '@mantle/api-keys';
-import { microsoftAuthority, resolveOAuthConfig } from '@mantle/microsoft';
 import { errorMessage } from '@mantle/std';
 import { egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl, isCarvedUrl } from './ssrf-guard';
@@ -68,14 +68,6 @@ type OAuthSecretLabel = (typeof MCP_OAUTH_SECRET_LABELS)[number];
 
 export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';
 
-/** The Settings → Microsoft app as a connector borrows it. */
-export type MicrosoftOAuthApp = {
-  clientId: string;
-  clientSecret: string;
-  /** Tenant authority, e.g. https://login.microsoftonline.com/<tenant>/v2.0 */
-  authorizationServer: string;
-};
-
 /** Persistence seam: bookkeeping on the binding + sealed secrets. */
 export type McpOAuthStore = {
   groupSlug: string;
@@ -84,8 +76,6 @@ export type McpOAuthStore = {
   getSecret(label: OAuthSecretLabel): Promise<string | null>;
   setSecret(label: OAuthSecretLabel, value: string): Promise<void>;
   deleteSecret(label: OAuthSecretLabel): Promise<void>;
-  /** The Settings → Microsoft app, or null when none is configured. */
-  microsoftApp(): Promise<MicrosoftOAuthApp | null>;
 };
 
 export function dbMcpOAuthStore(ownerId: string, groupSlug: string): McpOAuthStore {
@@ -120,15 +110,6 @@ export function dbMcpOAuthStore(ownerId: string, groupSlug: string): McpOAuthSto
       const rows = await listApiKeys(ownerId);
       const hit = rows.find((k) => k.service === groupSlug && k.label === label);
       if (hit) await deleteApiKey(ownerId, hit.id);
-    },
-    microsoftApp: async () => {
-      const cfg = await resolveOAuthConfig(ownerId);
-      if (!cfg) return null;
-      return {
-        clientId: cfg.clientId,
-        clientSecret: cfg.clientSecret,
-        authorizationServer: microsoftAuthority(cfg.tenant),
-      };
     },
   };
 }
@@ -254,15 +235,12 @@ async function patchOAuthState(
   await store.saveMcp({ ...mcp, oauth: next });
 }
 
-const NO_MICROSOFT_APP =
-  'this connector borrows the Microsoft app, but Settings → Microsoft has none configured. Add the app there (client id, secret, tenant) first, or switch the connector to a manual app';
-
 /**
  * Entra touch-ups to the SDK's authorization URL. The SDK appends
  * `prompt=consent` whenever `offline_access` is asked for. On a tenant where
  * users may not consent to apps themselves, that turns an app an admin has
  * ALREADY consented into a "Need admin approval" wall. Show the account picker
- * instead, exactly like the Graph sign-in (packages/microsoft oauth.ts).
+ * instead.
  */
 function microsoftAuthorizeUrl(url: URL): URL {
   const next = new URL(url);
@@ -290,17 +268,9 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
   };
-  // Resolved at most once per provider: the SDK asks for the client and the
-  // discovery state separately within one auth() run.
-  let microsoftApp: Promise<MicrosoftOAuthApp> | null = null;
-  const borrowMicrosoftApp = () =>
-    (microsoftApp ??= store.microsoftApp().then((app) => {
-      if (!app) throw new Error(`MCP connector '${store.groupSlug}': ${NO_MICROSOFT_APP}`);
-      return app;
-    }));
-
+  const entra = entraApp(client);
   // The authorization server a pre-registered app signs in at. The owner
-  // typed it (or Settings → Microsoft did); it is not discovered, so the
+  // typed it; it is not discovered, so the
   // mix-up defence the SDK's issuer checks give (RFC 8414 §3.3, the callback
   // leg's issuer binding, RFC 9207 `iss`) has nothing to defend. Entra needs
   // them off: its metadata names the tenant GUID (or a literal `{tenantid}` on
@@ -311,12 +281,7 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
   let preregistered: Promise<OAuthDiscoveryState | undefined> | null = null;
   const preregisteredDiscovery = () =>
     (preregistered ??= (async () => {
-      const url =
-        client?.source === 'microsoft'
-          ? (await borrowMicrosoftApp()).authorizationServer
-          : client?.source === 'manual'
-            ? client.authorizationServer
-            : undefined;
+      const url = client?.source === 'manual' ? client.authorizationServer : undefined;
       if (!url) return undefined; // full RFC 9728 discovery
       const metadata = await discoverAuthorizationServerMetadata(url, {
         fetchFn: mcpOAuthFetch,
@@ -335,27 +300,8 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
       return clientMetadata;
     },
     ...(opts.state ? { state: () => opts.state! } : {}),
-    clientInformation: async (ctx) => {
-      if (client?.source === 'microsoft') {
-        const app = await borrowMicrosoftApp();
-        // client_secret_post, like packages/microsoft: Entra lists it, and it
-        // spares the secret the Basic-auth encoding rules. Stamped with the
-        // issuer the SDK asks for: the app is resolved fresh every time, so an
-        // unstamped copy would make the SDK store one in this connector's vault.
-        // The stamp binds credentials to the server that issued them (SEP-2352);
-        // there is nothing to bind here, because this app only ever signs in at
-        // the tenant authority Settings → Microsoft names (discoveryState above),
-        // which is set by configuration and never discovered. Whatever issuer
-        // the SDK asks about, it is that server.
-        return {
-          client_id: app.clientId,
-          client_secret: app.clientSecret,
-          token_endpoint_auth_method: 'client_secret_post',
-          ...(ctx?.issuer ? { issuer: ctx.issuer } : {}),
-        };
-      }
-      return loadJsonSecret<OAuthClientInformationMixed>(store, 'oauth-client');
-    },
+    clientInformation: async () =>
+      loadJsonSecret<OAuthClientInformationMixed>(store, 'oauth-client'),
     // Reached only by dynamic registration: a pre-registered app is always
     // returned by clientInformation() above, so the SDK never registers.
     saveClientInformation: async (info) => {
@@ -365,7 +311,7 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
     discoveryState: preregisteredDiscovery,
     // Entra v2 derives the token audience from the scope; the RFC 8707
     // `resource` parameter adds nothing there but a way to fail.
-    ...(client?.source === 'microsoft' ? { validateResourceURL: async () => undefined } : {}),
+    ...(entra ? { validateResourceURL: async () => undefined } : {}),
     tokens: () => loadMcpOAuthTokens(store),
     saveTokens: async (tokens) => {
       await store.setSecret('oauth-tokens', JSON.stringify(tokens));
@@ -379,11 +325,7 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
     },
     redirectToAuthorization: async (authorizationUrl) => {
       if (opts.onRedirect) {
-        opts.onRedirect(
-          client?.source === 'microsoft'
-            ? microsoftAuthorizeUrl(authorizationUrl)
-            : authorizationUrl,
-        );
+        opts.onRedirect(entra ? microsoftAuthorizeUrl(authorizationUrl) : authorizationUrl);
         return;
       }
       // Runtime mode: a tool call cannot open a browser. Mark and teach.
@@ -447,7 +389,7 @@ const ENTRA_HINTS: ReadonlyArray<readonly [RegExp, string]> = [
   ],
   [
     /AADSTS7000215|AADSTS7000222/,
-    'The client secret in Settings → Microsoft is wrong or has expired. Create a new one in Azure and save it there.',
+    "The connector's client secret is wrong or has expired. Create a new one in Azure and save it on the connector's manual app.",
   ],
   [
     /AADSTS65001/,
@@ -459,7 +401,7 @@ const ENTRA_HINTS: ReadonlyArray<readonly [RegExp, string]> = [
   ],
   [
     /AADSTS50194/,
-    'The Azure app is single-tenant, but sign-in went to a multi-tenant endpoint. Check the tenant in Settings → Microsoft.',
+    "The Azure app is single-tenant, but sign-in went to a multi-tenant endpoint. Set the connector's authorization server to the tenant authority, https://login.microsoftonline.com/<tenant>/v2.0.",
   ],
 ];
 
@@ -469,20 +411,36 @@ export function explainMcpOAuthError(message: string): string {
   return hint ? `${message} (${hint})` : message;
 }
 
+/** Tests only: hosts (with port) that count as an Entra authority, for a
+ *  local stand-in of Entra. */
+let entraTestHosts: readonly string[] = [];
+export function setEntraHostsForTests(hosts: readonly string[]): void {
+  entraTestHosts = hosts;
+}
+
 const isMicrosoftAuthority = (url: string): boolean => {
   try {
-    return /^login\.microsoftonline\./i.test(new URL(url).hostname);
+    const u = new URL(url);
+    return /^login\.microsoftonline\./i.test(u.hostname) || entraTestHosts.includes(u.host);
   } catch {
     return false;
   }
 };
 
-/** Whether a connector's app signs in at a server the owner configured (the
- *  Microsoft app, or a manual app with its own server), not one discovered
- *  from the MCP server. */
+/** Whether a connector's app signs in at a server the owner configured (a
+ *  manual app with its own server), not one discovered from the MCP server. */
 function hasConfiguredServer(client: ToolGroupMcpOAuthClient | undefined): boolean {
+  return client?.source === 'manual' && !!client.authorizationServer;
+}
+
+/** A manual app that signs in at a Microsoft Entra authority: it takes the
+ *  Entra touch-ups (no `resource`, the account picker, the advertised scopes
+ *  plus `offline_access`, `client_secret_post`). */
+function entraApp(client: ToolGroupMcpOAuthClient | undefined): boolean {
   return (
-    client?.source === 'microsoft' || (client?.source === 'manual' && !!client.authorizationServer)
+    client?.source === 'manual' &&
+    !!client.authorizationServer &&
+    isMicrosoftAuthority(client.authorizationServer)
   );
 }
 
@@ -502,13 +460,13 @@ async function teachingStartError(err: unknown, mcp: ToolGroupMcpBinding): Promi
     () => undefined,
   );
   if (prm?.authorization_servers?.some(isMicrosoftAuthority)) {
-    return `${host} signs in through Microsoft Entra ID, which does not let apps register themselves. Switch this connector to the Microsoft app (it borrows the app from Settings → Microsoft), then authorize again. In Azure, that app needs this server's API permissions, and this connector's callback URL as a 'Web' redirect URI.`;
+    return `${host} signs in through Microsoft Entra ID, which does not let apps register themselves. Register an app in Azure (this server's API permissions, and this connector's callback URL as a 'Web' redirect URI), switch this connector to a manual app with its client id, secret and the tenant authority https://login.microsoftonline.com/<tenant>/v2.0, then authorize again.`;
   }
   return `${host} signs in through an authorization server that does not let apps register themselves (no dynamic client registration). Register an app with that provider, switch this connector to a manual app with its client id and secret, then authorize again.`;
 }
 
 /**
- * The scope a flow asks for. An explicit binding scope wins. A Microsoft app
+ * The scope a flow asks for. An explicit binding scope wins. An Entra app
  * otherwise takes what the server advertises (RFC 9728 `scopes_supported`),
  * and always gets `offline_access`: without it Entra issues no refresh token
  * and the connection dies at the first access-token expiry (~1h). Anything
@@ -517,7 +475,7 @@ async function teachingStartError(err: unknown, mcp: ToolGroupMcpBinding): Promi
 async function authorizationScope(mcp: ToolGroupMcpBinding): Promise<string | undefined> {
   const oauth = mcp.oauth;
   let scope = oauth?.scope;
-  if (oauth?.client?.source !== 'microsoft') return scope;
+  if (!entraApp(oauth?.client)) return scope;
   if (!scope) {
     const prm = await discoverOAuthProtectedResourceMetadata(mcp.url, {}, mcpOAuthFetch).catch(
       () => undefined,
@@ -674,13 +632,11 @@ export async function abandonMcpOAuth(store: McpOAuthStore, reason: string): Pro
 /** How a connector gets its OAuth app — the API/tool-facing input. */
 export type McpOAuthClientInput =
   | { source: 'dynamic' }
-  | { source: 'microsoft' }
   | { source: 'manual'; clientId: string; clientSecret?: string; authorizationServer?: string };
 
 function sameClient(prior: ToolGroupMcpOAuth, input: McpOAuthClientInput): boolean {
   const cur = prior.client;
   if (input.source === 'dynamic') return !cur;
-  if (input.source === 'microsoft') return cur?.source === 'microsoft';
   return (
     cur?.source === 'manual' &&
     prior.clientId === input.clientId.trim() &&
@@ -710,18 +666,20 @@ export async function setMcpOAuthClient(
 
   const c = input.client;
   if (c && !sameClient(mcp.oauth, c)) {
-    if (c.source === 'microsoft' && !(await store.microsoftApp())) {
-      throw new Error(`'${store.groupSlug}': ${NO_MICROSOFT_APP}`);
-    }
     if (c.source === 'manual') {
       const clientId = c.clientId.trim();
       if (!clientId) throw new Error('a manual app needs its client id');
       const authorizationServer = c.authorizationServer?.trim();
+      // client_secret_post for an Entra app: Entra lists it, and it spares
+      // the secret the Basic-auth encoding rules.
+      const entraPost =
+        !!c.clientSecret && !!authorizationServer && isMicrosoftAuthority(authorizationServer);
       await store.setSecret(
         'oauth-client',
         JSON.stringify({
           client_id: clientId,
           ...(c.clientSecret ? { client_secret: c.clientSecret } : {}),
+          ...(entraPost ? { token_endpoint_auth_method: 'client_secret_post' } : {}),
         }),
       );
       next.clientId = clientId;
@@ -730,11 +688,10 @@ export async function setMcpOAuthClient(
         : { source: 'manual' };
     } else {
       // No stored registration may linger: it would short-circuit dynamic
-      // registration, or shadow the borrowed Microsoft app.
+      // registration.
       await store.deleteSecret('oauth-client');
       delete next.clientId;
-      if (c.source === 'microsoft') next.client = { source: 'microsoft' };
-      else delete next.client;
+      delete next.client;
     }
     await store.deleteSecret('oauth-tokens');
     await store.deleteSecret('oauth-verifier');

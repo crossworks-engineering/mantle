@@ -6,10 +6,6 @@
 /** Files that never run on a narrow exit, each with why: their writes run on
  *  the system pool whatever they name. */
 export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object.freeze({
-  'packages/calendar/src/sync.ts': 'the calendar sync worker (system work)',
-  'packages/email/src/backfill-rfc-message-id.ts': 'a one-shot backfill job (system work)',
-  'packages/email/src/sync.ts': 'the mail sync worker (pg-boss job: system work)',
-  'packages/microsoft/src/drives/sync.ts': 'the drive sync worker (system work)',
   'packages/runs/src/budget.ts':
     "the runs engine's budget: the runs worker (system pool) or the run-control spot",
   'packages/runs/src/engine.ts':
@@ -30,7 +26,6 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
     'the maintenance runner (CLI and nightly cron: system work)',
   'server/web/lib/system-manifest/reconcile.ts':
     "the manifest's boot reconcile (system work) and its apply at the manifest's spots",
-  'server/web/workers/microsoft-sync.ts': 'the Microsoft sync worker (system work)',
 });
 
 /** Whether an open write reaches a narrow exit (the narrow login would meet

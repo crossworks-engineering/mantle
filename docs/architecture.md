@@ -74,7 +74,7 @@ Companion docs:
 - [`research.md`](./research.md), "Researcher", the web-search agent: the
   outward twin of Remy. `web_search` (Perplexity Sonar via OpenRouter) wrapped
   by a synthesising agent, reached through `invoke_agent` delegation.
-- [`email-send.md`](./email-send.md), outbound email: the `email_send` tool
+- [`email-send.md`](./_archive/email-send.md), outbound email: the `email_send` tool
   sends from the user's mailbox via provider SMTP submission (reusing the IMAP
   app password); never an own MTA. The send half of the §8 read-only pipeline.
 - [`contacts.md`](./contacts.md), `contact` node type (name + company + email
@@ -151,13 +151,11 @@ flowchart LR
     CC -- stdio --> MCPp
 
     %% Background workers
-    EmailW["server/web/workers/email-sync.ts<br/>(pg-boss)"]:::proc
     TgW["server/web/workers/telegram-poll.ts"]:::proc
     FilesW["server/web/workers/files-watch.ts<br/>(chokidar)"]:::proc
     EvW["server/web/workers/events-reminders.ts<br/>(30s poll)"]:::proc
     Agent["server/api/src/main.ts<br/>responder + extractor +<br/>summarizer + reflector<br/>(LISTEN-driven)"]:::proc
 
-    IMAP --> EmailW
     Phone -- "Bot API" --> TgW
     EvW -- "reminder" --> Phone
     Disk --> FilesW
@@ -169,7 +167,6 @@ flowchart LR
 
     Web -- "Drizzle pool" --> PG
     Web -- "S3 SDK" --> MIN
-    EmailW --> PG
     TgW --> PG
     FilesW --> PG
     EvW --> PG
@@ -215,7 +212,6 @@ the object store (RustFS) from docker-compose. That's it.
 | `web`                  | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE): but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream.                                                                                                                                                                                             |
 | `api`                  | **The durable runner** (`server/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own; it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `server/api` (v0.64.0).                                                                                                                                                                                                                        |
 | `mcp`                  | MCP server (`server/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `worker` (email)       | `server/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `tg`                   | `server/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `files`                | `server/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `events`               | `server/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent, `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups`, [`backups.md`](./backups.md), configured at /settings/backups). |
@@ -569,8 +565,8 @@ considered) is a half-day swap when the time comes.
 
 ## 8. Email pipeline
 
-Full reference: [`email-ingest.md`](./email-ingest.md) (inbound) and
-[`email-send.md`](./email-send.md) (outbound).
+Full reference: [`email-ingest.md`](./_archive/email-ingest.md) (inbound) and
+[`email-send.md`](./_archive/email-send.md) (outbound).
 
 The big idea: **never ingest mail you didn't ask for.** The **contacts list
 is the security gate**, the same list that authorises outbound send. A
@@ -580,9 +576,9 @@ account addresses; everyone else is silently rejected. Once it passes,
 the message lands as a `nodes` row of type `email` and the `node_ingested`
 pg_notify trigger fires the extractor, same path as notes and files. The
 gate is computed live per sync by `loadContactGate`
-(`packages/content/src/contact-gate.ts`); the worker
-(`server/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
-every 2 min, per-account sync, per-contact-entry 90-day backfill on add).
+(`packages/content/src/contact-gate.ts`). The mail sync itself left the
+brain in Sync plan M4 (its old worker is described in
+`docs/_archive/email-ingest.md`); it is rebuilt in the Sync service.
 _(The old per-sender curation layer (`email_senders`/`/settings/senders`)
 was retired in migration 0074; discovery of new senders now lives in the
 live-peek `/settings/discover` view.)_
@@ -613,7 +609,7 @@ Rules are RFC-based (`List-Unsubscribe-Post: One-Click`, `Precedence: bulk`,
 `Feedback-ID`, ESP fingerprints) with `Auto-Submitted` as the
 marketing→automated downgrader, so transactional sends via ESPs (Stripe
 via SendGrid, GitHub via SES) classify correctly. Full detail in
-[`email-ingest.md` §10](./email-ingest.md#10-delivery-kind-classification--salience-directlistautomatedmarketing).
+[`email-ingest.md` §10](./_archive/email-ingest.md#10-delivery-kind-classification--salience-directlistautomatedmarketing).
 
 ---
 
@@ -2141,7 +2137,7 @@ If you only read four files, read these in order:
 
 1. `packages/db/src/schema/nodes.ts`, the central abstraction.
 2. `server/mcp/src/server.ts`, the tools Claude actually uses.
-3. `packages/email/src/sync.ts`, the longest end-to-end pipeline.
+3. `server/api/src/agent/extract/index-writes.ts`, where the extractor writes what it read.
 4. `server/web/lib/auth.ts`, the security boundary.
 
 Then `git log --oneline` for the rest.

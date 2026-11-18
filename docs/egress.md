@@ -98,7 +98,6 @@ the platform's own connect.
 | MCP connector OAuth endpoints | `packages/tools/src/mcp-oauth.ts` | `redirect: 'error'`, 30 s, 1 MB |
 | peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap) |
 | federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB, 20 redirects |
-| calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB, 20 redirects |
 
 Not moved, and why:
 
@@ -137,10 +136,8 @@ read.
 
 The tables were recorded on the sources before the move and are never
 rewritten: `packages/tools/src/__snapshots__/egress-proof.before.json`,
-`packages/calendar/src/providers/__snapshots__/egress-proof.before.json`,
 `packages/content/src/__snapshots__/peers-egress-proof.before.json`. After
 the move each test (`packages/tools/src/egress-proof.test.ts`,
-`packages/calendar/src/providers/egress-proof.test.ts`,
 `packages/content/src/peers-egress-proof.test.ts`) requires the table to
 equal the recorded one with its named changes applied, and nothing else;
 the tables after are the `.after.json` files beside them. The
@@ -207,11 +204,6 @@ over 32 MB on one federation call errors instead of reading as empty.
   the parser's listener; the service gateway's listener and proxy).
   `eslint-rules/no-bare-fetch.test.ts` holds both inventories to exactly the
   files that use them.
-- The Microsoft Graph client (`packages/microsoft/src/client.ts`) follows
-  `@odata.nextLink` and a stored `@odata.deltaLink`, absolute URLs from
-  Graph's own answer: every call that carries the token is pinned to
-  `https://graph.microsoft.com` (fix round 2), so a link to another host is
-  refused before any request.
 - The scoreboard (`scripts/arch-scoreboard.ts`) counts the bare fetch sites
   in tools, calendar and content, `bareFetchSites`: 12 before the move,
   pinned at 5.
@@ -229,8 +221,6 @@ remote document chose:
 | custom chat, agent and AI worker base URLs | `packages/voice` (provider pool) | owner config: a local model on a LAN or tailnet address on purpose |
 | `/api/embedding/test` (`probeEmbeddingRoute`), the embedder probes | `packages/embeddings`, `server/web/lib/integrity/capabilities.ts`, `system-health.ts`, `services.ts` | owner config: the embedding base URL (a LAN or tailnet embedder on purpose) |
 | onboarding Azure probe | `server/web/lib/onboarding-steps.ts` | owner config: the Azure base URL the owner types in during onboarding |
-| IMAP and SMTP | `packages/email` (sockets, not fetch) | owner config: the mail host the owner set; not an HTTP fetch, so outside this layer |
-| Microsoft Graph download URL | `packages/microsoft/src/drives/sync.ts` | provider-returned: the pre-authenticated URL in Graph's own answer |
 | xAI returned image URL | `packages/voice/src/adapters/xai-image.ts` | moved onto the egress fetch (fix round 1): any URL in the answer, so it is checked, with 60 s and 32 MB |
 
 ### Calendar feeds on the LAN

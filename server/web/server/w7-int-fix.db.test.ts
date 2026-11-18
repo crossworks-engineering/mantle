@@ -307,31 +307,6 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     (await import('@mantle/embeddings')).clearEmbeddingModelCache();
   });
 
-  it('A3: turning TLS off with a blank password is a move', async () => {
-    const [acct] = await x<{ id: string }>(sql`insert into email_accounts
-        (user_id, provider, address, branch_path, imap_config_enc, imap_host, imap_port,
-         smtp_host, smtp_port)
-      values (${owner}, 'imap', ${`${tag}@example.invalid`}, ${`inbox.${tag}`}, '\\x00'::bytea,
-              '127.0.0.1', 1, '127.0.0.1', 2)
-      returning id::text`);
-    const route = await import('@/app/api/email/accounts/[id]/route');
-    const edit = (body: Record<string, unknown>) =>
-      route.PATCH(
-        json({ host: '127.0.0.1', port: 1, smtpHost: '127.0.0.1', smtpPort: 2, ...body }, 'PATCH'),
-        params('id', acct!.id),
-      );
-    as(second);
-    for (const off of [{ secure: false }, { smtpSecure: false }]) {
-      const res = await edit(off);
-      expect(res.status, JSON.stringify(off)).toBe(403);
-      expect(await res.text()).toMatch(/TLS off/);
-    }
-    // TLS on, the stored host and port: the gate lets it by.
-    expect((await edit({})).status).not.toBe(403);
-    await setKeys(true);
-    expect((await edit({ secure: false })).status).not.toBe(403);
-  });
-
   it('A4: a provider change on a keyed route with a base URL is a new pairing', async () => {
     const pair = await import('@/lib/model-route-pair');
     const before = { provider: 'openrouter', apiKeyId, baseUrl: 'https://192.0.2.13/v1' };

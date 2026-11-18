@@ -415,11 +415,6 @@ export async function createMcpConnector(
   // Check what can be checked BEFORE the row exists, so a bad app choice
   // never leaves a half-configured connector behind.
   const store = dbMcpOAuthStore(ownerId, groupSlug);
-  if (input.oauthClient?.source === 'microsoft' && !(await store.microsoftApp())) {
-    throw new InputError(
-      'this connector would borrow the Microsoft app, but Settings → Microsoft has none configured — add the app there (client id, secret, tenant) first',
-    );
-  }
   if (input.oauthClient?.source === 'manual' && !input.oauthClient.clientId.trim()) {
     throw new InputError('a manual OAuth app needs its client id');
   }

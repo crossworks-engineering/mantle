@@ -62,8 +62,10 @@ function retireStatement(role: string, exists = true): string {
 /** Hard cap on connections per role, across every process of a box.
  *  The user role's is sized to every user pool a box can open at once, each
  *  at VIEWER_POOL_MAX (3, gateway/pools.ts), as the narrow role's is: the 13
- *  compose processes that take the app env (39), up to 4 stdio MCP servers
- *  (12) and 2 operator runs (6). 39 + 12 + 6 = 57. The write role's is
+ *  compose processes that took the app env (39), up to 4 stdio MCP servers
+ *  (12) and 2 operator runs (6). 39 + 12 + 6 = 57. Since the old sync's
+ *  three workers left (Sync M4) the processes are 10 (30 + 12 + 6 = 48);
+ *  the limit stays 57. The write role's is
  *  smaller: only the processes that call openLoginWritePool open its pool
  *  (web, api, the runs worker, the Telegram poller, the stdio MCP server).
  *  connection-ceiling.test.ts holds both sums under these limits, with no

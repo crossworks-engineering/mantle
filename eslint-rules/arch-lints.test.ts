@@ -553,7 +553,13 @@ describe('the architecture ratchets (pinned counts)', () => {
     // settings area). Contact shares gone (0378: -5 with a caller): GET
     // (+HEAD) and DELETE /api/contacts/:id/shares, POST
     // /api/contacts/:id/sharing and POST /api/shares/contacts.
-    expect(rows.filter((r) => r.caller).length).toBe(920);
+    // The old sync left (Sync M4, -38 with a caller): /api/microsoft/** (23),
+    // GET (+HEAD), POST /api/calendar and PATCH, DELETE /api/calendar/:id,
+    // GET (+HEAD) /api/email/discover and POST /api/email/discover/contacts,
+    // POST /api/email/accounts, GET (+HEAD), PATCH /api/email/accounts/:id
+    // and GET (+HEAD), PUT /api/email/accounts/:id/folders (owner, the
+    // connectors area).
+    expect(rows.filter((r) => r.caller).length).toBe(882);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -595,7 +601,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 4 own pipeline rows (POST /api/pipelines, GET and HEAD
     //   /api/pipelines/:id/package, DELETE /api/pipelines/:id).
     // - the 6 contact share rows (0378): the 5 above and POST /s/:token/code.
-    expect(rows.length).toBe(1008);
+    // - the 38 rows of the old sync (Sync M4).
+    expect(rows.length).toBe(970);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

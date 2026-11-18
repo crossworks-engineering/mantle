@@ -112,11 +112,6 @@ const ADMIN_DISABLE = 'PATCH /api/users/:id {disabled} (an Admin user)';
 const OWNER_LOGOUT_ALL = 'POST /api/auth/logout {everywhere} (the owner)';
 /** The Admin user the disable row acts on (an admin by role: held). */
 const ADMIN2 = '22222222-2222-4222-8222-2222222222a1';
-/** The Microsoft sign-in, token refresh and drive discovery with Graph
- *  stubbed: the record key (the table's callback row carries no state
- *  cookie, so it never reaches the account write). */
-const MS_CONNECT = 'microsoft connect, refresh and discover (Graph stubbed)';
-const MS_UPN = 'sweep-ms2@example.invalid';
 
 /**
  * The rows each route needs to reach its write: one per table at the
@@ -330,10 +325,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
    *  pass: the answer and what landed. */
   const adminOff: Record<string, string> = {};
   const ownerOut: Record<string, string> = {};
-  /** The MS_CONNECT block per pass: the callback's redirect, the discover
-   *  answer, and what landed (the new account with its tokens, the
-   *  fixture account's refreshed expiry, the drive found). */
-  const ms: Record<string, Record<string, string | boolean>> = {};
 
   beforeAll(async () => {
     ts = await import('@mantle/db/test-support');
@@ -360,31 +351,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
-      }
-      // Microsoft's token endpoint and Graph (the MS_CONNECT block): a
-      // code exchange or refresh answers a token set, /me the account,
-      // /me/drive one drive, no followed sites.
-      const json = (out: unknown) =>
-        new Response(JSON.stringify(out), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      if (url.startsWith('https://login.microsoftonline.com/')) {
-        return json({
-          access_token: 'sweep-access',
-          refresh_token: 'sweep-refresh-2',
-          expires_in: 3600,
-          scope: 'Files.Read offline_access',
-        });
-      }
-      if (url === 'https://graph.microsoft.com/v1.0/me') {
-        return json({ userPrincipalName: MS_UPN, displayName: 'Sweep MS' });
-      }
-      if (url.startsWith('https://graph.microsoft.com/v1.0/me/drive')) {
-        return json({ id: 'sweep-drive-2', driveType: 'business', name: 'Sweep OneDrive' });
-      }
-      if (url.startsWith('https://graph.microsoft.com/v1.0/me/followedSites')) {
-        return json({ value: [] });
       }
       if (url.startsWith(SANDBOXD)) {
         return new Response('{}', {
@@ -503,48 +469,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
             select disabled_at is not null as off from auth.users where id = ${ADMIN2}`;
         adminOff[pass] = `${r.status} ${normalize(r.text)} disabled=${row?.off}`;
         await record(ADMIN_DISABLE);
-      }
-      // The Microsoft sign-in, a token refresh and a drive discovery, with
-      // Graph stubbed (round 13c, G): the callback with its state and PKCE
-      // cookies; the fixture account's tokens sealed for real and expired,
-      // so the discover refreshes them first. Before the area rows: the
-      // DELETE rows remove the config and the account.
-      {
-        const { seal } = await import('@mantle/crypto');
-        await su`update microsoft_config
-                      set client_secret_enc = ${seal('sweep-secret', OWNER).ciphertext}
-                    where owner_id = ${OWNER}`;
-        await su`update ms_accounts
-                      set access_token_enc = ${seal('sweep-old', S).ciphertext},
-                          refresh_token_enc = ${seal('sweep-refresh', S).ciphertext},
-                          token_expires_at = '2000-01-01Z', enabled = true
-                    where id = ${S}`;
-        const back = await app.request(
-          '/api/microsoft/oauth/callback?code=sweep-code&state=sweep-state',
-          {
-            method: 'GET',
-            headers: {
-              cookie: `${cookie}; ms_oauth_state=sweep-state; ms_oauth_verifier=sweep-verifier`,
-            },
-          },
-        );
-        const to = back.headers.get('location') ?? '';
-        const found = await send('POST', `/api/microsoft/accounts/${S}/drives`, {});
-        await record(MS_CONNECT);
-        const [acct] = await su<{ tokens: boolean }[]>`
-            select (access_token_enc is not null and refresh_token_enc is not null) as tokens
-              from ms_accounts where user_id = ${OWNER} and upn = ${MS_UPN}`;
-        const [fixture] = await su<{ fresh: boolean }[]>`
-            select token_expires_at > now() as fresh from ms_accounts where id = ${S}`;
-        const [drive] = await su<{ enabled: boolean }[]>`
-            select enabled from ms_drives where account_id = ${S} and drive_id = 'sweep-drive-2'`;
-        ms[pass] = {
-          callback: `${back.status} ${to.includes('connected=') ? 'connected' : to.slice(0, 160)}`,
-          discover: `${found.status} ${normalize(found.text)}`,
-          account: acct?.tokens ?? false,
-          refreshed: fixture?.fresh ?? false,
-          drive: drive ? `found, enabled ${drive.enabled}` : 'none',
-        };
       }
       // The DELETE rows last, a sub-resource's before its parent's (the
       // table's own order otherwise), so a row that reads, edits or acts
@@ -692,9 +616,8 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     const refused = [...denials].filter(([k, d]) => k.startsWith('read ') && d.length > 0);
     expect(refused).toEqual([]);
     // A 502 or 503 is an upstream's answer the sweep has none of, and only
-    // these two rows reach one (an MCP server, Microsoft Graph); every other
-    // row fails on any 5xx.
-    const upstream = new Set(['GET /api/dev-tools/mcp', 'GET /api/microsoft/drives/:id/browse']);
+    // this row reaches one (an MCP server); every other row fails on any 5xx.
+    const upstream = new Set(['GET /api/dev-tools/mcp']);
     expect(
       [...readAnswers.on].filter(
         ([k, a]) => a.startsWith('5') && !(upstream.has(k) && (a === '502' || a === '503')),
@@ -723,11 +646,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
   });
 
   it('records per row whether the narrow login wrote: the scope set`s insert on the narrow route', () => {
-    // ms_drive_scopes' narrow INSERT and DELETE (round 9, from the code):
-    // the product's scope set makes both as the narrow login.
-    expect(wrote.on.get('PUT /api/microsoft/drives/:id/scopes')).toEqual(
-      expect.arrayContaining(['public.ms_drive_scopes DELETE', 'public.ms_drive_scopes INSERT']),
-    );
     const by = (pick: (w: string[]) => boolean) => [...wrote.on].filter(([, w]) => pick(w)).length;
     console.log(
       `narrow sweep: rows where the narrow login wrote ${by((w) => w.length > 0)}, wrote nothing ${by((w) => w.length === 0)}`,
@@ -761,7 +679,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'self POST /api/telegram/chats/:id/unpair': ['acting-login'],
     'self DELETE /api/telegram/my-chats/:id': ['acting-login'],
     'read GET /api/docs/collections': ['docs-root'],
-    'read GET /api/microsoft/drives/:id/browse': ['ms-account'],
     'read GET /api/onboarding': ['profile-row'],
     'POST /api/agents': ['assistant-grant'],
     'POST /api/agents/:id/persona': ['skill-text'],
@@ -801,16 +718,12 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'PATCH /api/mcp-connectors/:slug': ['tool-config'],
     'POST /api/mcp-connectors/:slug/oauth/start': ['tool-config'],
     'PATCH /api/mcp-settings': ['profile-row'],
-    'PATCH /api/microsoft/accounts/:id/mail': ['mail-account'],
-    'PUT /api/microsoft/config': ['tool-config'],
-    'POST /api/microsoft/accounts/:id/drives': ['ms-account'],
     'POST /api/model-combos/apply': ['model-route'],
     // The destination and cost class: a pool entry added or
     // removed, the extraction concurrency; a new feed starts on (0325).
     'POST /api/model-pools': ['model-route'],
     'DELETE /api/model-pools/:id': ['model-route'],
     'PATCH /api/embedding/extraction': ['model-route'],
-    'POST /api/calendar': ['feed-enable'],
     'POST /api/onboarding': ['profile-row'],
     'POST /api/openapi-connectors': ['tool-group-grant'],
     'PATCH /api/model-pools/:id': ['model-route'],
@@ -849,7 +762,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     // contact routes, a Telegram chat's block or unpair, an assistant's
     // delete) run on the full route, where the gateway's SET carries it.
     'POST /api/agents/:id/telegram/chats': ['acting-login'],
-    'POST /api/email/discover/contacts': ['acting-login'],
     'POST /api/secrets': ['acting-login'],
     'PATCH /api/secrets/:id': ['acting-login'],
     'DELETE /api/agents/:id': ['acting-login'],
@@ -858,9 +770,7 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     // A switch turned on (0324: enabled, is_default and backup_enabled
     // only off on the narrow login): its spot.
     'POST /api/ai-workers/:id/default': ['model-route'],
-    'PATCH /api/calendar/:id': ['feed-enable'],
     'PATCH /api/docs/collections/:id': ['docs-root'],
-    'PATCH /api/microsoft/drives/:id': ['feed-enable'],
     'POST /api/users/:id/password': ['login-credential'],
     // 0327's hold on grants: a live grant of the owner rides on the client.
     'DELETE /api/mcp-clients/:id': ['login-credential'],
@@ -883,7 +793,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
       'profile-row',
       'tool-group-grant',
     ],
-    [MS_CONNECT]: ['ms-account'],
   };
 
   it('pins the rows whose write runs at a spot, and which spots', () => {
@@ -928,14 +837,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
       'offline',
       "Telegram's getMe checks the bot token before the bot is saved",
     ],
-    'POST /api/email/accounts': [
-      'offline',
-      'the IMAP login is tried before the account is saved (email_accounts is narrow all; PUT .../folders writes it on the narrow route)',
-    ],
-    'PATCH /api/email/accounts/:id': [
-      'offline',
-      'the IMAP login is tried before the change is saved',
-    ],
     'POST /api/mcp-connectors/:slug/sync': [
       'offline',
       "the server's tool list is fetched before any write (the tool rows run at tool-group-grant)",
@@ -947,10 +848,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'POST /api/openapi-connectors/preview': [
       'none',
       'reads a spec over the network, writes nothing',
-    ],
-    'GET /api/microsoft/oauth/callback': [
-      'offline',
-      'the table row sends no state cookie, so the sign-in is refused before any write (MS_CONNECT drives it with its cookies and Graph stubbed)',
     ],
     'POST /api/runners/:id': [
       'offline',
@@ -978,20 +875,6 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
   it('every row answers 2xx but the named ones, each with why', () => {
     const not2xx = [...answers.on].filter(([, a]) => !a.startsWith('2')).map(([k]) => k);
     expect(not2xx.sort()).toEqual(Object.keys(NOT_2XX).sort());
-  });
-
-  it('the Microsoft sign-in, a token refresh and a drive found, Graph stubbed: at the spot ms-account', () => {
-    expect(ms.on).toEqual({
-      callback: ms.on!.callback,
-      discover: ms.on!.discover,
-      account: true,
-      refreshed: true,
-      drive: 'found, enabled false',
-    });
-    expect(String(ms.on!.callback)).toMatch(/^30[27] connected$/);
-    expect(String(ms.on!.discover)).toMatch(/^2/);
-    expect(spots.on.get(MS_CONNECT)).toContain('ms-account');
-    expect(denials.get(MS_CONNECT)).toEqual([]);
   });
 
   it('a documentation item from a real markdown file: made and updated', () => {

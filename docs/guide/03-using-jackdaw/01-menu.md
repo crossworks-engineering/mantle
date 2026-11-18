@@ -36,20 +36,16 @@ Every item in the app's menu and what it is for. Each item links to its screen h
 
 ## Review
 
-| Item                               | What it is for                           |
-| ---------------------------------- | ---------------------------------------- |
-| [Models](../06-help/models.md)     | Catalogue of provider models and prices. |
-| [Discover](../06-help/discover.md) | Recent senders who are not contacts yet. |
-| [Pending](../06-help/pending.md)   | Actions and questions waiting for you.   |
+| Item                             | What it is for                           |
+| -------------------------------- | ---------------------------------------- |
+| [Models](../06-help/models.md)   | Catalogue of provider models and prices. |
+| [Pending](../06-help/pending.md) | Actions and questions waiting for you.   |
 
 ## Settings
 
 | Item                                                        | What it is for                                                 |
 | ----------------------------------------------------------- | -------------------------------------------------------------- |
 | [Appearance](../06-help/appearance.md)                      | Mode, theme, fonts, logo, backgrounds.                         |
-| [Accounts](../06-help/accounts.md)                          | Mailboxes over IMAP.                                           |
-| [Microsoft](../06-help/microsoft.md)                        | SharePoint, OneDrive and Outlook.                              |
-| [Calendars](../06-help/calendar.md)                         | Read-only calendar feeds.                                      |
 | [Profile](../06-help/profile.md)                            | Timezone, locale, house style, reminders.                      |
 | [API keys](../06-help/keys.md)                              | Provider keys: keys this brain uses to call other services.    |
 | [MCP](../06-help/mcp.md)                                    | Let an outside AI client use your brain.                       |

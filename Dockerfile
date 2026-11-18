@@ -83,10 +83,10 @@ COPY server/gateway/package.json server/gateway/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/parser/package.json server/parser/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
+COPY server/sync/package.json server/sync/package.json
 COPY server/web/package.json server/web/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
-COPY packages/calendar/package.json packages/calendar/package.json
 COPY packages/client-types/package.json packages/client-types/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/content/package.json packages/content/package.json
@@ -100,7 +100,6 @@ COPY packages/email/package.json packages/email/package.json
 COPY packages/embeddings/package.json packages/embeddings/package.json
 COPY packages/files/package.json packages/files/package.json
 COPY packages/mcp-core/package.json packages/mcp-core/package.json
-COPY packages/microsoft/package.json packages/microsoft/package.json
 COPY packages/rules/package.json packages/rules/package.json
 COPY packages/runs/package.json packages/runs/package.json
 COPY packages/runtime/package.json packages/runtime/package.json
@@ -330,6 +329,27 @@ EXPOSE 8095
 # `env -C` sets the package folder and execs bun, so no process stays above
 # it. --no-env-file: compose gives the environment.
 CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
+
+# ── 1d. sync: the Sync sidecar (server/sync; docs/services.md, "Sync") ──────
+# The optional service for everything that syncs with an outside account. It
+# carries the workspace (`deps`, the same layers as the server image's base,
+# so a box that has the server image pulls little more) plus the rclone binary, copied
+# from the pinned official image (MIT). No rclone daemon runs: a file job runs
+# one short rclone command and ends (Sync plan, M0).
+# rclone v1.76.0, pinned by its multi-arch index digest (amd64 and arm64):
+# a moved tag cannot change the build.
+FROM rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466 AS rclone-binary
+FROM deps AS sync
+COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=rclone-binary /usr/local/bin/rclone /usr/local/bin/rclone
+ENV NODE_ENV=production
+RUN rclone version >/dev/null
+# Node leaves the run image, as in the server image.
+RUN sh scripts/drop-node.sh
+ENTRYPOINT []
+USER node
+EXPOSE 8099
+CMD ["scripts/run-service.sh", "server/sync", "src/main.ts"]
 
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,

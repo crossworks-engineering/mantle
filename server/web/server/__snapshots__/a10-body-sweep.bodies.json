@@ -168,11 +168,6 @@
     "location": "sweep"
   },
   "POST /api/backups/run": null,
-  "POST /api/calendar": null,
-  "PATCH /api/calendar/:id": {
-    "enabled": true
-  },
-  "DELETE /api/calendar/:id": null,
   "POST /api/config/adopt": {
     "kind": "persona",
     "slug": "sweep"
@@ -224,17 +219,6 @@
   "POST /api/draws/:id/discard-draft": null,
   "PUT /api/draws/:id/draft": {
     "scene": {}
-  },
-  "POST /api/email/accounts": {
-    "address": "sweep@example.invalid",
-    "host": "sweep"
-  },
-  "PATCH /api/email/accounts/:id": {
-    "host": "sweep"
-  },
-  "PUT /api/email/accounts/:id/folders": {},
-  "POST /api/email/discover/contacts": {
-    "address": "sweep@example.invalid"
   },
   "PATCH /api/email/messages/:id": {
     "read": true,
@@ -369,22 +353,6 @@
   "PUT /api/member/push/preferences": null,
   "POST /api/member/push/subscriptions": null,
   "DELETE /api/member/push/subscriptions/:id": null,
-  "DELETE /api/microsoft/accounts/:id": null,
-  "POST /api/microsoft/accounts/:id/drives": null,
-  "PATCH /api/microsoft/accounts/:id/mail": {
-    "enabled": true
-  },
-  "PUT /api/microsoft/config": {
-    "clientId": "sweep",
-    "redirectUri": "https://example.invalid/a"
-  },
-  "DELETE /api/microsoft/config": null,
-  "PATCH /api/microsoft/drives/:id": {
-    "enabled": true
-  },
-  "PUT /api/microsoft/drives/:id/scopes": {
-    "scopes": []
-  },
   "POST /api/model-combos/apply": {
     "combo": "best-advanced"
   },
@@ -459,10 +427,18 @@
   "PUT /api/profile/default-mode": {
     "defaultMode": "light"
   },
-  "PUT /api/profile/description": { "description": "sweep" },
+  "PUT /api/profile/description": {
+    "description": "sweep"
+  },
   "PUT /api/profile/fonts": {},
   "PUT /api/profile/home-desk": {
-    "homeDesk": { "v": 1, "items": [], "counts": {}, "icons": true, "clock": "digital" },
+    "homeDesk": {
+      "v": 1,
+      "items": [],
+      "counts": {},
+      "icons": true,
+      "clock": "digital"
+    },
     "version": 0,
     "loginId": "33333333-3333-4333-8333-333333333333"
   },
@@ -472,7 +448,10 @@
     "navFavorites": []
   },
   "PUT /api/profile/sounds": {
-    "sounds": { "enabled": true, "volume": 0.7 }
+    "sounds": {
+      "enabled": true,
+      "volume": 0.7
+    }
   },
   "PUT /api/profile/neat-background": {
     "neatBackground": "sweep"

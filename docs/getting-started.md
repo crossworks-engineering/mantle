@@ -152,40 +152,10 @@ RustFS console: http://localhost:9001 (user `minio` / pass `minio12345`, kept fr
 
 ## Connecting an email account
 
-Mantle uses **IMAP for every provider**: Gmail, Outlook, custom
-domains, all of them. No OAuth, no Google Cloud Console setup, no
-refresh tokens to babysit. The cost is one app-password per account.
-
-For each account:
-
-1. **Enable 2FA** on the account if it isn't already (provider requires
-   this before issuing app passwords).
-2. **Generate an app password** in the provider's account-security UI:
-   - Gmail / Workspace: https://myaccount.google.com/apppasswords
-     (also: Gmail Settings → Forwarding and POP/IMAP → IMAP access: Enable)
-   - Outlook / Microsoft personal:
-     https://account.live.com → Security → Advanced → App passwords
-   - Fastmail / iCloud / Zoho / Proton (via Bridge): same idea,
-     account security → app passwords
-3. **Open `/settings/accounts` → Add IMAP account**:
-   - **Host** depends on provider:
-     - Gmail: `imap.gmail.com`
-     - Outlook personal: `outlook.office365.com`
-     - Your own domain: whatever your registrar set up
-   - **Port**: 993, TLS on
-   - **Username**: full email address
-   - **Password**: the app password from step 2
-4. Hit **Test connection** to verify before saving.
-
-**The contacts list is the ingest gate**: a message is only ingested when its
-sender matches a contact (exact address or `@domain` wildcard) or one of your
-own addresses; everyone else is silently rejected. Discover new senders at
-`/settings/discover`. See [`email-ingest.md`](./email-ingest.md).
-
-**Microsoft 365 corporate caveat**: some tenants have basic-auth IMAP
-disabled by admin policy. If you can't get IMAP working from a paid
-M365 mailbox, the easiest workaround is to ask your admin to enable
-it for your mailbox; Mantle does not implement Microsoft OAuth.
+Not available for now. Linking a mailbox (IMAP, Microsoft, Google) moves into
+the optional **Sync** service (`docs/services.md`); the old in-brain mail sync
+was removed in Sync plan M4. Mail already in a brain stays readable in
+**Email** while Sync is on, and searchable either way.
 
 ## Connecting a Telegram bot
 

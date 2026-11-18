@@ -133,7 +133,6 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   app_table_export_set: () => ({ table: 'a8' }),
   table_rows_add: () => ({ rows: [{}] }),
   table_column_add: (c) => ({ name: `${c.tag}`, type: 'text' }),
-  email_page: () => ({ to: 'a8@example.invalid' }),
   peer_file_copy: () => ({ peer: 'a8-none' }),
   file_set_indexing: () => ({ mode: 'metadata' }),
 };
@@ -749,11 +748,13 @@ const NOT_APPLICABLE: Readonly<Record<string, number>> = {
 /** The narrowed tool cells (a deny the oracle cannot see), by reason.
  *  The MCP Admin tool cells are 120 since Pipelines phase 2 M4, 2026-11-14:
  *  pipeline_test is a settings area tool, so its 5 allowed read cells of a
- *  login outside Admin are refused there, over both modes. */
+ *  login outside Admin are refused there, over both modes. 110 and 60 (from
+ *  120 and 70) since Sync M4, 2026-11-17: email_send and email_page, two
+ *  connectors area tools, left with the old sync (5 cells each, a surface). */
 const NARROWED: Readonly<Record<string, number>> = {
   'web-turn: the app data tools act for a login’s own MCP connection only': 44,
-  'web-turn: an Admin tool: the scope holds no Admin': 70,
-  'mcp-oauth: an Admin tool: the scope holds no Admin': 120,
+  'web-turn: an Admin tool: the scope holds no Admin': 60,
+  'mcp-oauth: an Admin tool: the scope holds no Admin': 110,
   'web-turn: a new app needs manage of its create home: the turn’s workspace': 6,
   'mcp-oauth: not on the MCP surface of a login outside Admin': 14,
 };
@@ -765,8 +766,9 @@ const NARROWED: Readonly<Record<string, number>> = {
  *  canvas (present_export) and a drawing the parser read (drawing_redraw). */
 const NOT_RUN: Readonly<Record<string, number>> = {
   // 68 to 76: speech_file_create's 8 cells (canvas media, task a265178d),
-  // a TTS call stubbed as every paid model call is.
-  'an allowed call needs a model or the outside (stubbed)': 76,
+  // a TTS call stubbed as every paid model call is. 76 to 72 (Sync M4):
+  // email_send's and email_page's 4 cells, a mail server stubbed, left.
+  'an allowed call needs a model or the outside (stubbed)': 72,
   'an allowed call needs a sandbox (sandboxd, outside the box)': 8,
   'an allowed call needs a federated peer brain (outside the box)': 8,
   'an allowed call needs the parser service (outside the box), and a real drawing': 20,

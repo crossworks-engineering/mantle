@@ -300,7 +300,7 @@ describe('shell chrome reads never fail the shell', () => {
         pendingApprovals: 0,
         navFavorites: [],
         maxUploadBytes: 1024,
-        features: { recallV2: true, treeCustomOrder: true },
+        features: { recallV2: true, treeCustomOrder: true, sync: expect.any(Boolean) },
       });
       const { READER_TREE_KINDS } = await import('@mantle/content/tree');
       expect(body.treeKinds).toEqual([...READER_TREE_KINDS]);

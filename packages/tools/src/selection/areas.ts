@@ -51,6 +51,7 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   recipe: 'new tools composed from existing tools',
   run: 'long background runs: plan, state, cancel, audit; server shell commands',
   sandbox: 'isolated Linux sandboxes: create, run commands, move files',
+  service: "the box's optional services: list them, switch one on or off",
   table: 'typed tables, or database grids: rows, columns, queries',
   task: 'tasks and to-dos',
   telegram: "Telegram messages in the user's own paired chats",

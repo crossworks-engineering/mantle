@@ -75,22 +75,19 @@ export type ToolGroupMcpOAuth = {
 };
 
 /**
- * Where a connector's pre-registered OAuth app comes from.
- * - `microsoft`: borrow the app from Settings → Microsoft (client id, secret,
- *   tenant). Nothing is copied, so a secret rotated there applies here too,
- *   and sign-in goes to that tenant's authority, not the server's generic one.
- * - `manual`: an app registered by hand with the server's provider. Its id is
- *   `clientId` on the oauth block; its secret, if any, is vault-sealed as the
- *   connector's `oauth-client` registration JSON, like a dynamic one.
+ * A connector's pre-registered OAuth app: `manual`, an app registered by hand
+ * with the server's provider. Its id is `clientId` on the oauth block; its
+ * secret, if any, is vault-sealed as the connector's `oauth-client`
+ * registration JSON, like a dynamic one. (The Settings → Microsoft borrow
+ * left with the Microsoft code, Sync plan M4: an Entra app is a manual app
+ * with the tenant authority as its authorization server.)
  */
-export type ToolGroupMcpOAuthClient =
-  | { source: 'microsoft' }
-  | {
-      source: 'manual';
-      /** Sign in here instead of where the server's discovery points, e.g. a
-       *  tenant authority for a single-tenant app. */
-      authorizationServer?: string;
-    };
+export type ToolGroupMcpOAuthClient = {
+  source: 'manual';
+  /** Sign in here instead of where the server's discovery points, e.g. a
+   *  tenant authority for a single-tenant app. */
+  authorizationServer?: string;
+};
 
 export type ToolGroupMcpBinding = {
   /** Streamable-HTTP endpoint, e.g. 'https://mcp.firecrawl.dev/v2/mcp'. */

@@ -22,7 +22,7 @@ describe('stageLabelForStep', () => {
     expect(stageLabelForStep('tool: task_create')).toBe('Adding a task…');
     expect(stageLabelForStep('tool: event_create')).toBe('Adding to your calendar…');
     expect(stageLabelForStep('tool: note_update')).toBe('Updating a note…');
-    expect(stageLabelForStep('tool: email_send')).toBe('Sending an email…');
+    expect(stageLabelForStep('tool: telegram_send')).toBe('Sending a message…');
     expect(stageLabelForStep('tool: file_upload')).toBe('Saving a file…');
   });
 

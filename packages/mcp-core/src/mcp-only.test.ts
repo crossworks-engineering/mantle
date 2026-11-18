@@ -88,6 +88,10 @@ describe('mcpOnly builtins', () => {
         'recall_map_set_slug',
         'recall_pending',
         'recall_revisions',
+        // Settings > Services (docs/services.md): an Admin user's client
+        // reads and switches the box's optional services.
+        'service_list',
+        'service_set',
         'telegram_edit',
         'telegram_mark_processed',
         'telegram_pair',

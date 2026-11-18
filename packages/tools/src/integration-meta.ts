@@ -464,13 +464,11 @@ export function parseMcpBinding(
         return {
           ok: false,
           error:
-            "integration.mcp.oauth.client must be { source: 'microsoft' } or { source: 'manual', authorization_server? } — set it via the connectors API, which also seals a manual app's secret",
+            "integration.mcp.oauth.client must be { source: 'manual', authorization_server? } — set it via the connectors API, which also seals a manual app's secret",
         };
       }
       const c = clientRaw as Record<string, unknown>;
-      if (c.source === 'microsoft') {
-        oauth.client = { source: 'microsoft' };
-      } else if (c.source === 'manual') {
+      if (c.source === 'manual') {
         const asRaw = c.authorizationServer ?? c.authorization_server;
         const as = asRaw === undefined || asRaw === null ? '' : String(asRaw).trim();
         if (as && !/^https:\/\/\S+$/i.test(as)) {
@@ -485,7 +483,7 @@ export function parseMcpBinding(
       } else {
         return {
           ok: false,
-          error: `integration.mcp.oauth.client.source '${String(c.source)}' must be microsoft | manual (leave client out for an app that registers itself)`,
+          error: `integration.mcp.oauth.client.source '${String(c.source)}' must be manual (leave client out for an app that registers itself)`,
         };
       }
     }

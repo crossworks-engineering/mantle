@@ -1,20 +1,9 @@
 /**
  * Behavioural tests for contact_create and contact_update: the two tools
- * that EXTEND the email allowlist. Neither had one.
- *
- * A contact is not just an address-book row here: `contact` nodes are the
- * sole gate on outbound mail and on inbound ingest (docs/contacts.md). So a
- * create is "this agent may now email these addresses, and their history
- * gets pulled into the brain". Two things follow that are worth pinning:
- *
- *  - the backfill is enqueued for exactly the addresses the STORE says were
- *    added (`addedEmails`), not for whatever the model typed: an update that
- *    re-sends an existing address must not re-backfill it;
- *  - the backfill never runs when the write did not happen (store threw, or
- *    the id resolved to nothing).
- *
- * The store (`createContact` / `updateContact`) and the backfill queue are
- * stubbed; the tools' own coercion, guards and ordering are real.
+ * that EXTEND the email allowlist (`contact` nodes are the gate on which mail
+ * the brain keeps; docs/contacts.md). The store (`createContact` /
+ * `updateContact`) is stubbed; the tools' own coercion, guards and ordering
+ * are real.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -28,10 +17,8 @@ vi.mock('@mantle/content', async (importOriginal) => {
     nodeUrl: (id: string) => `https://brain.test/n/${id}`,
   };
 });
-vi.mock('@mantle/email', () => ({ enqueueBackfills: vi.fn(async () => undefined) }));
 
 import { createContact, updateContact } from '@mantle/content';
-import { enqueueBackfills } from '@mantle/email';
 import { CONTACT_TOOLS } from './builtins-contacts';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -72,11 +59,10 @@ const stored = {
 beforeEach(() => {
   vi.clearAllMocks();
   // clearAllMocks clears CALLS, not implementations: re-establish defaults.
-  vi.mocked(enqueueBackfills).mockResolvedValue(undefined);
 });
 
 describe('contact_create', () => {
-  it('writes the cleaned fields under the owner and backfills what the store added', async () => {
+  it('writes the cleaned fields under the owner', async () => {
     vi.mocked(createContact).mockResolvedValue({
       contact: stored,
       addedEmails: ['alex@example.com', '@example.com'],
@@ -105,8 +91,6 @@ describe('contact_create', () => {
         tags: ['work'],
       }),
     );
-    // The backfill targets are the STORE's answer, not the model's input.
-    expect(enqueueBackfills).toHaveBeenCalledWith('o1', ['alex@example.com', '@example.com']);
     expect(outputOf(res)).toMatchObject({
       id: ID,
       title: 'Alex Botha',
@@ -114,14 +98,13 @@ describe('contact_create', () => {
     });
   });
 
-  it('does not enqueue a backfill when the store refused the write', async () => {
+  it('returns the refusal when the store refused the write', async () => {
     vi.mocked(createContact).mockRejectedValue(new Error('invalid cell number'));
 
     const res = await create.handler({ first_name: 'Alex', cell: 'abc' }, ctx);
 
     expect(errorOf(res)).toMatch(/invalid cell number/);
     // No contact ⇒ no allowlist entry ⇒ nothing to pull history for.
-    expect(enqueueBackfills).not.toHaveBeenCalled();
   });
 });
 
@@ -130,20 +113,18 @@ describe('contact_update', () => {
     const res = await update.handler({ id: '   ', first_name: 'Alex' }, ctx);
     expect(errorOf(res)).toMatch(/id/i);
     expect(updateContact).not.toHaveBeenCalled();
-    expect(enqueueBackfills).not.toHaveBeenCalled();
   });
 
-  it('reports a miss with the lookup that fixes it, and backfills nothing', async () => {
+  it('reports a miss with the lookup that fixes it', async () => {
     vi.mocked(updateContact).mockResolvedValue(null);
 
     const res = await update.handler({ id: ID, company: 'Modular' }, ctx);
 
     expect(errorOf(res)).toMatch(/not found/i);
     expect(errorOf(res)).toMatch(/contact_find|contact_list/);
-    expect(enqueueBackfills).not.toHaveBeenCalled();
   });
 
-  it('sends only the named fields (omitted ⇒ undefined) and backfills only the additions', async () => {
+  it('sends only the named fields (omitted ⇒ undefined)', async () => {
     vi.mocked(updateContact).mockResolvedValue({
       contact: { ...stored, company: 'Modular' },
       // The store diffed the list: one address was already on file.
@@ -168,7 +149,6 @@ describe('contact_update', () => {
         tags: undefined,
       }),
     );
-    expect(enqueueBackfills).toHaveBeenCalledWith('o1', ['orders@modular.example']);
     expect(outputOf(res)).toMatchObject({ id: ID, company: 'Modular' });
   });
 });

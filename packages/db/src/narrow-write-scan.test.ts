@@ -148,8 +148,6 @@ describe('the static narrow write scan', () => {
       'server/web/lib/openapi-connectors.ts',
       'server/api/src/agent/reflector.ts',
       'server/web/lib/agent-telegram.ts',
-      'packages/email/src/accounts.ts',
-      'packages/microsoft/src/outlook/manage.ts',
     ])
       expect(
         keys.filter((k) => k.startsWith(`${f} `)),

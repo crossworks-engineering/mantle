@@ -55,14 +55,16 @@ gate, and every path goes through it.
 
 `MANTLE_POLICY_EMAIL_SEND=off` closes MantleOS's own mail transports: the
 mail accounts people connected, sending over their SMTP server or over
-Microsoft Graph `sendMail` ([email-send.md](email-send.md)). Every Mantle
+Microsoft Graph `sendMail` ([email-send.md](_archive/email-send.md)). Every Mantle
 path to those two transports meets the refusal. Reading and syncing mail
 keep working (IMAP and Microsoft accounts, `email_list`, `email_get`, the
 inbox routes, new contacts' backfill).
 
-- **The gate.** `assertEmailSendAllowed` (`packages/email/src/send.ts`)
-  runs first in `sendEmail` (SMTP) and in `sendViaGraph`
-  (`packages/microsoft/src/outlook/send.ts`). While sending is off it throws
+- **The gate.** Sending left the brain with the old mail sync (Sync plan
+  M4); it returns in the Sync service, where this switch gates it again.
+  Until then the old gate, `assertEmailSendAllowed` in the SMTP and Graph
+  send paths, is described in `docs/_archive/email-send.md`. While sending
+  is off it throws
   `EmailSendPolicyOffError` before a connection is opened or a Graph call is
   made, whichever Mantle path called it: a tool call in a turn, a
   heartbeat, a sub-agent, a run, an app's declared tool, an MCP call or a

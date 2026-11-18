@@ -189,6 +189,7 @@ export { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 export { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
+export { SERVICE_TOOLS } from './builtins-services';
 export {
   PIPELINE_TOOLS,
   WORKSPACES_REFUSED,
@@ -498,6 +499,12 @@ export {
   type InvokeAgentResult,
 } from './agent-bridge';
 export {
+  registerServicesProvider,
+  getServicesProvider,
+  SERVICES_UNAVAILABLE,
+  type ServicesProvider,
+} from './services-bridge';
+export {
   registerBoxStatusProvider,
   getBoxStatusProvider,
   shapeBoxStatus,
@@ -591,7 +598,6 @@ export {
   abandonMcpOAuth,
   type McpOAuthStore,
   type McpOAuthClientInput,
-  type MicrosoftOAuthApp,
   type StartMcpOAuthResult,
 } from './mcp-oauth';
 export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';

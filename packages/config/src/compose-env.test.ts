@@ -200,7 +200,9 @@ describe('a stop waits for the exit deadline', () => {
 
   it('every worker', () => {
     const workers = blocks.filter((b) => name(b).startsWith('worker_'));
-    expect(workers.length).toBeGreaterThanOrEqual(10);
+    // 8 since worker_email, worker_microsoft and worker_calendar left with
+    // the old sync (Sync M4).
+    expect(workers.length).toBeGreaterThanOrEqual(8);
     for (const b of workers) expect([name(b), graceMs(b) > worker]).toEqual([name(b), true]);
   });
 

@@ -302,6 +302,13 @@ export const ENV_NUMBERS = {
     max: 65535,
     doc: 'the service gateway listens here',
   },
+  SYNC_PORT: {
+    default: 8099,
+    int: 'floor',
+    min: 1,
+    max: 65535,
+    doc: 'the Sync sidecar (server/sync) listens here',
+  },
   GATEWAY_MAX_BODY_BYTES: {
     default: 64 * 1024 * 1024,
     int: 'floor',

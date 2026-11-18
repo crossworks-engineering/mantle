@@ -64,11 +64,12 @@ export const msDriveItems = pgTable(
       .notNull()
       .references(() => msDrives.id, { onDelete: 'cascade' }),
     /** The deduped `file` node these bytes live in (shared if the same sha256
-     *  already arrived via another source). `restrict` so a node can't vanish
-     *  out from under a live mapping. */
+     *  already arrived via another source). `cascade` since 0378: the row is
+     *  provenance only and goes with its file (the old account delete that
+     *  freed it is gone, Sync plan M4). */
     nodeId: uuid('node_id')
       .notNull()
-      .references(() => nodes.id, { onDelete: 'restrict' }),
+      .references(() => nodes.id, { onDelete: 'cascade' }),
     /** Graph driveItem id — stable within a drive; the dedup key for "seen". */
     itemId: text('item_id').notNull(),
     /** Graph eTag — a cheap "did this change" check across syncs. */

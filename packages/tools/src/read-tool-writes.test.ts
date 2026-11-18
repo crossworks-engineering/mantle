@@ -240,6 +240,9 @@ const NO_WRITE_FOUND: readonly string[] = [
   'run_state',
   'sandbox_list',
   'sandbox_ls',
+  // Settings > Services: the services view (services.json, the run status
+  // file, the services' health probes); no write.
+  'service_list',
   'table_aggregate',
   'table_get',
   'table_history',

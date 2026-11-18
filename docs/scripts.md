@@ -163,7 +163,7 @@ docker compose pull                              # fetch the configured tag
 docker compose up -d --wait                      # start / converge, wait for health
 docker compose ps                                # state + health of every service
 docker compose logs -f --tail=200 web            # follow one service
-docker compose restart worker_email              # restart one service
+docker compose restart worker_files              # restart one service
 docker compose down                              # stop the stack (data untouched)
 docker compose up -d --remove-orphans            # converge after a compose change
 ```
