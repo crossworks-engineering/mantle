@@ -23,7 +23,7 @@ import {
   parserRasterizePdf,
   upsertFile,
 } from '@mantle/files';
-import { startTrace, step } from '@mantle/tracing';
+import { log, startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
@@ -191,7 +191,7 @@ export async function maybeExtractEmbeddedImages(
   // The pictures a file leaves out are stamped on it, and a stamp of an
   // earlier read that left none out goes (G4). Never fatal.
   await stampPicturesLeftOut(node, ownerId, result).catch((err: unknown) => {
-    console.error('[extractor] picture count not stamped:', errorMessage(err));
+    log('extractor').warn(`picture count not stamped: ${errorMessage(err)}`);
   });
   // The pictures this file has from an earlier read keep their nodes (G5).
   if (have.size > 0) {

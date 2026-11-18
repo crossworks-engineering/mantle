@@ -194,7 +194,7 @@ export type PipelineManifest = {
     table?: false;
     /** The tabs an `after` pipeline writes, by name. It may write no other. */
     tabs?: readonly string[];
-    /** Text by page (docs/pipelines.md, "Page passages"). A Reader: its tab
+    /** Text by page (docs/pipelines.md, "Page windows"). A Reader: its tab
      *  `Pages` (PAGES_TAB) holds one row a page, `Page` (the page of the
      *  original file) and `Text`. An Agent: its asks are keyed `page-<N>`
      *  (PAGE_ASK_KEY_PREFIX) and its field `Text` is the text of page N, over

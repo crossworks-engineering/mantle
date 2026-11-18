@@ -1,5 +1,5 @@
 /**
- * A file's text by page (docs/pipelines.md, "Page passages", P3): read from
+ * A file's text by page (docs/pipelines.md, "Page windows", P3): read from
  * its database, where a Reader that says `produces.pages` wrote its tab
  * `Pages` (one row a page: `Page`, the page of the ORIGINAL file, and
  * `Text`), and where an Agent that says `produces.pages` wrote the text of

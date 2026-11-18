@@ -1,6 +1,6 @@
 /**
  * Page windows of a PDF, cut with qpdf (docs/pipelines.md, "Page windows";
- * docs/parser.md, "/pdf/split"). qpdf (Apache-2.0) reads the page tree with
+ * docs/parser.md, "Page windows: qpdf and the local OCR"). qpdf (Apache-2.0) reads the page tree with
  * no page decode and no pdfjs, so it takes a file of any size the parser
  * takes: a 600-page scan of 343 MB, past the 256 MB pdfjs opens.
  *
