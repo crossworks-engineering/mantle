@@ -43,7 +43,7 @@ import { recordSkippedTrace, startTrace } from '@mantle/tracing';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
 import { isDocumentTitleMention } from '@mantle/content';
-import { withParserScope } from '@mantle/files';
+import { readByStampOf, withParserScope } from '@mantle/files';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { reusesTableSummary, runExtractorModel } from './extract/model';
 import { admitForExtraction } from './extract/gates';
@@ -278,7 +278,7 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
         ) {
           await retireUnassertedFacts(ownerId, node.id);
         }
-        await stampExtractCompleted(node.id);
+        await stampExtractCompleted(node);
         void bumpWorkerUsage(worker.id);
         return;
       }
@@ -289,7 +289,7 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
         `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP} retired=${tally.retired}`,
       );
 
-      await stampExtractCompleted(node.id);
+      await stampExtractCompleted(node);
       void bumpWorkerUsage(worker.id);
     },
   );
@@ -304,14 +304,22 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
  *  no version condition: a user edit clears summary/embedding, and the guard
  *  is a conjunction, so a stale stamp can never suppress the edit's
  *  re-extract. Drops a terminal-skip stamp left by an earlier pass that found
- *  nothing to read (@mantle/db extract-exempt.ts). */
-async function stampExtractCompleted(nodeId: string): Promise<void> {
+ *  nothing to read (@mantle/db extract-exempt.ts). A file gets `read_by` in
+ *  the same write: the core reader of its type and that reader's version
+ *  (@mantle/files read-stamp.ts), so a newer reader shows it as stale. */
+async function stampExtractCompleted(node: typeof nodes.$inferSelect): Promise<void> {
+  const stamp = {
+    extract_completed_at: new Date().toISOString(),
+    ...(node.type === 'file'
+      ? { read_by: readByStampOf((node.data ?? {}) as Record<string, unknown>, node.title) }
+      : {}),
+  };
   await db
     .update(nodes)
     .set({
-      data: sql`(${nodes.data} - 'extract_skipped' - 'extract_parked') || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
+      data: sql`(${nodes.data} - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(stamp)}::jsonb`,
     })
-    .where(eq(nodes.id, nodeId));
+    .where(eq(nodes.id, node.id));
 }
 
 // bumpAgentUsage was removed when the extractor moved to ai_workers.

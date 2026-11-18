@@ -42,7 +42,7 @@ import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
 import { itemMeta, itemState, itemSubtype, kindItemFilter } from './kinds';
 import { RANK_RE } from '../rank';
-import { extractionOf, withFileStatus } from '@mantle/files';
+import { extractionOf, readStampsOf, withFileStatus } from '@mantle/files';
 import { boxPipelines } from '../pipeline-registry';
 
 type FolderSqlRow = {
@@ -129,11 +129,12 @@ async function withTreeFileStatus<T extends TreeItem>(
       filename: typeof data.filename === 'string' ? data.filename : r.title,
       sha256: data.sha256,
       extraction: extractionOf(data),
+      ...readStampsOf(data),
     };
   });
-  const { dbExts } = await boxPipelines(ownerId);
+  const { dbExts, acted } = await boxPipelines(ownerId);
   const status = new Map(
-    (await withFileStatus(files, dbExts)).map((f) => [f.id, f.status] as const),
+    (await withFileStatus(files, dbExts, acted)).map((f) => [f.id, f.status] as const),
   );
   return items.map((item) => {
     const s = status.get(item.id);

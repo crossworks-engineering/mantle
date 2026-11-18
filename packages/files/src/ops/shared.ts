@@ -8,6 +8,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
 import { extractionOf, type FileExtraction } from '../extraction-status';
+import { readStampsOf, type PipelineReadStamp, type ReadByStamp } from '../read-stamp';
 import {
   db,
   isWriteRefused,
@@ -66,6 +67,11 @@ export type FileRow = {
    *  private workspace or shares it; its author may delete it. Absent on
    *  every other item. */
   readOnly?: true;
+  /** What read the file's text (data.read_by, ../read-stamp.ts): the core
+   *  reader and its version then. Absent before the stamps, or not read. */
+  readBy?: ReadByStamp;
+  /** The Reader pipeline that built its database (data.pipeline_read). */
+  pipelineRead?: PipelineReadStamp;
   createdAt: string;
   updatedAt: string;
 };
@@ -221,6 +227,7 @@ export function fileRowFromNode(row: Node): FileRow {
           ? 'full'
           : null,
     extraction: extractionOf(data),
+    ...readStampsOf(data),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

@@ -273,6 +273,28 @@ export {
   type FileJob,
   type FileStatus,
 } from './file-status';
+export {
+  READER_VERSIONS,
+  currentReaderVersion,
+  pipelineReadStampOf,
+  readByOf,
+  readByStampOf,
+  readStampsOf,
+  readerKeyOf,
+  staleOf,
+  type PipelineReadStamp,
+  type PipelineVersions,
+  type ReadByStamp,
+  type ReaderKey,
+} from './read-stamp';
+export {
+  STALE_LIST_DEFAULT,
+  STALE_LIST_MAX,
+  STALE_LIST_STATES,
+  listFilesNeedingAttention,
+  parseStaleCursor,
+  type StaleListState,
+} from './ops/stale';
 
 export {
   ensureRoot,

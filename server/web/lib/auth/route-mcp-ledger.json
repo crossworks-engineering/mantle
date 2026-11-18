@@ -240,6 +240,7 @@
     "GET /api/files/files/:id/processing": "file_processing",
     "GET /api/files/folders": "folder_list",
     "GET /api/files/folders/:id": { "tool": "folder_get_by_path", "gap": "by path, not by id" },
+    "GET /api/files/stale": "file_stale_list",
     "GET /api/fleet": {
       "planned": "control_box_list",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; control_ban_list and control_public_key read the rest"
@@ -786,6 +787,7 @@
     "POST /api/files/folders": "folder_create",
     "POST /api/files/folders/:id": "folder_copy",
     "POST /api/files/folders/:id/run": "pipeline_run",
+    "POST /api/files/reindex": "file_reindex",
     "POST /api/fleet/bans": {
       "planned": "control_ban",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; an archive is a person's act (archive: true, packages/tools person-only-acts.ts)"

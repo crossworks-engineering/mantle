@@ -95,7 +95,7 @@ export async function GET(req: Request) {
     return rows.filter((r) => !mail.has(r.id));
   };
   // The file types of the box that get a database (the registry).
-  const { dbExts } = await boxPipelines(user.id);
+  const { dbExts, acted } = await boxPipelines(user.id);
   if ('data' in parsed.data) {
     // The private file and member email rules are inside (fileDataRefusals);
     // a key's email rule is this route's, as for the other lists.
@@ -114,7 +114,7 @@ export async function GET(req: Request) {
       state: parsed.data.extraction,
       under: parsed.data.under,
     });
-    const files = await withoutMail(list.files).then((rows) => withFileStatus(rows, dbExts));
+    const files = await withoutMail(list.files).then((rows) => withFileStatus(rows, dbExts, acted));
     return NextResponse.json({ files: await capped(files), truncated: list.truncated });
   }
   if ('recent' in parsed.data) {
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
         ? []
         : listRecentFiles({ ownerId: user.id, limit })
             .then(withoutMail)
-            .then((rows) => withFileStatus(rows, dbExts)),
+            .then((rows) => withFileStatus(rows, dbExts, acted)),
       state === 'brain' ? [] : allPrivateRows(user, 'file', { cap: limit ?? 50 }),
     ]);
     const files = [...brain, ...own]
@@ -138,7 +138,7 @@ export async function GET(req: Request) {
       ? []
       : listFiles({ ownerId: user.id, parentPath: parsed.data.parent })
           .then(withoutMail)
-          .then((rows) => withFileStatus(rows, dbExts)),
+          .then((rows) => withFileStatus(rows, dbExts, acted)),
     state === 'brain' || !atRoot ? [] : allPrivateRows(user, 'file', { sort: 'title' }),
   ]);
   const files = [...brain, ...own].sort((a, b) =>

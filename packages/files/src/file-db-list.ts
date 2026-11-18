@@ -29,6 +29,7 @@ import {
 } from './file-data';
 import type { FileExtraction } from './extraction-status';
 import { fileStatusOf, type FileStatus } from './file-status';
+import { staleOf, type PipelineReadStamp, type ReadByStamp } from './read-stamp';
 import {
   fileDbPaths,
   fileIdsWithDatabase,
@@ -171,15 +172,27 @@ export async function listDataFiles(
  * (file-status.ts): ONE read of the queue for the whole list
  * (extractJobsFor), and a look on disk only for the rows with a Data view,
  * a few at a time, as the list of data files does. The rows are what the
- * caller's scope already read.
+ * caller's scope already read. `stale` and `pipeline` come from the row's
+ * own stamps (read-stamp.ts) and `installed`, the pipelines of the box that
+ * run (BoxPipelines.acted): no read at all. Without `installed`, only the
+ * reader's stamp decides `stale`.
  */
 export async function withFileStatus<
-  T extends { id: string; filename: string; sha256: unknown; extraction: FileExtraction },
+  T extends {
+    id: string;
+    filename: string;
+    sha256: unknown;
+    extraction: FileExtraction;
+    readBy?: ReadByStamp;
+    pipelineRead?: PipelineReadStamp;
+  },
 >(
   rows: readonly T[],
   dbExts: ReadonlySet<string>,
+  installed?: readonly { id: string; version: string }[],
 ): Promise<(T & { dataView: boolean; status: FileStatus })[]> {
   if (rows.length === 0) return [];
+  const versions = installed ? new Map(installed.map((p) => [p.id, p.version])) : undefined;
   const [viewed, jobs] = await Promise.all([
     withDataView(rows, dbExts),
     extractJobsFor(rows.map((r) => r.id)),
@@ -199,6 +212,8 @@ export async function withFileStatus<
           extraction: row.extraction.state,
           job: jobs.get(row.id),
           db: dbs[j],
+          stale: staleOf(row, versions),
+          pipeline: row.pipelineRead?.name,
         }),
       });
     });

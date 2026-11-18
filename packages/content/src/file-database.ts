@@ -561,6 +561,7 @@ async function writeRowsOrWord(
       pipelineStampOf(file.pipeline, [], parsed.optionsHash ?? ''),
     );
     await countRun(file.ownerId, file.pipeline.id, file.fileId);
+    await stampPipelineRead(file.fileId, file.sha256, file.pipeline);
     return built;
   }
   // The paid rows of the Agents, read before the write puts a new database
@@ -594,8 +595,48 @@ async function writeRowsOrWord(
   });
   // An older word for these bytes (a rebuild healing it) stops answering.
   await removeFileDbNone(file.fileId, file.sha256);
-  if (file.pipeline) await countRun(file.ownerId, file.pipeline.id, file.fileId);
+  if (file.pipeline) {
+    await countRun(file.ownerId, file.pipeline.id, file.fileId);
+    await stampPipelineRead(file.fileId, file.sha256, file.pipeline);
+  }
   return { status: 'built', tabs: tabs.length, rows };
+}
+
+/**
+ * The node's copy of the Reader's stamp (docs/files.md, "Reindex and stale
+ * indexes"): `data.pipeline_read` { id, name, version }, so a file row says
+ * which pipeline read it, and whether an installed version is newer, with no
+ * look into its database. Written where the stamp of the database is (the
+ * two write spots above), only while the row still has these bytes, and
+ * leaves `updated_at` alone (a derived write). System work only (the
+ * extract, a run on demand, the maintenance tasks). A failed write is
+ * logged and never fails or undoes the database's.
+ */
+async function stampPipelineRead(
+  fileId: string,
+  sha256: string,
+  pipeline: Pick<PipelineManifest, 'id' | 'name' | 'version'>,
+): Promise<void> {
+  const stamp = {
+    pipeline_read: { id: pipeline.id, name: pipeline.name, version: pipeline.version },
+  };
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+      await tx
+        .update(nodes)
+        .set({ data: sql`${nodes.data} || ${JSON.stringify(stamp)}::jsonb` })
+        .where(
+          and(
+            eq(nodes.id, fileId),
+            eq(nodes.type, 'file'),
+            sql`${nodes.data}->>'sha256' = ${sha256}`,
+          ),
+        );
+    });
+  } catch (err) {
+    logger.warn(`the pipeline stamp of ${fileId} was not written: ${errorMessage(err)}`);
+  }
 }
 
 /** The most rows of an Agent's tab that are read back: an Agent writes one

@@ -38,11 +38,24 @@ export type FileStatus = {
    *  failed one), or `not-built` yet. Absent for a file that has no Data
    *  view. */
   db?: DataFileState;
-  /** RESERVED (part P5, not filled yet): true when the file was read by an
-   *  older extractor than the box's current one, so a re-read would give
-   *  more. Absent today: the brain keeps no extractor version per file. */
+  /** Sent only when true: the file was read by an older reader (or its
+   *  database by an older pipeline version) than the box has now, so a
+   *  reindex would read it better. Absent: current, or unknown (read before
+   *  the stamps). */
   stale?: boolean;
+  /** The name of the Reader pipeline that built the file's database.
+   *  Absent when none did (no database, or built before the stamps). */
+  pipeline?: string;
 };
+
+/** What read a file's text: the core reader of its type (the parser
+ *  route: 'pdf-parse', 'mammoth', 'exceljs', 'utf8', ..., or 'image' for a
+ *  picture read by vision) and its version then. FileRow.readBy. */
+export type FileReadBy = { reader: string; v: number };
+
+/** The Reader pipeline that built a file's database, and its version
+ *  then. FileRow.pipelineRead. */
+export type FilePipelineRead = { id: string; name: string; version: string };
 
 /** The read state of the file, as FileRow.extraction (the brain's
  *  extraction-status rule). */
@@ -113,9 +126,18 @@ export type FileProcessing = {
   } | null;
   /** An extract job in the queue now, or null. */
   job: FileJob | null;
-  /** RESERVED (part P5): as FileStatus.stale; null while the brain keeps no
-   *  extractor version per file (always null today). */
+  /** true: read by an older reader or pipeline version than the box has
+   *  now (FileStatus.stale); false: by the current ones; null: unknown (no
+   *  stamp: read before the stamps, or not read). */
   stale: boolean | null;
+  /** The core reader that read the text, its version then, and the
+   *  version in force (`current` null: no longer a known reader). Null
+   *  with no stamp. */
+  readBy: { reader: string; version: number; current: number | null } | null;
+  /** The Reader pipeline that built the database, its version then, and
+   *  the installed one (`current` null: not installed now). Null with no
+   *  stamp. */
+  pipelineRead: { id: string; name: string; version: string; current: string | null } | null;
   /** Why the read failed or was skipped (the extractor's word and a
    *  sentence for a person); null when nothing went wrong. */
   error: { reason: string; hint: string | null } | null;
@@ -129,3 +151,42 @@ export type FileProcessing = {
 
 /** The most derived items one processing answer lists. */
 export const FILE_DERIVED_MAX = 200;
+
+/** The most files one reindex call takes. */
+export const FILE_REINDEX_MAX = 200;
+
+/** POST /api/files/reindex: the files to read again, 1 to FILE_REINDEX_MAX. */
+export type FileReindexBody = { ids: string[] };
+
+/** Why a file of a reindex call was not queued:
+ *  - `not-found`: no such file, or the caller cannot read it;
+ *  - `not-allowed`: the caller reads it but may not change it;
+ *  - `in-queue`: a read of it is already queued or running;
+ *  - `busy`: the read queue is busy; nothing was queued, try again later. */
+export type FileReindexSkip = 'not-found' | 'not-allowed' | 'in-queue' | 'busy';
+
+/** The answer of a reindex: every id sent is counted in `queued` or named
+ *  once in `skipped`. `databases`: of the queued files, those whose
+ *  database Reader run was queued too. */
+export type FileReindexAnswer = {
+  queued: number;
+  databases: number;
+  skipped: Array<{ id: string; reason: FileReindexSkip }>;
+};
+
+/** The lists of GET /api/files/stale (`state`): read by an older reader or
+ *  pipeline (`stale`), not read (`failed`), read in part (`partial`). */
+export type FileStaleState = 'stale' | 'failed' | 'partial';
+
+/** The most rows one page of GET /api/files/stale gives. */
+export const FILE_STALE_MAX = 200;
+
+/** GET /api/files/stale: one page, newest first. `files` are the file rows
+ *  of GET /api/files/files (the client's FileRow, with `status`); `next`
+ *  is the cursor of the next page (null: the last); `total` counts every
+ *  file in the state the caller reads. */
+export type FileStaleAnswer<Row = { id: string; status: FileStatus }> = {
+  files: Row[];
+  next: string | null;
+  total: number;
+};

@@ -691,6 +691,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_sql',
       // What the brain did with a file, and the items made from it.
       'file_processing',
+      // Read files again through the whole pipeline (the edit of each file),
+      // and the files that need it: stale, failed or read in part.
+      'file_reindex',
+      'file_stale_list',
       'file_create',
       'file_rename',
       'folder_rename',

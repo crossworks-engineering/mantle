@@ -12,6 +12,11 @@
  *    have one too: it is being read again.
  *  - `db` is the state of the file's own database, for a file that has a
  *    Data view (withDataView); absent for every other file.
+ *  - `stale` is sent only when true: a stamp of the file is below the
+ *    version in force (./read-stamp.ts, staleOf). A file with no stamp is
+ *    not stale (unknown).
+ *  - `pipeline` is the name of the Reader pipeline that built the file's
+ *    database (its `pipeline_read` stamp); absent with no stamp.
  *
  * The same shape is `FileStatus` in @mantle/client-types (dto/file-status),
  * the contract the client reads.
@@ -28,9 +33,11 @@ export type FileStatus = {
   ingest: FileIngest;
   job?: FileJob;
   db?: DataFileState;
-  /** RESERVED (part P5): read by an older extractor than the current one.
-   *  Never set today: no extractor version is kept per file. */
+  /** Read by an older reader or pipeline than the one in force. Sent only
+   *  when true. */
   stale?: boolean;
+  /** The name of the Reader pipeline that built the file's database. */
+  pipeline?: string;
 };
 
 /** The ingest word of an extraction state. */
@@ -55,10 +62,14 @@ export function fileStatusOf(args: {
   extraction: ExtractionState;
   job?: FileJob;
   db?: DataFileState;
+  stale?: boolean | null;
+  pipeline?: string;
 }): FileStatus {
   return {
     ingest: ingestOf(args.extraction),
     ...(args.job ? { job: args.job } : {}),
     ...(args.db ? { db: args.db } : {}),
+    ...(args.stale ? { stale: true } : {}),
+    ...(args.pipeline ? { pipeline: args.pipeline } : {}),
   };
 }

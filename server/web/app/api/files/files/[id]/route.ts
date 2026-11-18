@@ -155,7 +155,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // `dataView`: whether this kind of file has a Data view (withDataView); the
   // view itself gives the answer or the refusal. `status`: its compact state
   // (withFileStatus); the full answer is GET .../processing.
-  const file = (await withFileStatus([found], (await boxPipelines(user.id)).dbExts))[0]!;
+  const { dbExts, acted } = await boxPipelines(user.id);
+  const file = (await withFileStatus([found], dbExts, acted))[0]!;
   // Include content for text files so the editor can open it without
   // a second round-trip.
   if (file.isText) {

@@ -81,6 +81,7 @@ import {
   removeFileDbNames,
   resolveEffectiveIndexing,
   metadataSpineText,
+  readByStampOf,
 } from '@mantle/files';
 import { log, recordSkippedTrace } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -119,7 +120,7 @@ async function indexLocalOnly(
   // model; a file the parser refused) was not read: its verdict says so
   // (FileRow.extraction 'skipped'), never a completed read (task 8d40932a).
   const notRead = node.type === 'file' && (!body || body === node.title.trim());
-  const done = sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'extract_skipped' - 'extract_parked' - 'extract_completed_at')`;
+  const done = sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'extract_skipped' - 'extract_parked' - 'extract_completed_at' - 'read_by')`;
   await db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
     await tx
@@ -128,7 +129,21 @@ async function indexLocalOnly(
         embedding: vec,
         data: notRead
           ? sql`${done} || ${extractSkippedStamp(NOT_READ_NO_MODEL)} || ${JSON.stringify({ ...extra, indexing_applied: 'local' })}::jsonb`
-          : sql`${done} || ${JSON.stringify({ ...extra, indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
+          : sql`${done} || ${JSON.stringify({
+              ...extra,
+              indexing_applied: 'local',
+              extract_completed_at: new Date().toISOString(),
+              // What read it (@mantle/files read-stamp.ts): a newer reader
+              // shows the file as stale.
+              ...(node.type === 'file'
+                ? {
+                    read_by: readByStampOf(
+                      (node.data ?? {}) as Record<string, unknown>,
+                      node.title,
+                    ),
+                  }
+                : {}),
+            })}::jsonb`,
       })
       .where(eq(nodes.id, node.id));
   });

@@ -12,7 +12,13 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { fileById, fileDbStateOf, withFileStatus } from '@mantle/files';
+import {
+  currentReaderVersion,
+  fileById,
+  fileDbStateOf,
+  staleOf,
+  withFileStatus,
+} from '@mantle/files';
 import { readFileDbStamp } from '@mantle/content/file-database';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import {
@@ -85,9 +91,10 @@ export async function fileProcessing(
 ): Promise<FileProcessing | null> {
   const row = await fileById({ ownerId, fileId });
   if (!row) return null;
-  const { dbExts } = await boxPipelines(ownerId);
+  const { dbExts, acted } = await boxPipelines(ownerId);
+  const versions = new Map(acted.map((p) => [p.id, p.version]));
   const [[file], statsRows, derivedRows] = await Promise.all([
-    withFileStatus([row], dbExts),
+    withFileStatus([row], dbExts, acted),
     db.execute(sql`
       select n.embedding is not null as embedded,
              length(n.data->>'text') as text_chars,
@@ -151,8 +158,18 @@ export async function fileProcessing(
         }
       : null,
     job: file!.status.job ?? null,
-    // Reserved for P5: no extractor version is kept per file yet.
-    stale: null,
+    // What read it (@mantle/files read-stamp.ts): null with no stamp.
+    stale: staleOf(row, versions),
+    readBy: row.readBy
+      ? {
+          reader: row.readBy.reader,
+          version: row.readBy.v,
+          current: currentReaderVersion(row.readBy.reader),
+        }
+      : null,
+    pipelineRead: row.pipelineRead
+      ? { ...row.pipelineRead, current: versions.get(row.pipelineRead.id) ?? null }
+      : null,
     error: failed && ex.reason ? { reason: ex.reason, hint: ex.hint ?? null } : null,
     images: imagesOf(stats?.images),
     derived: {
@@ -178,7 +195,7 @@ export const file_processing: BuiltinToolDef = {
   },
   name: "Show a file's processing",
   description:
-    'What the brain did with one file and where its content went: `status` (ingest done, partial, waiting, failed or none; a `job` in the queue; its database state), size, pages, whether it was embedded, the counts of text chunks, facts and mentions, its database (state, size, the pipeline that read it), the last error, and `derived`: the items made from it (extracted images, auto Tables, pages and notes) with id, kind and title. Read only. For its text use `file_read`; for its rows, `file_sql`.',
+    'What the brain did with one file and where its content went: `status` (ingest done, partial, waiting, failed or none; a `job` in the queue; its database state), size, pages, whether it was embedded, the counts of text chunks, facts and mentions, its database (state, size, the pipeline that read it), what read it (`readBy`, `pipelineRead`) and whether a newer reader or pipeline is there now (`stale`; reindex it with `file_reindex`), the last error, and `derived`: the items made from it (extracted images, auto Tables, pages and notes) with id, kind and title. Read only. For its text use `file_read`; for its rows, `file_sql`.',
   preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',

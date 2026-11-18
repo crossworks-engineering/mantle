@@ -46,6 +46,7 @@ import {
   DRAWING_REDRAW_TOOLS,
   FILE_SQL_TOOLS,
   FILE_PROCESSING_TOOLS,
+  FILE_REINDEX_TOOLS,
   DIAGRAM_RENDER_TOOLS,
   PRESENT_TOOLS,
   CANVAS_LIBRARY_TOOLS,
@@ -443,6 +444,9 @@ export function registerMantleTools(
   // What the brain did with one file and where its content went (the
   // Details panel's answer), in the caller's scope. Read only, no spend.
   registerBuiltinTools(FILE_PROCESSING_TOOLS);
+  // Read files again through the whole pipeline (the edit of each file;
+  // spends under the box caps), and the files that need it (read only).
+  registerBuiltinTools(FILE_REINDEX_TOOLS);
   // Present canvases and the template look. The pictures need the browser
   // sidecar's renderer, which the host process registers (the web process,
   // and server/mcp for stdio): a host without it still lands a save and
