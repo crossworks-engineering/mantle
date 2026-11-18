@@ -15,11 +15,14 @@
  *  - A queued file loses what the extractor derived from its bytes (its
  *    text, summary, reader stamp) and is stamped for a whole read; the
  *    pipeline's stamp and its facts stay until the new read.
+ *  - A scanned drawing whose database holds its sketch read keeps that
+ *    read's text (text, ocr, vision_model), so the pass works from it and
+ *    pays no whole-page OCR (audit r2 M); a PDF with none drops it.
  *  - A file whose bytes are gone keeps everything and is `bytes-missing`;
  *    a superseded file is `not-found` (audit r1 M2, LOW 5).
  *  - A file stale only by its pipeline is not stale where that pipeline is
  *    off in its home workspace, in the list, its total and the row (LOW 3);
- *    a cursor that is not the ISO form is a 400 (LOW 7).
+ *    a cursor that is not epoch microseconds is a 400 (LOW 7, r2 LOW 1).
  *
  * No owner session is made: the logins are rows of the scratch database.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/app/api/files/file-reindex-route.db.test.ts
@@ -261,16 +264,30 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     expect(two.body!.next).toBeNull();
     expect((await stale(admin, '?state=old')).status).toBe(400);
     expect((await stale(admin, '?cursor=nope')).status).toBe(400);
-    // A crafted cursor: a time not in the ISO form, or not a real day, is a
-    // 400 and never reaches the database.
+    // The cursor carries epoch microseconds (audit r2 LOW 1). A crafted
+    // one: anything but a whole number of at most 16 digits (an old text
+    // time, a zone past +-15:59, year 0000, a minus) is a 400 and never
+    // reaches the database.
     const crafted = (ts: string) =>
       Buffer.from(`${ts}|${randomUUID()}`, 'utf8').toString('base64url');
-    for (const ts of ['Nov 19 2026', '2026-11-19', '2026-02-30T00:00:00Z', '20261119T000000Z']) {
+    for (const ts of [
+      'Nov 19 2026',
+      '2026-11-19T00:00:00.5+00:00',
+      '2026-11-19T00:00:00+99:00',
+      '0000-01-01T00:00:00Z',
+      '-1',
+      '1.5',
+      '12345678901234567',
+      '',
+    ]) {
       expect((await stale(admin, `?cursor=${crafted(ts)}`)).status, ts).toBe(400);
     }
-    expect((await stale(admin, `?cursor=${crafted('2026-11-19T00:00:00.5+00:00')}`)).status).toBe(
-      200,
-    );
+    for (const us of ['0', '1795046400000000', '9999999999999999']) {
+      expect((await stale(admin, `?cursor=${crafted(us)}`)).status, us).toBe(200);
+    }
+    // The cursor of a page is that whole number.
+    const [us] = Buffer.from(one.body!.next!, 'base64url').toString('utf8').split('|');
+    expect(us).toMatch(/^\d{1,16}$/);
     expect((await stale(admin, '?limit=500')).status).toBe(400);
   });
 
@@ -390,6 +407,80 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     // Kept: the pipeline's stamp (the extract builds no database).
     expect(data.pipeline_read).toEqual({ id: 'sheet', name: 'Spreadsheet', version: '0.9.0' });
     expect(data.index_work).toBe('extract');
+  });
+
+  it('a scanned drawing whose database holds its sketch read keeps that text (audit r2 M)', async () => {
+    const f = await import('@mantle/files');
+    const fd = await import('@mantle/content/file-database');
+    const { ensureWorkbookDoc } = await import('@mantle/content-core/table-model');
+    const { writeFileDatabaseDoc } = await import('@mantle/content/table-broker');
+    const { mkdirSync } = await import('node:fs');
+    const [ws] = await x<{ id: string }>(sql`select id::text as id from workspaces
+      where owner_id = ${owner} and is_admin`);
+    const made = await m.runAsSystem('test:file-reindex-route', () =>
+      m.withCreateHome({ createWs: ws!.id, privateWs: null, quiet: true }, async () => {
+        const out: Record<string, string> = {};
+        for (const role of ['sketch', 'scan']) {
+          const file = await f.upsertFile({
+            ownerId: owner,
+            parentPath: `files.${tag}`,
+            filename: `${role}.pdf`,
+            bytes: Buffer.from(`%PDF-1.7 made-up ${role}\n`),
+          });
+          out[role] = file.id;
+        }
+        return out;
+      }),
+    );
+    const read = {
+      extract_completed_at: '2026-11-18T00:00:00.000Z',
+      summary: 'made up',
+      text: 'the sketch text, paid for',
+      ocr: true,
+      vision_model: 'made-up-vision',
+      read_by: { reader: 'pdf-parse', v: 1 },
+    };
+    for (const id of Object.values(made)) await setData(id, read);
+    // `sketch` has a database whose File tab says the sketch read ran;
+    // `scan` has none.
+    const sha = (await dataOf(made.sketch!)).sha256;
+    mkdirSync(f.fileDbsDir(), { recursive: true });
+    writeFileDatabaseDoc(
+      f.fileDbPaths(made.sketch!, sha)!.sqlite,
+      ensureWorkbookDoc({
+        tabs: fd.tabsOfSheets([
+          {
+            name: 'File',
+            columns: [
+              { name: 'Kind', type: 'text' },
+              { name: 'Rules kind', type: 'text' },
+              { name: 'Vision read', type: 'checkbox' },
+            ],
+            rows: [['scan', 'scan', true]],
+          },
+        ]),
+      }),
+      { fileId: made.sketch!, ownerId: owner, description: 'A sketch read.' },
+    );
+    const got = await reindex(admin, [made.sketch!, made.scan!]);
+    expect(got.status, got.text).toBe(200);
+    expect(got.body!.queued).toBe(2);
+    expect(got.body!.skipped).toEqual([]);
+    const kept = await dataOf(made.sketch!);
+    expect(kept).toMatchObject({
+      text: read.text,
+      ocr: true,
+      vision_model: 'made-up-vision',
+      index_work: 'extract',
+    });
+    expect(kept).not.toHaveProperty('summary');
+    expect(kept).not.toHaveProperty('read_by');
+    expect(kept).not.toHaveProperty('extract_completed_at');
+    const dropped = await dataOf(made.scan!);
+    for (const k of ['text', 'ocr', 'vision_model', 'summary', 'read_by']) {
+      expect(dropped, k).not.toHaveProperty(k);
+    }
+    expect(dropped.index_work).toBe('extract');
   });
 
   it('a busy queue queues nothing and names every file', async () => {

@@ -37,7 +37,7 @@ export async function fileStaleList(
   if (!Number.isInteger(limit) || limit < 1 || limit > STALE_LIST_MAX) {
     return { ok: false, error: `limit must be a whole number from 1 to ${STALE_LIST_MAX}.` };
   }
-  let cursor: { ts: string; id: string } | null = null;
+  let cursor: { us: string; id: string } | null = null;
   if (q.cursor !== undefined && q.cursor !== '') {
     cursor = typeof q.cursor === 'string' ? parseStaleCursor(q.cursor) : null;
     if (!cursor) return { ok: false, error: 'cursor must be the `next` of a page before.' };

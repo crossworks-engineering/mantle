@@ -14,7 +14,12 @@
  *    there (one look at each, before anything is dropped): a file with no
  *    bytes keeps all it has and is skipped `bytes-missing`. The cached text
  *    is what the extractor would read instead of the bytes, so it goes; it
- *    is made again from the bytes that were just found. The old chunks and
+ *    is made again from the bytes that were just found. But for a scanned
+ *    drawing whose database holds its sketch read (`Vision read`): that read
+ *    is paid for and runs one time for its bytes, so its text (`text`,
+ *    `ocr`, `vision_model`) stays and the pass chunks, embeds and reads
+ *    facts from it again (dropped, the extract would pay a whole-page OCR
+ *    whose weaker text replaces it). The old chunks and
  *    facts stay until the new pass replaces them. The text of the Agents'
  *    tabs and the pipeline's stamp stay (no database is rebuilt by the
  *    extract);
@@ -54,9 +59,11 @@ import {
   emailAttachmentIds,
   extOf,
   fileDbNameExists,
+  fileDbSqlitePath,
   keyWithoutSearch,
   loadFileHead,
 } from '@mantle/files';
+import { storedPdfOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { log } from '@mantle/tracing';
@@ -76,6 +83,11 @@ const REINDEX_DROP_KEYS: readonly string[] = [
   ...BYTE_DERIVED_DATA_KEYS.filter((k) => k !== 'agent_text' && k !== 'pipeline_read'),
   'extract_parked',
 ];
+
+/** The keys of a sketch read's text, kept for a file whose database holds
+ *  it (the read is paid for and is not asked again for these bytes). */
+const SKETCH_TEXT_KEYS: readonly string[] = ['text', 'ocr', 'vision_model'];
+const SKETCH_DROP_KEYS = REINDEX_DROP_KEYS.filter((k) => !SKETCH_TEXT_KEYS.includes(k));
 
 /** How many files' bytes are looked for at once. */
 const BYTES_BATCH = 8;
@@ -187,18 +199,30 @@ export async function reindexFiles(
   }
   if (take.length === 0) return { queued: 0, databases: 0, skipped };
 
+  // A PDF whose database holds its sketch read keeps that read's text.
+  const sketched: string[] = [];
+  for (const id of take) {
+    const row = byId.get(id)!;
+    if (extOf(row.filename ?? row.title) !== 'pdf') continue;
+    const abs = await fileDbSqlitePath(id, row.sha256);
+    if (abs && (await storedPdfOf(abs))?.visionRead) sketched.push(id);
+  }
+
   // Drop what the extractor derived from the bytes (they are there) and ask
   // for its whole pass, in one transaction for all of them (the heads first, workspaces
   // plan U1). The announcements go out when it commits.
-  const drop = sql`array[${sql.join(
-    REINDEX_DROP_KEYS.map((k) => sql`${k}`),
-    sql`, `,
-  )}]::text[]`;
+  const keys = (list: readonly string[]) =>
+    sql`array[${sql.join(
+      list.map((k) => sql`${k}`),
+      sql`, `,
+    )}]::text[]`;
+  const drop = sql`case when ${nodes.id} = any (${`{${sketched.join(',')}}`}::uuid[])
+    then ${keys(SKETCH_DROP_KEYS)} else ${keys(REINDEX_DROP_KEYS)} end`;
   await withDeadlockRetry(() =>
     withHeads(take, 'update', async (tx) => {
       await tx
         .update(nodes)
-        .set({ data: sql`coalesce(${nodes.data}, '{}'::jsonb) - ${drop}` })
+        .set({ data: sql`coalesce(${nodes.data}, '{}'::jsonb) - (${drop})` })
         .where(
           and(
             eq(nodes.type, 'file'),
@@ -260,7 +284,7 @@ export const file_reindex: BuiltinToolDef = {
   },
   name: 'Reindex files',
   description:
-    "Read files again through the whole pipeline: text from the bytes, summary, chunks, embedding, facts, mentions, and the file database when it has one. Use it for a file whose `status.stale` is true (find them with `file_stale_list`) or whose read failed. Returns `queued`, `databases` (database runs queued) and `skipped`, a reason for each id not queued: `not-found`, `not-allowed` (you may not change it), `in-queue` (already being read), `busy` (queue full: try later), `bytes-missing` (the file's bytes are gone: nothing to read, nothing dropped). Each read spends model work, under the box caps. For one file's details use `file_processing`.",
+    "Read files again through the whole pipeline: text from the bytes, summary, chunks, embedding, facts, mentions, and the file database when it has one. Use it for a file whose `status.stale` is true (find them with `file_stale_list`) or whose read failed. Returns `queued`, `databases` (database runs queued) and `skipped`, a reason for each id not queued: `not-found`, `not-allowed` (you may not change it), `in-queue` (already being read), `busy` (queue full: try later), `bytes-missing` (the bytes could not be read now, gone or unreachable: nothing dropped). Each read spends model work, under the box caps. For one file's details use `file_processing`.",
   inputSchema: {
     type: 'object',
     properties: {
