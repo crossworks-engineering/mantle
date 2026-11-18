@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.705.0: shared workspace rights, Microsoft 365 inside Sync
+
+- **Changed:** rights on an item shared into a workspace (not its home). A Moderator of that workspace may now read, create and upload (items and folders), write, and move the item to another folder inside the workspace, with the Write switch on or off. A Moderator of a shared workspace does not delete it or move its home. A user of the workspace reads it, and writes it only with Write on; a user no longer adds new items to a shared folder. Items whose home is the workspace keep their rules. App code stays with the app's home Moderators.
+- **Changed:** an Admin user counts as a Moderator of the home of any item it can read: it edits, deletes, moves the home of and shares those items. An item it does not read stays not found.
+- **Added:** the item caps carry `mayMove`. The client shows Move from it, so a Moderator of a shared workspace sees Move but not Delete. A brain without the field keeps the old behaviour (`mayManage`).
+- **Added:** Microsoft 365 is back inside the Sync service: OneDrive and SharePoint files, Outlook mail in through the contacts gate, and Outlook send, in Settings > Accounts. New MCP admin tools `sync_*`. `sync-copy-accounts` also moves an old Microsoft app, account, drive and file map.
+- **Note:** on a box that used Microsoft before, turn Sync on, then run `sync-copy-accounts` (a dry run first). On a new box, set the Microsoft app in Settings > Accounts, then Connect.
+- **Note:** the Write switch no longer limits a Moderator of a workspace that holds an item. On a brain where every login is a Moderator of one workspace, every login may now write and move what is shared into it.
+- **Docs:** `docs/workspaces.md`, `docs/actors.md`, `docs/edit-check.md`; accepted risks in `docs/agent-ui.md`.
+- Migrations: `0382_sync_items` (the Sync file map) and `0383_shared_item_rights` (the rights above).
+- The client pair is v0.13.0 from v0.705.1.
+
 ## v0.704.0: honest extraction state, sandbox housekeeping, Sync mail and calendar feeds
 
 - **Added:** each file carries its extraction state: indexed, partial (pages n of m), failed, skipped (with a reason and a hint), pending or name only. It comes from the keys the extractor already writes, with no new column. `file_get`, `file_list`, the Files routes and `node_read` give it. `file_list` with `extraction` (the route takes `?extraction=`) lists the files in one state.
