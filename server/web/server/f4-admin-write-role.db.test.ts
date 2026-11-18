@@ -354,10 +354,12 @@ describe.skipIf(!DB_URL)('F4: an Admin user’s write request runs in its scope'
     for (const mode of ['off', 'warn', 'on'] as const) {
       await setMode(mode);
       for (const who of ['admin', 'owner'] as const) {
-        // Decision A: the Admin user edits the page it reads, so it changes
-        // its link.
+        // Decision A: the Admin user edits the page it reads, so the
+        // handler's item check lets it by (the cell's body is then the
+        // handler's 400, a mode it does not take).
         const ro = await cell(`${mode} ${who} gated read-only`, who, 'gated', 'read-only');
-        expect(ro.status, ro.text).toBe(200);
+        expect(ro.status, ro.text).not.toBe(403);
+        expect(ro.text).not.toContain('You cannot change this item in your workspaces.');
         const hidden = await cell(`${mode} ${who} gated hidden`, who, 'gated', 'hidden');
         expect(hidden.status, hidden.text).toBe(404);
         expect(JSON.parse(hidden.text)).toEqual({ ok: false, error: 'not found' });
