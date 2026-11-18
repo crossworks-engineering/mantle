@@ -1,16 +1,15 @@
 # A10 part 2 fold 1: the cells that answer otherwise than on main, each with its
 # named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
-# bad-json-400 (malformed): 184 cells
-# chunked-413: 196 cells
+# bad-json-400 (malformed): 181 cells
+# chunked-413: 194 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
 # batch-op (host.db.batch: the db broker takes a third op, and its 400 says so): 2 cells
 # trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
 # turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login): 12 cells
-# ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
+# ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 7 cells
 # password-rule (the new-password rule, 2026-11: 8 characters, three kinds): 10 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
-# code-first (Admin act definer, 0308: the code is made before the contact is asked): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
 # item-check-first (F4 fix round 2: asked of the database, the stand-in has none): 1 cells
 # item-read-first (pre-check removal part 2: the write reads the item in the scope before its body): 44 cells
@@ -408,15 +407,6 @@ PATCH /api/contacts/:id owner malformed [bad-json-400 (malformed)]
   now  400 application/json {"error":"invalid JSON"}
 PATCH /api/contacts/:id owner chunked [chunked-413]
   main 404 application/json {"error":"not found"}
-  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/contacts/:id/sharing owner valid [code-first (Admin act definer, 0308: the code is made before the contact is asked)]
-  main 404 application/json {"error":"not found"}
-  now  500 application/json {"error":"internal error"}
-POST /api/contacts/:id/sharing owner malformed [bad-json-400 (malformed)]
-  main 400 application/json {"error":"invalid action"}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/contacts/:id/sharing owner chunked [chunked-413]
-  main 400 application/json {"error":"invalid action"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 POST /api/debug/integrity/landed/delete owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
@@ -1249,12 +1239,6 @@ DELETE /api/shares/:id owner array [close-first (Admin act definer, 0310: the cl
 DELETE /api/shares/:id owner chunked [close-first (Admin act definer, 0310: the close is asked of the database first)]
   main 200 application/json {"ok":false}
   now  500 application/json {"error":"internal error"}
-POST /api/shares/contacts owner malformed [bad-json-400 (malformed)]
-  main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/shares/contacts owner chunked [chunked-413]
-  main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
-  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 POST /api/skills owner valid [opaque-500 (fold 2: a plain error, its text was the reply)]
   main 500 application/json {"error":"DATABASE_URL must be set"}
   now  500 application/json {"error":"internal error"}
@@ -1648,9 +1632,3 @@ PATCH /api/workspaces/:id/users/:loginId member malformed [bad-json-400 (malform
 PATCH /api/workspaces/:id/users/:loginId member chunked [chunked-413]
   main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /s/:token/code none malformed [bad-json-400 (malformed)]
-  main 500 text/plain Internal server error
-  now  400 application/json {"error":"invalid JSON"}
-POST /s/:token/code none chunked [ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB)]
-  main 413 application/json {"error":"This request is too large (at most 0 MB).","reason":"body-too-large"}
-  now  413 application/json {"error":"This request is too large (at most 64 KB).","reason":"body-too-large"}
