@@ -9,6 +9,11 @@
  * the list of items made from it are read in the same scope, so a caller
  * sees only what it may read anyway. Only the queue is read on the system
  * pool, for this one id (extractJobsFor). Read only; it writes nothing.
+ *
+ * The items made from the file are also held to the caller's reach
+ * (derivedReachSql): a key limited to some areas sees only the kinds of
+ * those areas, and an app sees no Table, as file_sql points neither at
+ * one (mayBePointedAtTable). The route and the tool pass the same reach.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -30,6 +35,7 @@ import { type BuiltinToolDef } from '../types';
 import { str } from '../coerce';
 import { FILE_ID_PRE } from '../builtins-common';
 import { fileSqlAnswer } from '../builtins-file-sql';
+import { scopeOutsideAdmin } from '../outside-admin';
 
 type StatsRow = {
   embedded: boolean;
@@ -41,8 +47,23 @@ type StatsRow = {
   images: unknown;
   chunks: number;
   facts: number;
-  mentions: number;
+  mentions: number | null;
 };
+
+/** Who asks, as far as the items made from the file go: a key's areas
+ *  (null: a session, a device token or an all-areas key), and whether an
+ *  app asks (apps have no Table access at all). */
+export type FileProcessingReach = { areas: readonly string[] | null; app?: boolean };
+
+/** The one filter on the items made from a file, for the caller's reach:
+ *  a key sees a kind whose area it holds (a kind's area is its plural:
+ *  file in files, table in tables, page in pages, note in notes; a kind of
+ *  no such area is left out), and an app sees no Table. */
+function derivedReachSql(reach: FileProcessingReach) {
+  const areas = reach.areas ? `{${reach.areas.join(',')}}` : null;
+  return sql`${areas === null ? sql`` : sql`and (n.type::text || 's') = any(${areas}::text[])`}
+         ${reach.app ? sql`and n.type <> 'table'` : sql``}`;
+}
 
 /** A count the reader wrote, or null: `{ kept, found }` of images (read
  *  as it comes: a reader may not write it). */
@@ -88,11 +109,16 @@ function readModeOf(raw: string | null): FileProcessing['readMode'] {
 export async function fileProcessing(
   ownerId: string,
   fileId: string,
+  reach: FileProcessingReach,
 ): Promise<FileProcessing | null> {
   const row = await fileById({ ownerId, fileId });
   if (!row) return null;
   const { dbExts, acted } = await boxPipelines(ownerId);
   const versions = new Map(acted.map((p) => [p.id, p.version]));
+  // Entity edges are read in an Admin scope only (their row rule, 0265):
+  // in any other scope the count would be a false 0, so it is not counted.
+  // Fails closed: an error reads as no.
+  const admin = !(await scopeOutsideAdmin().catch(() => true));
   const [[file], statsRows, derivedRows] = await Promise.all([
     withFileStatus([row], dbExts, acted),
     db.execute(sql`
@@ -104,16 +130,23 @@ export async function fileProcessing(
              n.data->'ocr' as ocr,
              n.data->'images' as images,
              (select count(*)::int from content_chunks c where c.node_id = n.id) as chunks,
-             (select count(*)::int from facts f where f.source_node_id = n.id) as facts,
-             (select count(*)::int from entity_edges e
-               where e.target_id = n.id and e.target_kind = 'node'
-                 and e.relation = 'mentioned_in') as mentions
+             (select count(*)::int from facts f
+               where f.source_node_id = n.id and f.valid_to is null) as facts,
+             ${
+               admin
+                 ? sql`(select count(*)::int from entity_edges e
+                         where e.target_id = n.id and e.target_kind = 'node'
+                           and e.relation = 'mentioned_in')`
+                 : sql`null::int`
+             } as mentions
         from nodes n
        where n.id = ${row.id}::uuid and n.owner_id = ${ownerId}::uuid`),
     db.execute(sql`
       select n.id, n.type::text as kind, n.title, n.path::text as path
         from nodes n
        where n.owner_id = ${ownerId}::uuid and n.data->>'sourceFileId' = ${row.id}
+         and n.superseded_by is null
+         ${derivedReachSql(reach)}
        order by n.type, lower(n.title), n.id
        limit ${FILE_DERIVED_MAX + 1}`),
   ]);
@@ -148,7 +181,7 @@ export async function fileProcessing(
     embedded: stats?.embedded === true,
     chunks: Number(stats?.chunks ?? 0),
     facts: Number(stats?.facts ?? 0),
-    mentions: Number(stats?.mentions ?? 0),
+    mentions: admin ? Number(stats?.mentions ?? 0) : null,
     database: dbState
       ? {
           state: dbState.state,
@@ -211,7 +244,10 @@ export const file_processing: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const fileId = str(input.file_id);
     if (!fileId) return { ok: false, error: 'file_id required' };
-    const answer = await fileProcessing(ctx.ownerId, fileId);
+    const answer = await fileProcessing(ctx.ownerId, fileId, {
+      areas: (ctx.caller?.gate?.facts?.keyAreas ?? null) as readonly string[] | null,
+      app: ctx.caller?.entry === 'app',
+    });
     if (!answer) {
       return {
         ok: false,

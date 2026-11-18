@@ -110,10 +110,12 @@ export type FileProcessing = {
   embedded: boolean;
   /** Text chunks of the file in search. */
   chunks: number;
-  /** Facts taken from the file. */
+  /** Facts taken from the file that are true now (a replaced fact is not
+   *  counted). */
   facts: number;
-  /** Entity mentions found in the file. */
-  mentions: number;
+  /** Entity mentions found in the file; null when they are not counted for
+   *  this caller (entity edges are read in an Admin scope only). */
+  mentions: number | null;
   /** The file's database, for a file with a Data view; null otherwise.
    *  `readBy`: the pipeline and version that built it (null before stamps
    *  or when not built). `tables`: what it extracted, each tab and its

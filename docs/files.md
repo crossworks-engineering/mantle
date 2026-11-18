@@ -286,8 +286,10 @@ What the brain did with a file, derived live (nothing new is stored):
   comes from the one read rule (`extractionOf`); `job` (`queued`,
   `running`) is an extract job in the queue now, ONE read of pg-boss for
   the whole list (`extractJobsFor`); `db` is the state of the file's own
-  database, for a file with a Data view. `packages/files/src/file-status.ts`
-  maps it; `withFileStatus` (`file-db-list.ts`) fills a list.
+  database, for a file with a Data view, from ONE read of the folder of
+  databases (a `.none` is opened for its word; no size on a row).
+  `packages/files/src/file-status.ts` maps it; `withFileStatus`
+  (`file-db-list.ts`) fills a list.
 - **Processing** (`FileProcessing`): `GET /api/files/files/:id/processing`
   and the `file_processing` tool, one answer (`fileProcessing` in
   `@mantle/tools`): size, pages, whether it was embedded, the counts of
@@ -295,7 +297,11 @@ What the brain did with a file, derived live (nothing new is stored):
   read it and its tabs with their rows), the queue, the last error, and the
   items made from it (`data.sourceFileId`: extracted images, auto Tables,
   pages and notes). Its gate is the file's own: a file the caller does not
-  read is a 404, and every count is read in the caller's scope.
+  read is a 404, and every count is read in the caller's scope. Facts and
+  items are the current ones (a replaced fact or a superseded item is not
+  counted). `mentions` is null outside an Admin scope (entity edges are
+  read there only). A key limited to some areas sees the items of those
+  areas only, and an app no Table (`derivedReachSql`).
 
 ### 8d. Reindex and stale indexes
 
