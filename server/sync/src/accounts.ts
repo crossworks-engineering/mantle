@@ -178,10 +178,12 @@ export async function removeAccount(deps: AccountDeps, id: string): Promise<Remo
   if (mailbox) {
     const done = await settlesSoon(
       deps.lane.exclusive(async () => {
-        await deps.brain.del(`/api/sidecar/mail/accounts/${id}`).catch((err: unknown) => {
-          // A mailbox row the brain no longer has: the state still goes.
-          if ((err as { status?: number }).status !== 404) throw err;
-        });
+        await deps.brain
+          .del(`/api/sidecar/mail/accounts/${id}?provider=imap`)
+          .catch((err: unknown) => {
+            // A mailbox row the brain no longer has: the state still goes.
+            if ((err as { status?: number }).status !== 404) throw err;
+          });
         await deps.state.deleteAccount(id);
       }),
     );
@@ -216,7 +218,7 @@ async function disconnect(deps: AccountDeps, account: MsAccount): Promise<void> 
   }
   if (account.mailboxId) {
     await deps.brain
-      .del(`/api/sidecar/mail/accounts/${account.mailboxId}`)
+      .del(`/api/sidecar/mail/accounts/${account.mailboxId}?provider=microsoft`)
       .catch((err: unknown) => {
         if ((err as { status?: number }).status !== 404) throw err;
       });
@@ -249,7 +251,7 @@ export async function setOutlookMail(
   }
   if (account.mailboxId) {
     await deps.brain
-      .del(`/api/sidecar/mail/accounts/${account.mailboxId}`)
+      .del(`/api/sidecar/mail/accounts/${account.mailboxId}?provider=microsoft`)
       .catch((err: unknown) => {
         if ((err as { status?: number }).status !== 404) throw err;
       });

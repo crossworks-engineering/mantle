@@ -152,11 +152,23 @@ export async function saveMailbox(
 
 /** Switch a mailbox off (the sidecar removed its account). Its stored mail
  *  stays, readable and searchable. */
-export async function disableMailbox(ownerId: string, accountId: string): Promise<boolean> {
+export async function disableMailbox(
+  ownerId: string,
+  accountId: string,
+  /** Only a row still of this kind: one taken over the other way (an IMAP
+   *  mailbox became an Outlook inbox, or back) is not the caller's any more. */
+  provider: 'imap' | 'microsoft',
+): Promise<boolean> {
   const rows = await db
     .update(emailAccounts)
     .set({ enabled: false, updatedAt: new Date() })
-    .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, ownerId)))
+    .where(
+      and(
+        eq(emailAccounts.id, accountId),
+        eq(emailAccounts.userId, ownerId),
+        eq(emailAccounts.provider, provider),
+      ),
+    )
     .returning({ id: emailAccounts.id });
   return rows.length > 0;
 }

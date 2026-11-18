@@ -338,7 +338,9 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
     for (const item of plan.fetch) {
       // The cap counts stored files: a file refused every run never holds
       // back the ones after it.
-      if (run.fetched >= FETCH_MAX) break;
+      // A bound on tries too: when every file fails (a throttled or
+      // signed-out account), the run still ends and the lane frees.
+      if (run.fetched >= FETCH_MAX || tried >= FETCH_MAX * 4) break;
       tried += 1;
       const got = await fetchOne(brain, state, drive, path, item);
       if (got.kind === 'stored') run.fetched += 1;
