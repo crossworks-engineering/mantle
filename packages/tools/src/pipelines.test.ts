@@ -338,6 +338,8 @@ describe('listPipelines', () => {
       // Nor of the Agents, which count by their entry too.
       'iso-title-block': [0, 0],
       'pdf-sheet-read': [0, 0],
+      'pdf-pages': [0, 0],
+      'pdf-page-read': [0, 0],
     });
     expect(list.countsPartial).toBe(false);
     // Numbers only: no file name, no id.
