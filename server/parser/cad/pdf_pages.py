@@ -430,7 +430,7 @@ def ruled_grids(gray):
     column lines, each fitted as a straight line (a skewed scan keeps its
     rows), and its box. Morphology open with long kernels keeps the long
     lines only. Also the mask of every long line, which the OCR picture
-    leaves out: Tesseract reads a ruled line as a letter (`|`, `—`)."""
+    leaves out: Tesseract reads a ruled line as a letter (a bar or a dash)."""
     import cv2
 
     h, w = gray.shape

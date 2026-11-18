@@ -506,7 +506,7 @@ const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
 /**
  * Whether a long PDF is a book, from the first pages' facts and kinds (the
  * sample), with no model. Every page read of the sample is on office paper
- * (A4, Letter or A3: `a4` or `a3`), none is a P&ID or an isometric, and
+ * (`a4` or `a3`: an A4, Letter or A3 sheet), none is a P&ID or an isometric, and
  * BOOK_MIN_SHARE of them or more are scans or typed text. A sample with no
  * page read is no book: the page rules decide. The page count is the
  * caller's (qpdf): over BOOK_MIN_PAGES.
