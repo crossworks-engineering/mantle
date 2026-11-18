@@ -38,13 +38,21 @@ function isZip(bytes: Buffer): boolean {
 async function extractRaw(
   bytes: Buffer,
   ext: string,
-  opts: { maxImages: number; render?: DwfRenderFn; dpi?: number },
+  opts: {
+    maxImages: number;
+    render?: DwfRenderFn;
+    dpi?: number;
+    counted?: import('./pdf').PdfPicturesCounted;
+  },
 ): Promise<EmbeddedImage[]> {
   if (ext === 'docx') return (await import('./docx')).extractDocxImages(bytes);
   // The cap is forwarded so the PDF pass stops decoding pages once it holds
   // enough real pictures.
   if (ext === 'pdf') {
-    return (await import('./pdf')).extractPdfImages(bytes, { maxImages: opts.maxImages });
+    return (await import('./pdf')).extractPdfImages(bytes, {
+      maxImages: opts.maxImages,
+      ...(opts.counted ? { counted: opts.counted } : {}),
+    });
   }
   if (ext === 'pptx' || ext === 'xlsx' || ext === 'xlsm') {
     return (await import('./ooxml-media')).extractOoxmlImages(bytes, ext);
@@ -85,10 +93,26 @@ export async function readEmbeddedImages(
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
   const lower = ext.toLowerCase();
   if (ZIP_IMAGE_EXTS.has(lower) && isZip(bytes)) await assertZipWithinLimits(bytes);
+  const counted: import('./pdf').PdfPicturesCounted = { overCap: 0 };
   const raw = await extractRaw(bytes, lower, {
     maxImages: cap,
     ...(opts?.render ? { render: opts.render } : {}),
     ...(opts?.dpi ? { dpi: opts.dpi } : {}),
+    ...(lower === 'pdf' ? { counted } : {}),
   });
-  return gateAndCap(raw, cap);
+  const result = gateAndCap(raw, cap);
+  if (lower !== 'pdf') return result;
+  // The PDF read counted the pictures past the cap it did not decode for
+  // keeping (G4), and says how many pages it scanned (G2).
+  if (counted.overCap > 0) {
+    result.rejected.over_cap = (result.rejected.over_cap ?? 0) + counted.overCap;
+  }
+  if (counted.pagesTotal !== undefined) {
+    result.pdf = {
+      pagesTotal: counted.pagesTotal,
+      pagesScanned: counted.pagesScanned ?? counted.pagesTotal,
+      ...(counted.countCut ? { countCut: true as const } : {}),
+    };
+  }
+  return result;
 }
