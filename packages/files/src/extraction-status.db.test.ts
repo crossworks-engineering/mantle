@@ -4,8 +4,8 @@
  * the parser's PDF limit, got `extract_skipped: document_unreadable`, while
  * `indexing_applied` still said 'full' and nothing on any screen said its
  * content was missing. Now its file row says `failed` with the reason, the
- * `extraction` list finds it, and the admins' "needs you" count holds it. A
- * scan the OCR read 10 pages of is `partial`. Seeds its own owner and rows
+ * `extraction` list finds it, also after a rename. A scan the OCR read 10
+ * pages of is `partial`. Seeds its own owner and rows
  * and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/files/src/extraction-status.db.test.ts
  */
@@ -105,21 +105,15 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
     expect(elsewhere.files).toEqual([]);
   });
 
-  it("the admins' count holds the failed read, and only it", async () => {
-    const r = await m.failedFileReads(owner);
-    expect(r.count).toBe(1);
-    expect(r.newest).toBe(later);
-  });
-
-  it('a write after the verdict makes it stale: the file waits for its next read', async () => {
-    // Any write moves updated_at to now (touch_updated_at); this one also
-    // dates the verdict before it.
-    await m.db.execute(sqlTag`
-      update nodes
-         set data = jsonb_set(data, '{extract_skipped,at}', '"2000-01-01T00:00:00.000Z"')
-       where id = ${ids.refused}`);
+  it('a rename after the verdict keeps it: the content is still not read (audit M1)', async () => {
+    // A rename moves updated_at (touch_updated_at) past the verdict and reads
+    // nothing: the file must still say failed, and still be listed.
+    await m.db.execute(
+      sqlTag`update nodes set title = 'spec-book-1 renamed.pdf' where id = ${ids.refused}`,
+    );
     const [row] = await ops.filesByIds({ ownerId: owner, ids: [ids.refused] });
-    expect(row?.extraction.state).toBe('pending');
-    expect((await m.failedFileReads(owner)).count).toBe(0);
+    expect(row?.extraction.state).toBe('failed');
+    const failed = await ops.listFilesByExtraction({ ownerId: owner, state: 'failed' });
+    expect(failed.files.map((f) => f.id)).toEqual([ids.refused]);
   });
 });

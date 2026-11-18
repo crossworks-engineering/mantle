@@ -438,6 +438,7 @@ export {
   EXTRACT_SKIPPED_KEY,
   TERMINAL_EXTRACT_SKIPS,
   READ_FAILURE_SKIPS,
+  FILE_READ_FAILED_CHANNEL,
   extractSkippedStamp,
   extractSkippedSql,
   EXTRACT_PARKED_KEY,
@@ -446,7 +447,6 @@ export {
 } from './extract-exempt';
 export { backfillTerminalSkips, type TerminalSkipBackfill } from './extract-skip-backfill';
 export { parkedExtractions, type ParkedExtractions } from './extract-parked';
-export { failedFileReads, type FailedFileReads } from './extract-failed';
 export { MIGRATION_TAGS } from './migration-tags';
 export { llmWorkAllowed } from './llm-guard';
 export { OLDER_SUMMARY_LABEL, olderSummaryOf } from './mixed-summaries';

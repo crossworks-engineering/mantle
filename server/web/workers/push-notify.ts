@@ -1,8 +1,9 @@
 /**
  * Push-notify worker. LISTENs on `conversation_changed` (the trigger from
  * migration 0091, also driving the SSE live stream), `pending_changed`
- * (approvals) and `needs_you_changed` (migration 0186: a provider outage or a
- * parked extraction) and, for every **outbound** turn, seals a teaser
+ * (approvals), `needs_you_changed` (migration 0186: a provider outage or a
+ * parked extraction) and `file_read_failed` (a file the brain could not read)
+ * and, for every **outbound** turn, seals a teaser
  * to the ADMIN devices and hands it to Mantle Push (push-notifications.md
  * §8/§10). Those three are the owner's side: admin devices only.
  *
@@ -28,11 +29,17 @@
 import postgres from 'postgres';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { LOGIN_NOTICE_CHANNEL, NEEDS_YOU_CHANGED_CHANNEL } from '@mantle/content';
-import { pushApproval, pushNeedsYou, pushOutbound, wantsOutboundPush } from '../lib/push/notify';
+import {
+  pushApproval,
+  pushNeedsYou,
+  pushOutbound,
+  pushReadFailed,
+  wantsOutboundPush,
+} from '../lib/push/notify';
 import { createLoginNoticeHandler, warnIfSchemaBehind } from '../lib/push/login-notice-handler';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
-import { systemDatabaseUrl } from '@mantle/db';
+import { FILE_READ_FAILED_CHANNEL, systemDatabaseUrl } from '@mantle/db';
 
 interface ConversationChange {
   ownerId: string;
@@ -104,6 +111,27 @@ function handleNeedsYou(ownerId: string): void {
   });
 }
 
+// A file the brain could not read (FILE_READ_FAILED_CHANNEL): one push to the
+// admins, at most one in READ_FAILED_PUSH_EVERY_MS; one handler at a time.
+const readFailedLast = new Map<string, number>();
+let readFailedChain: Promise<void> = Promise.resolve();
+
+function handleReadFailed(ownerId: string): void {
+  if (!ownerId) return;
+  readFailedChain = readFailedChain.then(async () => {
+    try {
+      const r = await pushReadFailed(ownerId, readFailedLast);
+      if (!r.skipped) {
+        console.log(`[push-notify] read-failed: delivered ${r.delivered}/${r.attempted}`);
+      }
+    } catch (err) {
+      if (!warnIfSchemaBehind(err)) {
+        console.error('[push-notify] read-failed send failed:', (err as Error).message);
+      }
+    }
+  });
+}
+
 // Member and client notices: lib/push/login-notice-handler.ts.
 const loginNotices = createLoginNoticeHandler();
 
@@ -129,7 +157,7 @@ runWorker('push-notify', async () => {
   if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
   console.log(
-    '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed + login_notice',
+    '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed + file_read_failed + login_notice',
   );
   const sql = postgres(url, { max: 1, prepare: false });
   await checkSchema(sql);
@@ -141,6 +169,7 @@ runWorker('push-notify', async () => {
   });
 
   const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, handleNeedsYou);
+  const subReadFailed = await sql.listen(FILE_READ_FAILED_CHANNEL, handleReadFailed);
   const subLogin = await sql.listen(LOGIN_NOTICE_CHANNEL, (payload) =>
     loginNotices.handle(payload),
   );
@@ -150,6 +179,7 @@ runWorker('push-notify', async () => {
       await subConversation.unlisten();
       await subPending.unlisten();
       await subNeedsYou.unlisten();
+      await subReadFailed.unlisten();
       await subLogin.unlisten();
       await sql.end({ timeout: 5 });
     } catch {

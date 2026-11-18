@@ -8,8 +8,12 @@
  * Derived live from the keys the extractor already writes, so there is no
  * new state to keep in step:
  *  - `indexing_applied` 'metadata': the content is kept out on purpose;
- *  - `extract_skipped` (current: stamped at or after the last write): the
- *    extractor's verdict, a read failure or a skip;
+ *  - `extract_skipped`: the extractor's verdict, a read failure or a skip.
+ *    It holds while the key is there: new bytes drop it with the other byte
+ *    keys (BYTE_DERIVED_DATA_KEYS) and a good read removes it. A rename or a
+ *    move keeps it: they re-embed the title and read nothing, so the
+ *    content is still not read (the drain's own "current" test, against
+ *    updated_at, is about re-queuing, not about this);
  *  - `extract_parked`: the write of a finished read was refused;
  *  - `extract_completed_at`: a read that ended; `ocr.pages_read` and
  *    `ocr.pages_total` say when a scan was read in part;
@@ -75,31 +79,19 @@ const HINTS: Readonly<Record<string, string>> = {
 const PARTIAL_HINT = (read: number, total: number) =>
   `Only pages 1 to ${read} of ${total} were read. The other pages are not in search.`;
 
-function isoTime(v: unknown): number | null {
-  if (typeof v !== 'string') return null;
-  const t = Date.parse(v);
-  return Number.isNaN(t) ? null : t;
-}
-
 function hintOf(reason: string): string | undefined {
   return HINTS[reason];
 }
 
-/** The extraction state of a file node, from its `data` and its
- *  `updated_at`. */
+/** The extraction state of a file node, from its `data`. */
 export function extractionOf(
   data: Readonly<Record<string, unknown>> | null | undefined,
-  updatedAt: Date | string,
 ): FileExtraction {
   const d = data ?? {};
   if (d.indexing_applied === 'metadata') return { state: 'name_only' };
 
-  const written = typeof updatedAt === 'string' ? Date.parse(updatedAt) : updatedAt.getTime();
-  const skip = d.extract_skipped as { reason?: unknown; at?: unknown } | undefined;
-  const skipAt = isoTime(skip?.at);
-  // A verdict holds while the node is unchanged (extract-exempt.ts): a
-  // write after it re-queues the node.
-  if (skip && typeof skip.reason === 'string' && skipAt !== null && skipAt >= written - 1000) {
+  const skip = d.extract_skipped as { reason?: unknown } | undefined;
+  if (skip && typeof skip.reason === 'string') {
     const reason = skip.reason;
     const hint = hintOf(reason);
     return {

@@ -18,6 +18,7 @@ import {
   dropIndexWork,
   readIndexWork,
   READ_FAILURE_SKIPS,
+  FILE_READ_FAILED_CHANNEL,
 } from '@mantle/db';
 import { recordSkippedTrace } from '@mantle/tracing';
 
@@ -34,18 +35,21 @@ export async function recordTerminalSkip(
 ): Promise<void> {
   await recordSkippedTrace(init);
   await stampExtractSkipped(init.subjectId, init.disposition, readIndexWork(node.data), extra);
-  // A read failure: the admins' phones hear of it (the "needs you" event,
-  // migration 0186; the push worker counts the failed files). Notify only:
-  // nothing that listens starts model work.
-  if (READ_FAILURE_SKIPS.includes(init.disposition)) await notifyNeedsYou(init.ownerId);
+  // A read failure: the admins' phones hear of it (the push worker,
+  // FILE_READ_FAILED_CHANNEL). Notify only: nothing that listens starts model
+  // work.
+  if (READ_FAILURE_SKIPS.includes(init.disposition)) await notifyReadFailed(init.ownerId);
 }
 
 /** Best effort: a lost notice only means no phone push for this file. */
-async function notifyNeedsYou(ownerId: string): Promise<void> {
+async function notifyReadFailed(ownerId: string): Promise<void> {
   try {
-    await db.execute(sql`SELECT pg_notify('needs_you_changed', ${ownerId}::text)`);
+    await db.execute(sql`SELECT pg_notify(${FILE_READ_FAILED_CHANNEL}, ${ownerId}::text)`);
   } catch (err) {
-    console.error('[extractor] needs-you notify failed:', err instanceof Error ? err.message : err);
+    console.error(
+      '[extractor] read-failed notify failed:',
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 

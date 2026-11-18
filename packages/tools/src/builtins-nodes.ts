@@ -116,7 +116,7 @@ export const node_read: BuiltinToolDef = {
         data: row.data && withoutDwgAnswers(row.data),
         // A file: whether its content was read (FileRow.extraction).
         ...(row.type === 'file'
-          ? { extraction: extractionOf(row.data as Record<string, unknown>, row.updatedAt) }
+          ? { extraction: extractionOf(row.data as Record<string, unknown>) }
           : {}),
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),

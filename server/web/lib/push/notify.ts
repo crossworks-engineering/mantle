@@ -10,7 +10,7 @@
 
 import { createHmac } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import { db, agents, assistantMessages, failedFileReads, parkedExtractions } from '@mantle/db';
+import { db, agents, assistantMessages, parkedExtractions } from '@mantle/db';
 import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadProfilePreferences, loadProviderAlerts } from '@mantle/content';
@@ -85,7 +85,13 @@ export interface PushResult {
   delivered: number;
   dropped: number; // unregistered devices removed
   skipped?:
-    'not_connected' | 'no_devices' | 'no_message' | 'disabled' | 'wrong_channel' | 'mcp_turn';
+    | 'not_connected'
+    | 'no_devices'
+    | 'no_message'
+    | 'disabled'
+    | 'wrong_channel'
+    | 'mcp_turn'
+    | 'throttled';
 }
 
 /** A reply as a lock-screen line: plain words (a reply is markdown, and a
@@ -379,12 +385,11 @@ export async function pushNeedsYou(
   const prefs = await getPushPrefs();
   if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
 
-  const [providers, parked, failedReads] = await Promise.all([
+  const [providers, parked] = await Promise.all([
     loadProviderAlerts(ownerId),
     parkedExtractions(ownerId).catch(() => null),
-    failedFileReads(ownerId).catch(() => null),
   ]);
-  const arrivals = needsYouArrivals(providers, seen, now, parked, failedReads);
+  const arrivals = needsYouArrivals(providers, seen, now, parked);
   if (arrivals.length === 0) {
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
   }
@@ -398,5 +403,52 @@ export async function pushNeedsYou(
   const m = needsYouMessage(arrivals[0]!);
   const payload: PushContent = { v: 1, t: m.title, b: m.body, deepLink: m.deepLink, ts: now };
   const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'needs-you');
+  return { attempted: devices.length, delivered, dropped };
+}
+
+/** At most one "a file could not be read" push in this time, per brain: a
+ *  folder of 30 locked PDFs, or a storage outage, is one notice. */
+export const READ_FAILED_PUSH_EVERY_MS = 30 * 60_000;
+
+/** Whether a read-failed push is due, after one at `last` (ms, or none). */
+export function readFailedDue(last: number | undefined, now: number): boolean {
+  return last === undefined || now - last >= READ_FAILED_PUSH_EVERY_MS;
+}
+
+/**
+ * Push "a file could not be read" to the devices of ACTIVE ADMIN logins only
+ * (task 8d40932a: a 347 MB spec book failed with nothing on any screen). The
+ * extractor notifies FILE_READ_FAILED_CHANNEL on a read failure; this sends
+ * fixed text that opens Files' Not read list, at most once in
+ * READ_FAILED_PUSH_EVERY_MS. `lastPushed` is the caller's per-process memory;
+ * the caller runs one call at a time. Gated by the approvals toggle ("things
+ * waiting for you"), as the needs-you push. Reads only the push settings and
+ * the devices.
+ */
+export async function pushReadFailed(
+  ownerId: string,
+  lastPushed: Map<string, number>,
+  now = Date.now(),
+): Promise<PushResult> {
+  if (!readFailedDue(lastPushed.get(ownerId), now)) {
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'throttled' };
+  }
+  const instance = await getPushInstance();
+  if (!instance) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'not_connected' };
+  const prefs = await getPushPrefs();
+  if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
+  // Remembered before sending: a failed send is not retried by the next event.
+  lastPushed.set(ownerId, now);
+  const devices = await listAdminSubscriptions(ownerId);
+  if (devices.length === 0)
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
+  const payload: PushContent = {
+    v: 1,
+    t: 'A file could not be read',
+    b: 'Its content is not in search. Open Files, Not read, to see which file and why.',
+    deepLink: '/files?unread=1',
+    ts: now,
+  };
+  const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'read-failed');
   return { attempted: devices.length, delivered, dropped };
 }

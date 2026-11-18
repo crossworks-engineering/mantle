@@ -4,12 +4,12 @@
  * Split out of ops.ts; bodies moved verbatim.
  */
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import { diskPathForLtree, filesRoot, ltreeToDash } from '../index';
 import { type ExtractionState } from '../extraction-status';
 import { emailAttachmentIds } from '../email-attachments';
 import { keyWithoutSearch } from '../file-data';
-import { db, nodes } from '@mantle/db';
+import { db, nodes, READ_FAILURE_SKIPS, type Node } from '@mantle/db';
 import {
   fileRowFromNode,
   folderCounts,
@@ -23,13 +23,25 @@ export const EXTRACTION_LIST_MAX = 500;
 
 /** The keys a file in each state holds, as SQL: a cheap first cut, which
  *  `extractionOf` (the one rule) then settles row by row. */
+const READ_FAILED_REASON = sql`${nodes.data}->'extract_skipped'->>'reason' in (${sql.join(
+  READ_FAILURE_SKIPS.map((r) => sql`${r}`),
+  sql`, `,
+)})`;
 const EXTRACTION_CUT: Readonly<Record<ExtractionState, ReturnType<typeof sql>>> = {
-  failed: sql`(${nodes.data} ? 'extract_skipped' or ${nodes.data} ? 'extract_parked')`,
-  skipped: sql`${nodes.data} ? 'extract_skipped'`,
+  failed: sql`(${READ_FAILED_REASON} or ${nodes.data} ? 'extract_parked')`,
+  skipped: sql`(${nodes.data} ? 'extract_skipped' and not ${READ_FAILED_REASON})`,
   partial: sql`jsonb_typeof(${nodes.data}->'ocr') = 'object'`,
-  pending: sql`not (${nodes.data} ? 'extract_completed_at') and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`,
+  pending: sql`not (${nodes.data} ?| array['extract_completed_at', 'extract_skipped', 'extract_parked']) and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`,
   indexed: sql`${nodes.data} ? 'extract_completed_at'`,
   name_only: sql`${nodes.data}->>'indexing_applied' = 'metadata'`,
+};
+
+/** A file row with no vector, and its data without the long text the
+ *  listing never shows (up to 1 M characters each). */
+const { embedding: _embedding, ...LIST_COLUMNS } = getTableColumns(nodes);
+const LIST_SELECT = {
+  ...LIST_COLUMNS,
+  data: sql<unknown>`${nodes.data} - 'text' - 'agent_text' - 'entities'`.as('data'),
 };
 
 /**
@@ -46,7 +58,7 @@ export async function listFilesByExtraction(args: {
   under?: string;
 }): Promise<{ files: FileRow[]; truncated: boolean }> {
   const rows = await db
-    .select()
+    .select(LIST_SELECT)
     .from(nodes)
     .where(
       and(
@@ -59,7 +71,9 @@ export async function listFilesByExtraction(args: {
     )
     .orderBy(sql`${nodes.updatedAt} desc`)
     .limit(EXTRACTION_LIST_MAX);
-  let files = rows.map(fileRowFromNode).filter((f) => f.extraction.state === args.state);
+  let files = rows
+    .map((r) => fileRowFromNode(r as unknown as Node))
+    .filter((f) => f.extraction.state === args.state);
   if (keyWithoutSearch() && files.length > 0) {
     const hidden = await emailAttachmentIds(
       args.ownerId,

@@ -118,6 +118,12 @@ export const READ_FAILURE_SKIPS: readonly string[] = [
   'bytes_unavailable',
 ];
 
+/** The NOTIFY channel of a new read failure (payload: the owner id). The
+ *  push worker sends the box admins' devices one notice, at most one in
+ *  READ_FAILED_PUSH_EVERY_MS (server/web/lib/push/notify.ts). Notify only:
+ *  nothing that listens starts model work. */
+export const FILE_READ_FAILED_CHANNEL = 'file_read_failed';
+
 /** The jsonb to merge onto `nodes.data` for a terminal skip. `at` is the
  *  database clock, the same clock the drain compares with `updated_at`.
  *  `extra`: what else the verdict answers (an app's failed summary call

@@ -220,7 +220,7 @@ export function fileRowFromNode(row: Node): FileRow {
         : data.indexing_applied === 'full'
           ? 'full'
           : null,
-    extraction: extractionOf(data, row.updatedAt),
+    extraction: extractionOf(data),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

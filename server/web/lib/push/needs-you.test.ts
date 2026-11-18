@@ -12,7 +12,6 @@ vi.mock('@mantle/db', () => ({
   agents: {},
   assistantMessages: {},
   parkedExtractions: vi.fn(async () => ({ count: 0, newest: null })),
-  failedFileReads: vi.fn(async () => ({ count: 0, newest: null })),
 }));
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({
@@ -33,7 +32,7 @@ vi.mock('./store', () => ({
   deleteSubscriptionByRoutingToken: vi.fn(),
 }));
 
-import { pushNeedsYou } from './notify';
+import { pushNeedsYou, pushReadFailed, readFailedDue, READ_FAILED_PUSH_EVERY_MS } from './notify';
 import { needsYouArrivals, needsYouMessage, rememberArrivals } from './needs-you';
 import { loadProviderAlerts } from '@mantle/content';
 import { sealToDevice } from './seal';
@@ -74,35 +73,6 @@ describe('parked extractions (W1 audit, LOW 4)', () => {
   it('none parked, or parked long ago, pushes nothing', () => {
     expect(needsYouArrivals([], new Set(), NOW, { count: 0, newest: null })).toEqual([]);
     expect(needsYouArrivals([], new Set(), NOW, { count: 1, newest: ago(3_600_000) })).toEqual([]);
-  });
-});
-
-describe('files the brain could not read (task 8d40932a)', () => {
-  it('a new failed read arrives once, as a count, and points at Files', () => {
-    const seen = new Set<string>();
-    const a = needsYouArrivals([], seen, NOW, null, { count: 2, newest: ago(60_000) });
-    expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ kind: 'failed_reads', count: 2 });
-    const m = needsYouMessage(a[0]!);
-    expect(m.title).toBe('A file could not be read');
-    expect(m.body).toContain('2 files');
-    expect(m.deepLink).toBe('/files?unread=1');
-    rememberArrivals(seen, a);
-    expect(needsYouArrivals([], seen, NOW, null, { count: 2, newest: ago(60_000) })).toEqual([]);
-  });
-
-  it('a newer failure is a new arrival; an old one is not', () => {
-    const seen = new Set<string>();
-    rememberArrivals(
-      seen,
-      needsYouArrivals([], seen, NOW, null, { count: 1, newest: ago(90_000) }),
-    );
-    expect(needsYouArrivals([], seen, NOW, null, { count: 2, newest: ago(10_000) })).toHaveLength(
-      1,
-    );
-    expect(
-      needsYouArrivals([], new Set(), NOW, null, { count: 1, newest: ago(3_600_000) }),
-    ).toEqual([]);
   });
 });
 
@@ -226,6 +196,53 @@ describe('pushNeedsYou', () => {
   it('no admin device, no push', async () => {
     vi.mocked(listAdminSubscriptions).mockResolvedValue([]);
     expect((await pushNeedsYou('owner', new Set(), NOW)).skipped).toBe('no_devices');
+    expect(relayNotify).not.toHaveBeenCalled();
+  });
+});
+
+describe('pushReadFailed: a file the brain could not read (task 8d40932a)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getPushInstance).mockResolvedValue({
+      instanceToken: 't',
+      relayInstanceId: 'i',
+      relayUrl: 'https://relay.example',
+    });
+    vi.mocked(getPushPrefs).mockResolvedValue({ assistantMessages: true, approvals: true });
+    vi.mocked(listAdminSubscriptions).mockResolvedValue([
+      {
+        id: 'd1',
+        routingToken: 'r1',
+        publicKey: 'pk1',
+        platform: 'ios' as const,
+        label: null,
+        loginId: 'admin-1',
+      },
+    ]);
+    vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
+    vi.mocked(relayNotify).mockResolvedValue({ ok: true, status: 200 });
+  });
+
+  it('pushes fixed words to the admins that open Files, Not read', async () => {
+    const res = await pushReadFailed('owner', new Map(), NOW);
+    expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
+    expect(listAdminSubscriptions).toHaveBeenCalledWith('owner');
+    const sent = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]) as Record<string, unknown>;
+    expect(sent).toMatchObject({ t: 'A file could not be read', deepLink: '/files?unread=1' });
+  });
+
+  it('a burst of failures is one push in the window', async () => {
+    const last = new Map<string, number>();
+    await pushReadFailed('owner', last, NOW);
+    expect((await pushReadFailed('owner', last, NOW + 60_000)).skipped).toBe('throttled');
+    expect(relayNotify).toHaveBeenCalledTimes(1);
+    expect(readFailedDue(NOW, NOW + READ_FAILED_PUSH_EVERY_MS)).toBe(true);
+    expect(readFailedDue(undefined, NOW)).toBe(true);
+  });
+
+  it('respects the approvals toggle', async () => {
+    vi.mocked(getPushPrefs).mockResolvedValue({ assistantMessages: true, approvals: false });
+    expect((await pushReadFailed('owner', new Map(), NOW)).skipped).toBe('disabled');
     expect(relayNotify).not.toHaveBeenCalled();
   });
 });
