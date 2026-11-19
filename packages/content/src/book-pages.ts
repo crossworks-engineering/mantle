@@ -185,7 +185,10 @@ export async function bookPageMethodsOf(sqlite: string): Promise<BookPageMethods
       ? `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') <> '' AND t."Model" LIKE '${SCAN_READER_MODEL_LIKE}'), ` +
         `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') <> '' AND coalesce(t."Model", '') NOT LIKE '${SCAN_READER_MODEL_LIKE}'), ` +
         `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') = '') ` +
-        `FROM "${PAGES_TAB}" p LEFT JOIN "${PAGE_TEXT_TAB}" t ON t."Key" = 'page-' || p."${PAGE_COLUMN}"`
+        `FROM "${PAGES_TAB}" p LEFT JOIN "${PAGE_TEXT_TAB}" t ` +
+        // A number column is a REAL: 5 reads as '5.0' in text, the Agent's key
+        // is 'page-5'.
+        `ON t."Key" = 'page-' || CAST(p."${PAGE_COLUMN}" AS INTEGER)`
       : `0, 0, sum(p."Method" = '${VISION_METHOD}') FROM "${PAGES_TAB}" p`);
   const read = async (joined: boolean) => {
     const r = await runTableSql(sqlite, counts(joined), { cap: 1 });

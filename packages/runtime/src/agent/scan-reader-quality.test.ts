@@ -150,4 +150,16 @@ describe('scanReadQualityOf', () => {
     // Its few lines never make it `unverified` either.
     expect(scanReadQualityOf(prose, { ocrWords: [], expectedLines: 30 }).ok).toBe(true);
   });
+
+  it('a made-up page written as paragraphs is still too long to be unverified-free', () => {
+    // 60 printed lines of made-up prose (about 65 characters each) in two
+    // paragraphs, where the free reads saw 20 lines and no sure word.
+    const para = Array.from(
+      { length: 30 },
+      (_, i) => `the made up inspector shall sign sheet ${i} of the book here`,
+    ).join(' ');
+    expect(
+      scanReadQualityOf(`${para}\n${para}`, { ocrWords: [], expectedLines: 20 }).reasons,
+    ).toEqual(['unverified']);
+  });
 });
