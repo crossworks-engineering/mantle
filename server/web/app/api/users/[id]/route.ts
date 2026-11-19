@@ -26,6 +26,7 @@ import {
   personDescriptionTooLongError,
 } from '@mantle/client-types/person-description';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { systemUserTarget } from '@/lib/system-workspace';
 
 export const policy = routePolicy({
   PATCH: {
@@ -107,6 +108,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const target = await loadLoginTarget(targetId);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  // A change of a System user's login (a disable or enable, a session end,
+  // a role change, its name or contact) is a System user's only, or its
+  // own. The description alone is the person card's, not the login's.
+  if (loginChange) {
+    const notSystem = await systemUserTarget(user.actor.id, target.id);
+    if (notSystem) return NextResponse.json(notSystem, { status: 403 });
+  }
 
   // A role change is an add to or a removal from the Admin workspace, by
   // its membership definer in this caller's name (the exit's acting login,
@@ -192,6 +200,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     .where(eq(authUsers.id, targetId))
     .limit(1);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  // A System user's login is deleted by a System user only.
+  const notSystem = await systemUserTarget(user.actor.id, target.id);
+  if (notSystem) return NextResponse.json(notSystem, { status: 403 });
 
   // All brain content is keyed to the anchor's id — deleting it would orphan
   // the whole tree. This also satisfies "never delete the last user".

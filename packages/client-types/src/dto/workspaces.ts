@@ -317,6 +317,7 @@ export type WorkspaceErrorCode =
   | 'rate_limited'
   | 'system_users_only'
   | 'not_admin_user'
-  | 'last_system_user';
+  | 'last_system_user'
+  | 'system_user_target';
 
 export type WorkspaceError = { error: string; code: WorkspaceErrorCode };

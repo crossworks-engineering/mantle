@@ -11,8 +11,9 @@
  * Numbers only: it prints what it added, never a name or an id.
  *
  * Exit codes: 0 done (or nothing to do) · 1 crash or a bad argument ·
- * 2 refused (no such login, a disabled or archived login, no System
- * workspace on this brain).
+ * 2 refused (no such login, a disabled or archived login, no Admin
+ * workspace on this brain). A brain with Admin and no System gets System
+ * made first (every Admin user seated).
  */
 import { env } from '@mantle/config';
 import { closeDb } from '@mantle/db';
@@ -43,7 +44,7 @@ if (!email) {
 const WHY = {
   no_login: 'no login with that email on this brain',
   disabled: 'the login is disabled or archived: enable it first',
-  no_system: 'this brain has no Admin or no System workspace (run the migrations first)',
+  no_system: 'this brain has no Admin workspace (run the migrations first)',
 } as const;
 
 async function main(): Promise<number> {

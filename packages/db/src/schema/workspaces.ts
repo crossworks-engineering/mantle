@@ -75,10 +75,12 @@ export const workspaces = pgTable(
     uniqueIndex('workspaces_bridge_key_uq')
       .on(t.ownerId, t.bridgeKey)
       .where(sql`${t.bridgeKey} is not null`),
-    // Only the Admin name is reserved (0255).
+    // The Admin and System names are reserved (0255, the System migration;
+    // a brain where a workspace was already called System keeps the
+    // Admin-only index, said in a NOTICE).
     uniqueIndex('workspaces_reserved_name_uq')
       .on(t.ownerId, sql`lower(btrim(${t.name}))`)
-      .where(sql`${t.archivedAt} is null and lower(btrim(${t.name})) = 'admin'`),
+      .where(sql`${t.archivedAt} is null and lower(btrim(${t.name})) in ('admin', 'system')`),
     index('workspaces_landing_app_idx')
       .on(t.landingAppId)
       .where(sql`${t.landingAppId} is not null`),

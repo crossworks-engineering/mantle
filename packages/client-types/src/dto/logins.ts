@@ -31,3 +31,13 @@ export type PasswordResetRefused = {
   reason: 'not-a-password-login';
   message: string;
 };
+
+/** The 403 an act on a System user's login answers a caller who is not a
+ *  System user (a password reset, a disable or enable, a session end, a
+ *  role change, a device revoke, the company sign-in link, a delete; on
+ *  the Users screen and on the Admin workspace's user list). Your own
+ *  login is never refused. */
+export type SystemUserTargetRefused = {
+  error: string;
+  code: 'system_user_target';
+};

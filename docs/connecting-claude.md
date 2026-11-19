@@ -309,7 +309,7 @@ stay the same.
   Over the **HTTP connector** it is off, because a stolen bearer would become a
   root shell on the box; set `MANTLE_MCP_TERMINAL=1` in the box's `.env` to turn
   it on anyway, or `=0` to turn it off for stdio too. Even then it runs only for
-  a user of the Admin workspace whose settings area is on (W7a). `sandbox_exec`
+  a user of the System workspace whose settings area is on (W7a). `sandbox_exec`
   is the contained alternative and is always available on both.
 - **`synthesize_speech`** — needs a live delivery surface (a Telegram chat, the
   web reply stream) to play audio into. Over MCP it could only ever error.

@@ -223,6 +223,39 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
 }
 
 /**
+ * Whether `actingId` may NOT act on the login of `targetId` (its password,
+ * sign-in, sessions, devices, role, the row itself): the target is a user
+ * of the System workspace and the acting login is not (owner, 2026-11-19:
+ * an Admin user outside System would else reset a System
+ * user's password and sign in as them). Your own login is never refused;
+ * a login that is no System user never is. Membership only (bridge_key
+ * 'system', as mantle_area_rule reads it). Admin pool. Fails closed: an
+ * error answers refused.
+ */
+export async function systemUserTargetRefused(
+  actingId: string,
+  targetId: string,
+): Promise<boolean> {
+  if (!UUID_RE.test(targetId)) return false;
+  if (!UUID_RE.test(actingId)) return true;
+  if (actingId.toLowerCase() === targetId.toLowerCase()) return false;
+  try {
+    const rows = (await getAdminDb().execute(
+      sqlTag`select bool_or(u."login_id" = ${targetId}::uuid)
+                    and not coalesce(bool_or(u."login_id" = ${actingId}::uuid), false) as r
+               from "public"."workspace_users" u
+               join "public"."workspaces" w on w."id" = u."workspace_id"
+              where w."bridge_key" = 'system'
+                and u."login_id" in (${targetId}::uuid, ${actingId}::uuid)`,
+    )) as unknown as { r: boolean | null }[];
+    return rows[0]?.r === true;
+  } catch (err) {
+    loginFactFailed(err);
+    return true;
+  }
+}
+
+/**
  * Whether login `loginId` holds Admin `area` now, asked on the system pool
  * for a login other than the current caller (the maker of an API tool,
  * when the tool's secret refs resolve at run time): the area

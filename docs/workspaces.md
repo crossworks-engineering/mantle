@@ -68,10 +68,27 @@ The workspaces a brain has:
   System user. The last System user cannot leave or be removed (409
   `last_system_user`, by any path, a login delete too), and the
   owner (the anchor) always stays. Taking a user out of Admin takes them
-  out of System too (refused for the last System user); whoever may remove
-  them from Admin may do it, System user or not. System keeps its name,
-  cannot be archived and grants no reading: being in it opens areas, not
-  items. Admin users with the users area see it and its users, read only.
+  out of System too (refused for the last System user), and only a System
+  user may take a System user out of Admin. System keeps its name ("System"
+  is reserved for every other workspace, as "Admin" is), cannot be
+  archived, and its name, description and look are its users' to change
+  (an Admin user outside it is refused). Being in it opens areas; it is
+  not meant for items: the brain accepts a grant to System like any other
+  (its users then read the item), the client does not offer it as a
+  target. Admin users with the users area see it and its users, read only.
+- **A System user's login** is changed by a System user only (owner,
+  2026-11-19): resetting its password, disabling or enabling it, ending
+  its sessions, changing its role or taking it out of Admin, revoking a
+  device, its company sign-in link and deleting it all answer 403
+  `system_user_target` ("Only a System user can change a System user's
+  login.") to anyone else. Your own login is never refused. One check
+  (`systemUserTarget`, lib/system-workspace.ts) before each of those
+  routes. SCIM and the Control Center's disable are outside callers and
+  not held by it.
+- **Leaving System ends sessions and keys.** A leave or a removal from
+  System ends every session, API key and connector grant of the login, as
+  leaving Admin does, so a key made with the keys area (no end date, risky
+  tools) does not outlive it.
   The migration that made it added every Admin user, each a Moderator.
   Adding a user to System is a person's act on its screen: no agent, MCP
   tool or key does it (`system_user_add` on the person-only list,
@@ -734,9 +751,12 @@ workspace with its users in it, like any other.
   adds one login back: `pnpm -C server/web system:add --email <address>`
   (in the web container: `docker exec <web container> pnpm -C server/web
 system:add --email <address>`). It adds the login to Admin first when it
-  is not an Admin user, then to System, through the workspace screen's own
+  is not an Admin user (its personal space settled as the Users screen's
+  promotion does), then to System, through the workspace screen's own
   definer as workspace system work (`system:system-add`), each with its
-  `workspace_events` row. A disabled or archived login is refused (enable
-  it first). It prints numbers only. Exit 0 done, 1 a bad argument or a
+  `workspace_events` row. A brain with Admin and no System gets System made
+  first (every Admin user seated, on the migrator's connection). A disabled
+  or archived login is refused (enable it first). It prints numbers only.
+  Exit 0 done, 1 a bad argument or a
   crash, 2 refused.
 - **Security overview**: [security.md](./security.md).

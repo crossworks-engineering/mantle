@@ -78,6 +78,7 @@ export {
   loginHasArea,
   loginAreas,
   loginHoldsAdmin,
+  systemUserTargetRefused,
   moderatorSeatsNow,
   loginActorNow,
 } from './gateway/scope-answers';

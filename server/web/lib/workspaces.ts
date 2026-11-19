@@ -85,6 +85,7 @@ import type { LoginRole } from '@mantle/client-types/role-names';
 import { adminFacts, type Login } from '@/lib/auth/login';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
+import { systemUserTarget } from '@/lib/system-workspace';
 import { lookOfRow, WS_LOOK_COLUMNS, type LookRow } from '@/lib/workspace-look';
 import { readJson } from '@/lib/read-body';
 import { defineDomainError, UUID_RE } from '@mantle/std';
@@ -483,13 +484,17 @@ async function reread(caller: WsCaller, id: string): Promise<WorkspaceDetailResp
 // ── Create and change ────────────────────────────────────────────────────────
 
 /** Names are not unique (0255): a clash with a workspace the caller cannot
- *  see would tell them it exists. Only the name of the Admin workspace is
- *  reserved, and everybody knows it ("Team" is a name like any other). */
-const RESERVED = () =>
+ *  see would tell them it exists. Only the names of the built-in Admin and
+ *  System workspaces are reserved, and everybody knows them ("Team" is a
+ *  name like any other). With no name (the index or the definer, behind
+ *  the check below): both. */
+const RESERVED = (name?: 'Admin' | 'System') =>
   new WsError(
     409,
     'reserved_name',
-    'Admin is the name of the built-in Admin workspace. Pick another name.',
+    name
+      ? `${name} is the name of the built-in ${name} workspace. Pick another name.`
+      : 'Admin and System are the names of the built-in workspaces. Pick another name.',
   );
 
 function nameError(err: unknown): WsError | null {
@@ -499,10 +504,13 @@ function nameError(err: unknown): WsError | null {
   return null;
 }
 
-/** The reserved name, in code: for any workspace but
- *  Admin. The index (0255, 0286) is the backstop. */
+/** The reserved names, in code: for any workspace but Admin and System.
+ *  The definer (mantle_ws_update_about) and the index (0255, 0286, the
+ *  System migration) are the backstop. */
 function refuseReservedName(name: string): void {
-  if (name.trim().toLowerCase() === 'admin') throw RESERVED();
+  const n = name.trim().toLowerCase();
+  if (n === 'admin') throw RESERVED('Admin');
+  if (n === 'system') throw RESERVED('System');
 }
 
 /** POST /api/workspaces: the maker is its only user and a Moderator (the
@@ -543,6 +551,9 @@ export async function createWorkspace(
  * of it: on Admin, its Moderators are Admin users.
  */
 function mayChangeAbout(seen: Seen): boolean {
+  // System's are its users' only (every one a Moderator there): an Admin
+  // user outside it changes nothing of it (mantle_ws_update_about too).
+  if (seen.row.is_system) return seen.mod;
   return seen.admin || seen.mod;
 }
 
@@ -593,6 +604,9 @@ export async function patchWorkspace(
   }
   if (body.contactNodeId !== undefined && !seen.admin) {
     throw new WsError(403, 'admin_only', 'Only an Admin user can set the contact.');
+  }
+  if (body.contactNodeId !== undefined && w.is_system && !seen.mod) {
+    throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
   }
   if (body.assistantId !== undefined && !seen.areas.includes('assistants')) {
     throw new WsError(403, 'admin_only', 'Only an Admin user can change the assistant.');
@@ -1236,6 +1250,10 @@ export async function removeUser(
                    ${loginParam(loginId)}::uuid)`,
     );
   if (pre.row.is_admin) {
+    // Out of Admin is out of System: a System user is taken out by a System
+    // user only (the one check of every act on a System user's login).
+    const notSystem = await systemUserTarget(caller.loginId, loginId);
+    if (notSystem) throw new WsError(403, notSystem.code, notSystem.error);
     await adminRoleChange(
       caller,
       loginId,
@@ -1245,7 +1263,8 @@ export async function removeUser(
     );
   } else {
     try {
-      await db.transaction(remove);
+      if (pre.row.is_system) await systemExit(caller, loginId, remove);
+      else await db.transaction(remove);
     } catch (err) {
       // A refusal at commit (the guard trigger) maps here too; on System the
       // last Moderator is the last System user.
@@ -1257,6 +1276,43 @@ export async function removeUser(
   // A login that left can no longer see the workspace.
   if (self && !pre.admin) return { ...(await detailAfterLeave(pre)) };
   return reread(caller, wid);
+}
+
+/**
+ * A leave or a removal from System: the definer's removal
+ * (`remove`, which checks the caller), then every session and key of the
+ * login ends, in ONE transaction, as out of Admin ends them
+ * (applyLoginChange, here as "sign out everywhere"): a key made while it
+ * held the keys area (no end date, risky tools) does not outlive System.
+ * On the system pool in the caller's write scope, as the Admin role change
+ * (adminRoleChange). A login id that names no login: the definer's own
+ * answer (not_user).
+ */
+async function systemExit(
+  caller: WsCaller,
+  loginId: string,
+  remove: (q: Exec) => Promise<void>,
+): Promise<void> {
+  const login = caller.login;
+  const target = login && UUID_RE.test(loginId) ? await loadLoginTarget(loginId) : null;
+  if (!login || !target) {
+    await db.transaction(remove);
+    return;
+  }
+  const actor = { id: login.brainId, email: login.email, actor: { ...login.actor } };
+  const done = await withSystemPoolInWriteScope(() =>
+    withDeadlockRetry(() =>
+      applyLoginChange(actor, target, { signOut: true }, undefined, async (tx) => {
+        await remove(tx);
+      }),
+    ),
+  );
+  if (!done.ok) {
+    if (done.reason === 'last-system-user' || done.reason === 'last-admin') {
+      throw LAST_SYSTEM_USER();
+    }
+    throw new WsError(409, 'invalid', done.error);
+  }
 }
 
 /** What a login that just left sees: the workspace as it was, without

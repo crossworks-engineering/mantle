@@ -20,6 +20,7 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
 import { passwordProblem, passwordProblemBody } from '@/lib/auth/password-rule';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { systemUserTarget } from '@/lib/system-workspace';
 
 export const policy = routePolicy({
   POST: {
@@ -36,8 +37,9 @@ const Body = z.object({ newPassword: z.string().min(1).max(1024) });
 
 /**
  * Admin password reset — no old password required (that's what
- * /api/auth/change-password is for). No permission tiers by design: any login
- * may reset any account, their own included. The audit event is the
+ * /api/auth/change-password is for). Any login with the users area may
+ * reset any account, their own included, but a System user's only when it
+ * is a System user too (systemUserTarget). The audit event is the
  * accountability mechanism. A reset ends every session the target holds
  * resetting your own keeps the device you did it from signed in, as
  * /api/auth/change-password does: the device token it came with, and a
@@ -70,6 +72,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .where(eq(authUsers.id, targetId))
     .limit(1);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  // A System user's password is reset by a System user only (or by itself).
+  const notSystem = await systemUserTarget(user.actor.id, targetId);
+  if (notSystem) return NextResponse.json(notSystem, { status: 403 });
   // Admins and members sign in with a password (the only roles). Named
   // roles only: an unknown role is refused. A member's reset stays: it is a
   // member's only way back in.

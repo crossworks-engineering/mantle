@@ -217,6 +217,7 @@ export type {
   LoginRefused,
   LoginRefusedReason,
   PasswordResetRefused,
+  SystemUserTargetRefused,
 } from './dto/logins';
 // Inbound API keys (0232). Types at the root; the runtime ACCESS_KEY_AREAS
 // is the `@mantle/client-types/dto/access-keys` subpath.

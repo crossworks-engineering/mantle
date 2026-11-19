@@ -48,9 +48,12 @@ export type AccessKind =
 export const ADMIN_ONLY_ERROR =
   'This tool belongs to the Admin workspace; it does not run in this workspace.';
 
-/** The refusal of an Admin-area tool for a scope without that area. */
+/** The refusal of an Admin-area tool for a scope without that area. The
+ *  users area is every Admin user's; every other area is a System user's
+ *  only (the System workspace, a subset of Admin). */
 export function adminAreaError(area: string): string {
-  return `This tool manages the brain's ${area}: it runs only for a user of the Admin workspace whose ${area} area is on.`;
+  const ws = area === 'users' ? 'Admin' : 'System';
+  return `This tool manages the brain's ${area}: it runs only for a user of the ${ws} workspace whose ${area} area is on.`;
 }
 
 /** The refusal of an Admin-only kind's create outside Admin. */

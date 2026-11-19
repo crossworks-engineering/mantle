@@ -35,6 +35,7 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
   let tokens: typeof import('../lib/auth/tokens');
   const tag = `sysws-${randomUUID().slice(0, 8)}`;
   const sys = randomUUID();
+  const sys2 = randomUUID(); // a second System user (the acts on a System user's login)
   const adm = randomUUID();
   const mem = randomUUID();
   const rec1 = randomUUID(); // a member, for the recovery
@@ -54,12 +55,15 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     body?: unknown,
   ): Promise<{ status: number; json: Json }> => {
     ip += 1;
+    // The login's session epoch now: a session end (leaving System) moves it.
+    const [e] = await sql<{ epoch: number }[]>`
+      select session_epoch::int as epoch from auth.users where id = ${as}`;
     const res = await app.request(path, {
       method,
       headers: {
         'content-type': 'application/json',
         'x-forwarded-for': `198.51.100.${ip % 250}`,
-        cookie: `mantle_session=${tokens.buildSessionCookie(as, { epoch: 0 }).value}`,
+        cookie: `mantle_session=${tokens.buildSessionCookie(as, { epoch: e?.epoch ?? 0 }).value}`,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -105,7 +109,8 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     const hash = bcrypt.hashSync(PASSWORD, 4);
     await su(
       (c) => c`insert into auth.users (id, email, password_hash, role) values
-        (${sys}, ${emailOf(sys)}, ${hash}, 'admin'), (${adm}, ${emailOf(adm)}, ${hash}, 'admin'),
+        (${sys}, ${emailOf(sys)}, ${hash}, 'admin'), (${sys2}, ${emailOf(sys2)}, ${hash}, 'admin'),
+        (${adm}, ${emailOf(adm)}, ${hash}, 'admin'),
         (${mem}, ${emailOf(mem)}, ${hash}, 'member'), (${rec1}, ${emailOf(rec1)}, ${hash}, 'member'),
         (${rec2}, ${emailOf(rec2)}, ${hash}, 'admin'), (${off}, ${emailOf(off)}, ${hash}, 'member')`,
     );
@@ -137,7 +142,7 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     const rows = await sql<{ login: string; moderator: boolean }[]>`
       select login_id::text as login, moderator from workspace_users
        where workspace_id = ${systemWs} order by login_id`;
-    expect(new Set(rows.map((r) => r.login))).toEqual(new Set([anchor, sys]));
+    expect(new Set(rows.map((r) => r.login))).toEqual(new Set([anchor, sys, sys2]));
     expect(rows.every((r) => r.moderator)).toBe(true);
     expect(adminWs).not.toBe(systemWs);
   });
@@ -251,18 +256,68 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     // The owner stays.
     r = await call(sys, 'DELETE', `${base}/users/${anchor}`);
     expect([r.status, r.json.code]).toEqual([403, 'owner_stays_admin']);
+    // Its name, description and look are its users': an
+    // Admin user outside it changes none of them; a System user does.
+    r = await call(adm, 'PATCH', base, { description: `${tag} by adm` });
+    expect([r.status, r.json.code]).toEqual([403, 'forbidden']);
+    r = await call(adm, 'PATCH', base, { icon: null });
+    expect([r.status, r.json.code]).toEqual([403, 'forbidden']);
+    r = await call(sys, 'PATCH', base, { description: `${tag} by sys` });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
     // A System user adds an Admin user, ticked even when the body says no:
     // the areas follow at once.
     r = await call(sys, 'POST', `${base}/users`, { loginId: adm, moderator: false });
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     expect((await usersOf())[adm]).toBe(true);
     expect(await status(adm, 'GET', AREA_ROUTES.connectors)).toBe(200);
-    // Anyone may leave, and the areas go with it.
+    // While in System it makes a key that never expires (the keys area).
+    const key = await call(adm, 'POST', '/api/access-keys', {
+      name: `${tag} sys key`,
+      access: 'read',
+      areas: null,
+      password: PASSWORD,
+      expiresInDays: null,
+    });
+    expect(key.status, JSON.stringify(key.json)).toBe(201);
+    const epochOf = async (id: string) =>
+      (
+        await sql<{ e: number }[]>`select session_epoch::int as e from auth.users where id = ${id}`
+      )[0]!.e;
+    const liveKeys = async (id: string) =>
+      (
+        await sql<{ n: number }[]>`
+          select count(*)::int as n from access_keys where login_id = ${id} and revoked_at is null`
+      )[0]!.n;
+    expect(await liveKeys(adm)).toBe(1);
+    const epoch = await epochOf(adm);
+    // Anyone may leave, and the areas go with it; so do its sessions and
+    // keys, as out of Admin.
     r = await call(adm, 'DELETE', `${base}/users/${adm}`);
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     expect((await usersOf())[adm]).toBeUndefined();
+    expect(await liveKeys(adm)).toBe(0);
+    expect(await epochOf(adm)).toBeGreaterThan(epoch);
     expect(await status(adm, 'GET', AREA_ROUTES.connectors)).toBe(403);
-    expect(Object.keys(await usersOf()).sort()).toEqual([anchor, sys].sort());
+    // A removal by a System user ends them too.
+    r = await call(sys, 'POST', `${base}/users`, { loginId: adm });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    const again = await epochOf(adm);
+    r = await call(sys, 'DELETE', `${base}/users/${adm}`);
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    expect(await epochOf(adm)).toBeGreaterThan(again);
+    expect((await usersOf())[adm]).toBeUndefined();
+    // "System" is reserved for every other workspace, as "Admin" is.
+    r = await call(sys, 'POST', '/api/workspaces', { name: ' system ' });
+    expect([r.status, r.json.code, r.json.error]).toEqual([
+      409,
+      'reserved_name',
+      'System is the name of the built-in System workspace. Pick another name.',
+    ]);
+    const made = await call(sys, 'POST', '/api/workspaces', { name: `${tag} ws` });
+    expect(made.status, JSON.stringify(made.json)).toBe(201);
+    r = await call(sys, 'PATCH', `/api/workspaces/${made.json.id as string}`, { name: 'System' });
+    expect([r.status, r.json.code]).toEqual([409, 'reserved_name']);
+    expect(Object.keys(await usersOf()).sort()).toEqual([anchor, sys, sys2].sort());
   });
 
   it('the last System user stays, in its own words: a leave, a removal from Admin, a login delete', async () => {
@@ -270,7 +325,8 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     // leaves sys the last System user.
     await su(
       (c) =>
-        c`delete from workspace_users where workspace_id = ${systemWs} and login_id = ${anchor}`,
+        c`delete from workspace_users
+           where workspace_id = ${systemWs} and login_id in (${anchor}, ${sys2})`,
     );
     try {
       let r = await call(sys, 'DELETE', `/api/workspaces/${systemWs}/users/${sys}`);
@@ -278,12 +334,16 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
       expect(r.json.error).toBe(
         'This is the last System user. Add another Admin user to System first.',
       );
+      // Out of Admin, a role change and a delete of a System user are a
+      // System user's acts only, so no person reaches the
+      // last one that way: an Admin user outside System is refused first.
+      // The guard trigger at commit still holds it (system-workspace.db.test).
       r = await call(adm, 'DELETE', `/api/workspaces/${adminWs}/users/${sys}`);
-      expect([r.status, r.json.code], JSON.stringify(r.json)).toEqual([409, 'last_system_user']);
+      expect([r.status, r.json.code], JSON.stringify(r.json)).toEqual([403, 'system_user_target']);
       r = await call(adm, 'PATCH', `/api/users/${sys}`, { role: 'member' });
-      expect([r.status, r.json.reason], JSON.stringify(r.json)).toEqual([409, 'last-system-user']);
+      expect([r.status, r.json.code], JSON.stringify(r.json)).toEqual([403, 'system_user_target']);
       r = await call(adm, 'DELETE', `/api/users/${sys}`);
-      expect([r.status, r.json.reason], JSON.stringify(r.json)).toEqual([409, 'last-system-user']);
+      expect([r.status, r.json.code], JSON.stringify(r.json)).toEqual([403, 'system_user_target']);
       const [still] = await sql<{ n: number }[]>`
         select count(*)::int as n from workspace_users
          where workspace_id = ${systemWs} and login_id = ${sys}`;
@@ -291,9 +351,72 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     } finally {
       await su(
         (c) => c`insert into workspace_users (workspace_id, login_id, moderator)
-                  values (${systemWs}, ${anchor}, true) on conflict do nothing`,
+                  values (${systemWs}, ${anchor}, true), (${systemWs}, ${sys2}, true)
+                  on conflict do nothing`,
       );
     }
+  });
+
+  it("a System user's login is a System user's to change; a member's is any Admin user's", async () => {
+    const refusedBody = {
+      error: "Only a System user can change a System user's login.",
+      code: 'system_user_target',
+    };
+    const NEW_PASSWORD = 'system area password 2';
+    // An Admin user outside System, on a System user: every act refused,
+    // nothing changed.
+    const before = await sql<{ e: number; d: boolean }[]>`
+      select session_epoch::int as e, disabled_at is not null as d from auth.users where id = ${sys2}`;
+    const acts: [string, string, unknown?][] = [
+      ['POST', `/api/users/${sys2}/password`, { newPassword: NEW_PASSWORD }],
+      ['PATCH', `/api/users/${sys2}`, { disabled: true }],
+      ['PATCH', `/api/users/${sys2}`, { signOut: true }],
+      ['PATCH', `/api/users/${sys2}`, { role: 'member' }],
+      ['PATCH', `/api/users/${sys2}`, { displayName: `${tag} renamed` }],
+      ['DELETE', `/api/users/${sys2}`],
+      ['DELETE', `/api/users/${sys2}/devices/${randomUUID()}`],
+      ['PATCH', `/api/users/${sys2}/oidc`, { outside: true }],
+      ['DELETE', `/api/users/${sys2}/oidc`],
+    ];
+    for (const [method, path, body] of acts) {
+      const r = await call(adm, method, path, body);
+      expect([r.status, r.json], `${method} ${path}`).toEqual([403, refusedBody]);
+    }
+    const r0 = await call(adm, 'DELETE', `/api/workspaces/${adminWs}/users/${sys2}`);
+    expect([r0.status, r0.json.code, r0.json.error]).toEqual([
+      403,
+      'system_user_target',
+      refusedBody.error,
+    ]);
+    const after = await sql<{ e: number; d: boolean }[]>`
+      select session_epoch::int as e, disabled_at is not null as d from auth.users where id = ${sys2}`;
+    expect(after).toEqual(before);
+    // The person card's description is not the login: it stays open.
+    expect(await status(adm, 'PATCH', `/api/users/${sys2}`, { description: `${tag} card` })).toBe(
+      200,
+    );
+    // A System user on a System user: allowed.
+    let r = await call(sys, 'POST', `/api/users/${sys2}/password`, { newPassword: NEW_PASSWORD });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    r = await call(sys, 'PATCH', `/api/users/${sys2}`, { signOut: true });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    r = await call(sys, 'PATCH', `/api/users/${sys2}`, { disabled: true });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    r = await call(sys, 'PATCH', `/api/users/${sys2}`, { disabled: false });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    // Your own login stays yours (a System user's, an Admin user's).
+    r = await call(sys2, 'PATCH', `/api/users/${sys2}`, { displayName: `${tag} me` });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    r = await call(adm, 'PATCH', `/api/users/${adm}`, { displayName: `${tag} me too` });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    // A member's login: any Admin user's, as before.
+    r = await call(adm, 'POST', `/api/users/${mem}/password`, { newPassword: NEW_PASSWORD });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    r = await call(adm, 'PATCH', `/api/users/${mem}`, { signOut: true });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    // An Admin user outside System: any Admin user's too (adm on rec2).
+    r = await call(adm, 'PATCH', `/api/users/${rec2}`, { signOut: true });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
   });
 
   it("workspace_user_set refuses System for every role, the owner's call too, and changes nothing", async () => {
@@ -351,7 +474,23 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
       addedToSystem: true,
     });
     expect(await seats(rec2)).toEqual(['admin:true', 'system:true']);
-    // A member: Admin (the role follows), then System. The email in any case.
+    // A member with a shared item in its personal space: Admin (the role
+    // follows, the space settled as the Users screen's promotion), then
+    // System. The email in any case.
+    const item = randomUUID();
+    await su((c) =>
+      c.begin(async (t) => {
+        await t`set local session_replication_role = replica`;
+        await t`insert into spaces (kind, login_id) values ('personal', ${rec1})
+                  on conflict do nothing`;
+        const [sp] = await t<{ id: string }[]>`
+          select id::text as id from spaces where kind = 'personal' and login_id = ${rec1}`;
+        await t`insert into nodes (id, owner_id, type, title, path)
+                values (${item}, ${sp!.id}, 'note', 'shared', 'notes')`;
+        await t`insert into space_items (node_id, sharing, review_state, submitted_at)
+                values (${item}, 'team', 'draft', null)`;
+      }),
+    );
     expect(await systemAdd(emailOf(rec1).toUpperCase())).toEqual({
       ok: true,
       addedToAdmin: true,
@@ -360,6 +499,10 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     expect(await seats(rec1)).toEqual(['admin:true', 'system:true']);
     const [role] = await sql<{ role: string }[]>`select role from auth.users where id = ${rec1}`;
     expect(role!.role).toBe('admin');
+    const [settled] = await su(
+      (c) => c<{ sharing: string }[]>`select sharing from space_items where node_id = ${item}`,
+    );
+    expect(settled!.sharing).toBe('private');
     expect(await status(rec1, 'GET', AREA_ROUTES.keys)).toBe(200);
     // Again: nothing to do.
     expect(await systemAdd(emailOf(rec1))).toEqual({
@@ -376,5 +519,22 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
          and subject->>'by' is null
          and workspace_id in (${adminWs}, ${systemWs})`;
     expect(ev!.n).toBe(3);
+    // A brain whose System was lost (a hand repair): made again, every
+    // Admin user seated, then the login added.
+    await su((c) => c`delete from workspaces where id = ${systemWs}`);
+    expect(await systemAdd(emailOf(rec2))).toEqual({
+      ok: true,
+      addedToAdmin: false,
+      addedToSystem: false,
+    });
+    const [again] = await sql<{ id: string | null }[]>`
+      select mantle_ws_system_id(${anchor}::uuid)::text as id`;
+    expect(again!.id).not.toBeNull();
+    expect(again!.id).not.toBe(systemWs);
+    const seated = await sql<{ login: string }[]>`
+      select login_id::text as login from workspace_users where workspace_id = ${again!.id}`;
+    const admins = await sql<{ login: string }[]>`
+      select login_id::text as login from workspace_users where workspace_id = ${adminWs}`;
+    expect(new Set(seated.map((x) => x.login))).toEqual(new Set(admins.map((x) => x.login)));
   });
 });

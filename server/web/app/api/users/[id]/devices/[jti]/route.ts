@@ -9,6 +9,7 @@ import {
   forgetRelayDevices,
 } from '@/lib/push/store';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { systemUserTarget } from '@/lib/system-workspace';
 
 export const policy = routePolicy({
   DELETE: {
@@ -45,6 +46,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
     .where(eq(authUsers.id, targetId))
     .limit(1);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  // A System user's device is revoked by a System user only (or by itself).
+  const notSystem = await systemUserTarget(user.actor.id, target.id);
+  if (notSystem) return NextResponse.json(notSystem, { status: 403 });
 
   const [row] = await db
     .select({ id: mobileTokens.id, label: mobileTokens.label })

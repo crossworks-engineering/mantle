@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { oidcAdminSetOutside, oidcAdminUnlink } from '@/lib/oidc/flow';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { systemUserTarget } from '@/lib/system-workspace';
 
 export const policy = routePolicy({
   PATCH: {
@@ -31,6 +32,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
+  // A System user's sign-in is changed by a System user only (or by itself).
+  const notSystem = await systemUserTarget(user.actor.id, id.data.id);
+  if (notSystem) return NextResponse.json(notSystem, { status: 403 });
   return oidcAdminSetOutside(req, id.data.id.toLowerCase(), {
     id: user.actor.id,
     email: user.email,
@@ -41,5 +45,8 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const user = ownerCaller();
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
+  // A System user's sign-in is changed by a System user only (or by itself).
+  const notSystem = await systemUserTarget(user.actor.id, id.data.id);
+  if (notSystem) return NextResponse.json(notSystem, { status: 403 });
   return oidcAdminUnlink(req, id.data.id.toLowerCase(), { id: user.actor.id, email: user.email });
 }

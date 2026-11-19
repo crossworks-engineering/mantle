@@ -35,7 +35,10 @@
 --    - mantle_ws_set_moderator: the tick on System is never cleared, as on
 --      Admin (admin_workspace).
 --    - mantle_ws_archive: System is never archived (archive_admin).
---    - mantle_ws_update_about: System keeps its name (admin_keeps_name).
+--    - mantle_ws_update_about: System keeps its name (admin_keeps_name);
+--      its name, description and look are a System user's only
+--      (about_forbidden for an Admin user outside it); "System" is a
+--      reserved name as "Admin" is (reserved_name).
 -- 5. mantle_ws_last_admin_mod_trg (0241): fires for System too, so the last
 --    System user is never removed by any path (a login's delete included).
 -- 6. mantle_ws_system_work (0321, as 0322 left it): one more pair,
@@ -45,8 +48,11 @@
 -- 7. mantle_ws_migrate (0286): mantle_ws_ensure_system() at its end, so a
 --    brain switched after this ends as one switched before.
 -- 8. System is made here once, with a NOTICE of how many users it seated.
+-- 9. workspaces_reserved_name_uq covers "system" too, unless a workspace is
+--    already called System (left as it is, NOTICE; the index stays).
 --
--- No table, column, CHECK or trigger is added. No LLM work.
+-- No table, column, CHECK or trigger is added (one index is redefined). No
+-- LLM work.
 -- Revert: packages/db/rollback/0386_system_workspace.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
@@ -436,6 +442,12 @@ BEGIN
     RAISE EXCEPTION 'mantle_ws:about_forbidden %: only a Moderator changes it', fn
       USING ERRCODE = '42501';
   END IF;
+  -- System's name, description and look are its users' only (all of them
+  -- Moderators there): not an Admin user's outside it.
+  IF coalesce(ws = "public"."mantle_ws_system_id"(owner), false) AND NOT s.moderator THEN
+    RAISE EXCEPTION 'mantle_ws:about_forbidden %: only a System user changes the System workspace', fn
+      USING ERRCODE = '42501';
+  END IF;
   SELECT w."name", w."description", w."color", w."icon" INTO cur
     FROM "public"."workspaces" w WHERE w."id" = ws;
   IF p ? 'name' AND (p ->> 'name') IS DISTINCT FROM cur."name" THEN
@@ -445,8 +457,8 @@ BEGIN
       RAISE EXCEPTION 'mantle_ws:admin_keeps_name %: the Admin and System workspaces keep their names', fn
         USING ERRCODE = '55000';
     END IF;
-    IF lower(btrim(p ->> 'name')) = 'admin' THEN
-      RAISE EXCEPTION 'mantle_ws:reserved_name %: Admin is the built-in workspace''s name', fn
+    IF lower(btrim(p ->> 'name')) IN ('admin', 'system') THEN
+      RAISE EXCEPTION 'mantle_ws:reserved_name %: Admin and System are the built-in workspaces'' names', fn
         USING ERRCODE = '55000';
     END IF;
     changed := changed || jsonb_build_object('name', p -> 'name');
@@ -581,5 +593,28 @@ DECLARE
   seated integer := "public"."mantle_ws_ensure_system"();
 BEGIN
   RAISE NOTICE 'mantle System workspace: % Admin user(s) seated', seated;
+END
+$$;
+--> statement-breakpoint
+-- 9. "System" is reserved as "Admin" is: the name index
+-- covers both. A brain where a workspace someone made is already called
+-- System keeps it as it is (never renamed here) and keeps the Admin-only
+-- index, with a NOTICE; the code and mantle_ws_update_about still refuse
+-- the name to every other workspace.
+DO $$
+DECLARE
+  taken integer;
+BEGIN
+  SELECT count(*) INTO taken FROM "public"."workspaces" w
+   WHERE w."archived_at" IS NULL AND lower(btrim(w."name")) = 'system'
+     AND w."bridge_key" IS DISTINCT FROM 'system';
+  IF taken > 0 THEN
+    RAISE NOTICE 'mantle System workspace: % other workspace(s) already called System, left as they are; the name index stays Admin only', taken;
+  ELSE
+    DROP INDEX IF EXISTS "public"."workspaces_reserved_name_uq";
+    CREATE UNIQUE INDEX "workspaces_reserved_name_uq"
+      ON "public"."workspaces" ("owner_id", lower(btrim("name")))
+      WHERE "archived_at" IS NULL AND lower(btrim("name")) IN ('admin', 'system');
+  END IF;
 END
 $$;

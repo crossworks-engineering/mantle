@@ -8,7 +8,8 @@
 -- mantle_ws_add_user and mantle_ws_remove_user 0330, mantle_ws_set_moderator
 -- 0307, mantle_ws_archive and mantle_ws_update_about 0309,
 -- mantle_ws_last_admin_mod_trg 0241, mantle_ws_migrate 0286), drops the two
--- functions it added (mantle_ws_system_id, mantle_ws_ensure_system), and
+-- functions it added (mantle_ws_system_id, mantle_ws_ensure_system), puts
+-- the name index back to "Admin" only (workspaces_reserved_name_uq, 0286), and
 -- takes it off the ledger, so the next roll forward applies it again. Every
 -- Admin user then holds every area again, as before.
 --
@@ -39,6 +40,13 @@ BEGIN
   DELETE FROM "public"."workspaces" w WHERE w."bridge_key" = 'system';
 END
 $$;
+--> statement-breakpoint
+-- The name index as 0286 made it: "Admin" only.
+DROP INDEX IF EXISTS "public"."workspaces_reserved_name_uq";
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "workspaces_reserved_name_uq"
+  ON "public"."workspaces" ("owner_id", lower(btrim("name")))
+  WHERE "archived_at" IS NULL AND lower(btrim("name")) = 'admin';
 --> statement-breakpoint
 -- mantle_ws_system_work: 0321's body, its actor read as 0322 rewrote it.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"(fn text)

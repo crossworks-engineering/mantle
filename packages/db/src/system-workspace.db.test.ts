@@ -24,7 +24,11 @@
  *    bodies back byte for byte, drops the two functions, takes System and
  *    the ledger row out, refuses while System holds a grant; a roll forward
  *    applies it again;
- *  - the catalog: the two new definers' rights.
+ *  - the catalog: the two new definers' rights;
+ *  - an Admin user outside System changes none of its row;
+ *    "System" is a reserved name, the index its backstop, a workspace
+ *    already called System kept with a NOTICE; the fact behind the
+ *    one check of an act on a System user's login.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/db/src/system-workspace.db.test.ts
  */
@@ -471,6 +475,43 @@ describe.skipIf(!URL)('the System workspace (rules and areas)', () => {
       true,
     );
     refused(await run(await asLogin(L.mem), about({ description: 'x' })), 'P0002', 'not_found');
+    // An Admin user outside System changes none of it.
+    for (const patch of [{ description: 'x' }, { icon: null }, { color: null }]) {
+      refused(await run(await asLogin(L.adm), about(patch)), '42501', 'about_forbidden');
+    }
+  });
+
+  it('"System" is reserved for every other workspace, as "Admin" is', async () => {
+    const rename = (name: string) => (tx: postgres.TransactionSql) =>
+      tx`select mantle_ws_update_about(${brain}::uuid, ${W}::uuid, ${tx.json({ name } as never)})`;
+    for (const name of ['System', ' system ', 'ADMIN']) {
+      refused(await run(await asLogin(L.mem), rename(name)), '55000', 'reserved_name');
+    }
+    expect((await run(await asLogin(L.mem), rename(`${tag} W2`))).ok).toBe(true);
+    // The index is the backstop: a live second "System" never lands.
+    const [ix] = await sql<{ def: string }[]>`
+      select indexdef as def from pg_indexes where indexname = 'workspaces_reserved_name_uq'`;
+    expect(ix!.def).toContain(`'system'`);
+    const insert = await run({}, async (tx) => {
+      await tx`set local session_replication_role = replica`;
+      return tx`insert into workspaces (owner_id, name) values (${brain}, ' SYSTEM ')`;
+    });
+    expect(insert.ok).toBe(false);
+    if (!insert.ok) expect(insert.state).toBe('23505');
+  });
+
+  it("acting on a System user's login needs a System user, or your own", async () => {
+    const no = (acting: string, target: string) => m.systemUserTargetRefused(acting, target);
+    expect(await no(L.adm, L.sys)).toBe(true);
+    expect(await no(L.adm, brain)).toBe(true);
+    expect(await no(L.mem, L.sys2)).toBe(true);
+    expect(await no(L.sys, L.sys2)).toBe(false);
+    expect(await no(L.sys2, L.sys2)).toBe(false);
+    expect(await no(L.adm, L.adm)).toBe(false);
+    expect(await no(L.adm, L.mem)).toBe(false);
+    expect(await no(L.sys, L.adm)).toBe(false);
+    expect(await no('not-a-uuid', L.sys)).toBe(true);
+    expect(await no(L.adm, 'not-a-uuid')).toBe(false);
   });
 
   it('recovery: system:system-add puts a login in Admin and then System, as system work; that actor on nothing else', async () => {
@@ -571,6 +612,10 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
       select f.fn, pg_get_functiondef(p.oid) as def, p.proacl::text as acl
         from unnest(${REPLACED}::text[]) f(fn) join pg_proc p on p.oid = to_regprocedure(f.fn)
        order by 1`),
+    // The reserved name index: Admin only before, Admin and System after.
+    ...(await sql<Def[]>`
+      select indexname::text as fn, indexdef as def, null as acl from pg_indexes
+       where schemaname = 'public' and indexname = 'workspaces_reserved_name_uq'`),
   ];
   const added = async () =>
     (
@@ -599,10 +644,15 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
     return n;
   };
   let atBefore: Def[] = [];
+  const notices: string[] = [];
 
   beforeAll(async () => {
     scratch = await createScratchDatabaseBefore(URL!, TAG);
-    sql = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    sql = postgres(scratch.url, {
+      max: 1,
+      prepare: false,
+      onnotice: (n) => notices.push(String(n.message)),
+    });
     await sql`create schema if not exists "drizzle"`;
     await sql`create table if not exists "drizzle"."__drizzle_migrations" (
                 id serial primary key, hash text not null, created_at bigint)`;
@@ -625,7 +675,7 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
       await tx`select * from mantle_ws_migrate()`;
     });
     atBefore = await defs();
-    expect(atBefore).toHaveLength(REPLACED.length);
+    expect(atBefore).toHaveLength(REPLACED.length + 1);
   }, 300_000);
 
   afterAll(async () => {
@@ -687,5 +737,24 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
     expect(await apply()).toBe(1);
     expect(await defs()).toEqual(at0386);
     expect((await system()).map((u) => u.id)).toEqual([brain, L.a1, L.a2].sort());
+  }, 120_000);
+
+  it('a workspace already called System: kept as it is, a NOTICE, the name index stays Admin only', async () => {
+    await sql.begin(async (tx) => {
+      for (const st of revertStatements()) await tx.unsafe(st);
+    });
+    const [mine] = await sql<{ id: string }[]>`
+      insert into workspaces (owner_id, name) values (${brain}, 'System') returning id::text`;
+    notices.length = 0;
+    expect(await apply()).toBe(1);
+    expect(notices.some((n) => /1 other workspace\(s\) already called System/.test(n))).toBe(true);
+    const [w] = await sql<{ name: string; key: string | null }[]>`
+      select name, bridge_key as key from workspaces where id = ${mine!.id}`;
+    expect(w).toEqual({ name: 'System', key: null });
+    expect((await system()).map((u) => u.id)).toEqual([brain, L.a1, L.a2].sort());
+    const [ix] = await sql<{ def: string }[]>`
+      select indexdef as def from pg_indexes where indexname = 'workspaces_reserved_name_uq'`;
+    expect(ix!.def).not.toContain(`'system'`);
+    expect(ix!.def).toContain(`'admin'`);
   }, 120_000);
 });
