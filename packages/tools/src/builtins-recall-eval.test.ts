@@ -43,11 +43,15 @@ const NODE_ROWS = [
   { id: 'n2', type: 'note', title: 'Board minutes', title_key: 'tk-board', body_key: null },
 ];
 
-/** Bound parameter values of a drizzle SQL tree, in order. */
+/** Bound parameter values of a drizzle SQL tree, in order: `Param` objects
+ *  (from `eq`) and the plain values a raw sql`` template holds. */
 function paramsOf(node: unknown, out: unknown[] = []): unknown[] {
   if (!node || typeof node !== 'object') return out;
   const o = node as { queryChunks?: unknown[]; value?: unknown; encoder?: unknown };
-  if (Array.isArray(o.queryChunks)) for (const c of o.queryChunks) paramsOf(c, out);
+  if (Array.isArray(o.queryChunks))
+    for (const c of o.queryChunks)
+      if (typeof c === 'string' || typeof c === 'number') out.push(c);
+      else paramsOf(c, out);
   else if ('value' in o && 'encoder' in o) out.push(o.value);
   return out;
 }
