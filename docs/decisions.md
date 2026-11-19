@@ -627,7 +627,7 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   goes `live`. Nothing asks again for those bytes: the rebuild
   (`dwg-reindex --pdf`) reads PDFs with no model.
 
-### `scan_read_check` (built; ships `shadow`)
+### `scan_read_check` (built; ships `live`)
 
 Is a Scan reader's text a faithful reading of the scanned page in the
 picture? (`packages/decisions/src/scan-read-check.ts`; the Scan reader is in
@@ -645,18 +645,23 @@ its shape (line count, loops).
 - **Where.** The paid ask of a book page (server/api/src/agent/extract/pipeline-ask.ts)
   asks it after a Scan reader read the free rules judge good or only
   `unverified`; the answer is in the step's meta (`check`). Live, it decides
-  those reads (a read it calls made up is unread; an `unverified` read it
-  calls faithful stands); another bad reason (a loop) is never overruled.
+  those reads: a read it calls made up is stored as unread, never as text;
+  an `unverified` read it calls faithful stands; another bad reason (a loop)
+  is never overruled.
 - **Cost.** About 6,300 input tokens a page (the picture about 5,000) at
   $0.042 per million, output free: about $0.00027 a page, $0.27 per 1,000
   pages; about 1.2 s. With no local OCR it is asked on nearly every scanned
   page.
-- **Shadow** (the manifest's fresh brains: `enabled: true, mode: 'shadow',
-  threshold: 0.5`): the answer is logged; the free rules decide. Going live
-  is the owner's call (the bench numbers above).
+- **Live on fresh brains** (the manifest: `enabled: true, mode: 'live',
+  threshold: 0.5`; owner decision 2026-11-19, on the bench numbers above,
+  an exception to "a new use ships in shadow": with no local OCR it is the
+  one check of a page's content). In shadow (an operator's choice) the
+  answer is only logged. **Existing brains without the decider worker get
+  only the free checks**: the decider is optional and an upgrade never adds
+  it or changes its uses.
 - **No answer** (the use off, no decider, a model with no pictures, a text
   past 30,000 characters, a picture the parser cannot shrink, a failure):
-  null, and the caller keeps its own rules.
+  null, and the free checks alone decide.
 - **What it can do.** Leave a page unread, or keep a read. It never writes,
   retires or deletes. Text on the page can steer it (rule 6), as it can
   steer the Scan reader itself.

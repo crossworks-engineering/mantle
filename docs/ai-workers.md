@@ -713,7 +713,7 @@ plus about $0.03 of the text model. Before, Tesseract read most scanned
 pages for nothing and vision (about $3.94 per 1,000) read the ones it read
 badly: a book of good scans costs more now, a book of poor scans about half.
 A figure page costs the parser and one vision call. With the decider on,
-`scan_read_check` adds about $0.27 per 1,000 pages (shadow: logged only).
+`scan_read_check` adds about $0.27 per 1,000 pages.
 Where the page goes: to OpenRouter and on to Mistral (the parser), as a
 vision page goes to OpenRouter.
 
@@ -745,7 +745,13 @@ the picture shows, and over 10, counting a paragraph by its characters over
 80): the made-up page. `short` (under 40 characters) is judged only with no
 line count: a scanned divider of a few words is read whole. The decider's
 `scan_read_check` (docs/decisions.md) asks Jev whether the read is faithful
-to the page picture where its answer can matter: in shadow, logged only.
+to the page picture where its answer can matter (no other bad reason): LIVE
+at 0.5 on fresh brains (owner decision 2026-11-19), so a read it rejects is
+stored as unread, never as text, and an `unverified` read it calls faithful
+stands. With no answer (Jev failed, the use off) the free checks decide.
+**Existing brains without the decider worker get only the free checks**:
+the decider is optional, an upgrade never adds it, and an operator adds it
+(with `scan_read_check` live) to have Jev check their scanned pages.
 
 **The bench** (2026-11-19, made-up pages only; four sets of 12 copies of the
 generated spec book):

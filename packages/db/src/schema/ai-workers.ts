@@ -343,10 +343,10 @@ export type DecisionUse =
    *  picks which no-model reader fills the file's database. One call a
    *  file: the answer is kept in that database. */
   | 'pdf_kind'
-  /** On a scanned page no free read can vouch for: is the Scan reader's text
-   *  a faithful reading of the page in the picture (one `noul`, the page
-   *  picture and the text in the state)? Ships in shadow: the answer is
-   *  logged, the `unverified` rule decides. docs/decisions.md. */
+  /** Is the Scan reader's text of a scanned book page a faithful reading of
+   *  the page in the picture (one `noul`, the page picture and the text in
+   *  the state)? Ships live on fresh brains (owner decision 2026-11-19): a
+   *  rejected read is unread. docs/decisions.md. */
   | 'scan_read_check'
   /** Per-request model routing (complexity / needs tools / sensitive). */
   | 'model_routing';
