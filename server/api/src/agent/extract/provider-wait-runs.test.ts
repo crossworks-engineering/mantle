@@ -56,7 +56,15 @@ describe('runWaitOf', () => {
   });
 
   it('a stop that left a paid read unkept is a paid wait, for the provider and the day cap', async () => {
-    const unkept = (stopped: string): PipelineRunResult => ({ ...asked(stopped), paidStop: true });
+    const unkept = (stopped: string): PipelineRunResult => ({
+      status: 'asked',
+      rows: 3,
+      made: 0,
+      reused: 2,
+      warnings: [],
+      stopped,
+      paidStop: true,
+    });
     expect(await runWaitOf('o', unkept('provider_rate_limit'), deps(null))).toEqual({
       for: 'provider',
       reason: 'rate_limit',
