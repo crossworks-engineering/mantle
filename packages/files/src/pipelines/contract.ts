@@ -85,7 +85,7 @@ export const PIPELINE_ASK_LIST_TEXT_MAX = 120;
 export const PIPELINE_ASK_PAGE_MAX = 10_000;
 /** The largest page number an ask may name (`input.page`): a bound on the
  *  number, not on the count of pages asked, so a marked page past 10,000
- *  of a longer book is asked like any (L2 of the large-PDF audit, round 3). */
+ *  of a longer book is asked like any. */
 export const PIPELINE_PAGE_NUMBER_MAX = 10_000_000;
 
 /** One field an ask wants: its name (the column of the Agent's tab) and a

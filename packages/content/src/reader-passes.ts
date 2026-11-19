@@ -135,7 +135,7 @@ function bookAgentOf(pipelines: BoxPipelines): BoxPipeline | null {
 
 /**
  * Draw the pictures of a book's marked pages with the book's Agent step and
- * no model (H1 of the large-PDF audit, round 3): the step draws a window's
+ * no model: the step draws a window's
  * marked pages in the parser's pdfjs child before any ask, and the asks are
  * never sent, so this is no paid call. Only the windows that hold the pages
  * are cut (pdfWindowsAt). Each picture is put on disk (`spool`) as it comes,

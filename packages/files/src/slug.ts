@@ -168,7 +168,7 @@ export const BOOK_HEAVY_MIN_BYTES = 10 * 1024 * 1024;
 
 /**
  * A PDF of more than this many pages is a heavy extraction too, whatever
- * its bytes (M6 of the large-PDF audit, round 3): a typed catalogue of
+ * its bytes: a typed catalogue of
  * 4,000 pages is a few MB, and its book read (80 windows of text layer,
  * tables and pictures) needs the time budget that grows with its pages
  * (extract-lanes.ts bookExpireMinutes), which only the heavy lane sets.

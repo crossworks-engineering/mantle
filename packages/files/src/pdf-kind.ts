@@ -513,7 +513,7 @@ const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
  * none is a P&ID or an isometric, and BOOK_MIN_SHARE of them or more are
  * scans or typed text. The ruled scans of a long file (kind `scan`) are
  * under 1 - BOOK_MIN_SHARE of its pages read, or tables the eye read
- * (tablePageOf): a scanned drawing set on A4 or A3 paper is no book. A file
+ * (tablePageOf): a scanned drawing set on office paper is no book. A file
  * of BOOK_MIN_PAGES pages or fewer must also
  * hold typed or scanned text pages (kind `document`) but for a few
  * ({@link DOCUMENT_MIN_SHARE}), or ruled scans the eye reads as tables
@@ -527,8 +527,7 @@ export function bookOf(pageCount: number | null, sample: readonly BookSamplePage
   if (!officePagesOf(sample)) return false;
   const read = sample.filter((p) => p.class !== undefined);
   // A long file: its ruled scans (kind `scan`: a table, a form, a drawing)
-  // are a few fold-outs, or tables the eye read (M3 of the large-PDF audit,
-  // round 3): a scanned drawing set on A4 or A3 stays the drawing reader's.
+  // are a few fold-outs, or tables the eye read: a scanned drawing set on office paper stays the drawing reader's.
   if (pageCount > BOOK_MIN_PAGES) {
     const ruled = read.filter((p) => p.kind === 'scan');
     return read.length - ruled.length >= BOOK_MIN_SHARE * read.length || ruledTablesOf(ruled);
@@ -581,7 +580,7 @@ function tableScansOf(read: readonly BookSamplePage[]): boolean {
 }
 
 /** Ruled scans that are tables: every one the eye looked at is a table
- *  page (tablePageOf), at least one was looked at, and every one is on A4
+ *  page (tablePageOf), at least one was looked at, and every one is on `a4`
  *  paper. */
 function ruledTablesOf(ruled: readonly BookSamplePage[]): boolean {
   const seen = ruled.filter((p) => p.eye);

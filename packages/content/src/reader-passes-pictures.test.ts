@@ -1,6 +1,5 @@
 /**
- * A book's page pictures (G1) never lost in silence (H1 of the large-PDF
- * audit, round 3): the picture pass takes the PNGs of the Reader's run kept
+ * A book's page pictures (G1) never lost in silence: the picture pass takes the PNGs of the Reader's run kept
  * for the extract, and a page the Reader marked for vision with no picture
  * there (no run kept: the memo let it go, or a retry whose database was
  * there; a picture the Reader left out) is drawn by the book's Agent step,

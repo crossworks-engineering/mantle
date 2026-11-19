@@ -2,8 +2,7 @@
  * A book's page pictures take the Agent's text of their page (G1,
  * describeBookPagePictures), only the pictures of the bytes the Agent read:
  * a page picture of an older revision (another sha256, marked
- * `olderVersion`) keeps its own text and is not indexed again (M1 of the
- * large-PDF audit, round 3). On a migrated scratch database, in the extract
+ * `olderVersion`) keeps its own text and is not indexed again. On a migrated scratch database, in the extract
  * queue's scope. The Agent's page text is made up here.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/images-book-pages.db.test.ts

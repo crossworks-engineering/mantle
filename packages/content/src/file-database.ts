@@ -812,7 +812,7 @@ export async function readerOptionsOf(
 export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
   // A read here (no `parsed`) is never an extract's: no picture pass takes
   // the pictures its Reader's run put on disk. The runs it made are dropped
-  // when it is done (L5 of the large-PDF audit, round 3); a run kept before
+  // when it is done; a run kept before
   // (another extract's) is left as it is.
   const before =
     !args.parsed && isFileSha256(args.sha256) ? new Set(keptRunKeysOf(args.sha256)) : null;
@@ -1500,7 +1500,7 @@ async function runAgentWindowed(args: {
  * when a window was lost (`keep` 'all'), every one, so no paid row is lost.
  * On the last write of a run that read every window, only the rows of the
  * keys in `keep`: the pages still marked for vision that this run did not
- * ask (past the option `pages`; L3 of the large-PDF audit, round 3), so
+ * ask (past the option `pages`), so
  * their paid text stays, and a page no longer marked goes.
  */
 export function keptUnseenRows<R extends Readonly<Record<string, unknown>>>(
