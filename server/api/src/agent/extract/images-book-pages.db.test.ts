@@ -153,6 +153,13 @@ describe.skipIf(!URL)("a book's page pictures, saved by its Agent", () => {
       ),
     ).toBe(1);
     expect((await picturesOf(b.id)).map((r) => r.id)).toEqual(rows.map((r) => r.id));
+    // ... and with a picture drawn again that differs: the text stays on it.
+    await extract(() =>
+      pics.save([
+        { page: 4, bytes: PNG(4, ' again'), mime: 'image/png', text: 'the text of page 4' },
+      ]),
+    );
+    expect((await dataOf(rows[1]!.id)).text).toBe('the text of page 4');
     // A picture whose text was taken off is not done.
     await x(sqlTag`update nodes set data = data - 'text' where id = ${rows[1]!.id}`);
     expect([...(await extract(() => pics.done()))]).toEqual([2]);

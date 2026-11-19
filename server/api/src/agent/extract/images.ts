@@ -7,7 +7,7 @@
 
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { createPartOfFile, db, nodes } from '@mantle/db';
+import { createPartOfFile, db, markContentChanged, nodes } from '@mantle/db';
 import {
   CAD_EXTS,
   IMAGE_PAGE_COVER,
@@ -1074,7 +1074,7 @@ export function bookPagePicturesFor(
       for (const p of pictures) {
         const ext = describeImageBytes(p.bytes, p.mime === 'image/jpeg' ? 'jpg' : 'png').ext;
         try {
-          await createPartOfFile(
+          const part = await createPartOfFile(
             fileId,
             () =>
               upsertFile({
@@ -1098,6 +1098,25 @@ export function bookPagePicturesFor(
               }),
             (f) => deleteFileById({ ownerId, fileId: f.id }).then((r) => r.ok),
           );
+          // A write over a page picture of other bytes (a page drawn again
+          // whose picture differs) drops the text with the old bytes' keys:
+          // it is set again, through the one door of a re-index.
+          const [now] = await db
+            .select({ text: sql<string | null>`${nodes.data}->>'text'` })
+            .from(nodes)
+            .where(and(eq(nodes.id, part.id), eq(nodes.ownerId, ownerId)));
+          if (now && now.text !== p.text) {
+            await db.transaction(async (tx) => {
+              await tx
+                .update(nodes)
+                .set({
+                  data: sql`${nodes.data} || jsonb_build_object('text', ${p.text}::text)`,
+                  updatedAt: new Date(),
+                })
+                .where(and(eq(nodes.id, part.id), eq(nodes.ownerId, ownerId)));
+              await markContentChanged(tx, { id: part.id, type: 'file' }, ['content']);
+            });
+          }
           saved += 1;
         } catch (err) {
           // Not done: the page is counted as not read, and the next run of
