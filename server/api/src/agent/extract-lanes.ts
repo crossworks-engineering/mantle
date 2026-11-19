@@ -1,5 +1,5 @@
 /**
- * The extractor's two lanes, and the one ceiling over both.
+ * The extractor's three lanes, and the ceiling over two of them.
  *
  * A drawing (DWG, DXF, DGN, DWF) is a heavy extraction: the parser reads it
  * for seconds to minutes on a whole core, and this process then builds its
@@ -9,26 +9,45 @@
  * job slot and failed `busy` into pg-boss retries, and a document uploaded
  * meanwhile waited behind all of them.
  *
- * So a heavy file runs in its own lane (extract-queue.ts): one at a time, on
- * its own queue, and the workers of the main queue stay free for light
- * files. Two rules, and no more:
+ * A book is longer still: a PDF of BOOK_HEAVY_MIN_BYTES (10 MB) or more, or
+ * of more than BOOK_HEAVY_MIN_PAGES (200) pages (its page count, qpdf's, is
+ * read at the hop), is read by OCR window by window, with an extract time
+ * that grows with its page windows (bookExpireMinutes), up to 8 hours. In
+ * the heavy lane it held the one heavy place for all that time, and every
+ * drawing waited behind it.
  *
- *   1. weight: the file's extension says heavy or light
- *      (`extractWeightOfExt`, packages/files/src/slug.ts);
- *   2. ceiling: light and heavy together never pass the box's
- *      "extractions at once" setting. A box set to 1 runs one extraction at
- *      a time, whatever it is.
+ * So each runs in a lane of its own (extract-queue.ts):
  *
- * What the lane does not do: the parser still has one job slot for the whole
- * box. A document's read waits there for the one drawing that is being read
- * (not for the drawings queued behind it), as it waits for any other read: a
- * chat attachment, a thumbnail, a drawing tool, a maintenance run. A PDF of
- * BOOK_HEAVY_MIN_BYTES (10 MB) or more is heavy (a book read by OCR window
- * by window), and so is a PDF of more than BOOK_HEAVY_MIN_PAGES (200) pages
- * (a long typed book: its page count, qpdf's, is read at the hop), with an
- * extract time that grows with its page windows (bookExpireMinutes); a
- * smaller PDF is light, so many small PDFs never queue behind a book.
+ *   light  the main queue, `mantle.extract`: every file but these two, a
+ *          smaller PDF included, so many small PDFs never queue behind a
+ *          book. "Extractions at once" workers.
+ *   heavy  `mantle.extract.heavy`: a drawing, HEAVY_LANE_WORKERS (1) at a
+ *          time. A book is never here, so it never holds a drawing back.
+ *   book   `mantle.extract.book`: a book, and the run of a Reader or an
+ *          Agent on one, bookLaneWorkers() at a time (EXTRACT_BOOK_CONCURRENCY,
+ *          default 1, read at start).
+ *
+ * Three rules, and no more:
+ *
+ *   1. lane: the file says it (extractLaneOfNode): its extension, and for a
+ *      PDF its bytes and pages (`extractWeightOfFile`,
+ *      packages/files/src/slug.ts);
+ *   2. ceiling: light and heavy together never pass the box's "extractions
+ *      at once" setting. A box set to 1 runs one of those at a time,
+ *      whatever it is;
+ *   3. a book's place is its lane's own (its own ceiling of
+ *      bookLaneWorkers()), outside the one above: a book takes hours, and
+ *      inside the shared ceiling it would hold a place light and heavy work
+ *      need for all of them (on a box set to 1, every place). So at most
+ *      "extractions at once" + EXTRACT_BOOK_CONCURRENCY run in all.
+ *
+ * What the lanes do not do: the parser still has one job slot for the whole
+ * box. A document's read waits there for the one job being read (a
+ * drawing's read, or one page window of a book, never a whole book), as it
+ * waits for any other read: a chat attachment, a thumbnail, a drawing tool,
+ * a maintenance run.
  */
+import { envNum } from '@mantle/config';
 import {
   PIPELINE_WINDOW_DEFAULT,
   extOf,
@@ -40,10 +59,22 @@ import {
  *  heavy file could only wait for that slot. */
 export const HEAVY_LANE_WORKERS = 1;
 
-/** What a hop to the heavy lane answers. pg-boss stores a handler's answer
- *  as the job's output, so the queue counts can leave a hop out of "done"
- *  (server/web/lib/extraction-queue.ts reads the same key). */
+/** Books at once, in the book lane: EXTRACT_BOOK_CONCURRENCY, 1 to 4,
+ *  default 1. Each book is a long run of parser jobs, one page window at a
+ *  time, so a second book only shares the parser's one job slot with the
+ *  first; a box with more parser room may raise it. */
+export function bookLaneWorkers(): number {
+  return envNum('EXTRACT_BOOK_CONCURRENCY');
+}
+
+/** The lane of an extraction (see the header). */
+export type ExtractLane = 'light' | 'heavy' | 'book';
+
+/** What a hop to the heavy or the book lane answers. pg-boss stores a
+ *  handler's answer as the job's output, so the queue counts can leave a hop
+ *  out of "done" (packages/db/src/provider-alerts.ts reads the same key). */
 export const HEAVY_HOP_OUTPUT = { lane: 'heavy' } as const;
+export const BOOK_HOP_OUTPUT = { lane: 'book' } as const;
 
 /** The weight of a node's extraction. Only a file has one: a note, a page or
  *  an email is light. The name is the one the extractor types the file by
@@ -67,6 +98,14 @@ export function extractWeightOfNode(node: {
   );
 }
 
+/** The lane of a node's extraction: a heavy PDF is a book, any other heavy
+ *  file (a drawing) heavy, the rest light. */
+export function extractLaneOfNode(node: Parameters<typeof extractWeightOfNode>[0]): ExtractLane {
+  if (extractWeightOfNode(node) !== 'heavy') return 'light';
+  const name = (node.filename ?? node.title ?? '').toLowerCase();
+  return extOf(name) === 'pdf' ? 'book' : 'heavy';
+}
+
 /** The minutes a book's extract gets for each page window of
  *  PIPELINE_WINDOW_DEFAULT (50 pages) over the base time budget: about 2.5
  *  minutes of OCR on 2 CPUs a window (1.8 s a page a CPU), the picture pass
@@ -76,7 +115,10 @@ export const BOOK_EXPIRE_MIN_PER_WINDOW = 5;
  *  pages of OCR on 2 CPUs. A book past it expires and is tried again as
  *  every extract is (the Reader's database is written when its last window
  *  is read), so it is the one bound of this path that can leave a book
- *  unread: said in the job's failure, never silent. */
+ *  unread: said in the job's failure, never silent. A run tried again does
+ *  not start over: each page window the Reader read is kept as it ends
+ *  (packages/content/src/window-stage.ts), and the next try reads on from
+ *  the first window not kept. */
 export const BOOK_EXPIRE_MAX_MIN = 480;
 
 /**

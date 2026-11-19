@@ -162,7 +162,8 @@ export function extractWeightOfExt(ext: string): ExtractWeight {
  * costs (a scanned page is a picture: the made-up spec book is 0.55 MB a
  * page at 200 dpi, so 10 MB is about 18 scanned pages). Below it a PDF is
  * light, so many small PDFs never queue behind one book; at it or above,
- * one book at a time, and light work is never held by a book.
+ * it is a book, in the book lane (extract-lanes.ts), and neither light work
+ * nor a drawing is ever held by a book.
  */
 export const BOOK_HEAVY_MIN_BYTES = 10 * 1024 * 1024;
 
@@ -171,7 +172,7 @@ export const BOOK_HEAVY_MIN_BYTES = 10 * 1024 * 1024;
  * its bytes: a typed catalogue of
  * 4,000 pages is a few MB, and its book read (80 windows of text layer,
  * tables and pictures) needs the time budget that grows with its pages
- * (extract-lanes.ts bookExpireMinutes), which only the heavy lane sets.
+ * (extract-lanes.ts bookExpireMinutes), which only the book lane sets.
  * 200 pages is four windows of 50: up to about 10 minutes of OCR on 2 CPUs,
  * well inside the base budget of the light lane.
  */

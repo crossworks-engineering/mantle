@@ -1400,8 +1400,9 @@ scope.
 `node_ingested` and sends one job on the extract queue for each notify
 (`enqueuePipelineRun`): its data is `{ nodeId, run }` and its singleton key
 `<pipeline>:<node>`, so a second notify while the first job waits sends no
-second job. A reader's run of a drawing goes on to the heavy lane by the rule
-an extract follows; an `after` run stays on the main queue. The job
+second job. A reader's run of a drawing goes on to the heavy lane, and one of
+a book to the book lane, by the rule an extract follows; an `after` run stays
+on the main queue. The job
 (`server/api/src/agent/extract/pipeline-run.ts`) writes one trace of kind
 `pipeline_run` (migration 0374) with one step, `file_database`, with the
 result. It is not an `extractor_run`, so the readers that look for an extract
@@ -2339,6 +2340,40 @@ Reader that claims kinds on a file of its type (the build names the kind).
 
 **P6, local OCR.** qpdf, Tesseract with its English data, pdfplumber and
 pypdfium2 are in the parser image (docs/parser.md, "Page windows").
+
+### A book read again
+
+A book's read can run for hours (up to 8, docs/embeddings.md "Drawings and
+books have their own lanes"). Its database is written once, after the last
+window, so before the stage a book that expired, or whose run a restart cut,
+was read again from window 1. Now a Reader's windowed run in a real read (an
+upload's extract, a run on demand, a read again: the build of a file, never a
+Test or a compare) keeps each page window as it ends, and a run tried again
+takes the windows kept and reads on from the first one that is not
+(`packages/content/src/window-stage.ts`, `runWindowed`). A book stopped after
+window 3 of 6 starts again at window 4, with no cut and no step of windows 1
+to 3, and its result is the one a read in one go gives: a window given up is
+kept as given up, with its warning.
+
+- **Where.** In the folder of the file's database, beside it:
+  `.file-dbs/<file id>.<sha16>.stage-<run16>-<first page>.json`, one file a
+  window (`@mantle/files` file-dbs.ts). Each holds what its window gave the
+  run: its pages, and either the step's result (the rows, text, warnings,
+  counts, the state for the next window, its pictures) or the words of a
+  window given up. It is no database: the lists of the folder never show it.
+- **The key.** The file's id, the sha256 of the bytes read (checked whole
+  inside each file), and the run: the Reader's id and version, the options,
+  the kind the router named, the state of window 1 and the window's size. New
+  bytes, another Reader version or other options take no kept window.
+- **Gone.** At the end of the build of those bytes (`buildFileDatabase`,
+  whatever it writes); with every name of the file on a delete or a turn to
+  private (`removeFileDbNames`); and when its bytes change (the next extract
+  removes the stage of other bytes, `removeOtherWindowStages`, as does the
+  next build, `removeOtherFileDbNames`). Nothing else removes it and no timer
+  runs.
+- **Money.** The Reader's step asks no model, so no paid call is kept or
+  made again here. An Agent's paid rows were already written window by window
+  (P4) and are taken by their hash on its next run.
 
 ## The book reader
 

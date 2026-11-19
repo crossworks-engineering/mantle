@@ -40,6 +40,7 @@ import {
   pdfFileTabOf,
   pdfReadPoorer,
   pipelineStampOf,
+  removeWindowStage,
   PIPELINE_CALLS_MAX,
   PIPELINE_STAMP_KEYS,
   removeFileDbNames,
@@ -291,10 +292,16 @@ async function readRouted(
       reader,
       opts.count ? (await pipelineStateOf(opts.count.ownerId, reader)).options : {},
     );
-    const run = await routedReaderRun(reader, bytes, ext, own, {
-      kind,
-      state: readerStateOf(decision, false, opts.pdfNodeVision === true),
-    });
+    // A real read keeps its page windows as they end, so a run tried again
+    // reads on from the first window not kept (./window-stage.ts).
+    const run = await routedReaderRun(
+      reader,
+      bytes,
+      ext,
+      own,
+      { kind, state: readerStateOf(decision, false, opts.pdfNodeVision === true) },
+      opts.count ? { fileId: opts.count.fileId } : undefined,
+    );
     const parsed = withRunFacts(reader, run, parsedFileOfRun(reader, run));
     const hash = optionsHash(reader, own);
     return parsed.kind === 'sheets'
@@ -866,6 +873,29 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
       ...(pdfNodeVision ? { pdfNodeVision } : {}),
       count: { ownerId, fileId },
     }));
+  // The read is done: whatever this build does with it, the windows its
+  // run kept go (./window-stage.ts). A throw below leaves them, for the
+  // build tried again.
+  const out = await buildFromParsed(args, { names, ext, pipelines, reader, again, parsed });
+  await removeWindowStage(fileId, sha256);
+  return out;
+}
+
+/** The rest of buildFileDatabase, from the read's result on. */
+async function buildFromParsed(
+  args: BuildArgs,
+  at: {
+    names: NonNullable<ReturnType<typeof fileDbPaths>>;
+    ext: string;
+    pipelines: BoxPipelines;
+    reader: BoxPipeline | null;
+    again: { stored: StoredPdf | null; since: FileStamp | null; reroute: boolean } | undefined;
+    parsed: ParsedFile;
+  },
+): Promise<FileDbBuild> {
+  const { fileId, ownerId, bytes } = args;
+  const sha256 = args.sha256 as string;
+  const { names, ext, pipelines, reader, again, parsed } = at;
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
   }

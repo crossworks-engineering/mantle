@@ -326,8 +326,8 @@ at once in mantle_web OOM-restarted a web tier on 2026-09-24.
 Postgres as live work. Before it starts, the script prints one line, for
 example `box: load 0.44 on 2 core(s), 3 extract job(s) waiting`, and refuses
 when the 1-minute load is above twice the core count, or when more than 50
-extract jobs wait (`mantle.extract` and `mantle.extract.heavy`, created or
-in retry). A dry run is checked too. `--force`, before the task, starts it
+extract jobs wait (`mantle.extract`, `mantle.extract.heavy` and
+`mantle.extract.book`, created or in retry). A dry run is checked too. `--force`, before the task, starts it
 anyway and says so. A number that cannot be read decides nothing. There is
 no waiting and no retry: start it later. The container also has a low CPU
 weight (`--cpu-shares 256`; the web, the api and Postgres have Docker's

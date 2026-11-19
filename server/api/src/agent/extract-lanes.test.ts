@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CAD_EXTS, extractWeightOfExt } from '@mantle/files';
 import { BOOK_HEAVY_MIN_BYTES, BOOK_HEAVY_MIN_PAGES } from '@mantle/files';
 import {
   BOOK_EXPIRE_MAX_MIN,
   bookExpireMinutes,
+  bookLaneWorkers,
   ExtractCeiling,
+  extractLaneOfNode,
   extractWeightOfNode,
   HEAVY_LANE_WORKERS,
 } from './extract-lanes';
@@ -85,6 +87,39 @@ describe('extractWeightOfNode', () => {
 
   it('the heavy lane is one wide, as the parser has one job slot', () => {
     expect(HEAVY_LANE_WORKERS).toBe(1);
+  });
+});
+
+describe('extractLaneOfNode', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('a heavy PDF is a book, a drawing heavy, the rest light', () => {
+    const of = (filename: string, sizeBytes: number | null = null, pages: number | null = null) =>
+      extractLaneOfNode({ type: 'file', title: filename, filename, sizeBytes, pages });
+    expect(of('manual.pdf', BOOK_HEAVY_MIN_BYTES)).toBe('book');
+    expect(of('CATALOGUE.PDF', 8e6, BOOK_HEAVY_MIN_PAGES + 1)).toBe('book');
+    expect(of('small.pdf', 1e6, 12)).toBe('light');
+    for (const ext of [...CAD_EXTS, 'dwf']) expect(of(`plan.${ext}`, 1e9)).toBe('heavy');
+    expect(of('big.docx', 1e9, 4000)).toBe('light');
+    // An email attachment: the title names it.
+    expect(
+      extractLaneOfNode({ type: 'file', title: 'spec.pdf', filename: null, sizeBytes: 2e7 }),
+    ).toBe('book');
+    // Only a file has a lane but light.
+    expect(
+      extractLaneOfNode({ type: 'note', title: 'x.pdf', filename: null, sizeBytes: 2e7 }),
+    ).toBe('light');
+  });
+
+  it('books at once: EXTRACT_BOOK_CONCURRENCY, default 1, 1 to 4', () => {
+    vi.stubEnv('EXTRACT_BOOK_CONCURRENCY', '');
+    expect(bookLaneWorkers()).toBe(1);
+    vi.stubEnv('EXTRACT_BOOK_CONCURRENCY', '3');
+    expect(bookLaneWorkers()).toBe(3);
+    vi.stubEnv('EXTRACT_BOOK_CONCURRENCY', '0');
+    expect(bookLaneWorkers()).toBe(1);
+    vi.stubEnv('EXTRACT_BOOK_CONCURRENCY', '99');
+    expect(bookLaneWorkers()).toBe(4);
   });
 });
 

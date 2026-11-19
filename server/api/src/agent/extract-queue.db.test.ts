@@ -1,5 +1,5 @@
 /**
- * The extract queue's two lanes on a real pg-boss (extract-queue.ts,
+ * The extract queue's three lanes on a real pg-boss (extract-queue.ts,
  * extract-lanes.ts), the extractor itself stubbed:
  *  - a drawing sent to `mantle.extract` is sent on to `mantle.extract.heavy`
  *    and extracted there, once; the main queue's job is completed with the
@@ -9,7 +9,10 @@
  *  - heavy files run one at a time, and a document sent after a batch of
  *    drawings does not wait for them;
  *  - the ceiling is in the path: on a box set to one extraction at a time, a
- *    document waits for the drawing that runs, and runs when it ends.
+ *    document waits for the drawing that runs, and runs when it ends;
+ *  - a book (a PDF of 10 MB or more) hops to `mantle.extract.book` and holds
+ *    no place of the light and heavy ceiling: while it runs, a drawing and a
+ *    document both run and end, on a box set to one extraction at a time.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -64,6 +67,13 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     const id = randomUUID();
     await su`insert into nodes (id, owner_id, type, title, path, data)
       values (${id}, ${owner}, 'file', ${name}, 'files', ${JSON.stringify({ filename: name })}::jsonb)`;
+    return id;
+  };
+  const pdfOf = async (name: string, sizeBytes: number): Promise<string> => {
+    const id = randomUUID();
+    const data = { filename: name, size_bytes: sizeBytes };
+    await su`insert into nodes (id, owner_id, type, title, path, data)
+      values (${id}, ${owner}, 'file', ${name}, 'files', ${JSON.stringify(data)}::jsonb)`;
     return id;
   };
   const jobs = (nodeId: string) =>
@@ -168,5 +178,53 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     runs.release.delete(dwg);
     await until('the document runs once the drawing ends', () => runs.ended.includes(doc));
     expect(runs.ended.indexOf(dwg)).toBeLessThan(runs.started.lastIndexOf(doc));
+  }, 120_000);
+
+  it('a book takes its own lane, and a drawing and a document run while it holds it', async () => {
+    // The box is still set to one extraction at a time (the test above).
+    const book = await pdfOf('manual.pdf', 20 * 1024 * 1024);
+    runs.held.add(book);
+    await q.enqueueExtract(book);
+    await until('the book holds its lane', () => runs.release.has(book));
+    expect((await jobs(book)).map((j) => [j.name, j.lane])).toEqual([
+      ['mantle.extract', 'book'],
+      ['mantle.extract.book', null],
+    ]);
+
+    // A drawing in the heavy lane and a document on the main queue: both
+    // run and end while the book still runs.
+    const dwg = await file('beside-the-book.dwg');
+    const doc = await file('beside-the-book.docx');
+    runs.heavy.add(dwg);
+    await q.enqueueExtract(dwg);
+    await q.enqueueExtract(doc);
+    await until('the drawing and the document end', () =>
+      [dwg, doc].every((id) => runs.ended.includes(id)),
+    );
+    expect(runs.ended).not.toContain(book);
+    expect((await jobs(dwg)).map((j) => j.name)).toEqual([
+      'mantle.extract',
+      'mantle.extract.heavy',
+    ]);
+
+    // A second book waits for the first: one book at a time by default.
+    const book2 = await pdfOf('second.pdf', 30 * 1024 * 1024);
+    runs.held.add(book2);
+    await q.enqueueExtract(book2);
+    await until('the second book is in the book lane', async () =>
+      (await jobs(book2)).some((j) => j.name === 'mantle.extract.book'),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(runs.started).not.toContain(book2);
+
+    runs.release.get(book)!();
+    runs.release.delete(book);
+    await until('the second book runs once the first ends', () => runs.release.has(book2));
+    runs.release.get(book2)!();
+    runs.release.delete(book2);
+    await until('the second book ends', () => runs.ended.includes(book2));
+    // The hop of a book is not a finished extraction.
+    const counts = await m.extractionQueueCounts();
+    expect(counts.running + counts.waiting).toBe(0);
   }, 120_000);
 });

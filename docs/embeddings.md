@@ -259,34 +259,52 @@ last 10 minutes, dead-lettered (`GET/PATCH /api/embedding/extraction`). A host
 that sends extraction to a hosted model (no local CPU embedder) can run 8 or
 more; a CPU-only box should stay at 1 or 2.
 
-**Drawings have their own lane.** A DWG, DXF, DGN or DWF is a heavy
-extraction: the parser reads it on a whole core for seconds to minutes, and
-the api then builds its tabs and its database. The worker that takes such a
-job sends it on to a second queue, `mantle.extract.heavy`, where one worker
-runs heavy files one at a time (the parser has one job slot, so a second one
-could only wait for it). The workers of `mantle.extract` stay free, so a
-document uploaded during a batch of drawings does not wait behind the queue
-of them. It still shares the parser's one job slot: its read waits for the
-one drawing that is being read at that moment, as for any other read (a chat
-attachment, a thumbnail, a drawing tool, a maintenance run). A PDF of 10 MB
-or more (`BOOK_HEAVY_MIN_BYTES`, packages/files/src/slug.ts) is heavy too:
-every office PDF is a book read by the local OCR window by window, and a
-PDF's bytes are what its OCR costs, so many small PDFs never queue behind a
-book, and a book never holds light work. So is a PDF of more than 200 pages
-(`BOOK_HEAVY_MIN_PAGES`) whatever its bytes: a typed catalogue of 4,000
-pages is a few MB. The main queue reads every PDF's page count (qpdf in the
-parser, no page decode) before it picks the lane. A heavy PDF's job gets a time budget
-that grows with its pages (`bookExpireMinutes`,
-server/api/src/agent/extract-lanes.ts): the base budget
+**Drawings and books have their own lanes.** There are three lanes, each a
+queue of its own:
+
+| Lane  | Queue                  | What runs there                                           | At once                                       |
+| ----- | ---------------------- | --------------------------------------------------------- | --------------------------------------------- |
+| light | `mantle.extract`       | every other file, a small PDF included, notes, emails     | the extractor count (Settings, 1 to 16)       |
+| heavy | `mantle.extract.heavy` | a drawing: DWG, DXF, DGN, DWF                             | 1 (the parser has one job slot)               |
+| book  | `mantle.extract.book`  | a book: a PDF of 10 MB or more, or of more than 200 pages | `EXTRACT_BOOK_CONCURRENCY`, default 1, 1 to 4 |
+
+A DWG, DXF, DGN or DWF is a heavy extraction: the parser reads it on a whole
+core for seconds to minutes, and the api then builds its tabs and its
+database. A book is a long one: every office PDF is read by the local OCR
+window by window, and a PDF's bytes are what its OCR costs. So a PDF of 10 MB
+or more (`BOOK_HEAVY_MIN_BYTES`, packages/files/src/slug.ts) is a book, and so
+is a PDF of more than 200 pages (`BOOK_HEAVY_MIN_PAGES`) whatever its bytes:
+a typed catalogue of 4,000 pages is a few MB. The main queue reads every
+PDF's page count (qpdf in the parser, no page decode) before it picks the
+lane. The worker of `mantle.extract` that takes a drawing's or a book's job
+sends it on to its lane and is free at once, so a document uploaded during a
+batch of drawings or a book does not wait behind them, many small PDFs never
+queue behind a book, and a book never holds a drawing back. The run of a
+Reader or an Agent on such a file (`pipeline_run`) takes the same lane. A
+document's read still shares the parser's one job slot: it waits for the one
+job being read at that moment (a drawing's read, or one page window of a
+book), as for any other read (a chat attachment, a thumbnail, a drawing
+tool, a maintenance run).
+
+A book's job gets a time budget that grows with its pages
+(`bookExpireMinutes`, server/api/src/agent/extract-lanes.ts): the base budget
 (`MANTLE_EXTRACT_EXPIRE_MIN`, 60) plus 5 minutes for each page window of 50,
 at most 8 hours, so a 1,000-page OCR book (about 50 minutes on 2 CPUs) gets
-160 minutes and does not expire and start again. The page count is qpdf's,
-read when the job goes on to the heavy lane; one that cannot be read gives
-the 8 hours. A PDF under 10 MB of 200 pages or fewer is light and keeps the
-base budget.
+160 minutes. The page count is qpdf's, read when the job goes on to the book
+lane; one that cannot be read gives the 8 hours. A book that expires anyway,
+or whose run a restart cuts, is tried again as every extract is, and reads
+on from the first page window it had not finished: each window the Reader
+read is kept as it ends (docs/pipelines.md, "A book read again"). A PDF under
+10 MB of 200 pages or fewer is light and keeps the base budget.
+
 Light and heavy together never pass the extractor count: a box set to 1 runs
-one extraction at a time, whatever it is. Every sender still sends to
-`mantle.extract` only, and the panel's counts add the two queues
+one of those at a time, whatever it is. A book's place is its own lane's,
+outside that count: a book takes hours, and inside it would hold a place
+light and heavy work need for all of them (on a box set to 1, every place).
+So at most the extractor count plus `EXTRACT_BOOK_CONCURRENCY` run in all.
+`EXTRACT_BOOK_CONCURRENCY` is read at start (set it in the host `.env` and
+restart the api); it has no screen or tool yet. Every sender still sends to
+`mantle.extract` only, and the panel's counts add the three queues
 (`server/api/src/agent/extract-lanes.ts`, `extract-queue.ts`).
 
 ```bash
