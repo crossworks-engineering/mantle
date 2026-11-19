@@ -273,3 +273,28 @@ describe('details only (the owner, 2026-11-19: "No, details only")', () => {
     expect(hasPartialReadCut({})).toBe(false);
   });
 });
+
+describe('the order of the sentences', () => {
+  it("a scan's pages, the pictures kept, a book's page pictures, then the readers' cuts", () => {
+    const x = extractionOf({
+      extract_completed_at: '2026-11-19T00:00:00Z',
+      ocr: { pages_read: 9, pages_total: 10 },
+      images: {
+        embedded: { kept: 3, found: 4 },
+        pages: { kept: 1, found: 2 },
+        kept: 4,
+        found: 6,
+      },
+      read_cut: { markup_bytes: { what: 'bytes', read: 1, total: 2 } },
+    });
+    expect(x.cuts?.map((c) => c.key)).toEqual([
+      'ocr_pages',
+      'pictures',
+      'page_pictures',
+      'markup_bytes',
+    ]);
+    expect(x.hint).toMatch(
+      /^Only 9 of 10 pages were read\. .* 3 of 4 pictures kept\. .* 1 of 2 pages left to vision/,
+    );
+  });
+});
