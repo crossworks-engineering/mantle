@@ -30,6 +30,8 @@ const BOX_FLAGS = [
   'MANTLE_NO_AUTO_TABLES',
   // Own pipelines (docs/pipelines.md): =curated on a managed box.
   'MANTLE_PIPELINES',
+  // The day cap of paid Agent pipeline asks (docs/configuration.md).
+  'MANTLE_PIPELINE_ASKS_PER_DAY',
   // Calls (plan page 886126b4): the agent worker's flag, the calls host and
   // the key pair the brain signs tokens with (the profile decides what runs).
   'MANTLE_CALLS_AGENT',
