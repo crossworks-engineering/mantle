@@ -103,8 +103,10 @@ function cursorOf(us: string, id: string): string {
   return Buffer.from(`${us}|${id}`, 'utf8').toString('base64url');
 }
 
-/** A row's updated_at in epoch microseconds, exact (extract gives numeric). */
-const updatedUs = sql`(extract(epoch from ${nodes.updatedAt}) * 1000000)::bigint`;
+/** A row's updated_at in epoch microseconds, exact (extract gives numeric).
+ *  Built at the call, not at import: a test that stubs @mantle/db loads
+ *  this module through @mantle/files without a `nodes` table. */
+const updatedUs = (): SQL => sql`(extract(epoch from ${nodes.updatedAt}) * 1000000)::bigint`;
 
 /** The (updated_at in epoch microseconds, id) a cursor names, or null when
  *  it is not one: the time only as a whole number of at most 16 digits (so
@@ -155,11 +157,11 @@ export async function listFilesNeedingAttention(args: {
     cut,
   );
   const after = args.cursor
-    ? sql`(${updatedUs}, ${nodes.id}) < (${args.cursor.us}::bigint, ${args.cursor.id}::uuid)`
+    ? sql`(${updatedUs()}, ${nodes.id}) < (${args.cursor.us}::bigint, ${args.cursor.id}::uuid)`
     : undefined;
   const [page, counted] = await Promise.all([
     db
-      .select({ id: nodes.id, us: sql<string>`${updatedUs}::text` })
+      .select({ id: nodes.id, us: sql<string>`${updatedUs()}::text` })
       .from(nodes)
       .where(and(where, after))
       .orderBy(sql`${nodes.updatedAt} desc`, sql`${nodes.id} desc`)
