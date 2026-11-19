@@ -421,6 +421,24 @@ an older image shows `different` (`hash`, tab `Symbols`) in
 `pipeline-compare` one time, until the file is read again; before the fork
 it showed that on every run.
 
+**One drawing frontend, and the hatches it will not draw in full.**
+`model.png`, the crops and the symbol SVGs all draw through
+`server/parser/cad/cad_frontend.py`: ezdxf's frontend with two changes, for
+pattern hatches only. ezdxf collects every dash of a pattern before it draws
+one, and its hatching timeout only looks at the clock between pattern lines,
+so a fine pattern over a large boundary (a billion dashes) takes all the
+memory before the timeout can stop it. The frontend first estimates the
+dashes (the lines across the boundary's box at the pattern's spacing, times
+the dashes along one line); past `MAX_DASHES` (1,000,000) the hatch is drawn
+as its outline and counted: `hatches_outlined` in the index of `model.png`
+and of the crops, in `symbol_facts`, and for a DWG also in its `partial` list
+(the digest's "Partly read"). And a pattern denser than ezdxf draws is filled
+solid, as in ezdxf, but where the hatch is: ezdxf 1.4.5 fills that boundary in
+the hatch's own plane, so a hatch with extrusion (0, 0, -1) landed mirrored in
+x, far from its sheet. A DWG hatch's boundary points reach ezdxf as x and y
+only (`dwg_read.py`); the reader's third value is the elevation, which a
+polyline path would read as a bulge.
+
 A DGN (MicroStation V8, or V7 2D) takes the same exchange. The extractor
 sends a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file
 whose bytes hold the name of the DGN header stream (`Dgn~H`, in UTF-16; a
