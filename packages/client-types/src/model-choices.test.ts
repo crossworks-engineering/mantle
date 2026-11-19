@@ -3,6 +3,7 @@ import {
   ASSISTANT_MODEL_CHOICES,
   WORKER_MODEL_CHOICES,
   formatUsdPerM,
+  isShippedWorkerDefaults,
   templatePrice,
 } from './model-choices';
 
@@ -37,5 +38,16 @@ describe('shipped model cards', () => {
       .filter((c) => /\d\.\d{5,}/.test(c.price))
       .map((c) => `${c.name}: ${c.price}`);
     expect(noisy).toEqual([]);
+  });
+});
+
+describe('isShippedWorkerDefaults', () => {
+  it('is the recommended worker card only', () => {
+    const rec = WORKER_MODEL_CHOICES.find((c) => c.recommended)!;
+    expect(isShippedWorkerDefaults(rec.id)).toBe(true);
+    for (const c of WORKER_MODEL_CHOICES.filter((x) => !x.recommended)) {
+      expect(isShippedWorkerDefaults(c.id)).toBe(false);
+    }
+    expect(isShippedWorkerDefaults('')).toBe(false);
   });
 });

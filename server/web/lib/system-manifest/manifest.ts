@@ -1505,40 +1505,48 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
 ];
 
 // ── Shipped model defaults ───────────────────────────────────────────────────
+//
+// Every default below is the model the reference box runs (the IT box, read
+// 2026-11-19; owner's word: "make all our default models the same as IT").
+// Each id is checked against the live OpenRouter catalog. They are PINNED
+// ids, not aliases: a default is a choice made on purpose, and
+// `pinned-model-drift` tells us when a newer model of the family lands.
+//
+// Operator-owned after seeding: an agent's or a worker's model is never
+// overwritten by the boot reconcile (decision 2026-07-29). A box that differs
+// is shown by the model check (model-check.ts: GET /api/config/models, the
+// `config_models_check` MCP tool, scripts/fleet-model-check.sh).
 
-/**
- * The model every shipped agent is seeded on.
- *
- * It is an ALIAS, not a pin. OpenRouter marks an auto-updating alias with a
- * leading `~`: `~x-ai/grok-latest` resolves to xAI's current flagship (Grok 4.7
- * today, 500k context, tools + vision) and follows the family forward on its
- * own. A pinned id is a decision that nothing ages — six months on, a fresh
- * install seeds a model two generations behind and no one notices until a turn
- * 404s. An alias is the standing instruction "ship whatever is current", which
- * is what a default should mean.
- *
- * `pinned-model-drift` deliberately reports an alias as `current` rather than
- * `newer-in-family` — "something newer exists" is not a finding when tracking
- * the family is exactly what was asked for.
- *
- * Operator-owned after seeding: an agent's model is never overwritten by the
- * boot reconcile (decision 2026-07-29), and `coder` / `appsmith` additionally
- * accept a `CODER_MODEL` / `APPSMITH_MODEL` env override at seed time.
- */
-export const DEFAULT_AGENT_MODEL = '~x-ai/grok-latest';
+/** The persona's model: the onboarding Models step's recommended assistant
+ *  card. A specialist accepts a `<SLUG>_MODEL` env override at seed time. */
+export const DEFAULT_AGENT_MODEL = 'openai/gpt-6.1-sol';
 
-/**
- * The model the always-on indexing workers run on (extractor, summarizer,
- * reflector, document reader, vision, narrator, suggester).
- *
- * NOT an alias, and deliberately so: the only Google alias OpenRouter offers is
- * `~google/gemini-flash-latest`, which is full Flash at ~3x the token price.
- * These workers read EVERYTHING the brain ingests, so the cheap Flash Lite tier
- * dominates the cost of running a brain and there is no `flash-lite-latest` to
- * track. So this one stays pinned, and `pinned-model-drift` is what tells us a
- * newer Flash Lite has landed, to bump on purpose rather than by surprise.
- */
-export const DEFAULT_WORKER_MODEL = 'google/gemini-3.5-flash-lite';
+/** The specialists that write and build: Pages, Draftsman, Presenter,
+ *  Mathematician, Appsmith. */
+export const BUILDER_AGENT_MODEL = 'anthropic/claude-sonnet-5.5';
+
+/** The everyday specialists and the Team responder: Researcher, Ledger
+ *  (tables), Toolsmith, the Team responder. */
+export const WORKHORSE_AGENT_MODEL = 'openai/gpt-6.1-terra';
+
+/** The light specialists: Curator and Remy. */
+export const LIGHT_AGENT_MODEL = 'anthropic/claude-haiku-5.5';
+
+/** The coder: the strongest model, for hard multi-step code work. */
+export const CODER_AGENT_MODEL = 'anthropic/claude-opus-5.5';
+
+/** The summarizer and the narrator. Also the onboarding Models step's
+ *  recommended worker card, which keeps every worker on its own default
+ *  below (provisionDefaults applies a worker pick only when it is another
+ *  card). */
+export const DEFAULT_WORKER_MODEL = 'anthropic/claude-haiku-5.5';
+
+/** The extractor and the suggester. */
+export const FACT_WORKER_MODEL = 'openai/gpt-6-luna';
+
+/** The workers that read: the reflector, the document reader, the vision
+ *  worker, and the Reader specialist. */
+export const READ_WORKER_MODEL = 'google/gemini-3.8-flash';
 
 // ── Agents ───────────────────────────────────────────────────────────────────
 
@@ -1673,7 +1681,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Pages',
     description: 'Document authoring + editing specialist; backs the /pages Assist panel.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: BUILDER_AGENT_MODEL,
     envModelVar: 'PAGES_MODEL',
     systemPrompt: AGENT_PROMPTS['pages']!,
     retiredPromptSha256: [
@@ -1730,7 +1738,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Ledger',
     description: 'Typed-grid + data specialist; backs the /tables Assist panel.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: WORKHORSE_AGENT_MODEL,
     envModelVar: 'TABLES_MODEL',
     systemPrompt: AGENT_PROMPTS['tables']!,
     retiredPromptSha256: [
@@ -1767,7 +1775,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Diagram + chart specialist: hand-draws editorial SVG into pages beside a readable spec block (46 visual types, P&ID included).',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: BUILDER_AGENT_MODEL,
     envModelVar: 'DIAGRAMMER_MODEL',
     systemPrompt: AGENT_PROMPTS['diagrammer']!,
     retiredPromptSha256: [
@@ -1804,7 +1812,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Canvas specialist: schematics, animated explainers, decks, dashboards and posters as live HTML canvases in Present, drawn and checked before it reports.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: BUILDER_AGENT_MODEL,
     envModelVar: 'PRESENTER_MODEL',
     systemPrompt: AGENT_PROMPTS['presenter']!,
     // `present` to author and look (no delete: present-admin stays
@@ -1827,7 +1835,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Remy',
     description: 'Memory-recall agent — replays past conversations from the archive.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: LIGHT_AGENT_MODEL,
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
     retiredPromptSha256: [
@@ -1851,7 +1859,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Researcher',
     description: 'Live-web research agent (Perplexity Sonar via OpenRouter).',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: WORKHORSE_AGENT_MODEL,
     envModelVar: 'RESEARCHER_MODEL',
     systemPrompt: AGENT_PROMPTS['researcher']!,
     retiredPromptSha256: [
@@ -1876,7 +1884,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'OpenRouter usage rankings, benchmarks, and pricing. Advisory shortlists only; never ' +
       'changes what any agent or worker runs.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: LIGHT_AGENT_MODEL,
     envModelVar: 'CURATOR_MODEL',
     systemPrompt: AGENT_PROMPTS['curator']!,
     retiredPromptSha256: [
@@ -1898,7 +1906,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Calculation librarian — transcribes equations out of standards into stored formulas, and audits the ones already there.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: BUILDER_AGENT_MODEL,
     envModelVar: 'MATHEMATICIAN_MODEL',
     systemPrompt: AGENT_PROMPTS['mathematician']!,
     // `formulas` (author + evaluate, no delete) + `calculator` for arithmetic it
@@ -1920,7 +1928,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Web page reader — opens a URL and reads its content back as context for the responder.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: READ_WORKER_MODEL,
     envModelVar: 'READER_MODEL',
     systemPrompt: AGENT_PROMPTS['reader']!,
     // Just `web-read` (web_fetch) — a focused page reader, deliberately without
@@ -1938,7 +1946,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools. Reached by delegation (invoke_agent) from the responder, like every specialist — no surface pre-selects it.',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: WORKHORSE_AGENT_MODEL,
     envModelVar: 'TOOLSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['toolsmith']!,
     retiredPromptSha256: [
@@ -1973,7 +1981,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Brian the Coder',
     description: 'Code + ops specialist (holds the unrestricted terminal).',
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: CODER_AGENT_MODEL,
     envModelVar: 'CODER_MODEL',
     systemPrompt: AGENT_PROMPTS['coder']!,
     retiredPromptSha256: [
@@ -1996,7 +2004,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       "Mini-app builder — writes real TSX against the app's shadcn UI + theme, bundles with esbuild, renders in a sandbox; backs the /apps Assist panel.",
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: BUILDER_AGENT_MODEL,
     envModelVar: 'APPSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['appsmith']!,
     retiredPromptSha256: [
@@ -2042,7 +2050,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only itself, it hands a diagram, a canvas or an app to Draftsman, Presenter or Appsmith, which work with the member's own rights. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
-    model: DEFAULT_AGENT_MODEL,
+    model: WORKHORSE_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',
     systemPrompt: AGENT_PROMPTS['team-responder']!,
     // The defaults this prompt shipped with before: the 1:1 portal chat, the
@@ -2187,7 +2195,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Extractor',
     required: true,
     provider: 'openrouter',
-    model: DEFAULT_WORKER_MODEL,
+    model: FACT_WORKER_MODEL,
     params: { extract_facts: true },
   },
   {
@@ -2202,31 +2210,30 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Reflector',
     required: true,
     provider: 'openrouter',
-    model: DEFAULT_WORKER_MODEL,
+    model: READ_WORKER_MODEL,
   },
   {
     kind: 'document',
     name: 'Document reader',
     required: true,
     provider: 'openrouter',
-    model: DEFAULT_WORKER_MODEL,
+    model: READ_WORKER_MODEL,
   },
   {
     kind: 'vision',
     name: 'Read images',
     required: false,
     provider: 'openrouter',
-    model: DEFAULT_WORKER_MODEL,
+    model: READ_WORKER_MODEL,
   },
   {
     kind: 'image_gen',
-    // The STABLE id, not `-preview`: same vendor, same price, but 131k context
-    // instead of 65k and no preview-window withdrawal risk. (Verified against
-    // the live OpenRouter catalog 2026-09-22.)
+    // Nano Banana 2.1, the reference box's model (a stable id, not a
+    // `-preview`). Verified against the live OpenRouter catalog 2026-11-19.
     name: 'Image generation',
     required: false,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-image',
+    model: 'google/gemini-nano-banana-2.1',
   },
   {
     kind: 'tts',
@@ -2245,7 +2252,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Transcribe voice',
     required: false,
     provider: 'openrouter',
-    model: 'openai/gpt-4o-mini-transcribe',
+    model: 'openai/gpt-4o-transcribe',
     params: { language: 'en' },
     altKeyService: 'xai',
     altProvider: 'xai',
@@ -2294,7 +2301,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Follow-up suggester',
     required: false,
     provider: 'openrouter',
-    model: DEFAULT_WORKER_MODEL,
+    model: FACT_WORKER_MODEL,
   },
   // Decider: the typed-decision model (TypeSafe Jev) behind `decide()` in
   // @mantle/decisions. Since 2026-09-24 a fresh brain ships it ON with every

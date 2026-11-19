@@ -67,19 +67,19 @@ refresh resumes from `onboardingStep`. Server work is in
 terminal wizard calls directly, so the two cannot drift; the stepper is
 `onboarding-client.tsx`.
 
-| # | Step | What it does |
-|---|------|--------------|
-| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, the object store + the bucket, the document parser, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
-| 2 | **Your key** (required) | the one required key, OpenRouter. **Save & test** genuinely validates the key against OpenRouter's `/api/v1/key`; with a key already saved the button reads **Test saved key** |
-| 3 | **Models** | curated model cards. Assistant (top-tier): **Claude Sonnet 5** (recommended, $2/$10 per M tokens, 1M ctx), Claude Opus 4.8, GPT-5.5 (Azure-capable), Grok 4.20. Worker (fast): **Gemini 3.1 Flash Lite** (recommended), GPT-5.4 Nano/Mini (Azure-capable), Claude Haiku 4.5. Route: **OpenRouter**, or **Azure OpenAI** via the `custom` provider (endpoint + key) |
-| 4 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
-| 5 | **Memory** | embeddings (semantic search). Default: the **online** embedder, `text-embedding-3-large` (or the budget `text-embedding-3-small`), MRL-reduced to **768 dims** to fit the `vector(768)` columns, via **OpenRouter** (default; reuses the chat key, slug `openai/text-embedding-3-large`) or OpenAI direct. **Local EmbeddingGemma** (keyless, via Ollama) is the advanced opt-in, see the callout below |
-| 6 | **Set up** | `provisionDefaults(ownerId)`, creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present |
-| 7 | **Check** | `runSanityChecks()`, green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
-| 8 | **Purpose** | what this brain is for: an archetype + free-text description → `savePurpose` writes `preferences.purpose`/`purposeArchetype`; injected into the always-on identity block (`buildIdentityContext`) |
-| 9 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
-| 10 | **Telegram** | optional/skippable, BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 6) first |
-| 11 | **Done** | marks `preferences.onboardedAt` and drops you into the app. Leads with the governing principle; ingestion is automatic, there is no "remember this" to issue, then a three-item orientation: add files (indexed on arrival), email needs contacts first (the gate in [`email-ingest.md`](./_archive/email-ingest.md); no contacts means an empty inbox), then just ask. Deliberately three and no more; it's the last screen before the assistant |
+| #   | Step                    | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Welcome**             | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, the object store + the bucket, the document parser, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard)                                                                                        |
+| 2   | **Your key** (required) | the one required key, OpenRouter. **Save & test** genuinely validates the key against OpenRouter's `/api/v1/key`; with a key already saved the button reads **Test saved key**                                                                                                                                                                                                                                                                                      |
+| 3   | **Models**              | curated model cards. Assistant (top-tier): **Claude Sonnet 5** (recommended, $2/$10 per M tokens, 1M ctx), Claude Opus 4.8, GPT-5.5 (Azure-capable), Grok 4.20. Worker (fast): **Gemini 3.1 Flash Lite** (recommended), GPT-5.4 Nano/Mini (Azure-capable), Claude Haiku 4.5. Route: **OpenRouter**, or **Azure OpenAI** via the `custom` provider (endpoint + key)                                                                                                  |
+| 4   | **Voice**               | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route                                                                                                                                                                                                                                                                                                                                          |
+| 5   | **Memory**              | embeddings (semantic search). Default: the **online** embedder, `text-embedding-3-large` (or the budget `text-embedding-3-small`), MRL-reduced to **768 dims** to fit the `vector(768)` columns, via **OpenRouter** (default; reuses the chat key, slug `openai/text-embedding-3-large`) or OpenAI direct. **Local EmbeddingGemma** (keyless, via Ollama) is the advanced opt-in, see the callout below                                                             |
+| 6   | **Set up**              | `provisionDefaults(ownerId)`, creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present                                                                                                                                                                                                                                                                               |
+| 7   | **Check**               | `runSanityChecks()`, green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
+| 8   | **Purpose**             | what this brain is for: an archetype + free-text description → `savePurpose` writes `preferences.purpose`/`purposeArchetype`; injected into the always-on identity block (`buildIdentityContext`)                                                                                                                                                                                                                                                                   |
+| 9   | **Personality**         | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent`                                                                                                                                                                                                                                                                                                                                                                                        |
+| 10  | **Telegram**            | optional/skippable, BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 6) first                                                                                                                                           |
+| 11  | **Done**                | marks `preferences.onboardedAt` and drops you into the app. Leads with the governing principle; ingestion is automatic, there is no "remember this" to issue, then a three-item orientation: add files (indexed on arrival), email needs contacts first (the gate in [`email-ingest.md`](./_archive/email-ingest.md); no contacts means an empty inbox), then just ask. Deliberately three and no more; it's the last screen before the assistant                   |
 
 **Hybrid routing, why.** OpenRouter covers chat, memory indexing, image reading
 (vision), image generation, AND voice (via the `openrouter-{tts,stt}` adapters,
@@ -99,25 +99,25 @@ over the same surfaces the settings pages use.
 `provisionDefaults(ownerId)` is driven by which keys exist (idempotent, a
 kind/slug that already exists is left alone):
 
-| Capability | Worker kind | Provider · model | Gated by |
-|---|---|---|---|
-| Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
-| Document/PDF reading | `document` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
-| Image / scan reading | `vision` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
-| Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | OpenRouter key |
-| Spoken replies | `tts` | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara) | xAI key if added, else OpenRouter |
-| Voice notes → text | `stt` | xAI · `grok-stt` **or** OpenRouter · `openai/gpt-4o-mini-transcribe` | xAI key if added, else OpenRouter |
+| Capability                                           | Worker kind                       | Provider · model                                                                            | Gated by                          |
+| ---------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------- |
+| Fact extraction, follow-up suggestions               | `extractor`, `suggester`          | OpenRouter · `openai/gpt-6-luna`                                                            | OpenRouter key                    |
+| Summaries, the live status trail                     | `summarizer`, `narrator`          | OpenRouter · `anthropic/claude-haiku-5.5`                                                   | OpenRouter key                    |
+| Reflection, document/PDF reading, image/scan reading | `reflector`, `document`, `vision` | OpenRouter · `google/gemini-3.8-flash`                                                      | OpenRouter key                    |
+| Image generation                                     | `image_gen`                       | OpenRouter · `google/gemini-nano-banana-2.1`                                                | OpenRouter key                    |
+| Spoken replies                                       | `tts`                             | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara/rex) | xAI key if added, else OpenRouter |
+| Voice notes → text                                   | `stt`                             | xAI · `grok-stt` **or** OpenRouter · `openai/gpt-4o-transcribe`                             | xAI key if added, else OpenRouter |
 
-All OpenRouter model picks above are operator-verified as working + affordable on
-a single OpenRouter key. `gemini-3.5-flash-lite` is multimodal, so it backs the
-indexing workers, document reading, and vision alike.
+The models are the manifest's (`MANIFEST_WORKERS`), the ones the reference box
+runs (2026-11-19), each checked against the live OpenRouter catalog. The Models
+step's recommended worker card keeps each worker on its own model; any other
+card puts every text-indexing worker on that one model (`isShippedWorkerDefaults`).
 | Memory search | embeddings | chosen in the **Memory** step, online `text-embedding-3-large` @768 via OpenRouter/OpenAI by default; the keyless local EmbeddingGemma config is the pre-onboarding fallback | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder`, serves
 both web `/assistant` and Telegram). Its model, params, memory config, and tool
 grant all come from `PERSONA_MANIFEST` (the system manifest), not hardcoded here:
-model `DEFAULT_AGENT_MODEL` (`~x-ai/grok-latest`, an auto-updating OpenRouter
-alias), granted `PERSONA_TOOL_GROUP_SLUGS`. It's
+model `DEFAULT_AGENT_MODEL` (`openai/gpt-6.1-sol`), granted `PERSONA_TOOL_GROUP_SLUGS`. It's
 created with the Warm/Saskia default and refined by the personality step
 (`savePersonaAgent`: rebuilds the system prompt from the chosen preset, sets the
 name + temperature, points the TTS voice at the gender).
@@ -126,7 +126,8 @@ name + temperature, points the TTS voice at the gender).
 > with no tool grant can't act (no search, no capture, no delegation), and one
 > without the shared behaviour skills answers from memory instead of the user's
 > data; both look "set up" but are broken. So provisioning also:
-> - seeds the capability **substrate**: the builtin tool rows *and* the tool
+>
+> - seeds the capability **substrate**: the builtin tool rows _and_ the tool
 >   **groups**: via `seedToolCapabilities(ownerId)`, then grants the persona its
 >   `toolGroupSlugs: PERSONA_TOOL_GROUP_SLUGS` (P6: groups are the sole grant, so
 >   the groups must exist first or the grant resolves to 0 tools). This is the
@@ -150,13 +151,13 @@ key is present, `provisionDefaults` runs `seedSpecialistStack(ownerId)`, which
 seeds the shared skills first (`page_editing`/`tool_grounding`/`voice_reply`,
 `rich_writing`, `table_authoring`) then the specialist agents:
 
-| Agent (slug) | Role | Why |
-|---|---|---|
-| **Pages** (`pages`) | document authoring/editing | backs the `/pages` Assist panel; Saskia delegate |
-| **Ledger** (`tables`) | typed-grid/data | backs the `/tables` Assist panel; Saskia delegate |
-| **Remy** (`remy`) | memory recall | Saskia delegate (`find_window` → `replay_window`) |
-| **Researcher** (`researcher`) | web search | Saskia delegate (Perplexity Sonar) |
-| **Coder** (`coder`) | code specialist | responder; delegates to pages/tables |
+| Agent (slug)                  | Role                       | Why                                               |
+| ----------------------------- | -------------------------- | ------------------------------------------------- |
+| **Pages** (`pages`)           | document authoring/editing | backs the `/pages` Assist panel; Saskia delegate  |
+| **Ledger** (`tables`)         | typed-grid/data            | backs the `/tables` Assist panel; Saskia delegate |
+| **Remy** (`remy`)             | memory recall              | Saskia delegate (`find_window` → `replay_window`) |
+| **Researcher** (`researcher`) | web search                 | Saskia delegate (Perplexity Sonar)                |
+| **Coder** (`coder`)           | code specialist            | responder; delegates to pages/tables              |
 
 These are seeded from the **system manifest** (`server/web/lib/system-manifest/`),
 the single declarative source of truth for the agent/skill/tool/worker graph, with
@@ -186,7 +187,7 @@ wizard's Set-up step (`ProvisionResult.seededSpecialists`).
 > (`text-embedding-3-large` @768 via OpenRouter or OpenAI). The keyless
 > **local** EmbeddingGemma config remains the **pre-onboarding fallback** so a
 > fresh box boots without any key, but the local embedder itself isn't
-> *running* unless you enable it, so semantic search is off until the Memory
+> _running_ unless you enable it, so semantic search is off until the Memory
 > step (or a local setup) completes. To run local: the **prod** compose
 > (`docker-compose.yml`) bundles `ollama` + a one-shot model pull behind the
 > **`local-embedder` profile** (`docker compose --profile local-embedder up -d`,
@@ -302,7 +303,8 @@ same wizard directly from the stack directory:
 ```bash
 docker compose exec -it web pnpm -C server/web exec bun scripts/onboard.ts
 ```
- Shell access proves ownership, so it does not
+
+Shell access proves ownership, so it does not
 ask for the setup code. It creates the owner (`createFirstOwner`, the same
 function signup uses), then walks the wizard's own steps in its order:
 profile, OpenRouter key (saved and tested), models, memory search, set up,
