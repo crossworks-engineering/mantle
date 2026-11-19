@@ -27,10 +27,19 @@
  * Removed at the end of the build (buildFileDatabase: removeWindowStage),
  * with the file's other names on a delete or a turn to private, and on new
  * bytes (removeOtherWindowStages, the extract's gate). A stage that cannot be
- * written or read costs a resume only: the run goes on.
+ * written or read costs a resume only: the run goes on. A window lost to a
+ * passing failure (twice a timeout or a crash, `passing` of windowJob) is
+ * not kept, nor any window after it in that run: a run tried again reads it
+ * again, so a busy box never makes a lost window for good.
+ *
+ * Two runs of one file at once (an extract here and a read again in the web's
+ * maintenance) share a run key's windows, which is right for a Reader whose
+ * read of the same bytes is the same; the first build to end removes the
+ * stage, and the other run loses only its resume.
  */
 import { createHash } from 'node:crypto';
 import { readWindowStage, writeWindowStage, type FileTabsWriteInput } from '@mantle/files';
+import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
 const logger = log('window-stage');
@@ -39,8 +48,9 @@ const logger = log('window-stage');
  *  the run's key. */
 export type WindowStage = { fileId: string; sha256: string; runKey: string };
 
-/** What one window gave to the run, as kept. */
-export type StagedOutcome = {
+/** What one window gave to the run: its pages, and either the run of its
+ *  step or the words of a window given up. Its pictures go beside it. */
+export type WindowOutcome = {
   from: number;
   to: number;
   pagesTotal: number;
@@ -53,8 +63,6 @@ export type StagedOutcome = {
         warnings: string[];
         counts: Record<string, number>;
         state?: unknown;
-        /** The window's pictures, by name, as base64. */
-        pictures: [string, string][];
       };
     }
 );
@@ -62,7 +70,14 @@ export type StagedOutcome = {
 /** The version of a kept window's form. */
 const STAGE_FORM = 1;
 
-type StagedFile = StagedOutcome & { v: number; runKey: string; sha256: string };
+/** A kept window's file: the outcome, its pictures by name as base64, and
+ *  the run it is of. */
+type StagedFile = WindowOutcome & {
+  v: number;
+  runKey: string;
+  sha256: string;
+  pictures: [string, string][];
+};
 
 /** The run16 of a run key: the first 16 hex of its sha256. */
 export function run16Of(runKey: string): string {
@@ -70,7 +85,8 @@ export function run16Of(runKey: string): string {
 }
 
 /** The run key of a Reader's windowed run: the memo key of the run, the kind
- *  and the first state, and the window's size. */
+ *  and the first state, and the window's size. The whole first state is in
+ *  it (the decision of the router too): the Reader writes it into its rows. */
 export function windowRunKey(
   memoKey: string,
   named: { kind?: string; state?: unknown },
@@ -87,7 +103,11 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** One kept window as read back, or null when it is not one of this run. */
-function outcomeOf(stage: WindowStage, from: number, body: string): StagedOutcome | null {
+function keptOf(
+  stage: WindowStage,
+  from: number,
+  body: string,
+): { outcome: WindowOutcome; pictures: Map<string, Buffer> } | null {
   let o: unknown;
   try {
     o = JSON.parse(body);
@@ -100,55 +120,65 @@ function outcomeOf(stage: WindowStage, from: number, body: string): StagedOutcom
   if (!Number.isInteger(to) || !Number.isInteger(pagesTotal)) return null;
   if ((to as number) < from || (pagesTotal as number) < (to as number)) return null;
   const pages = { from, to: to as number, pagesTotal: pagesTotal as number };
-  if (typeof o.lost === 'string') return { ...pages, lost: o.lost };
+  if (!Array.isArray(o.pictures)) return null;
+  const pictures = new Map<string, Buffer>();
+  for (const p of o.pictures as unknown[]) {
+    if (!Array.isArray(p) || typeof p[0] !== 'string' || typeof p[1] !== 'string') return null;
+    pictures.set(p[0], Buffer.from(p[1], 'base64'));
+  }
+  if (typeof o.lost === 'string') return { outcome: { ...pages, lost: o.lost }, pictures };
   const run = o.run;
   if (!isObj(run) || run.status !== 'ok') return null;
-  if (!Array.isArray(run.warnings) || !isObj(run.counts) || !Array.isArray(run.pictures)) {
-    return null;
-  }
-  return { ...pages, run: run as Extract<StagedOutcome, { run: unknown }>['run'] };
+  if (!Array.isArray(run.warnings) || !isObj(run.counts)) return null;
+  const kept = run as Extract<WindowOutcome, { run: unknown }>['run'];
+  return { outcome: { ...pages, run: kept }, pictures };
 }
 
-/** The windows kept of this run, by their first page. Empty when none, or
- *  when the stage cannot be read. */
-export async function stagedWindows(stage: WindowStage): Promise<Map<number, StagedOutcome>> {
-  const out = new Map<number, StagedOutcome>();
+/** The windows kept of this run: `at(from)` reads the one that starts at
+ *  that page, or gives null (none, not of this run, or unreadable). One
+ *  window is read at a time. */
+export async function openWindowStage(stage: WindowStage): Promise<{
+  at(from: number): Promise<{ outcome: WindowOutcome; pictures: Map<string, Buffer> } | null>;
+}> {
+  let kept: Map<number, () => Promise<string | null>>;
   try {
-    const kept = await readWindowStage(stage.fileId, stage.sha256, run16Of(stage.runKey));
-    for (const [from, body] of kept) {
-      const o = outcomeOf(stage, from, body);
-      if (o) out.set(from, o);
-    }
+    kept = await readWindowStage(stage.fileId, stage.sha256, run16Of(stage.runKey));
   } catch (err) {
-    logger.warn(`the window stage of ${stage.fileId} was not read: ${String(err)}`);
+    logger.warn(`the window stage of ${stage.fileId} was not read: ${errorMessage(err)}`);
+    kept = new Map();
   }
-  return out;
-}
-
-/** Keep one window of this run. A failure is logged by the write and costs
- *  only a resume of that window. */
-export async function keepWindow(stage: WindowStage, outcome: StagedOutcome): Promise<void> {
-  const file: StagedFile = {
-    v: STAGE_FORM,
-    runKey: stage.runKey,
-    sha256: stage.sha256,
-    ...outcome,
+  return {
+    async at(from) {
+      const body = await kept.get(from)?.();
+      return body ? keptOf(stage, from, body) : null;
+    },
   };
-  await writeWindowStage(
-    stage.fileId,
-    stage.sha256,
-    run16Of(stage.runKey),
-    outcome.from,
-    JSON.stringify(file),
-  );
 }
 
-/** A window's pictures, as the stage keeps them. */
-export function picturesToStage(pictures: ReadonlyMap<string, Buffer>): [string, string][] {
-  return [...pictures].map(([name, b]) => [name, b.toString('base64')]);
-}
-
-/** A kept window's pictures, as the run holds them. */
-export function picturesFromStage(pictures: readonly [string, string][]): Map<string, Buffer> {
-  return new Map(pictures.map(([name, b64]) => [name, Buffer.from(b64, 'base64')]));
+/** Keep one window of this run, with its pictures. Never throws: a window
+ *  that cannot be kept (the disk, a body too large to write) is logged and
+ *  costs only a resume of that window. */
+export async function keepWindow(
+  stage: WindowStage,
+  outcome: WindowOutcome,
+  pictures: ReadonlyMap<string, Buffer>,
+): Promise<void> {
+  try {
+    const file: StagedFile = {
+      v: STAGE_FORM,
+      runKey: stage.runKey,
+      sha256: stage.sha256,
+      ...outcome,
+      pictures: [...pictures].map(([name, b]) => [name, b.toString('base64')]),
+    };
+    await writeWindowStage(
+      stage.fileId,
+      stage.sha256,
+      run16Of(stage.runKey),
+      outcome.from,
+      JSON.stringify(file),
+    );
+  } catch (err) {
+    logger.warn(`a window of ${stage.fileId} was not kept: ${errorMessage(err)}`);
+  }
 }

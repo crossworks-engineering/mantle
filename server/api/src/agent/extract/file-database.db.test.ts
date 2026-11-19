@@ -624,8 +624,13 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     it('a workbook timeout throws fatal and writes no name; the retry builds', async () => {
       reply = failing('timeout', 504);
       const file = await upload(unique('xlsx'), 'workbook timeout');
+      // A window a run of these bytes kept (window-stage.ts): a read that
+      // throws leaves it for the retry, and the build that ends removes it.
+      const sha = await shaOf(file.id);
+      const stage = `${sha.slice(0, 16)}.stage-0123456789abcdef-1.json`;
+      expect(await f.writeWindowStage(file.id, sha, '0123456789abcdef', 1, '{}')).toBe(true);
       await expect(pass(file.id)).rejects.toMatchObject({ fatalToExtract: true, code: 'timeout' });
-      expect(namesOf(file.id)).toEqual([]);
+      expect(namesOf(file.id)).toEqual([stage]);
       reply = grid();
       await pass(file.id);
       expect(namesOf(file.id)).toEqual([sqliteName(await shaOf(file.id))]);

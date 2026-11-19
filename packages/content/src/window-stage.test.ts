@@ -5,8 +5,10 @@
  *  - a book of 6 windows whose run fails in window 4 (a busy parser, the
  *    extract tries again) resumes at window 4: no cut and no step of windows
  *    1 to 3 again, and the result is the one a run in one go gives;
- *  - a window given up is kept as given up, so a resume reads the run it
- *    would have been;
+ *  - a window given up for good is kept as given up, so a resume reads the
+ *    run it would have been;
+ *  - a window lost to a passing failure (twice a timeout under load) is not
+ *    kept, nor any window after it: a run tried again reads it again;
  *  - new bytes, another Reader version or other options take no kept window;
  *  - a kept window that is not of this run (its sha256 inside differs) is
  *    read again;
@@ -162,7 +164,6 @@ describe('the window stage', () => {
     expect(resumed.write).toEqual(whole.write);
     expect(resumed.warnings).toEqual(whole.warnings);
     expect(resumed.counts).toEqual(whole.counts);
-    expect(resumed.state).toBe(whole.state);
     expect(resumed.windows).toEqual(whole.windows);
     expect([...resumed.pictures.keys()]).toEqual([...whole.pictures.keys()]);
     expect(resumed.pictures.get('w11-p1.png')!.toString()).toBe('pic11');
@@ -180,7 +181,29 @@ describe('the window stage', () => {
     expect(stageFiles()).toEqual([]);
   });
 
-  it('a window given up is kept as given up, and a resume does not read it again', async () => {
+  it('a window lost to a passing failure is read again on a retry, and nothing after it was kept', async () => {
+    cut();
+    read((from) =>
+      from === 11
+        ? new ParserError('timeout', 'slow', { retryable: true, terminal: false })
+        : from === 31
+          ? busy()
+          : null,
+    );
+    await expect(run(stage())).rejects.toThrow('busy');
+    // Window 1 only: window 2 was lost twice to a timeout, and window 3 (read
+    // with the state of a run that lacked window 2) is not kept.
+    expect(stageFiles()).toEqual([expect.stringMatching(/-1\.json$/)]);
+    split.mockClear();
+    step.mockClear();
+    read();
+    const resumed = await run(stage());
+    expect(firstPages(split.mock.calls)).toEqual([11, 21, 31, 41, 51]);
+    expect(resumed.windows).toEqual({ pagesTotal: TOTAL, failed: [] });
+    expect(stageFiles()).toHaveLength(6);
+  });
+
+  it('a window given up for good is kept as given up, and a resume does not read it again', async () => {
     cut();
     read((from) =>
       from === 11

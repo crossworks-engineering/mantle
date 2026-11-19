@@ -50,11 +50,9 @@ import { scanTabColumns } from '@mantle/tabledb';
 import { AgentAskError, askCapOf } from './pipeline-agent';
 import {
   keepWindow,
-  picturesFromStage,
-  picturesToStage,
-  stagedWindows,
+  openWindowStage,
   windowRunKey,
-  type StagedOutcome,
+  type WindowOutcome,
   type WindowStage,
 } from './window-stage';
 
@@ -235,8 +233,11 @@ export function readsInWindows(
   return pipeline.needs.window !== undefined && ext === 'pdf';
 }
 
-/** A window job that failed for good: its words, for the warning. */
-export type WindowLost = { lost: string };
+/** A window job that failed for good: its words, for the warning.
+ *  `passing`: it failed twice on a failure that is not the parser's verdict
+ *  on the bytes (a timeout, a crash, under load), so a later run may read it
+ *  (the window stage keeps no such window, ./window-stage.ts). */
+export type WindowLost = { lost: string; passing?: true };
 
 /**
  * One parser job of a window (the cut, a step, a picture read), with the
@@ -257,8 +258,12 @@ export async function windowJob<T>(job: () => Promise<T>): Promise<T | WindowLos
       if (isParserUnavailable(err)) throw err;
       const contract = err instanceof PipelineRunError || err instanceof AgentAskError;
       if (!isParserError(err) && !contract) throw err;
-      if (attempt < 2 && isParserError(err) && err.retryable && !err.terminal) continue;
-      return { lost: err instanceof Error ? err.message.slice(0, 200) : 'failed' };
+      const passing = isParserError(err) && err.retryable && !err.terminal;
+      if (attempt < 2 && passing) continue;
+      return {
+        lost: err instanceof Error ? err.message.slice(0, 200) : 'failed',
+        ...(passing ? { passing: true as const } : {}),
+      };
     }
   }
 }
@@ -279,7 +284,8 @@ export type PdfWindowPart = {
 /** One step of {@link pdfWindows}: a window, or the pages of one the parser
  *  could not cut. */
 export type PdfWindowStep =
-  { part: PdfWindowPart } | { part: null; from: number; to: number; pagesTotal: number };
+  | { part: PdfWindowPart }
+  | { part: null; from: number; to: number; pagesTotal: number; passing?: true };
 
 /**
  * The page windows of a PDF, one at a time and in page order
@@ -313,7 +319,13 @@ export async function* pdfWindows(
         : await windowJob(() => parserPdfSplit(bytes, cut));
     if (isWindowLost(part)) {
       const to = Math.min(total!, from + window.pages - 1);
-      yield { part: null, from, to, pagesTotal: total! };
+      yield {
+        part: null,
+        from,
+        to,
+        pagesTotal: total!,
+        ...(part.passing ? { passing: true as const } : {}),
+      };
       if (to >= total!) return;
       from = to + 1;
       continue;
@@ -430,7 +442,9 @@ export function mergeWindowWrite(
  * and a run of the same bytes, Reader and options takes the windows kept
  * from window 1 on and reads on from the first one that is not, so a book
  * tried again after window 3 of 6 starts at window 4, with no parser job for
- * the first three. The result is the one a run in one go gives.
+ * the first three. The result is the one a run in one go gives. A window
+ * lost to a passing failure is not kept, nor any window after it, so a run
+ * tried again reads on from it.
  */
 export async function runWindowed(
   pipeline: PipelineManifest & { needs: { window: { pages: number; mb: number } } },
@@ -454,7 +468,7 @@ export async function runWindowed(
   let pagesTotal = 0;
   let first = true;
   /** One window's outcome into the run, kept or read now. */
-  const take = (o: StagedOutcome, windowPictures: ReadonlyMap<string, Buffer>) => {
+  const take = (o: WindowOutcome, windowPictures: ReadonlyMap<string, Buffer>) => {
     pagesTotal = o.pagesTotal;
     first = false;
     if ('lost' in o) {
@@ -478,41 +492,46 @@ export async function runWindowed(
     };
     write = mergeWindowWrite(write, renamed, warnings);
   };
+  // Windows are kept while every window so far is kept: a window lost to a
+  // passing failure (`passing`: a timeout or a crash under load) is not, so
+  // a run tried again reads it, and no window after it is kept, as its
+  // state came from a run that lacked that window.
+  let keeping = opts.stage !== undefined;
   /** A window read now: into the run, then kept. */
-  const done = async (o: StagedOutcome, windowPictures: ReadonlyMap<string, Buffer>) => {
+  const done = async (
+    o: WindowOutcome,
+    windowPictures: ReadonlyMap<string, Buffer>,
+    passing = false,
+  ) => {
     take(o, windowPictures);
-    if (opts.stage) await keepWindow(opts.stage, o);
+    if (passing) keeping = false;
+    if (keeping && opts.stage) await keepWindow(opts.stage, o, windowPictures);
   };
 
-  // The windows a run before kept, from window 1 on, in page order.
+  // The windows a run before kept, from window 1 on, in page order, one
+  // file at a time.
   let from = 1;
   let known: number | undefined;
   let whole = false;
   if (opts.stage) {
-    const kept = await stagedWindows(opts.stage);
-    for (let o = kept.get(from); o; o = kept.get(from)) {
-      take(o, 'run' in o ? picturesFromStage(o.run.pictures) : new Map());
-      known = o.pagesTotal;
-      if (o.to >= o.pagesTotal) {
+    const kept = await openWindowStage(opts.stage);
+    for (let k = await kept.at(from); k; k = await kept.at(from)) {
+      take(k.outcome, k.pictures);
+      known = k.outcome.pagesTotal;
+      if (k.outcome.to >= k.outcome.pagesTotal) {
         whole = true;
         break;
       }
-      from = o.to + 1;
+      from = k.outcome.to + 1;
     }
   }
 
   const windows = whole ? [] : pdfWindows(bytes, file.sha256, pipeline.needs.window, from, known);
   for await (const w of windows) {
     if (!w.part) {
-      await done(
-        {
-          from: w.from,
-          to: w.to,
-          pagesTotal: w.pagesTotal,
-          lost: 'could not be cut from the file',
-        },
-        new Map(),
-      );
+      const lost = 'could not be cut from the file';
+      const o = { from: w.from, to: w.to, pagesTotal: w.pagesTotal, lost };
+      await done(o, new Map(), w.passing === true);
       continue;
     }
     const { part } = w;
@@ -526,7 +545,7 @@ export async function runWindowed(
       }),
     );
     if (isWindowLost(run)) {
-      await done({ ...pages, lost: 'could not be read' }, new Map());
+      await done({ ...pages, lost: 'could not be read' }, new Map(), run.passing === true);
       continue;
     }
     if (run.status === 'not_mine' && first) {
@@ -536,20 +555,17 @@ export async function runWindowed(
       await done({ ...pages, lost: `ended ${run.status}` }, new Map());
       continue;
     }
-    await done(
-      {
-        ...pages,
-        run: {
-          status: 'ok',
-          ...(run.write ? { write: run.write } : {}),
-          warnings: run.warnings,
-          counts: { ...run.counts },
-          ...(run.state !== undefined ? { state: run.state } : {}),
-          pictures: opts.stage ? picturesToStage(run.pictures) : [],
-        },
+    const outcome: WindowOutcome = {
+      ...pages,
+      run: {
+        status: 'ok',
+        ...(run.write ? { write: run.write } : {}),
+        warnings: run.warnings,
+        counts: { ...run.counts },
+        ...(run.state !== undefined ? { state: run.state } : {}),
       },
-      run.pictures,
-    );
+    };
+    await done(outcome, run.pictures);
   }
   return {
     status: 'ok',
