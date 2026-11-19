@@ -290,11 +290,12 @@ The cuts said today, each with its key:
 | `vision_answer`                                                                                                          | a vision or document answer that used its whole token budget (where the provider counts the tokens)                                                                                                     |
 | `pictures_small`, `pictures_metafile`, `pictures_unreadable`, `pictures_tiny`                                            | pictures the gate left out (`embedded-images.ts`, said by the picture pass once its read is whole; a duplicate is no cut). The cap and the parser's answer budget are `data.images` (`{ kept, found }`) |
 | `pictures_large`                                                                                                         | Visio pictures past 32 MB, or past 256 MB a drawing (`vsdx.ts`)                                                                                                                                         |
-| `description`                                                                                                            | a calendar feed's event whose description was cut to 4,000 characters (the Sync sidecar; on the event node)                                                                                             |
+| `description`                                                                                                            | a calendar event posted with `descriptionChars` past the description it holds (POST /api/sidecar/events, on the event node)                                                                             |
 
-A calendar feed's own cuts (events past 5,000, a series past 400
-occurrences, events outside the window) are on the feed's status in the
-Sync sidecar (`ics.ts` `feedCutText`), as the feed has no node.
+A calendar feed's own cuts (a series past 50,000 occurrences before the
+horizon, an event past 16 MB of text, a description past 20,000
+characters, a feed that ended early) are on the feed's status in the Sync
+sidecar (`feeds.ts`, the status `note`), as the feed has no node.
 
 `file_list` with `extraction: 'partial'` lists the files read in part;
 `node_read` of another item read in part (an event) carries its `cuts`. A
