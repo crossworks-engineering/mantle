@@ -736,10 +736,13 @@ export async function nativeReadPdfNode(
   );
 }
 
-/** How long the extract's claim on a window's pages holds (shared reads,
- *  @mantle/runtime scan-share.ts): a window of 20 pages, 4 at once, with a
- *  try more each, well inside it. A retry's own claims are its own. */
-const EXTRACT_CLAIM_MS = 10 * 60_000;
+/** How long the extract's claim on a page holds (shared reads, @mantle/runtime
+ *  scan-share.ts). Each page is claimed again just before its paid call
+ *  (readScannedPdf), so the claim covers one page: its Scan reader call and
+ *  a figure's vision call, each through the in-job pauses (at most
+ *  30 + 90 + 180 s with a Retry-After: 10 minutes for both), and the calls
+ *  themselves. A retry's own claims are its own. */
+const EXTRACT_CLAIM_MS = 15 * 60_000;
 
 /** The shared page reads on the node, as `{ scan }`, or `{}`. */
 const keptScanSql = () =>

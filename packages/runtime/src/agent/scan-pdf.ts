@@ -435,6 +435,16 @@ export async function readScannedPdf(opts: {
       // reader waiting for it has it then, not at the window's end.
       const share = opts.share;
       const keep = share ? (p: ScanPage) => share.keep([p], total) : undefined;
+      // Each page is claimed again just before its paid call: a window's
+      // claim may end while its first pages wait out a "not now", and a
+      // page another reader took meanwhile is theirs (waited for below),
+      // never paid twice.
+      const renew = share
+        ? async (n: number): Promise<ScanPage | number | null> => {
+            const c = await share.claim([n]);
+            return c.mine.includes(n) ? null : (c.kept.get(n) ?? c.theirs.get(n) ?? null);
+          }
+        : undefined;
       const read = await readMine(
         claim.mine,
         part,
@@ -448,8 +458,10 @@ export async function readScannedPdf(opts: {
           if (mdl) model = mdl;
         },
         waits,
+        renew,
       );
-      for (const p of read) got.set(p.page, p);
+      for (const p of read.pages) got.set(p.page, p);
+      for (const [n, until] of read.theirs) claim.theirs.set(n, until);
       if (claim.theirs.size === 0 || !opts.share) break;
       // The provider said "not now": the held pages are not waited for;
       // they stay the other reader's.
@@ -499,7 +511,9 @@ type ScanWaits = {
 
 /** The pages a read claimed: each cut (parser work, before any paid call:
  *  a busy parser throws here with nothing of them paid), then read, 4 at
- *  once. */
+ *  once. `renew` claims a page again just before its call: null, still this
+ *  read's; a page, kept by another reader meanwhile (taken, no call); a
+ *  time, held by another reader until then (no call: in `theirs`). */
 async function readMine(
   mine: readonly number[],
   part: PdfWindowPart,
@@ -510,7 +524,9 @@ async function readMine(
   keep: ((p: ScanPage) => Promise<void>) | undefined,
   saw: (ran: boolean, model: string | null) => void,
   waits: ScanWaits,
-): Promise<ScanPage[]> {
+  renew?: (n: number) => Promise<ScanPage | number | null>,
+): Promise<{ pages: ScanPage[]; theirs: Map<number, number> }> {
+  const theirs = new Map<number, number>();
   const cuts = new Map<number, Buffer | ScanUnreadReason>();
   for (const n of mine) {
     const pdf = await windowJob(() => d.cut(part, n));
@@ -523,7 +539,7 @@ async function readMine(
           : pdf,
     );
   }
-  const one = async (n: number): Promise<ScanPage> => {
+  const one = async (n: number): Promise<ScanPage | null> => {
     const pg: ScanPage = { page: n, method: 'unread', text: '' };
     const pdf = cuts.get(n)!;
     if (typeof pdf === 'string') return { ...pg, why: pdf };
@@ -531,6 +547,15 @@ async function readMine(
     // The provider said "not now" to a page before: not sent (a try again
     // reads it).
     if (waits.held()) return { ...pg, why: 'failed' };
+    const held = renew ? await renew(n) : null;
+    if (typeof held === 'number') {
+      theirs.set(n, held);
+      return null;
+    }
+    if (held) {
+      taken.add(n);
+      return held;
+    }
     // The line count of a page the Reader marked for the Scan reader; none
     // for a page it could not draw or did not mark (the check is then made
     // without it).
@@ -538,12 +563,15 @@ async function readMine(
     const lines = m?.method === VISION_METHOD && m.why === SCAN_WHY ? m.lines : null;
     return readPage(opts.ownerId, opts.filename, n, pdf, lines, d, saw, waits);
   };
-  const jobs = mine.map((n) => async (): Promise<ScanPage> => {
+  // The pages another reader kept meanwhile: taken, not kept again.
+  const taken = new Set<number>();
+  const jobs = mine.map((n) => async (): Promise<ScanPage | null> => {
     const p = await one(n);
-    await keep?.(p);
+    if (p && !taken.has(n)) await keep?.(p);
     return p;
   });
-  return inTurn(jobs, SCAN_PAGES_AT_ONCE);
+  const pages = (await inTurn(jobs, SCAN_PAGES_AT_ONCE)).filter((p): p is ScanPage => p !== null);
+  return { pages, theirs };
 }
 
 /** One scanned page, as a one-page PDF: the Scan reader, its verdict, and

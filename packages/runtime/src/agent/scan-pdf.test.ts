@@ -452,9 +452,9 @@ describe('pageMarksOf', () => {
 
 describe('the reads shared by the readers of one upload (scan-share.ts)', () => {
   /** One node's shared reads, in memory: the store's own pure rules. */
-  function memoryShare(store: ScanShareData, by: ScanReader): ScanShareHooks {
+  function memoryShare(store: ScanShareData, by: ScanReader, claimMs = 60_000): ScanShareHooks {
     return {
-      claim: async (pages) => claimOn(store, pages, by, Date.now(), Date.now() + 60_000),
+      claim: async (pages) => claimOn(store, pages, by, Date.now(), Date.now() + claimMs),
       keep: async (pages, total) => keepOn(store, pages, by, scanPageFinal, total),
       wait: async (pages, until) => {
         for (;;) {
@@ -546,6 +546,27 @@ describe('the reads shared by the readers of one upload (scan-share.ts)', () => 
     expect(chat.r.pages.filter((p) => p.method === 'scan_reader').length).toBeGreaterThanOrEqual(4);
     expect(chat.r.pages.filter((p) => p.why === 'time').length).toBeLessThanOrEqual(4);
     expect((await extract).calls.scan).toHaveLength(8);
+  });
+
+  it('each page is claimed again before its call: a window claim that ended while its first pages waited pays nothing twice', async () => {
+    const store = fresh();
+    // The extract's claim holds 400 ms; each call takes 300 ms, 4 at once:
+    // the window's third round starts at about 600 ms, past the window's
+    // claim (as a long "not now" pause makes a real window outlast it).
+    const extract = readWith(memoryShare(store, 'extract', 400), { total: 12, delayMs: 300 });
+    // The chat turn comes at about 480 ms: the window's claim ended.
+    await new Promise((r) => setTimeout(r, 480));
+    const chat = await readWith(
+      memoryShare(store, 'chat'),
+      { total: 12 },
+      { deadline: Date.now() + 10_000 },
+    );
+    const ex = await extract;
+    // Each page paid one time in all, and both readers have every page.
+    const paid = [...chat.calls.scan, ...ex.calls.scan].sort((x, y) => x - y);
+    expect(paid).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(ex.r.pages.filter((p) => p.method === 'scan_reader')).toHaveLength(12);
+    expect(chat.r.pages.filter((p) => p.method === 'scan_reader')).toHaveLength(12);
   });
 
   it('a page read with no answer is not kept: the next reader reads it', async () => {
