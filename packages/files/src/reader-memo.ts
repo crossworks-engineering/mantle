@@ -98,3 +98,17 @@ export function keptReaderRun<T>(key: string): Promise<T> | undefined {
 export function readerRunFailure(key: string): string | undefined {
   return failures.get(key);
 }
+
+/** The keys of the runs kept for these bytes. */
+export function keptRunKeysOf(sha256: string): string[] {
+  return [...memo.keys()].filter((k) => k.includes(`:${sha256}:`));
+}
+
+/** Forget the run of this key, and give its promise (or undefined): a
+ *  caller that made a run no extract takes drops what it holds on disk. */
+export function forgetReaderRun<T>(key: string): Promise<T> | undefined {
+  const entry = memo.get(key);
+  memo.delete(key);
+  failures.delete(key);
+  return entry?.promise as Promise<T> | undefined;
+}
