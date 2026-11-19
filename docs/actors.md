@@ -101,8 +101,7 @@ missing or stale).
 | re-run its extraction                             | edit (it spends model work)                                                                                                                                                                           |
 | close any link                                    | an Admin user with the users area                                                                                                                                                                     |
 | tick or clear Moderator                           | an Admin user with the users area                                                                                                                                                                     |
-| an Admin area                                     | an Admin user holding that area: users for every Admin user; settings, assistants, connectors and keys for a user of the System workspace too                                                         |
-| add a user to System                              | a System user, adding an Admin user (a person, never an agent); removing another System user: a System user                                                                                           |
+| an Admin area                                     | an Admin user holding that area: users, any Admin user; settings, assistants, connectors and keys, a System user ([workspaces.md](./workspaces.md))                                                   |
 
 The database's needs (`mantle_check_row`, `mantle_check_item`): `read`, `edit`, `manage`, `admin`,
 `appdata`, `link`, `link_close` ([edit-check.md](./edit-check.md)). An item the caller does not read
@@ -121,12 +120,8 @@ Owner rules:
 - Moderator: only an Admin user with the users area ticks or clears it, or removes a Moderator; a
   Moderator adds users without the tick and removes plain users; short of the users area only a
   workspace's maker makes itself one. The last is never cleared or removed (409 `last_moderator`).
-  Admin users are always Moderators of Admin (409 `admin_workspace`); adding a user to Admin, or
-  removing one, needs the users area.
-- System: a subset of the Admin users (`mantle_area_rule`: the Admin seat, and the users area or
-  a seat in System). Only a System user adds there (403 `system_users_only`), only an Admin user
-  (409 `not_admin_user`), always ticked; only a System user removes another; anyone leaves; the
-  last one and the owner stay. Out of Admin is out of System.
+  Admin users are always Moderators of Admin and System (409 `admin_workspace`); adding a user to
+  Admin, or removing one, needs the users area; to System, a System user (an Admin user only).
 - App code (build, edit, publish, history) needs manage of the app; a new app's import, manage of
   its create home. Its data needs edit, and while Informational is on an Admin user. Its delete is
   an archive (Recently deleted, with a snapshot); one a login other than the owner deleted is purged
@@ -208,8 +203,7 @@ reason)`**: work that never runs in a scope (it refuses one), full route; files 
   no acting login, a workspace definer or `mantle_file_restamp_home` runs only for its one listed
   actor: `system:ws-clear-ticks` (`mantle_ws_set_moderator`), `system:boot:migrate-workspaces`
   (`mantle_ws_attach_assistants`), `system:snapshot-copies` (`mantle_file_restamp_home`),
-  `system:system-add` (`mantle_ws_add_user`: the operator's `system:add`, the System recovery).
-  `system:operator:*` is on no line: a hand repair there is the superuser's (section 14).
+  `system:system-add` (`mantle_ws_add_user`, `system:add`). `system:operator:*`: the superuser's.
 - **Logs**: the audit rows (`audit_log`, `system:audit:tool-call`) and the MCP call log
   (`mcp_calls`, `system:audit:mcp-call`; a login reads only its own rows) go through `systemDb`,
   which on the narrow route may only INSERT them.
