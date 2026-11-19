@@ -82,8 +82,10 @@
  *                          pictures read before it, the extraction call
  *                          before an embed) re-pays them on a try again:
  *                          it is sent again PAID_WAIT_RESENDS_MAX times
- *                          in a row, then takes the old bounded retries
- *                          (cost safety; paidWaitResends). An
+ *                          (a wait in between with no paid call keeps
+ *                          the count; only a try that got work done
+ *                          starts it over), then takes the old bounded
+ *                          retries (cost safety; paidWaitResends). An
  *                          Agent's run held at the day cap of paid asks
  *                          is sent again once the cap has room. While it
  *                          waits the job carries `wait`, and a file's
@@ -185,7 +187,8 @@ type ExtractJobWait = {
   for: 'provider' | 'day_cap';
   reason?: ProviderWaitReason;
   waits: number;
-  /** Waits after paid calls in a row (paidWaitResends). */
+  /** Waits after paid calls since the job last got work done
+   *  (paidWaitResends). */
   paid?: number;
   until: string;
 };
@@ -284,8 +287,10 @@ export async function waitAgain(
   // answered, facts applied) starts the gaps over.
   const before = job.wait?.for === wait.for && !opts.progressed ? job.wait.waits : -1;
   const waits = before + 1;
-  // The waits after paid calls, in a row (PAID_WAIT_RESENDS_MAX).
-  const paid = opts.paid ? (job.wait?.paid ?? 0) + 1 : 0;
+  // The waits after paid calls (PAID_WAIT_RESENDS_MAX): carried through a
+  // wait with no paid call between, so it never starts over while the same
+  // work is paid for again; only a try that got work done starts it over.
+  const paid = (opts.progressed ? 0 : (job.wait?.paid ?? 0)) + (opts.paid ? 1 : 0);
   const due =
     wait.for === 'day_cap' ? wait.until : new Date(now + providerWaitDelayMs(waits, wait.provider));
   const next: ExtractJob = {
@@ -303,7 +308,7 @@ export async function waitAgain(
 }
 
 /** Whether a wait after paid calls is sent again as a wait, or (past
- *  PAID_WAIT_RESENDS_MAX in a row) takes the queue's old bounded retries:
+ *  PAID_WAIT_RESENDS_MAX) takes the queue's old bounded retries:
  *  each such try pays for those calls again. */
 export function paidWaitResends(job: ExtractJob): boolean {
   return (job.wait?.paid ?? 0) < PAID_WAIT_RESENDS_MAX;

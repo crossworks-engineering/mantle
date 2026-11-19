@@ -157,7 +157,7 @@ describe('waitAgain', () => {
     expect((sent[0]!.data.wait as { waits: number }).waits).toBe(0);
   });
 
-  it('a wait after paid calls is counted, and sent again only a few times in a row', async () => {
+  it('a wait after paid calls is counted, and sent again only a few times', async () => {
     sent.length = 0;
     let job: Parameters<typeof waitAgain>[1] = { nodeId: 'n4' };
     let resends = 0;
@@ -169,9 +169,35 @@ describe('waitAgain', () => {
       resends++;
     }
     expect(resends).toBe(PAID_WAIT_RESENDS_MAX);
-    // A wait before any paid call keeps no count: it waits as long as it
-    // must.
+    // A wait before any paid call adds nothing to the count, but keeps it:
+    // the same work paid again after it is still past the bound.
     await waitAgain(send, job, { for: 'provider', provider: { reason: 'overloaded' } }, at);
-    expect((sent.at(-1)!.data.wait as { paid?: number }).paid).toBeUndefined();
+    job = sent.at(-1)!.data as typeof job;
+    expect((job.wait as { paid?: number }).paid).toBe(PAID_WAIT_RESENDS_MAX);
+    expect(paidWaitResends(job)).toBe(false);
+  });
+
+  it('paid and unpaid waits in turn never start the paid count over', async () => {
+    sent.length = 0;
+    let job: Parameters<typeof waitAgain>[1] = { nodeId: 'n5' };
+    let tries = 0;
+    // A figure page paid then a wait, then a wait before any call, and so
+    // on: bounded all the same.
+    while (paidWaitResends(job) && tries < 20) {
+      await waitAgain(send, job, { for: 'provider', provider: { reason: 'rate_limit' } }, at, {
+        paid: tries % 2 === 0,
+      });
+      job = sent.at(-1)!.data as typeof job;
+      tries++;
+    }
+    expect(paidWaitResends(job)).toBe(false);
+    expect(tries).toBe(2 * PAID_WAIT_RESENDS_MAX - 1);
+    // A try that got work done starts it over.
+    await waitAgain(send, job, { for: 'provider', provider: { reason: 'rate_limit' } }, at, {
+      progressed: true,
+    });
+    job = sent.at(-1)!.data as typeof job;
+    expect((job.wait as { paid?: number }).paid).toBeUndefined();
+    expect(paidWaitResends(job)).toBe(true);
   });
 });
