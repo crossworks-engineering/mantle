@@ -10,7 +10,10 @@
  *    for it; the others are queued (audit r1 M2).
  *  - An API key without the Search area does not reach an email attachment
  *    on MCP: it is `not-found`, and nothing is written (audit r1 LOW 4).
+ *  - A PDF whose database holds its sketch read keeps that read's text
+ *    (text, ocr, vision_model); every other file drops it (audit r2 M).
  */
+import type { SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const OWNER = '00000000-0000-4000-8000-000000000000';
@@ -33,6 +36,8 @@ const h = vi.hoisted(() => ({
   keyNoSearch: false,
   updated: 0,
   changed: [] as string[],
+  sketched: new Set<string>(),
+  sets: [] as unknown[],
 }));
 
 vi.mock('@mantle/db', async (orig) => ({
@@ -47,8 +52,9 @@ vi.mock('@mantle/db', async (orig) => ({
   withHeads: async (_ids: readonly string[], _m: string, fn: (tx: unknown) => Promise<void>) =>
     fn({
       update: () => ({
-        set: () => ({
+        set: (v: { data: unknown }) => ({
           where: async () => {
+            h.sets.push(v.data);
             h.updated += 1;
           },
         }),
@@ -71,6 +77,11 @@ vi.mock('@mantle/files', async (orig) => ({
     h.gone.has(node.id) ? null : Buffer.from('x'),
   ),
   fileDbNameExists: vi.fn(async () => false),
+  fileDbSqlitePath: vi.fn(async (id: string) => (h.sketched.has(id) ? `/made-up/${id}` : null)),
+}));
+
+vi.mock('@mantle/content/pdf-read', () => ({
+  storedPdfOf: vi.fn(async () => ({ visionRead: true })),
 }));
 
 vi.mock('@mantle/content/pipeline-registry', () => ({
@@ -78,6 +89,15 @@ vi.mock('@mantle/content/pipeline-registry', () => ({
 }));
 
 const { file_reindex, reindexFiles } = await import('./reindex');
+const { PgDialect } = await import('drizzle-orm/pg-core');
+
+/** The bound values of the one update's drop: the sketched ids, then the
+ *  keys a sketched file drops, then the keys every other file drops. */
+const dropOf = () => {
+  const q = new PgDialect().sqlToQuery(h.sets[0] as SQL);
+  const [ids, ...keys] = q.params as string[];
+  return { ids, keys };
+};
 
 const row = (id: string, filename: string) => ({
   id,
@@ -96,6 +116,8 @@ beforeEach(() => {
   h.keyNoSearch = false;
   h.updated = 0;
   h.changed = [];
+  h.sketched = new Set();
+  h.sets = [];
 });
 
 describe('file_reindex has the marks of pipeline_run', () => {
@@ -140,5 +162,37 @@ describe('reindexFiles', () => {
     const all = await reindexFiles(OWNER, [A, MAIL]);
     expect(all).toEqual({ queued: 2, databases: 0, skipped: [] });
     expect(h.changed).toEqual([A, MAIL]);
+  });
+
+  it('a PDF whose database holds its sketch read keeps its text; the others drop it', async () => {
+    h.rows = [row(A, 'sketch.pdf'), row(B, 'b.pdf')];
+    h.sketched = new Set([A]);
+    const got = await reindexFiles(OWNER, [A, B]);
+    expect(got).toEqual({ queued: 2, databases: 0, skipped: [] });
+    expect(h.updated).toBe(1);
+    const { ids, keys } = dropOf();
+    expect(ids).toBe(`{${A}}`);
+    // Each kept key is named once (in the list of the others), the rest twice.
+    for (const k of ['text', 'ocr', 'vision_model']) {
+      expect(
+        keys.filter((x) => x === k),
+        k,
+      ).toHaveLength(1);
+    }
+    for (const k of ['summary', 'read_by', 'extract_completed_at', 'extract_parked']) {
+      expect(
+        keys.filter((x) => x === k),
+        k,
+      ).toHaveLength(2);
+    }
+    expect(keys).not.toContain('agent_text');
+    expect(keys).not.toContain('pipeline_read');
+  });
+
+  it('a file that is no PDF never keeps its text, even with a database', async () => {
+    h.rows = [row(A, 'a.txt')];
+    h.sketched = new Set([A]);
+    await reindexFiles(OWNER, [A]);
+    expect(dropOf().ids).toBe('{}');
   });
 });

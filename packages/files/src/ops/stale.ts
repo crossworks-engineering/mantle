@@ -97,32 +97,28 @@ function readCut(state: 'failed' | 'partial'): SQL {
              else false end)`;
 }
 
-/** The cursor of the row after which the next page starts. */
-function cursorOf(ts: string, id: string): string {
-  return Buffer.from(`${ts}|${id}`, 'utf8').toString('base64url');
+/** The cursor of the row after which the next page starts: its updated_at
+ *  in epoch microseconds (an integer, exact) and its id. */
+function cursorOf(us: string, id: string): string {
+  return Buffer.from(`${us}|${id}`, 'utf8').toString('base64url');
 }
 
-/** The ISO form of the time a cursor carries (to_json of a timestamptz):
- *  date, time, up to 6 digits of a second, and its zone. */
-const CURSOR_TS =
-  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+/** A row's updated_at in epoch microseconds, exact (extract gives numeric). */
+const updatedUs = sql`(extract(epoch from ${nodes.updatedAt}) * 1000000)::bigint`;
 
-/** The (updated_at, id) a cursor names, or null when it is not one: the
- *  time only in its ISO form and a real day, so a crafted cursor is a 400,
- *  never a database error. */
-export function parseStaleCursor(cursor: string): { ts: string; id: string } | null {
+/** The (updated_at in epoch microseconds, id) a cursor names, or null when
+ *  it is not one: the time only as a whole number of at most 16 digits (so
+ *  a crafted cursor, an old text-time one too, is a 400, never a database
+ *  error). */
+export function parseStaleCursor(cursor: string): { us: string; id: string } | null {
   if (cursor.length > 200) return null;
   const text = Buffer.from(cursor, 'base64url').toString('utf8');
   const at = text.lastIndexOf('|');
   if (at < 0) return null;
-  const ts = text.slice(0, at);
+  const us = text.slice(0, at);
   const id = text.slice(at + 1);
-  const m = CURSOR_TS.exec(ts);
-  if (!m || !UUID_RE.test(id)) return null;
-  // A real day of that month (no 31 April, no 29 February out of a leap year).
-  const day = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  if (day.getUTCDate() !== Number(m[3])) return null;
-  return { ts, id };
+  if (!/^\d{1,16}$/.test(us) || !UUID_RE.test(id)) return null;
+  return { us, id };
 }
 
 /** A file row with no vector, and its data without the long text the
@@ -147,7 +143,7 @@ export async function listFilesNeedingAttention(args: {
   ownerId: string;
   state: StaleListState;
   installed: readonly InstalledPipeline[];
-  cursor?: { ts: string; id: string } | null;
+  cursor?: { us: string; id: string } | null;
   limit?: number;
 }): Promise<{ files: FileRow[]; next: string | null; total: number }> {
   const limit = Math.min(STALE_LIST_MAX, Math.max(1, args.limit ?? STALE_LIST_DEFAULT));
@@ -159,11 +155,11 @@ export async function listFilesNeedingAttention(args: {
     cut,
   );
   const after = args.cursor
-    ? sql`(${nodes.updatedAt}, ${nodes.id}) < (${args.cursor.ts}::timestamptz, ${args.cursor.id}::uuid)`
+    ? sql`(${updatedUs}, ${nodes.id}) < (${args.cursor.us}::bigint, ${args.cursor.id}::uuid)`
     : undefined;
   const [page, counted] = await Promise.all([
     db
-      .select({ id: nodes.id, ts: sql<string>`to_json(${nodes.updatedAt}) #>> '{}'` })
+      .select({ id: nodes.id, us: sql<string>`${updatedUs}::text` })
       .from(nodes)
       .where(and(where, after))
       .orderBy(sql`${nodes.updatedAt} desc`, sql`${nodes.id} desc`)
@@ -200,7 +196,7 @@ export async function listFilesNeedingAttention(args: {
   const last = ids[ids.length - 1];
   return {
     files,
-    next: more && last ? cursorOf(last.ts, last.id) : null,
+    next: more && last ? cursorOf(last.us, last.id) : null,
     total: counted[0]?.n ?? 0,
   };
 }

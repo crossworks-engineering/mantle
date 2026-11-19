@@ -341,11 +341,16 @@ itself (cost safety: no trigger, no timer).
   named), and no tool group of an in-brain agent holds it.
   Each file is read again through the whole pipeline on the existing extract
   queue, under its caps. First the bytes of each are looked for (one small
-  read): a file whose bytes are in neither place keeps everything it has and
-  is skipped `bytes-missing`. Then the keys the extractor derived from the
+  read): a file whose bytes could not be read now (gone, or the object
+  store unreachable) keeps everything it has and is skipped
+  `bytes-missing`. Then the keys the extractor derived from the
   bytes are dropped (the cached text, the summary, the reader's stamp, a
   skip or parked verdict) and `markContentChanged` asks for the whole pass
-  (text, chunks, vector, facts, mentions). The old chunks and facts stay
+  (text, chunks, vector, facts, mentions). A scanned drawing whose database
+  holds its sketch read (`Vision read`) keeps that read's text (`text`,
+  `ocr`, `vision_model`): the read is paid for and runs one time for its
+  bytes, so the pass chunks, embeds and reads facts from the kept text, and
+  no whole-page OCR is paid on top. The old chunks and facts stay
   until the new pass replaces them. A file with a database (or a word) for
   its bytes also gets one run of the box's Reader of its type, unless the
   Reader is off in its home workspace. The Reader asks no model; the
