@@ -364,16 +364,16 @@ describe('a PDF, read by the packages pdf-router and drawing-pdf', () => {
     expect(decide).not.toHaveBeenCalled();
   });
 
-  it('a document by the rules gets no name, and no decider call: one job', async () => {
+  it('a document by the rules is a book (rules 4), with no decider call: the router\'s job, then the book reader\'s', async () => {
     const calls = inProcess();
     const decide = vi.fn(async (_state: unknown) => decision('pid'));
-    expect(
-      await parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines, pdfKind: decide }),
-    ).toEqual({
-      kind: 'not-drawing',
-    });
+    // The book reader is Python in the parser image: its first job (the cut
+    // of its first window) is no job this process runs.
+    await expect(
+      parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines, pdfKind: decide }),
+    ).rejects.toThrow();
     expect(decide).not.toHaveBeenCalled();
-    expect(calls).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveBeenCalledTimes(2);
   });
 
   it('an unsure file is put to the decider once, with counts and the sample only, and takes a usable answer', async () => {
