@@ -513,28 +513,70 @@ const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
  * none is a P&ID or an isometric, and BOOK_MIN_SHARE of them or more are
  * scans or typed text. A file of BOOK_MIN_PAGES pages or fewer must also
  * hold typed or scanned text pages (kind `document`) but for a few
- * ({@link DOCUMENT_MIN_SHARE}): a short scanned drawing or ruled form on A4 paper
- * (kind `scan`) stays the drawing reader's, while a scan of 7 pages with one
- * ruled table page is a book. A sample with no page read is no book: the
+ * ({@link DOCUMENT_MIN_SHARE}), or ruled scans the eye reads as tables
+ * (tablePageOf): a short scanned drawing or ruled form on A4 paper (kind
+ * `scan`) stays the drawing reader's, while a scan of 7 pages with one ruled
+ * table page, or five, is a book. A sample with no page read is no book: the
  * page rules decide. The page count is the caller's (qpdf).
  */
-export function bookOf(
-  pageCount: number | null,
-  sample: readonly { class?: PageClass; size?: PageSize; kind?: PageKind }[],
-): boolean {
+export function bookOf(pageCount: number | null, sample: readonly BookSamplePage[]): boolean {
   if (pageCount === null || pageCount < 1) return false;
   if (!officePagesOf(sample)) return false;
   if (pageCount > BOOK_MIN_PAGES) return true;
   const read = sample.filter((p) => p.class !== undefined);
   const documents = read.filter((p) => p.kind === 'document').length;
-  return documents > 0 && documents >= DOCUMENT_MIN_SHARE * read.length;
+  if (documents > 0 && documents >= DOCUMENT_MIN_SHARE * read.length) return true;
+  return tableScansOf(read);
+}
+
+/** A page of a book's sample: its facts, its kind, and what the eye saw of
+ *  a raster page it looked at. */
+export type BookSamplePage = {
+  class?: PageClass;
+  size?: PageSize;
+  kind?: PageKind;
+  eye?: PageEye | null;
+};
+
+/**
+ * A ruled scan on A4 paper that is a table, not a drawing (routing check 1
+ * of the large-PDF finish: a table-heavy scanned office PDF is a book): the
+ * eye finds its long lines all on the page's two axes (a slanted share of
+ * TABLE_SLANT_MAX or less: an isometric sketch has 0.02 and more, bench
+ * measure 2026-11-11) and TABLE_MIN_TEXT_AREAS or more areas of text (a
+ * table's cells; the made-up spec table page has 267, a page of prose 64 to
+ * 71; made-up measure, 2026-11-19, no real drawing measured). A3 and larger
+ * sheets are never judged so: they stay the drawing reader's, or the
+ * decider's.
+ */
+export const TABLE_SLANT_MAX = 0.005;
+export const TABLE_MIN_TEXT_AREAS = 150;
+
+function tablePageOf(p: BookSamplePage): boolean {
+  const axes = p.eye?.axes;
+  return (
+    p.size === 'a4' &&
+    !!axes &&
+    axes.iso + axes.other <= TABLE_SLANT_MAX &&
+    (p.eye?.textAreas ?? 0) >= TABLE_MIN_TEXT_AREAS
+  );
+}
+
+/** A short scan whose ruled pages (kind `scan`) are tables: every one the
+ *  eye looked at is a table page (tablePageOf), at least one was looked at,
+ *  and every one is on A4 paper; its other pages are text (`document`). A
+ *  page the eye did not look at took its kind from those that were. */
+function tableScansOf(read: readonly BookSamplePage[]): boolean {
+  const ruled = read.filter((p) => p.kind === 'scan');
+  const seen = ruled.filter((p) => p.eye);
+  if (seen.length === 0 || !seen.every(tablePageOf)) return false;
+  if (!ruled.every((p) => p.size === 'a4')) return false;
+  return read.every((p) => p.kind === 'scan' || p.kind === 'document');
 }
 
 /** The office rule of {@link bookOf}, with no page count: the pages read
  *  are office paper, typed or scanned, with no P&ID or isometric. */
-export function officePagesOf(
-  sample: readonly { class?: PageClass; size?: PageSize; kind?: PageKind }[],
-): boolean {
+export function officePagesOf(sample: readonly BookSamplePage[]): boolean {
   const read = sample.filter((p) => p.class !== undefined);
   if (read.length === 0) return false;
   const office = read.filter((p) => p.size === 'a4' || p.size === 'a3').length;
@@ -554,10 +596,7 @@ export function officePagesOf(
  * kind keeps it a drawing. With no ask it stays the drawing reader's, as
  * before.
  */
-export function bookUnsureOf(
-  pageCount: number,
-  sample: readonly { class?: PageClass; size?: PageSize; kind?: PageKind }[],
-): boolean {
+export function bookUnsureOf(pageCount: number, sample: readonly BookSamplePage[]): boolean {
   if (pageCount > BOOK_MIN_PAGES || bookOf(pageCount, sample)) return false;
   if (!officePagesOf(sample)) return false;
   return sample.some((p) => p.kind === 'document') && sample.some((p) => p.kind === 'scan');

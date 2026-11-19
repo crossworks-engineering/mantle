@@ -121,6 +121,27 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
     expect(bookOf(40, sample(20, scan))).toBe(true);
   });
 
+  it('a short scan whose ruled pages the eye reads as tables is a book; slanted lines keep a drawing', () => {
+    const scannedText = { ...scan, kind: 'document' as const };
+    const axes = (iso: number) => ({ h: 0.95 - iso, v: 0.05, iso, other: 0, longMm: 15_911 });
+    const eyed = (iso: number, textAreas: number, size: 'a4' | 'a3' = 'a4') => ({
+      ...scan,
+      size,
+      eye: { axes: axes(iso), skewDeg: 0, ink: 0.08, textAreas },
+    });
+    // The made-up spec book scanned: pages 2 to 6 ruled tables, one looked at.
+    const book = [scannedText, scan, scan, eyed(0, 267), scan, scan, scannedText];
+    expect(bookOf(7, book)).toBe(true);
+    // An isometric sketch form: slanted lines (0.02 and more).
+    expect(bookOf(1, [eyed(0.02, 267)])).toBe(false);
+    // Few text areas: a ruled drawing form, not a table.
+    expect(bookOf(1, [eyed(0, 60)])).toBe(false);
+    // On A3: never judged a table by its lines.
+    expect(bookOf(1, [eyed(0, 267, 'a3')])).toBe(false);
+    // No eye at all: not known to be a table.
+    expect(bookOf(2, [scan, scan])).toBe(false);
+  });
+
   it('large sheets past a fifth of the sample, a P&ID or an isometric make a drawing set', () => {
     const large: SamplePage = { class: 'scan', size: 'a1' };
     // One fold-out sheet in a spec book: still a book.

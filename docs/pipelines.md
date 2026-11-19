@@ -2355,7 +2355,11 @@ fold-out sheet makes no drawing set), none is a P&ID or an isometric, and 80%
 or more are scans or typed text; when the page rules name it a `document`;
 and when it has 20 pages or fewer, read whole, with the same office rule and
 typed or scanned text pages (page kind `document`) but for a few (75%,
-`DOCUMENT_MIN_SHARE`). The router names `document` no more: no PDF is left
+`DOCUMENT_MIN_SHARE`), or its ruled scans are tables: on A4 paper, every one
+the eye looked at with no slanted long lines (`TABLE_SLANT_MAX`, 0.005; an
+isometric sketch has 0.02 and more) and 150 areas of text or more
+(`TABLE_MIN_TEXT_AREAS`; the made-up spec table page has 267, a page of prose
+about 70), so a table-heavy scanned spec is a book. The router names `document` no more: no PDF is left
 to the core's own text read and OCR (its 10-page OCR, `MAX_OCR_PAGES`, runs
 only for a PDF whose Reader gave no text). A book hands the Reader no facts:
 the Reader reads the file, window by window.
