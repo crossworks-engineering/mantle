@@ -50,7 +50,9 @@ export const ADMIN_ONLY_ERROR =
 
 /** The refusal of an Admin-area tool for a scope without that area. */
 export function adminAreaError(area: string): string {
-  return `This tool manages the brain's ${area}: it runs only for a user of the Admin workspace whose ${area} area is on.`;
+  // Every area but users needs a seat in System too (the System workspace).
+  const system = area === 'users' ? '' : ', who is also a user of the System workspace';
+  return `This tool manages the brain's ${area}: it runs only for a user of the Admin workspace whose ${area} area is on${system}.`;
 }
 
 /** The refusal of an Admin-only kind's create outside Admin. */

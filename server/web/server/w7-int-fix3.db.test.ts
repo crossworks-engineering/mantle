@@ -238,7 +238,7 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
 
   // ── F1 ─────────────────────────────────────────────────────────────────
 
-  it("F1: the house style and the purpose are the anchor's only, the brand needs the settings area, nothing restamps", async () => {
+  it("F1: the house style and the purpose are the anchor's only, the brand needs the users area, nothing restamps", async () => {
     const hb = await newHeartbeat(`${tag}-hb-prefs`, agent.slug, null);
     // Through the full pipeline (runRoute, A4 step 3b): the gate answers
     // the login from its session cookie, the handler reads it.
@@ -262,9 +262,10 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
       expect(refused.status, JSON.stringify(body)).toBe(403);
       expect(await refused.text()).toMatch(/houseStyle|purpose/);
     }
-    // The brand: with the settings area yes, without it no.
+    // The brand: with the users area yes, without it no (branding is every
+    // Admin user's since the System workspace, not the settings area's).
     expect((await put({ siteName: `${tag} site` })).status).toBe(200);
-    await setAreas(maker, { settings: false });
+    await setAreas(maker, { users: false });
     expect((await put({ siteName: `${tag} other` })).status).toBe(403);
     // The anchor changes the house style.
     who = owner;
@@ -431,7 +432,7 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
 
   // ── L4 ─────────────────────────────────────────────────────────────────
 
-  it('L4: the brand writers under /api/profile need the settings area; the anchor always may', async () => {
+  it('L4: the brand writers under /api/profile need the users area; the anchor always may', async () => {
     const writers: Array<[string, 'PUT' | 'DELETE']> = [
       ['color-theme', 'PUT'],
       ['fonts', 'PUT'],
@@ -446,12 +447,12 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
     // Through the full pipeline (runRoute, A4 step 3b): /api/profile/<name>.
     const callAs = (login: string, name: string, method: 'PUT' | 'DELETE', body = {}) =>
       runRoute(login, method, `/api/profile/${name}`, body);
-    await setAreas(maker, { settings: false });
+    await setAreas(maker, { users: false });
     for (const [name, method] of writers) {
       const res = await callAs(maker, name, method);
       expect(res.status, `${method} ${name}`).toBe(403);
     }
-    // Representative: with the settings area, and as the anchor, it saves.
+    // Representative: with the users area, and as the anchor, it saves.
     await setAreas(maker, {});
     const ok = await callAs(maker, 'color-theme', 'PUT', { colorTheme: 'neutral' });
     expect(ok.status, await ok.clone().text()).toBe(200);

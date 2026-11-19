@@ -64,9 +64,12 @@ describe.skipIf(!URL)('a new login and its workspace rows, in one transaction', 
       sql`select id::text as id from workspaces where owner_id = ${owner} and is_admin`,
     );
     admin = ws[0]!.id;
-    // A new brain has no Team (0286).
+    // A new brain has no Team (0286): Admin and System only.
     expect(
-      await sys(sql`select id from workspaces where owner_id = ${owner} and not is_admin`),
+      await sys(
+        sql`select id from workspaces where owner_id = ${owner} and not is_admin
+              and bridge_key is distinct from 'system'`,
+      ),
     ).toEqual([]);
     // The bridge fails for a login whose email marks it: after its insert,
     // inside the same transaction.

@@ -53,6 +53,8 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
       values (${adminWs}, ${anchor}, 'Admin', true)`);
     await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${anchor}, true)`);
+    // And System (0391), as the switch makes it: the technical areas need it.
+    await su(sqlTag`select mantle_ws_ensure_system()`);
     for (const slug of ['tool_group_ensure', 'note_list']) {
       await q(sqlTag`
         insert into tools (owner_id, slug, name, description, handler, input_schema)

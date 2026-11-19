@@ -66,7 +66,11 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     // switch made one, found it held nothing, and removed it with its events.
     const ws = await sql<{ key: string; admin: boolean }[]>`
       select bridge_key as key, is_admin as admin from workspaces order by bridge_key`;
-    expect(ws).toEqual([{ key: 'admin', admin: true }]);
+    // And System (0391: the switch ends with mantle_ws_ensure_system).
+    expect(ws).toEqual([
+      { key: 'admin', admin: true },
+      { key: 'system', admin: false },
+    ]);
     expect(
       Number(
         (await sql`select count(*) as n from workspace_events where workspace_id is null`)[0]!.n,

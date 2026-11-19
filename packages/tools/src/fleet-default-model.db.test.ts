@@ -72,6 +72,9 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
     const [adminWs] = (await su(
       sqlTag`select id::text as id from workspaces where is_admin and archived_at is null limit 1`,
     )) as { id: string }[];
+    // In System too: the settings area needs it (the System workspace).
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+      values (mantle_ws_system_id(${owner}::uuid), ${adminB}, true) on conflict do nothing`);
     await su(sqlTag`insert into workspace_users (workspace_id, login_id) values (${adminWs!.id}, ${adminB})
       on conflict do nothing`);
     await su(
