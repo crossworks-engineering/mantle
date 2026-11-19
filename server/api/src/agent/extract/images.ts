@@ -183,11 +183,10 @@ export async function maybeExtractEmbeddedImages(
   // A file that left pictures out (`data.images`, G4) is a candidate again
   // (G5): the pictures of its current bytes are kept by their sha256, and
   // only the new ones are saved (one vision call each).
+  const currentCount = Number(prior[0]?.cur ?? 0);
+  if (currentCount > 0 && !picturesLeftOut(data)) return;
   const have =
-    Number(prior[0]?.cur ?? 0) > 0
-      ? await extractedPicturesOf(ownerId, node.id, current)
-      : new Set<string>();
-  if (have.size > 0 && !picturesLeftOut(data)) return;
+    currentCount > 0 ? await extractedPicturesOf(ownerId, node.id, current) : new Set<string>();
   // Set only by the two person routes (an upload with replace, a restore):
   // a login's scope alone is no sign (apps and MCP clients run in one).
   const personStarted = data.replaced_by === 'person';
