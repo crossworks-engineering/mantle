@@ -313,7 +313,7 @@ class Scans(unittest.TestCase):
         cls.pages, cls.truth, cls.methods = book_pdfs.book()
         cls.pdf = os.path.join(cls.dir, "scan.pdf")
         book_pdfs.write_pdf(cls.pdf, cls.pages, scan=set(range(1, 10)))
-        # G1's pictures are an option until the core keeps them (PAGE_PICTURES).
+        # G1's pictures (PAGE_PICTURES, on since the core keeps them).
         cls.result, cls.job = run(cls.pdf, {"options": {"page_pictures": True}})
         cls.tabs, cls.input = tabs_of(cls.result)
 
@@ -346,12 +346,15 @@ class Scans(unittest.TestCase):
         self.assertEqual(idx[names[0]][5], "ocr")
         self.assertIn(idx[names[0]][6], ("ok", "partial"))
 
-    def test_g1_is_off_by_default(self):
+    def test_g1_is_on_by_default_and_the_option_turns_it_off(self):
+        # The core keeps a book Reader's page pictures (G1, PAGE_PICTURES).
         pages, _, _ = book_pdfs.book()
         pdf = os.path.join(self.dir, "fig.pdf")
         book_pdfs.write_pdf(pdf, [pages[7]], scan={1})
         r, job = run(pdf)
         self.assertEqual(tabs_of(r)[0]["Pages"]["rows"][0][2], "vision")
+        self.assertEqual([p["page"] for p in tabs_of(r)[1]["pictures"]], [1])
+        r, job = run(pdf, {"options": {"page_pictures": False}})
         self.assertEqual(tabs_of(r)[1]["pictures"], [])
         self.assertFalse(any(f.endswith(".png") for f in os.listdir(job)))
 
