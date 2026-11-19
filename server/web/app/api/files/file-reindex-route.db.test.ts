@@ -215,7 +215,8 @@ describe.skipIf(!URL)('reindex and the stale list: the edit right is the one che
     if (!reg?.ok) {
       await su(sql`create schema if not exists pgboss`);
       await su(sql`create table pgboss.job (name text not null, state text not null,
-        data jsonb, completed_on timestamptz, output jsonb)`);
+        data jsonb, completed_on timestamptz, output jsonb,
+        start_after timestamptz not null default now())`);
       await su(sql`grant select on pgboss.job to mantle_system_narrow, mantle_runtime`);
       await su(sql`insert into pgboss.job (name, state, data) values
         ('mantle.extract', 'created', ${JSON.stringify({ nodeId: ids.queued })}::jsonb)`);
