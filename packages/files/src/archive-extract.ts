@@ -56,11 +56,13 @@ import {
 } from '@mantle/db';
 import { ConflictError, errorMessage, InputError, UUID_RE } from '@mantle/std';
 import { contentKey, getContent } from '@mantle/storage';
-import { startTrace, step } from '@mantle/tracing';
+import { log, startTrace, step } from '@mantle/tracing';
 import {
   ARCHIVE_LIMITS,
   ArchiveRefusedError,
   archiveBaseName,
+  cleanText,
+  shownName,
   archiveExtOf,
   archiveKindOfHead,
   EntryDamagedError,
@@ -239,13 +241,22 @@ type ArchiveRow = {
   title: string;
   path: string;
   data: Record<string, unknown>;
+  /** The login the archive is private to (nodes.login_id), or null: its
+   *  files are private to it too. */
+  loginId: string | null;
 };
 
 /** The archive file the caller reads (current, in its scope), or null. */
 async function archiveRowFor(ownerId: string, fileId: string): Promise<ArchiveRow | null> {
   if (!UUID_RE.test(fileId)) return null;
   const [row] = await db
-    .select({ id: nodes.id, title: nodes.title, path: nodes.path, data: nodes.data })
+    .select({
+      id: nodes.id,
+      title: nodes.title,
+      path: nodes.path,
+      data: nodes.data,
+      loginId: nodes.loginId,
+    })
     .from(nodes)
     .where(
       and(
@@ -262,27 +273,28 @@ async function archiveRowFor(ownerId: string, fileId: string): Promise<ArchiveRo
     title: row.title,
     path: String(row.path),
     data: (row.data ?? {}) as Record<string, unknown>,
+    loginId: row.loginId ?? null,
   };
 }
 
+/** A file row's fields the checks read. */
+type ArchiveHead = Pick<ArchiveRow, 'id' | 'title' | 'path' | 'data'>;
+
 /** The name the file has on disk (data.filename), else its title. */
-const fileNameOf = (row: ArchiveRow) =>
+const fileNameOf = (row: ArchiveHead) =>
   typeof row.data.filename === 'string' && row.data.filename ? row.data.filename : row.title;
 
 /** The first bytes of the archive, from disk or storage, or null. */
-async function headOf(row: ArchiveRow, n: number): Promise<Buffer | null> {
+async function headOf(row: ArchiveHead, n: number): Promise<Buffer | null> {
   const { loadFileHead } = await import('./file-read');
   return loadFileHead(row, n);
 }
 
 /** Whether a file can be extracted, by its name and its first bytes: null
  *  when it can, else the refusal. Read only. */
-export async function archiveExtractableRefusal(row: {
-  id: string;
-  title: string;
-  path: string;
-  data: Record<string, unknown>;
-}): Promise<ArchiveExtractRefusal | null> {
+export async function archiveExtractableRefusal(
+  row: ArchiveHead,
+): Promise<ArchiveExtractRefusal | null> {
   const name = fileNameOf(row);
   const ext = archiveExtOf(name);
   if (ext === '7z' || ext === 'rar') {
@@ -450,6 +462,9 @@ export async function startArchiveExtract(
   try {
     folder = await newFolderFor(ownerId, row.path, row.title || fileNameOf(row));
   } catch (err) {
+    log('files').warn(
+      `archive extract: the folder beside ${id} was not made: ${errorMessage(err)}`,
+    );
     const failed: ArchiveExtractStamp = {
       ...stamp,
       state: 'failed',
@@ -461,7 +476,8 @@ export async function startArchiveExtract(
       ok: false,
       status: 403,
       reason: 'not-allowed',
-      error: `The folder for its contents could not be made beside the archive: ${errorMessage(err).slice(0, 200)}`,
+      error:
+        'The folder for its contents could not be made beside the archive: you may not add a folder there.',
     };
   }
   const queued: ArchiveExtractStamp = { ...stamp, folder_id: folder.id, folder_path: folder.path };
@@ -652,11 +668,14 @@ async function extractInto(
   opts: ArchiveExtractJobOptions,
 ): Promise<ArchiveExtractStamp> {
   const cur: ArchiveExtractStamp = { ...asked, refused: [], refused_count: 0 };
+  /** Write the stamp while it is still this job's (its ask, running): an
+   *  ask made since (this one past its time) is never written over. */
+  const own = () => writeStamp(row.id, cur, { at: asked.at, state: 'running' });
   const fail = async (error: string): Promise<ArchiveExtractStamp> => {
     cur.state = 'failed';
     cur.error = error;
     cur.finished_at = new Date().toISOString();
-    await writeStamp(row.id, cur).catch(() => false);
+    await writeStamp(row.id, { ...cur }, { at: asked.at, state: 'running' }).catch(() => false);
     return cur;
   };
 
@@ -668,20 +687,13 @@ async function extractInto(
       and(eq(nodes.id, asked.folder_id!), eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch')),
     )
     .limit(1);
-  if (!folder) {
-    // The claim first, so a second job of the same ask does nothing.
-    if (
-      !(await writeStamp(row.id, { ...cur, state: 'running' }, { at: asked.at, state: 'queued' }))
-    ) {
-      return asked;
-    }
-    return fail('The folder made for its contents is gone. Ask again to extract it.');
-  }
-  const destPath = String(folder.path);
-  cur.folder_path = destPath;
+  // The claim first, so a second job of the same ask does nothing.
   cur.state = 'running';
   cur.started_at = new Date().toISOString();
+  if (folder) cur.folder_path = String(folder.path);
   if (!(await writeStamp(row.id, cur, { at: asked.at, state: 'queued' }))) return asked;
+  if (!folder) return fail('The folder made for its contents is gone. Ask again to extract it.');
+  const destPath = String(folder.path);
 
   const limits: ArchiveLimits = {
     ...ARCHIVE_LIMITS,
@@ -692,6 +704,7 @@ async function extractInto(
   const local = await archiveOnDisk(row);
   if (!local) return fail("The archive's bytes could not be read now.");
   try {
+    const before = await stat(local.path);
     const kind = archiveKindOfHead(await diskHead(local.path, 512));
     if (kind !== 'zip' && kind !== 'tar' && kind !== 'gzip') {
       return fail('The bytes are not a ZIP, a TAR or a gzip.');
@@ -701,20 +714,43 @@ async function extractInto(
       await planArchive(local.path, kind, limits);
     } catch (err) {
       if (err instanceof ArchiveRefusedError) return fail(err.message);
-      throw err;
+      log('files').warn(`archive extract: the plan of ${row.id} failed: ${errorMessage(err)}`);
+      return fail('The archive is damaged: it could not be read to the end.');
     }
-    await writeEntries(ownerId, row, local.path, kind, destPath, limits, cur);
+    // The bytes the plan read are the bytes the write reads (the walk
+    // holds the caps itself too).
+    const after = await stat(local.path);
+    if (
+      after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs ||
+      after.ino !== before.ino
+    ) {
+      return fail('The archive changed while it was being read. Ask again to extract it.');
+    }
+    await writeEntries(ownerId, row, local.path, kind, destPath, limits, cur, own);
     cur.state = 'done';
     cur.finished_at = new Date().toISOString();
-    await writeStamp(row.id, cur);
+    await own();
     return cur;
   } catch (err) {
+    if (err instanceof StampTakenError) return cur;
     if (err instanceof ArchiveRefusedError) return fail(err.message);
+    log('files').warn(`archive extract: ${row.id} stopped: ${errorMessage(err)}`);
     return fail(
-      `The extraction stopped after ${cur.files} files: ${errorMessage(err).slice(0, 300)}`,
+      fatal(err)
+        ? `The extraction stopped after ${cur.files} files: the disk is full.`
+        : `The extraction stopped after ${cur.files} files: the archive could not be read on.`,
     );
   } finally {
     if (local.temp) await discardSpooled(local.temp);
+  }
+}
+
+/** The stamp is another ask's now: this job stops and writes nothing more. */
+class StampTakenError extends Error {
+  constructor() {
+    super('the archive was asked for again');
+    this.name = 'StampTakenError';
   }
 }
 
@@ -727,6 +763,7 @@ async function writeEntries(
   destPath: string,
   limits: ArchiveLimits,
   cur: ArchiveExtractStamp,
+  own: () => Promise<boolean>,
 ): Promise<void> {
   const room = FILES_MAX_FOLDER_DEPTH - filesFolderDepth(destPath);
   /** Folder made for each archive folder, by its ltree path. */
@@ -744,7 +781,7 @@ async function writeEntries(
   const ensureFolders = async (segments: readonly string[]): Promise<string> => {
     let parent = destPath;
     for (const seg of segments) {
-      const name = folderDisplayName(seg) || 'folder';
+      const name = folderDisplayName(cleanText(seg, 120)) || 'folder';
       const slug = folderSlugOf(name) ?? 'folder';
       const childPath = `${parent}.${dashToLtree(slug)}`;
       if (!made.has(childPath)) {
@@ -780,7 +817,8 @@ async function writeEntries(
     if (sinceWrite < PROGRESS_FILES && Date.now() - lastWrite < PROGRESS_MS) return;
     sinceWrite = 0;
     lastWrite = Date.now();
-    await writeStamp(row.id, cur).catch(() => false);
+    // Another ask's stamp now (this one past its time): stop here.
+    if ((await own().catch(() => true)) === false) throw new StampTakenError();
   };
 
   const archiveName = fileNameOf(row);
@@ -833,8 +871,10 @@ async function writeEntries(
         parentPath,
         filename,
         spooled,
-        title: place.title.slice(0, 200),
-        data: { from_archive: { id: row.id, path: shown.slice(0, 500) } },
+        title: cleanText(place.title, 200) || filename,
+        data: { from_archive: { id: row.id, path: cleanText(shown, 500) } },
+        // Private to the archive's login when the archive is.
+        loginId: row.loginId,
       });
       cur.files += 1;
       cur.bytes += spooled.size;
@@ -848,5 +888,3 @@ async function writeEntries(
     await progress();
   });
 }
-
-const shownName = (s: string) => (s.length > 200 ? `${s.slice(0, 200)}...` : s);

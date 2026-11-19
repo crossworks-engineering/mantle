@@ -176,12 +176,28 @@ export function isOsMetadataPath(segments: readonly string[]): boolean {
   );
 }
 
-/** A name as it is shown in a report: no control characters, at most 200
- *  characters. */
-export function shownName(raw: string): string {
+/** Half of a character pair with no other half. */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+/** Control characters, line and paragraph separators, and the marks that
+ *  turn text around. */
+const UNSHOWABLE =
   // eslint-disable-next-line no-control-regex
-  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim();
-  return s.length > 200 ? `${s.slice(0, 200)}...` : s || '(no name)';
+  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g;
+
+/** A name from the archive made safe to show and to store: no control
+ *  characters, no bidi overrides (a name that shows another extension), no
+ *  half of a character pair (jsonb refuses one), and at most `max`
+ *  characters, cut on whole characters. */
+export function cleanText(raw: string, max: number): string {
+  const s = raw.replace(UNSHOWABLE, ' ').replace(LONE_SURROGATE, '').trim();
+  const chars = Array.from(s);
+  return chars.length > max ? `${chars.slice(0, max).join('')}...` : s;
+}
+
+/** A name as it is shown in a report: cleanText, at most 200 characters. */
+export function shownName(raw: string): string {
+  return cleanText(raw, 200) || '(no name)';
 }
 
 /**
@@ -256,17 +272,28 @@ export async function planArchive(
   limits: ArchiveLimits,
 ): Promise<ArchivePlan> {
   const plan: ArchivePlan = { kind, files: 0, bytes: 0, refused: 0, skipped: 0 };
+  // The folders the write may make (the levels the tree has room for):
+  // held to the file cap, as the files are.
+  const folders = new Set<string>();
+  const countFolders = (dirs: readonly string[]) => {
+    for (let i = 1; i <= Math.min(dirs.length, PLAN_FOLDER_LEVELS); i += 1) {
+      folders.add(dirs.slice(0, i).join('/').toLowerCase());
+    }
+    if (folders.size > limits.maxFiles) {
+      throw new ArchiveRefusedError(
+        'too-many',
+        `The archive holds more than ${limits.maxFiles.toLocaleString('en-US')} folders, more than one extraction makes.`,
+      );
+    }
+  };
   await walkArchive(file, kind, limits, async (e) => {
+    if (e.type === 'dir') countFolders(e.segments);
+    if (e.type === 'file') countFolders(e.segments.slice(0, -1));
     if (e.type === 'refused') plan.refused += 1;
     else if (e.type === 'skipped') plan.skipped += 1;
     else if (e.type === 'file') {
       plan.files += 1;
-      if (plan.files > limits.maxFiles) {
-        throw new ArchiveRefusedError(
-          'too-many',
-          `The archive holds more than ${limits.maxFiles.toLocaleString('en-US')} files, more than one extraction makes.`,
-        );
-      }
+      if (plan.files > limits.maxFiles) throw tooMany(limits);
       if (e.size === null) {
         // A lone gzip: its size is known only by inflating it, here, under
         // the entry cap (the walk's stream errors past it).
@@ -291,6 +318,17 @@ export async function planArchive(
 }
 
 const mb = (n: number) => `${Math.round(n / (1024 * 1024))} MB`;
+
+function tooMany(limits: ArchiveLimits): ArchiveRefusedError {
+  return new ArchiveRefusedError(
+    'too-many',
+    `The archive holds more than ${limits.maxFiles.toLocaleString('en-US')} files, more than one extraction makes.`,
+  );
+}
+
+/** Folder levels the plan counts: the most a new folder below Files holds
+ *  (FILES_MAX_FOLDER_DEPTH - 1 inside the extraction's own folder). */
+const PLAN_FOLDER_LEVELS = 2;
 
 function totalRefusal(limits: ArchiveLimits): ArchiveRefusedError {
   return new ArchiveRefusedError(
@@ -363,6 +401,11 @@ async function readAt(
   at: number,
   len: number,
 ): Promise<Buffer> {
+  // An offset the archive made up (negative after a shift, past a safe
+  // number): the archive is damaged, never a fault of the reader.
+  if (!Number.isSafeInteger(at) || at < 0 || !Number.isSafeInteger(len) || len < 0) {
+    throw damaged('an offset points outside the file');
+  }
   const buf = Buffer.alloc(len);
   const { bytesRead } = await fh.read(buf, 0, len, at);
   return buf.subarray(0, bytesRead);
@@ -502,6 +545,7 @@ async function walkZip(
   onEntry: (entry: ArchiveEntry) => Promise<void>,
 ): Promise<void> {
   const { records, fileSize } = await zipDirectory(file, limits);
+  const walked = { files: 0, bytes: 0 };
   const fh = await open(file, 'r');
   try {
     for (const r of records) {
@@ -522,6 +566,12 @@ async function walkZip(
         continue;
       }
       if (isDir) {
+        // A folder that holds bytes (a mode or a DOS flag on a file): never
+        // dropped in silence.
+        if (r.size > 0 || r.compSize > 0) {
+          await onEntry({ type: 'refused', name, reason: 'unsupported' });
+          continue;
+        }
         if (isOsMetadataPath(path.segments)) continue;
         await onEntry({ type: 'dir', segments: path.segments });
         continue;
@@ -543,6 +593,12 @@ async function walkZip(
         await onEntry({ type: 'refused', name, reason: 'too-large' });
         continue;
       }
+      // The walk holds the limits itself, whatever a plan said before: a
+      // file changed between the plan and the write is held all the same.
+      walked.files += 1;
+      walked.bytes += r.size;
+      if (walked.files > limits.maxFiles) throw tooMany(limits);
+      if (walked.bytes > limits.maxTotalBytes) throw totalRefusal(limits);
       // The entry's data: after its local header, whose name and extra
       // lengths are its own (they can differ from the directory's).
       const local = await readAt(fh, r.localOffset, 30);
@@ -712,6 +768,7 @@ async function walkTarStream(
 ): Promise<void> {
   const r = new ChunkReader(prefixed(first, source));
   let headers = 0;
+  let files = 0;
   let longName: string | null = null;
   let pax = new Map<string, string>();
   // Every entry's bytes count (each is read to pass it): the whole read is
@@ -780,7 +837,11 @@ async function walkTarStream(
         if (isOsMetadataPath(path.segments)) reported = { type: 'skipped', name };
         else if (size > limits.maxEntryBytes)
           reported = { type: 'refused', name, reason: 'too-large' };
-        else fileSize = size;
+        else {
+          files += 1;
+          if (files > limits.maxFiles) throw tooMany(limits);
+          fileSize = size;
+        }
       } else {
         // S (sparse), V (a volume label), M (a multi-volume part), D, ...
         reported = { type: 'refused', name, reason: 'unsupported' };
