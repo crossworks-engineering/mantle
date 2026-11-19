@@ -375,12 +375,38 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
       ['PATCH', `/api/users/${sys2}`, { displayName: `${tag} renamed` }],
       ['DELETE', `/api/users/${sys2}`],
       ['DELETE', `/api/users/${sys2}/devices/${randomUUID()}`],
-      ['PATCH', `/api/users/${sys2}/oidc`, { outside: true }],
-      ['DELETE', `/api/users/${sys2}/oidc`],
     ];
     for (const [method, path, body] of acts) {
       const r = await call(adm, method, path, body);
       expect([r.status, r.json], `${method} ${path}`).toEqual([403, refusedBody]);
+    }
+    // The company sign-in link: off, the route is not there (404, as on
+    // every company sign-in route); on, refused as the acts above.
+    const oidcActs: [string, string, unknown?][] = [
+      ['PATCH', `/api/users/${sys2}/oidc`, { outside: true }],
+      ['DELETE', `/api/users/${sys2}/oidc`],
+    ];
+    for (const [method, path, body] of oidcActs) {
+      expect((await call(adm, method, path, body)).status, `${method} ${path} off`).toBe(404);
+    }
+    const oidcEnv = {
+      MANTLE_OIDC_MODE: 'optional',
+      MANTLE_OIDC_ISSUER: 'https://login.example.invalid/tenant/v2.0',
+      MANTLE_OIDC_CLIENT_ID: 'mantle',
+      MANTLE_PUBLIC_URL: 'https://brain.example.invalid',
+    };
+    const saved = Object.fromEntries(Object.keys(oidcEnv).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, oidcEnv);
+    try {
+      for (const [method, path, body] of oidcActs) {
+        const r = await call(adm, method, path, body);
+        expect([r.status, r.json], `${method} ${path} on`).toEqual([403, refusedBody]);
+      }
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
     }
     const r0 = await call(adm, 'DELETE', `/api/workspaces/${adminWs}/users/${sys2}`);
     expect([r0.status, r0.json.code, r0.json.error]).toEqual([
