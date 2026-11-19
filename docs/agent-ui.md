@@ -411,10 +411,11 @@ these apart, and they are accepted as they are:
   Admin users. Only a System user changes it.
 - **Any Admin user revokes any API key** (System workspace audit r2,
   owner 2026-11-19). An Admin user outside System may revoke another
-  login's key, a System user's too, though it lists only its own keys
-  (the keys area lists every key). It never makes or reads another
-  login's key: revoke is the safe direction, and a leaked key must be
-  stoppable by whoever learns of it first.
+  login's key, a System user's too, by the key's id, though it lists
+  only its own keys: on the screen only a System user (the keys area)
+  sees other logins' keys. It never makes or reads another login's key:
+  revoke is the safe direction, and a leaked key must be stoppable by
+  whoever learns of it first.
 - **SCIM may disable a System user** (System workspace audit r2). On a
   Control Center, where SCIM runs, the company's provider with the SCIM
   token (the box `.env`, or the company sign-in setup screen, the setup

@@ -62,11 +62,12 @@ export type AccessKeyView = {
   revokedAt: string | null;
 };
 
-/** GET /api/access-keys. A member gets their own keys; an admin gets every
- *  key on the brain. */
+/** GET /api/access-keys. The keys area (a System user) gets every key on
+ *  the brain; every other login gets its own. */
 export type AccessKeyList = {
   keys: AccessKeyView[];
-  /** The caller's kind: an admin sees every key. */
+  /** The caller's kind, for display: which keys it sees follows the keys
+   *  area, never this role. */
   role: AccessKeyRole;
   areas: AccessKeyArea[];
   /** The expiry a key gets when the create names none. */

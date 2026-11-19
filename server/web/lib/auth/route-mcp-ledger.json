@@ -105,7 +105,7 @@
     },
     "GET /api/access-keys": {
       "planned": "access_key_list",
-      "note": "refused on a call made with a key"
+      "note": "refused on a call made with a key; follows the route's keys-area rule (every key for a System user, else its own), not the definer"
     },
     "GET /api/activity": { "planned": "activity_list" },
     "GET /api/agents": {

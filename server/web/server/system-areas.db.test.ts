@@ -217,6 +217,35 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     expect((await make(adm)).status).toBe(400);
   });
 
+  it('the key list: the keys area (a System user) sees every key, an Admin user outside System its own', async () => {
+    const make = async (id: string) => {
+      const r = await call(id, 'POST', '/api/access-keys', {
+        name: `${tag} list key`,
+        access: 'read',
+        areas: null,
+        password: PASSWORD,
+      });
+      expect(r.status, JSON.stringify(r.json)).toBe(201);
+      return r.json.id as string;
+    };
+    const sysKey = await make(sys);
+    const memKey = await make(mem);
+    const listOf = async (id: string) => {
+      const r = await call(id, 'GET', '/api/access-keys');
+      expect(r.status, JSON.stringify(r.json)).toBe(200);
+      return (r.json as { keys: { id: string; login: { id: string } }[] }).keys;
+    };
+    // adm is an Admin user (role admin, in Admin) without the keys area: no
+    // key of another login, sys's included.
+    const admList = await listOf(adm);
+    expect(admList.filter((k) => k.login.id !== adm)).toEqual([]);
+    expect(admList.map((k) => k.id)).not.toContain(sysKey);
+    // sys holds the keys area: its own key and other logins' keys.
+    const sysIds = (await listOf(sys)).map((k) => k.id);
+    expect(sysIds).toContain(sysKey);
+    expect(sysIds).toContain(memKey);
+  });
+
   it('the workspace list: an Admin user sees System, built in, read only', async () => {
     const list = (await call(adm, 'GET', '/api/workspaces')).json as {
       workspaces: Json[];
@@ -435,7 +464,7 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     // The assistant route goes past the check for a System user (sys2 has
     // no assistant to rename or release: 400 and 404, never 403).
     r = await call(sys, 'PUT', `/api/users/${sys2}/agent`, { name: `${tag} assistant` });
-    expect(r.status, JSON.stringify(r.json)).toBe(400);
+    expect([r.status, r.json.error]).toEqual([400, 'Choose an agent to copy.']);
     r = await call(sys, 'DELETE', `/api/users/${sys2}/agent`);
     expect(r.status, JSON.stringify(r.json)).toBe(404);
     // Your own login stays yours (a System user's, an Admin user's).
