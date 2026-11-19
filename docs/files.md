@@ -254,9 +254,12 @@ from the stored text keeps the cuts of the read that made it). A parser job
 opens its own and sends `cuts` with its answer, which the parser client says
 again in the caller's sink; a Reader pipeline's write carries `readCuts`
 (the step check checks them, the core says them where it takes the text).
-`read_cut` is a byte key (migration 0387): new bytes drop it; a reindex drops
-it too but an Agent's entries (kept with their text) and a sketched file's
-(kept with its text).
+`read_cut` is a byte key (migration 0387): new bytes drop it; a reindex or
+an OCR rescan drops it too, unless an Agent's entry is in it (kept with that
+Agent's text) or the file is sketched (kept with its text). Then the map stays
+whole: a reindex runs in the caller's scope, where the edit check lets a write
+clear a key only the brain sets, never change it. The next read says its
+cuts again, each key replacing its entry.
 
 The cuts said today, each with its key:
 
@@ -266,6 +269,7 @@ The cuts said today, each with its key:
 | `sheet_rows`, `sheet_columns`, `sheet_text`                                                                              | a workbook's text: 5,000 rows and 256 columns a sheet, 1,000,000 characters a workbook (`xlsx.ts`)                                                                                                      |
 | `legacy_cells`                                                                                                           | `.xls`/`.xlsb` sheets past 1,000,000 cells (`read-document.ts`)                                                                                                                                         |
 | `database_size`                                                                                                          | a delimited text past `MANTLE_FILE_DB_CSV_MAX_MB`: no database (`auto-table.ts`)                                                                                                                        |
+| `database_rows`                                                                                                          | sheets past `TABLE_IMPORT_MAX_ROWS`: no database (`auto-table.ts`)                                                                                                                                      |
 | `markup_bytes`                                                                                                           | HTML and XML past 32 MB (`markup.ts`)                                                                                                                                                                   |
 | `cad_texts`, `cad_text_length`, `cad_layers`, `cad_blocks_cap`, `cad_geometry`, `cad_labels`, `cad_blocks`, `layer_list` | DWG/DXF/DGN: the CAD tier's 20,000 texts, 512 characters a text (and a DGN's attribute values), 1,000 layers, 20,000 blocks, the geometry lists' budgets, and the digest's budgets                      |
 | `dwf_sheets`, `dwf_scan`, `dwf_labels`, `layer_list`                                                                     | DWF: 64 sheets, a stream past 16 MB or past a sheet's layer or label cap, the digest's label and layer budgets                                                                                          |

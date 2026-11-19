@@ -7,7 +7,7 @@
 import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import ExcelJS from 'exceljs';
-import { withReadCutSink } from './read-cut-sink';
+import { noteReadCut, noteReadCuts, withReadCutSink } from './read-cut-sink';
 import { parseXlsx } from './xlsx';
 import { parseMarkupBytes } from './markup';
 import { parseDwf } from './pipelines/pkg/plot-dwf/dwf';
@@ -197,5 +197,39 @@ describe('pictures: what the gate left out (the cap and the answer budget are da
       notePicturesLeftOut({ images: [], candidates: 4, rejected: { duplicate: 3 } }),
     );
     expect(cuts).toEqual({});
+  });
+});
+
+describe('the sink', () => {
+  it('a key named like an inherited property is a cut of its own', async () => {
+    const { cuts } = await withReadCutSink(async () => {
+      noteReadCut('constructor', { what: 'rows', read: 1, total: 2 });
+    });
+    expect(cuts).toEqual({ constructor: { what: 'rows', read: 1, total: 2 } });
+  });
+
+  it('a note that left nothing out is no cut', async () => {
+    const { cuts } = await withReadCutSink(async () => {
+      noteReadCut('sheet_rows', { what: 'rows', read: 5, total: 5 });
+      noteReadCuts({ markup_bytes: { what: 'bytes', read: 9, total: 3 } });
+    });
+    expect(cuts).toEqual({});
+  });
+
+  it('two reads at once keep their own cuts', async () => {
+    const tick = () => new Promise((r) => setTimeout(r, 1));
+    const [a, b] = await Promise.all([
+      withReadCutSink(async () => {
+        await tick();
+        noteReadCut('sheet_rows', { what: 'rows', read: 1, total: 2 });
+        await tick();
+      }),
+      withReadCutSink(async () => {
+        noteReadCut('markup_bytes', { what: 'bytes', read: 3, total: 4 });
+        await tick();
+      }),
+    ]);
+    expect(Object.keys(a.cuts)).toEqual(['sheet_rows']);
+    expect(Object.keys(b.cuts)).toEqual(['markup_bytes']);
   });
 });

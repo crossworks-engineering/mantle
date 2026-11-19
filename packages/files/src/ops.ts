@@ -24,6 +24,7 @@ export {
   upsertFile,
   readFileById,
   BYTE_DERIVED_DATA_KEYS,
+  agentReadCutsOnly,
   openFileById,
   fileDeleteBlock,
   type FileDeleteBlock,

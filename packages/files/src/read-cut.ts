@@ -88,6 +88,8 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
     `Only ${ofTotal(c)} bytes were read (a ${limitText(c, 'byte', '32 MB')} limit for HTML and XML). The rest is not in search.`,
   database_size: (c) =>
     `No database was built: the file is ${n(c.total ?? 0)} bytes, past the ${limitText(c, 'byte', '32 MB')} limit, so file_sql has no rows of it. Its text is read as usual.`,
+  database_rows: (c) =>
+    `No database was built: its sheets hold ${n(c.total ?? 0)} rows, past the ${limitText(c, 'row', 'import')} limit, so file_sql has no rows of it. Its text is read as usual.`,
   cad_texts: (c) =>
     `${ofTotal(c)} texts of the drawing were read (a ${limitText(c, 'text', '20,000-text')} limit). The others are not in search.`,
   cad_text_length: (c) =>
@@ -122,7 +124,9 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
     () => 'each past 32 MB, or past the 256 MB of pictures one drawing may hold',
   ),
   description: (c) =>
-    `${ofTotal(c)} characters of its description were kept (a ${limitText(c, 'character', '4,000-character')} limit).`,
+    c.read === 0
+      ? `Its description (${n(c.total ?? 0)} characters) was left out: the feed was too large to send with it.`
+      : `${ofTotal(c)} characters of its description were kept (a ${limitText(c, 'character', '4,000-character')} limit).`,
 };
 
 function generic(c: ReadCutValue): string {

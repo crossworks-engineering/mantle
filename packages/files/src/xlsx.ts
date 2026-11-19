@@ -99,8 +99,9 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
   // columns past the caps of a sheet, and the sheets past the text budget.
   const rows = { read: 0, total: 0 };
   const cols = { read: 0, total: 0 };
-  let sheetsWhole = 0;
-  let sheetsLeft = 0;
+  // The sheets before the one the text limit cut (empty ones too, as the
+  // total counts every sheet), once a cut happened.
+  let sheetsRead = -1;
 
   for (const [i, ws] of wb.worksheets.entries()) {
     // Hidden sheets are usually lookup tables and scratch space the author
@@ -127,12 +128,11 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
       if (room > 0) parts.push(`# Sheet: ${ws.name}\n${csv.slice(0, room)}`);
       truncated = true;
       // This sheet in part, and every sheet after it not read at all.
-      sheetsLeft = wb.worksheets.length - i;
+      sheetsRead = i;
       break; // stop before rendering any further sheets
     }
     parts.push(`# Sheet: ${ws.name}\n${csv}`);
     total += csv.length;
-    sheetsWhole += 1;
   }
   if (rows.total > 0) {
     noteReadCut('sheet_rows', { what: 'rows', ...rows, limit: MAX_ROWS_PER_SHEET });
@@ -140,11 +140,11 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
   if (cols.total > 0) {
     noteReadCut('sheet_columns', { what: 'columns', ...cols, limit: MAX_COLS_PER_SHEET });
   }
-  if (sheetsLeft > 0) {
+  if (sheetsRead >= 0) {
     noteReadCut('sheet_text', {
       what: 'sheets',
-      read: sheetsWhole,
-      total: sheetsWhole + sheetsLeft,
+      read: sheetsRead,
+      total: wb.worksheets.length,
       limit: MAX_TEXT_CHARS,
     });
   }

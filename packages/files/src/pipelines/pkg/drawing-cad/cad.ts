@@ -104,7 +104,7 @@ const REGISTRY_BLOCKS = 20_000;
 export function cadReplyCuts(r: DwgRender): ReadCuts {
   const cuts: ReadCuts = {};
   const say = (key: string, c: ReadCutValue) => {
-    cuts[key] = addReadCut(cuts[key], c);
+    cuts[key] = addReadCut(Object.hasOwn(cuts, key) ? cuts[key] : undefined, c);
   };
   const seen = r.textsSeen;
   if (seen !== undefined ? seen > r.texts.length : r.capped && r.texts.length >= REGISTRY_TEXTS) {

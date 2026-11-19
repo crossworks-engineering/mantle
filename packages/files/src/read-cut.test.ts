@@ -193,3 +193,16 @@ describe('extractionOf: one model for every cut', () => {
     ).toBe('pending');
   });
 });
+
+describe('the sentences of the newer cuts', () => {
+  it('sheets past the import ceiling, and a feed description left out whole', () => {
+    expect(
+      readCutHint('database_rows', { what: 'rows', read: 0, total: 2_500_000, limit: 2_000_000 }),
+    ).toBe(
+      'No database was built: its sheets hold 2,500,000 rows, past the 2,000,000 row limit, so file_sql has no rows of it. Its text is read as usual.',
+    );
+    expect(readCutHint('description', { what: 'characters', read: 0, total: 9000 })).toBe(
+      'Its description (9,000 characters) was left out: the feed was too large to send with it.',
+    );
+  });
+});
