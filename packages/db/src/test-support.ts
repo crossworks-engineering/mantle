@@ -122,7 +122,11 @@ export async function ensureAdminUsers(sql: Sql, logins: readonly string[]): Pro
   }
   // And of System (0391), as every Admin user a brain had when System came:
   // the technical areas need it (mantle_area_rule). A test of an Admin user
-  // outside System seats that login by hand.
+  // outside System seats that login by hand. A database stopped before 0391
+  // has no System yet.
+  const [made] = await sql<{ ok: boolean }[]>`
+    select to_regprocedure('public.mantle_ws_ensure_system()') is not null as ok`;
+  if (!made?.ok) return ws.id;
   await sql`select mantle_ws_ensure_system()`;
   for (const login of [anchor, ...logins]) {
     await sql`insert into workspace_users (workspace_id, login_id, moderator)
