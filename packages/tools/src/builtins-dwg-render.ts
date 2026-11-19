@@ -64,6 +64,15 @@ const frameOutput = (f: DwgFrame | undefined) =>
       }
     : {};
 
+/** Pattern hatches the parser drew as their outline only: the picture is
+ *  partial, and says so. */
+const partlyDrawn = (n: number | undefined) =>
+  n
+    ? {
+        partly_drawn: `${n} pattern ${n === 1 ? 'hatch is' : 'hatches are'} drawn as outlines only (too many dashes to draw).`,
+      }
+    : {};
+
 export const dwg_render: BuiltinToolDef = {
   slug: 'dwg_render',
   policy: {
@@ -205,6 +214,7 @@ export const dwg_render: BuiltinToolDef = {
       height: crop.height,
       smallest_text_px: crop.textPx,
       ...frameOutput(drawn.value.frame),
+      ...partlyDrawn(drawn.value.hatchesOutlined),
     };
     ctx.step?.setOutput({ width: crop.width, height: crop.height, blank: crop.blank === true });
     if (crop.blank) {

@@ -1216,6 +1216,87 @@ describe("the DWG reader's facts (dwg)", () => {
   });
 });
 
+describe('pattern hatches drawn as outlines (hatches_outlined)', () => {
+  /** A reply whose picture drew `picture` hatches as outlines and whose
+   *  symbol SVGs drew `svgs`. */
+  const outlined = (converter: string, picture: number, svgs: number) => ({
+    ...sidecarReply(),
+    converter,
+    hatches_outlined: picture,
+    symbols: [],
+    placements: [],
+    symbol_facts: {
+      inserts: 0,
+      unkeyed: 0,
+      symbols: 0,
+      drawn: 0,
+      labels: 0,
+      draw_errors: 0,
+      not_drawn: { too_large: 0, total_cap: 0, time: 0 },
+      svg_bytes: 0,
+      hatches_outlined: svgs,
+    },
+  });
+
+  it('reads the picture count and the symbols count', () => {
+    const r = cadReplyOf(outlined('none', 3, 2));
+    expect(r.hatchesOutlined).toBe(3);
+    expect(r.symbolFacts?.hatchesOutlined).toBe(2);
+    // A CAD tier before it: 0.
+    const old = cadReplyOf(sidecarReply());
+    expect(old.hatchesOutlined).toBe(0);
+  });
+
+  it('says in one line what was drawn only in part, for every converter', async () => {
+    let seed = 50;
+    for (const converter of ['ezdwg', 'ezdgn', 'none']) {
+      stubSidecar(outlined(converter, 3, 2));
+      try {
+        const digest = await parseDocumentBytes(dwgFixture(seed++), 'dwg');
+        const lines = digest.split('\n').filter((l) => l.startsWith('Partly drawn'));
+        expect(lines).toEqual([
+          'Partly drawn: 5 pattern hatches drawn as outlines only (too many dashes to draw): 3 in the picture, 2 in the symbol SVGs.',
+        ]);
+      } finally {
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+      }
+    }
+  });
+
+  it('names only where it happened, and says nothing at 0', async () => {
+    stubSidecar(outlined('none', 0, 1));
+    try {
+      const digest = await parseDocumentBytes(dwgFixture(53), 'dwg');
+      expect(digest).toContain(
+        'Partly drawn: 1 pattern hatch drawn as outlines only (too many dashes to draw): 1 in the symbol SVGs.',
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+    stubSidecar(outlined('ezdwg', 0, 0));
+    try {
+      const digest = await parseDocumentBytes(dwgFixture(54), 'dwg');
+      expect(digest).not.toContain('Partly drawn');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('does not speak of a picture it did not keep', async () => {
+    stubSidecar({ ...outlined('none', 4, 0), png_base64: null, render_error: 'MemoryError' });
+    try {
+      const digest = await parseDocumentBytes(dwgFixture(55), 'dwg');
+      expect(digest).not.toContain('Partly drawn');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('the sheet frame (frame)', () => {
   const FRAME = {
     full: [0, 0, 9000, 500],

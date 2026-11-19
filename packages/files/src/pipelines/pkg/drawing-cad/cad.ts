@@ -108,6 +108,7 @@ export function cadDigest(r: DwgRender, format: CadFormat): string {
   );
   if (r.dgn) out.push(...dgnDigest(r.dgn));
   if (r.dwg) out.push(...dwgDigest(r.dwg));
+  out.push(...partlyDrawn(r));
 
   const typeLine = Object.entries(r.counts)
     .sort((a, b) => b[1] - a[1])
@@ -261,6 +262,23 @@ function dgnDigest(d: DgnFacts): string[] {
   }
   if (d.note) out.push(d.note);
   return out;
+}
+
+/** The pattern hatches the picture and the symbol SVGs draw as their outline
+ *  only, in one line for every converter, so the brain never takes a partial
+ *  picture for a whole one. */
+function partlyDrawn(r: DwgRender): string[] {
+  const picture = r.png ? r.hatchesOutlined : 0;
+  const svgs = r.symbolFacts?.hatchesOutlined ?? 0;
+  const n = picture + svgs;
+  if (!n) return [];
+  const where = [
+    picture ? `${picture} in the picture` : '',
+    svgs ? `${svgs} in the symbol SVGs` : '',
+  ].filter(Boolean);
+  return [
+    `Partly drawn: ${n} pattern ${n === 1 ? 'hatch' : 'hatches'} drawn as outlines only (too many dashes to draw): ${where.join(', ')}.`,
+  ];
 }
 
 /** What a DWG did not give: the objects not converted, by type, and what

@@ -222,6 +222,9 @@ export type DwgSymbolFacts = {
   drawErrors: number;
   notDrawn: { tooLarge: number; totalCap: number; time: number };
   svgBytes: number;
+  /** Pattern hatches the SVGs draw as their outline only (too many dashes
+   *  to draw: cad/cad_frontend.py); 0 from a CAD tier before it. */
+  hatchesOutlined: number;
 };
 
 /** A window in drawing units: x0, y0, x1, y1. */
@@ -373,6 +376,10 @@ export type DwgRender = {
   renderError: string | null;
   /** What `png` frames; null from an older image or an unreadable layout. */
   frame: DwgFrame | null;
+  /** Pattern hatches `png` draws as their outline only (too many dashes to
+   *  draw: cad/cad_frontend.py), for every converter; 0 from a CAD tier
+   *  before it. */
+  hatchesOutlined: number;
   /** The symbols and placements; null when the reply has no `symbols`
    *  (an image before the symbols pass). */
   symbols: DwgSymbol[] | null;
@@ -625,6 +632,7 @@ function readSymbols(body: Record<string, unknown>) {
             time: count(nd.time),
           },
           svgBytes: count(f.svg_bytes),
+          hatchesOutlined: count(f.hatches_outlined),
         }
       : null,
     symbolsError:
@@ -744,6 +752,7 @@ export function cadReplyOf(body: Record<string, unknown>): DwgRender {
     renderError:
       typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
     frame: readFrame(body.frame),
+    hatchesOutlined: count(body.hatches_outlined),
     ...readSymbols(body),
     ...readShapes(body),
   };

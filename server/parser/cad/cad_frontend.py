@@ -10,9 +10,14 @@ hatches only; everything else draws exactly as before.
    comes to a billion dashes eats the container's memory long before the
    timeout can stop it. So the dashes are estimated first (`dashes`): the
    lines across the boundary's box, at the pattern's own spacing, times
-   the dashes on one line. Past MAX_DASHES the hatch is drawn as its
-   boundary. Nothing is dropped silently: the caller puts the count in its
-   index, and the picture says it is partial.
+   the dashes on one line, plus the pieces a jagged boundary cuts the
+   lines into. Past MAX_DASHES the hatch is drawn as its boundary. And one
+   picture holds every dash it draws until it is saved, so many hatches
+   below MAX_DASHES can still fill the memory: a pattern hatch that would
+   take the Frontend's dashes past DASH_BUDGET is drawn as its boundary
+   too. Nothing is dropped silently: the caller puts the count in its
+   index, and the digest says the picture is partial. A hatch in a block
+   counts once for every time it is drawn.
 
 2. A pattern denser than ezdxf draws (spacing under its
    `min_hatch_line_distance`) falls back to a solid fill, as in ezdxf. But
@@ -35,16 +40,22 @@ from ezdxf.render import hatching
 # million dashes draw in seconds and well under a GB; a fine pattern over a
 # boundary a kilometre wide is a thousand times that.
 MAX_DASHES = 1_000_000
-# How a DWG's `partial` list says it (the digest's "Partly read: ...").
-OUTLINED = "pattern hatch too fine to draw (drawn as its outline)"
+# Dashes of all the pattern hatches one Frontend draws (one picture): each
+# is held, a few hundred bytes, until the picture is saved, so a pattern
+# hatch that would go past this is drawn as its outline.
+DASH_BUDGET = 3_000_000
+# ezdxf draws a dash pattern shorter than this as one solid line.
+SOLID_PATTERN = 1e-9
 
 
 def dashes(polygon, loops, min_distance: float) -> float:
     """About how many dashes ezdxf makes for the pattern of `polygon` inside
-    `loops` (its boundary paths): per pattern line, the lines across the
-    boundary box's diagonal at the line's spacing, times the dashes along
-    one diagonal. A line family too dense for ezdxf ends the count: ezdxf
-    stops there too and fills the hatch solid."""
+    `loops` (its boundary paths), at most: per pattern line, the lines
+    across the boundary box's diagonal at the line's spacing, times the
+    dashes along one diagonal; and since ezdxf cuts a line at every pair of
+    boundary crossings, a jagged boundary adds up to (perimeter / spacing +
+    edges) pieces, each with its own dashes. A line family too dense for
+    ezdxf ends the count: ezdxf stops there too and fills the hatch solid."""
     from ezdxf import path as ezpath  # noqa: PLC0415
 
     pattern = polygon.pattern
@@ -54,26 +65,36 @@ def dashes(polygon, loops, min_distance: float) -> float:
     if not box.has_data:
         return 0.0
     diag = box.size.magnitude
+    # The control polygon is never shorter than the curve it holds.
+    perimeter = math.fsum(_polyline_length(p.control_vertices()) for p in loops)
+    edges = sum(len(p) for p in loops)
     total = 0.0
     for line in pattern.lines:
         spacing = abs(Vec2.from_deg_angle(line.angle).det(Vec2(line.offset)))
         if spacing < min_distance:
             break
-        across = diag / spacing + 1.0
         items = line.dash_length_items
         length = math.fsum(abs(v) for v in items)
-        along = diag / length * len(items) + len(items) if items and length > 0 else 1.0
-        total += across * along
+        n = len(items) if length >= SOLID_PATTERN else 0
+        across = diag / spacing + 1.0
+        along = diag / length * n + n if n else 1.0
+        pieces = perimeter / spacing + edges
+        total += across * along + pieces * max(1, n)
     return total
+
+
+def _polyline_length(points) -> float:
+    return math.fsum(a.distance(b) for a, b in zip(points, points[1:]))
 
 
 class Frontend(_ezdxf_frontend.Frontend):
     """ezdxf's Frontend; `outlined` counts the pattern hatches it drew as
-    their outline (MAX_DASHES)."""
+    their outline (MAX_DASHES, DASH_BUDGET), `spent` the dashes it drew."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.outlined = 0
+        self.spent = 0.0
 
     def draw_hatch_entity(self, entity, properties, *, loops=None) -> None:
         filling = properties.filling
@@ -86,10 +107,13 @@ class Frontend(_ezdxf_frontend.Frontend):
             return
         # ezdxf's own boundary for the pattern (in the hatch's plane).
         pattern_loops = loops if loops is not None else hatching.hatch_boundary_paths(entity, filter_text_boxes=True)
-        if dashes(entity, pattern_loops, self.config.min_hatch_line_distance) > MAX_DASHES:
+        n = dashes(entity, pattern_loops, self.config.min_hatch_line_distance)
+        # Written as `not ... <=`, so a NaN estimate is outlined too.
+        if not (n <= MAX_DASHES and self.spent + n <= DASH_BUDGET):
             self.outlined += 1
             self._boundary(entity, properties, loops, outline=True)
             return
+        self.spent += n
         try:
             self.draw_hatch_pattern(entity, pattern_loops, properties)
         except hatching.DenseHatchingLinesError:
@@ -97,13 +121,16 @@ class Frontend(_ezdxf_frontend.Frontend):
 
     def _boundary(self, entity, properties, loops, *, outline: bool) -> None:
         """The hatch's boundary in world coordinates, as ezdxf draws a solid
-        hatch: filled, or its outline only."""
-        if loops is None:  # a HATCH; an MPOLYGON comes with its loops
+        hatch: filled, or its outline only. An MPOLYGON comes with its
+        `loops`, and ezdxf draws its outline after its filling anyway."""
+        if loops is None:  # a HATCH
             loops = _ezdxf_frontend.closed_loops(
                 list(entity.paths.rendering_paths(entity.dxf.hatch_style)),
                 entity.ocs(),
                 entity.dxf.elevation.z,
             )
+        elif outline:
+            return
         paths = list(_ezdxf_frontend.ignore_text_boxes(loops))
         if outline:
             for p in paths:

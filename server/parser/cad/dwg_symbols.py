@@ -379,7 +379,7 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
         "hidden": 0,
         "draw_errors": 0,
         "not_drawn": {"too_large": 0, "total_cap": 0, "time": 0},
-        # Pattern hatches drawn as their outline (cad_frontend.MAX_DASHES).
+        # Pattern hatches drawn as their outline (cad_frontend.MAX_DASHES, DASH_BUDGET).
         "hatches_outlined": 0,
     }
     placements: list = []

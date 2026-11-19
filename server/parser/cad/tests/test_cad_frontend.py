@@ -1,6 +1,6 @@
 """Tests for cad_frontend.py: the one ezdxf frontend of model.png, the crops
-and the symbol SVGs. A pattern too fine for its area is drawn as its outline
-and counted; a pattern too dense for ezdxf is filled where the hatch is, also
+and the symbol SVGs. A pattern too fine for its area, or past the picture's
+dash budget, is drawn as its outline and counted; a pattern too dense for ezdxf is filled where the hatch is, also
 when the hatch is upside down (extrusion 0, 0, -1).
 
 Run (stdlib unittest; the cases skip when ezdxf or matplotlib is missing,
@@ -64,6 +64,35 @@ def hatch(space, x0, x1, *, fill="ANSI31", scale=1.0, flip=False, spacing=None, 
     return h
 
 
+def comb(space, teeth, depth, *, spacing, dashes=()):
+    """A hatch of horizontal pattern lines over a comb: `teeth` teeth 1 wide
+    and `depth` - 1 deep, 1 apart, on a back 1 high. Every line through the
+    teeth is cut once per tooth."""
+    pts = [(0, 0)]
+    for i in range(teeth):
+        x = 2 * i
+        pts += [(x, depth), (x + 1, depth), (x + 1, 1), (x + 2, 1)]
+    pts += [(2 * teeth, 0)]
+    h = space.add_hatch(color=1)
+    lines = [[0.0, (0.0, 0.0), (0.0, spacing), list(dashes)]]
+    h.set_pattern_fill("_USER", style=0, pattern_type=0, definition=lines)
+    h.set_pattern_definition(lines, factor=1.0, angle=0.0)
+    h.paths.add_polyline_path(pts, is_closed=True)
+    return h
+
+
+def made(polygon, loops):
+    """The dashes ezdxf makes for `polygon`'s pattern, counted as its
+    draw_hatch_pattern makes them."""
+    from ezdxf.render import hatching  # noqa: PLC0415
+
+    n = 0
+    for baseline in hatching.pattern_baselines(polygon, jiggle_origin=True):
+        for line in hatching.hatch_paths(baseline, loops):
+            n += sum(1 for _ in baseline.pattern_renderer(line.distance).render(line.start, line.end))
+    return n
+
+
 def drawn(doc):
     """(outlined, (xmin, ymin, xmax, ymax)) of the model space as drawn."""
     rec = Recorder()
@@ -84,17 +113,19 @@ def huge_drawing(path):
 
 @unittest.skipUnless(HAVE_RENDER, "ezdxf or matplotlib not installed")
 class EstimateTests(unittest.TestCase):
-    def test_lines_across_the_box_times_dashes_along_it(self):
+    def test_lines_across_the_box_times_dashes_along_it_plus_the_cuts(self):
         doc = ezdxf.new("R2010")
         plain = hatch(doc.modelspace(), 0, 10, spacing=1.0)
         dashed = hatch(doc.modelspace(), 0, 10, spacing=1.0, dashes=(0.5, -0.5))
         from ezdxf.render import hatching  # noqa: PLC0415
 
         diag = 200**0.5
-        got = cad_frontend.dashes(plain, hatching.hatch_boundary_paths(plain), 1e-4)
-        self.assertAlmostEqual(got, diag + 1.0)
+        loops = hatching.hatch_boundary_paths(plain)
+        edges = sum(len(p) for p in loops)
+        got = cad_frontend.dashes(plain, loops, 1e-4)
+        self.assertAlmostEqual(got, (diag + 1.0) + (40 + edges))
         got = cad_frontend.dashes(dashed, hatching.hatch_boundary_paths(dashed), 1e-4)
-        self.assertAlmostEqual(got, (diag + 1.0) * (diag * 2 + 2))
+        self.assertAlmostEqual(got, (diag + 1.0) * (diag * 2 + 2) + (40 + edges) * 2)
 
     def test_a_line_too_dense_for_ezdxf_is_not_counted(self):
         doc = ezdxf.new("R2010")
@@ -102,6 +133,36 @@ class EstimateTests(unittest.TestCase):
         from ezdxf.render import hatching  # noqa: PLC0415
 
         self.assertEqual(cad_frontend.dashes(h, hatching.hatch_boundary_paths(h), 1e-4), 0.0)
+
+    def test_a_tiny_dash_pattern_is_one_solid_line_as_in_ezdxf(self):
+        doc = ezdxf.new("R2010")
+        tiny = hatch(doc.modelspace(), 0, 10, spacing=1.0, dashes=(1e-12, -1e-12))
+        plain = hatch(doc.modelspace(), 0, 10, spacing=1.0)
+        from ezdxf.render import hatching  # noqa: PLC0415
+
+        loops = hatching.hatch_boundary_paths(tiny)
+        self.assertEqual(cad_frontend.dashes(tiny, loops, 1e-4), cad_frontend.dashes(plain, loops, 1e-4))
+        self.assertEqual(drawn(doc)[0], 0)
+
+    def test_a_jagged_boundary_counts_every_piece(self):
+        # A pattern longer than the comb is wide: the box gives about one
+        # dash per line, but every tooth cuts its own dash.
+        from ezdxf.render import hatching  # noqa: PLC0415
+
+        doc = ezdxf.new("R2010")
+        h = comb(doc.modelspace(), 200, 400, spacing=1.0, dashes=(1000.0, -1000.0))
+        loops = hatching.hatch_boundary_paths(h)
+        real = made(h, loops)
+        diag = hatching_box_diag(loops)
+        box_only = (diag / 1.0 + 1.0) * (diag / 2000.0 * 2 + 2)
+        self.assertGreater(real, box_only * 5)
+        self.assertGreaterEqual(cad_frontend.dashes(h, loops, 1e-4), real)
+
+
+def hatching_box_diag(loops):
+    from ezdxf import path as ezpath  # noqa: PLC0415
+
+    return ezpath.bbox(loops, fast=True).size.magnitude
 
 
 @unittest.skipUnless(HAVE_RENDER, "ezdxf or matplotlib not installed")
@@ -124,6 +185,64 @@ class DrawTests(unittest.TestCase):
         started = time.time()
         self.assertEqual(drawn(doc), (1, (0.0, 0.0, HUGE, 10.0)))
         self.assertLess(time.time() - started, 10)
+
+    def test_past_the_budget_further_hatches_are_outlines(self):
+        # Many hatches each under MAX_DASHES: the picture's dashes stay
+        # under DASH_BUDGET, and the rest are counted as outlines.
+        doc = ezdxf.new("R2010")
+        for i in range(8):
+            hatch(doc.modelspace(), 20 * i, 20 * i + 10, spacing=0.1, dashes=(0.05, -0.05))
+        from ezdxf.render import hatching  # noqa: PLC0415
+
+        one = hatch(ezdxf.new("R2010").modelspace(), 0, 10, spacing=0.1, dashes=(0.05, -0.05))
+        each = cad_frontend.dashes(one, hatching.hatch_boundary_paths(one), 1e-4)
+        from ezdxf.addons.drawing.recorder import SolidLinesRecord  # noqa: PLC0415
+
+        with mock.patch.object(cad_frontend, "MAX_DASHES", each * 1.5), \
+                mock.patch.object(cad_frontend, "DASH_BUDGET", each * 3.5):
+            rec = Recorder()
+            front = cad_frontend.Frontend(RenderContext(doc), rec)
+            front.draw_layout(doc.modelspace(), finalize=True)
+        self.assertEqual(front.outlined, 5)
+        self.assertLessEqual(front.spent, each * 3.5)
+        lines = sum(len(r.lines) // 2 for r in rec.records if isinstance(r, SolidLinesRecord))
+        self.assertGreater(lines, 0)
+        self.assertLessEqual(lines, front.spent)
+        # The outlines are drawn: the whole row is in the picture.
+        self.assertEqual(round(rec.player().bbox().extmax.x, 6), 150.0)
+
+    def test_a_dense_upside_down_hatch_in_a_turned_mirrored_block_lands_where_its_twin_does(self):
+        # The block: a hatch at x 90..100, y 0..10. Inserted at (1000, 500),
+        # mirrored in x and turned 90 degrees: (x, y) -> (1000 - y, 500 - x).
+        for kw in ({"spacing": 5e-5}, {"scale": 1e-9}, {"scale": 0.5}):
+            boxes = []
+            for flip in (False, True):
+                doc = ezdxf.new("R2010")
+                block = doc.blocks.new("B")
+                hatch(block, 90, 100, flip=flip, **kw)
+                doc.modelspace().add_blockref("B", (1000, 500), dxfattribs={"xscale": -1, "rotation": 90})
+                boxes.append(drawn(doc))
+            for (n, box) in boxes:
+                for got, want in zip(box, (990.0, 400.0, 1000.0, 410.0)):
+                    self.assertAlmostEqual(got, want, delta=0.3, msg=f"{kw} {boxes}")
+            self.assertEqual(boxes[0][0], boxes[1][0], kw)
+
+    def test_an_outlined_mpolygon_draws_its_boundary_once(self):
+        from ezdxf.addons.drawing.recorder import PathRecord  # noqa: PLC0415
+
+        def paths(scale):
+            doc = ezdxf.new("R2010")
+            mp = doc.modelspace().add_mpolygon(color=1)
+            mp.set_pattern_fill("ANSI31", scale=scale)
+            mp.paths.add_polyline_path([(0, 0), (HUGE, 0), (HUGE, 10), (0, 10)], is_closed=True)
+            rec = Recorder()
+            front = cad_frontend.Frontend(RenderContext(doc), rec)
+            front.draw_layout(doc.modelspace(), finalize=True)
+            return front.outlined, sum(isinstance(r, PathRecord) for r in rec.records)
+
+        self.assertEqual(paths(0.001), (1, 1))
+        # A pattern ezdxf draws: the boundary is drawn once there too.
+        self.assertEqual(paths(HUGE / 100)[1], 1)
 
     def test_an_upside_down_hatch_draws_where_its_twin_does(self):
         # Pattern, outline, and a pattern denser than ezdxf draws: ezdxf
@@ -172,7 +291,32 @@ class ChildTests(unittest.TestCase):
             if sys.platform.startswith("linux"):
                 self.assertLess(peak, 1_500_000, f"peak {peak} KB")
 
-    def test_a_dwg_says_it_in_its_partial_list(self):
+    def test_many_medium_hatches_stop_at_the_budget(self):
+        # Eight hatches of about 0.9 million estimated dashes each, every
+        # one under MAX_DASHES: three are drawn, five are outlines, and the
+        # picture and its index are written.
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = ezdxf.new("R2010")
+            for i in range(8):
+                hatch(doc.modelspace(), 20 * i, 20 * i + 10, spacing=0.015, dashes=(0.015, -0.015))
+            src = os.path.join(tmp, "many.dxf")
+            doc.saveas(src)
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            proc = subprocess.run([sys.executable, APP, "--dwg-render", src, out, "50"],
+                                  capture_output=True, text=True, timeout=120)
+            self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+            with open(os.path.join(out, "index.json")) as f:
+                index = json.load(f)
+            self.assertEqual(index["hatches_outlined"], 5)
+            self.assertIsNone(index["render_error"])
+            peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+            if sys.platform.startswith("linux"):
+                self.assertLess(peak, 1_500_000, f"peak {peak} KB")
+
+    def test_a_dwg_counts_it_in_the_index_not_in_its_partial_list(self):
+        # The digest says "Partly drawn" from hatches_outlined for every
+        # converter; a DWG's `partial` (what reading lost) does not repeat it.
         import cad  # noqa: PLC0415
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -188,10 +332,7 @@ class ChildTests(unittest.TestCase):
             with open(os.path.join(out, "index.json")) as f:
                 index = json.load(f)
             self.assertEqual(index["hatches_outlined"], 1)
-            self.assertEqual(index["dwg"]["partial"], [
-                {"reason": "a style not carried", "count": 2},
-                {"reason": cad_frontend.OUTLINED, "count": 1},
-            ])
+            self.assertEqual(index["dwg"]["partial"], [{"reason": "a style not carried", "count": 2}])
 
     def test_the_crops_count_it(self):
         with tempfile.TemporaryDirectory() as tmp:

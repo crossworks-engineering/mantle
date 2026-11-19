@@ -84,6 +84,9 @@ export type DwgCrops = {
   capped: string[];
   /** The drawing's frame, when a `view` asked for one. */
   frame?: DwgFrame;
+  /** Pattern hatches drawn as their outline only (too many dashes to draw:
+   *  cad/cad_frontend.py); 0 from a CAD tier before it. */
+  hatchesOutlined: number;
 };
 
 /**
@@ -126,6 +129,7 @@ export async function parserDwgCrop(
           : null,
       capped: Array.isArray(body.capped) ? body.capped.map(text).filter(Boolean) : [],
       ...(frame ? { frame } : {}),
+      hatchesOutlined: count(body.hatches_outlined),
     };
   });
 }

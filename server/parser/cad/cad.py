@@ -515,15 +515,13 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     # Registry without pixels still ships; the parent tolerates a missing
     # model.png. The reason is recorded so the app side can say WHY the
     # drawing has no image child instead of silently emitting nothing.
-    # Pattern hatches too fine to draw (cad_frontend.MAX_DASHES), drawn as
-    # their outline: the picture is partial, and says so. A DWG says it in
-    # its `partial` list too, as the digest's "Partly read".
+    # Pattern hatches drawn as their outline (cad_frontend.MAX_DASHES,
+    # DASH_BUDGET): the picture is partial, and the digest says so for every
+    # converter ("Partly drawn").
     index["hatches_outlined"] = 0
     render_error = render_png(doc)
 
     index["render_error"] = render_error
-    if index["hatches_outlined"] and converter == "ezdwg":
-        notes["partial"].append({"reason": cad_frontend.OUTLINED, "count": index["hatches_outlined"]})
     # After the picture: the SVGs draw in temporary layouts of the same
     # document, and never cost the registry or model.png.
     index.update(symbols_of(doc, started + SYMBOL_BUDGET_S, started + SYMBOL_STOP_S))

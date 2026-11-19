@@ -111,6 +111,23 @@ describe('dwg_render', () => {
     expect((await call({})).ok).toBe(true);
   });
 
+  it('says when the picture draws pattern hatches as outlines only', async () => {
+    const partial = crop();
+    files.parserDwgCrop.mockResolvedValueOnce({
+      ...partial,
+      value: { ...partial.value, hatchesOutlined: 2 },
+    });
+    const r = await call({});
+    expect(r).toMatchObject({
+      ok: true,
+      output: {
+        partly_drawn: '2 pattern hatches are drawn as outlines only (too many dashes to draw).',
+      },
+    });
+    const whole = await call({});
+    expect(whole.ok && 'output' in whole && whole.output).not.toHaveProperty('partly_drawn');
+  });
+
   it('says a blank window is blank and sends no picture', async () => {
     files.parserDwgCrop.mockResolvedValue(crop({ blank: true }));
     const r = await call({ window: [3000, 3000, 3100, 3100] });
