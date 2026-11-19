@@ -97,9 +97,9 @@ TABLES_FAILED = "The tables of some text pages could not be found; their text is
 # The time a window's job may take in all (seconds): a Tesseract run still
 # going then is stopped, and its page goes to vision. Under the job's end.
 JOB_BUDGET_S = 225
-# G1, the PNG of each page left to vision as one of the file's pictures: off
-# until the core takes a book Reader's pictures (images.ts reads the core's
-# own pictures of a PDF), so no window carries pictures nothing keeps.
+# G1, the PNG of each page left to vision as one of the file's pictures: on
+# since the core keeps a book Reader's page pictures (images.ts, streamed to
+# disk window by window, described by the Agent's text of the page).
 PAGE_PICTURES = True
 # The time a window spends drawing pages for OCR, at most (seconds): the
 # job's end is 240 s (PARSER_JOB_TIMEOUT_MS.pipelineRun), and a job that
@@ -635,6 +635,17 @@ def picture_of(arr, drawn_dpi, dpi, path):
     return os.path.getsize(path)
 
 
+def jpeg_of(arr, drawn_dpi, dpi, path):
+    """The page as a JPEG (quality 75), for a window whose PNGs pass the
+    answer's picture budget: a noisy scan is a fraction of its PNG."""
+    im = Image.fromarray(arr, "L")
+    k = min(1.0, dpi / drawn_dpi)
+    if k < 1.0:
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+    im.save(path, "JPEG", quality=75, optimize=True)
+    return os.path.getsize(path)
+
+
 # ── the joining of tables over pages ────────────────────────────────────────
 
 
@@ -948,14 +959,24 @@ def read_pages(path, job, opts, request):
             name = "page-%05d.png" % n
             at = os.path.join(job, name)
             size = picture_of(arr, drawn, pic_dpi, at)
+            mime = "image/png"
             if pics_bytes + size > PICTURES_MAX_BYTES:
+                # Past the answer's budget as a PNG (a noisy photocopy): the
+                # same page as a JPEG, a fraction of the bytes. No page
+                # picture is left out for its size but past even that.
                 os.remove(at)
-                pics_left_out += 1
-                return
+                name = "page-%05d.jpg" % n
+                at = os.path.join(job, name)
+                size = jpeg_of(arr, drawn, pic_dpi, at)
+                mime = "image/jpeg"
+                if pics_bytes + size > PICTURES_MAX_BYTES:
+                    os.remove(at)
+                    pics_left_out += 1
+                    return
             pics_bytes += size
             head = heading_of_text(pages[n]["text"])
             caption = "Page %d%s" % (n, ": " + head if head else "")
-            pics.append({"file": name, "mime": "image/png", "caption": caption[:200], "page": n})
+            pics.append({"file": name, "mime": mime, "caption": caption[:200], "page": n})
 
         try:
             doc = pdfplumber.open(path)
