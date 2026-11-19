@@ -2051,6 +2051,7 @@ import of a test file (`./x.test`), since the check never reads tests.
 | Shapes          | `pipelines/shapes.ts`                                                        |
 | Plan check      | `mspdi-sniff.ts`                                                             |
 | Limits          | `read-limit.ts`, `zip-guard.ts`, `limits.ts`                                 |
+| Read in part    | `read-cut.ts`, `read-cut-sink.ts` (docs/files.md, "Read in part")            |
 | Types           | `sheet-to-grid.ts`, `pipelines/contract.ts`                                  |
 
 The native helpers are kit too, but a step reaches them through the job
