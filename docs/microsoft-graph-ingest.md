@@ -87,7 +87,8 @@ Mail.Read Mail.Send Calendars.Read`.
   as an IMAP move is. Pages go by key (each asks again from the last time
   read, so a message read or moved during the run never shifts another
   past a page). A group changed in one second (mark all read, a retention
-  stamp, an import) is read on its second key, receivedDateTime, and where
+  stamp, an import) is read on its second key, receivedDateTime, over its
+  whole second (Graph may keep a finer time than it prints), and where
   it got to is kept in the cursor (`ties`), so a group of any size is
   crossed over as many runs as it takes and the folder never stalls. A
   timeout or a broken read of one message, while Graph still answers a

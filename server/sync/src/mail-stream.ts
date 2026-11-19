@@ -241,6 +241,17 @@ export function retryWaitMs(tries: number): number {
 
 /** A failed message: its tries, its first failure, its folder, and when
  *  it is next tried (ms since the epoch). */
+/** The queue of failed messages is full: the run stops here (its cursor
+ *  stays), after the retry has had its turn to free places. */
+export class QueueFullError extends Error {
+  constructor() {
+    super(
+      `${FAILURES_MAX} messages of this mailbox fail to read; the run stops here until they read`,
+    );
+    this.name = 'QueueFullError';
+  }
+}
+
 export type FailEntry = { n: number; first: number; folder: string; next?: number };
 
 /** The messages of a mailbox that failed to read, kept in the brain
@@ -268,11 +279,7 @@ export function failuresFor(
     async record(id, folder) {
       const fails = await state.msgFails(mailboxId);
       const known = fails[id];
-      if (!known && Object.keys(fails).length >= FAILURES_MAX) {
-        throw new Error(
-          `${FAILURES_MAX} messages of this mailbox fail to read; the run stops here until they read`,
-        );
-      }
+      if (!known && Object.keys(fails).length >= FAILURES_MAX) throw new QueueFullError();
       const n = (known?.n ?? 0) + 1;
       fails[id] = { n, first: known?.first ?? now(), folder, next: now() + retryWaitMs(n) };
       await state.putMsgFails(mailboxId, fails);

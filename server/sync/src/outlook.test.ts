@@ -22,8 +22,14 @@ const graph = {
   slow: new Set<string>(),
   /** The network is down: every call but a folder listing fails. */
   down: false,
+  /** Message ids with one file attachment whose bytes time out. */
+  slowAtt: new Set<string>(),
   urls: [] as string[],
 };
+
+/** A time as Graph prints it: to the second. */
+const toSecond = (iso: string) =>
+  new Date(Math.floor(Date.parse(iso) / 1000) * 1000).toISOString().replace('.000Z', 'Z');
 
 vi.mock('./microsoft', async (orig) => {
   const real = await orig<typeof import('./microsoft')>();
@@ -41,18 +47,31 @@ vi.mock('./microsoft', async (orig) => {
       const skip = Number(u.searchParams.get('$skip') ?? 0);
       // Graph's filter on the watermark (ge, gt, eq), the received
       // reach, and its sort on both keys (key paging asks again).
+      // Times are kept finer than they print (as Exchange may): a filter
+      // compares the stored time, a reply prints it to the second.
       const filter = u.searchParams.get('$filter') ?? '';
-      const mod = /lastModifiedDateTime (ge|gt|eq) (\S+)/.exec(filter);
+      const ms = (v: string) => Date.parse(v);
+      const mods = [...filter.matchAll(/lastModifiedDateTime (ge|gt|lt|eq) (\S+)/g)];
       const recGe = /receivedDateTime ge (\S+)/.exec(filter)?.[1];
-      const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+      const byReceived = (u.searchParams.get('$orderby') ?? '').startsWith('receivedDateTime');
+      const cmp = (a: number, b: number) => a - b;
       const all = (graph.messages.get(id) ?? [])
         .filter((m) => {
-          if (mod?.[1] === 'ge' && !(m.at >= mod[2]!)) return false;
-          if (mod?.[1] === 'gt' && !(m.at > mod[2]!)) return false;
-          if (mod?.[1] === 'eq' && m.at !== mod[2]) return false;
-          return !recGe || (m.rec ?? m.at) >= recGe;
+          for (const [, op, v] of mods) {
+            const a = ms(m.at);
+            const b = ms(v!);
+            if (op === 'ge' && !(a >= b)) return false;
+            if (op === 'gt' && !(a > b)) return false;
+            if (op === 'lt' && !(a < b)) return false;
+            if (op === 'eq' && a !== b) return false;
+          }
+          return !recGe || ms(m.rec ?? m.at) >= ms(recGe);
         })
-        .sort((a, b) => cmp(a.at, b.at) || cmp(a.rec ?? a.at, b.rec ?? b.at));
+        .sort((a, b) =>
+          byReceived
+            ? cmp(ms(a.rec ?? a.at), ms(b.rec ?? b.at))
+            : cmp(ms(a.at), ms(b.at)) || cmp(ms(a.rec ?? a.at), ms(b.rec ?? b.at)),
+        );
       const page = all.slice(skip, skip + 50);
       const next =
         skip + 50 < all.length
@@ -65,17 +84,30 @@ vi.mock('./microsoft', async (orig) => {
         value: page.map((m) => ({
           id: m.id,
           from: { emailAddress: { address: m.from } },
-          receivedDateTime: m.rec ?? m.at,
-          lastModifiedDateTime: m.at,
-          hasAttachments: graph.withRef.has(m.id),
+          receivedDateTime: toSecond(m.rec ?? m.at),
+          lastModifiedDateTime: toSecond(m.at),
+          hasAttachments: graph.withRef.has(m.id) || graph.slowAtt.has(m.id),
         })),
         ...(next ? { '@odata.nextLink': next } : {}),
       };
     }
-    if (/\/attachments$/.test(u.pathname))
+    if (/\/attachments$/.test(u.pathname)) {
+      const mid = decodeURIComponent(/\/messages\/([^/]+)\/attachments$/.exec(u.pathname)![1]!);
+      if (graph.slowAtt.has(mid))
+        return {
+          value: [
+            {
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              id: 'a1',
+              name: 'big.zip',
+              size: 10,
+            },
+          ],
+        };
       return {
         value: [{ '@odata.type': '#microsoft.graph.referenceAttachment', id: 'r1', name: 'Plan' }],
       };
+    }
     if (/\/attachments\/r1$/.test(u.pathname)) return {};
     const msg = /\/me\/messages\/([^/]+)$/.exec(u.pathname);
     if (msg) {
@@ -87,8 +119,9 @@ vi.mock('./microsoft', async (orig) => {
         return {
           id,
           from: { emailAddress: { address: found.from } },
-          receivedDateTime: found.at,
-          lastModifiedDateTime: found.at,
+          receivedDateTime: toSecond(found.rec ?? found.at),
+          lastModifiedDateTime: toSecond(found.at),
+          hasAttachments: graph.slowAtt.has(id),
         };
       }
       if (graph.broken.has(id)) throw new real.GraphError(503, 'Microsoft Graph answered 503');
@@ -101,6 +134,13 @@ vi.mock('./microsoft', async (orig) => {
   return {
     ...real,
     accessToken: async () => 'token',
+    // An attachment's bytes ($value): the slow one times out.
+    graph: async (_token: string, url: string) => {
+      graph.urls.push(url);
+      if (url.includes('/attachments/a1/$value'))
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      return new Response('bytes');
+    },
     graphJson: json,
     graphAll: async (token: string, path: string) =>
       ((await json(token, path)) as { value: unknown[] }).value,
@@ -143,6 +183,7 @@ beforeEach(() => {
   graph.broken = new Set();
   graph.withRef = new Set();
   graph.slow = new Set();
+  graph.slowAtt = new Set();
   graph.down = false;
   graph.urls = [];
 });
@@ -397,15 +438,19 @@ describe('a timeout on one message', () => {
 describe('a group changed in one second, past what a run reads', () => {
   it('is crossed over runs, every message read, and the folder goes on', async () => {
     graph.folders = [{ id: 'f0', displayName: 'Inbox' }];
-    const t = recent(5);
+    const t = toSecond(recent(5));
     const n = RUN_PAGES * 50 * 2 + 300; // over two runs' pages
     graph.messages.set('f0', [
       ...Array.from({ length: n }, (_, i) => ({
         id: `tie${i}`,
         from: 'a@b.test',
-        at: t,
-        // 80 share one receivedDateTime too (a page at both keys).
-        rec: i < 80 ? recent(-100) : new Date(Date.parse(recent(-90)) + i * 1000).toISOString(),
+        // One printed second, kept finer.
+        at: new Date(Date.parse(t) + (i % 997)).toISOString(),
+        // 180 share one receivedDateTime too (pages at both keys).
+        rec:
+          i < 180
+            ? toSecond(recent(-100))
+            : new Date(Date.parse(recent(-90)) + i * 1000).toISOString(),
       })),
       { id: 'after', from: 'a@b.test', at: recent(9) },
     ]);
@@ -426,7 +471,7 @@ describe('a group changed in one second, past what a run reads', () => {
     for (let i = 0; i < 4 && !posted.has('after'); i++) await run();
     expect(posted.has('after')).toBe(true);
     expect([...posted].filter((p) => p.startsWith('tie'))).toHaveLength(n);
-    // Past the group: new mail comes on the next run, from `gt` its time.
+    // Past the group: new mail comes on the next run, from the next second.
     graph.messages.get('f0')!.push({ id: 'new', from: 'a@b.test', at: recent(20) });
     await run();
     expect(posted.has('new')).toBe(true);
@@ -453,11 +498,15 @@ describe('a group changed in one second, past what a run reads', () => {
       }),
     );
     const tieUrl = graph.urls.find((u) =>
-      decodeURIComponent(u).includes('lastModifiedDateTime eq'),
+      decodeURIComponent(u).includes('lastModifiedDateTime lt'),
     )!;
     const q = new URL(`https://graph.microsoft.com/v1.0${tieUrl}`).searchParams;
-    expect(q.get('$orderby')).toBe('lastModifiedDateTime asc,receivedDateTime asc');
-    expect(q.get('$filter')).toMatch(/^lastModifiedDateTime eq \S+ and receivedDateTime ge /);
+    // The ordered property first in the filter, as Graph's rule asks; the
+    // group's whole second as a range.
+    expect(q.get('$orderby')).toBe('receivedDateTime asc');
+    expect(q.get('$filter')).toMatch(
+      /^receivedDateTime ge \S+ and lastModifiedDateTime ge \S+ and lastModifiedDateTime lt \S+$/,
+    );
   });
 });
 
@@ -495,5 +544,77 @@ describe('the messages that failed before', () => {
     expect(posted.length).toBe(1 + RETRY_PER_RUN);
     await run();
     expect(posted.length).toBe(1 + 40);
+  });
+});
+
+describe('a full queue of failed messages', () => {
+  it('still gives the retry its turn, so it drains and the mailbox goes on', async () => {
+    const { FAILURES_MAX } = await import('./mail-stream');
+    graph.folders = [{ id: 'f0', displayName: 'Inbox' }];
+    graph.messages.set('f0', [
+      ...Array.from({ length: 30 }, (_, i) => ({
+        id: `old${i}`,
+        from: 'a@b.test',
+        at: recent(-80 + i),
+      })),
+      { id: 'bad', from: 'a@b.test', at: recent(40) },
+    ]);
+    graph.broken.add('bad');
+    let clock = Date.now();
+    const { state } = fakeState();
+    const failures = failuresFor(state, 'box', () => clock);
+    // The queue full: 30 that read now, the rest gone from the mailbox.
+    for (let i = 0; i < 30; i++) await failures.record(`old${i}`, 'Inbox');
+    for (let i = 30; i < FAILURES_MAX; i++) await failures.record(`gone${i}`, 'Inbox');
+    clock += retryWaitMs(1);
+    await state.putMsCursor('acc', { since: null, folders: { f0: recent(39) } });
+    const posted: string[] = [];
+    const run = () =>
+      syncOutlook(
+        state,
+        account,
+        async (envs) => envs.map((e) => e.providerMsgId).filter((id) => !posted.includes(id)),
+        async (m) => void posted.push(m.providerMsgId),
+        async () => ({ sha256: 'a'.repeat(64), size: 0 }),
+        failures,
+      );
+    await expect(run()).rejects.toThrow(/fail to read/);
+    // The retry had its turn: 25 read, the gone ones let go.
+    expect(posted.length).toBe(RETRY_PER_RUN);
+    // Places freed: the next run keeps the new failing message and ends well.
+    await run();
+    expect((await failures.ids()).has('bad')).toBe(true);
+  });
+});
+
+describe('the last try of a message', () => {
+  it('keeps the body and names a slow attachment, never a bare stub', async () => {
+    graph.folders = [{ id: 'f0', displayName: 'Inbox' }];
+    graph.messages.set('f0', [{ id: 'm', from: 'a@b.test', at: recent(1) }]);
+    graph.slowAtt.add('m');
+    let clock = Date.now();
+    const { state } = fakeState();
+    const failures = failuresFor(state, 'box', () => clock);
+    const posted: { id: string; body?: string }[] = [];
+    const run = () =>
+      syncOutlook(
+        state,
+        account,
+        async (envs) =>
+          envs.map((e) => e.providerMsgId).filter((id) => !posted.some((p) => p.id === id)),
+        async (m) => void posted.push({ id: m.providerMsgId, body: m.bodyText }),
+        async () => ({ sha256: 'a'.repeat(64), size: 0 }),
+        failures,
+      );
+    for (let i = 0; i < 4; i++) {
+      await run();
+      clock += 6 * 60 * 60_000;
+    }
+    expect(posted).toEqual([]);
+    clock += MESSAGE_GIVE_UP_MS;
+    await run();
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.body).toContain('body of m');
+    expect(posted[0]!.body).toContain('big.zip');
   });
 });

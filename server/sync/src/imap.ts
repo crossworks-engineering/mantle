@@ -33,6 +33,7 @@ import {
   stageOne,
   unreadStub,
   type Stager,
+  QueueFullError,
   type Failures,
 } from './mail-stream';
 import { BrainError, MessageFault } from './brain';
@@ -775,53 +776,62 @@ export async function syncMailbox(
   const client = await connect(account);
   let scanned = 0;
   try {
-    for (const folder of await scanFolders(client, account)) {
-      let lock;
-      try {
-        lock = await client.getMailboxLock(folder);
-      } catch (err) {
-        console.warn('[sync] skipping folder', folder, errorMessage(err));
-        continue;
-      }
-      try {
-        const mbox = client.mailbox;
-        if (!mbox || typeof mbox === 'boolean') continue;
-        const uidvalidity = Number(mbox.uidValidity);
-        const prev = cursor.folders[folder];
-        const sameVal = prev?.uidvalidity === uidvalidity;
-        let uids: number[];
-        if (sameVal && prev) {
-          const found = await client.search({ uid: `${prev.lastUid + 1}:*` }, { uid: true });
-          // `n:*` always answers the last message, even below n.
-          uids = (Array.isArray(found) ? found : []).filter((u) => u > prev.lastUid);
-        } else {
-          const since = new Date(Date.now() - account.firstScanDays * 86_400_000);
-          const found = await client.search({ since }, { uid: true });
-          uids = Array.isArray(found) ? found : [];
-          cursor.folders[folder] = { uidvalidity, lastUid: 0 };
-        }
-        uids.sort((a, b) => a - b);
-        if (uids.length === 0) {
-          if (!sameVal) await saveCursor(cursor);
+    try {
+      for (const folder of await scanFolders(client, account)) {
+        let lock;
+        try {
+          lock = await client.getMailboxLock(folder);
+        } catch (err) {
+          console.warn('[sync] skipping folder', folder, errorMessage(err));
           continue;
         }
-        scanned += await walk(
-          client,
-          uids,
-          folder,
-          uidvalidity,
-          wantedOf,
-          onMessage,
-          async (maxUid) => {
-            cursor.folders[folder] = { uidvalidity, lastUid: maxUid };
-            await saveCursor(cursor);
-          },
-          stage,
-          failures,
-        );
-      } finally {
-        lock.release();
+        try {
+          const mbox = client.mailbox;
+          if (!mbox || typeof mbox === 'boolean') continue;
+          const uidvalidity = Number(mbox.uidValidity);
+          const prev = cursor.folders[folder];
+          const sameVal = prev?.uidvalidity === uidvalidity;
+          let uids: number[];
+          if (sameVal && prev) {
+            const found = await client.search({ uid: `${prev.lastUid + 1}:*` }, { uid: true });
+            // `n:*` always answers the last message, even below n.
+            uids = (Array.isArray(found) ? found : []).filter((u) => u > prev.lastUid);
+          } else {
+            const since = new Date(Date.now() - account.firstScanDays * 86_400_000);
+            const found = await client.search({ since }, { uid: true });
+            uids = Array.isArray(found) ? found : [];
+            cursor.folders[folder] = { uidvalidity, lastUid: 0 };
+          }
+          uids.sort((a, b) => a - b);
+          if (uids.length === 0) {
+            if (!sameVal) await saveCursor(cursor);
+            continue;
+          }
+          scanned += await walk(
+            client,
+            uids,
+            folder,
+            uidvalidity,
+            wantedOf,
+            onMessage,
+            async (maxUid) => {
+              cursor.folders[folder] = { uidvalidity, lastUid: maxUid };
+              await saveCursor(cursor);
+            },
+            stage,
+            failures,
+          );
+        } finally {
+          lock.release();
+        }
       }
+    } catch (err) {
+      // A full queue: the retry still has its turn (it frees places), then
+      // the run stops with its cursor.
+      if (err instanceof QueueFullError && failures && client.usable) {
+        await retryFailed(client, failures, onMessage, stage);
+      }
+      throw err;
     }
     // The messages that failed before, after the new mail.
     if (failures) await retryFailed(client, failures, onMessage, stage);
