@@ -469,6 +469,20 @@ const NAMED_CHANGES: Record<
   ],
   'rule-in-query': [
     {
+      cells: /^GET \/api\/(shell|auth\/whoami) (pending )?\w+$/,
+      reason:
+        'the System workspace (migration 0391): every Admin user the switch seated is in it, so ' +
+        'their switcher list holds it, marked isSystem (the client hides it there). The shell ' +
+        "also says noAutoTables (the named change below). Without both the answer is main's.",
+      back: (now) =>
+        now
+          .replace(
+            /\{"id":"ws:other\(System\)","name":"System","isAdmin":false,"isSystem":true,[^}]*\},/g,
+            '',
+          )
+          .replace(',"noAutoTables":false,', ','),
+    },
+    {
       cells: /^GET \/api\/shell (pending )?\w+$/,
       reason:
         "the shell says whether the box has the line (noAutoTables, false here: the sweep's box " +
@@ -586,6 +600,13 @@ const NAMED_CHANGES: Record<
     },
   ],
   'workspace-create': [
+    {
+      cells: /^(POST \/api\/workspaces|createWorkspace write:)\w*/,
+      reason:
+        'the System workspace (migration 0391): a workspace row says isSystem (false on a new ' +
+        "one). Without it the answer is main's.",
+      back: (now) => now.replaceAll('"isSystem":false,', ''),
+    },
     {
       cells: /^createWorkspace read:\w+$/,
       reason:

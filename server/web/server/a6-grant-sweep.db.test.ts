@@ -96,7 +96,34 @@ const NAMED_CHANGES: ReadonlyArray<{
   cells: RegExp;
   reason: string;
   back: (now: string) => string;
-}> = [];
+}> = [
+  {
+    cells: /^(grants\.(get|write) |world members$)/,
+    reason:
+      'the System workspace (a subset of the Admin users, migration 0391): every Admin user the ' +
+      'switch seated is in it, so it is a workspace the owner moderates and an addable grant ' +
+      'target (the brain keeps it grantable, KISS; the client hides it from Grant Access), and ' +
+      "its seats are in the world. Without System the answer is main's.",
+    back: (now) =>
+      now.startsWith('[')
+        ? JSON.stringify((JSON.parse(now) as string[]).filter((e) => !e.includes(SYSTEM_WS_LABEL)))
+        : withoutSystemAddable(now),
+  },
+  {
+    cells: /^workspaces\.list /,
+    reason:
+      'the System workspace (migration 0391): a workspace row says isSystem, and System is ' +
+      'listed (to its users, and to every Admin user with the users area). Without both the ' +
+      "answer is main's.",
+    back: (now) => {
+      const o = JSON.parse(now) as { ok: { workspaces: Json[] } };
+      o.ok.workspaces = o.ok.workspaces
+        .filter((w) => w.id !== SYSTEM_WS_LABEL)
+        .map(({ isSystem: _drop, ...w }) => w);
+      return JSON.stringify(o);
+    },
+  },
+];
 
 /**
  * Cells recorded on main whose code is gone, with why: they are left out of
@@ -114,6 +141,12 @@ const REMOVED_CELLS: ReadonlyArray<{ cells: RegExp; reason: string }> = [
       "newItemDiff is deleted (owner's word, 2026-11-12): a new item takes its folder's sharing with no confirm, so nothing computes its change",
   },
 ];
+/** The System workspace's label in a cell (an id the sweep has no name for). */
+const SYSTEM_WS_LABEL = 'ws:other(System)';
+/** A grant answer without System among its addable workspaces. */
+const withoutSystemAddable = (now: string) =>
+  now.replaceAll(`{"wsId":"${SYSTEM_WS_LABEL}","name":"System"},`, '');
+
 const removedCell = (key: string) => REMOVED_CELLS.some((c) => c.cells.test(key));
 const namedChange = (key: string) => NAMED_CHANGES.find((c) => c.cells.test(key)) ?? null;
 
@@ -873,7 +906,8 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     );
     const differ = got
       .map((l, i) => [l, want[i]!] as const)
-      .filter(([a, b]) => a !== b)
+      // The System workspace (0391) is addable to the owner: the one change.
+      .filter(([a, b]) => a !== b && withoutSystemAddable(a) !== b)
       .map(([a, b]) => `now:  ${a}\nmain: ${b}`);
     expect(differ).toEqual([]);
   });
