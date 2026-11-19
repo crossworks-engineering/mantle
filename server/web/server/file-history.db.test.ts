@@ -466,8 +466,8 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     );
     expect(viaMcp, JSON.stringify(viaMcp)).toMatchObject({ ok: true });
     // Work with no login (an export's, a tool's own system step): system.
-    const [{ t }] = await raw<{ t: string }[]>`select title as t from nodes where id = ${id}`;
-    await put(t, 'by the box ' + randomUUID());
+    const [named] = await raw<{ t: string }[]>`select title as t from nodes where id = ${id}`;
+    await put(named!.t, 'by the box ' + randomUUID());
     expect(await actors()).toEqual([
       [1, 'owner', owner],
       [2, 'owner', owner],
