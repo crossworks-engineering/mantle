@@ -484,6 +484,7 @@ export {
   providerWaitDelayMs,
   providerWaitOf,
   providerWaitPaid,
+  providerWaitProgressed,
   tooLargeForLimit,
   type ProviderWait,
   type ProviderWaitReason,

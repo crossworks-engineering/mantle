@@ -312,6 +312,10 @@ export type ScanPdfResult = {
    *  whose keep did not reach the node (the extract queue then bounds the
    *  waits, ProviderWaitError `paid`). */
   waitPaid?: true;
+  /** With a wait: a page this read paid for was kept on the node, so a
+   *  try again does not pay for it (the queue counts the try as one that
+   *  got work done, ProviderWaitError `progressed`). */
+  progressed?: true;
 };
 
 /**
@@ -352,6 +356,8 @@ export async function readScannedPdf(opts: {
   // A paid page whose keep did not reach the node: a try again pays for
   // it again.
   let unkept = false;
+  // A paid page kept on the node: a try again does not pay for it.
+  let keptPaid = false;
   const pauses = opts.waitPauses ?? (opts.deadline !== undefined ? [] : PROVIDER_WAIT_IN_JOB_MS);
   const waits = {
     pauses,
@@ -360,12 +366,19 @@ export async function readScannedPdf(opts: {
       wait ??= w;
       if (paid) waitPaid = true;
     },
-    onUnkept: () => {
-      unkept = true;
+    onKeep: (ok: boolean) => {
+      if (ok) keptPaid = true;
+      else unkept = true;
     },
   };
   const waitOut = () =>
-    wait ? { wait, ...(waitPaid || unkept ? { waitPaid: true as const } : {}) } : {};
+    wait
+      ? {
+          wait,
+          ...(waitPaid || unkept ? { waitPaid: true as const } : {}),
+          ...(keptPaid ? { progressed: true as const } : {}),
+        }
+      : {};
   const late = () => opts.deadline !== undefined && Date.now() >= opts.deadline;
   const unread = (from: number, to: number, why: ScanUnreadReason): ScanPage[] =>
     Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => ({
@@ -515,8 +528,8 @@ type ScanWaits = {
   pauses: readonly number[];
   held: () => boolean;
   onWait: (wait: ProviderWait, paid: boolean) => void;
-  /** A page this read paid for was not kept on the node. */
-  onUnkept: () => void;
+  /** A page this read paid for was kept on the node (true), or not. */
+  onKeep: (ok: boolean) => void;
 };
 
 /** The pages a read claimed: each cut (parser work, before any paid call:
@@ -577,7 +590,10 @@ async function readMine(
   const taken = new Set<number>();
   const jobs = mine.map((n) => async (): Promise<ScanPage | null> => {
     const p = await one(n);
-    if (p && !taken.has(n) && keep && !(await keep(p)) && paidFor(p)) waits.onUnkept();
+    if (p && !taken.has(n) && keep) {
+      const ok = await keep(p);
+      if (paidFor(p)) waits.onKeep(ok);
+    }
     return p;
   });
   const pages = (await inTurn(jobs, SCAN_PAGES_AT_ONCE)).filter((p): p is ScanPage => p !== null);

@@ -84,12 +84,22 @@ export class ProviderWaitError extends Error {
    *  again (pages or pictures read before it, the extraction call before
    *  an embed): the queue then bounds the waits (PAID_WAIT_RESENDS_MAX). */
   readonly paid: boolean;
-  constructor(wait: ProviderWait, what: string, opts: { paid?: boolean } = {}) {
+  /** The try kept new work before this wait that a try again does not pay
+   *  for again (a scan's pages kept on the node): the queue sends it again
+   *  past that bound, its count started over (a file has finitely many
+   *  pages). */
+  readonly progressed: boolean;
+  constructor(
+    wait: ProviderWait,
+    what: string,
+    opts: { paid?: boolean; progressed?: boolean } = {},
+  ) {
     super(`${what}: ${PROVIDER_WAIT_TEXT[wait.reason]}`);
     this.name = 'ProviderWaitError';
     this.wait = wait;
     this.what = what;
     this.paid = opts.paid === true;
+    this.progressed = opts.progressed === true;
   }
 }
 
@@ -98,6 +108,17 @@ export function providerWaitPaid(err: unknown): boolean {
   for (const e of chain(err)) {
     if ((e as { name?: unknown }).name === 'ProviderWaitError') {
       return (e as { paid?: unknown }).paid === true;
+    }
+  }
+  return false;
+}
+
+/** True when `err` (or a cause) is a wait raised after the try kept new
+ *  work (ProviderWaitError `progressed`). */
+export function providerWaitProgressed(err: unknown): boolean {
+  for (const e of chain(err)) {
+    if ((e as { name?: unknown }).name === 'ProviderWaitError') {
+      return (e as { progressed?: unknown }).progressed === true;
     }
   }
   return false;

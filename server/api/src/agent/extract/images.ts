@@ -867,8 +867,13 @@ export async function ocrIngestPdfNode(
       // (extract-queue.ts). Each page read before it is kept on the node
       // (data.ocr.scan, by the bytes' sha256), so the try again reads only
       // the rest and pays for no page twice.
+      // A try that kept pages it paid for got work done: the queue sends it
+      // again past its bound of paid waits (a file has finitely many pages).
       if (read.wait) {
-        throw new ProviderWaitError(read.wait, 'scan_reader', { paid: read.waitPaid === true });
+        throw new ProviderWaitError(read.wait, 'scan_reader', {
+          paid: read.waitPaid === true,
+          progressed: read.progressed === true,
+        });
       }
 
       const pages = [...keptBefore, ...read.pages].sort((a, b) => a.page - b.page);

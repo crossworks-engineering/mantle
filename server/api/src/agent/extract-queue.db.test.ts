@@ -15,7 +15,8 @@
  *    document both run and end, on a box set to one extraction at a time;
  *  - past PAID_WAIT_RESENDS_MAX waits after paid calls, a wait with no paid
  *    call is no new job either: the job takes the queue's retries, which
- *    count to the dead letters.
+ *    count to the dead letters; a try that kept new pages is sent again
+ *    past the bound, its count started over.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -35,7 +36,7 @@ const runs = vi.hoisted(() => ({
   release: new Map<string, () => void>(),
   held: new Set<string>(),
   /** The provider's "not now" each try of a node meets, in turn. */
-  waits: new Map<string, { paid?: boolean }[]>(),
+  waits: new Map<string, { paid?: boolean; progressed?: boolean }[]>(),
 }));
 vi.mock('./extractor.js', async () => {
   const { ProviderWaitError } = await import('@mantle/std');
@@ -277,5 +278,33 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
       ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => 'completed'),
       'retry',
     ]);
+  }, 90_000);
+  it('a try that kept new pages is sent again past the bound, its count started over', async () => {
+    const pdf = await file('scan-long.pdf');
+    runs.waits.set(pdf, [
+      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => ({ paid: true })),
+      { paid: true, progressed: true },
+    ]);
+    const main = () =>
+      su<{ state: string; paid: number | null }[]>`
+        select state, (data->'wait'->>'paid')::int as paid from pgboss.job
+        where data->>'nodeId' = ${pdf} and name = 'mantle.extract' order by created_on`;
+    await q.enqueueExtract(pdf);
+    for (let sent = 1; sent <= PAID_WAIT_RESENDS_MAX + 1; sent += 1) {
+      await until(`wait ${sent} is sent`, async () => (await main()).length === sent + 1);
+      await su`update pgboss.job set start_after = now()
+        where data->>'nodeId' = ${pdf} and state = 'created'`;
+    }
+    // The try after it reads the rest and ends.
+    await until('the read ended', () => runs.ended.includes(pdf));
+    await until('its job is done', async () => (await main()).at(-1)!.state === 'completed');
+    const all = await main();
+    expect(all.map((j) => j.paid)).toEqual([
+      null,
+      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, (_, i) => i + 1),
+      // Paid again, but counted from naught: the try got work done.
+      1,
+    ]);
+    expect(all.every((j) => j.state === 'completed')).toBe(true);
   }, 90_000);
 });

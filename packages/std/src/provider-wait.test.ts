@@ -12,6 +12,7 @@ import {
   providerWaitDelayMs,
   providerWaitOf,
   providerWaitPaid,
+  providerWaitProgressed,
   tooLargeForLimit,
   type ProviderWait,
 } from './provider-wait';
@@ -96,6 +97,19 @@ describe('a wait after paid calls', () => {
     expect(providerWaitPaid(new Error('x', { cause: paid }))).toBe(true);
     expect(providerWaitPaid(new ProviderWaitError({ reason: 'rate_limit' }, 'vision'))).toBe(false);
     expect(providerWaitPaid(http(429))).toBe(false);
+  });
+
+  it('says a try that kept new work, also under a wrapper', () => {
+    const kept = new ProviderWaitError({ reason: 'rate_limit' }, 'scan_reader', {
+      paid: true,
+      progressed: true,
+    });
+    expect(providerWaitProgressed(kept)).toBe(true);
+    expect(providerWaitProgressed(new Error('x', { cause: kept }))).toBe(true);
+    expect(providerWaitProgressed(new ProviderWaitError({ reason: 'quota' }, 'vision'))).toBe(
+      false,
+    );
+    expect(providerWaitProgressed(http(429))).toBe(false);
   });
 });
 

@@ -593,6 +593,33 @@ describe('the reads shared by the readers of one upload (scan-share.ts)', () => 
     expect(unkept.r.waitPaid).toBe(true);
   });
 
+  it('a read that kept pages it paid for before its wait says it got work done', async () => {
+    const noCredit = { ...answer(''), ran: false, wait: { reason: 'quota' as const } };
+    // Pages 1 to 5 read and kept, then "not now": progressed.
+    const first = await readWith(
+      memoryShare(fresh(), 'extract'),
+      { total: 6, scan: (n) => (n === 6 ? noCredit : answer(`${ROWS}\nPAGE ${n}`)) },
+      { waitPauses: [] },
+    );
+    expect(first.r.wait).toEqual({ reason: 'quota' });
+    expect(first.r.progressed).toBe(true);
+    // "Not now" before any page is paid for: nothing kept, no progress.
+    const none = await readWith(
+      memoryShare(fresh(), 'extract'),
+      { total: 6, scan: () => noCredit },
+      { waitPauses: [] },
+    );
+    expect(none.r.wait).toEqual({ reason: 'quota' });
+    expect(none.r.progressed).toBeUndefined();
+    // Read but not kept (the node gone): no progress either.
+    const lost = await readWith(
+      { ...memoryShare(fresh(), 'extract'), keep: async () => false },
+      { total: 6, scan: (n) => (n === 6 ? noCredit : answer(`${ROWS}\nPAGE ${n}`)) },
+      { waitPauses: [] },
+    );
+    expect(lost.r.progressed).toBeUndefined();
+  });
+
   it('a page read with no answer is not kept: the next reader reads it', async () => {
     const store = fresh();
     await readWith(memoryShare(store, 'chat'), {

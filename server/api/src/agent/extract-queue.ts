@@ -178,6 +178,7 @@ import {
   providerWaitDelayMs,
   providerWaitOf,
   providerWaitPaid,
+  providerWaitProgressed,
   type ProviderWait,
   type ProviderWaitReason,
 } from '@mantle/std';
@@ -706,14 +707,17 @@ async function handleExtractJob(
     // paid for and a try again pays for again) are sent again a few times
     // only (paidWaitResends). Past that ANY wait throws, paid or not: a
     // wait sent again is a new job, whose retries start over, so paid and
-    // unpaid waits in turn would never reach the dead letters.
+    // unpaid waits in turn would never reach the dead letters. A try that
+    // kept new work (a scan's pages: progressed) is sent again past it, its
+    // count started over: a file has finitely many pages.
     const wait = providerWaitOf(err);
-    if (wait && paidWaitResends(data)) {
+    const progressed = providerWaitProgressed(err);
+    if (wait && (progressed || paidWaitResends(data))) {
       await sendWaiting(
         b,
         data,
         { for: 'provider', provider: wait },
-        { paid: providerWaitPaid(err) },
+        { paid: providerWaitPaid(err), progressed },
       );
       return;
     }
