@@ -1190,7 +1190,9 @@ def step(request, path, job):
     except Exception as e:  # noqa: BLE001 - pdfium's own errors: the file is not a PDF it opens
         return {"status": "failed", "warnings": ["the PDF could not be opened: %s" % type(e).__name__]}
     tabs, desc, text, counts, next_state = build(read, state)
-    pictures = [{k: p[k] for k in ("file", "mime", "caption")} for p in read["pictures"]]
+    # `page`: the page of the original file (G1: the core keeps it on the
+    # picture, and its Agent text is the picture's description).
+    pictures = [{k: p[k] for k in ("file", "mime", "caption", "page")} for p in read["pictures"]]
     result = {
         "status": "ok",
         "warnings": read["warnings"],
