@@ -319,9 +319,10 @@ describe.skipIf(!URL)('an archive is extracted only on an ask, into a folder bes
     // `site-tar`: read it from the stamp.
     expect(stamp!.folder_path).toBe(`${folderPath}.site_tar`);
     const rows = await below(stamp!.folder_path!);
+    // By path, then slug: the folder's own row and its file share a path.
     expect(rows.map((r) => [r.type, r.slug])).toEqual([
-      ['branch', 'site'],
       ['file', 'index.html'],
+      ['branch', 'site'],
     ]);
   });
 
