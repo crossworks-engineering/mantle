@@ -17,13 +17,13 @@ import {
   type ExtractorParams,
 } from '@mantle/db';
 
-import { currentTrace, step } from '@mantle/tracing';
+import { currentTrace, startTrace, step } from '@mantle/tracing';
 import { prefilterFactAdd, type FactAddPrefilter } from '@mantle/decisions';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { type ExtractedFact, type ExtractorOutput } from '../extractor-parse';
 import { CLASSIFIER_PROMPT_TEMPLATE } from './prompts';
-import { chatComplete } from './model';
-import { errorMessage } from '@mantle/std';
+import { chatComplete, resolveExtractor } from './model';
+import { errorMessage, providerWaitOf, type ProviderWait } from '@mantle/std';
 
 /** Top-K near-neighbours considered when classifying a candidate fact. */
 const CLASSIFIER_NEIGHBOURS = 3;
@@ -222,12 +222,25 @@ export async function retireUnassertedFacts(ownerId: string, nodeId: string): Pr
 }
 
 /**
- * fact extraction pass: embed the candidate facts, then classify+apply each
- * (ADD/UPDATE/DELETE/NOOP) against near-neighbour facts, honouring the optional
- * per-run cost cap. Uses the H4 dirty-flag protocol: mark this node's live
- * facts suspect, clear the re-asserted ones, retire the rest on a COMPLETE pass
- * (a cost-cap break leaves them untouched and records `data.extract_incomplete`
- * for recovery). Returns the ADD/UPDATE/DELETE/NOOP/retired tally.
+ * The fact pass of a read: embed the candidate facts, then classify+apply
+ * each (ADD/UPDATE/DELETE/NOOP) against near-neighbour facts. Uses the H4
+ * dirty-flag protocol: mark this node's live facts suspect, clear the
+ * re-asserted ones, retire the rest on a COMPLETE pass.
+ *
+ * Nothing is dropped (owner decision 2026-11-19: cost controls pace paid
+ * calls, they never decide what is kept; the provider is the cap). Two
+ * things stop the pass before its last candidate, and both DEFER the rest:
+ *  - the optional per-run cost cap (`extract_cost_cap_micro_usd`, opt-in): a
+ *    pace. The rest goes back in the queue (FACTS_PACE_MS later), in a job
+ *    of its own with a fresh budget, until every candidate is done;
+ *  - the provider's "not now" on a classify call (a rate limit, no credit,
+ *    busy: @mantle/std provider-wait.ts): the rest waits with the provider's
+ *    growing gap.
+ * A deferred pass retires nothing (the candidates after the stop were not
+ * looked at yet) and marks the node `data.extract_incomplete` with
+ * `reason: 'facts_deferred'`; the job that finishes the rest clears it
+ * (processDeferredFacts). Returns the ADD/UPDATE/DELETE/NOOP/retired tally
+ * and `deferred`, the candidates left for later.
  */
 export async function processFacts(
   node: typeof nodes.$inferSelect,
@@ -236,30 +249,37 @@ export async function processFacts(
   params: ExtractorParams,
   parsed: ExtractorOutput,
   entityIdByName: Map<string, string>,
-): Promise<{ ADD: number; UPDATE: number; DELETE: number; NOOP: number; retired: number }> {
-  const factTexts = parsed.facts.map((f) => f.content);
-  let factVectors: number[][] = [];
-  try {
-    const { embedBatch } = await import('@mantle/embeddings');
-    factVectors = await embedBatch(ownerId, factTexts);
-  } catch (err) {
-    // Throw so the queue retries — a silent return here meant the facts
-    // for this node were never written and (pre-completion-marker)
-    // never would be.
-    throw new Error(
-      `extractor: fact embed batch failed for node ${node.id}: ${errorMessage(err)}`,
-      { cause: err },
-    );
-  }
+  deps: Partial<FactsDeps> = {},
+): Promise<FactsTally> {
+  // Each candidate with the entity it is about, resolved now: a deferred
+  // job applies it as this pass would have.
+  const items: DeferredFactCandidate[] = parsed.facts.map((f) => {
+    let entityId: string | null = null;
+    for (const e of f.entities ?? []) {
+      const id = entityIdByName.get(e.name.trim().toLowerCase());
+      if (id) {
+        entityId = id;
+        break;
+      }
+    }
+    return {
+      content: f.content,
+      kind: f.kind,
+      confidence: f.confidence,
+      ...(f.occurredAt ? { occurredAt: f.occurredAt } : {}),
+      entityId,
+    };
+  });
+  const vectors = await embedFacts(node.id, ownerId, items);
 
   // Treat 0 / negative / non-numeric as "no cap". `?? null` alone is a
   // trap: a configured 0 survives (0 ?? null === 0) and, because the
   // llm_extract step has already spent money by the time we get here,
-  // `spent >= 0` is always true — so every fact gets dropped at #0. A 0
+  // `spent >= 0` is always true — so every fact gets stopped at #0. A 0
   // means "unlimited", not "zero budget".
   const costCap = resolveCostCap(params.extract_cost_cap_micro_usd);
 
-  const tally = await step(
+  return step(
     {
       name: 'process_facts',
       kind: 'compute',
@@ -276,7 +296,6 @@ export async function processFacts(
       },
     },
     async (h) => {
-      const t = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
       // H4 (re-extract reconciliation): mark this node's live facts suspect.
       // Each re-asserted by the new extraction gets cleared (NOOP/UPDATE);
       // the rest are retired after the loop. Without this, a fact dropped
@@ -288,58 +307,14 @@ export async function processFacts(
         .where(
           and(eq(facts.ownerId, ownerId), eq(facts.sourceNodeId, node.id), isNull(facts.validTo)),
         );
-      let capExceededAt: number | null = null;
-      for (let i = 0; i < parsed.facts.length; i++) {
-        if (costCap != null) {
-          const spent = currentTrace()?.costMicroUsd ?? 0;
-          if (spent >= costCap) {
-            capExceededAt = i;
-            // Surface every dropped fact so a tight cap isn't an
-            // invisible data-loss event. The previous code summed
-            // them up only after the loop and left the individual
-            // contents undiscoverable.
-            const dropped = parsed.facts.slice(i).map((f) => f.content);
-            console.warn(
-              `[extractor] cost cap ${costCap}µ$ hit at fact ${i}/${parsed.facts.length}; ` +
-                `dropping ${dropped.length} fact(s) from node ${node.id}:`,
-              dropped,
-            );
-            break;
-          }
-        }
-        const candidate = parsed.facts[i]!;
-        const vec = factVectors[i]!;
-        let primaryEntityId: string | null = null;
-        for (const e of candidate.entities ?? []) {
-          const id = entityIdByName.get(e.name.trim().toLowerCase());
-          if (id) {
-            primaryEntityId = id;
-            break;
-          }
-        }
-        try {
-          const decision = await classifyAndApplyFact(
-            ownerId,
-            candidate,
-            vec,
-            node,
-            primaryEntityId,
-            worker,
-          );
-          t[decision]++;
-        } catch (err) {
-          console.error(
-            '[extractor]   fact classify failed:',
-            err instanceof Error ? err.message : err,
-          );
-        }
-      }
+      const run = await applyCandidates(ownerId, node, worker, items, vectors, costCap);
+      const t = run.tally;
       // H4: retire facts this extraction didn't re-assert (still dirty) —
-      // but only on a complete pass. A cost-cap break leaves later
-      // candidates unprocessed, so their facts must NOT be retired; just
+      // but only on a complete pass. A deferred pass leaves later
+      // candidates for later, so their facts must NOT be retired; just
       // clear the suspect flag in that case.
       let retired = 0;
-      if (capExceededAt == null) {
+      if (run.stoppedAt == null) {
         const retiredRows = await db
           .update(facts)
           .set({ validTo: new Date(), dirty: false, updatedAt: new Date() })
@@ -354,74 +329,318 @@ export async function processFacts(
           .returning({ id: facts.id });
         retired = retiredRows.length;
         // A complete pass clears any stale incomplete-marker from a prior
-        // capped run (guarded by `?` so it's a no-op when absent — no write
-        // amplification on the normal path).
-        await db
-          .update(nodes)
-          .set({ data: sql`${nodes.data} - 'extract_incomplete'` })
-          .where(
-            and(eq(nodes.id, node.id), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`),
-          );
-      } else {
-        await db
-          .update(facts)
-          .set({ dirty: false })
-          .where(
-            and(
-              eq(facts.ownerId, ownerId),
-              eq(facts.sourceNodeId, node.id),
-              isNull(facts.validTo),
-              eq(facts.dirty, true),
-            ),
-          );
-        // Durable, queryable proof that this node has facts the extractor
-        // never persisted (the cost cap cut the run short). Logs + the amber
-        // trace step get pruned; this marker survives so the loss is
-        // recoverable: raise extract_cost_cap_micro_usd for the worker, then
-        // re-fire pg_notify('node_ingested') on these nodes. Cleared on the
-        // next complete pass (above).
-        const incomplete = {
-          reason: 'fact_cost_cap',
-          dropped: parsed.facts.length - capExceededAt,
-          processed: capExceededAt,
-          at: new Date().toISOString(),
-        };
-        await db
-          .update(nodes)
-          .set({
-            data: sql`${nodes.data} || ${JSON.stringify({ extract_incomplete: incomplete })}::jsonb`,
-          })
-          .where(eq(nodes.id, node.id));
+        // deferred run (guarded by `?` so it's a no-op when absent — no
+        // write amplification on the normal path).
+        await clearIncomplete(node.id);
+        const output = { ...t, retired };
+        h.setOutput(output);
+        return output;
       }
-      const output: Record<string, unknown> = { ...t, retired };
-      if (capExceededAt != null) {
-        const dropped = parsed.facts.length - capExceededAt;
-        output.costCapHitAt = capExceededAt;
-        output.processed = capExceededAt;
-        output.skipped = dropped;
-        // Flip the step to `skipped` so a cost-cap-exhausted fact run is
-        // amber in /traces and the node-biography instead of a green
-        // "success" that hides paid-for facts being dropped — the exact
-        // silent-miss class observability.md §4 used to warn was invisible.
-        // `fact_cost_cap`/`dropped`/`model` mirror the duplicate-guard
-        // meta so /debug's widget rolls it up without a join. See §9n.
-        h.setSkipped('fact_cost_cap');
-        h.setMeta({
-          fact_cost_cap: true,
-          dropped,
-          model: worker.model,
-          costCapMicroUsd: costCap,
-          spentMicroUsd: currentTrace()?.costMicroUsd ?? 0,
-        });
-        console.warn(
-          `[extractor]   cost cap ${costCap}µ$ hit after ${capExceededAt}/${parsed.facts.length} facts — skipping rest`,
+      await db
+        .update(facts)
+        .set({ dirty: false })
+        .where(
+          and(
+            eq(facts.ownerId, ownerId),
+            eq(facts.sourceNodeId, node.id),
+            isNull(facts.validTo),
+            eq(facts.dirty, true),
+          ),
         );
-      }
+      const deferred = await deferRest(
+        node.id,
+        items.slice(run.stoppedAt),
+        run.stoppedAt,
+        run.wait,
+        deps,
+      );
+      reportDeferred(h, {
+        processed: run.stoppedAt,
+        deferred: deferred.facts.candidates.length,
+        wait: run.wait,
+        model: worker.model,
+        costCap,
+      });
+      const output = { ...t, retired, deferred: deferred.facts.candidates.length };
       h.setOutput(output);
-      return { ...t, retired };
+      return { ...t, retired, deferred };
     },
   );
-  return tally;
+}
+
+/** The tally of a fact pass, with the candidates it left for later. */
+export type FactsTally = {
+  ADD: number;
+  UPDATE: number;
+  DELETE: number;
+  NOOP: number;
+  retired: number;
+  deferred?: DeferredFactsOut;
+};
+
+/** The pace of deferred facts: the rest of a pass stopped by the cost cap
+ *  goes back in the queue this long after, so other files get their turn.
+ *  A gap, not a limit: every candidate is done in the end. */
+export const FACTS_PACE_MS = 2 * 60_000;
+
+/** One candidate fact left for later, with the entity it is about. */
+export type DeferredFactCandidate = {
+  content: string;
+  kind: ExtractedFact['kind'];
+  confidence: number;
+  occurredAt?: string;
+  entityId: string | null;
+};
+
+/** The facts a read left for later, as their job carries them. `at` is the
+ *  node's `extract_incomplete.at`: a newer read writes a newer one, and the
+ *  old job then has nothing to do (its facts are the old read's). */
+export type DeferredFacts = { at: string; candidates: DeferredFactCandidate[] };
+
+/** What a fact pass sends for later: the facts, and the provider's wait
+ *  when that is why it stopped (else the cost cap's pace). */
+export type DeferredFactsOut = { facts: DeferredFacts; wait?: ProviderWait };
+
+/** The queue's door for deferred facts: a stand-in in a test. */
+export type FactsDeps = {
+  defer(nodeId: string, out: DeferredFactsOut): Promise<void>;
+};
+
+/** The default door: the extract queue (loaded at the call: the queue
+ *  imports this module). */
+async function deferToQueue(nodeId: string, out: DeferredFactsOut): Promise<void> {
+  const { enqueueDeferredFacts } = await import('../extract-queue.js');
+  await enqueueDeferredFacts(nodeId, out);
+}
+
+async function embedFacts(
+  nodeId: string,
+  ownerId: string,
+  items: readonly DeferredFactCandidate[],
+): Promise<number[][]> {
+  try {
+    const { embedBatch } = await import('@mantle/embeddings');
+    return await embedBatch(
+      ownerId,
+      items.map((f) => f.content),
+    );
+  } catch (err) {
+    // Throw so the queue retries — a silent return here meant the facts
+    // for this node were never written and (pre-completion-marker)
+    // never would be.
+    throw new Error(`extractor: fact embed batch failed for node ${nodeId}: ${errorMessage(err)}`, {
+      cause: err,
+    });
+  }
+}
+
+/**
+ * Classify and apply the candidates in order, until the last one or a stop:
+ * the cost cap (spent in this trace) or the provider's "not now". Any other
+ * failure of one candidate is logged and the next goes on, as before.
+ */
+async function applyCandidates(
+  ownerId: string,
+  node: Pick<typeof nodes.$inferSelect, 'id' | 'createdAt' | 'data'>,
+  worker: AiWorker,
+  items: readonly DeferredFactCandidate[],
+  vectors: readonly number[][],
+  costCap: number | null,
+  atLeastOne = false,
+): Promise<{
+  tally: { ADD: number; UPDATE: number; DELETE: number; NOOP: number };
+  stoppedAt: number | null;
+  wait?: ProviderWait;
+}> {
+  const tally = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
+  for (let i = 0; i < items.length; i++) {
+    // The cap paces: past it the rest is deferred. A deferred job always
+    // applies one candidate first (`atLeastOne`), so a budget its own
+    // embed call already spent can never hold it at no progress.
+    if (costCap != null && !(atLeastOne && i === 0)) {
+      const spent = currentTrace()?.costMicroUsd ?? 0;
+      if (spent >= costCap) return { tally, stoppedAt: i };
+    }
+    const item = items[i]!;
+    try {
+      const decision = await classifyAndApplyFact(
+        ownerId,
+        item,
+        vectors[i]!,
+        node,
+        item.entityId,
+        worker,
+      );
+      tally[decision]++;
+    } catch (err) {
+      const wait = providerWaitOf(err);
+      if (wait) return { tally, stoppedAt: i, wait };
+      console.error(
+        '[extractor]   fact classify failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return { tally, stoppedAt: null };
+}
+
+/** Drop the node's incomplete marker (a no-op when absent). */
+async function clearIncomplete(nodeId: string): Promise<void> {
+  await db
+    .update(nodes)
+    .set({ data: sql`${nodes.data} - 'extract_incomplete'` })
+    .where(and(eq(nodes.id, nodeId), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`));
+}
+
+/**
+ * Mark the node and send the rest for later. The marker is durable and
+ * queryable: the node has facts not applied yet, and why. Its `at` is the
+ * deferred job's key to the node: a newer read writes a newer one.
+ */
+async function deferRest(
+  nodeId: string,
+  rest: DeferredFactCandidate[],
+  processed: number,
+  wait: ProviderWait | undefined,
+  deps: Partial<FactsDeps>,
+): Promise<DeferredFactsOut> {
+  const at = new Date().toISOString();
+  const incomplete = {
+    reason: 'facts_deferred',
+    why: wait ? `provider_${wait.reason}` : 'cost_cap',
+    deferred: rest.length,
+    processed,
+    at,
+  };
+  await db
+    .update(nodes)
+    .set({
+      data: sql`${nodes.data} || ${JSON.stringify({ extract_incomplete: incomplete })}::jsonb`,
+    })
+    .where(eq(nodes.id, nodeId));
+  const out: DeferredFactsOut = { facts: { at, candidates: rest }, ...(wait ? { wait } : {}) };
+  await (deps.defer ?? deferToQueue)(nodeId, out);
+  return out;
+}
+
+/** The step of a deferred pass, amber in /traces: the candidates left for
+ *  later, and why. `fact_cost_cap` stays for the /debug roll-up; `dropped`
+ *  is 0, since nothing is dropped any more. */
+function reportDeferred(
+  h: { setSkipped(reason: string): void; setMeta(meta: Record<string, unknown>): void },
+  r: {
+    processed: number;
+    deferred: number;
+    wait: ProviderWait | undefined;
+    model: string;
+    costCap: number | null;
+  },
+): void {
+  h.setSkipped('facts_deferred');
+  h.setMeta({
+    facts_deferred: true,
+    ...(r.wait
+      ? { provider_wait: r.wait.reason }
+      : { fact_cost_cap: true, costCapMicroUsd: r.costCap }),
+    processed: r.processed,
+    deferred: r.deferred,
+    dropped: 0,
+    model: r.model,
+    spentMicroUsd: currentTrace()?.costMicroUsd ?? 0,
+  });
+  console.warn(
+    `[extractor]   facts deferred after ${r.processed} (${r.wait ? `provider: ${r.wait.reason}` : 'cost cap'}): ${r.deferred} left for a later job`,
+  );
+}
+
+/**
+ * The job of deferred facts (extract-queue.ts): apply the candidates a read
+ * left for later, in a trace of its own (so the cost cap is a fresh budget).
+ * Nothing is read again and no extraction call is made. A job whose node
+ * was read again since (its `extract_incomplete.at` is not this job's) or
+ * is gone does nothing: the newer read has its own facts. Stops and defers
+ * again on the cap or the provider's "not now"; the last job clears the
+ * marker. Retires nothing: a deferred pass's old facts were kept.
+ */
+export async function processDeferredFacts(
+  nodeId: string,
+  ownerId: string,
+  job: DeferredFacts,
+): Promise<{ applied: number; deferred?: DeferredFactsOut }> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
+    .limit(1);
+  const marker = (node?.data as { extract_incomplete?: { at?: unknown } } | null)
+    ?.extract_incomplete;
+  if (!node || marker?.at !== job.at || job.candidates.length === 0) return { applied: 0 };
+  const worker = await resolveExtractor(ownerId);
+  // No extractor any more: nothing can classify; the marker stays and says
+  // the facts are not applied.
+  if (!worker) return { applied: 0 };
+  const params = (worker.params ?? {}) as ExtractorParams;
+  const costCap = resolveCostCap(params.extract_cost_cap_micro_usd);
+  return startTrace(
+    {
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: nodeId,
+      subjectKind: 'node',
+      data: { source: 'facts_deferred', candidates: job.candidates.length },
+    },
+    async () => {
+      const vectors = await embedFacts(nodeId, ownerId, job.candidates);
+      return step(
+        { name: 'process_facts', kind: 'compute', input: { deferred: job.candidates.length } },
+        async (h) => {
+          const run = await applyCandidates(
+            ownerId,
+            node,
+            worker,
+            job.candidates,
+            vectors,
+            costCap,
+            true,
+          );
+          const applied = run.stoppedAt ?? job.candidates.length;
+          if (run.stoppedAt == null) {
+            await clearIncomplete(nodeId);
+            h.setOutput({ ...run.tally, applied });
+            return { applied };
+          }
+          // Only a provider's "not now" on the first candidate leaves a job
+          // with no progress (it then waits the provider's gap); the cap
+          // always lets one through.
+          const rest = job.candidates.slice(run.stoppedAt);
+          const out: DeferredFactsOut = {
+            facts: { at: job.at, candidates: rest },
+            ...(run.wait ? { wait: run.wait } : {}),
+          };
+          await db
+            .update(nodes)
+            .set({
+              data: sql`jsonb_set(${nodes.data}, '{extract_incomplete,deferred}', ${String(rest.length)}::jsonb)`,
+            })
+            .where(
+              and(
+                eq(nodes.id, nodeId),
+                sql`${nodes.data}->'extract_incomplete'->>'at' = ${job.at}`,
+              ),
+            );
+          reportDeferred(h, {
+            processed: applied,
+            deferred: rest.length,
+            wait: run.wait,
+            model: worker.model,
+            costCap,
+          });
+          h.setOutput({ ...run.tally, applied, deferred: rest.length });
+          return { applied, deferred: out };
+        },
+      );
+    },
+  );
 }
 
 // ─── The main entrypoint ────────────────────────────────────────────────────

@@ -27,7 +27,12 @@
 import { resolveDefaultWorker } from '@mantle/api-keys';
 import { bumpWorkerUsage } from '@mantle/db';
 import { getVisionAdapter } from '@mantle/voice';
-import { providerErrorStatus, publicProviderErrorMessage } from '@mantle/std';
+import {
+  providerErrorStatus,
+  providerWaitOf,
+  publicProviderErrorMessage,
+  type ProviderWait,
+} from '@mantle/std';
 import { scanReadQualityOf, type OcrWord, type ScanReadQuality } from './scan-reader-quality';
 
 /** The Scan reader's engine: OpenRouter's PDF parser `mistral-ocr`, $2 per
@@ -60,6 +65,10 @@ export type ScanReaderResult = {
   costUsd?: number;
   /** The read's quality: `ok: false` leaves the page unread. */
   quality: ScanReadQuality;
+  /** The provider said "not now" (a rate limit, no credit, busy:
+   *  @mantle/std provider-wait.ts): the page waits for a run again, it is
+   *  not a bad read. Only with `ran: false`. */
+  wait?: ProviderWait;
 };
 
 const notRun = (note: string, model: string | null, attempted = false): ScanReaderResult => ({
@@ -193,10 +202,14 @@ export async function runScanReader(opts: {
       }),
     };
   } catch (err) {
-    return notRun(
-      `Scan reader failed: ${publicProviderErrorMessage(err, 'scan-reader')}`,
-      worker.model,
-      true,
-    );
+    const wait = providerWaitOf(err);
+    return {
+      ...notRun(
+        `Scan reader failed: ${publicProviderErrorMessage(err, 'scan-reader')}`,
+        worker.model,
+        true,
+      ),
+      ...(wait ? { wait } : {}),
+    };
   }
 }

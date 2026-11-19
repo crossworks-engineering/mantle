@@ -13,8 +13,18 @@
  *  3. The day cap of the box is not reached (pipelineAsksToday).
  * Guards 1 and 2 are read one time for a run. Each "no" is the answer
  * `not_available` with a reason word: `off`, `no_llm_work`, `day_cap`,
- * `no_worker`. The run stops at the first one and starts nothing later: no
- * timer and no retry asks again.
+ * `no_worker`. The run stops at the first one. A run stopped at the day
+ * cap is deferred, not dropped: the run job sends it again once the cap has
+ * room (extract-queue.ts, pipeline-asks.ts pipelineAsksFreeAt), and it asks
+ * only what its tab does not hold yet. No other stop is tried again by
+ * itself.
+ *
+ * The provider is the cap (owner decision 2026-11-19): a provider's "not
+ * now" (a rate limit, no credit, busy: @mantle/std provider-wait.ts) is the
+ * answer `not_available` with the word `provider_<reason>`. The run stops
+ * there (no more calls into a refusal), keeps what it paid for, and the run
+ * job sends it again later with a growing gap. Such a refused call is no
+ * step of the day count: the provider billed nothing.
  *
  * The call: the box's vision worker, with a fixed system text and the
  * core's question (the step gives fields, never free text). The model has
@@ -46,7 +56,9 @@ import {
   askAnswerOf,
   askQuestionOf,
   ASK_SKIPPED_NO_SCAN_READER,
+  DAY_CAP_STOP,
   PAGE_TEXT_ANSWER_MAX_CHARS,
+  providerWaitStop,
   type AgentAsk,
   type AgentAskFn,
 } from '@mantle/content/pipeline-agent';
@@ -164,6 +176,13 @@ export function pipelineAskOf(
           h.setMeta({ reader: 'scan_reader', note: out.note });
           return { ok: false, error: 'not_available', reason: ASK_SKIPPED_NO_SCAN_READER };
         }
+        // The provider said "not now": no step of the day count (nothing
+        // billed), the page is not judged, and the run waits.
+        if (!out.ran && out.wait) {
+          h.setSkipped(providerWaitStop(out.wait.reason));
+          h.setMeta({ reader: 'scan_reader', wait: out.wait.reason, note: out.note });
+          return no(providerWaitStop(out.wait.reason));
+        }
         h.setMeta({
           // A call went out: one of the day count (a provider that failed
           // may bill it).
@@ -219,13 +238,13 @@ export function pipelineAskOf(
   return async (ask: AgentAsk): Promise<PipelineCallAnswer> => {
     const why = await fixedNo();
     if (why) return no(why);
-    if ((await d.asksToday()) >= d.dayCap()) return no('day_cap');
+    if ((await d.asksToday()) >= d.dayCap()) return no(DAY_CAP_STOP);
     // A scanned page (one field, the page's text, with its PDF and line
     // count): the Scan reader alone. Vision only for a figure.
     if (pageText && ask.pdf && ask.scan && ask.fields.length === 1 && !ask.list) {
       const read = await scanRead(ask, ask.scan, ask.pdf);
       if (read !== 'figure') return read;
-      if ((await d.asksToday()) >= d.dayCap()) return no('day_cap');
+      if ((await d.asksToday()) >= d.dayCap()) return no(DAY_CAP_STOP);
     }
     return step(
       {
@@ -257,6 +276,13 @@ export function pipelineAskOf(
         if (!out.ran && out.model === null) {
           h.setSkipped('no_worker');
           return no('no_worker');
+        }
+        // The provider said "not now": no step of the day count (nothing
+        // billed); the run waits and asks again later.
+        if (!out.ran && out.wait) {
+          h.setSkipped(providerWaitStop(out.wait.reason));
+          h.setMeta({ pipeline: pipeline.id, wait: out.wait.reason, note: out.note });
+          return no(providerWaitStop(out.wait.reason));
         }
         h.setMeta({
           use: PIPELINE_ASK_USE,

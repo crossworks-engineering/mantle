@@ -25,10 +25,27 @@ import type { DataFileState, FileDatabaseReadBy } from './file-databases';
  *  - `none`: not read on purpose: kept to its name, or nothing to read. */
 export type FileIngest = 'done' | 'partial' | 'waiting' | 'failed' | 'none';
 
-/** An extract job for the file in the queue now: waiting (`queued`) or
- *  being read (`running`). A file read before can have one: it is being
- *  read again. */
-export type FileJob = 'queued' | 'running';
+/** An extract job for the file in the queue now: waiting its turn
+ *  (`queued`), being read (`running`), or held until the model provider
+ *  answers again or, for an Agent's run, the day cap of paid asks has room
+ *  (`waiting`; FileProcessing.wait says why and when). A file read before
+ *  can have one: it is being read again. */
+export type FileJob = 'queued' | 'running' | 'waiting';
+
+/** Why a file's job waits, and until when (FileProcessing.wait). The
+ *  provider's "not now": `rate_limit` (too many calls now), `quota` (the
+ *  account has no credit left), `overloaded` (busy). Nothing is dropped: the
+ *  job is tried again by itself. */
+export type FileJobWait = {
+  for: 'provider' | 'day_cap';
+  reason?: 'rate_limit' | 'quota' | 'overloaded';
+  /** The Agent pipeline whose run waits, when it is a run. */
+  run?: string;
+  /** When it is tried again (ISO). */
+  until: string;
+  /** One sentence for a person. */
+  hint: string;
+};
 
 export type FileStatus = {
   ingest: FileIngest;
@@ -173,6 +190,8 @@ export type FileProcessing = {
   } | null;
   /** An extract job in the queue now, or null. */
   job: FileJob | null;
+  /** Why the job waits (`job` is `waiting`); absent otherwise. */
+  wait?: FileJobWait;
   /** true: read by an older reader or pipeline version than the box has
    *  now (FileStatus.stale); false: by the current ones; null: unknown (no
    *  stamp: read before the stamps, or not read). */

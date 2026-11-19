@@ -11,7 +11,16 @@
  * again, and a part that still fails stops the whole call with an error.
  * Nothing here ever returns a shortened text.
  */
-import { backgroundFence, withFenceNote, type Fence } from '@mantle/std';
+import {
+  backgroundFence,
+  inJobPause,
+  providerWaitOf,
+  PROVIDER_WAIT_TEXT,
+  withFenceNote,
+  type Fence,
+  withRetry,
+  type ProviderWait,
+} from '@mantle/std';
 
 /** Target tokens per source token in a bad case (English into a script the
  *  tokenizer splits finely). A part is sized so its answer fits the model's
@@ -34,6 +43,11 @@ export const TRANSLATE_TRIES = 3;
 export const TRANSLATE_MAX_HALVINGS = 4;
 /** Parts in flight at once. The answer is joined in the text's order. */
 export const TRANSLATE_CONCURRENCY = 3;
+/** The pauses a part waits through when the provider says "not now" (a
+ *  rate limit, busy: @mantle/std provider-wait.ts) before the call says it
+ *  is waiting for the provider. A wait is no try: the provider is the cap,
+ *  not the brain. Short: a person is waiting for the answer. */
+export const TRANSLATE_WAIT_PAUSES_MS: readonly number[] = [5_000, 15_000, 30_000];
 
 /** A model's limits as the catalog reports them (null: unknown). */
 export type ModelLimits = { context: number | null; output: number | null };
@@ -409,17 +423,24 @@ export type PartAnswer = {
   tokensIn?: number;
 };
 
-/** Raised when a part cannot be translated in full: the call fails. */
+/** Raised when a part cannot be translated in full: the call fails. With
+ *  `wait`, the provider said "not now" (no credit, or still busy after the
+ *  pauses): the answer says the work waits for the provider, not that the
+ *  text could not be translated. */
 export class TranslatePartError extends Error {
   constructor(
     readonly part: number,
     readonly parts: number,
     readonly reason: string,
     readonly done: number,
+    readonly wait?: ProviderWait,
   ) {
     super(
-      `Translation stopped: part ${part} of ${parts} could not be translated (${reason}). ` +
-        `${done} of ${parts} parts were done. Nothing was saved and no shortened text is returned; try again, or pick another translator model.`,
+      wait
+        ? `Translation is waiting for the model provider at part ${part} of ${parts}: ${PROVIDER_WAIT_TEXT[wait.reason]} ` +
+            `${done} of ${parts} parts were done. Nothing was saved and no shortened text is returned; ask again ${wait.reason === 'quota' ? 'once credit is added' : 'in a few minutes'}.`
+        : `Translation stopped: part ${part} of ${parts} could not be translated (${reason}). ` +
+            `${done} of ${parts} parts were done. Nothing was saved and no shortened text is returned; try again, or pick another translator model.`,
     );
     this.name = 'TranslatePartError';
   }
@@ -479,6 +500,9 @@ async function translateOnePart(opts: {
   cancelled: () => boolean;
   /** Why the call must stop now (a budget run out), or null. */
   stopReason: () => string | null;
+  /** The pauses through a provider's "not now", and the sleep (a test's). */
+  waitPauses: readonly number[];
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<string> {
   let lastReason = 'no answer';
   let cutShort = 0;
@@ -497,8 +521,30 @@ async function translateOnePart(opts: {
     const { system, user, fence } = opts.prompt(masked);
     let answer: PartAnswer;
     try {
-      answer = await opts.call(route, system, user);
+      // The provider's "not now" is no try: a short one is waited through
+      // and the same asked again (withRetry). No credit, or still busy
+      // after the pauses: the call says it waits for the provider.
+      answer = await withRetry(() => opts.call(route, system, user), {
+        retries: opts.waitPauses.length,
+        retryOn: (failure) => {
+          const wait = failure.error !== undefined ? providerWaitOf(failure.error) : null;
+          return !!wait && wait.reason !== 'quota';
+        },
+        delayMs: (retry, failure) =>
+          inJobPause(opts.waitPauses[retry - 1]!, providerWaitOf(failure.error)),
+        ...(opts.sleep ? { sleep: opts.sleep } : {}),
+      });
     } catch (err) {
+      const wait = providerWaitOf(err);
+      if (wait) {
+        throw new TranslatePartError(
+          opts.index,
+          opts.total,
+          PROVIDER_WAIT_TEXT[wait.reason],
+          opts.done(),
+          wait,
+        );
+      }
       lastReason = err instanceof Error && err.message ? err.message : 'the provider call failed';
       continue;
     }
@@ -587,6 +633,10 @@ export async function translateInParts(opts: {
   /** Parts in flight at once (TRANSLATE_CONCURRENCY when unset; 1 while a
    *  budget applies, so no call runs past it). */
   concurrency?: number;
+  /** The pauses through a provider's "not now" (TRANSLATE_WAIT_PAUSES_MS),
+   *  and the sleep: a test's stand-ins. */
+  waitPauses?: readonly number[];
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<{ text: string; parts: number; fallbackParts: number }> {
   const parts = splitForTranslation(opts.text, opts.partTokens);
   const total = parts.length;
@@ -632,6 +682,8 @@ export async function translateInParts(opts: {
             },
             cancelled: () => failed !== null,
             stopReason: opts.stopReason ?? (() => null),
+            waitPauses: opts.waitPauses ?? TRANSLATE_WAIT_PAUSES_MS,
+            ...(opts.sleep ? { sleep: opts.sleep } : {}),
           });
           results[i] = lead + translated + tail;
         } catch (err) {

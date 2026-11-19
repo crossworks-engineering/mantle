@@ -217,9 +217,10 @@ export type ExtractorParams = ChatLlmParams & {
   extract_facts?: boolean;
   // NOTE: no per-extractor embedding_model. The embedder is the single
   // `embedding_config` row (migration 0061) — the extractor embeds through it.
-  /** Hard cost cap per node extraction in micro-USD. Once the running
-   *  trace cost exceeds this, remaining facts are dropped and a warning
-   *  is logged. Null = no cap. */
+  /** A pace per node extraction in micro-USD. Once the running trace
+   *  cost exceeds this, the remaining facts are DEFERRED to a facts job of
+   *  their own with a fresh budget (never dropped: owner decision
+   *  2026-11-19). Null or 0 = no pace. */
   extract_cost_cap_micro_usd?: number | null;
   /** Ceiling on embedded images kept per source document, applied AFTER the
    *  dimension/byte/duplicate gate. Blank falls back to

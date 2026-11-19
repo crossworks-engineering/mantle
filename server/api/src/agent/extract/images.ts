@@ -29,7 +29,7 @@ import {
 } from '@mantle/files';
 import { log, startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
-import { errorMessage } from '@mantle/std';
+import { callThroughWaits, errorMessage, ProviderWaitError, type ProviderWait } from '@mantle/std';
 import { cleanText } from './text';
 import {
   bookVisionPageCountOf,
@@ -542,6 +542,9 @@ export async function visionIngestImageNode(
    *  missing or the worker did not run (none wired, a provider error): the
    *  caller then must not stamp the node terminal. */
   ran: boolean;
+  /** The provider said "not now" (@mantle/std provider-wait.ts): the read
+   *  waits in the queue (the caller raises ProviderWaitError). */
+  wait?: ProviderWait;
 }> {
   // Bytes from disk (uploads) or object storage (email image attachments).
   const loaded = await loadFileBytes(node);
@@ -599,6 +602,7 @@ export async function visionIngestImageNode(
           text: null,
           failure: result.note ?? 'vision worker returned no text',
           ran: result.ran,
+          ...(result.wait ? { wait: result.wait } : {}),
         };
       }
       const text = cleanText(result.text); // strip NULs the model/OCR may emit
@@ -774,6 +778,9 @@ export async function ocrIngestPdfNode(
         });
         return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
       }
+      // The provider said "not now" to the native read: the read waits in
+      // the queue (extract-queue.ts), not on to a paid page by page read.
+      if (native.wait) throw new ProviderWaitError(native.wait, 'document');
       let ran = native.ran;
       // Kept before the render runs: the render may fail the job, and its
       // retry must not pay for this read again.
@@ -843,12 +850,18 @@ export async function ocrIngestPdfNode(
             input: { page: pg.pageNumber, mime: pg.mime, bytes: pg.png.length },
           },
           async (h) => {
-            const r = await runVisionWorker({
-              ownerId,
-              bytes: pg.png,
-              mimeType: pg.mime,
-              filename: `${filename}#page-${pg.pageNumber}.${pg.mime === 'image/jpeg' ? 'jpg' : 'png'}`,
-            });
+            // A short "not now" is waited through here, so the pages read
+            // before it are not paid again (@mantle/std callThroughWaits).
+            const r = await callThroughWaits(
+              () =>
+                runVisionWorker({
+                  ownerId,
+                  bytes: pg.png,
+                  mimeType: pg.mime,
+                  filename: `${filename}#page-${pg.pageNumber}.${pg.mime === 'image/jpeg' ? 'jpg' : 'png'}`,
+                }),
+              (a) => a.wait,
+            );
             h.setMeta({
               ran: r.ran,
               note: r.note,
@@ -859,6 +872,9 @@ export async function ocrIngestPdfNode(
             return r;
           },
         );
+        // Still "not now": the read waits in the queue; a page is never
+        // read as empty because the provider was busy.
+        if (res.wait) throw new ProviderWaitError(res.wait, 'vision');
         if (res.ran) ran = true;
         if (res.model) model = res.model;
         if (res.text.trim()) {

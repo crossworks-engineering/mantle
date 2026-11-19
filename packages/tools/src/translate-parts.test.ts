@@ -27,7 +27,7 @@ import {
   type ModelRoute,
   type PartAnswer,
 } from './translate-parts';
-import { backgroundFence } from '@mantle/std';
+import { backgroundFence, ProviderHttpError } from '@mantle/std';
 
 /** A long made-up document: headings, paragraphs, a table, a code block. */
 function doc(sections: number): string {
@@ -548,5 +548,98 @@ describe('translateInParts', () => {
     const { masked, blocks, nonce } = maskCode(text, '5');
     expect(blocks[0]!.startsWith('   ```sh')).toBe(true);
     expect(unmaskCode(masked, blocks, nonce)).toBe(text);
+  });
+});
+
+/** The provider is the cap (owner decision 2026-11-19): its "not now" is
+ *  no try. A short rate limit or a busy provider is waited through and the
+ *  part goes on; no credit, or still busy, says the call waits for the
+ *  provider, never that the text could not be translated. */
+describe('translateInParts: the provider says "not now"', () => {
+  const refused = (status: number, body = '') =>
+    new Error('The model provider answered with an error.', {
+      cause: new ProviderHttpError({ provider: 'openrouter', status, body }),
+    });
+  const sleeps: number[] = [];
+  const sleep = async (ms: number) => {
+    sleeps.push(ms);
+  };
+
+  it('a rate limit is waited through and is no try: all tries are left', async () => {
+    sleeps.length = 0;
+    let calls = 0;
+    const r = await translateInParts({
+      text: 'Hello.',
+      to: 'de',
+      partTokens: 100,
+      primary: { model: 'primary', maxOutputTokens: 100 },
+      waitPauses: [7, 9, 11],
+      sleep,
+      call: async (route, sys, user) => {
+        calls++;
+        // Three refusals, then two failed tries: a wait counted as a try
+        // would have used every try up.
+        if (calls <= 3) throw refused(calls === 2 ? 529 : 429);
+        if (calls <= 5) return { text: '', finishReason: 'stop' };
+        return upper(route, sys, user);
+      },
+    });
+    expect(r.text).toBe('HELLO.');
+    expect(calls).toBe(TRANSLATE_TRIES + 3);
+    expect(sleeps).toEqual([7, 9, 11]);
+  });
+
+  it('no credit: at once, the answer says it waits for the provider', async () => {
+    sleeps.length = 0;
+    const err = await translateInParts({
+      text: 'Hello.',
+      to: 'de',
+      partTokens: 100,
+      primary: { model: 'primary', maxOutputTokens: 100 },
+      waitPauses: [7],
+      sleep,
+      call: async () => {
+        throw refused(402);
+      },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TranslatePartError);
+    expect((err as TranslatePartError).wait?.reason).toBe('quota');
+    expect((err as Error).message).toMatch(/waiting for the model provider/);
+    expect((err as Error).message).toMatch(/once credit is added/);
+    expect(sleeps).toEqual([]);
+  });
+
+  it('still busy after the pauses: it waits for the provider, no shortened text', async () => {
+    sleeps.length = 0;
+    const err = await translateInParts({
+      text: 'Hello.',
+      to: 'de',
+      partTokens: 100,
+      primary: { model: 'primary', maxOutputTokens: 100 },
+      waitPauses: [7, 9],
+      sleep,
+      call: async () => {
+        throw refused(503);
+      },
+    }).catch((e: unknown) => e);
+    expect((err as TranslatePartError).wait?.reason).toBe('overloaded');
+    expect(sleeps).toEqual([7, 9]);
+  });
+
+  it('a refusal of the content stays a failure after its tries, as before', async () => {
+    let calls = 0;
+    const err = await translateInParts({
+      text: 'Hello.',
+      to: 'de',
+      partTokens: 100,
+      primary: { model: 'primary', maxOutputTokens: 100 },
+      sleep,
+      call: async () => {
+        calls++;
+        throw refused(400, 'bad request');
+      },
+    }).catch((e: unknown) => e);
+    expect((err as TranslatePartError).wait).toBeUndefined();
+    expect(calls).toBe(TRANSLATE_TRIES);
   });
 });

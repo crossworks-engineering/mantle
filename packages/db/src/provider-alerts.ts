@@ -311,16 +311,26 @@ export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
 
 /** An extract job for a file, as a file's status shows it: waiting
  *  (created or retry) or running (active). */
-export type ExtractJobState = 'queued' | 'running';
+/** The one read of pg-boss's job table for a file's jobs (the system
+ *  pool: pg-boss's tables are no scoped data). */
+function readExtractJobs(q: ReturnType<typeof sql>): Promise<unknown> {
+  return systemDb.execute(q);
+}
+
+/** An extract job of a file: `queued`, `running`, or `waiting`: sent again
+ *  after the model provider's "not now" or the Agents' day cap, and held
+ *  until it is due (the extract queue's point 7; extractJobWaitOf says
+ *  why). */
+export type ExtractJobState = 'queued' | 'running' | 'waiting';
 
 /**
  * The extract jobs (every lane) waiting or running for these node ids: ONE
  * read for a whole list, never one per row (a file's status in Files,
  * docs/files.md "Status and processing"). The ids are rows the caller's
  * scope already read: this answers only for them. Running wins over
- * queued. An empty map when pg-boss has no schema or job table yet (a
- * fresh brain) or no database is reached; any other database error is
- * thrown.
+ * queued, and queued over waiting (a job of the file that is not held). An
+ * empty map when pg-boss has no schema or job table yet (a fresh brain) or
+ * no database is reached; any other database error is thrown.
  */
 export async function extractJobsFor(
   ids: readonly string[],
@@ -328,14 +338,17 @@ export async function extractJobsFor(
   const out = new Map<string, ExtractJobState>();
   if (ids.length === 0) return out;
   try {
-    const rows = (await systemDb.execute(sql`
-      SELECT data->>'nodeId' AS id, bool_or(state = 'active') AS running
+    const rows = (await readExtractJobs(sql`
+      SELECT data->>'nodeId' AS id, bool_or(state = 'active') AS running,
+             bool_and(state = 'created' AND data ? 'wait' AND start_after > now()) AS waiting
       FROM pgboss.job
       WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
         AND state IN ('created', 'retry', 'active')
         AND data->>'nodeId' = any(string_to_array(${ids.join(',')}, ','))
-      GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean }>;
-    for (const r of rows) out.set(r.id, r.running ? 'running' : 'queued');
+      GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean; waiting: boolean }>;
+    for (const r of rows) {
+      out.set(r.id, r.running ? 'running' : r.waiting ? 'waiting' : 'queued');
+    }
   } catch (err) {
     // No pg-boss schema or job table yet (a fresh brain), or no database
     // reached at all (no SQLSTATE): nothing is queued. Any other answer of
@@ -345,6 +358,58 @@ export async function extractJobsFor(
     if (code !== null && code !== '42P01' && code !== '3F000') throw err;
   }
   return out;
+}
+
+/** Why a file's job waits (the extract queue's point 7): the model
+ *  provider's "not now" and its reason, or the Agents' day cap of paid
+ *  asks; the pipeline when it is an Agent's run; and when it is tried
+ *  again. */
+export type ExtractJobWait = {
+  for: 'provider' | 'day_cap';
+  reason?: 'rate_limit' | 'quota' | 'overloaded';
+  run?: string;
+  until: string;
+};
+
+/**
+ * The wait of one file's job, or null when none of its jobs waits. One
+ * read, for one id the caller's scope already read (the Details panel).
+ * Null too when pg-boss has no schema yet; any other database error is
+ * thrown, as extractJobsFor throws.
+ */
+export async function extractJobWaitOf(id: string): Promise<ExtractJobWait | null> {
+  try {
+    const rows = (await readExtractJobs(sql`
+      SELECT data->'wait'->>'for' AS for, data->'wait'->>'reason' AS reason,
+             data->>'run' AS run, start_after AS until
+      FROM pgboss.job
+      WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
+        AND state = 'created' AND data ? 'wait' AND start_after > now()
+        AND data->>'nodeId' = ${id}
+      ORDER BY start_after
+      LIMIT 1`)) as unknown as Array<{
+      for: string | null;
+      reason: string | null;
+      run: string | null;
+      until: Date | string;
+    }>;
+    const r = rows[0];
+    if (!r || (r.for !== 'provider' && r.for !== 'day_cap')) return null;
+    const reason =
+      r.reason === 'rate_limit' || r.reason === 'quota' || r.reason === 'overloaded'
+        ? r.reason
+        : undefined;
+    return {
+      for: r.for,
+      ...(reason ? { reason } : {}),
+      ...(r.run ? { run: r.run } : {}),
+      until: new Date(r.until).toISOString(),
+    };
+  } catch (err) {
+    const code = pgErrorCode(err);
+    if (code !== null && code !== '42P01' && code !== '3F000') throw err;
+    return null;
+  }
 }
 
 /** Whether the extract queue is busy: more than EXTRACT_BUSY_JOBS jobs

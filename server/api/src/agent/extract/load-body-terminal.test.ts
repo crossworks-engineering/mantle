@@ -15,6 +15,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ProviderWaitError } from '@mantle/std';
 
 const h = vi.hoisted(() => ({
   recordSkippedTrace: vi.fn(),
@@ -220,6 +221,20 @@ describe('loadExtractableBody: terminal skips', () => {
     h.visionIngestImageNode.mockResolvedValue({ text: null, failure: '503', ran: false });
     await run(fileNode('plan.png', 'image/png'));
     expect(plain()).toBe('no_vision_text');
+    expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+  });
+
+  it('the provider says "not now" to an image: the read waits in the queue, no skip at all', async () => {
+    h.visionIngestImageNode.mockResolvedValue({
+      text: null,
+      failure: 'Vision worker failed: 429',
+      ran: false,
+      wait: { reason: 'rate_limit', status: 429 },
+    });
+    const err = await run(fileNode('plan.png', 'image/png')).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderWaitError);
+    expect((err as ProviderWaitError).wait.reason).toBe('rate_limit');
+    expect(h.recordSkippedTrace).not.toHaveBeenCalled();
     expect(h.recordTerminalSkip).not.toHaveBeenCalled();
   });
 

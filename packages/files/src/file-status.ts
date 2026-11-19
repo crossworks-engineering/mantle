@@ -9,7 +9,8 @@
  *    `waiting`; a file kept to its name or with nothing to read is `none`.
  *  - `job` is an extract job in the queue for the file now (ONE read for a
  *    whole list: extractJobsFor in @mantle/db). A file read before can
- *    have one too: it is being read again.
+ *    have one too: it is being read again. `waiting`: the job waits for
+ *    the model provider (or an Agent's run for the day cap of paid asks).
  *  - `db` is the state of the file's own database, for a file that has a
  *    Data view (withDataView); absent for every other file.
  *  - `stale` is sent only when true: a stamp of the file is below the
@@ -27,7 +28,10 @@ import type { ExtractionState } from './extraction-status';
 import type { DataFileState } from './file-db-list';
 
 export type FileIngest = 'done' | 'partial' | 'waiting' | 'failed' | 'none';
-export type FileJob = 'queued' | 'running';
+/** `waiting`: a job held by the model provider's "not now" or the Agents'
+ *  day cap, sent again when it is due (the processing answer's `wait` says
+ *  why and when). */
+export type FileJob = 'queued' | 'running' | 'waiting';
 
 export type FileStatus = {
   ingest: FileIngest;

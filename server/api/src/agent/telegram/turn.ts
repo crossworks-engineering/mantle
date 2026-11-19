@@ -38,7 +38,12 @@ import {
 } from '@mantle/runtime/assistant';
 import { log } from '@mantle/tracing';
 import type { ToolSurface } from '@mantle/tools/surface';
-import { audioTagInstructionsFor, transcribeInboundVoice } from './voice';
+import {
+  audioTagInstructionsFor,
+  longVoiceNote,
+  transcribeInboundVoice,
+  voiceWaitApology,
+} from './voice';
 import { buildResponderInput } from './responder-input';
 import { deliverReply } from './deliver';
 import { persistOutbound } from './persist';
@@ -71,14 +76,20 @@ export async function runTelegramTurn(args: {
   // `row.text`. Failure downgrades the turn to a text apology rather
   // than crashing the trace. See telegram/voice.ts.
   if (voiceFileId) {
-    const ok = await transcribeInboundVoice({ ownerId, row, voiceFileId });
-    if (!ok) {
+    const voice = await transcribeInboundVoice({ ownerId, row, voiceFileId });
+    if (!voice.ok) {
+      // The provider's "not now" is said as such (no credit, busy); any
+      // other failure keeps the old apology.
       await sendApology(
         row,
-        "Sorry love — I couldn't pick up that voice clip. Could you try again, or type it out?",
+        voice.wait
+          ? voiceWaitApology(voice.wait)
+          : "Sorry love — I couldn't pick up that voice clip. Could you try again, or type it out?",
       );
       return;
     }
+    // A long note is read in full (L5): the responder hears that it is long.
+    if (voice.long) row.text = `${longVoiceNote(voice.durationSeconds)}\n\n${row.text}`;
   }
 
   // Record the inbound turn into the unified per-(owner, agent)
