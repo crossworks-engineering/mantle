@@ -43,8 +43,9 @@
  * for it. A page the engine finds mostly a figure goes on to the vision
  * call above (a description of the figure), behind the same guards; when
  * that call waits (the provider's "not now", the day cap), the paid Scan
- * reader read is kept on the file as a figure (keepBookPage), so the run
- * again makes only the vision call. With no
+ * reader read is kept on the file as the book's pending figure
+ * (keepBookFigure: no other reader takes it as final), so the run again
+ * makes only the vision call. With no
  * Scan reader on the brain the page is skipped with no stop (unread, said
  * so) and the run's other pages go on. The decider's `scan_read_check` is
  * asked where its answer can matter: in shadow it is only logged; live, it
@@ -75,6 +76,7 @@ import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state
 import { checkScanRead } from '@mantle/decisions';
 import {
   bookScanTurn,
+  keepBookFigure,
   keepBookPage,
   runScanReader,
   runVisionWorker,
@@ -118,8 +120,11 @@ export type PipelineAskDeps = {
   check: typeof checkScanRead;
   /** The shared reads of one page (bookScanTurn). */
   shared(page: number): Promise<BookScanTurn>;
-  /** Keep one page of the file in the shared reads (keepBookPage). */
-  keep(page: ScanPage): Promise<void>;
+  /** Keep one final page of the file in the shared reads (keepBookPage). */
+  keep(page: ScanPage): Promise<unknown>;
+  /** Keep a figure page whose vision call waits, for this book's run again
+   *  alone (keepBookFigure); false: it was not kept. */
+  keepFigure(page: number): Promise<boolean>;
 };
 
 /**
@@ -146,6 +151,7 @@ export function pipelineAskOf(
     check: checkScanRead,
     shared: (page) => bookScanTurn(nodeId, page),
     keep: (page) => keepBookPage(nodeId, page),
+    keepFigure: (page) => keepBookFigure(nodeId, page),
     ...deps,
   };
   // Guards 1 and 2, read one time for the run.
@@ -275,7 +281,11 @@ export function pipelineAskOf(
     if (pageText && ask.pdf && ask.scan && ask.fields.length === 1 && !ask.list) {
       const name = ask.fields[0]!.name;
       const turn: BookScanTurn = page !== null ? await d.shared(page) : { alone: true };
-      if ('kept' in turn) {
+      if ('figure' in turn) {
+        // This book's figure whose vision call waited: its Scan reader read
+        // is paid, only the vision call is left.
+        keptFigure = true;
+      } else if ('kept' in turn) {
         const k = turn.kept;
         // A figure the chat turn's vision could not describe: this ask's
         // own vision call (its Scan reader read is not made again).
@@ -303,10 +313,7 @@ export function pipelineAskOf(
       if ((await d.asksToday()) >= d.dayCap()) {
         // The figure's Scan reader read, paid here, is kept: the run again
         // (once the cap has room) makes only the vision call.
-        if (paidFigure && page !== null) {
-          if (shared) await keepShared(shared, figure(page));
-          else await d.keep(figure(page));
-        }
+        if (paidFigure && page !== null) await d.keepFigure(page);
         return no(DAY_CAP_STOP);
       }
     }
@@ -379,22 +386,24 @@ export function pipelineAskOf(
       const text = answer.ok ? valueOf(answer.output, ask.fields[0]!.name) : null;
       const described = typeof text === 'string' && text.trim() ? text : null;
       // The provider's "not now" to the vision call after this ask paid the
-      // figure's Scan reader read: that read is kept (a figure), so the run
-      // again makes only the vision call, never the Scan reader's again.
+      // figure's Scan reader read: that read is kept (the book's pending
+      // figure, which also ends a shared claim), so the run again makes only
+      // the vision call, never the Scan reader's again. A chat turn reads
+      // the page itself.
       const waited = paidFigure && !answer.ok && providerWaitOfStop(answer.reason) !== null;
-      if (shared) {
+      if (waited) {
+        await d.keepFigure(page);
+      } else if (shared) {
         // A shared figure page: its description kept for the chat turn
         // (none: a figure not described, final).
         await keepShared(
           shared,
           described
             ? { page, method: 'vision', text: described }
-            : answer.ok || waited
+            : answer.ok
               ? figure(page)
               : { page, method: 'unread', text: '', why: 'failed' },
         );
-      } else if (waited) {
-        await d.keep(figure(page));
       } else if (keptFigure && described) {
         // A kept figure now described: the description in its place, for a
         // chat turn on the same upload.

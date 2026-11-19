@@ -324,6 +324,7 @@ describe('the Scan reader of a scanned page', () => {
   let checkOut: Awaited<ReturnType<NonNullable<CheckDep>>>;
   let today: number;
   let keptAlone: unknown[];
+  let keptFigures: number[];
 
   const PAGES_AGENT = {
     id: 'pdf-page-read',
@@ -377,6 +378,10 @@ describe('the Scan reader of a scanned page', () => {
     keep: async (p: unknown) => {
       keptAlone.push(p);
     },
+    keepFigure: async (n: number) => {
+      keptFigures.push(n);
+      return true;
+    },
     ...over,
   });
   const paid = () => h.steps.filter((s) => s.meta.use === PIPELINE_ASK_USE);
@@ -388,6 +393,7 @@ describe('the Scan reader of a scanned page', () => {
     h.steps.length = 0;
     visionCalls = 0;
     keptAlone = [];
+    keptFigures = [];
     scanCalls = [];
     checkCalls = 0;
     today = 0;
@@ -592,6 +598,21 @@ describe('the Scan reader of a scanned page', () => {
       expect(scanCalls).toHaveLength(0);
       expect(visionCalls).toBe(1);
     });
+
+    it('a figure whose vision call waits is kept for the book alone: the chat turn reads the page itself', async () => {
+      scanOut = { ...scanOut, text: 'FIG 1', pictures: 1 };
+      const vision = async () => {
+        visionCalls += 1;
+        return { ran: false, text: '', note: '429', model: 'v', wait: { reason: 'rate_limit' } };
+      };
+      expect(await run({ shared: async () => ({ hooks }), vision })).toMatchObject({
+        reason: 'provider_rate_limit',
+      });
+      // Not a final figure for the chat turn: the book's pending figure,
+      // which also ends the book's claim.
+      expect(kept).toEqual([]);
+      expect(keptFigures).toEqual([7]);
+    });
   });
 
   it('a figure whose vision call waits keeps its Scan reader read: the run again makes only the vision call', async () => {
@@ -599,10 +620,14 @@ describe('the Scan reader of a scanned page', () => {
     const store = new Map<number, unknown>();
     const shared = async (page: number) => {
       const k = store.get(page);
-      return k ? { kept: k } : { alone: true as const };
+      return k === 'figure' ? { figure: true } : k ? { kept: k } : { alone: true as const };
     };
     const keep = async (p: { page: number }) => {
       store.set(p.page, p);
+    };
+    const keepFigure = async (n: number) => {
+      store.set(n, 'figure');
+      return true;
     };
     let busy = true;
     const vision = async () => {
@@ -623,18 +648,18 @@ describe('the Scan reader of a scanned page', () => {
           };
     };
     scanOut = { ...scanOut, text: 'FIG 1', pictures: 1 };
-    expect(await run({ shared, keep, vision })).toEqual({
+    expect(await run({ shared, keep, keepFigure, vision })).toEqual({
       ok: false,
       error: 'not_available',
       reason: 'provider_rate_limit',
     });
     expect(scanCalls).toHaveLength(1);
     // The run again, still "not now": no second Scan reader read.
-    await run({ shared, keep, vision });
+    await run({ shared, keep, keepFigure, vision });
     expect(scanCalls).toHaveLength(1);
     // Then the vision call answers: the description, and it is kept.
     busy = false;
-    expect(await run({ shared, keep, vision })).toMatchObject({
+    expect(await run({ shared, keep, keepFigure, vision })).toMatchObject({
       output: { values: { Text: 'A FIGURE OF A VALVE' } },
     });
     expect(scanCalls).toHaveLength(1);
@@ -652,7 +677,8 @@ describe('the Scan reader of a scanned page', () => {
       },
     });
     expect(out).toEqual({ ok: false, error: 'not_available', reason: 'day_cap' });
-    expect(keptAlone).toEqual([{ page: 7, method: 'unread', text: '', why: 'figure' }]);
+    expect(keptFigures).toEqual([7]);
+    expect(keptAlone).toEqual([]);
   });
 
   it('the provider says "not now" to the Scan reader: the run waits; the page is not judged', async () => {

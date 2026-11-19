@@ -15,7 +15,12 @@
  *
  * A page is kept only when final (scanPageFinal: read, blank, read badly,
  * too large, a figure not described); one a later read may cure (no Scan
- * reader yet, no answer, not cut) is not, so it is read again. Before a paid
+ * reader yet, no answer, not cut) is not, so it is read again. One more,
+ * not final, is the book's own (FIGURE_PENDING): a figure page whose Scan
+ * reader read the book's ask paid before its vision call waited. Only the
+ * book's ask takes it (bookScanTurn: only the vision call is left); every
+ * other reader reads the page itself and keeps its own read over it.
+ * Before a paid
  * call a reader CLAIMS the page (a row lock on the node: one claim wins);
  * a page another reader holds a live claim on is waited for, never read
  * twice. A claim ends at its `until` (a reader that died), and a reader's
@@ -71,6 +76,15 @@ const finalRead = () =>
 /** The key of the core scan read's own final `ocr` object (a book's page
  *  stamp has none: it is no whole read of the scans). */
 export const SCAN_READ_MARK = 'scan_read';
+
+/** The `why` of a book's figure page whose vision call waits (see the
+ *  module note): no ScanUnreadReason, and final for no reader but the
+ *  book's ask. */
+export const FIGURE_PENDING = 'figure_pending';
+
+/** A stored page another reader takes: any but the book's pending figure. */
+const keptForAll = (e: Entry | undefined): e is Entry =>
+  !!e && !(e[0] === 'unread' && e[1] === FIGURE_PENDING);
 
 const pageOf = (n: number, [method, why, text]: Entry): ScanPage => ({
   page: n,
@@ -137,7 +151,7 @@ export function claimOn(
   const out: ScanClaim = { kept: new Map(), mine: [], theirs: new Map() };
   for (const n of pages) {
     const kept = share.pages[String(n)];
-    if (kept) {
+    if (keptForAll(kept)) {
       out.kept.set(n, pageOf(n, kept));
       continue;
     }
@@ -250,7 +264,9 @@ export async function scanKeptOf(
 ): Promise<Map<number, ScanPage>> {
   const share = await scanShareOf(nodeId, sha256);
   const out = new Map<number, ScanPage>();
-  for (const [k, e] of Object.entries(share?.pages ?? {})) out.set(Number(k), pageOf(Number(k), e));
+  for (const [k, e] of Object.entries(share?.pages ?? {})) {
+    if (keptForAll(e)) out.set(Number(k), pageOf(Number(k), e));
+  }
   return out;
 }
 
@@ -315,7 +331,7 @@ export function scanShareHooks(opts: {
         let ended = false;
         for (const n of pages) {
           const kept = share?.pages[String(n)];
-          if (kept) got.set(n, pageOf(n, kept));
+          if (keptForAll(kept)) got.set(n, pageOf(n, kept));
           else {
             open = true;
             const c = share?.claims[String(n)];
@@ -377,6 +393,9 @@ export async function scanFinalReadOf(
 export type BookScanTurn =
   /** Another reader of the upload kept it: no call. */
   | { kept: ScanPage }
+  /** The book's own figure page whose vision call waited (FIGURE_PENDING):
+   *  its Scan reader read is paid, only the vision call is left. */
+  | { figure: true }
   /** A chat turn reads the file now: this page is claimed; the read is kept
    *  (`hooks.keep`) whatever its end, which also ends the claim. */
   | { hooks: ScanShareHooks }
@@ -402,7 +421,8 @@ export async function bookScanTurn(
   try {
     const share = await scanShareOf(nodeId, null);
     const kept = share?.pages[String(page)];
-    if (kept) return { kept: pageOf(page, kept) };
+    if (keptForAll(kept)) return { kept: pageOf(page, kept) };
+    if (kept) return { figure: true };
     if (!chatReadingNow(share, opts.now?.() ?? Date.now())) return { alone: true };
     const hooks = scanShareHooks({
       nodeId,
@@ -426,21 +446,37 @@ export async function bookScanTurn(
   }
 }
 
-/**
- * Keep one page of a book's own bytes (node `nodeId`) in the shared reads,
- * whether a chat turn reads the file or not: a figure page whose Scan
- * reader read was paid before its vision call waited (the run again takes
- * it and makes only the vision call), and that figure's description once
- * made. Never throws for the store.
- */
-export async function keepBookPage(nodeId: string, page: ScanPage): Promise<void> {
-  await scanShareHooks({
-    nodeId,
-    sha256: null,
-    by: 'book',
-    final: scanPageFinal,
-    claimMs: () => BOOK_CLAIM_MS,
+/** One write of a book's own bytes (node `nodeId`) in the shared reads,
+ *  whether a chat turn reads the file or not. True when it is on the node;
+ *  false when the node is gone or holds a whole read. Never throws for the
+ *  store. */
+function keepBook(nodeId: string, fn: (share: ScanShareData) => void): Promise<boolean> {
+  return change(nodeId, null, (share, _now, final) => {
+    fn(share);
+    // A whole read on the node is never written over.
+    return { value: !final, write: true };
   })
-    .keep([page])
+    .then((wrote) => wrote === true)
     .catch(() => false);
+}
+
+/** Keep one final page of a book's own bytes (a figure's description, once
+ *  made), for a chat turn on the same upload. True when it is on the node. */
+export function keepBookPage(nodeId: string, page: ScanPage): Promise<boolean> {
+  return keepBook(nodeId, (share) => keepOn(share, [page], 'book', scanPageFinal));
+}
+
+/**
+ * Keep page `page` of a book's own bytes as a figure whose Scan reader read
+ * was paid before its vision call waited (FIGURE_PENDING), and end the
+ * book's claim on it: the run again takes it (bookScanTurn) and makes only
+ * the vision call. Not final for any other reader. True when it is on the
+ * node; false: a run again pays for the Scan reader read again.
+ */
+export function keepBookFigure(nodeId: string, page: number): Promise<boolean> {
+  return keepBook(nodeId, (share) => {
+    const k = String(page);
+    share.pages[k] = ['unread', FIGURE_PENDING, ''];
+    if (share.claims[k]?.[0] === 'book') delete share.claims[k];
+  });
 }

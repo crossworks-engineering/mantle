@@ -303,6 +303,39 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
     expect((await dataOf(id)).keep).toBe('me');
     expect(m.takeActorMisses()).toEqual([]);
   });
+  it('a book’s figure whose vision call waits is kept for the book alone: a chat turn reads the page itself', async () => {
+    const id = await fileNode();
+    const sha = createHash('sha256').update(`${tag} book figure`).digest('hex');
+    await x(
+      sql`update nodes set data = data || jsonb_build_object('sha256', ${sha}::text) where id = ${id}`,
+    );
+    const rt = await import('@mantle/runtime/agent');
+    // The book's ask paid the Scan reader read of page 4; its vision call
+    // waited.
+    expect(await rt.keepBookFigure(id, 4)).toBe(true);
+    // The book's run again takes it: only the vision call is left.
+    expect(await rt.bookScanTurn(id, 4)).toEqual({ figure: true });
+    // A chat turn takes it as no read: it claims the page and reads it.
+    const chat = rt.scanShareHooks({
+      nodeId: id,
+      sha256: sha,
+      by: 'chat',
+      final: rt.scanPageFinal,
+      claimMs: () => 60_000,
+    });
+    const c = await chat.claim([4]);
+    expect(c.kept.size).toBe(0);
+    expect(c.mine).toEqual([4]);
+    expect((await rt.scanKeptOf(id, sha)).size).toBe(0);
+    // Its read, kept over it, stands for every reader, the book's too.
+    expect(await chat.keep([{ page: 4, method: 'vision', text: 'A VALVE' }])).toBe(true);
+    expect(await rt.bookScanTurn(id, 4)).toEqual({
+      kept: { page: 4, method: 'vision', text: 'A VALVE' },
+    });
+    expect((await dataOf(id)).keep).toBe('me');
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+
   it('a whole read is never written over; the chat turn’s end drops the shared pages beside it', async () => {
     const rt = await import('@mantle/runtime/agent');
     const id = await fileNode();

@@ -29,6 +29,7 @@ import {
 import { scanReadQualityOf } from './scan-reader-quality';
 import {
   claimOn,
+  FIGURE_PENDING,
   keepOn,
   shareDataOf,
   type ScanReader,
@@ -663,6 +664,20 @@ describe('claimOn and keepOn', () => {
     ]);
     expect(claimOn(share, [1], 'chat', 2000, 7000).mine).toEqual([1]);
     expect(claimOn(share, [2], 'extract', 6000, 9000).mine).toEqual([2]);
+  });
+
+  it('a book’s pending figure is no kept page for another reader: it claims and reads it', () => {
+    const share: ScanShareData = {
+      sha256: 's',
+      pages: { '4': ['unread', FIGURE_PENDING, ''] },
+      claims: {},
+    };
+    const c = claimOn(share, [4], 'chat', 0, 10);
+    expect(c.kept.size).toBe(0);
+    expect(c.mine).toEqual([4]);
+    // Its own read, final, is kept over it.
+    keepOn(share, [{ page: 4, method: 'vision', text: 'A VALVE' }], 'chat', scanPageFinal);
+    expect(share.pages['4']).toEqual(['vision', '', 'A VALVE']);
   });
 
   it('keeps final pages only, with no NUL, and ends the reader’s claims', () => {
