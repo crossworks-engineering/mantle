@@ -15,6 +15,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ARCHIVE_LIMITS,
+  cleanText,
   archiveBaseName,
   archiveKindOfHead,
   ArchiveRefusedError,
@@ -379,6 +380,72 @@ describe('bombs', () => {
     const file = await onDisk(Buffer.from('PK\x03\x04 this is not really a zip at all'));
     const err = await planArchive(file, 'zip', ARCHIVE_LIMITS).catch((e: unknown) => e);
     expect((err as ArchiveRefusedError).reason).toBe('damaged');
+  });
+});
+
+describe('audit round 1', () => {
+  it('the walk holds the total and the count itself, with no plan before it', async () => {
+    // Three entries of 1 MB each against a 2 MB total: a file changed after
+    // its plan is held all the same.
+    const mb1 = Buffer.alloc(1024 * 1024, 1);
+    const file = await onDisk(
+      testZip([
+        { name: 'a.bin', repeat: { chunk: mb1, times: 1 } },
+        { name: 'b.bin', repeat: { chunk: mb1, times: 1 } },
+        { name: 'c.bin', repeat: { chunk: mb1, times: 1 } },
+      ]),
+    );
+    const err = await readAll(file, 'zip', small({ maxTotalBytes: 2 * 1024 * 1024 })).catch(
+      (e: unknown) => e,
+    );
+    expect((err as ArchiveRefusedError).reason).toBe('too-large');
+    const tar = await onDisk(
+      testTar(Array.from({ length: 5 }, (_, i) => ({ name: `f${i}.txt`, data: 'x' }))),
+    );
+    const many = await readAll(tar, 'tar', small({ maxFiles: 3 })).catch((e: unknown) => e);
+    expect((many as ArchiveRefusedError).reason).toBe('too-many');
+  });
+
+  it('the plan holds the folders to the cap too', async () => {
+    const tgz = await onDisk(
+      testGzip(testTar(Array.from({ length: 12 }, (_, i) => ({ name: `d${i}/`, type: '5' })))),
+    );
+    const err = await planArchive(tgz, 'gzip', small({ maxFiles: 10 })).catch((e: unknown) => e);
+    expect((err as ArchiveRefusedError).reason).toBe('too-many');
+    expect((err as Error).message).toMatch(/folders/);
+  });
+
+  it('a folder entry that holds bytes is refused, never dropped', async () => {
+    const file = await onDisk(
+      testZip([
+        { name: 'looks-like-a-file', data: 'secret bytes', mode: 0o040755 },
+        { name: 'real/', mode: 0o040755 },
+      ]),
+    );
+    expect(await readAll(file, 'zip')).toEqual([
+      { type: 'refused', name: 'looks-like-a-file', reason: 'unsupported' },
+      { type: 'dir', path: 'real' },
+    ]);
+  });
+
+  it('a directory offset past the file is a damaged archive, not a fault', async () => {
+    const zip = testZip([{ name: 'a.txt', data: 'a' }]);
+    // The end record's directory offset, far past the file.
+    zip.writeUInt32LE(0x7fffffff, zip.length - 22 + 16);
+    const err = await planArchive(await onDisk(zip), 'zip', ARCHIVE_LIMITS).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ArchiveRefusedError);
+    expect((err as ArchiveRefusedError).reason).toBe('damaged');
+  });
+
+  it('a name is cleaned of controls, turn-around marks and half pairs, cut on whole characters', () => {
+    expect(cleanText('a\u202egnp.exe', 50)).toBe('a gnp.exe');
+    expect(cleanText('a\x07b\nc', 50)).toBe('a b c');
+    const emoji = `${'x'.repeat(199)}\u{1F600}tail`;
+    const cut = cleanText(emoji, 200);
+    expect(cut).toBe(`${'x'.repeat(199)}\u{1F600}...`);
+    expect(cleanText('lone \ud83d half', 50)).toBe('lone  half');
   });
 });
 

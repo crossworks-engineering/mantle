@@ -509,7 +509,10 @@ MCP client acting for them; no trigger, timer or sweep starts one:
   ordinary upload: the extract queue reads it as any other (and a nested
   archive gets the default text and its own "Extract contents"). Each file
   carries `data.from_archive { id, path }`; it is no derived item of the
-  archive (deleting the archive leaves them). Progress is written on the
+  archive (deleting the archive leaves them). An archive private to one
+  login makes files private to that login. The job asks no rights of its
+  own: the ask checked them, and the job writes only into the folder the
+  ask made (the precedent of a run on demand). Progress is written on the
   stamp every 50 files or 3 seconds. A stamp `queued` or `running` older
   than 3 hours is taken as dead (the agent was down when it was sent), so
   the person may ask again.
@@ -523,9 +526,13 @@ MCP client acting for them; no trigger, timer or sweep starts one:
   folder.
 - **Limits** (`archive-read.ts`): the ZIP guard's own caps (`zip-guard.ts`):
   an entry at most 128 MB (or the box's upload cap, if lower), all the
-  files together at most 512 MB, and at most 10,000 files. Past the total
-  or the count the archive is refused whole (`failed`, nothing written); an
-  entry past 128 MB is refused and the others are written. A ZIP entry is
+  files together at most 512 MB, at most 10,000 files and at most 10,000
+  folders (of the two levels a new folder can hold). Past the total or a
+  count the archive is refused whole (`failed`, nothing written); an entry
+  past 128 MB is refused and the others are written. The walk that writes
+  holds the total and the file count itself too, and the archive must be
+  the same file (size, time, inode) as the one the plan read, so bytes
+  changed between the two are held all the same. A ZIP entry is
   held to its declared size as it inflates and checked against its CRC; a
   TAR's every entry counts against the total (each is read to pass it); a
   lone gzip is held to the entry cap as it inflates.
@@ -539,8 +546,12 @@ MCP client acting for them; no trigger, timer or sweep starts one:
   that do not match the archive's word (more than declared, another CRC, a
   short range: `damaged`), and a write that failed (`not-written`).
   Skipped and counted in `skipped`: the macOS and Windows folder files
-  (`__MACOSX/`, `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`). No entry's
-  path is ever used as a disk path: every file lands by its cleaned name
+  (`__MACOSX/`, `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`). A folder
+  entry that holds bytes is refused (`unsupported`). Names shown or kept
+  (titles, folder names, `refused`, `from_archive.path`) lose control
+  characters, the marks that turn text around and halves of character
+  pairs. An unknown fault is said in a fixed sentence (the detail is in the
+  log). No entry's path is ever used as a disk path: every file lands by its cleaned name
   through `upsertFile`, inside the new folder.
 
 ---
