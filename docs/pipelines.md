@@ -2390,15 +2390,20 @@ with no ask on a read again, as for every rules version.
 window of 50 pages or 50 MB a job). For each page:
 
 - `text`: its text layer (pdfplumber) holds 40 or more characters that are
-  not spaces (the option `text_min_chars`);
+  not spaces (the option `text_min_chars`), or fewer on a page with no
+  picture over half of it that draws fewer than 10 lines, boxes and curves
+  (a section divider, a title page: a typed page never goes to vision);
 - `ocr`: else the page is drawn (pypdfium2) at its scan's own dots, from 200
   up to the option `ocr_dpi` (300), and read by Tesseract with `--psm 3`
   (never 6: rows cross the ruled lines), TSV out. A 200 dpi scan drawn at
   300 read 90% of the table cells right on the made-up spec book, drawn at
   its own 200 dots 96%;
-- `vision`: the OCR's mean confidence is under `ocr_min_confidence` (70) or
-  it gave under 40 characters (a figure, a bad copy): the Agent reads the
-  page. A page pdfium cannot draw, or Tesseract cannot read, is `vision` too;
+- `vision`: the OCR's mean confidence is under `ocr_min_confidence` (70), or
+  it gave under 40 characters on a page with ink besides the words it read
+  (0.5% of the page or more: a figure, a drawing): the Agent reads the page.
+  Few words read well with nothing else on the page (a scanned divider or
+  cover) are `ocr`. A page pdfium cannot draw, or Tesseract cannot read, is
+  `vision` too;
 - `blank`: no text layer and no ink, or under 0.1% ink and OCR found under
   40 characters (a speck, a stamp): no paid ask for a white page. What OCR
   read is kept in its row.

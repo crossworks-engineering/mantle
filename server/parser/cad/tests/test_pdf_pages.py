@@ -198,6 +198,23 @@ class TextLayer(unittest.TestCase):
         self.assertEqual(self.result["counts"]["vision"], 0)
         self.assertEqual(self.result["counts"]["ocr"], 0)
 
+    def test_a_short_typed_page_is_text_a_vector_figure_is_not(self):
+        # M4 of the large-PDF audit, round 3: a section divider or a title
+        # page of a typed book is read from its text layer, never by vision;
+        # a typed page that draws a figure with a few labels still goes to
+        # vision.
+        pdf = os.path.join(self.dir, "divider.pdf")
+        book_pdfs.write_pdf(
+            pdf,
+            [[("text", 300, 1000, 60, True, "SECTION 16")], [("text", 300, 1000, 60, True, "ELECTRICAL")], self.pages[7]],
+            scan=set(),
+        )
+        r, _ = run(pdf)
+        rows = tabs_of(r)[0]["Pages"]["rows"]
+        self.assertEqual([row[2] for row in rows][:2], ["text", "text"])
+        self.assertEqual(rows[0][5], "SECTION 16")
+        self.assertNotEqual(rows[2][2], "text")
+
     def test_text_has_a_page_line_before_each_page(self):
         text = self.input["text"]
         for n in range(1, 8):
@@ -375,6 +392,18 @@ class Scans(unittest.TestCase):
         self.assertEqual(im.mode, "L")
         self.assertAlmostEqual(im.width, 1240, delta=3)  # A4 at 150 dpi
         self.assertFalse(any(f.startswith("ocr-") for f in os.listdir(self.job)))
+
+    def test_a_scanned_divider_read_well_is_ocr_a_figure_is_vision(self):
+        # M4 of the large-PDF audit, round 3: few words read well, and nothing
+        # else on the page, are no reason for a paid ask.
+        pdf = os.path.join(self.dir, "divider-scan.pdf")
+        pages, _, _ = book_pdfs.book()
+        book_pdfs.write_pdf(pdf, [[("text", 300, 1000, 60, True, "SECTION 16")], pages[7]], scan={1, 2})
+        r, _ = run(pdf)
+        rows = tabs_of(r)[0]["Pages"]["rows"]
+        self.assertEqual([row[2] for row in rows], ["ocr", "vision"])
+        self.assertIn("SECTION", rows[0][5])
+        self.assertEqual([p["page"] for p in tabs_of(r)[1]["pictures"]], [2])
 
     def test_counts_and_description(self):
         c = self.result["counts"]

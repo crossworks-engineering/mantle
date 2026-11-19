@@ -5,12 +5,16 @@ It reads a PDF the router named a `book` (a long run of office pages, mostly
 scans or typed text), one window of pages a job, page by page:
 
   text    the page's text layer (pdfplumber) holds TEXT_MIN_CHARS or more
-          characters that are not spaces: its text is the page's text.
+          characters that are not spaces, or fewer on a page with no picture
+          over half of it and no vector figure (a section divider, a title
+          page): its text is the page's text. A typed page never goes to
+          vision.
   ocr     else the page is drawn (pypdfium2) and read by Tesseract
           (--psm 3, never 6: rows cross the ruled lines), TSV out: words,
           boxes and confidence.
   vision  the OCR's mean confidence is under OCR_MIN_CONFIDENCE, or it gave
-          under TEXT_MIN_CHARS characters: the Agent `pdf-page-read` reads
+          under TEXT_MIN_CHARS characters on a page with ink besides its words
+          (a figure; FIGURE_INK_SHARE): the Agent `pdf-page-read` reads
           the page with vision. A PNG of the page (150 dpi, gray) is kept as
           one of the file's pictures (G1), so a drawing or a figure is never
           lost; its description is the Agent's text.
@@ -80,6 +84,17 @@ MAX_PIXELS = 4096 * 4096
 # ink at all is blank with no OCR.
 INK_LEVEL = 128
 BLANK_INK_SHARE = 0.001
+# A scanned page whose OCR gave under TEXT_MIN_CHARS characters at a good
+# confidence is `ocr`, not `vision`, when the ink outside the words OCR read
+# is under this share of the page (a section divider, a cover: only those
+# words are on it); more ink there is a figure or a drawing, for vision. A
+# clean scan's specks are about 0.1%.
+FIGURE_INK_SHARE = 0.005
+# A page with a short text layer (1 to TEXT_MIN_CHARS characters) and no
+# picture over half of it is a typed page, read from its text layer (a
+# section divider, a title page), unless it draws this many lines, boxes
+# and curves or more (a vector figure with a few labels: vision reads it).
+FIGURE_MIN_OBJECTS = 10
 # One Tesseract run, at most (seconds). A page past it goes to vision.
 OCR_TIMEOUT_S = 180
 # Tesseract runs at once: the parser's CPU share (docker-compose: cpus 2).
@@ -602,6 +617,39 @@ def native_dpi(pl):
         return None
 
 
+def typed_short(pl):
+    """Whether a page with a short text layer is a typed page: no picture
+    covers half of it or more, and it draws fewer than FIGURE_MIN_OBJECTS
+    lines, boxes and curves. A page whose facts cannot be read is not."""
+    try:
+        area = float(pl.width) * float(pl.height)
+        for im in pl.images:
+            w = float(im["x1"]) - float(im["x0"])
+            h = float(im["bottom"]) - float(im["top"])
+            if w * h >= 0.5 * area:
+                return False
+        return len(pl.lines) + len(pl.rects) + len(pl.curves) < FIGURE_MIN_OBJECTS
+    except Exception:  # noqa: BLE001 - not known to be typed: drawn and read
+        return False
+
+
+def ink_outside(arr, words):
+    """The share of a page's picture that is ink outside the boxes of the
+    words OCR read (each box a little larger, for the edges of its letters)."""
+    ink = arr < INK_LEVEL
+    if not ink.any():
+        return 0.0
+    ink = ink.copy()
+    h, w = ink.shape
+    for wd in words:
+        pad = max(2, int(0.25 * (wd["bottom"] - wd["top"])))
+        x0, x1 = max(0, int(wd["x0"]) - pad), min(w, int(wd["x1"]) + pad)
+        y0, y1 = max(0, int(wd["top"]) - pad), min(h, int(wd["bottom"]) + pad)
+        if x1 > x0 and y1 > y0:
+            ink[y0:y1, x0:x1] = False
+    return float(ink.mean())
+
+
 def ocr_dpi_of(native, dpi):
     """The dots a scan is drawn at for Tesseract: its own, from NATIVE_DPI_MIN
     up to the option `ocr_dpi` (bench, 2026-11-18: a 200 dpi scan drawn at
@@ -931,8 +979,12 @@ def read_pages(path, job, opts, request):
                     # Almost no ink, and OCR found next to nothing: a blank
                     # page with a speck or a stamp. What OCR read is kept.
                     method = "blank"
-                elif mean < min_conf or nonspace(text) < text_min:
+                elif mean < min_conf:
                     method = "vision"
+                elif nonspace(text) < text_min:
+                    # Few words, read well: a divider or a cover is `ocr`; a
+                    # figure (ink outside the words) is for vision.
+                    method = "ocr" if ink_outside(arr, words) < FIGURE_INK_SHARE else "vision"
                 else:
                     method = "ocr"
                 pages[n] = {"paper": paper, "method": method, "conf": round(mean, 1), "text": text}
@@ -996,7 +1048,13 @@ def read_pages(path, job, opts, request):
                         text = pl.extract_text() or ""
                 except Exception:  # noqa: BLE001 - a page pdfminer cannot read is drawn and read
                     pl, raw, text = None, [], ""
-                if pl is not None and nonspace(text) >= text_min:
+                # A typed page: its text layer holds text_min characters, or
+                # fewer on a page that is no scan and no vector figure (a
+                # section divider, a title page). A typed page never goes to
+                # vision.
+                if pl is not None and (
+                    nonspace(text) >= text_min or (nonspace(text) > 0 and typed_short(pl))
+                ):
                     words = [word(w["text"], w["x0"], w["top"], w["x1"], w["bottom"]) for w in raw]
                     pages[n] = {"paper": paper, "method": "text", "conf": None, "text": text.strip()}
                     if want_tables:
