@@ -9,7 +9,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { assemblePdf } from '../../../pdf-fixtures.test-helper';
-import { BOOK_MIN_PAGES, BOOK_SAMPLE_PAGES, bookOf, bookUnsureOf } from '../../../pdf-kind';
+import {
+  BOOK_MIN_PAGES,
+  BOOK_SAMPLE_PAGES,
+  bookOf,
+  bookUnsureOf,
+  officePaperOf,
+} from '../../../pdf-kind';
 import { PDF_MAX_BYTES } from '../../../pdf-open';
 import { renderPdfWindows } from '../../../rasterize';
 import { BUILTIN_PIPELINES } from '../../builtin';
@@ -100,7 +106,7 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
   it('more than BOOK_MIN_PAGES pages of A4 text or scans is a book; so is a short file of typed or scanned text', () => {
     expect(BOOK_MIN_PAGES).toBe(20);
     expect(bookOf(21, sample(20))).toBe(true);
-    expect(bookOf(1679, sample(20, scan))).toBe(true);
+    expect(bookOf(1679, sample(20, { ...scan, kind: 'document' }))).toBe(true);
     expect(bookOf(null, sample(20))).toBe(false);
     // Every office PDF, whatever its size (rules 4): one typed page, seven.
     expect(bookOf(20, sample(20))).toBe(true);
@@ -117,8 +123,28 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
     expect(bookOf(7, [...sample(6, scannedText), scan])).toBe(true);
     // Two of four: not text but for a few (DOCUMENT_MIN_SHARE 0.75).
     expect(bookOf(4, [...sample(2, scannedText), ...sample(2, scan)])).toBe(false);
-    // The same sample over BOOK_MIN_PAGES: the long rule.
-    expect(bookOf(40, sample(20, scan))).toBe(true);
+    // Over BOOK_MIN_PAGES, ruled scans past a fifth of the sample that the
+    // eye did not read as tables: a scanned drawing set (M3), not a book.
+    expect(bookOf(40, sample(20, scan))).toBe(false);
+    expect(bookOf(40, [...sample(16, scannedText), ...sample(4, scan)])).toBe(true);
+    expect(bookOf(40, [...sample(15, scannedText), ...sample(5, scan)])).toBe(false);
+  });
+
+  it('a long scan of A4 or A3 ruled sheets is a book only when the eye reads them as tables (M3)', () => {
+    const scannedText = { ...scan, kind: 'document' as const };
+    const axes = (iso: number) => ({ h: 0.95 - iso, v: 0.05, iso, other: 0, longMm: 15_911 });
+    const eyed = (iso: number, textAreas: number, size: 'a4' | 'a3' = 'a4') => ({
+      ...scan,
+      size,
+      eye: { axes: axes(iso), skewDeg: 0, ink: 0.08, textAreas },
+    });
+    // A spec book of scanned tables: one ruled page looked at, a table.
+    expect(bookOf(300, [...sample(10, scannedText), eyed(0, 267), ...sample(9, scan)])).toBe(true);
+    // A 30-sheet scanned A3 P&ID set: ruled sheets, not tables.
+    expect(bookOf(30, sample(20, { ...scan, size: 'a3' }))).toBe(false);
+    expect(bookOf(30, [eyed(0, 267, 'a3'), ...sample(19, { ...scan, size: 'a3' })])).toBe(false);
+    // A scanned isometric package under ISO_MIN_SHARE: slanted lines, few text areas.
+    expect(bookOf(60, [eyed(0.002, 60), ...sample(19, scan)])).toBe(false);
   });
 
   it('a short scan whose ruled pages the eye reads as tables is a book; slanted lines keep a drawing', () => {
@@ -229,12 +255,25 @@ describe('the router: an ambiguous short scan, and a table, by the decider', () 
   });
 
   it('an unsure file the decider calls a table of rows is a book; a drawing kind stays', async () => {
-    const two = (kind: string) =>
-      routerStep(request({ step: 2, answers: [answer(kind)] }), jobOf(typedPdf(1)).job);
+    const two = (kind: string, state?: Record<string, unknown>) =>
+      routerStep(
+        request({ step: 2, answers: [answer(kind)], ...(state ? { state } : {}) }),
+        jobOf(typedPdf(1)).job,
+      );
     expect((await two('table')).kind).toBe('book');
     expect((await two('pfd')).kind).toBe('pfd');
-    // A document is never used for an unsure file: it keeps its database.
+    // A document on drawing sheets: it keeps its database, the drawing reader's.
     expect((await two('document')).kind).toBe('unsure');
+    // A document on office paper (a typed manual whose first pages hold
+    // charts): every office PDF is a book (M2).
+    expect((await two('document', { officePaper: true })).kind).toBe('book');
+    expect((await two('pfd', { officePaper: true })).kind).toBe('pfd');
+  });
+
+  it('office paper: BOOK_MIN_SHARE of the pages read on A4, Letter or A3', () => {
+    expect(officePaperOf([{ class: 'vector_text', size: 'a4' }])).toBe(true);
+    expect(officePaperOf([{ class: 'vector_text', size: 'a1' }])).toBe(false);
+    expect(officePaperOf([])).toBe(false);
   });
 });
 

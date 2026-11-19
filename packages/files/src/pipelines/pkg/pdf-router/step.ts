@@ -30,9 +30,11 @@
  *
  * Step 2: the decider's answer gives the kind, by the one rule
  * (decidedKind): it can make the file more of a drawing, never a document.
- * No answer, a `document`, or one that may not be used: the kind stays
- * `unsure`, and the file keeps its database. The core hears the answer
- * itself (it made the ask), and gives it to the reader for its File tab.
+ * A `table`, or a `document` of a file on office paper, makes it a book
+ * (every office PDF is one). No answer, a `document` on drawing sheets, or
+ * one that may not be used: the kind stays `unsure`, and the file keeps its
+ * database. The core hears the answer itself (it made the ask), and gives
+ * it to the reader for its File tab.
  */
 import type { PipelineStep } from '../../contract';
 import { PIPELINE_FACTS_MAX_BYTES } from '../../contract';
@@ -48,6 +50,7 @@ import {
   BOOK_SAMPLE_PAGES,
   bookOf,
   bookUnsureOf,
+  officePaperOf,
   type PdfKind,
 } from '../../../pdf-kind';
 import { PDF_MAX_BYTES } from '../../../pdf-open';
@@ -91,7 +94,10 @@ export const step: PipelineStep = async (req, job) => {
     return {
       status: 'ok',
       calls: [{ call: 'worker', worker: 'decider', input: pdfKindAskFrom(drawing) }],
-      ...(mixed ? { state: { [MIXED]: drawing.kind } } : {}),
+      state: {
+        ...(mixed ? { [MIXED]: drawing.kind } : {}),
+        ...(officePaperOf(drawing.pages) ? { [OFFICE_PAPER]: true } : {}),
+      },
       ...factsOf(drawing),
     };
   }
@@ -104,9 +110,27 @@ export const step: PipelineStep = async (req, job) => {
     decision?.used === true && (decision.kind === 'table' || decision.kind === 'document');
   const base = mixedBaseOf(req.state);
   if (base !== null) return { status: 'ok', kind: office ? 'book' : base };
-  if (office && decision.kind === 'table') return { status: 'ok', kind: 'book' };
+  // An unsure file the decider calls a table, or a document on office
+  // paper (a typed manual whose first pages hold charts): every office PDF
+  // is a book (M2 of the large-PDF audit, round 3). A `document` on drawing
+  // sheets stays unsure, the drawing reader's.
+  if (office && (decision.kind === 'table' || officePaperIn(req.state))) {
+    return { status: 'ok', kind: 'book' };
+  }
   return { status: 'ok', kind: decidedKind('unsure', decision) ?? 'unsure' };
 };
+
+/** The state key of an unsure file whose pages are office paper
+ *  (officePaperOf): the decider's `document` makes it a book. */
+const OFFICE_PAPER = 'officePaper';
+
+function officePaperIn(state: unknown): boolean {
+  return (
+    !!state &&
+    typeof state === 'object' &&
+    (state as Record<string, unknown>)[OFFICE_PAPER] === true
+  );
+}
 
 /** The state key of a short mixed scan (bookUnsureOf): the kind the rules
  *  gave it, kept if the decider names no office kind. */
