@@ -232,6 +232,35 @@ For Jev (`~typesafe/jev-latest`) nothing binds, so its requests are the same
 as before. The per-item text caps (`MAX_PASSAGE_CHARS` and the others) stay:
 they were chosen on quality, not on window size.
 
+### Pictures
+
+A state may hold pictures for a model that takes them (since 2026-11-19, for
+`scan_read_check`): an `image_url` part with a PNG or JPEG data URL, inline in
+the state, as OpenRouter's decisions endpoint takes it. Which models take
+them is the profile's `pictures` (Jev 1.13, 1.14 and `~typesafe/jev-latest`,
+from OpenRouter's multimodal decisions table); `decide()` sends no picture
+to any other model (the step is skipped, `no_pictures`).
+
+- **Limits** (`DECISION_PICTURE_LIMITS`, packages/client-types/src/decision-models.ts):
+  256 to 1,568 pixels a side, 78,400 to 2,458,624 pixels in all, 16 MiB. A
+  picture outside them is never sent (`over_limit`, with the reason).
+- **The part** (`decisionPictureOf`, packages/decisions/src/picture.ts): a PNG
+  or JPEG within the limits goes as it is; a larger one, or another type, is
+  shrunk by the parser to a JPEG of 1,568 pixels on its long edge (its
+  thumbnail job: the decode is the parser's, never the brain's). A picture
+  under the smallest size is not sent at all.
+- **Size.** A picture counts at its token cost, not at its base64 length (a
+  page picture is about 1.4 million characters of base64): one token for
+  300 pixels (`PICTURE_PIXELS_PER_TOKEN`), which counts high: a 1,108 x
+  1,568 page picture with about 3,000 characters of text was 5,429 to 6,820
+  input tokens on Jev 1.14. A request with a picture runs in TypeSafe's
+  long-context mode.
+- **Timeout.** A use may set a floor over the worker's `timeout_ms`
+  (`USE_TIMEOUT_FLOOR_MS`, still capped at 5 s): `scan_read_check` takes 5
+  s (a picture call was about 1.2 s on the bench).
+- **Privacy.** The picture is the owner's document: it leaves the box under
+  the worker's privacy setting, as every state does.
+
 ## 4. Uses
 
 ### `passage_scoring` (built; ships `live`)
@@ -597,6 +626,37 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   read in `shadow` keeps its database, so it is not asked again when the use
   goes `live`. Nothing asks again for those bytes: the rebuild
   (`dwg-reindex --pdf`) reads PDFs with no model.
+
+### `scan_read_check` (built; ships `shadow`; not called yet)
+
+Is a Scan reader's text a faithful reading of the scanned page in the
+picture? (`packages/decisions/src/scan-read-check.ts`; the Scan reader is in
+docs/ai-workers.md, "The Scan reader".) One `noul` question, `faithful`, with
+the text (`transcription:`) and the page picture in the state, for a page
+whose Scan reader text no free read can vouch for: Tesseract read under 30
+confident words on it.
+
+- **Why.** On the scan bench (2026-11-19, made-up pages) the OCR engines
+  wrote a whole plausible spec table onto pages too bad to read. Jev 1.14 told
+  true reads (0.57 to 0.94) from made-up ones (0.11 to 0.62) at 0.5 on 59 of
+  60 cases, and a read of another page with the right line count at 0.02 to
+  0.13: a case the free `unverified` rule (it counts lines) cannot see.
+- **Cost.** About 6,300 input tokens a page (the picture about 5,000) at
+  $0.042 per million, output free: about $0.00027 a page, $0.27 per 1,000
+  pages checked; about 1.2 s.
+- **Shadow** (the manifest's fresh brains: `enabled: true, mode: 'shadow',
+  threshold: 0.5`): the answer is in the `decide_scan_read_check` step and in
+  the result (`used: false`); the free `unverified` rule decides. **Live:** at
+  or over the threshold (0.5, or the use's own) the read is taken; under it,
+  the page goes on to vision.
+- **No answer** (the use off, no decider, a model with no pictures, a text
+  past 30,000 characters, a picture the parser cannot read, a failure): null,
+  and the caller keeps its own rule.
+- **What it can do.** Send a page on to vision, or keep a read. It never
+  writes, retires or deletes. Text on the page can steer it (rule 6), as it
+  can steer the Scan reader itself.
+- **Not called yet.** The book reader's wiring (the Scan reader's second
+  part) asks it; until then the use is defined and nothing calls it.
 
 ### Declared, not built
 

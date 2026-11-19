@@ -10,9 +10,11 @@
  * with. Pure, except `limitsForModel`, which reads the cached catalog.
  */
 import {
+  DECISION_PICTURE_LIMITS,
   decisionRequestLimits,
   type DecisionRequestLimits,
 } from '@mantle/client-types/decision-models';
+import { pictureTokens, statePictures, type StatePicture } from './picture';
 import type { DecisionQuestion } from '@mantle/voice';
 import { contextLimitFor } from '@mantle/tracing';
 
@@ -39,9 +41,28 @@ export function estimateTokens(chars: number): number {
   return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
-/** The JSON length of a request's state and questions. */
+/** The JSON length of a request's state and questions, each picture in the
+ *  state counted as a short stand-in (its tokens are `requestTokens`'). */
 export function requestChars(state: unknown, questions: Record<string, DecisionQuestion>): number {
-  return JSON.stringify({ state, questions }).length;
+  return JSON.stringify({ state: statePictures(state).text, questions }).length;
+}
+
+/** Estimated input tokens of a request: its text at `CHARS_PER_TOKEN`, and
+ *  each picture at its token cost (`pictureTokens`; one of no known size at
+ *  the largest a picture may be). Also the pictures, measured. */
+export function requestTokens(
+  state: unknown,
+  questions: Record<string, DecisionQuestion>,
+): { tokens: number; pictures: StatePicture[] } {
+  const { pictures, text } = statePictures(state);
+  const chars = JSON.stringify({ state: text, questions }).length;
+  const L = DECISION_PICTURE_LIMITS;
+  const largest = pictureTokens(L.maxSide, Math.floor(L.maxPixels / L.maxSide));
+  const pics = pictures.reduce(
+    (n, p) => n + (p.width && p.height ? pictureTokens(p.width, p.height) : largest),
+    0,
+  );
+  return { tokens: estimateTokens(chars) + pics, pictures };
 }
 
 /** Why a request may not be sent to a model with these limits, or null. */
@@ -58,8 +79,14 @@ export function requestOverLimit(
       reason: `${count} questions, the model takes at most ${limits.maxQuestions}`,
     };
   }
+  const { tokens, pictures } = requestTokens(state, questions);
+  // A picture the endpoint would refuse is not sent (the picture helper
+  // shrinks a large one first; one that reaches here was not made by it).
+  const refused = pictures.find((p) => p.refusal !== null);
+  if (refused) {
+    return { questions: count, estimatedTokens: null, reason: refused.refusal! };
+  }
   if (limits.maxInputTokens === null) return null;
-  const tokens = estimateTokens(requestChars(state, questions));
   if (tokens <= limits.maxInputTokens) return null;
   return {
     questions: count,

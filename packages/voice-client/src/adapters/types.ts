@@ -982,7 +982,10 @@ export interface DecisionOptions {
   apiKey: string;
   model: string;
   /** The evidence: a string, a JSON object (preferred — every part has a
-   *  name the questions can point at) or an array. Text only. */
+   *  name the questions can point at) or an array. Text, and pictures as
+   *  `{type: 'image_url', image_url: {url: <PNG or JPEG data URL>}}` parts
+   *  for a model whose profile says it takes them (`decide()` checks; see
+   *  DECISION_PICTURE_LIMITS in @mantle/client-types). */
   state: unknown;
   questions: Record<string, DecisionQuestion>;
   /** What the provider may do with the state, which can hold the owner's

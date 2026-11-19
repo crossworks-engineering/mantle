@@ -68,6 +68,8 @@ import {
 import { DECISION_FAILURE_REASONS, DecisionCutError, decisionFailureClass } from './failure';
 import { deciderPrivacy } from './privacy';
 import { limitsForModel, requestOverLimit, type DecisionRequestLimits } from './request-limits';
+import { statePictures } from './picture';
+import { decisionModelTakesPictures } from '@mantle/client-types/decision-models';
 import { CircuitBreaker } from './breaker';
 import { DecisionCache } from './cache';
 
@@ -84,6 +86,14 @@ export const DEFAULTS = {
   minTimeoutMs: 200,
   maxTimeoutMs: 5_000,
 } as const;
+
+/** A use's own floor on the timeout, over the worker's `timeout_ms` (still
+ *  capped at `maxTimeoutMs`): a request with a picture runs in TypeSafe's
+ *  long-context mode, about 1.2 s on the scan bench, past the 1.5 s default's
+ *  margin. */
+export const USE_TIMEOUT_FLOOR_MS: Partial<Record<DecisionUse, number>> = {
+  scan_read_check: 5_000,
+};
 
 export type DecisionMode = 'shadow' | 'live';
 
@@ -328,16 +338,17 @@ function heardFailure(h: Heard, err: unknown): boolean {
   return opened;
 }
 
-/** The worker's timeout: `timeout_ms` clamped to 0.2-5 s, times `factor`
- *  (still capped at 5 s). */
-export function timeoutOf(params: DeciderParams, factor = 1): number {
+/** The worker's timeout: `timeout_ms` clamped to 0.2-5 s, times `factor`,
+ *  at least the use's `floorMs` (all still capped at 5 s). */
+export function timeoutOf(params: DeciderParams, factor = 1, floorMs = 0): number {
   const t = params.timeout_ms;
   const base =
     typeof t !== 'number' || !Number.isFinite(t)
       ? DEFAULTS.timeoutMs
       : Math.max(DEFAULTS.minTimeoutMs, t);
   const f = Number.isFinite(factor) && factor > 1 ? factor : 1;
-  return Math.min(DEFAULTS.maxTimeoutMs, base * f);
+  const floor = Number.isFinite(floorMs) && floorMs > 0 ? floorMs : 0;
+  return Math.min(DEFAULTS.maxTimeoutMs, Math.max(base * f, floor));
 }
 
 /**
@@ -355,6 +366,8 @@ export async function sendDecision(input: {
   questions: Record<string, DecisionQuestion>;
   limits: DecisionRequestLimits;
   timeoutFactor?: number;
+  /** The use's floor on the timeout (USE_TIMEOUT_FLOOR_MS). */
+  timeoutFloorMs?: number;
 }): Promise<DecisionResult> {
   const res = await input.adapter.decide({
     apiKey: input.apiKey,
@@ -362,7 +375,7 @@ export async function sendDecision(input: {
     state: input.state,
     questions: input.questions,
     privacy: deciderPrivacy(input.params),
-    timeoutMs: timeoutOf(input.params, input.timeoutFactor),
+    timeoutMs: timeoutOf(input.params, input.timeoutFactor, input.timeoutFloorMs),
   });
   if (input.limits.cutAt !== null && res.tokensIn === input.limits.cutAt) {
     throw new DecisionCutError(input.limits.cutAt);
@@ -381,6 +394,23 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
   const hit = cache.get(key);
   if (hit) {
     return { answers: hit.answers, mode: use.mode, use, model: hit.model, cached: true, ms: 0 };
+  }
+  // A picture to a model that takes none: never sent (the model would
+  // answer from the text alone, or the endpoint refuse it). The step says so;
+  // the breaker does not hear it.
+  if (!decisionModelTakesPictures(worker.model) && statePictures(input.state).pictures.length > 0) {
+    return step(
+      {
+        name: `decide_${input.use}`,
+        kind: 'llm_call',
+        input: { use: input.use, mode: use.mode, model: worker.model, provider: worker.provider },
+      },
+      async (h) => {
+        h.setMeta({ use: input.use, mode: use.mode, model: worker.model, no_pictures: true });
+        h.setSkipped('no_pictures');
+        return null;
+      },
+    );
   }
   // Above the model's limits: never sent, so the endpoint is not at fault and
   // the breaker does not hear it. The step says why.
@@ -438,6 +468,7 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           questions: input.questions,
           limits,
           timeoutFactor: input.timeoutFactor,
+          timeoutFloorMs: USE_TIMEOUT_FLOOR_MS[input.use],
         });
         const ms = Date.now() - t0;
         h.setMeta({

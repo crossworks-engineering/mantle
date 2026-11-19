@@ -50,6 +50,11 @@ export type DecisionModelProfile = {
   /** A start value for passage scoring's threshold where Jev's 1.5 drops
    *  right passages. Tune it with eval:route. */
   thresholdStart?: number;
+  /** Takes a picture in the state (an `image_url` part, PNG or JPEG, within
+   *  DECISION_PICTURE_LIMITS). From OpenRouter's multimodal decisions table
+   *  (2026-11-19) and one measured use (`scan_read_check`). `decide()`
+   *  sends a picture only to such a model. */
+  pictures?: true;
   /** Its place in the shipped decider pool. A product decision (2026-10-30),
    *  not a ranking: re-curation offers only these, in this order. */
   poolPosition?: number;
@@ -65,11 +70,12 @@ export const DECISION_MODEL_PROFILES: readonly DecisionModelProfile[] = [
     id: '~typesafe/jev-latest',
     status: 'works',
     privacy: 'zdr',
+    pictures: true,
     poolPosition: 0,
     note: 'the shipped default',
   },
-  { id: 'typesafe/jev-1.14', status: 'works', privacy: 'zdr' },
-  { id: 'typesafe/jev-1.13', status: 'works', privacy: 'zdr' },
+  { id: 'typesafe/jev-1.14', status: 'works', privacy: 'zdr', pictures: true },
+  { id: 'typesafe/jev-1.13', status: 'works', privacy: 'zdr', pictures: true },
   {
     id: 'perplexity/pplx-decider-v1.2',
     status: 'works',
@@ -159,6 +165,25 @@ export function decisionModelRefusal(model: string | null | undefined): string |
     'Pick a tested decision model such as ~typesafe/jev-latest or perplexity/pplx-decider-v1.2.'
   );
 }
+
+/** Whether a decision model takes a picture in its state (its profile says
+ *  `pictures`). An untested model does not: a picture is never sent to it. */
+export function decisionModelTakesPictures(model: string | null | undefined): boolean {
+  return decisionModelProfile(model)?.pictures === true;
+}
+
+/** What a picture in a decision state may be (OpenRouter's multimodal
+ *  decisions table for TypeSafe, 2026-11-19): a PNG or JPEG data URL, 256 to
+ *  1,568 pixels a side, 78,400 to 2,458,624 pixels in all, 16 MiB at most.
+ *  `decide()` refuses one outside these, sending nothing; the picture helper
+ *  of @mantle/decisions shrinks a larger one first. */
+export const DECISION_PICTURE_LIMITS = {
+  minSide: 256,
+  maxSide: 1568,
+  minPixels: 78_400,
+  maxPixels: 2_458_624,
+  maxBytes: 16 * 1024 * 1024,
+} as const;
 
 /** The size of one decision request a model takes. Null = no limit is known,
  *  so the use's own size stands. */

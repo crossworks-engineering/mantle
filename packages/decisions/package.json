@@ -16,6 +16,7 @@
     "@mantle/client-types": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
+    "@mantle/files": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
