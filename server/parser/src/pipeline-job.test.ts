@@ -199,4 +199,27 @@ describe('the pictures of an answer', () => {
     const sent = await picturesOf(dir, [ask('sheet.png'), ask('huge.png'), ask('right-side.png')]);
     expect(sent.map((p) => p.file)).toEqual(['sheet.png', 'right-side.png']);
   });
+
+  it("sends a page ask's one-page PDF after every picture, so it never takes a picture's place", async () => {
+    const dir = folder();
+    writeFileSync(path.join(dir, 'page-1.pdf'), '%PDF-1.4 one');
+    // Just under the budget less the two pictures: the PDF does not fit.
+    writeFileSync(path.join(dir, 'page-2.pdf'), '');
+    truncateSync(path.join(dir, 'page-2.pdf'), PARSER_PICTURES_BUDGET_BYTES - 5);
+    const withPdf = (picture: string, pdf: string) => ({
+      ...ask(picture),
+      input: { picture, pdf, fields: [{ name: 'Text' }] },
+    });
+    const sent = await picturesOf(dir, [
+      withPdf('sheet.png', 'page-2.pdf'),
+      withPdf('right-side.png', 'page-1.pdf'),
+    ]);
+    expect(sent.map((p) => p.file)).toEqual(['sheet.png', 'right-side.png', 'page-1.pdf']);
+    // A PDF named by another worker's ask, or a path out of the folder, is not sent.
+    const other = await picturesOf(dir, [
+      { ...withPdf('sheet.png', 'page-1.pdf'), worker: 'decider' },
+      withPdf('sheet.png', '../../etc/passwd'),
+    ]);
+    expect(other.map((p) => p.file)).toEqual(['sheet.png']);
+  });
 });

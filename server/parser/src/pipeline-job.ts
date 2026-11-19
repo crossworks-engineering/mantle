@@ -110,16 +110,12 @@ export async function picturesOf(
     const input = (c.input ?? {}) as {
       pictures?: readonly { file?: unknown }[];
       picture?: unknown;
-      pdf?: unknown;
     };
-    // A page ask may name the page as a one-page PDF too (the Scan reader's
-    // read), after its picture: past the budget, the PDF is the one left out
-    // and the page is read by vision.
     const named =
       c.call === 'tool' && c.tool === FILE_TABS_WRITE
         ? (input.pictures ?? [])
         : c.call === 'worker' && c.worker === VISION_WORKER
-          ? [{ file: input.picture }, ...(input.pdf !== undefined ? [{ file: input.pdf }] : [])]
+          ? [{ file: input.picture }]
           : [];
     for (const pic of named) {
       if (typeof pic.file !== 'string' || sent.has(pic.file)) continue;
@@ -134,6 +130,22 @@ export async function picturesOf(
       total += bytes.length;
       out.push({ file: pic.file, bytes_base64: bytes.toString('base64') });
     }
+  }
+  // Then each page ask's one-page PDF (the Scan reader's read), after EVERY
+  // picture, so a PDF never takes a picture's place in the budget: past it,
+  // the PDF is the one left out and its page is read by vision.
+  for (const c of calls) {
+    const pdf = (c.input as { pdf?: unknown } | undefined)?.pdf;
+    if (c.call !== 'worker' || c.worker !== VISION_WORKER || typeof pdf !== 'string') continue;
+    if (sent.has(pdf)) continue;
+    sent.add(pdf);
+    const at = path.join(dir, path.basename(pdf));
+    const size = (await fs.stat(at).catch(() => null))?.size;
+    if (size === undefined || total + size > PARSER_PICTURES_BUDGET_BYTES) continue;
+    const bytes = await fs.readFile(at).catch(() => null);
+    if (!bytes || total + bytes.length > PARSER_PICTURES_BUDGET_BYTES) continue;
+    total += bytes.length;
+    out.push({ file: pdf, bytes_base64: bytes.toString('base64') });
   }
   return out;
 }

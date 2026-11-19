@@ -121,6 +121,7 @@ CHARS_MIN = 40
 LINES_MIN_EXPECTED = 10
 LINES_MIN_SHARE = 0.8
 LINES_MAX_SHARE = 1.5
+CHARS_PER_LINE = 45
 
 
 def quality(text, finish, words, expected_lines=None):
@@ -148,6 +149,8 @@ def quality(text, finish, words, expected_lines=None):
     # bands of the picture (no OCR). A read with far fewer lines left rows out.
     if expected_lines and expected_lines >= LINES_MIN_EXPECTED:
         have_lines = sum(1 for l in text.split("\n") if l.strip())
+        # An engine writes a prose paragraph as one line: count by length too.
+        have_lines = max(have_lines, -(-len(re.sub(r"\s", "", text)) // CHARS_PER_LINE))
         if have_lines < LINES_MIN_SHARE * expected_lines:
             reasons.append("too_few_lines")
     illegible = sum(t.count("[?]") for t in toks) / max(1, len(toks))

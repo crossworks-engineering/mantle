@@ -137,4 +137,17 @@ describe('scanReadQualityOf', () => {
     // A short answer is not judged by this rule.
     expect(scanReadQualityOf(ROWS.slice(0, 10).join('\n'), { expectedLines: 0 }).ok).toBe(true);
   });
+
+  it('a prose page an OCR engine writes as one paragraph is not short; half of it is', () => {
+    // 30 printed lines of about 65 characters, read whole into one line.
+    const prose = Array.from(
+      { length: 30 },
+      (_, i) => `the inspector shall check line ${i} of the specification before`,
+    ).join(' ');
+    expect(scanReadQualityOf(prose, { expectedLines: 30 }).ok).toBe(true);
+    const half = prose.slice(0, Math.floor(prose.length / 2.2));
+    expect(scanReadQualityOf(half, { expectedLines: 30 }).reasons).toEqual(['too_few_lines']);
+    // Its few lines never make it `unverified` either.
+    expect(scanReadQualityOf(prose, { ocrWords: [], expectedLines: 30 }).ok).toBe(true);
+  });
 });
