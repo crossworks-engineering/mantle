@@ -346,7 +346,7 @@ async function reconcileFiles(
     await db.transaction(async (tx) => {
       await markContentChanged(tx, { id: f.id, type: 'file' }, ['indexing']);
       // The answers read from a private file go with its summary, at once:
-      // search_tsv covers all of data, and a box with no extractor never
+      // search_tsv covers data (each part capped, 0388), and a box with no extractor never
       // reaches the metadata pass.
       if (effective === 'metadata') await dropAnswers(tx, f.id);
     });

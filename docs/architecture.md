@@ -493,7 +493,7 @@ nodes (
   path        ltree NOT NULL,       -- materialised: 'inbox.email_jason.2026.may'
   tags        text[] NOT NULL,
   embedding   vector(768),          -- pgvector, local EmbeddingGemma dim (was 1536; migration 0060)
-  search_tsv  tsvector,             -- GENERATED ALWAYS column over title/data
+  search_tsv  tsvector,             -- GENERATED ALWAYS from capped parts of title/data (0388)
   created_at  timestamptz,
   updated_at  timestamptz
 )

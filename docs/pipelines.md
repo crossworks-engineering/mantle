@@ -1282,9 +1282,10 @@ name the page of the picture:
 
 After a run wrote an Agent's tabs, their text goes on the file node,
 `data.agent_text`, one text for each Agent by its id (owner's yes,
-2026-11-16; `server/api/src/agent/extract/agent-text.ts`). `search_tsv` is
-generated over the whole data blob, so a plain search finds a drawing by a
-line number, a tag or a title block value. `file_sql` reads the same values
+2026-11-16; `server/api/src/agent/extract/agent-text.ts`). `search_tsv`
+takes it first in the file's long text (the first 90,000 characters, the
+Agents' text before the file's, migration 0388), so a plain search finds a drawing by a line number, a tag
+or a title block value. `file_sql` reads the same values
 from the tabs. This holds for every Agent, `iso-title-block` too.
 
 The same text is in the file's passages (`content_chunks`), so a search of
