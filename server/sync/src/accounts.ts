@@ -233,8 +233,11 @@ export async function setOutlookMail(
   deps: AccountDeps,
   accountId: string,
   on: boolean,
+  /** The mail folders and reach, as a mailbox's (unset: kept as they are). */
+  choice: Pick<MsAccount, 'excludedFolders' | 'includedFolders' | 'firstScanDays'> = {},
 ): Promise<MsAccount> {
-  const account = await deps.state.msAccount(accountId);
+  const found = await deps.state.msAccount(accountId);
+  const account = found ? { ...found, ...choice } : null;
   if (!account) throw new AccountError('No such Microsoft account.');
   if (on) {
     const { id: mailboxId } = await mailboxRow(deps, {

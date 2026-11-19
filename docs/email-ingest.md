@@ -37,17 +37,44 @@ Every 5 minutes, one mailbox at a time:
    `service_state`) and reports the run: `POST /api/sidecar/mail/run`
    (a `sync_runs` row, the mailbox's last sync stamp or error).
 
-A message over 40 MB is never downloaded: it lands with its headers and a
-note. What crosses is the old adapter's parsed shape
+What crosses is the old adapter's parsed shape
 (`packages/email/src/wire.ts`), attachments in base64; the ingest route's
-body ceiling is 64 MB.
+body ceiling is 64 MB. A message over 40 MB (or one whose server names no
+size) is read as a stream instead (`server/sync/src/mail-stream.ts`): each
+attachment streams on to `POST /api/sidecar/mail/attachment` as it is
+parsed (spooled to disk there, stored in the object store under its
+sha256, up to the streamed upload cap), and the message posts naming them
+(`staged`). A body over 16 MB goes as a `message-body` attachment of its
+own; an attached email (a `message/rfc822` part) is kept as its own `.eml`
+attachment even when it was sent `inline` (MailParser folds such a part
+into the body); a message over 40 MB whose body text alone is over 16 MB is read part
+by part (IMAP), each large text part staged the same way. What could not be
+taken in (an attachment over the cap, attachments past the 500 a message
+holds) is named in a note at the top of the body: nothing is dropped
+silently. A message the mail server (or Microsoft) fails on never holds a
+mailbox: the run goes on past it and keeps it to try again (`msgfail:`,
+at most 500 a mailbox; past that the run stops rather than let one go).
+Each run tries those again after its new mail, at most 25 a run, each
+after a wait that doubles from 5 minutes to 6 hours (a full queue still
+gives the retry its turn before the run stops); one that reads is
+stored whole. Only
+after three tries over a day is it stored with what could be read and a
+note saying what could not, so an outage never turns mail into stubs. The
+brain's own failures, a token, a throttle or the network stop the run, and
+the cursor stays.
 
 ## A new contact
 
 A new contact address (made in the app, by `contact_create` or
 `contact_update`, or from Discover) asks the sidecar for a backfill
-(`enqueueBackfills`, `POST /backfill`): each mailbox's last 90 days from that
-sender, through the same gate and store. With Sync off nothing is asked.
+(`enqueueBackfills`, `POST /backfill`): that sender's mail in every mailbox,
+back to the mailbox's first-scan reach (`firstScanDays`, 365 days unless
+set), through the same gate and store. The backfill is a job kept in
+`service_state` (`backfill:<id>`) until it reaches the end: each run reads
+a share of each mailbox (2 500 envelopes, or 50 Outlook pages) and keeps
+its place per folder (one job per new address, its marks pruned as they
+finish, so a job stays small), and the scheduler goes on with it every 5 minutes,
+after a failure or a restart too. With Sync off nothing is asked.
 
 ## Discover
 

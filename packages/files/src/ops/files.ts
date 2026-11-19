@@ -1277,7 +1277,9 @@ export async function syncFileFromDisk(args: {
   ownerId: string;
   parentPath: string;
   filename: string;
-  bytes: Buffer;
+  /** The file read whole (a small file), or its sha256 and size hashed as
+   *  a stream (a large one, never held in memory: the watcher). */
+  bytes: Buffer | { sha256: string; size: number };
 }): Promise<{ status: 'noop' | 'inserted' | 'updated' | 'skipped'; nodeId: string | null }> {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`syncFileFromDisk: parent '${args.parentPath}' is outside the files root`);
@@ -1301,7 +1303,11 @@ export async function syncFileFromDisk(args: {
   }
   // Compute hash locally; no disk write.
   const { createHash } = await import('node:crypto');
-  const sha256 = createHash('sha256').update(args.bytes).digest('hex');
+  const whole = Buffer.isBuffer(args.bytes) ? args.bytes : null;
+  const sha256 = whole
+    ? createHash('sha256').update(whole).digest('hex')
+    : (args.bytes as { sha256: string }).sha256;
+  const size = whole ? whole.byteLength : (args.bytes as { size: number }).size;
   const ext = extOf(filename);
   const mime = mimeForExt(ext);
   const isText = TEXT_EXTS.has(ext);
@@ -1344,14 +1350,13 @@ export async function syncFileFromDisk(args: {
     )
     .limit(1);
 
-  const content =
-    isText && args.bytes.byteLength <= TEXT_BYTE_CAP ? args.bytes.toString('utf8') : null;
+  const content = whole && isText && size <= TEXT_BYTE_CAP ? whole.toString('utf8') : null;
 
   const newData: Record<string, unknown> = {
     filename,
     extension: ext,
     mime_type: mime,
-    size_bytes: args.bytes.byteLength,
+    size_bytes: size,
     sha256,
     ...(content != null ? { content } : {}),
   };

@@ -103,7 +103,18 @@ export async function adminReply(path: string, b: Body, deps: AccountDeps): Prom
         const id = idOf(b.accountId);
         const on = bool(b.on);
         if (!id || on === undefined) return bad('Name the account and on or off.');
-        const a = await setOutlookMail(deps, id, on);
+        const list = (v: unknown) =>
+          Array.isArray(v)
+            ? v.filter((x): x is string => typeof x === 'string' && !!x).slice(0, 500)
+            : undefined;
+        const days = Number(b.firstScanDays);
+        const a = await setOutlookMail(deps, id, on, {
+          ...(list(b.excludedFolders) ? { excludedFolders: list(b.excludedFolders) } : {}),
+          ...(b.includedFolders === null || list(b.includedFolders)
+            ? { includedFolders: list(b.includedFolders) ?? null }
+            : {}),
+          ...(Number.isInteger(days) && days > 0 && days <= 36500 ? { firstScanDays: days } : {}),
+        });
         return ok({ id: a.id, upn: a.upn, mail: a.mail });
       }
       case '/admin/microsoft/drives': {

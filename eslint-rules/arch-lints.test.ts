@@ -625,7 +625,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 2 processing rows (GET and HEAD /api/files/files/:id/processing)
     //   and the 3 reindex and stale rows (GET and HEAD /api/files/stale,
     //   POST /api/files/reindex).
-    expect(rows.length).toBe(1011);
+    // + the 4 public rows of sync-complete (the sidecar's token): GET and HEAD
+    //   /api/sidecar/events (a feed's stored uids), POST
+    //   /api/sidecar/files/stub and POST /api/sidecar/mail/attachment.
+    expect(rows.length).toBe(1015);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

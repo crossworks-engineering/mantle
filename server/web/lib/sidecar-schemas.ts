@@ -62,12 +62,25 @@ export const WireMessageBody = Envelope.extend({
   bodyHtml: z.string().optional(),
   attachments: z
     .array(
-      z.object({
-        filename: text(L.filename),
-        mimeType: text(L.mimeType).optional(),
-        sizeBytes: z.number().int().nonnegative().optional(),
-        contentB64: z.string(),
-      }),
+      z
+        .object({
+          filename: text(L.filename),
+          mimeType: text(L.mimeType).optional(),
+          sizeBytes: z.number().int().nonnegative().optional(),
+          contentB64: z.string().optional(),
+          /** Bytes streamed before (POST /api/sidecar/mail/attachment). */
+          staged: z
+            .object({
+              sha256: z.string().regex(/^[0-9a-f]{64}$/),
+              size: z.number().int().nonnegative(),
+            })
+            .optional(),
+        })
+        // Its bytes, inline or staged: one with neither would store an
+        // empty file.
+        .refine((a) => a.contentB64 !== undefined || a.staged !== undefined, {
+          message: 'an attachment carries contentB64 or staged',
+        }),
     )
     .max(L.attachments),
   clientCodeMail: z.boolean().optional(),
@@ -86,9 +99,11 @@ export const RunBody = z.object({
   error: text(2000).optional(),
 });
 
-/** The most events one feed may hold (the sidecar stops there, in the feed's
- *  own order). */
+/** The most events one post carries: a page of a feed (the sidecar pages a
+ *  feed of any size, FEED_PAGE_EVENTS in server/sync feeds.ts). */
 export const FEED_EVENTS_MAX = 5000;
+/** The most uids one removal post names. */
+export const FEED_REMOVE_MAX = 5000;
 
 export const FeedEventsBody = z.object({
   /** The feed's id: its events carry it as `data.external_account_id`. */
@@ -96,8 +111,14 @@ export const FeedEventsBody = z.object({
   /** The feed's name, its events' tag. */
   name: text(200),
   source: z.enum(['ics']),
-  /** The feed's complete current set: an event stored before and missing
-   *  here is removed. An empty list removes every event of the feed. */
+  /** True: a page of the feed. Its events are upserted, and nothing is
+   *  removed but the uids in `remove` (the sidecar names them only after a
+   *  run that read the whole feed). Absent: `events` is the feed's complete
+   *  current set, and an event stored before and missing here is removed;
+   *  an empty list removes every event of the feed. */
+  partial: z.literal(true).optional(),
+  /** With `partial`: uids that left the feed. */
+  remove: z.array(text(1000).min(1)).max(FEED_REMOVE_MAX).optional(),
   events: z
     .array(
       z.object({
@@ -140,6 +161,18 @@ export const FileQuery = z.object({
   hash: z.string().max(200).optional(),
   size: z.coerce.number().int().nonnegative().optional(),
   mod: z.coerce.date().optional(),
+});
+
+/** POST /api/sidecar/files/stub: a drive file past the streamed cap. */
+export const FileStubBody = z.object({
+  source,
+  item: itemId,
+  path: z.string().max(600),
+  name: z.string().min(1).max(400),
+  mime: z.string().max(200).optional(),
+  hash: z.string().max(200).nullish(),
+  size: z.number().int().nonnegative(),
+  mod: z.coerce.date().nullish(),
 });
 
 export const FileRelinkBody = z.object({

@@ -1,12 +1,20 @@
 /**
- * POST /api/sidecar/events (Sync service plan M2; docs/calendar-ingest.md):
- * one calendar feed's complete current set of events, from the Sync sidecar.
- * Each is upserted as an ordinary event node (packages/content
- * upsertExternalEvent: dedup by feed and UID, no reminder of its own), and
- * an event of the feed stored before and missing now is removed. An empty
- * set removes the feed's events (the feed was removed).
+ * The Sync sidecar's calendar feeds (Sync service plan M2;
+ * docs/calendar-ingest.md):
+ *
+ *   GET  /api/sidecar/events?feedId=  the uids stored for a feed
+ *   POST /api/sidecar/events          a page of a feed (`partial`): each
+ *        event upserted as an ordinary event node (packages/content
+ *        upsertExternalEvent: dedup by feed and UID, no reminder of its
+ *        own), and only the uids in `remove` removed. The sidecar names
+ *        those after a run that read the whole feed (GET's set less the
+ *        run's), so an event a cut or stopped run did not post is never
+ *        removed. Without `partial` the body is the complete set, and an
+ *        event stored before and missing now is removed (an empty set: the
+ *        feed was removed).
  */
 import { NextResponse } from '@/server/http-compat';
+import { UUID_RE } from '@mantle/std';
 import { deleteExternalEvents, listExternalEventUids, upsertExternalEvent } from '@mantle/content';
 import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -16,6 +24,7 @@ import { asSidecar, sidecarOwner, sidecarRequestRefusal } from '@/lib/sidecar';
 export const policy = routePolicy({
   // No rate limit, as the gateway's routes (gateway/registry/route.ts says
   // why): the token is checked first and a refusal does no work.
+  GET: { class: 'public' },
   POST: {
     class: 'public',
     item: { none: "a public route: it judges its own credential (the Sync sidecar's token)" },
@@ -30,6 +39,16 @@ function feedTag(name: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
   return t || 'calendar';
+}
+
+export async function GET(req: Request) {
+  const refused = sidecarRequestRefusal(req);
+  if (refused) return refused;
+  const feedId = new URL(req.url).searchParams.get('feedId') ?? '';
+  if (!UUID_RE.test(feedId)) return NextResponse.json({ error: 'bad query' }, { status: 400 });
+  return asSidecar(async () =>
+    NextResponse.json({ uids: await listExternalEventUids(await sidecarOwner(), feedId) }),
+  );
 }
 
 export async function POST(req: Request) {
@@ -64,6 +83,13 @@ export async function POST(req: Request) {
         // stop the feed: it is counted and the rest go on.
         failed += 1;
       }
+    }
+    if (body.partial) {
+      // A page: nothing leaves but what the sidecar named.
+      const removed = body.remove?.length
+        ? await deleteExternalEvents(owner, body.feedId, body.remove)
+        : 0;
+      return NextResponse.json({ upserted, failed, removed });
     }
     const stored = await listExternalEventUids(owner, body.feedId);
     const removed = await deleteExternalEvents(

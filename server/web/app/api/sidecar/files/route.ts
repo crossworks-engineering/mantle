@@ -6,14 +6,21 @@
  *        one file's bytes as the raw body (rclone cat, streamed): spooled to
  *        disk with its sha256, then an ordinary file node (one per owner
  *        and sha256), its map row, and the node it replaced retired. Its
- *        body ceiling is BUFFERED_UPLOAD_BYTES (lib/body-limit.ts): a larger
- *        file answers 413 and the sidecar skips it.
+ *        cap is the streamed upload cap (maxStreamedUploadBytes, 512 MB by
+ *        default): the body streams to the spool and on to the store, so
+ *        memory stays flat. GET names the cap (`maxBytes`), and the sidecar
+ *        posts a file past it as a stub (stub/route.ts), never skips it.
  */
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
 import { listSyncItems } from '@mantle/db';
-import { discardSpooled, MAX_UPLOAD_BYTES, spoolUpload, UploadTooLargeError } from '@mantle/files';
+import {
+  discardSpooled,
+  maxStreamedUploadBytes,
+  spoolUpload,
+  UploadTooLargeError,
+} from '@mantle/files';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import { FileQuery } from '@/lib/sidecar-schemas';
 import { asSidecar, sidecarOwner, sidecarRequestRefusal } from '@/lib/sidecar';
@@ -41,7 +48,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'bad query' }, { status: 400 });
   }
   const items = await asSidecar(() => listSyncItems(FILE_SERVICE, source, after));
-  return NextResponse.json({ items });
+  return NextResponse.json({ items, maxBytes: maxStreamedUploadBytes() });
 }
 
 export async function POST(req: Request) {
@@ -56,7 +63,7 @@ export async function POST(req: Request) {
   try {
     spooled = await spoolUpload(
       Readable.fromWeb(req.body as unknown as NodeReadableStream<Uint8Array>),
-      { maxBytes: MAX_UPLOAD_BYTES },
+      { maxBytes: maxStreamedUploadBytes() },
     );
   } catch (err) {
     if (err instanceof UploadTooLargeError) {

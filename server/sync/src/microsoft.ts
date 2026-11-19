@@ -170,7 +170,13 @@ async function refresh(state: State, a: MsAccount): Promise<string> {
 export async function graph(
   token: string,
   pathOrUrl: string,
-  init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+  init: {
+    method?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+    /** A longer deadline (a streamed attachment's bytes). */
+    timeoutMs?: number;
+  } = {},
 ): Promise<Response> {
   const url = pathOrUrl.startsWith('https://') ? pathOrUrl : `${GRAPH}${pathOrUrl}`;
   if (new URL(url).origin !== GRAPH_ORIGIN) throw new GraphError(400, 'not a Graph address');
@@ -186,7 +192,7 @@ export async function graph(
         },
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
         redirect: 'error',
-        signal: timeoutSignal(NET_TIMEOUTS.syncGraph),
+        signal: timeoutSignal(init.timeoutMs ?? NET_TIMEOUTS.syncGraph),
       }),
     {
       retries: 4,

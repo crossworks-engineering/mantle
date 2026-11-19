@@ -780,7 +780,7 @@ owner rows open to members (145):
   PUT /api/recall/maps/:id/cards/:card
   PUT /api/tables/:id/draft
   PUT /api/tree/items/:id/pin
-public (no credential, or its own) (45):
+public (no credential, or its own) (48):
   DELETE /api/auth/oidc/link
   DELETE /api/sidecar/mail/accounts/:id
   DELETE /api/sidecar/state/:key
@@ -800,6 +800,7 @@ public (no credential, or its own) (45):
   GET /api/services/sync/oauth/callback
   GET /api/services/sync/oauth/start
   GET /api/services/sync/ui
+  GET /api/sidecar/events
   GET /api/sidecar/files
   GET /api/sidecar/state
   GET /api/sidecar/state/:key
@@ -821,7 +822,9 @@ public (no credential, or its own) (45):
   POST /api/sidecar/files/forget
   POST /api/sidecar/files/relink
   POST /api/sidecar/files/remove
+  POST /api/sidecar/files/stub
   POST /api/sidecar/mail/accounts
+  POST /api/sidecar/mail/attachment
   POST /api/sidecar/mail/gate
   POST /api/sidecar/mail/ingest
   POST /api/sidecar/mail/run

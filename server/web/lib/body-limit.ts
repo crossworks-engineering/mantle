@@ -65,6 +65,10 @@ const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/apps\/import-package$/,
   /^\/api\/member\/space-files$/,
   /^\/api\/admin\/space-files$/,
+  // The Sync sidecar's streamed bytes (a drive file, rclone cat; a mail
+  // attachment): each spooled to disk under maxStreamedUploadBytes.
+  /^\/api\/sidecar\/files$/,
+  /^\/api\/sidecar\/mail\/attachment$/,
 ];
 
 /** Room for the multipart framing (boundaries, part headers, the text
@@ -135,11 +139,8 @@ export function bodyCeilingFor(path: string): number | null {
   if (path === '/api/control/call') return CONTROL_BODY_CEILING_BYTES;
   // One message the Sync sidecar fetched, attachments in base64 (wire.ts).
   if (path === '/api/sidecar/mail/ingest') return MAIL_INGEST_BODY_BYTES;
-  // One calendar feed's complete set (5000 events at most, each clipped).
+  // One page of a calendar feed (5000 events at most, each clipped).
   if (path === '/api/sidecar/events') return FEED_BODY_BYTES;
-  // One drive file the Sync sidecar streams (rclone cat): the buffered
-  // upload cap, the cap a drive file had before M4; the route spools it.
-  if (path === '/api/sidecar/files') return BUFFERED_UPLOAD_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }

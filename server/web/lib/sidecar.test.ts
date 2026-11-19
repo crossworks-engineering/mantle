@@ -51,3 +51,25 @@ describe('the sealed state', () => {
     expect(() => openState('account:y', sealed)).toThrow();
   });
 });
+
+describe('a message the sidecar posts', () => {
+  const base = {
+    accountId: '00000000-0000-4000-8000-000000000001',
+    message: {
+      providerMsgId: 'INBOX:1:1',
+      fromAddr: 'a@b.test',
+      toAddrs: [],
+      internalDate: '2026-11-18T00:00:00.000Z',
+    },
+  };
+  it('names the bytes of each attachment, inline or staged', async () => {
+    const { IngestBody } = await import('./sidecar-schemas');
+    const att = (a: object) => ({ ...base, message: { ...base.message, attachments: [a] } });
+    expect(IngestBody.safeParse(att({ filename: 'a', contentB64: '' })).success).toBe(true);
+    expect(
+      IngestBody.safeParse(att({ filename: 'a', staged: { sha256: 'a'.repeat(64), size: 1 } }))
+        .success,
+    ).toBe(true);
+    expect(IngestBody.safeParse(att({ filename: 'a' })).success).toBe(false);
+  });
+});

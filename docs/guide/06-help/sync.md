@@ -12,7 +12,7 @@ This screen links your mailboxes, calendar feeds and Microsoft 365 accounts to t
 - **Folders**: tick the folders that sync. Trash, Junk and Drafts are left out by default.
 - **Add a calendar feed**: a name and the calendar's iCal address. Its events show in Calendar.
 - **Sync now** runs a mailbox or a feed at once. Mail syncs every 5 minutes, feeds every 30 minutes.
-- **Find senders** lists recent senders who are not contacts yet. **Add as contact** brings in their last 90 days of mail.
+- **Find senders** lists recent senders who are not contacts yet. **Add as contact** brings in their mail from as far back as the mailbox's first scan reaches (a year unless set).
 - **Remove** stops the sync and deletes the password. Mail already stored stays. A removed feed takes its events with it.
 - **Microsoft app**: an admin registers a web app in Microsoft Entra once and enters its client ID, secret, tenant and redirect URI here. The screen shows the redirect URI to register.
 - **Connect a Microsoft account** opens Microsoft's sign-in in a new tab. Sign in, then come back: the account shows with its OneDrive and the libraries of the SharePoint sites you follow.
@@ -29,6 +29,7 @@ This screen links your mailboxes, calendar feeds and Microsoft 365 accounts to t
 
 - Only mail from contacts is kept. Mail from anyone else is never fetched.
 - Passwords, feed addresses and Microsoft tokens are sealed in the brain with the box's master key. The Sync service keeps nothing on disk.
-- A synced file over 64 MB is skipped.
+- A synced file of any size up to the upload cap (512 MB unless an admin sets more) comes in whole. A larger one is in the brain by name, and its status says its content was not taken in.
+- A calendar feed comes in whole, at any size. A run that could not read all of it removes no event.
 - An admin's own agent can do all of this over MCP (the `sync_*` tools), except signing in to Microsoft.
 - Turning Sync off stops it. Nothing is deleted, and on again goes on where it stopped.

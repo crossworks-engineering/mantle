@@ -3,7 +3,8 @@
  * one message the Sync sidecar fetched in full. Stored as the old sync did
  * (ingest rules, the email node, attachments as file nodes), judged again by
  * the contacts gate, once per mailbox (both dedup keys). Its body ceiling is
- * MAIL_INGEST_BODY_BYTES (lib/body-limit.ts).
+ * MAIL_INGEST_BODY_BYTES (lib/body-limit.ts): a larger message names its
+ * attachments streamed before (attachment/route.ts) instead of carrying them.
  */
 import { NextResponse } from '@/server/http-compat';
 import { ingestWireMessage, mailboxOf } from '@mantle/email';
@@ -30,6 +31,8 @@ export async function POST(req: Request) {
     if (!account || !account.enabled) {
       return NextResponse.json({ error: 'no such mailbox' }, { status: 404 });
     }
+    // A message naming an attachment that was never uploaded throws
+    // StagedAttachmentMissingError, an InputError: the one 400.
     return NextResponse.json({ stored: await ingestWireMessage(account, body.message) });
   });
 }

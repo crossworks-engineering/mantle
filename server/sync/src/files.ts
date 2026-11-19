@@ -22,9 +22,17 @@ import { BrainError, type Brain } from './brain';
 import { accessToken, currentSelections, inSelections } from './microsoft';
 import type { MsDrive, State } from './state';
 
-/** The largest file a drive run takes: the brain's buffered upload cap
- *  (MAX_UPLOAD_BYTES), as before M4. A bigger one is skipped and counted. */
-export const FILE_MAX_BYTES = 64 * 1024 * 1024;
+/** The largest file a drive run fetches when the brain names no cap: its
+ *  streamed upload cap's default (maxStreamedUploadBytes, 512 MB). The
+ *  brain names its own (GET /api/sidecar/files `maxBytes`, MANTLE_MAX_UPLOAD_MB).
+ *  A bigger file is posted as a stub (a node by name whose status says it
+ *  was not taken in), never skipped. */
+export const FILE_MAX_BYTES = 512 * 1024 * 1024;
+
+/** The map hash a stub keeps (lib/sidecar-files.ts stubHash, the brain's). */
+export function stubHash(hash: string | null, size: number): string {
+  return `stub:${hash ?? `size:${size}`}`.slice(0, 200);
+}
 const BATCH = 500;
 /** The most files one run fetches: a large first sync goes on in the next
  *  runs, so mail and feeds on the one lane do not wait for hours. Removal
@@ -112,7 +120,9 @@ export type Plan = {
   relink: Listed[];
   /** Ids listed and in the selections (kept). */
   seen: Set<string>;
-  /** Files over the size cap (not fetched; an old copy is kept). */
+  /** Files over the size cap, not posted as a stub yet. */
+  stub: Listed[];
+  /** Files over the size cap (each a stub). */
   oversize: number;
 };
 
@@ -122,15 +132,17 @@ export function planItem(
   map: Map<string, MapRow>,
   drive: Pick<MsDrive, 'selections'>,
   item: Listed,
+  maxBytes = FILE_MAX_BYTES,
 ): void {
   if (!inSelections(drive.selections, item.id.startsWith('path:') ? undefined : item.id, item.path))
     return;
   plan.seen.add(item.id);
-  if (item.size > FILE_MAX_BYTES) {
+  const known = map.get(item.id);
+  if (item.size > maxBytes) {
     plan.oversize += 1;
+    if (known?.hash !== stubHash(item.hash, item.size)) plan.stub.push(item);
     return;
   }
-  const known = map.get(item.id);
   if (known?.hash && item.hash && known.hash === item.hash) return;
   // A copied old row (no hash yet): re-linked only when its size is the
   // same and it has not changed since the old sync's last run.
@@ -215,18 +227,27 @@ async function listDrive(
   return bad ? { complete: false, error: `${bad} listing line(s) unread` } : { complete: true };
 }
 
-/** The drive's file map in the brain, every page. */
-async function loadMap(brain: Brain, source: string): Promise<Map<string, MapRow>> {
+/** The drive's file map in the brain, every page, and the brain's cap for
+ *  one streamed file. */
+async function loadMap(
+  brain: Brain,
+  source: string,
+): Promise<{ map: Map<string, MapRow>; maxBytes: number }> {
   const map = new Map<string, MapRow>();
+  let maxBytes = FILE_MAX_BYTES;
   let after: string | null = null;
   for (;;) {
     const q: URLSearchParams = new URLSearchParams({ source, ...(after ? { after } : {}) });
-    const r: { items: MapRow[] } = await brain.get<{ items: MapRow[] }>(`/api/sidecar/files?${q}`);
+    const r: { items: MapRow[]; maxBytes?: number } = await brain.get<{
+      items: MapRow[];
+      maxBytes?: number;
+    }>(`/api/sidecar/files?${q}`);
+    if (typeof r.maxBytes === 'number' && r.maxBytes > 0) maxBytes = r.maxBytes;
     for (const row of r.items) map.set(row.itemId, row);
     if (r.items.length === 0) break;
     after = r.items[r.items.length - 1]!.itemId;
   }
-  return map;
+  return { map, maxBytes };
 }
 
 /** Stream one file into the brain. 'skipped' when the brain refused this
@@ -296,6 +317,8 @@ async function fetchOne(
 
 export type DriveRun = {
   listed: number;
+  /** Files past the brain's cap: in the brain as stubs. */
+  oversize: number;
   fetched: number;
   relinked: number;
   removed: number;
@@ -304,7 +327,14 @@ export type DriveRun = {
 
 /** One run of a drive, kept as its status. */
 export async function runDrive(brain: Brain, state: State, drive: MsDrive): Promise<DriveRun> {
-  const run: DriveRun = { listed: 0, fetched: 0, relinked: 0, removed: 0, skipped: 0 };
+  const run: DriveRun = {
+    listed: 0,
+    oversize: 0,
+    fetched: 0,
+    relinked: 0,
+    removed: 0,
+    skipped: 0,
+  };
   let error: string | undefined;
   try {
     const account = await state.msAccount(drive.accountId);
@@ -313,13 +343,36 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
     // Each chosen folder's path as it is now (a renamed folder keeps
     // syncing; its files are not taken for gone).
     const chosen = { selections: await currentSelections(state, drive) };
-    const map = await loadMap(brain, drive.id);
-    const plan: Plan = { fetch: [], relink: [], seen: new Set(), oversize: 0 };
+    const { map, maxBytes } = await loadMap(brain, drive.id);
+    const plan: Plan = { fetch: [], relink: [], seen: new Set(), stub: [], oversize: 0 };
     const listing = await listDrive(state, drive, (item) => {
       run.listed += 1;
-      planItem(plan, map, chosen, item);
+      planItem(plan, map, chosen, item, maxBytes);
     });
-    run.skipped += plan.oversize;
+    run.oversize = plan.oversize;
+    // Past the cap: a node by name whose status says so, never a skip.
+    let stubFailed = 0;
+    for (const item of plan.stub) {
+      try {
+        await brain.post('/api/sidecar/files/stub', {
+          source: drive.id,
+          item: item.id,
+          path,
+          name: item.name,
+          hash: item.hash,
+          size: item.size,
+          mod: item.modTime,
+        });
+      } catch (err) {
+        // One stub the brain refused, or a brain from before stubs (404,
+        // 405): counted, the run goes on (the file is still seen, so it is
+        // never taken for gone) and posts it again next run.
+        const one = err instanceof BrainError && [400, 404, 405, 413].includes(err.status);
+        if (!one) throw err;
+        stubFailed += 1;
+      }
+    }
+    run.skipped += stubFailed;
     for (let i = 0; i < plan.relink.length; i += BATCH) {
       const r = await brain.post<{ relinked: number }>('/api/sidecar/files/relink', {
         source: drive.id,
@@ -384,6 +437,18 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
     ok: !error,
     ...(error ? { error } : {}),
     count: run.fetched + run.relinked,
+    ...(run.oversize || run.skipped
+      ? {
+          note: [
+            run.oversize
+              ? `${run.oversize} file(s) past the brain's upload cap (MANTLE_MAX_UPLOAD_MB) are in by name only`
+              : '',
+            run.skipped ? `${run.skipped} file(s) the brain refused` : '',
+          ]
+            .filter(Boolean)
+            .join('; '),
+        }
+      : {}),
   });
   return run;
 }

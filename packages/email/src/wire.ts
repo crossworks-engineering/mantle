@@ -12,10 +12,15 @@ import type { DeliveryKind } from './classify';
 
 /** The most envelopes one gate call takes. */
 export const MAIL_GATE_BATCH_MAX = 200;
-/** The largest message the sidecar posts (bodies plus attachment bytes,
- *  before base64). A bigger message is skipped by the sidecar, as the old
- *  sync skipped one over its IMAP fetch cap. */
+/** The largest message the sidecar posts in one body (bodies plus
+ *  attachment bytes, before base64). A bigger message is read as a stream:
+ *  each attachment goes on its own (POST /api/sidecar/mail/attachment,
+ *  spooled to disk and stored there), and the message posts naming them
+ *  (`staged`), so a message of any size is taken in with flat memory. */
 export const MAIL_MESSAGE_MAX_BYTES = 40 * 1024 * 1024;
+/** The most body text and HTML a message posts inline. More (a huge HTML
+ *  body) goes as a staged attachment of its own, and the body says so. */
+export const MAIL_BODY_INLINE_MAX = 16 * 1024 * 1024;
 /** The ingest route's body ceiling: the message above in base64, plus the
  *  JSON around it. */
 export const MAIL_INGEST_BODY_BYTES = 64 * 1024 * 1024;
@@ -34,8 +39,11 @@ export type WireAttachment = {
   filename: string;
   mimeType?: string;
   sizeBytes?: number;
-  /** The bytes, base64. */
-  contentB64: string;
+  /** The bytes, base64 (a message under MAIL_MESSAGE_MAX_BYTES). */
+  contentB64?: string;
+  /** Or the bytes the sidecar streamed before (POST
+   *  /api/sidecar/mail/attachment answered these). */
+  staged?: { sha256: string; size: number };
 };
 
 /** One allowed message, fetched in full. The old RawMessage plus the
@@ -126,8 +134,21 @@ export function clipEnvelope(e: WireEnvelope): WireEnvelope {
 /** A message within WIRE_LIMITS. */
 export function clipMessage(m: WireMessage): WireMessage {
   const L = WIRE_LIMITS;
+  // Past the most a message carries: the rest is counted in its body text,
+  // never dropped silently.
+  const over = m.attachments.length - L.attachments;
+  const bodyText =
+    over > 0
+      ? [
+          `(Not all of this message could be taken in: ${over} attachment(s) past the ${L.attachments} a message holds. Read it in your mail client.)`,
+          m.bodyText,
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : m.bodyText;
   return {
     ...m,
+    bodyText,
     ...clipEnvelope(m),
     threadId: cut(m.threadId, L.id),
     fromName: cut(m.fromName, L.name),

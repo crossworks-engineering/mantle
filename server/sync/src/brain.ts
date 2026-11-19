@@ -10,6 +10,16 @@ import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 export const TOKEN_HEADER = 'x-mantle-sync-token';
 
+/** A failure of the one message being read, not of the run: its source
+ *  stream broke part way, or its upload passed its deadline. The run goes
+ *  on past the message and tries it again later (mail-stream.ts Failures). */
+export class MessageFault extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'MessageFault';
+  }
+}
+
 export class BrainError extends Error {
   constructor(
     readonly status: number,
@@ -38,6 +48,17 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** A fetch to the brain that did not answer (down, a reset, a timeout):
+ *  a BrainError of status 0, so a caller tells the brain's side from the
+ *  mail server's. */
+async function reach(go: () => Promise<Response>): Promise<Response> {
+  try {
+    return await go();
+  } catch (err) {
+    throw new BrainError(0, `the brain did not answer: ${(err as Error).message}`);
+  }
+}
+
 export function createBrain(opts: { url: string; token: string }): Brain {
   const base = opts.url.replace(/\/+$/, '');
   async function answer<T>(res: Response): Promise<T> {
@@ -53,30 +74,43 @@ export function createBrain(opts: { url: string; token: string }): Brain {
     return parsed as T;
   }
   async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${base}${path}`, {
-      method,
-      headers: {
-        [TOKEN_HEADER]: opts.token,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: 'error',
-      signal: timeoutSignal(NET_TIMEOUTS.syncBrain),
-    });
+    const res = await reach(() =>
+      fetch(`${base}${path}`, {
+        method,
+        headers: {
+          [TOKEN_HEADER]: opts.token,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        redirect: 'error',
+        signal: timeoutSignal(NET_TIMEOUTS.syncBrain),
+      }),
+    );
     return answer<T>(res);
   }
   return {
     stream: async (path, body, signal) => {
-      const res = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/octet-stream' },
-        body,
-        // A streamed request body (Bun and undici both take it).
-        duplex: 'half',
-        redirect: 'error',
-        signal: AbortSignal.any([signal, timeoutSignal(NET_TIMEOUTS.syncFile)]),
-      } as RequestInit);
-      return answer(res);
+      const deadline = timeoutSignal(NET_TIMEOUTS.syncFile);
+      try {
+        const res = await reach(() =>
+          fetch(`${base}${path}`, {
+            method: 'POST',
+            headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/octet-stream' },
+            body,
+            // A streamed request body (Bun and undici both take it).
+            duplex: 'half',
+            redirect: 'error',
+            signal: AbortSignal.any([signal, deadline]),
+          } as RequestInit),
+        );
+        return await answer(res);
+      } catch (err) {
+        // This one upload ran past its deadline (a very large file on a
+        // slow source): the message's failure, not the brain's.
+        if (deadline.aborted)
+          throw new MessageFault('the upload passed its deadline', { cause: err });
+        throw err;
+      }
     },
     get: (path) => call('GET', path),
     post: (path, body) => call('POST', path, body),

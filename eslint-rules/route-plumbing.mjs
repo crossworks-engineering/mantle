@@ -40,7 +40,9 @@ export const BODY_READ_ALLOW = Object.freeze({
   'server/web/app/api/apps/import-package/route.ts':
     'streams the package (req.body) to disk under its own cap (spoolUpload)',
   'server/web/app/api/sidecar/files/route.ts':
-    "streams a drive file from the Sync sidecar (req.body, rclone cat) to disk under its own cap (spoolUpload), at the loader's ceiling (body-limit.ts)",
+    "streams a drive file from the Sync sidecar (req.body, rclone cat) to disk under its own cap (spoolUpload, maxStreamedUploadBytes); a streamed upload path with no loader ceiling (body-limit.ts UPLOAD_PATHS)",
+  'server/web/app/api/sidecar/mail/attachment/route.ts':
+    "streams one attachment of a large message from the Sync sidecar (req.body) to disk under its own cap (spoolUpload); a streamed upload path with no loader ceiling (body-limit.ts UPLOAD_PATHS)",
   'server/web/app/api/oauth/token/route.ts':
     'an OAuth token request is a form post (RFC 6749), answered in its own error shape',
   'server/web/app/api/oauth/authorize/route.ts':

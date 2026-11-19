@@ -213,6 +213,48 @@ export async function putContent(
 }
 
 /**
+ * Upload a file on disk (a spooled upload) under its content address, read
+ * as a stream so memory stays flat at any size. `sha256` and `size` are the
+ * ones the spool computed on the way in (spoolUpload). Deduplicated as
+ * putContent.
+ */
+export async function putContentFile(
+  filePath: string,
+  sha256: string,
+  size: number,
+  contentType: string,
+): Promise<{ key: string; sha256: string; size: number; deduped: boolean }> {
+  const key = contentKey(sha256);
+  if (await exists(key)) return { key, sha256, size, deduped: true };
+  const b = bunStore(key);
+  const bun = (globalThis as unknown as { Bun?: { file(p: string): Blob } }).Bun;
+  if (b && bun) {
+    // A Bun file as the body: Bun streams it (a multipart upload past 5 MB).
+    await b.file(key).write(bun.file(filePath) as unknown as Buffer, { type: contentType });
+    return { key, sha256, size, deduped: false };
+  }
+  const { createReadStream } = await import('node:fs');
+  const { PutObjectCommand } = await sdk();
+  await (
+    await client()
+  ).send(
+    new PutObjectCommand({
+      Bucket: bucket(),
+      Key: key,
+      Body: createReadStream(filePath),
+      ContentLength: size,
+      ContentType: contentType,
+    }),
+  );
+  return { key, sha256, size, deduped: false };
+}
+
+/** Whether the bytes with this sha256 are in the store (their content key). */
+export async function contentStored(sha256: string): Promise<boolean> {
+  return exists(contentKey(sha256));
+}
+
+/**
  * Stream bytes back from object storage. Downloads are always proxied through
  * the app: the object store is an internal compose service the browser cannot
  * reach, which is why there is no presigned-URL helper here.

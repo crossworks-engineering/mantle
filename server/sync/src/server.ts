@@ -8,7 +8,8 @@
  * The rest only from the brain, with SYNC_TOKEN in `x-mantle-sync-token`:
  *
  *   POST /send       send a message from a linked mailbox (send.ts)
- *   POST /backfill   a new contact's last 90 days of mail, in the background
+ *   POST /backfill   a new contact's mail back to each mailbox's first-scan
+ *                    reach, kept as a job until it reaches the end
  *   GET|POST /ui/*   the account screens (ui.ts), through the brain's screen
  *                    route, which adds the base path and a fresh ticket
  *   POST /admin/*    the brain's Sync admin tools (admin.ts)
@@ -19,7 +20,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { errorMessage } from '@mantle/std';
 import { TOKEN_HEADER } from './brain';
 import { adminReply } from './admin';
-import { backfill, runError } from './mail';
+import { queueBackfill, runBackfill, runError } from './mail';
 import { sendOutlook } from './outlook';
 import { SendRefusedError, outlookSenderFor, senderFor, sendMail, type SendInput } from './send';
 import { uiReply, type UiDeps } from './ui';
@@ -141,8 +142,11 @@ export function createSyncServer(state: SyncState, deps: SyncDeps | null): Serve
       const targets = Array.isArray(body.targets)
         ? body.targets.filter((t): t is string => typeof t === 'string').slice(0, 100)
         : [];
-      if (targets.length > 0)
-        void deps.lane.run('backfill', () => backfill(deps.brain, deps.state, targets));
+      if (targets.length > 0) {
+        for (const job of await queueBackfill(deps.state, targets)) {
+          void deps.lane.run('backfill', () => runBackfill(deps.brain, deps.state, job.id));
+        }
+      }
       return json(res, 202, { queued: targets.length });
     }
     if ((path.startsWith('/admin/') || path.startsWith('/oauth/')) && method === 'POST') {

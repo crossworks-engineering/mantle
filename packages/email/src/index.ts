@@ -34,6 +34,7 @@ export {
   disableMailbox,
   gateEnvelopes,
   ingestWireMessage,
+  StagedAttachmentMissingError,
   recordMailRun,
   ensureBranchPath,
 } from './ingest';

@@ -12,12 +12,23 @@
  * move-copy.ts, through disk.ts): there the disk path IS the row, so the
  * disk follows the row inside its flip (store-broker.ts flipThenPlace).
  */
-import { putContent } from '@mantle/storage/write';
+import { putContent, putContentFile } from '@mantle/storage/write';
 
 /** Store `bytes` under their content address, before the row that names
  *  them: returns the key the row records. Never inside a transaction (a
  *  network write). */
 export async function stageFileObject(bytes: Buffer, mimeType: string): Promise<{ key: string }> {
   const { key } = await putContent(bytes, mimeType);
+  return { key };
+}
+
+/** The same for a spooled upload on disk (spoolUpload's file, sha256 and
+ *  size), streamed: a drive file or a mail attachment of any size, with
+ *  flat memory. */
+export async function stageSpooledObject(
+  spooled: { tempPath: string; sha256: string; size: number },
+  mimeType: string,
+): Promise<{ key: string }> {
+  const { key } = await putContentFile(spooled.tempPath, spooled.sha256, spooled.size, mimeType);
   return { key };
 }

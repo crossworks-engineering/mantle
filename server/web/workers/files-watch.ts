@@ -24,17 +24,14 @@
  *   - Watch outside the files root: chokidar is scoped to MANTLE_FILES_ROOT.
  */
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
+import { createReadStream, promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import chokidar from 'chokidar';
 import {
-  INGESTABLE_EXTS,
-  MEDIA_EXTS,
-  PREVIEWABLE_MARKDOWN_EXTS,
-  TEXT_EXTS,
   deleteFileByPath,
   ensureRoot,
-  extOf,
   filesRoot,
+  maxStreamedUploadBytes,
   isDiskChaff,
   ltreeForDiskPath,
   reconcileAutoFiled,
@@ -51,44 +48,34 @@ import { sleep } from '@mantle/std';
 // until the first signup instead of exiting.
 let USER_ID: string | undefined = env('ALLOWED_USER_ID');
 
-/** Extensions the watcher cares about. Keep in sync with the UI's
- *  uploader. Everything else is ignored to avoid noise from editor
- *  temp files, .DS_Store, lock files, etc. */
-const WATCHED_EXTS = new Set<string>([
-  ...TEXT_EXTS,
-  ...PREVIEWABLE_MARKDOWN_EXTS,
-  ...INGESTABLE_EXTS, // includes pdf
-  // Media syncs as a stored, playable file node. The extractor records an
-  // honest unsupported_media skip for it — indexing (transcription) only ever
-  // happens through the explicit video_ingest tool, never from this watcher
-  // (cost-safety: a synced folder of recordings must not trigger LLM spend).
-  ...MEDIA_EXTS,
-  'png',
-  'jpg',
-  'jpeg',
-  'gif',
-  'webp',
-  'svg',
-  'csv',
-  'html',
-]);
-
+/** Every file the operator put here becomes a node, whatever its type (a
+ *  TIFF, an SMF, a `.000` plot, a zip, a HEIC, a file with no extension):
+ *  the brain holds what was placed, and the extractor says per file what it
+ *  could read (an honest skip for a type no reader takes, `unsupported_media`
+ *  for audio and video, which only the explicit video_ingest transcribes).
+ *  Only editor and OS chaff (isDiskChaff: dotfiles, `~` backups, swap and
+ *  temp files) is ignored. */
 function shouldSync(absPath: string): boolean {
-  const base = path.basename(absPath);
-  if (isDiskChaff(base)) return false; // editor + OS chaff
-  const ext = extOf(base);
-  if (!ext) return false;
-  return WATCHED_EXTS.has(ext);
+  return !isDiskChaff(path.basename(absPath));
 }
 
-/** Hard ceiling on what this worker will buffer for one file. The whole file
- *  is read into memory (readFile + sha256), the container runs under a 1 GB
- *  mem_limit, and chokidar fires upserts CONCURRENTLY — before media joined
- *  WATCHED_EXTS the practical max was a 64 MB document, but a synced `.mkv`
- *  can be many GB. Over the cap: log loudly and skip; the file stays on disk,
- *  it just doesn't become a node. (Deliberately larger than MAX_UPLOAD_BYTES:
- *  the operator placed this file on purpose.) */
-const WATCH_MAX_BYTES = 512 * 1024 * 1024;
+/** The most this worker reads into memory for one file (chokidar fires
+ *  upserts CONCURRENTLY, under a 1 GB mem_limit). A larger file is hashed as
+ *  a stream and becomes a node all the same, at any size; past the box's
+ *  read cap (MANTLE_MAX_UPLOAD_MB) its extract records the terminal
+ *  `file_too_large`, so its status says its content is not in search. */
+const WATCH_BUFFER_BYTES = 64 * 1024 * 1024;
+
+/** A file's sha256 and size, read as a stream (flat memory at any size). */
+async function digestOf(absPath: string): Promise<{ sha256: string; size: number }> {
+  const hash = createHash('sha256');
+  let size = 0;
+  for await (const chunk of createReadStream(absPath)) {
+    hash.update(chunk as Buffer);
+    size += (chunk as Buffer).length;
+  }
+  return { sha256: hash.digest('hex'), size };
+}
 
 async function handleUpsert(absPath: string): Promise<void> {
   try {
@@ -96,13 +83,13 @@ async function handleUpsert(absPath: string): Promise<void> {
     const loc = ltreeForDiskPath(absPath);
     if (!loc) return;
     const st = await fs.stat(absPath);
-    if (st.size > WATCH_MAX_BYTES) {
+    const bytes =
+      st.size > WATCH_BUFFER_BYTES ? await digestOf(absPath) : await fs.readFile(absPath);
+    if (st.size > maxStreamedUploadBytes()) {
       console.warn(
-        `[files-watch] SKIPPED ${loc.parentPath}/${loc.filename}: ${st.size} bytes exceeds the ${WATCH_MAX_BYTES}-byte sync cap (file left on disk, no node created)`,
+        `[files-watch] ${loc.parentPath}/${loc.filename}: ${st.size} bytes, past the ${maxStreamedUploadBytes()}-byte read cap: a node by name, its content not read (file_too_large)`,
       );
-      return;
     }
-    const bytes = await fs.readFile(absPath);
     const res = await syncFileFromDisk({
       ownerId: USER_ID!,
       parentPath: loc.parentPath,

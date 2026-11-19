@@ -12,15 +12,19 @@ import {
   type WireEnvelope,
   type WireMessage,
 } from '@mantle/email/wire';
+import { randomUUID } from 'node:crypto';
 import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
 import { errorMessage } from '@mantle/std';
 import { BrainError, type Brain } from './brain';
+import { stagerFor, failuresFor } from './mail-stream';
 import { backfillSender, mask, recentSenders, syncMailbox } from './imap';
 import { backfillOutlook, recentOutlookSenders, syncOutlook } from './outlook';
-import type { MailAccount, MsAccount, State } from './state';
+import type { BackfillJob, BackfillMark, MailAccount, MsAccount, State } from './state';
 
-/** How far a new contact's backfill reaches. */
-const BACKFILL_DAYS = 90;
+/** A backfill run's share per mailbox and target (pacing: the next run
+ *  goes on from the mark). IMAP: envelopes; Outlook: pages of 50. */
+export const BACKFILL_RUN_ENVELOPES = 2500;
+export const BACKFILL_RUN_PAGES = 50;
 /** How far the discover scan reaches, and how many senders it shows. */
 const DISCOVER_DAYS = 30;
 const DISCOVER_LIMIT = 50;
@@ -118,6 +122,8 @@ export async function runMailbox(brain: Brain, state: State, account: MailAccoun
       gateFor(brain, account.id),
       ingestFor(brain, account.id, counter),
       (c) => state.putCursor(account.id, c).then(() => undefined),
+      stagerFor(brain, account.id),
+      failuresFor(state, account.id),
     );
     scanned = r.scanned;
   } catch (err) {
@@ -149,7 +155,8 @@ export async function outlookAccounts(
   );
 }
 
-/** One run of a Microsoft account's Outlook inbox, reported as a mailbox's. */
+/** One run of a Microsoft account's Outlook mail folders, reported as a
+ *  mailbox's. */
 export async function runOutlookMail(
   brain: Brain,
   state: State,
@@ -165,6 +172,8 @@ export async function runOutlookMail(
       account,
       gateFor(brain, account.mailboxId),
       ingestFor(brain, account.mailboxId, counter),
+      stagerFor(brain, account.mailboxId),
+      failuresFor(state, account.mailboxId),
     );
     scanned = r.scanned;
   } catch (err) {
@@ -186,50 +195,120 @@ export async function runOutlookMail(
   });
 }
 
-/** Each target's last 90 days across every enabled mailbox. */
-export async function backfill(brain: Brain, state: State, targets: string[]): Promise<number> {
-  const since = new Date(Date.now() - BACKFILL_DAYS * 86_400_000);
+/** A new backfill job per target, each kept in the brain until it reaches
+ *  the end (each run of it a share: runBackfill). One per target keeps a
+ *  job's marks (every mailbox's folders) well under the 256 KB a state
+ *  value holds. */
+export async function queueBackfill(state: State, targets: string[]): Promise<BackfillJob[]> {
+  const jobs: BackfillJob[] = [];
+  for (const target of new Set(targets)) {
+    const job: BackfillJob = {
+      id: randomUUID(),
+      targets: [target],
+      at: new Date().toISOString(),
+      marks: {},
+    };
+    await state.putBackfill(job);
+    jobs.push(job);
+  }
+  return jobs;
+}
+
+/** A mark as small as it can be kept: a done one needs no folders, a done
+ *  folder no watermark (an IMAP one keeps its UIDVALIDITY: a new one
+ *  reads the folder again). */
+export function pruneMark(m: BackfillMark): void {
+  if (m.done) {
+    delete m.folders;
+    return;
+  }
+  for (const [id, f] of Object.entries(m.folders ?? {})) {
+    if (!f.done) continue;
+    m.folders![id] =
+      f.uidvalidity === undefined ? { done: true } : { uidvalidity: f.uidvalidity, done: true };
+  }
+}
+
+/**
+ * One run of a backfill job: each target across every enabled mailbox and
+ * every Outlook account, back to that mailbox's first-scan reach, at most
+ * BACKFILL_RUN_ENVELOPES envelopes (IMAP) or BACKFILL_RUN_PAGES pages
+ * (Outlook) per mailbox and target this run. Each mark is kept as it moves,
+ * so the next run (the scheduler's, or after a restart) goes on; a job whose
+ * every mark is done is removed. A mailbox that fails is tried again next
+ * run. How many messages it stored.
+ */
+export async function runBackfill(brain: Brain, state: State, id: string): Promise<number> {
+  const job = await state.backfill(id);
+  if (!job) return 0;
+  const save = () => {
+    for (const m of Object.values(job.marks)) pruneMark(m);
+    return state.putBackfill(job).then(() => undefined);
+  };
   let ingested = 0;
+  let open = false;
+  const mark = (key: string): BackfillMark => (job.marks[key] ??= {});
   for (const account of await outlookAccounts(state)) {
-    for (const target of targets) {
+    for (const target of job.targets) {
+      const m = mark(`${account.mailboxId}|${target}`);
+      if (m.done) continue;
       const counter = { ingested: 0 };
       try {
-        await backfillOutlook(
+        const r = await backfillOutlook(
           state,
           account,
           target,
-          since,
+          m,
+          save,
           gateFor(brain, account.mailboxId),
           ingestFor(brain, account.mailboxId, counter),
+          stagerFor(brain, account.mailboxId),
+          BACKFILL_RUN_PAGES,
+          failuresFor(state, account.mailboxId),
         );
+        m.done = r.done;
+        if (!r.done) open = true;
       } catch (err) {
+        open = true;
         console.warn(
           `[sync] backfill on ${mask(account.upn)} failed: ${runError(err, { address: account.upn })}`,
         );
       }
+      await save();
       ingested += counter.ingested;
     }
   }
   for (const account of await state.accounts()) {
     if (!account.enabled) continue;
-    for (const target of targets) {
+    for (const target of job.targets) {
+      const m = mark(`${account.id}|${target}`);
+      if (m.done) continue;
       const counter = { ingested: 0 };
       try {
-        await backfillSender(
+        const r = await backfillSender(
           account,
           target,
-          since,
+          m,
+          save,
           gateFor(brain, account.id),
           ingestFor(brain, account.id, counter),
+          stagerFor(brain, account.id),
+          BACKFILL_RUN_ENVELOPES,
+          failuresFor(state, account.id),
         );
+        m.done = r.done;
+        if (!r.done) open = true;
       } catch (err) {
+        open = true;
         console.warn(
           `[sync] backfill on ${mask(account.address)} failed: ${runError(err, account)}`,
         );
       }
+      await save();
       ingested += counter.ingested;
     }
   }
+  if (!open) await state.deleteBackfill(job.id);
   return ingested;
 }
 

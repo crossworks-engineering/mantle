@@ -159,8 +159,9 @@ export async function sendViaSync(input: SyncSendInput): Promise<SyncSendResult>
 }
 
 /**
- * Pull each new contact entry's last 90 days of mail into the brain (an
- * address, or an `@domain` wildcard), across the owner's mailboxes. Best
+ * Pull each new contact entry's mail (an address, or an `@domain`
+ * wildcard) into the brain, back to each mailbox's first-scan reach, across
+ * the owner's mailboxes. Best
  * effort and in the background on the sidecar: never fails the caller's
  * write, and does nothing while Sync is off.
  */

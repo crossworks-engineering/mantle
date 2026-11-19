@@ -52,6 +52,7 @@ const READ_FAILURES: ReadonlySet<string> = new Set([
   'pdf_too_large',
   'encrypted_pdf',
   'bytes_unavailable',
+  'file_too_large',
 ]);
 
 const HINTS: Readonly<Record<string, string>> = {
@@ -63,6 +64,8 @@ const HINTS: Readonly<Record<string, string>> = {
     'The PDF is password-protected. Add its password in Settings > PDF passwords, then read it again.',
   bytes_unavailable:
     "The file's bytes are not in storage, so it could not be read. Upload it again.",
+  file_too_large:
+    'The file is larger than this box reads (an admin can raise MANTLE_MAX_UPLOAD_MB). It is stored and findable by its name; its content is not in search.',
   parked: 'The file was read, but its index could not be written. An Admin can look at it.',
   needs_export:
     'This format cannot be read directly. Export it to a readable format and upload that.',

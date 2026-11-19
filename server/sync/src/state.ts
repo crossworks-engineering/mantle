@@ -11,8 +11,12 @@
  *   msdrive:<id>          a OneDrive or SharePoint library of one, its selections
  *   mscursor:<id>         an account's Outlook mail watermark
  *   msoauth:<state>       a sign-in under way (10 minutes, used once)
+ *   backfill:<id>         a new contact's backfill, until it reaches the end
+ *   msgfail:<mailbox id>  messages that failed to read, by id: tries, first, folder
+ *   feedkeys:<feed id>    a feed's changed occurrences last run (hashed keys)
  */
 import type { Brain } from './brain';
+import type { FailEntry } from './mail-stream';
 
 export type HostPort = { host: string; port: number; secure: boolean };
 
@@ -44,6 +48,9 @@ export type RunStatus = {
   error?: string;
   /** Mail: messages stored. Feed: events in the feed. */
   count?: number;
+  /** A run that went through but could not take everything in: what, in
+   *  plain words (shown beside the count). */
+  note?: string;
 };
 
 /** The Microsoft (Azure) app this box signs in with (Sync service plan M3). */
@@ -73,6 +80,14 @@ export type MsAccount = {
   mail: boolean;
   /** The brain's mailbox row its mail lands under, once mail was on. */
   mailboxId: string | null;
+  /** How far back the first scan of a mail folder (and a new contact's
+   *  backfill) reaches; unset: 365 days. */
+  firstScanDays?: number;
+  /** Mail folders (paths, `Inbox/Projects`) left out; unset: Deleted Items,
+   *  Junk Email, Drafts, Outbox and Sync Issues (as IMAP's defaults). */
+  excludedFolders?: string[];
+  /** Non-empty: only these mail folders (paths). */
+  includedFolders?: string[] | null;
   /** The last token refresh's failure, cleared by the next success. */
   lastError?: string | null;
 };
@@ -97,7 +112,38 @@ export type MsDrive = {
   selections: DriveSelection[];
 };
 
-export type MsCursor = { since: string | null };
+/** An account's Outlook mail watermarks: `since` is the inbox's from before
+ *  every folder synced; `folders` holds each folder's (by Graph id). */
+export type MsCursor = {
+  since: string | null;
+  folders?: Record<string, string>;
+  /** Where the next run's backlog round robin starts (outlook.ts). */
+  rr?: number;
+  /** Per folder inside a group of messages changed in one second: its
+   *  time and the receivedDateTime read to (outlook.ts). */
+  ties?: Record<string, { at: string; after: string; skip?: number }>;
+};
+
+/** A new contact's backfill, kept until it reaches the end (Sync service
+ *  plan M2): each run reads a share of every mailbox and goes on in the
+ *  next, so a restart or a failure never leaves it half done. */
+export type BackfillJob = {
+  id: string;
+  targets: string[];
+  at: string;
+  /** Per `<mailbox or account id>|<target>`: where it got to. */
+  marks: Record<string, BackfillMark>;
+};
+
+export type BackfillMark = {
+  done?: boolean;
+  /** IMAP: the last UID read per folder. Outlook: the receivedDateTime
+   *  watermark per folder id. */
+  folders?: Record<
+    string,
+    { uidvalidity?: number; lastUid?: number; since?: string; done?: boolean }
+  >;
+};
 
 export type MsOAuth = { verifier: string; at: number };
 
@@ -142,6 +188,7 @@ export function createState(brain: Brain) {
       await del(`account:${id}`);
       await del(`cursor:${id}`);
       await del(`status:${id}`);
+      await del(`msgfail:${id}`);
     },
     cursor: async (id: string) => (await get<MailCursor>(`cursor:${id}`)) ?? { folders: {} },
     putCursor: (id: string, c: MailCursor) => put(`cursor:${id}`, c),
@@ -151,7 +198,11 @@ export function createState(brain: Brain) {
     deleteFeed: async (id: string) => {
       await del(`feed:${id}`);
       await del(`status:${id}`);
+      await del(`feedkeys:${id}`);
     },
+    /** A feed's changed or cancelled occurrence keys of its last full run. */
+    feedKeys: async (id: string) => (await get<string[]>(`feedkeys:${id}`)) ?? [],
+    putFeedKeys: (id: string, keys: string[]) => put(`feedkeys:${id}`, keys),
     status: (id: string) => get<RunStatus>(`status:${id}`),
     putStatus: (id: string, s: RunStatus) => put(`status:${id}`, s),
     msApp: () => get<MsApp>('msapp'),
@@ -173,6 +224,13 @@ export function createState(brain: Brain) {
     },
     msCursor: async (id: string) => (await get<MsCursor>(`mscursor:${id}`)) ?? { since: null },
     putMsCursor: (id: string, c: MsCursor) => put(`mscursor:${id}`, c),
+    /** Messages of a mailbox that failed to read, by id: how many runs. */
+    msgFails: async (id: string) => (await get<Record<string, FailEntry>>(`msgfail:${id}`)) ?? {},
+    putMsgFails: (id: string, f: Record<string, FailEntry>) => put(`msgfail:${id}`, f),
+    backfills: () => list<BackfillJob>('backfill:'),
+    backfill: (id: string) => get<BackfillJob>(`backfill:${id}`),
+    putBackfill: (j: BackfillJob) => put(`backfill:${j.id}`, j),
+    deleteBackfill: (id: string) => del(`backfill:${id}`),
     oauth: (st: string) => get<MsOAuth>(`msoauth:${st}`),
     /** Every sign-in under way: its state and value. */
     oauthAll: async () => {
