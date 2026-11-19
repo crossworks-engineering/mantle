@@ -39,6 +39,7 @@ const { pipelineStampOf } = await import('@mantle/files');
 const { tabsOfSheets } = await import('./file-database');
 const { writeFileDatabaseDoc } = await import('./table-broker');
 const { filePagesOf, pagesText } = await import('./page-passages');
+const { bookScanPagesOf, bookVisionPagesOf } = await import('./book-pages');
 
 const SHA = 'b'.repeat(64);
 
@@ -106,5 +107,20 @@ describe('filePagesOf', () => {
   it('gives none for a Reader that does not say produces.pages, or no database', async () => {
     expect(await filePagesOf({ id: database(PLAIN, false), ownerId: 'o', sha256: SHA })).toBeNull();
     expect(await filePagesOf({ id: randomUUID(), ownerId: 'o', sha256: SHA })).toBeNull();
+  });
+});
+
+describe("a book's scanned pages and its marked pages", () => {
+  it('the scanned pages are those read by OCR or left to vision: the core pictures none of them again (M5)', async () => {
+    const id = database(BOOK, false);
+    expect([...(await bookScanPagesOf({ id, sha256: SHA }))].sort((a, b) => a - b)).toEqual([
+      7, 8, 412,
+    ]);
+    expect((await bookScanPagesOf({ id: randomUUID(), sha256: SHA })).size).toBe(0);
+  });
+
+  it('the marked pages are those left to vision', async () => {
+    const id = database(BOOK, false);
+    expect(await bookVisionPagesOf(path.join(dir, `${id}.sqlite`))).toEqual([7]);
   });
 });

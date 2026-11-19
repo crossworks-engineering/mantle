@@ -29,12 +29,12 @@ import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import {
+  bookScanPagesOf,
   readerPassOf,
   readerStandsOverFile,
   standingReaderPictures,
 } from '@mantle/content/reader-passes';
 import { agentPageTextOf } from '@mantle/content/page-passages';
-import type { SpooledPictures } from '@mantle/content/picture-spool';
 import type { EmbeddedImage } from '@mantle/files/embedded-images';
 import {
   picturesByWindows,
@@ -260,19 +260,37 @@ export async function maybeExtractEmbeddedImages(
     isPdf && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
       ? await picturesByWindows(loaded.bytes, cap, whole, undefined, { scanBook: book })
       : { ...whole!, windowsFailed: 0 };
-  // G1: the PNG of each page of a book its Reader left to vision, from the
-  // run of this extract's database pass, on disk. Its description is the
-  // Agent's vision text of the page (no second vision call): set now when
-  // the Agent has read it (a read again), else by the Agent's run.
+  // G1: a picture of each page of a book its Reader left to vision: the
+  // PNGs of the run of this extract's database pass, on disk; a marked page
+  // with none there is drawn by the book's Agent step with no model
+  // (standingReaderPictures), so none is lost in silence. Its description is
+  // the Agent's vision text of the page (no second vision call): set now
+  // when the Agent has read it (a read again), else by the Agent's run.
   const bookPages = new Map<EmbeddedImage, number>();
   const pageRun = book
-    ? await standingReaderPictures(ownerId, { id: node.id, sha256: data.sha256 }).catch(() => null)
+    ? await standingReaderPictures(
+        ownerId,
+        { id: node.id, sha256: data.sha256 },
+        loaded.bytes,
+        currentCount > 0 ? await pagePicturesOf(ownerId, node.id, current) : new Set<number>(),
+      )
     : null;
   if (pageRun) {
+    // The Reader reads a book's scanned pages (G1, M5 of the audit, round
+    // 3): a core picture of a page it read by OCR or left to vision (the
+    // page's scan, pictured whole above) is not kept a second time, so no
+    // page is pictured or asked by vision twice.
+    const scans = await bookScanPagesOf({ id: node.id, sha256: data.sha256 });
+    if (scans.size > 0) {
+      result.images = result.images.filter(
+        (img) => img.location?.page == null || !scans.has(img.location.page),
+      );
+      result.images.forEach((img, i) => (img.ordinal = i + 1));
+    }
     for (const p of pageRun.pictures) {
       const bytes = pageRun.bytes.get(p.file);
       if (!bytes || bytes.length === 0) continue;
-      const described = describeImageBytes(bytes, 'png');
+      const described = describeImageBytes(bytes, p.mime === 'image/jpeg' ? 'jpg' : 'png');
       const img = {
         ...described,
         ordinal: result.images.length + 1,
@@ -293,12 +311,14 @@ export async function maybeExtractEmbeddedImages(
     bookPages.size > 0
       ? await agentPageTextOf({ id: node.id, ownerId, sha256: data.sha256 })
       : null;
-  // The pictures of the file the cap keeps, those it had before too.
-  const keptTotal = result.images.length;
+  // The pictures of the file the cap keeps, those it had before too (a page
+  // picture of these bytes already is one of them).
+  const keptTotal = result.images.length + (pageRun?.had ?? 0);
   // The pictures a file leaves out are stamped on it once the new ones are
   // saved (a save that failed is a picture not kept), and a stamp of an
-  // earlier read that left none out goes (G4). Never fatal.
-  const foundTotal = keptTotal + picturesLeftOutOf(result);
+  // earlier read that left none out goes (G4). A marked page of a book that
+  // could not be drawn is one left out. Never fatal.
+  const foundTotal = keptTotal + picturesLeftOutOf(result) + (pageRun?.lost ?? 0);
   const stamp = (notSaved: number) =>
     stampPicturesLeftOut(node, ownerId, result, keptTotal - notSaved, foundTotal).catch(
       (err: unknown) => {
@@ -312,7 +332,7 @@ export async function maybeExtractEmbeddedImages(
   if (result.images.length === 0) {
     await stamp(0);
     result.spool?.drop();
-    if (pageRun && 'drop' in pageRun.bytes) (pageRun.bytes as SpooledPictures).drop();
+    pageRun?.drop();
   }
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
@@ -477,12 +497,11 @@ export async function maybeExtractEmbeddedImages(
   );
   const notSaved = result.images.length - (Array.isArray(created) ? created.length : 0);
   await stamp(notSaved);
-  // Every picture is saved: the pictures on disk go. A save that failed
-  // keeps them for the extract's retry (the kept run is read again).
-  if (notSaved === 0) {
-    result.spool?.drop();
-    if (pageRun && 'drop' in pageRun.bytes) (pageRun.bytes as SpooledPictures).drop();
-  }
+  // The pictures on disk go. A save that failed is counted (`data.images`),
+  // so the file is a candidate again (G5), and a page picture not saved is
+  // drawn again then (standingReaderPictures): nothing waits on the spool.
+  result.spool?.drop();
+  pageRun?.drop();
 }
 
 /**
@@ -939,6 +958,28 @@ async function extractedPicturesOf(
       ),
     );
   return new Set(rows.map((r) => r.sha ?? '').filter((s) => s !== ''));
+}
+
+/** The pages of a book with a page picture (G1, `data.bookPage`) of its
+ *  current bytes (`current`: the dedupe's rule): never drawn or saved again. */
+async function pagePicturesOf(
+  ownerId: string,
+  fileId: string,
+  current: ReturnType<typeof sql>,
+): Promise<Set<number>> {
+  const rows = await db
+    .select({ page: sql<number | null>`(${nodes.data}->>'bookPage')::int` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
+        sql`${nodes.data} ? 'bookPage'`,
+        current,
+      ),
+    );
+  return new Set(rows.map((r) => Number(r.page)).filter((n) => Number.isInteger(n) && n >= 1));
 }
 
 /**
