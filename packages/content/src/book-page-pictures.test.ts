@@ -238,6 +238,7 @@ describe("a book's page pictures: render, read and save in the Agent's run", () 
     const s = sink();
     await run(b, s.pictures);
     h.events.length = 0;
+    h.states.length = 0;
     const again = await run(b, sink(s.done).pictures);
     expect(again).toMatchObject({ status: 'asked', made: 0, pictures: 0 });
     expect(h.events).toEqual([]);
@@ -257,6 +258,7 @@ describe("a book's page pictures: render, read and save in the Agent's run", () 
     h.row = { sha256: b.sha256 };
     await run(b, sink().pictures);
     h.events.length = 0;
+    h.states.length = 0;
     const s = sink(new Set([30]));
     const out = await run(b, s.pictures);
     expect(out).toMatchObject({ status: 'asked', made: 0, reused: 1, pictures: 1 });
@@ -279,6 +281,7 @@ describe("a book's page pictures: render, read and save in the Agent's run", () 
     expect(s.counted()).toBe(1);
     // A run again pays only for the page not read.
     h.events.length = 0;
+    h.states.length = 0;
     fail = undefined;
     const s2 = sink(s.done);
     await run(b, s2.pictures);
