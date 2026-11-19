@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   role: 'member' as string,
   updated: [] as string[],
+  systemTarget: false,
 }));
 
 vi.mock('@mantle/db', () => {
@@ -52,6 +53,19 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/audit', () => ({ auditFireAndForget: () => {}, requestMetaFrom: () => ({}) }));
 
+// The System target check (a System user's login is a System user's to
+// change) stood in: the target is no System user unless a case says so.
+// The real check on Postgres is in system-areas.db.test.ts.
+vi.mock('@/lib/system-workspace', () => ({
+  systemUserTarget: async () =>
+    h.systemTarget
+      ? {
+          error: "Only a System user can change a System user's login.",
+          code: 'system_user_target',
+        }
+      : null,
+}));
+
 const TARGET = '22222222-2222-4222-8222-222222222222';
 
 async function reset() {
@@ -70,6 +84,16 @@ async function reset() {
 describe('POST /api/users/:id/password by target role', () => {
   beforeEach(() => {
     h.updated = [];
+    h.systemTarget = false;
+  });
+
+  it('refuses a System user target for a login outside System, writing nothing', async () => {
+    h.role = 'admin';
+    h.systemTarget = true;
+    const res = await reset();
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('system_user_target');
+    expect(h.updated).toEqual([]);
   });
 
   it.each(['admin', 'member'])('resets a %s password', async (role) => {

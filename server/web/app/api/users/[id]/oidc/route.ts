@@ -1,7 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { oidcAdminSetOutside, oidcAdminUnlink } from '@/lib/oidc/flow';
+import { oidcAdminSetOutside, oidcAdminUnlink, oidcOffAnswer } from '@/lib/oidc/flow';
+import { oidcSettings } from '@/lib/oidc/settings';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import { systemUserTarget } from '@/lib/system-workspace';
 
@@ -32,7 +33,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
-  // A System user's sign-in is changed by a System user only (or by itself).
+  // Off: the 404 comes first, as on every company sign-in route. Then a
+  // System user's sign-in is changed by a System user only (or by itself).
+  if (oidcSettings().mode === 'off') return oidcOffAnswer();
   const notSystem = await systemUserTarget(user.actor.id, id.data.id);
   if (notSystem) return NextResponse.json(notSystem, { status: 403 });
   return oidcAdminSetOutside(req, id.data.id.toLowerCase(), {
@@ -45,7 +48,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const user = ownerCaller();
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
-  // A System user's sign-in is changed by a System user only (or by itself).
+  // Off: the 404 comes first, as on every company sign-in route. Then a
+  // System user's sign-in is changed by a System user only (or by itself).
+  if (oidcSettings().mode === 'off') return oidcOffAnswer();
   const notSystem = await systemUserTarget(user.actor.id, id.data.id);
   if (notSystem) return NextResponse.json(notSystem, { status: 403 });
   return oidcAdminUnlink(req, id.data.id.toLowerCase(), { id: user.actor.id, email: user.email });
