@@ -2428,7 +2428,9 @@ Agent's run does three things in one job, with no hand-over to another:
   vision call of its own (`load-body.ts`).
 
 A page with a saved picture of these bytes that holds its text, and its
-text row, is done: a run again neither draws nor asks it. A page whose
+text row, is done: a run again neither draws nor asks it (the step gets the
+done pages as `state.donePages`; its option `pages` still counts every
+marked page from the first, so a run again reaches no further). A page whose
 picture was not saved is drawn again, and its ask is answered from the tab
 by hash: no second paid call. A page that could not be drawn, read (a
 failed ask, the day cap) or saved stays not done, and is never saved as an
@@ -2442,11 +2444,13 @@ shows `partial` until every marked page is read. The next run of the Agent
 no timer or sweep starts one.
 
 The core's picture pass reads a book's own pictures (figures, photos) like
-any PDF's. It leaves out only a picture painted over half its page or more
-(`pageCover` at `IMAGE_PAGE_COVER` or more: the page's scan) on a page
-marked `vision`: that page's picture is the Agent's, so no page is pictured
-or read by vision twice. Every other picture is kept, a figure on a vision
-page too, and its count is `data.images.embedded`. `data.images.kept` and
+any PDF's. On a page marked `vision` it leaves out the pictures that
+together are painted over half the page or more (the sum of their
+`pageCover`, at `IMAGE_PAGE_COVER` or more: the page's scan, whole or in
+strips; withoutVisionPageScans): that page's picture is the Agent's, so no
+page is pictured or read by vision twice. Every other picture is kept, a
+figure on a vision page too (a picture whose cover is not known counts as
+none), and its count is `data.images.embedded`. `data.images.kept` and
 `found` are the sums of the two parts (extraction-status.ts,
 picturesStampOf).
 

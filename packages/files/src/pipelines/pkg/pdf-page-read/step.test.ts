@@ -30,7 +30,7 @@ import {
 import { checkStepResult } from '../../step-check';
 import { inProcessStepJob } from '../../test-job';
 import { step as routerStep } from '../pdf-router/step';
-import { FIELDS, KIND, PAGES_DEFAULT, pagesOf, step, visionPagesOf } from './step';
+import { FIELDS, KIND, PAGES_DEFAULT, donePagesOf, pagesOf, step, visionPagesOf } from './step';
 
 /** Points of a sheet. */
 const A4 = { w: 595.28, h: 841.89 };
@@ -332,6 +332,21 @@ describe('the step of pdf-page-read', () => {
     expect(r.warnings).toEqual([
       '1 marked pages of this window are past the option pages (2), and are not read.',
     ]);
+  });
+
+  it('a page done is not drawn or asked; the option still counts it, so a run again reaches no further', async () => {
+    const { job, drawn } = jobOf(typedPdf(4));
+    const r = await step(
+      request({
+        kind: KIND,
+        options: { pages: 2 },
+        state: { visionPages: [4, 2, 3], donePages: [2, 'x', 0] },
+      }),
+      job,
+    );
+    expect(inputs(r.calls).map((c) => c.key)).toEqual(['page-3']);
+    expect(drawn).toEqual([[3]]);
+    expect([...donePagesOf({ donePages: [5, 5, -1, 2.5] })]).toEqual([5]);
   });
 
   it('another kind, or no marked page in the window, asks nothing', async () => {

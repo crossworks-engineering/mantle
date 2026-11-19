@@ -39,6 +39,8 @@ const PNG = (n: number) =>
 const h = vi.hoisted(() => ({
   /** What happened, in order: `cut:<from>`, `step:<from>`, `ask:<key>`. */
   events: [] as string[],
+  /** The state each step got. */
+  states: [] as unknown[],
   row: { sha256: '' },
 }));
 
@@ -58,12 +60,18 @@ vi.mock('@mantle/files', async (orig) => ({
     async (
       _b: Buffer,
       _p: unknown,
-      req: { state: { visionPages: number[] }; pageFrom: number; pageTo: number },
+      req: {
+        state: { visionPages: number[]; donePages?: number[] };
+        pageFrom: number;
+        pageTo: number;
+      },
     ) => {
       h.events.push(`step:${req.pageFrom}`);
+      h.states.push(req.state);
       const pictures = new Map<string, Buffer>();
+      const done = new Set(req.state.donePages ?? []);
       const calls = req.state.visionPages
-        .filter((n) => n >= req.pageFrom && n <= req.pageTo)
+        .filter((n) => n >= req.pageFrom && n <= req.pageTo && !done.has(n))
         .map((n) => {
           pictures.set(`page-${n}.png`, PNG(n));
           return {
@@ -202,6 +210,7 @@ const of = (prefix: string) => h.events.filter((e) => e.startsWith(prefix));
 
 beforeEach(() => {
   h.events.length = 0;
+  h.states.length = 0;
   fail = undefined;
 });
 
@@ -253,6 +262,9 @@ describe("a book's page pictures: render, read and save in the Agent's run", () 
     expect(out).toMatchObject({ status: 'asked', made: 0, reused: 1, pictures: 1 });
     expect(of('cut:')).toEqual(['cut:2']);
     expect(of('ask:')).toEqual([]);
+    // The step gets every marked page (its option counts them all) and the
+    // done ones, which it neither draws nor asks.
+    expect(h.states).toEqual([{ readerOptions: {}, visionPages: [2, 30], donePages: [30] }]);
     expect(s.saved.map((p) => [p.page, p.text])).toEqual([[2, 'the text of page-2']]);
   });
 

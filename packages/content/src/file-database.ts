@@ -1280,13 +1280,17 @@ async function runAgentWindowed(args: {
   const input = await agentInputOf(ownerId, ext, args.pipelines, sqlite);
   // A book's page pictures (G1, ./book-page-pictures.ts): a marked page
   // done already (its picture of these bytes and its text row) is neither
-  // drawn nor asked again.
+  // drawn nor asked again. The step gets every marked page (its option
+  // `pages` counts them all) and the done ones; only the windows that hold
+  // a page to read are cut.
   const marked = input.state.visionPages;
   const pagePictures = marked ? args.pagePictures : undefined;
   const toRead =
     marked && pagePictures ? pagesToRead(marked, await pagePictures.done(), stored) : marked;
+  const reading = new Set(toRead ?? []);
+  const donePages = marked ? marked.filter((n) => !reading.has(n)) : [];
   const stepInput =
-    toRead === marked ? input : { ...input, state: { ...input.state, visionPages: toRead } };
+    donePages.length === 0 ? input : { ...input, state: { ...input.state, donePages } };
   let picturesSaved = 0;
   const file = stepFileOf(bytes, ext);
   let sheet = null as ParsedSheet | null;
