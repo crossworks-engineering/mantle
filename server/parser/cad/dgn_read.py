@@ -364,8 +364,22 @@ def _attrib_tag(name) -> str:
     return out or "TAG"
 
 
+# Attribute values cut to MAX_VALUE_LEN in this read (one job, one process:
+# load() starts it at 0), for the reply (cad.py: the brain says it on the
+# file, read_cut).
+_VALUES_CUT = [0]
+
+
+def values_cut() -> int:
+    """The attribute values cut to MAX_VALUE_LEN since load() began."""
+    return _VALUES_CUT[0]
+
+
 def _attrib_value(value) -> str:
-    return re.sub(r"[\r\n]+", " ", _text_of(value))[:MAX_VALUE_LEN]
+    whole = re.sub(r"[\r\n]+", " ", _text_of(value))
+    if len(whole) > MAX_VALUE_LEN:
+        _VALUES_CUT[0] += 1
+    return whole[:MAX_VALUE_LEN]
 
 
 def _hidden(layer: str, value, o, tag) -> list:
@@ -1749,6 +1763,7 @@ def load(src: str, data: bool = True) -> tuple[list, dict]:
     a file it cannot read."""
     import ezdgn  # noqa: PLC0415 - child-only import
 
+    _VALUES_CUT[0] = 0
     info = ezdgn.detect_format(src)
     if info.is_v7 and info.dimension == 3:
         raise DgnRefused("DGN V7 3D is not read")

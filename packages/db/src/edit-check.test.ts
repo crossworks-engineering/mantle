@@ -85,17 +85,23 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     }
   });
 
-  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339, 0377, 0385 and 0386) is this list', () => {
+  it('the SQL list (mantle_node_derived_keys, 0281; the presentation keys, 0337; the extractor keys, 0339, 0377, 0385, 0386 and 0387) is this list', () => {
     const m = migration('0281_edit_check_tables');
-    // The extractor's keys, last replaced in 0386 (the pictures a file left
-    // out), before it in 0385 (the read stamps), 0377 (the text of the
-    // Agents' tabs) and 0339 (the parser's failure count).
-    const extractor = sqlArrayAfter(migration('0386_images_key'), 'mantle_node_extractor_keys"()');
+    // The extractor's keys, last replaced in 0387 (the read cuts), before it
+    // in 0386 (the pictures a file left out), 0385 (the read stamps), 0377
+    // (the text of the Agents' tabs) and 0339 (the parser's failure count).
+    const extractor = sqlArrayAfter(
+      migration('0387_read_cut_key'),
+      'mantle_node_extractor_keys"()',
+    );
     expect(extractor).toEqual([...NODE_EXTRACTOR_KEYS]);
+    expect(sqlArrayAfter(migration('0386_images_key'), 'mantle_node_extractor_keys"()')).toEqual(
+      NODE_EXTRACTOR_KEYS.filter((k) => k !== 'read_cut'),
+    );
     expect(
       sqlArrayAfter(migration('0385_file_read_stamps'), 'mantle_node_extractor_keys"()'),
-    ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => k !== 'images'));
-    const stamps = ['read_by', 'pipeline_read', 'images'];
+    ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => k !== 'images' && k !== 'read_cut'));
+    const stamps = ['read_by', 'pipeline_read', 'images', 'read_cut'];
     expect(
       sqlArrayAfter(migration('0377_agent_text_key'), 'mantle_node_extractor_keys"()'),
     ).toEqual(NODE_EXTRACTOR_KEYS.filter((k) => !stamps.includes(k)));
@@ -126,16 +132,25 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     expect(copy).toHaveLength(13);
     // The copy's trigger now reads the named list (0281): the same 13, and
     // the parser's failure count since 0339, the Agents' text since 0377,
-    // the read stamps since 0385, the pictures left out since 0386.
+    // the read stamps since 0385, the pictures left out since 0386, the read
+    // cuts since 0387.
     expect(
-      [...copy, 'parser_failures', 'agent_text', 'read_by', 'pipeline_read', 'images'].sort(),
+      [
+        ...copy,
+        'parser_failures',
+        'agent_text',
+        'read_by',
+        'pipeline_read',
+        'images',
+        'read_cut',
+      ].sort(),
     ).toEqual([...NODE_EXTRACTOR_KEYS].sort());
     const files = read('packages/files/src/ops/files.ts');
     const at = files.indexOf('export const BYTE_DERIVED_DATA_KEYS = [');
     const bytes = [...files.slice(at, files.indexOf('] as const', at)).matchAll(/'([^']+)'/g)].map(
       (m) => m[1]!,
     );
-    expect(bytes).toHaveLength(18);
+    expect(bytes).toHaveLength(19);
     for (const k of [...copy, ...bytes]) expect(NODE_DERIVED_KEYS, k).toContain(k);
   });
 

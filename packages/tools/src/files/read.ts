@@ -78,7 +78,7 @@ export const file_list: BuiltinToolDef = {
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
     'With `data: true` instead, list the files that have a read-only database (spreadsheets, CSVs, plans, drawings) in every folder, or under `parent_path`, each with its state; query one with `file_sql`. ' +
-    "Each file says if its content was read (`extraction`); `extraction: 'failed'` lists the unread files. " +
+    "Each file says if its content was read (`extraction`); `extraction: 'failed'` lists the unread files, `'partial'` the files read only in part (`extraction.cuts` says what was left out: rows, sheets, characters, pictures, pages). " +
     "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
   inputSchema: {
     type: 'object',
@@ -97,7 +97,7 @@ export const file_list: BuiltinToolDef = {
         type: 'string',
         enum: [...EXTRACTION_STATES],
         description:
-          "List the files whose content is in this read state, in that folder and its sub-folders (all folders with no parent_path). 'failed' finds the files the brain could not read.",
+          "List the files whose content is in this read state, in that folder and its sub-folders (all folders with no parent_path). 'failed' finds the files the brain could not read; 'partial' the files read only in part.",
       },
     },
   },
@@ -372,7 +372,7 @@ export const file_get: BuiltinToolDef = {
   },
   name: 'Fetch file metadata',
   description:
-    "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. " +
+    "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. Its `extraction` says if the content was read, and for a file read only in part (`partial`) what was left out (`cuts`, `hint`). " +
     'For the actual file content use `file_read`; for listing files in a folder use `file_list`.',
   preconditions: FILE_ID_PRE,
   inputSchema: {

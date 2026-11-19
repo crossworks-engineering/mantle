@@ -34,6 +34,7 @@ import {
 } from './pipelines/contract';
 import { BUILTIN_PIPELINES } from './pipelines/builtin';
 import { keptReaderRun, memoReaderRun, readerRunFailure, readerRunKey } from './reader-memo';
+import { noteReadCuts } from './read-cut-sink';
 import { CAD_FTS_SKIP_COLUMNS } from './pipelines/pkg/drawing-cad/cad';
 import { CAD_PICTURE } from './pipelines/pkg/drawing-cad/step';
 import type { CadExt } from './slug';
@@ -271,7 +272,11 @@ export async function symbolsReading(bytes: Buffer, ext: CadExt): Promise<Symbol
  */
 export async function parseCadFile(bytes: Buffer, ext: CadExt): Promise<string> {
   if (!sniffCad(bytes, ext)) return '';
-  return (await cadRun(bytes, ext)).write.text ?? '';
+  const { write } = await cadRun(bytes, ext);
+  // What the CAD tier and the digest left out, said in the extract's sink
+  // (./read-cut-sink.ts): the run is kept for the extract, the note is not.
+  noteReadCuts(write.readCuts);
+  return write.text ?? '';
 }
 
 /**

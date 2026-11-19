@@ -74,6 +74,7 @@ export async function POST(req: Request) {
           allDay: ev.allDay,
           location: ev.location,
           description: ev.description,
+          ...(ev.descriptionChars !== undefined ? { descriptionChars: ev.descriptionChars } : {}),
           timezone: ev.timezone,
           tags: [tag],
         });

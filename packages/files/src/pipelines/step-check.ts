@@ -15,6 +15,7 @@ import {
   PIPELINE_STATE_MAX_BYTES,
   type PipelineStepResult,
 } from './contract';
+import { readCutsOf } from '../read-cut';
 
 const STATUSES: ReadonlySet<string> = new Set(['ok', 'not_mine', 'unsure', 'failed']);
 
@@ -51,6 +52,15 @@ function isSheet(v: unknown): boolean {
 const isPicture = (p: unknown) =>
   isObject(p) && typeof p.file === 'string' && typeof p.mime === 'string' && isStr(p.caption);
 
+/** The cuts a write says (FileTabsWriteInput.readCuts): an object whose
+ *  every entry the core's own check keeps (../read-cut.ts readCutsOf), at
+ *  most 64 of them. */
+function isReadCuts(v: unknown): boolean {
+  if (!isObject(v)) return false;
+  const keys = Object.keys(v);
+  return keys.length <= 64 && Object.keys(readCutsOf(v)).length === keys.length;
+}
+
 /** The input of the write call (FileTabsWriteInput), field by field. */
 function writeProblem(input: unknown): string | null {
   if (!isObject(input) || !Array.isArray(input.tabs) || !input.tabs.every(isSheet)) {
@@ -62,7 +72,8 @@ function writeProblem(input: unknown): string | null {
     isStr(input.sourceSha256) &&
     isStr(input.text) &&
     (input.pictures === undefined ||
-      (Array.isArray(input.pictures) && input.pictures.every(isPicture)));
+      (Array.isArray(input.pictures) && input.pictures.every(isPicture))) &&
+    (input.readCuts === undefined || isReadCuts(input.readCuts));
   return ok ? null : 'a field of the write call is not of its type';
 }
 

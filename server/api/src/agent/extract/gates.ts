@@ -92,6 +92,7 @@ import { maybeAutoTableSpreadsheet } from './auto-table';
 import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 import { readNodeBodyLocal } from './load-body';
+import { notifyReadPartial, readCutStampSql } from './read-cut-stamp';
 import { writePublishedSummaryIndex, writeRetrievalChunks } from './index-writes';
 import { APP_SUMMARY_FAILED, summarizeAppForIndex } from './app-summary';
 
@@ -143,10 +144,12 @@ async function indexLocalOnly(
                     ),
                   }
                 : {}),
-            })}::jsonb`,
+              // The cuts the local read said (docs/files.md, "Read in part").
+            })}::jsonb${readCutStampSql()}`,
       })
       .where(eq(nodes.id, node.id));
   });
+  if (!notRead) await notifyReadPartial(node);
   return { chunked: !!body, embedded: true };
 }
 

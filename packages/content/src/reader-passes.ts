@@ -14,6 +14,7 @@
  * made, kept for the extract (readerRun), so the three passes cost one job.
  * No model is asked: the run is model-free.
  */
+import { noteReadCuts } from '@mantle/files/read-cut-sink';
 import { effectiveOptions, keptReaderRun } from '@mantle/files';
 import { bookVisionPageCountOf, bookVisionPageSetOf } from './book-pages';
 import { readFileDbStamp, readFileRowNow } from './file-database';
@@ -64,7 +65,11 @@ export async function readerTextOf(
   bytes: Buffer,
 ): Promise<string> {
   const r = await run(bytes);
-  return r.status === 'ok' ? (r.write?.text ?? '') : '';
+  if (r.status !== 'ok') return '';
+  // What the Reader's read left out, said in the extract's sink (docs/
+  // files.md, "Read in part"): checked again there (readCutsOf).
+  noteReadCuts(r.write?.readCuts);
+  return r.write?.text ?? '';
 }
 
 /** The Reader that wrote the database of a file at these bytes, when it

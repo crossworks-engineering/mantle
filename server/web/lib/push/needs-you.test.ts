@@ -32,7 +32,13 @@ vi.mock('./store', () => ({
   deleteSubscriptionByRoutingToken: vi.fn(),
 }));
 
-import { pushNeedsYou, pushReadFailed, readFailedDue, READ_FAILED_PUSH_EVERY_MS } from './notify';
+import {
+  pushNeedsYou,
+  pushReadFailed,
+  pushReadPartial,
+  readFailedDue,
+  READ_FAILED_PUSH_EVERY_MS,
+} from './notify';
 import { needsYouArrivals, needsYouMessage, rememberArrivals } from './needs-you';
 import { loadProviderAlerts } from '@mantle/content';
 import { sealToDevice } from './seal';
@@ -244,5 +250,19 @@ describe('pushReadFailed: a file the brain could not read (task 8d40932a)', () =
     vi.mocked(getPushPrefs).mockResolvedValue({ assistantMessages: true, approvals: false });
     expect((await pushReadFailed('owner', new Map(), NOW)).skipped).toBe('disabled');
     expect(relayNotify).not.toHaveBeenCalled();
+  });
+
+  it('a file read only in part: its own words and its own window (docs/files.md, "Read in part")', async () => {
+    const partial = new Map<string, number>();
+    const res = await pushReadPartial('owner', partial, NOW);
+    expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
+    const sent = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]) as Record<string, unknown>;
+    expect(sent).toMatchObject({
+      t: 'A file was read only in part',
+      deepLink: '/files?partial=1',
+    });
+    expect((await pushReadPartial('owner', partial, NOW + 60_000)).skipped).toBe('throttled');
+    // A failure is not held back by a partial read's notice.
+    expect((await pushReadFailed('owner', new Map(), NOW + 60_000)).skipped).toBeUndefined();
   });
 });

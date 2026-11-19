@@ -6,7 +6,8 @@
  *  - `stale`: read by an older reader or pipeline than the box has now (the
  *    stamps of ../read-stamp.ts; a file with no stamp is never here);
  *  - `failed`: its content could not be read (extraction state `failed`);
- *  - `partial`: read in part (a scan's first pages).
+ *  - `partial`: read in part (a scan's first pages, pictures left out, or
+ *    any cut a reader said: ../read-cut.ts).
  *
  * One query for the page and one for the total, both in the caller's scope
  * and on the SAME predicate, then the rows of the page by id: `total` and
@@ -89,12 +90,22 @@ function readCut(state: 'failed' | 'partial'): SQL {
       or (not coalesce(${reasonIsText}, false) and ${nodes.data} ? 'extract_parked')))`;
   }
   const ocr = (k: string) => sql`${nodes.data}->'ocr'->${k}`;
+  const img = (k: string) => sql`${nodes.data}->'images'->${k}`;
+  // One model (extractionOf, readCutsOfFile): a scan's pages read below its
+  // pages, pictures kept below those found, or any cut a reader said
+  // (`read_cut`, a non-empty object: hasReadCut).
   return sql`(${notNameOnly} and not coalesce(${reasonIsText}, false)
     and not (${nodes.data} ? 'extract_parked') and ${nodes.data} ? 'extract_completed_at'
-    and case when jsonb_typeof(${ocr('pages_read')}) = 'number'
+    and (case when jsonb_typeof(${ocr('pages_read')}) = 'number'
                   and jsonb_typeof(${ocr('pages_total')}) = 'number'
              then (${ocr('pages_read')})::text::numeric < (${ocr('pages_total')})::text::numeric
-             else false end)`;
+             else false end
+      or case when jsonb_typeof(${img('kept')}) = 'number'
+                   and jsonb_typeof(${img('found')}) = 'number'
+              then (${img('kept')})::text::numeric < (${img('found')})::text::numeric
+              else false end
+      or (jsonb_typeof(${nodes.data}->'read_cut') = 'object'
+          and ${nodes.data}->'read_cut' <> '{}'::jsonb)))`;
 }
 
 /** The cursor of the row after which the next page starts: its updated_at

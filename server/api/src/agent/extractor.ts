@@ -44,6 +44,8 @@ import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
 import { isDocumentTitleMention } from '@mantle/content';
 import { readByStampOf, withParserScope } from '@mantle/files';
+import { noteReadCut, withReadCutSink } from '@mantle/files/read-cut-sink';
+import { notifyReadPartial, readCutStampSql } from './extract/read-cut-stamp';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { reusesTableSummary, runExtractorModel } from './extract/model';
 import { admitForExtraction } from './extract/gates';
@@ -63,8 +65,12 @@ import { nodeParserFailures } from './extract/parser-failures';
  *  failures on the node (./extract/parser-failures.ts), so a file the
  *  parser gave up on twice stays terminal across restarts and rolls. */
 export async function extractNode(nodeId: string, ownerId: string): Promise<void> {
-  return withParserScope({ failures: nodeParserFailures(nodeId, ownerId) }, () =>
-    extractNodeInScope(nodeId, ownerId),
+  // One sink for the cuts the readers say during this read (docs/files.md,
+  // "Read in part"): the stamp at the end writes them on the node.
+  await withReadCutSink(() =>
+    withParserScope({ failures: nodeParserFailures(nodeId, ownerId) }, () =>
+      extractNodeInScope(nodeId, ownerId),
+    ),
   );
 }
 
@@ -98,6 +104,16 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
     node.type === 'file' && !existingData.content
       ? rawBody.slice(0, TEXT_STORE_MAX_CHARS)
       : undefined;
+  // Past the store's limit the stored text is cut (the passages below
+  // cover all of it): said, so the file shows as read in part.
+  if (persistedText !== undefined && rawBody.length > TEXT_STORE_MAX_CHARS) {
+    noteReadCut('text_store', {
+      what: 'characters',
+      read: TEXT_STORE_MAX_CHARS,
+      total: rawBody.length,
+      limit: TEXT_STORE_MAX_CHARS,
+    });
+  }
 
   // Resolve the chat adapter for this worker's provider: the
   // worker.provider field steers the dispatch. If no adapter is wired for the provider, surface a
@@ -306,7 +322,9 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
  *  re-extract. Drops a terminal-skip stamp left by an earlier pass that found
  *  nothing to read (@mantle/db extract-exempt.ts). A file gets `read_by` in
  *  the same write: the core reader of its type and that reader's version
- *  (@mantle/files read-stamp.ts), so a newer reader shows it as stale. */
+ *  (@mantle/files read-stamp.ts), so a newer reader shows it as stale.
+ *  The cuts the readers said in this read go on in the same write
+ *  (`read_cut`, readCutStampSql). */
 async function stampExtractCompleted(node: typeof nodes.$inferSelect): Promise<void> {
   const stamp = {
     extract_completed_at: new Date().toISOString(),
@@ -317,9 +335,10 @@ async function stampExtractCompleted(node: typeof nodes.$inferSelect): Promise<v
   await db
     .update(nodes)
     .set({
-      data: sql`(${nodes.data} - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(stamp)}::jsonb`,
+      data: sql`(${nodes.data} - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(stamp)}::jsonb${readCutStampSql()}`,
     })
     .where(eq(nodes.id, node.id));
+  await notifyReadPartial(node);
 }
 
 // bumpAgentUsage was removed when the extractor moved to ai_workers.

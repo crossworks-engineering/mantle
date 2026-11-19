@@ -281,7 +281,12 @@ export async function updateEvent(
     if (input.location) newData.location = input.location.slice(0, 200);
     else delete newData.location;
   }
-  if (input.body !== undefined) newData.body = input.body;
+  if (input.body !== undefined) {
+    newData.body = input.body;
+    // A person's own words: a feed's cut of the description no longer holds
+    // (the write may clear the brain's key, never set it).
+    delete newData.read_cut;
+  }
   if (input.remindMinutesBefore !== undefined) {
     newData.remind_minutes_before = Math.max(0, Math.floor(input.remindMinutesBefore));
   }
@@ -490,9 +495,22 @@ export type UpsertExternalEventInput = {
   allDay?: boolean;
   location?: string | null;
   description?: string;
+  /** The description's whole length when the feed cut it (the Sync
+   *  sidecar's ics.ts): said on the event (`data.read_cut`, docs/files.md
+   *  "Read in part"). */
+  descriptionChars?: number;
   timezone?: string;
   tags?: string[];
 };
+
+/** The cut of a description the feed shortened, as `data.read_cut`, or
+ *  null when it came whole. */
+function descriptionCutOf(input: UpsertExternalEventInput): Record<string, unknown> | null {
+  const kept = (input.description ?? '').length;
+  const whole = input.descriptionChars;
+  if (typeof whole !== 'number' || !Number.isFinite(whole) || whole <= kept) return null;
+  return { description: { what: 'characters', read: kept, total: Math.floor(whole) } };
+}
 
 function externalEventData(input: UpsertExternalEventInput): Record<string, unknown> {
   const startsAt = new Date(input.startsAt);
@@ -516,6 +534,8 @@ function externalEventData(input: UpsertExternalEventInput): Record<string, unkn
     if (!Number.isNaN(endsAt.getTime())) data.ends_at = endsAt.toISOString();
   }
   if (input.location) data.location = input.location.slice(0, 200);
+  const cut = descriptionCutOf(input);
+  if (cut) data.read_cut = cut;
   return data;
 }
 
@@ -552,11 +572,32 @@ export async function upsertExternalEvent(
       old.ends_at !== data.ends_at ||
       old.location !== data.location ||
       old.body !== data.body;
-    if (!contentChanged) return rowOf(existing); // no-op re-sync, no churn
+    if (!contentChanged) {
+      // No churn, no new read: only a description cut said or gone (the
+      // first sync since the count, or a feed that now sends it whole) is
+      // written, as the brain's own key, with updated_at kept.
+      const cutNow = data.read_cut ?? null;
+      if (JSON.stringify(cutNow) !== JSON.stringify(old.read_cut ?? null)) {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+          await tx
+            .update(nodes)
+            .set({
+              data: cutNow
+                ? sql`${nodes.data} || jsonb_build_object('read_cut', ${JSON.stringify(cutNow)}::jsonb)`
+                : sql`${nodes.data} - 'read_cut'`,
+            })
+            .where(eq(nodes.id, existing.id));
+        });
+      }
+      return rowOf(existing); // no-op re-sync, no churn
+    }
 
     // Preserve any fields we don't manage; the reset below drops the stale
     // extractor output.
     const merged: Record<string, unknown> = { ...old, ...data };
+    // A description that now comes whole takes its old cut with it.
+    if (!data.read_cut) delete merged.read_cut;
     const changed = changedFields({
       title: [existing.title, title],
       starts_at: [old.starts_at, data.starts_at],

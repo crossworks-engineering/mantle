@@ -10,6 +10,9 @@
  *  - `updated_at` stays;
  *  - a file in the name-only mode gets none, nor a file whose bytes changed;
  *  - a person's write may not set the key (the edit check, 0377);
+ *  - a text past AGENT_TEXT_MAX_CHARS is cut there and the cut is said on
+ *    the file (`read_cut`, docs/files.md "Read in part"), and goes again
+ *    when a shorter text comes;
  *  - the file's passages (`content_chunks`) hold the text of its Agents,
  *    read at the write (a made-up embedder: no provider).
  *
@@ -18,6 +21,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { AGENT_TEXT_MAX_CHARS } from '@mantle/content/pipeline-agent';
 
 vi.mock('@mantle/embeddings', async (orig) => ({
   ...(await orig<typeof import('@mantle/embeddings')>()),
@@ -199,9 +203,48 @@ describe.skipIf(!URL)('the Agents’ text on a file node, both checks on', () =>
   it('the key is one of the derived keys: a person’s write may not set it (0377)', async () => {
     const keys = await x<{ k: string[] }>(sql`select "public"."mantle_node_derived_keys"() as k`);
     expect(keys[0]!.k).toContain('agent_text');
+    expect(keys[0]!.k).toContain('read_cut');
     const extractor = await x<{ k: string[] }>(
       sql`select "public"."mantle_node_extractor_keys"() as k`,
     );
     expect(extractor[0]!.k).toContain('agent_text');
+    expect(extractor[0]!.k).toContain('read_cut');
+  });
+
+  it('a text past its cap is cut there and the cut is said, then goes with a shorter text', async () => {
+    const id = await fileNode({
+      read_cut: { text_store: { what: 'characters', read: 1, total: 2 } },
+    });
+    const long = Array.from({ length: 6000 }, (_, i) => `Text: TAG-${i}-0001`).join('\n');
+    expect(long.length).toBeGreaterThan(AGENT_TEXT_MAX_CHARS);
+    expect(await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', long))).toBe(true);
+    let data = (await rowOf(id)).data;
+    expect((data.agent_text as Record<string, string>)['pdf-sheet-read']).toHaveLength(
+      AGENT_TEXT_MAX_CHARS,
+    );
+    expect(data.read_cut).toEqual({
+      // The read's own cut stays beside it.
+      text_store: { what: 'characters', read: 1, total: 2 },
+      'agent_text:pdf-sheet-read': {
+        what: 'characters',
+        read: AGENT_TEXT_MAX_CHARS,
+        total: long.length,
+        limit: AGENT_TEXT_MAX_CHARS,
+      },
+    });
+    // The same text again: nothing changes, nothing is written.
+    expect(await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', long))).toBe(false);
+    // A cut lost (a reindex that kept the text) is written again, with no
+    // passages asked for (the text is the same).
+    await x(sql`update nodes set data = data - 'read_cut' where id = ${id}`);
+    expect(await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', long))).toBe(false);
+    expect((await rowOf(id)).data.read_cut).toHaveProperty(['agent_text:pdf-sheet-read']);
+    // A shorter text: the cut goes, and an empty map takes the key with it.
+    expect(
+      await extract(() => writeAgentText(owner, id, SHA, 'pdf-sheet-read', 'Text: short')),
+    ).toBe(true);
+    data = (await rowOf(id)).data;
+    expect(data.read_cut).toBeUndefined();
+    expect(m.takeActorMisses()).toEqual([]);
   });
 });

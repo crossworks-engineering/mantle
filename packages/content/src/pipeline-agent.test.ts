@@ -647,7 +647,7 @@ describe('agentTextOf: the text of the tabs for a plain search', () => {
     expect(agentTextOf([null])).toBe('');
   });
 
-  it('is cut at its cap', () => {
+  it('is whole past its cap: the write cuts it and says so (read_cut)', () => {
     const rows = Array.from({ length: 5_000 }, (_, i) => [
       'k',
       1,
@@ -655,8 +655,10 @@ describe('agentTextOf: the text of the tabs for a plain search', () => {
       'tag',
       'h',
     ]);
-    expect(
-      agentTextOf([sheet('Sheet list', ['Key', 'Page', 'Text', 'Class', 'Input hash'], rows)]),
-    ).toHaveLength(AGENT_TEXT_MAX_CHARS);
+    const text = agentTextOf([
+      sheet('Sheet list', ['Key', 'Page', 'Text', 'Class', 'Input hash'], rows),
+    ]);
+    expect(text.length).toBeGreaterThan(AGENT_TEXT_MAX_CHARS);
+    expect(text).toContain('TAG-4999-');
   });
 });

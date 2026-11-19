@@ -17,6 +17,7 @@
  * the caller treats '' as the honest "no_text_layer" skip.
  */
 
+import { noteReadCut } from './read-cut-sink';
 import { assertZipWithinLimits } from './zip-guard';
 import { ANYDOC_EXTS, LEGACY_SHEET_EXTS, MARKUP_EXTS, TEXT_EXTS } from './slug';
 
@@ -47,6 +48,14 @@ async function legacySheetText(bytes: Buffer): Promise<string> {
   if (!converted) return '';
   const text = await (await import('./xlsx')).parseXlsx(converted.xlsx);
   if (converted.refused.length === 0) return text;
+  // Said on the file too, not only in the note (./read-cut.ts).
+  const kept = converted.keptSheets ?? 0;
+  noteReadCut('legacy_cells', {
+    what: 'sheets',
+    read: kept,
+    total: kept + converted.refused.length,
+    limit: MAX_LEGACY_CELLS,
+  });
   const note = `[Left out for size: ${describeRefused(converted.refused)}, past the ${MAX_LEGACY_CELLS.toLocaleString('en-US')}-cell limit for a legacy spreadsheet.]`;
   return text ? `${text}\n\n${note}` : note;
 }

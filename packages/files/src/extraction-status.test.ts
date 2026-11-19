@@ -91,7 +91,7 @@ describe('the read failures are one list', () => {
       images: { kept: 3, found: 4 },
     });
     expect(x).toMatchObject({ state: 'partial', pages: { read: 950, total: 1000 } });
-    expect(x.hint).toMatch(/950 of 1000 pages were read/);
+    expect(x.hint).toMatch(/950 of 1,000 pages were read/);
     expect(x.hint).toMatch(/3 of 4 pictures kept/);
   });
 

@@ -15,15 +15,20 @@
  *    content is still not read (the drain's own "current" test, against
  *    updated_at, is about re-queuing, not about this);
  *  - `extract_parked`: the write of a finished read was refused;
- *  - `extract_completed_at`: a read that ended; `ocr.pages_read` and
- *    `ocr.pages_total` say when a scan (or a book read in page windows)
- *    was read in part, and `images.kept` and `images.found` when pictures
- *    were left out (over the cap, or a window that failed: G4), or pages of
- *    a book left to vision have no page picture yet (`images.pages`, G1);
+ *  - `extract_completed_at`: a read that ended. It was read in part when
+ *    anything says so, one model for every input (./read-cut.ts): the
+ *    readers' `read_cut` (rows, sheets, characters, pictures, ...), a scan's
+ *    (or a book's page windows') `ocr.pages_read` below `ocr.pages_total`,
+ *    and the pictures a file left out (`data.images`, by part: `embedded`,
+ *    over the cap or a window that failed, G4; `pages`, a book's pages left
+ *    to vision with no page picture yet, G1). Each is one entry of `cuts`,
+ *    with its sentence; `hint` is them all;
  *  - none of these: not read yet (queued, retrying, or never queued).
  *
- * Pure, with no imports: the file listing, `node_read` and the tests share it.
+ * Pure, with no imports but the pure ./read-cut.ts: the file listing,
+ * `node_read` and the tests share it.
  */
+import { hasReadCut, readCutViews, readCutsOf, type ReadCutView, type ReadCuts } from './read-cut';
 
 export type ExtractionState =
   'indexed' | 'partial' | 'failed' | 'skipped' | 'pending' | 'name_only';
@@ -46,9 +51,11 @@ export type FileExtraction = {
   hint?: string;
   /** A scan read in part: the pages read and the pages in the file. */
   pages?: { read: number; total: number };
-  /** Pictures left out (over the cap, or a page window that could not be
-   *  read): the pictures kept and the pictures found (G4). */
+  /** Pictures left out (`data.images`): the pictures kept and found. */
   pictures?: { kept: number; found: number; more?: true };
+  /** Read in part: each kind of cut, its counts and its sentence (the
+   *  `hint` is these sentences in order). */
+  cuts?: ReadCutView[];
 };
 
 /** Verdicts that mean the content is there but could not be read. Every
@@ -86,15 +93,6 @@ const HINTS: Readonly<Record<string, string>> = {
   not_read_no_model:
     'Not read: only its name is in search. A full read needs an assistant in its workspace.',
 };
-
-const PARTIAL_HINT = (read: number, total: number) =>
-  `Only ${read} of ${total} pages were read. The other pages are not in search.`;
-
-const EMBEDDED_HINT = (kept: number, found: number, more: boolean) =>
-  `${kept} of ${more ? 'at least ' : ''}${found} pictures kept. The others are not in search: a raised picture cap and a new read fetch those the cap left out.`;
-
-const PAGES_HINT = (kept: number, found: number) =>
-  `${kept} of ${found} pages left to vision are read. The others keep their OCR text only: run the Agent pdf-page-read on the book to read them.`;
 
 /** One part of a file's pictures left out: the kept and the found. */
 export type PicturesPart = { kept: number; found: number; more?: true };
@@ -162,17 +160,29 @@ export function picturesLeftOut(
   return { kept, found, ...(img?.more === true ? { more: true as const } : {}) };
 }
 
-/** The sentence for the pictures a file left out, by part. */
-function picturesHintOf(data: Readonly<Record<string, unknown>>, all: PicturesPart): string {
-  const parts = picturesPartsOf(data.images);
-  const out: string[] = [];
-  if (parts.embedded) {
-    out.push(
-      EMBEDDED_HINT(parts.embedded.kept, parts.embedded.found, parts.embedded.more === true),
-    );
+/** Every cut of a read file, one model: the readers' `read_cut`, then the
+ *  scan's pages and the pictures left out, each part an entry of its own. */
+export function readCutsOfFile(d: Readonly<Record<string, unknown>>): ReadCuts {
+  const cuts = readCutsOf(d.read_cut);
+  const ocr = d.ocr as { pages_read?: unknown; pages_total?: unknown } | undefined;
+  const read = typeof ocr?.pages_read === 'number' ? ocr.pages_read : null;
+  const total = typeof ocr?.pages_total === 'number' ? ocr.pages_total : null;
+  if (read !== null && total !== null && read < total) {
+    cuts.ocr_pages = { what: 'pages', read, total };
   }
-  if (parts.pages) out.push(PAGES_HINT(parts.pages.kept, parts.pages.found));
-  return out.length > 0 ? out.join(' ') : EMBEDDED_HINT(all.kept, all.found, all.more === true);
+  const parts = picturesPartsOf(d.images);
+  if (parts.embedded) {
+    cuts.pictures = {
+      what: 'pictures',
+      read: parts.embedded.kept,
+      total: parts.embedded.found,
+      ...(parts.embedded.more ? { atLeast: true as const } : {}),
+    };
+  }
+  if (parts.pages) {
+    cuts.page_pictures = { what: 'pages', read: parts.pages.kept, total: parts.pages.found };
+  }
+  return cuts;
 }
 
 function hintOf(reason: string): string | undefined {
@@ -199,23 +209,20 @@ export function extractionOf(
   if (d.extract_parked) return { state: 'failed', reason: 'parked', hint: HINTS.parked };
 
   if (d.extract_completed_at) {
-    const ocr = d.ocr as { pages_read?: unknown; pages_total?: unknown } | undefined;
-    const read = typeof ocr?.pages_read === 'number' ? ocr.pages_read : null;
-    const total = typeof ocr?.pages_total === 'number' ? ocr.pages_total : null;
-    const pictures = picturesLeftOut(d);
-    if (read !== null && total !== null && read < total) {
+    const views = readCutViews(readCutsOfFile(d));
+    // A stored map with no entry this rule reads is still a cut said (the
+    // SQL form tests the map only): partial, with the generic sentence.
+    if (views.length > 0 || hasReadCut(d.read_cut)) {
+      const ocr = views.find((v) => v.key === 'ocr_pages');
+      const pics = picturesLeftOut(d);
       return {
         state: 'partial',
-        pages: { read, total },
-        hint: PARTIAL_HINT(read, total) + (pictures ? ` ${picturesHintOf(d, pictures)}` : ''),
-        ...(pictures ? { pictures } : {}),
-      };
-    }
-    if (pictures) {
-      return {
-        state: 'partial',
-        pictures,
-        hint: picturesHintOf(d, pictures),
+        hint:
+          views.map((v) => v.hint).join(' ') ||
+          'The file was read in part. Read it again to see what was left out.',
+        cuts: views,
+        ...(ocr ? { pages: { read: ocr.read, total: ocr.total ?? ocr.read } } : {}),
+        ...(pics ? { pictures: pics } : {}),
       };
     }
     if (d.indexing_applied === 'local') {

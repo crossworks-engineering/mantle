@@ -294,6 +294,12 @@ export type FileTabsWriteInput = {
    *  reads in page windows names it; a book's page pictures are its Agent's,
    *  G1, never its Reader's). */
   pictures?: readonly { file: string; mime: string; caption?: string; page?: number }[];
+  /** What the step's read left out (docs/files.md, "Read in part"): one
+   *  entry per kind of cut, by its key (../read-cut.ts), checked again by
+   *  the core. The core says them on the file where it takes the text. */
+  readCuts?: Readonly<
+    Record<string, { what: string; read: number; total?: number; limit?: number }>
+  >;
 };
 
 /** One picture `job.sheetPictures` cuts: a file name in the job's folder

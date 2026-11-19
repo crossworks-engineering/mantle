@@ -34,12 +34,13 @@ import {
   pushNeedsYou,
   pushOutbound,
   pushReadFailed,
+  pushReadPartial,
   wantsOutboundPush,
 } from '../lib/push/notify';
 import { createLoginNoticeHandler, warnIfSchemaBehind } from '../lib/push/login-notice-handler';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
-import { FILE_READ_FAILED_CHANNEL, systemDatabaseUrl } from '@mantle/db';
+import { FILE_READ_FAILED_CHANNEL, FILE_READ_PARTIAL_CHANNEL, systemDatabaseUrl } from '@mantle/db';
 import { log } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 
@@ -134,6 +135,26 @@ function handleReadFailed(ownerId: string): void {
   });
 }
 
+// A file read only in part (FILE_READ_PARTIAL_CHANNEL): the same terms, its
+// own memory, on the same one-at-a-time chain.
+const readPartialLast = new Map<string, number>();
+
+function handleReadPartial(ownerId: string): void {
+  if (!ownerId) return;
+  readFailedChain = readFailedChain.then(async () => {
+    try {
+      const r = await pushReadPartial(ownerId, readPartialLast);
+      if (!r.skipped) {
+        log('push-notify').info(`read-partial: delivered ${r.delivered}/${r.attempted}`);
+      }
+    } catch (err) {
+      if (!warnIfSchemaBehind(err)) {
+        log('push-notify').error(`read-partial send failed: ${errorMessage(err)}`);
+      }
+    }
+  });
+}
+
 // Member and client notices: lib/push/login-notice-handler.ts.
 const loginNotices = createLoginNoticeHandler();
 
@@ -159,7 +180,7 @@ runWorker('push-notify', async () => {
   if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
   console.log(
-    '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed + file_read_failed + login_notice',
+    '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed + file_read_failed + file_read_partial + login_notice',
   );
   const sql = postgres(url, { max: 1, prepare: false });
   await checkSchema(sql);
@@ -172,6 +193,7 @@ runWorker('push-notify', async () => {
 
   const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, handleNeedsYou);
   const subReadFailed = await sql.listen(FILE_READ_FAILED_CHANNEL, handleReadFailed);
+  const subReadPartial = await sql.listen(FILE_READ_PARTIAL_CHANNEL, handleReadPartial);
   const subLogin = await sql.listen(LOGIN_NOTICE_CHANNEL, (payload) =>
     loginNotices.handle(payload),
   );
@@ -182,6 +204,7 @@ runWorker('push-notify', async () => {
       await subPending.unlisten();
       await subNeedsYou.unlisten();
       await subReadFailed.unlisten();
+      await subReadPartial.unlisten();
       await subLogin.unlisten();
       await sql.end({ timeout: 5 });
     } catch {

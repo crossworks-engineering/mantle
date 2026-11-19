@@ -260,6 +260,9 @@ export type DgnFacts = {
   /** The type name of the error the data reader hit on this file, when it
    *  read the file the 0.3.2 way instead (no `shared_cells` then). */
   dataError: string | null;
+  /** Attribute values the DGN reader cut to its length (512): 0 from a CAD
+   *  tier before the count. */
+  valuesCut: number;
 };
 
 function readDgn(raw: unknown): DgnFacts | null {
@@ -285,6 +288,7 @@ function readDgn(raw: unknown): DgnFacts | null {
     note: text(d.note) || null,
     dataReader: !!d.shared_cells && typeof d.shared_cells === 'object',
     dataError: text(d.data_error) || null,
+    valuesCut: count(d.values_cut),
   };
 }
 
@@ -347,6 +351,11 @@ export type DwgRender = {
   /** The blocks list hit its ceiling; separate so it never reads as Texts
    *  being truncated. */
   blocksCapped: boolean;
+  /** Every text the registry met (past its cap too), those it cut to its
+   *  length, and every layer: absent from a CAD tier before the counts. */
+  textsSeen?: number;
+  textsShortened?: number;
+  layersTotal?: number;
   layers: Array<{ name: string; count: number }>;
   texts: DwgTextEntity[];
   /** Attribute-bearing INSERTs; empty from a CAD tier older than the
@@ -735,6 +744,11 @@ export function cadReplyOf(body: Record<string, unknown>): DwgRender {
     entities: typeof body.entities === 'number' ? body.entities : 0,
     capped: body.capped === true,
     blocksCapped: body.blocks_capped === true,
+    ...(typeof body.texts_seen === 'number' ? { textsSeen: count(body.texts_seen) } : {}),
+    ...(typeof body.texts_shortened === 'number'
+      ? { textsShortened: count(body.texts_shortened) }
+      : {}),
+    ...(typeof body.layers_total === 'number' ? { layersTotal: count(body.layers_total) } : {}),
     layers,
     texts,
     blocks,

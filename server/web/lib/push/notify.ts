@@ -430,6 +430,41 @@ export async function pushReadFailed(
   lastPushed: Map<string, number>,
   now = Date.now(),
 ): Promise<PushResult> {
+  return pushFileRead(ownerId, lastPushed, now, 'read-failed', {
+    t: 'A file could not be read',
+    b: 'Its content is not in search. Open Files, Not read, to see which file and why.',
+    deepLink: '/files?unread=1',
+  });
+}
+
+/**
+ * Push "a file was read only in part" to the devices of ACTIVE ADMIN logins
+ * only (docs/files.md, "Read in part"): the extractor notifies
+ * FILE_READ_PARTIAL_CHANNEL when a read ends with a cut (rows, sheets,
+ * characters, pictures left out). The same terms as pushReadFailed, with its
+ * own memory (`lastPushed`): at most once in READ_FAILED_PUSH_EVERY_MS, fixed
+ * text, gated by the approvals toggle.
+ */
+export async function pushReadPartial(
+  ownerId: string,
+  lastPushed: Map<string, number>,
+  now = Date.now(),
+): Promise<PushResult> {
+  return pushFileRead(ownerId, lastPushed, now, 'read-partial', {
+    t: 'A file was read only in part',
+    b: 'Some of its content is not in search. Open Files, Read in part, to see which file and what was left out.',
+    deepLink: '/files?partial=1',
+  });
+}
+
+/** One file-read notice to the admins' devices, throttled per brain. */
+async function pushFileRead(
+  ownerId: string,
+  lastPushed: Map<string, number>,
+  now: number,
+  collapseKey: string,
+  text: { t: string; b: string; deepLink: string },
+): Promise<PushResult> {
   if (!readFailedDue(lastPushed.get(ownerId), now)) {
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'throttled' };
   }
@@ -442,13 +477,7 @@ export async function pushReadFailed(
   const devices = await listAdminSubscriptions(ownerId);
   if (devices.length === 0)
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
-  const payload: PushContent = {
-    v: 1,
-    t: 'A file could not be read',
-    b: 'Its content is not in search. Open Files, Not read, to see which file and why.',
-    deepLink: '/files?unread=1',
-    ts: now,
-  };
-  const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'read-failed');
+  const payload: PushContent = { v: 1, ...text, ts: now };
+  const { delivered, dropped } = await sendToDevices(instance, devices, payload, collapseKey);
   return { attempted: devices.length, delivered, dropped };
 }

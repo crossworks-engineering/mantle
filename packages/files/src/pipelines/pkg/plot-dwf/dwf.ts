@@ -62,6 +62,7 @@
  * and opens the container with {@link openDwf}.
  */
 import JSZip from 'jszip';
+import { noteReadCut } from '../../../read-cut-sink';
 import type { ParsedSheet } from '../../../sheet-to-grid';
 
 /** True when the bytes carry the classic DWF magic (`(DWF Vnn.nn)`). */
@@ -90,12 +91,18 @@ export type DwfSheet = {
   labelTotal: number;
   /** Container path of the sheet's thumbnail PNG, when present. */
   thumbnailPath: string | null;
+  /** The scrape of the sheet stopped short (a stream past its scan size,
+   *  or a sheet past its layer or distinct-label cap). */
+  scanCut?: true;
 };
 
 export type DwfParsed = {
   /** `V06.20` from the container magic, or null when absent. */
   version: string | null;
   sheets: DwfSheet[];
+  /** The ePlot sheets the manifest names: past MAX_SHEETS, more than
+   *  `sheets`. */
+  sheetsFound: number;
 };
 
 /* ------------------------------------------------------------------- caps */
@@ -197,8 +204,12 @@ export function scrapeW2d(stream: Buffer): {
   layers: string[];
   labels: Array<{ text: string; count: number }>;
   labelTotal: number;
+  /** The scrape stopped short: past the scan size, the layer cap or the
+   *  distinct-label cap. */
+  cut?: true;
 } {
   const body = stream.subarray(0, MAX_W2D_SCAN_BYTES).toString('latin1');
+  let cut = stream.length > MAX_W2D_SCAN_BYTES;
 
   const layers: string[] = [];
   const seenLayers = new Set<string>();
@@ -207,7 +218,10 @@ export function scrapeW2d(stream: Buffer): {
     if (!name || seenLayers.has(name)) continue;
     seenLayers.add(name);
     layers.push(name);
-    if (layers.length >= MAX_LAYERS_PER_SHEET) break;
+    if (layers.length >= MAX_LAYERS_PER_SHEET) {
+      cut = true;
+      break;
+    }
   }
 
   const counts = new Map<string, number>();
@@ -219,13 +233,15 @@ export function scrapeW2d(stream: Buffer): {
     labelTotal += 1;
     if (counts.size < MAX_UNIQUE_LABELS_PER_SHEET || counts.has(text)) {
       counts.set(text, (counts.get(text) ?? 0) + 1);
+    } else {
+      cut = true;
     }
   }
   const labels = [...counts.entries()]
     .map(([text, count]) => ({ text, count }))
     .sort((a, b) => b.count - a.count || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
 
-  return { layers, labels, labelTotal };
+  return { layers, labels, labelTotal, ...(cut ? { cut: true as const } : {}) };
 }
 
 /** Per-section entry paths, resolved in one pass over the archive. */
@@ -237,6 +253,8 @@ export type OpenedDwf = {
   sectionEntries: Map<string, SectionEntries>;
   /** ePlot sections in manifest order: sheet identity for every consumer. */
   sections: Array<{ name: string; title: string }>;
+  /** The ePlot sections the manifest names, past MAX_SHEETS too. */
+  sectionsFound: number;
 };
 
 /** Open the container, map every entry, and read the manifest's sheet list —
@@ -274,15 +292,17 @@ export async function openDwf(bytes: Buffer): Promise<OpenedDwf> {
 
   // Manifest sections carry the published sheet titles in order.
   const sections: Array<{ name: string; title: string }> = [];
+  // Counted past the cap, so a cut set says how many it left out.
+  let sectionsFound = 0;
   for (const m of manifest.matchAll(/<[^>]*Section\b[^>]*>/g)) {
     const name = attr(m[0], 'name');
     const title = attr(m[0], 'title');
     if (!name || !title || !name.includes('ePlot_')) continue;
-    sections.push({ name, title });
-    if (sections.length >= MAX_SHEETS) break;
+    sectionsFound += 1;
+    if (sections.length < MAX_SHEETS) sections.push({ name, title });
   }
 
-  return { version: versionMatch?.[1] ?? null, entries, sectionEntries, sections };
+  return { version: versionMatch?.[1] ?? null, entries, sectionEntries, sections, sectionsFound };
 }
 
 /** One structural parse per Buffer: the digest, the registry workbook and
@@ -303,7 +323,7 @@ export function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
 
 /** Open the container and extract every ePlot sheet's metadata + scrape. */
 async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
-  const { version, entries, sectionEntries, sections } = await openDwf(bytes);
+  const { version, entries, sectionEntries, sections, sectionsFound } = await openDwf(bytes);
 
   const sheets: DwfSheet[] = [];
   for (const { name, title } of sections) {
@@ -325,8 +345,12 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
       const size = declaredSize(w2dEntry);
       if (size >= 0 && size <= MAX_W2D_SCAN_BYTES) {
         scraped = scrapeW2d(await w2dEntry.async('nodebuffer'));
+      } else {
+        // Metadata only for this sheet: its stream is not scanned.
+        scraped = { ...scraped, cut: true };
       }
     }
+    const { cut: scanCut, ...scrapedKept } = scraped;
 
     sheets.push({
       title,
@@ -340,11 +364,12 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
           ? `${paperW.toFixed(1)} × ${paperH.toFixed(1)} ${paperUnits}`
           : null,
       thumbnailPath: paths.png ?? null,
-      ...scraped,
+      ...scrapedKept,
+      ...(scanCut ? { scanCut: true as const } : {}),
     });
   }
 
-  return { version, sheets };
+  return { version, sheets, sheetsFound: sectionsFound };
 }
 
 /**
@@ -444,8 +469,26 @@ export async function parseDwfToGrids(bytes: Buffer): Promise<ParsedSheet[]> {
  * as its honest hollow skip.
  */
 export async function parseDwf(bytes: Buffer): Promise<string> {
-  const { version, sheets } = await parseDwfStructured(bytes);
+  const { version, sheets, sheetsFound } = await parseDwfStructured(bytes);
   if (sheets.length === 0) return '';
+  // What the digest leaves out, said on the file (../../../read-cut.ts).
+  if (sheetsFound > sheets.length) {
+    noteReadCut('dwf_sheets', {
+      what: 'sheets',
+      read: sheets.length,
+      total: sheetsFound,
+      limit: MAX_SHEETS,
+    });
+  }
+  const scanCut = sheets.filter((s) => s.scanCut).length;
+  if (scanCut > 0) {
+    noteReadCut('dwf_scan', {
+      what: 'sheets',
+      read: sheets.length - scanCut,
+      total: sheets.length,
+    });
+  }
+  const labels = { read: 0, total: 0 };
 
   const out: string[] = [];
   out.push(
@@ -480,6 +523,8 @@ export async function parseDwf(bytes: Buffer): Promise<string> {
         chars += piece.length + 2;
       }
       const cut = s.labels.length - parts.length;
+      labels.read += parts.length;
+      labels.total += s.labels.length;
       out.push(
         `Annotation text (${s.labelTotal} labels, ${s.labels.length} unique): ${parts.join(', ')}` +
           (cut > 0 ? `, … and ${cut} more` : ''),
@@ -503,6 +548,12 @@ export async function parseDwf(bytes: Buffer): Promise<string> {
     for (const [layer, on] of registry) {
       if (lines >= DIGEST_REGISTRY_LAYERS) {
         out.push(`… and ${registry.size - lines} more layers.`);
+        noteReadCut('layer_list', {
+          what: 'layers',
+          read: lines,
+          total: registry.size,
+          limit: DIGEST_REGISTRY_LAYERS,
+        });
         break;
       }
       const shown = on.slice(0, DIGEST_REGISTRY_SHEETS_PER_LAYER);
@@ -514,5 +565,6 @@ export async function parseDwf(bytes: Buffer): Promise<string> {
     }
   }
 
+  if (labels.total > labels.read) noteReadCut('dwf_labels', { what: 'labels', ...labels });
   return out.join('\n');
 }

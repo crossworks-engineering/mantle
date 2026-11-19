@@ -49,6 +49,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const db: Record<string, unknown> = {
     ...actual.db,
     transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
+    // The keep_updated_at setting of a cut-only write.
+    execute: vi.fn(async () => []),
     select: vi.fn(() => ({
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
@@ -199,5 +201,47 @@ describe('upsertExternalEvent', () => {
     // markContentChanged, which drops the summary keys and the vector (an
     // event's title is 'extract' in the kind registry).
     expect(h.marked).toEqual([{ id: 'existing', type: 'event', fields: ['title'] }]);
+  });
+
+  it('a description the feed cut is said on the event (read_cut), its length kept', async () => {
+    await upsertExternalEvent('o1', {
+      ...INPUT,
+      description: 'd'.repeat(4000),
+      descriptionChars: 9000,
+    });
+    expect(h.inserted[0]!.data).toMatchObject({
+      read_cut: { description: { what: 'characters', read: 4000, total: 9000 } },
+    });
+    // A description that came whole says nothing.
+    await upsertExternalEvent('o1', { ...INPUT, externalUid: 'u2', description: 'short' });
+    expect(h.inserted[1]!.data).not.toHaveProperty('read_cut');
+  });
+
+  it('a re-sync whose only change is the cut writes it, with no new read', async () => {
+    h.selectRows = [stored({ data: { ...stored().data, body: 'd'.repeat(4000) } })];
+    await upsertExternalEvent('o1', {
+      ...INPUT,
+      description: 'd'.repeat(4000),
+      descriptionChars: 9000,
+    });
+    expect(h.updates).toHaveLength(1);
+    expect(h.marked).toEqual([]);
+    // The same cut again: nothing written.
+    h.updates.length = 0;
+    h.selectRows = [
+      stored({
+        data: {
+          ...stored().data,
+          body: 'd'.repeat(4000),
+          read_cut: { description: { what: 'characters', read: 4000, total: 9000 } },
+        },
+      }),
+    ];
+    await upsertExternalEvent('o1', {
+      ...INPUT,
+      description: 'd'.repeat(4000),
+      descriptionChars: 9000,
+    });
+    expect(h.updates).toEqual([]);
   });
 });

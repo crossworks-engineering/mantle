@@ -49,7 +49,8 @@ import { LEGACY_SHEET_EXTS } from './slug';
 export const MAX_LEGACY_CELLS = 1_000_000;
 
 /** A converted workbook, and the sheets left out of it for their size. */
-export type LegacyConversion = { xlsx: Buffer; refused: RefusedSheet[] };
+/** `keptSheets`: the sheets converted (the refused ones are not). */
+export type LegacyConversion = { xlsx: Buffer; refused: RefusedSheet[]; keptSheets?: number };
 
 /** True when this extension needs converting before the exceljs path. */
 export function isLegacySheetExt(ext: string): boolean {
@@ -158,5 +159,5 @@ export async function convertLegacySheetToXlsx(bytes: Buffer): Promise<LegacyCon
     const ws = wb.addWorksheet(name);
     for (const row of sheet.rows) ws.addRow(row.map(numericOrText));
   }
-  return { xlsx: Buffer.from(await wb.xlsx.writeBuffer()), refused };
+  return { xlsx: Buffer.from(await wb.xlsx.writeBuffer()), refused, keptSheets: kept.length };
 }

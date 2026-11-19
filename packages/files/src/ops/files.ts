@@ -121,6 +121,8 @@ export const BYTE_DERIVED_DATA_KEYS = [
   'pipeline_read',
   // The pictures a file left out, `{ kept, found }` (G4, migration 0386).
   'images',
+  // What the read of the bytes left out (../read-cut.ts).
+  'read_cut',
 ] as const;
 
 /**

@@ -49,11 +49,12 @@ import {
   type ParserFailureLedger,
 } from './parser-client';
 import { TITLE_BLOCK_MM } from './pdf-rows';
+import { withReadCutSink } from './read-cut-sink';
 import { PIPELINE_API } from './pipelines/contract';
 
 type Reply =
   | { code: ParserErrorCode; final?: boolean }
-  | { text: string }
+  | { text: string; cuts?: Record<string, unknown> }
   | { status: number }
   | { health: Record<string, unknown> };
 let reply: Reply = { text: '' };
@@ -96,9 +97,15 @@ beforeAll(async () => {
           }),
         );
       } else {
-        res
-          .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ text: reply.text, images: [], candidates: 0, rejected: 0 }));
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            text: reply.text,
+            images: [],
+            candidates: 0,
+            rejected: 0,
+            ...(reply.cuts ? { cuts: reply.cuts } : {}),
+          }),
+        );
       }
     });
   });
@@ -145,6 +152,21 @@ describe('parser client', () => {
     reply = { text: 'hello' };
     expect(await parserText(doc(), 'docx')).toBe('hello');
     expect(hits).toEqual(['/text']);
+  });
+
+  it("says the parser's cuts again in the caller's sink, checked first", async () => {
+    reply = {
+      text: 'rows',
+      cuts: {
+        sheet_rows: { what: 'rows', read: 5000, total: 12000, limit: 5000 },
+        junk: { read: 'x' },
+      },
+    };
+    const { value, cuts } = await withReadCutSink(() => parserText(doc(), 'xlsx'));
+    expect(value).toBe('rows');
+    expect(cuts).toEqual({ sheet_rows: { what: 'rows', read: 5000, total: 12000, limit: 5000 } });
+    // With no sink, the same answer reads as before.
+    expect(await parserText(doc(), 'xlsx')).toBe('rows');
   });
 
   for (const code of ['too_large', 'timeout', 'crashed'] as const) {

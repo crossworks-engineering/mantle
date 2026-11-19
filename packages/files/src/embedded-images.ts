@@ -48,6 +48,7 @@
 import { createHash } from 'node:crypto';
 import { envNum } from '@mantle/config';
 import { sniffImage } from './image-probe';
+import { noteReadCut } from './read-cut-sink';
 import { extOf, isCadExt, slugifyFolder } from './slug';
 
 /** Where the image sits in its source document. Which field is populated
@@ -287,6 +288,34 @@ export async function extractEmbeddedImages(
     maxImages: cap,
     ...(lower === 'dwf' ? { dpi: envNum('DWF_RENDER_DPI') } : {}),
   });
+}
+
+/** The cut each gate reason a picture is left out for is said as
+ *  (./read-cut.ts). A duplicate is not one: the same picture is kept once.
+ *  The cap and the parser's answer budget are not here: what they leave out
+ *  is the picture pass's `data.images` ({ kept, found }, G4), counted after
+ *  the page windows fetched what one read could not. */
+const LEFT_OUT_CUTS: Readonly<Record<string, string>> = {
+  metafile: 'pictures_metafile',
+  too_few_bytes: 'pictures_tiny',
+  unrenderable: 'pictures_unreadable',
+  too_small: 'pictures_small',
+};
+
+/** Say the pictures the gate left out, one cut a reason: `read` of `total`,
+ *  the total being the candidates but the duplicates. Called once a picture
+ *  read is whole (the extract's picture pass, after any page windows), so a
+ *  window read again is not counted twice. The result is returned as it
+ *  came. */
+export function notePicturesLeftOut(r: ExtractEmbeddedImagesResult): ExtractEmbeddedImagesResult {
+  const rejected = r.rejected as Record<string, number | undefined>;
+  const total = Math.max(0, r.candidates - (rejected.duplicate ?? 0));
+  for (const [reason, key] of Object.entries(LEFT_OUT_CUTS)) {
+    const n = rejected[reason] ?? 0;
+    if (n <= 0) continue;
+    noteReadCut(key, { what: 'pictures', read: Math.max(0, total - n), total });
+  }
+  return r;
 }
 
 /** The gate and the per-document cap, over candidates in document order.

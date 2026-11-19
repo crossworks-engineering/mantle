@@ -26,6 +26,7 @@
 
 import { SaxesParser } from 'saxes';
 import { DocumentTooLargeError } from './read-limit';
+import { noteReadCut } from './read-cut-sink';
 import type { EmbeddedImage } from './embedded-images';
 import { loadZip, numericSuffix, relationshipsFor, type Zip } from './ooxml-media';
 
@@ -194,17 +195,32 @@ export async function vsdxImages(bytes: Buffer): Promise<EmbeddedImage[]> {
     .sort((a, b) => mediaNumber(a) - mediaNumber(b) || a.localeCompare(b));
   const out: EmbeddedImage[] = [];
   let total = 0;
-  for (const path of paths) {
+  // Parts left out for their size, said on the file (./read-cut.ts).
+  let skipped = 0;
+  for (const [i, path] of paths.entries()) {
     const size = declaredSize(zip, path) ?? 0;
-    if (size > MAX_VSDX_IMAGE_BYTES) continue;
+    if (size > MAX_VSDX_IMAGE_BYTES) {
+      skipped += 1;
+      continue;
+    }
     total += size;
-    if (total > MAX_VSDX_TOTAL_BYTES) break;
+    if (total > MAX_VSDX_TOTAL_BYTES) {
+      skipped += paths.length - i;
+      break;
+    }
     const data = Buffer.from((await zip.file(path)?.async('uint8array')) ?? new Uint8Array());
     if (data.length === 0) continue;
     out.push({
       bytes: data,
       ordinal: out.length + 1,
       ...describeImageBytes(data, path.slice(path.lastIndexOf('.') + 1)),
+    });
+  }
+  if (skipped > 0) {
+    noteReadCut('pictures_large', {
+      what: 'pictures',
+      read: paths.length - skipped,
+      total: paths.length,
     });
   }
   return out;
