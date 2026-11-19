@@ -34,7 +34,7 @@ export type PageText = { page: number; text: string };
  *  bound is only the page numbers qpdf counts, never reached. */
 const PAGES_MAX = Number.MAX_SAFE_INTEGER;
 /** No page's text is cut: the bound of one SQLite text cell (1 GB) is
- *  above any page; a page of 4-point type on A0 is about 2 MB of text. */
+ *  above any page; a page of 4-point type on A0 paper is about 2 MB of text. */
 const PAGE_TEXT_MAX_CHARS = 1_000_000_000;
 
 /** The pages of the file's database, and the pages its windows read, or

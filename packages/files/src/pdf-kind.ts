@@ -508,12 +508,12 @@ const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
 /**
  * Whether a PDF is a book, from its pages' facts and kinds (the sample of a
  * long file, every page of a short one), with no model. BOOK_MIN_SHARE of
- * the pages read or more are on office paper (`a4` or `a3`: an A4, Letter
- * or A3 sheet; a fold-out sheet in a spec book makes no drawing set of it),
+ * the pages read or more are on office paper (`a4` or `a3`: an A4 sheet, a
+ * Letter or an A3 sheet; a fold-out sheet in a spec book makes no drawing set of it),
  * none is a P&ID or an isometric, and BOOK_MIN_SHARE of them or more are
  * scans or typed text. A file of BOOK_MIN_PAGES pages or fewer must also
  * hold typed or scanned text pages (kind `document`) but for a few
- * ({@link DOCUMENT_MIN_SHARE}): a short scanned drawing or ruled form on A4
+ * ({@link DOCUMENT_MIN_SHARE}): a short scanned drawing or ruled form on A4 paper
  * (kind `scan`) stays the drawing reader's, while a scan of 7 pages with one
  * ruled table page is a book. A sample with no page read is no book: the
  * page rules decide. The page count is the caller's (qpdf).
