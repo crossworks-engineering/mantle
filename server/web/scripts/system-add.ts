@@ -16,6 +16,7 @@
  */
 import { env } from '@mantle/config';
 import { closeDb } from '@mantle/db';
+import { errorMessage } from '@mantle/std';
 import { systemAdd } from '../lib/system-workspace';
 
 if (!env('DATABASE_URL')) {
@@ -64,6 +65,6 @@ main()
     process.exit(code);
   })
   .catch((err) => {
-    console.error('[system-add] failed:', err instanceof Error ? err.message : err);
+    console.error('[system-add] failed:', errorMessage(err));
     process.exit(1);
   });
