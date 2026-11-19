@@ -239,8 +239,6 @@ export function retryWaitMs(tries: number): number {
   return Math.min(5 * 60_000 * 2 ** Math.max(0, tries - 1), 6 * 60 * 60_000);
 }
 
-/** A failed message: its tries, its first failure, its folder, and when
- *  it is next tried (ms since the epoch). */
 /** The queue of failed messages is full: the run stops here (its cursor
  *  stays), after the retry has had its turn to free places. */
 export class QueueFullError extends Error {
@@ -252,6 +250,8 @@ export class QueueFullError extends Error {
   }
 }
 
+/** A failed message: its tries, its first failure, its folder, and when
+ *  it is next tried (ms since the epoch). */
 export type FailEntry = { n: number; first: number; folder: string; next?: number };
 
 /** The messages of a mailbox that failed to read, kept in the brain

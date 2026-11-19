@@ -829,7 +829,7 @@ export async function syncMailbox(
       // A full queue: the retry still has its turn (it frees places), then
       // the run stops with its cursor.
       if (err instanceof QueueFullError && failures && client.usable) {
-        await retryFailed(client, failures, onMessage, stage);
+        await retryFailed(client, failures, onMessage, stage).catch(() => {});
       }
       throw err;
     }

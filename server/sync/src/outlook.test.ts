@@ -618,3 +618,80 @@ describe('the last try of a message', () => {
     expect(posted[0]!.body).toContain('big.zip');
   });
 });
+
+describe('a run of messages sharing both times', () => {
+  const runner = (state: State, posted: Set<string>, onEach?: (id: string) => void) => () =>
+    syncOutlook(
+      state,
+      account,
+      async (envs) => envs.map((e) => e.providerMsgId).filter((id) => !posted.has(id)),
+      async (m) => {
+        posted.add(m.providerMsgId);
+        onEach?.(m.providerMsgId);
+      },
+      async () => ({ sha256: 'a'.repeat(64), size: 0 }),
+    );
+
+  it('larger than one run reads, is crossed over runs from where it got to', async () => {
+    graph.folders = [{ id: 'f0', displayName: 'Inbox' }];
+    const t = toSecond(recent(5));
+    const r = toSecond(recent(-100));
+    const n = RUN_PAGES * 50 + 600; // past one run's pages at both keys
+    graph.messages.set('f0', [
+      ...Array.from({ length: n }, (_, i) => ({ id: `both${i}`, from: 'a@b.test', at: t, rec: r })),
+      { id: 'after', from: 'a@b.test', at: recent(9) },
+    ]);
+    const posted = new Set<string>();
+    const { state, kv } = fakeState();
+    const run = runner(state, posted);
+    await run();
+    expect(posted.has('after')).toBe(false);
+    const tie = (kv.get('cursor') as { ties?: Record<string, { skip?: number }> }).ties?.f0;
+    expect(tie?.skip).toBeGreaterThan(0);
+    for (let i = 0; i < 4 && !posted.has('after'); i++) await run();
+    expect(posted.has('after')).toBe(true);
+    expect([...posted].filter((p) => p.startsWith('both'))).toHaveLength(n);
+  });
+
+  it('never skips one when another leaves the group while it is crossed', async () => {
+    graph.folders = [{ id: 'f0', displayName: 'Inbox' }];
+    const t = toSecond(recent(5));
+    const r = toSecond(recent(-100));
+    const msgs = Array.from({ length: 300 }, (_, i) => ({
+      id: `both${i}`,
+      from: 'a@b.test',
+      at: t,
+      rec: r,
+    }));
+    graph.messages.set('f0', [...msgs, { id: 'after', from: 'a@b.test', at: recent(9) }]);
+    const posted = new Set<string>();
+    const { state } = fakeState();
+    // Someone reads the first few while the run crosses: they leave the
+    // group (a later change time), and the rest move up.
+    const run = runner(state, posted, (id) => {
+      if (id === 'both120') for (let k = 0; k < 5; k++) msgs[k]!.at = recent(20);
+    });
+    for (let i = 0; i < 3 && !posted.has('after'); i++) await run();
+    expect([...posted].filter((p) => p.startsWith('both'))).toHaveLength(300);
+  });
+
+  it('is left only once its second is a minute old', async () => {
+    graph.folders = [{ id: 'f0', displayName: 'Inbox' }];
+    const t = toSecond(new Date(Date.now() - 5_000).toISOString());
+    graph.messages.set(
+      'f0',
+      Array.from({ length: 60 }, (_, i) => ({ id: `now${i}`, from: 'a@b.test', at: t })),
+    );
+    const posted = new Set<string>();
+    const { state, kv } = fakeState();
+    await runner(state, posted)();
+    expect(posted.size).toBe(60);
+    const cursor = kv.get('cursor') as {
+      ties?: Record<string, unknown>;
+      folders: Record<string, string>;
+    };
+    // Still at the group: nothing past its second is taken for read.
+    expect(cursor.ties?.f0).toBeDefined();
+    expect(cursor.folders.f0).not.toBe(new Date(Date.parse(t) + 1000).toISOString());
+  });
+});

@@ -121,7 +121,7 @@ export type MsCursor = {
   rr?: number;
   /** Per folder inside a group of messages changed in one second: its
    *  time and the receivedDateTime read to (outlook.ts). */
-  ties?: Record<string, { at: string; after: string }>;
+  ties?: Record<string, { at: string; after: string; skip?: number }>;
 };
 
 /** A new contact's backfill, kept until it reaches the end (Sync service

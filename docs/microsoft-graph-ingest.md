@@ -89,7 +89,8 @@ Mail.Read Mail.Send Calendars.Read`.
   past a page). A group changed in one second (mark all read, a retention
   stamp, an import) is read on its second key, receivedDateTime, over its
   whole second (Graph may keep a finer time than it prints), and where
-  it got to is kept in the cursor (`ties`), so a group of any size is
+  it got to (and how many at that receivedDateTime were read) is kept in
+  the cursor (`ties`), so a group of any size is
   crossed over as many runs as it takes and the folder never stalls. A
   timeout or a broken read of one message, while Graph still answers a
   cheap call, is that message's failure: it is skipped and tried again. Every folder gets its first page each run, however many

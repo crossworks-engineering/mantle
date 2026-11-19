@@ -446,6 +446,13 @@ async function retryFailed(
   }
 }
 
+/** Messages a group's page reads again before where it got to: one that
+ *  left the group meanwhile never shifts another past the page. */
+const SKIP_OVERLAP = 10;
+/** A group's second is left once it is this old (a change still landing
+ *  in it is never passed over). */
+const GROUP_SETTLE_MS = 60_000;
+
 /** The second after an ISO time printed to the second (a group's end). */
 const secondAfter = (iso: string) => new Date(Date.parse(iso) + 1000).toISOString();
 
@@ -510,11 +517,9 @@ export async function syncOutlook(
   type Walker = {
     f: MailFolder;
     mark: string;
-    /** Inside a group at one time: its second and the receivedDateTime
-     *  read to. */
-    tie?: { at: string; after: string };
-    /** A page at one receivedDateTime too: Graph's next link crosses it. */
-    dtie?: string;
+    /** Inside a group at one time: its second, the receivedDateTime read
+     *  to, and how many at that receivedDateTime were read. */
+    tie?: { at: string; after: string; skip?: number };
     seen: Set<string>;
     done: boolean;
   };
@@ -527,43 +532,54 @@ export async function syncOutlook(
   const step = async (w: Walker) => {
     if (w.tie) {
       // The group's second as a range (Graph may keep a finer time than it
-      // prints), on receivedDateTime first, as $orderby asks.
+      // prints), on receivedDateTime first, as $orderby asks. Where it got
+      // to is `after` and the messages at that receivedDateTime already
+      // read (`skip`), kept in the cursor, so a run of messages sharing
+      // both times is crossed over as many runs as it takes. Each page
+      // asks again from there with SKIP_OVERLAP messages read twice (the
+      // gate drops them), so one leaving the group meanwhile never shifts
+      // another past a page.
       const end = secondAfter(w.tie.at);
+      const skip = Math.max(0, (w.tie.skip ?? 0) - SKIP_OVERLAP);
       const url =
-        w.dtie ??
         folderMessages(
           w.f.id,
           `receivedDateTime ge ${w.tie.after} and lastModifiedDateTime ge ${w.tie.at} and lastModifiedDateTime lt ${end}`,
           'receivedDateTime asc',
-        );
+        ) + (skip > 0 ? `&$skip=${skip}` : '');
       const page: Page = await graphJson<Page>(token, url);
-      const all = (page.value ?? []).filter((m) => m.id);
-      await walk(w, all);
-      const first = all[0]?.receivedDateTime;
-      const last = all[all.length - 1]?.receivedDateTime;
-      const next = page['@odata.nextLink'];
-      if (!next || all.length < PAGE) {
-        // Past the group: the folder reads on from the next second.
+      const raw = page.value ?? [];
+      await walk(
+        w,
+        raw.filter((m) => m.id),
+      );
+      if (!page['@odata.nextLink']) {
+        // Past the group. Its second is left only once it is a minute old,
+        // so a change still landing in it is never passed over; until then
+        // the folder waits at its place.
+        if (Date.parse(w.tie.at) + GROUP_SETTLE_MS > Date.now()) {
+          w.done = true;
+          return;
+        }
         marks[w.f.id] = end;
         w.mark = end;
         delete ties[w.f.id];
         w.tie = undefined;
-        w.dtie = undefined;
         await save();
         return;
       }
-      // A full page at one receivedDateTime too: the next link goes on
-      // through it (every page of it, new or not); else the key moves on.
-      if (first && first === last) {
-        w.dtie = next;
+      const last = raw[raw.length - 1]?.receivedDateTime;
+      if (!last) {
+        w.done = true;
         return;
       }
-      w.dtie = undefined;
-      if (last && last !== w.tie.after) {
-        w.tie.after = last;
-        ties[w.f.id] = { ...w.tie };
-        await save();
-      }
+      // The messages at `last` read so far: the page's own, and those
+      // before it when the whole page sat at the same receivedDateTime.
+      const atLast = raw.filter((m) => m.receivedDateTime === last).length;
+      const before = last === w.tie.after && atLast === raw.length ? skip : 0;
+      w.tie = { at: w.tie.at, after: last, skip: before + atLast };
+      ties[w.f.id] = { ...w.tie };
+      await save();
       return;
     }
     const page: Page = await graphJson<Page>(
@@ -633,7 +649,7 @@ export async function syncOutlook(
     // A full queue: the retry still has its turn (it frees places), then
     // the run stops with its watermark.
     if (err instanceof QueueFullError && failures) {
-      await retryFailed(token, failures, onMessage, stage);
+      await retryFailed(token, failures, onMessage, stage).catch(() => {});
     }
     throw err;
   }
