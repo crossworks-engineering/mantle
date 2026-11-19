@@ -6,7 +6,10 @@
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
-vi.mock('drizzle-orm', () => ({
+// The real module under the stubs: a package the auth chain loads (since
+// Files P5, @mantle/files loads @mantle/tracing) takes `sql` at import.
+vi.mock('drizzle-orm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('drizzle-orm')>()),
   and: (...a: unknown[]) => ({ __and: a }),
   eq: (...a: unknown[]) => ({ __eq: a }),
   gt: (...a: unknown[]) => ({ __gt: a }),
