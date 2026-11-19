@@ -19,6 +19,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
+import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -222,14 +223,22 @@ describe('the parser server', () => {
   });
 
   it('a reader\'s cut comes back with the text, end to end (docs/files.md, "Read in part")', async () => {
-    // A generated page past the 32 MB a markup read takes.
-    const limit = 32 * 1024 * 1024;
-    const page = Buffer.alloc(limit + 1024, 0x61);
-    const { value, cuts } = await withReadCutSink(() => parserText(page, 'html'));
-    expect(value.length).toBeGreaterThan(0);
-    expect(cuts).toEqual({
-      markup_bytes: { what: 'bytes', read: limit, total: limit + 1024, limit },
-    });
+    // A generated sheet past the 5,000 rows a sheet's text takes, well under
+    // this parser's 1 MB upload limit. exceljs is @mantle/files' own.
+    type Book = {
+      addWorksheet(name: string): { addRow(row: unknown[]): void };
+      xlsx: { writeBuffer(): Promise<ArrayBuffer> };
+    };
+    const ExcelJS = createRequire(path.join(HERE, '../../../packages/files/package.json'))(
+      'exceljs',
+    ) as { Workbook: new () => Book };
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Big');
+    for (let r = 0; r < 5100; r++) ws.addRow([`v${r}`]);
+    const sheet = Buffer.from(await wb.xlsx.writeBuffer());
+    const { value, cuts } = await withReadCutSink(() => parserText(sheet, 'xlsx'));
+    expect(value).toContain('v4999');
+    expect(cuts).toEqual({ sheet_rows: { what: 'rows', read: 5000, total: 5100, limit: 5000 } });
     // Within it: no cut.
     expect(
       (await withReadCutSink(() => parserText(Buffer.from('<p>hi</p>'), 'html'))).cuts,

@@ -44,4 +44,8 @@ export const PIPELINE_KIT_FILES: readonly string[] = [
   'read-limit.ts',
   'zip-guard.ts',
   'limits.ts',
+  // A read in part (docs/files.md, "Read in part"): the shape of a cut and
+  // the sink a step says it in (the CAD and DWF packages).
+  'read-cut.ts',
+  'read-cut-sink.ts',
 ];
