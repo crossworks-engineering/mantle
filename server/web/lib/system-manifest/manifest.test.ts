@@ -404,12 +404,14 @@ describe('system manifest integrity', () => {
       'team-read',
       'formulas-eval',
       'delegation',
+      'translate',
     ]);
     expect(groups.filter((g) => adminOnly.has(g))).toEqual(['team-read-admin']);
     expect(groupsForAgent(groups, { workspace: 'other', role: team.role }, adminOnly)).toEqual([
       'team-read',
       'formulas-eval',
       'delegation',
+      'translate',
     ]);
   });
 
