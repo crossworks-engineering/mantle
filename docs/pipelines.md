@@ -2399,8 +2399,9 @@ the eye looked at with no slanted long lines (`TABLE_SLANT_MAX`, 0.005; an
 isometric sketch has 0.02 and more) and 150 areas of text or more
 (`TABLE_MIN_TEXT_AREAS`; the made-up spec table page has 267, a page of prose
 about 70), so a table-heavy scanned spec is a book. The router names `document` no more: no PDF is left
-to the core's own text read and OCR (its 10-page OCR, `MAX_OCR_PAGES`, runs
-only for a PDF whose Reader gave no text). A book hands the Reader no facts:
+to the core's own text read and its scan read (the Scan reader, every page,
+docs/ai-workers.md "Scanned PDFs outside a book", runs only for a PDF whose
+Reader gave no text). A book hands the Reader no facts:
 the Reader reads the file, window by window.
 
 What stays a drawing: a P&ID, an isometric (by its lines, or by the eye of a

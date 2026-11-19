@@ -581,14 +581,18 @@ so PDFs keep working out of the box; the dedicated worker is purely additive.
 
 ### Where it's wired (both layers)
 
+- **A PDF with no text layer** (a scan) is no longer read natively nor by
+  page OCR: since the Scan reader's second branch it is the Scan reader's,
+  page by page, in the live turn and in the indexer alike (section "Scanned
+  PDFs outside a book" below).
 - **Live turn** (`extractAttachmentForTurn`, web `/assistant` + Telegram):
-  `parse_document` (cheap text) → on empty, native PDF → rasterize. A new
-  `extract_document` trace step makes it visible in `/traces`.
-- **Indexer** (`server/api/src/agent/extractor.ts` `ocrIngestPdfNode`): same
-  native-first → rasterize chain for the durable `data.text`. Native results are
-  flagged `native_pdf: true` (not `ocr`, which means page-OCR). A native read
-  that found no text is kept as `native_pdf: { empty_sha256 }`, so a retry of
-  the same bytes goes straight to the render.
+  `parse_document` (cheap text); with `prefer_native`, the native read of a
+  PDF with a text layer (the `extract_document` trace step).
+- **Indexer** (`nativeReadPdfNode`, server/api/src/agent/extract/images.ts):
+  the native read of a PDF with a text layer under `prefer_native`, flagged
+  `native_pdf: true`. A native read that found no text is kept as
+  `native_pdf: { empty_sha256 }`, so a retry of the same bytes does not pay
+  for it again; the text layer is kept.
 
 **The bug this fixed.** Before this, the live turn ran *text-only* PDF parsing
 with no OCR fallback, a scanned invoice (no text layer) came back "No text
@@ -603,9 +607,9 @@ use the cheap text path). But a digital invoice can have a *complete but
 scrambled* text layer that mangles columns. The document worker's
 `prefer_native` toggle says "always send PDFs to the model, even with a text
 layer." Honoured on **both** the live turn and the indexer (the latter via
-`documentWorkerPrefersNative` → `ocrIngestPdfNode` on text-layer PDFs, keeping
-the text body if native yields nothing). Off by default; it costs one LLM call
-per PDF.
+`documentWorkerPrefersNative` → `nativeReadPdfNode` on text-layer PDFs, keeping
+the text body if native yields nothing; no page read of a typed PDF). Off by
+default; it costs one LLM call per PDF.
 
 ### Cost
 
@@ -678,10 +682,9 @@ book reader"):
 
 How each page was read (text, OCR of an older read, blank, Scan reader,
 vision, unread) is counted live from the book's database and shown in the
-file's processing details (`bookPages`, `file_processing`). Other places
-that read text from a scanned picture (drawings, image OCR, the core's
-non-book PDF path, the ocr-rescan maintenance) still use Tesseract; moving
-them to the Scan reader is its own branch.
+file's processing details (`bookPages`, `file_processing`). A PDF outside a
+book with no text layer, and a scanned PDF attached in chat, are the Scan
+reader's too (below). Photos, screenshots and drawings keep vision.
 
 **The wiring.** The book reader `pdf-pages` (1.3.0) runs no OCR: a scanned
 page is drawn at 150 dpi only to count its text lines from its ink
@@ -774,6 +777,81 @@ kept; about $0.00027 a page.
 `scripts/scan-reader/harness.py` scores Tesseract and any OpenRouter model
 or PDF parser engine on them (cells, words, characters, the check, billed
 cost per 1,000 pages, seconds a page) under a spend cap.
+
+### Scanned PDFs outside a book
+
+A PDF with no text layer that is no book (a drawing set's scan, a file the
+router did not name a book, a brain with no pipelines), the maintenance
+`ocr-rescan` and `blank-scans` that read such files again, and a scanned PDF
+attached in chat are read the book's way (owner decision 2026-11-19, "Non-book
+PDFs + chat"): the Scan reader, every page, with no page cap (the old page OCR
+read 10 pages by vision and stopped). No native read first, no vision backup.
+
+`readScannedPdf` (`packages/runtime/src/agent/scan-pdf.ts`), one function for
+the extractor (`ocrIngestPdfNode`, server/api/src/agent/extract/images.ts)
+and the chat turn (`scanPdfForTurn`, ./attachments.ts):
+
+1. the file in page windows of 20 pages (`SCAN_WINDOW`, `pdfWindows`: qpdf,
+   any size);
+2. each window marked with no model by the book reader's own Reader
+   `pdf-pages` (run with `runPackaged`, its tab Pages): a page with a text
+   layer is its text, a white page is `blank` (no paid call), a scanned page
+   gets its `Lines` (the ink bands), the evidence of the check. A Reader that
+   fails leaves every page to the Scan reader with no line count;
+3. each scanned page cut as a one-page PDF (qpdf); a page past
+   `PIPELINE_ASK_PICTURE_MAX_BYTES` is not sent (`too_large`);
+4. `runScanReader` (`tries: 2`), 4 pages at once (`SCAN_PAGES_AT_ONCE`), and
+   the verdict `scanVerdictOf`, the same function the book's paid ask uses
+   (pipeline-ask.ts): judged good, the page's text; judged bad, `unread`;
+   mostly a figure, one vision call on the page's picture (drawn by the
+   parser then); the decider's `scan_read_check` asked where no free rule
+   finds fault but `unverified`.
+
+Each page ends `text`, `blank`, `scan_reader`, `vision` or `unread` with a
+reason (`ScanUnreadReason`, packages/files/src/read-cut.ts): `bad_read`,
+`no_scan_reader`, `failed` (no answer), `too_large`, `not_cut`, `time` (a
+chat turn's budget). The file's status says them: `data.ocr` is `true` for a
+whole read, else `{ pages_read, pages_total, unread: { <reason>: n } }` and
+the file is `partial` with one sentence per reason (extractionOf). A scan
+that read no text records the `no_text_layer` skip with the reasons (the
+stamp's `pages`), terminal only when the read reached a verdict (a page
+blank or read badly); no Scan reader, or a provider that failed, leaves it
+to be read again. A brain with no Scan reader says so (an OpenRouter key and
+the worker); nothing falls back to vision or a native read.
+
+**Money.** One paid call a page (two only when the provider gave no answer).
+The parser's work of a window (its cut, marks and page cuts) is done before
+the window's first paid call, so a busy parser fails the extract (pg-boss
+retries it) with nothing of that window paid. The pages each window read are
+kept on the node as it ends (`data.ocr.resume`, with the sha256 of the
+bytes), and a retry (a busy parser, a restart, the job's time) goes on after
+them: no page is paid for twice. A picture drawn after a paid call (a figure,
+the check) that fails is no throw: the figure page is unread, the free rule
+stands. No new trigger: the extract runs on an upload as before, and
+`ocr-rescan` / `blank-scans` stay person-started (dry run first; their
+estimate is the Scan reader's price for every page, the worst case every
+page a figure).
+
+**Chat.** The turn reads for `TURN_SCAN_MS` (60 s) from page 1, then stops
+starting pages: the note says how many of how many were read, each reason
+for the rest (`time` for those not reached), and that the saved file is read
+whole in the background by the extractor. A busy parser mid-file keeps what
+was read and says the rest. Per page, not the whole file in one call: the
+engine's price is per page either way, and only per page does each page get
+the check (a page read badly is left out of the answer, never shown as the
+page) and a figure its description. KISS over queueing: nothing replies
+later by itself (that would start model work with no person), and the
+durable read already reads the whole file. The turn's pages and the
+extractor's are two reads of the same upload, as for a photo or a native
+read before.
+
+**Measured** (2026-11-19, the generated 140-page scanned spec book, the
+large-PDF e2e set: marks and cuts in the parser image on a workstation, the
+paid calls from the Mac with the bench key): 140 of 140 pages read by the
+Scan reader, every true table cell found (100%), $0.284 billed in all:
+**$2.03 per 1,000 pages**; a call 3.75 s median, 4.79 s at p90, 4 at once.
+The marks and cuts took 16.8 s for the 140 pages on 2 CPUs. A chat turn on
+it read 56 pages in its 60 s (63 s wall) and said the 84 others.
 
 ---
 

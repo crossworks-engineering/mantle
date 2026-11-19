@@ -346,7 +346,7 @@ async function scanPdfForTurn(opts: {
       : `${opts.filename} could not be read just now: ${stopped ?? 'no page was read'}.${later}`;
   const capped =
     text.length > DOC_TEXT_MAX
-      ? `${text.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${text.length - DOC_TEXT_MAX} more characters — call file_read on the node for the full document.]`
+      ? `${text.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${text.length - DOC_TEXT_MAX} more characters: call file_read on the node for the full document.]`
       : text;
   return { text: capped, note };
 }
