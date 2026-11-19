@@ -781,9 +781,15 @@ can run for the same worker without conflicting.
 
 ## 5d′. The Translator (`translator`, 2026-11-19)
 
-One tool, `translate` (`packages/tools/src/builtins-translate.ts`), in the
-`media-workers` group, so the persona and every workspace assistant that
-holds that group can call it, and on the MCP surface. Owner's rules:
+One tool, `translate` (`packages/tools/src/builtins-translate.ts`), on the
+MCP surface and in two groups: its own `translate` group (the persona, the
+Team responder and Pages hold it; the boot reconcile adds it to the Admin
+workspace's assistants and to those two specialists on existing brains) and
+`media-workers` (so every assistant that holds that group, a workspace
+assistant copied from the persona included, has it too). A workspace
+assistant other than Admin's that holds neither gets it only when the owner
+adds the group: it spends, so no reconcile grants it there by itself.
+Owner's rules:
 
 - **Called, never started by itself.** No trigger, timer or sweep runs it.
   A paid call happens only when a person or an agent asks.
@@ -823,7 +829,9 @@ holds that group can call it, and on the MCP surface. Owner's rules:
   `mistralai/mistral-small-2603`) takes a part only when the primary fails
   it: an error, a refusal, an empty or far too short answer, or one cut at
   the output limit. `params.high_model` (shipped:
-  `mistralai/mistral-medium-3-5`) runs a call that asks `quality: 'high'`
+  `mistralai/mistral-medium-3-5`; OpenRouter lists an expiration date of
+  2027-01-31 for it, so it must be swapped before then) runs a call that
+  asks `quality: 'high'`
   instead of the worker's model. No part is ever sent twice once it has a
   good answer. The models are ids on the worker's own provider.
 - **Rights.** The item is read in the caller's scope (an item it does not

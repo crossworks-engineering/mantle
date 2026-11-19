@@ -1242,6 +1242,18 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     ],
   },
   {
+    // The Translator's one tool, in a group of its own so the agents that
+    // hold no `media-workers` (the Team responder, Pages) translate too. Not
+    // adminOnly. It spends (a model call per part), so it is no content-kind
+    // group: a workspace assistant other than Admin's holds it only where the
+    // owner adds it, or through `media-workers`.
+    slug: 'translate',
+    name: 'Translate',
+    description:
+      'Translate text or an item into another language (translate), the copy saved beside the original on request. Paid model work per call; nothing starts it by itself.',
+    toolSlugs: ['translate'],
+  },
+  {
     slug: 'video-ingest',
     name: 'Video ingest',
     description:
@@ -1588,6 +1600,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'email',
       'persona',
       'media-workers',
+      'translate',
       'video-ingest',
       'crawl',
       'delegation',
@@ -1722,6 +1735,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'export',
       'documents',
       'curation',
+      // A page in another language, saved beside the original.
+      'translate',
     ],
     skillSlugs: ['rich_writing', 'page_editing', 'writing_style'],
     isDelegate: true,
@@ -2082,7 +2097,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // its workspace. Granted ONCE to an existing brain's responder
     // (reconcileWorkspaceDelegation), so an owner's removal sticks: the
     // specialist union leaves this group out for it.
-    toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval', 'delegation'],
+    // `translate` (owner's route, 2026-11-19): a member asks for an item in
+    // their language; it reads only what the member reads, and a saved copy
+    // is the member's own create, at the top level (filing is the owner's).
+    toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval', 'delegation', 'translate'],
     // `visual_answers` rides on the `show_image` grant in `team-read`: the
     // documents a team shares are full of extracted diagrams and screenshots,
     // and describing one when it could be shown is the weaker answer on the
@@ -2306,6 +2324,8 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     model: 'google/gemini-3.1-flash-lite',
     params: {
       fallback_model: 'mistralai/mistral-small-2603',
+      // The catalog gives this model an expiration_date of 2027-01-31:
+      // swap it before then.
       high_model: 'mistralai/mistral-medium-3-5',
     },
   },
