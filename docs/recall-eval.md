@@ -101,8 +101,9 @@ So a case survives the item being deleted and made again, a re-sync that
 gives it a new id, a rename (the body key still holds) or an edit to its
 start (the title key still holds). It breaks only when both change at once;
 the run then names the case as skipped. Writing a case (`--keys`) and
-resolving it at run time use the same SQL expressions in `eval-recall.ts`, so
-the two sides cannot drift. A hash of a short, guessable title can be
+resolving it at run time use the same SQL expressions
+(`packages/search/src/gold-keys.ts`, shared with the in-brain `recall_eval`
+tool), so the sides cannot drift. A hash of a short, guessable title can be
 recovered by guessing, which is why committed cases stay on public topics.
 
 ## First baseline (2026-06-03, 12 cases, pages + events)
@@ -1028,10 +1029,19 @@ The harness above is manual (`pnpm -C server/web eval:recall`). The automated
 half runs the same idea inside the brain, on a schedule:
 
 - **Golden cases live in the brain**: a note tagged `recall-eval-cases` whose
-  content is a JSON array of `{id, query, expectNodeIds? | expectTitleIncludes?}`
-  (the field name `expectNodeTitleIncludes` from `recall-cases.json` is accepted
-  unchanged). Editable in the UI like any note, add a case the moment a recall
-  miss annoys you.
+  content is a JSON array of
+  `{id, query, expect?: [{type, titleKey, bodyKey}] | expectNodeIds? | expectTitleIncludes?}`.
+  `expect` holds the same stable keys as `recall-gold.json` (since 2026-11-19),
+  so a case written for the manual harness pastes in unchanged (the field name
+  `expectNodeTitleIncludes` is accepted too). Get the keys of an item with
+  `pnpm -C server/web eval:recall --keys=<nodeId>` on the box. Prefer keys: an
+  id dies when an item is made again, a key does not. Editable in the UI like
+  any note, add a case the moment a recall miss annoys you.
+- **Gold is resolved once per run, by the same code as the harness**
+  (`resolveGold` and the key SQL in `packages/search/src/gold-keys.ts`): a key
+  match (same type, and the title key or the body key equal), a live id, or a
+  title substring. A case with no live gold is **stale**: it is skipped, not
+  scored as a miss, and named in the run's `staleCases`.
 - **`recall_eval` (builtin tool)** runs every case through the shipped
   retrievers as agents call them (hybrid `search_nodes` + hybrid passage
   `search_chunks`), scores
@@ -1052,15 +1062,17 @@ half runs the same idea inside the brain, on a schedule:
   only against a run that also measured hybrid, so the switch raises no false
   alert. The capacity dial's `retrieval` number (the `chunks` R@10) now reads
   the arm agents use.
-- **A gold set that matches nothing alerts on its own.** When EVERY case
-  misses in both retrievers the run scores exactly 0/0, which drift reads as
-  "no change" — that state sat silent for nine weekly runs on the dev brain
-  (2026-07-20 → 2026-09-15; the set had been pasted in from another brain, so
-  none of its node ids or titles existed). `recall_eval` now returns
-  `alert: true, reason: 'gold_set_unmatched'` with `unmatchedCases` and a
-  `detail` naming the fix (repair the `recall-eval-cases` note; prefer
-  `expectTitleIncludes` for documentation nodes, whose ids churn on re-sync).
-  Retrieval is unmeasured in that state, not degraded.
+- **A gold set that matches nothing alerts on its own.** A run where every
+  case scores 0 reads to drift as "no change": that state sat silent for nine
+  weekly runs on the dev brain (2026-07-20 to 2026-09-15; the set had been
+  pasted in from another brain, so none of its node ids or titles existed).
+  Since 2026-11-19 the test is staleness, not misses: when EVERY case is
+  stale, `recall_eval` returns `alert: true, reason: 'gold_set_unmatched'`
+  with `staleCases` and a `detail` naming the fix, and writes no run note (a
+  zero run would mask the next real drift). Some stale cases with others live
+  is no alert: the live ones are scored and the stale ones named. A live case
+  that no retriever ranks is a real miss and stays in the scores
+  (`unmatchedCases` names it).
 - **The `brain_health` heartbeat** ships in the system manifest, so every brain
   gets it — new ones at onboarding, existing ones on the next boot reconcile.
   It fires weekly ±6h with quiet hours, calls `brain_capacity` + `recall_eval`

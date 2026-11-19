@@ -18,20 +18,49 @@
  *  - Every lookup and retriever call is scoped to the caller's owner id.
  *  - Drift vs the previous run drives `alert`; without a previous run there
  *    is no drift and no alert.
- *  - A gold set that matches NOTHING (every case null in both retrievers)
- *    alerts on its own, with `reason: 'gold_set_unmatched'`, even on the very
- *    first run. Drift reads 0 → 0 as "no change", which is how a pasted-in set
- *    from another brain stayed silent for nine weekly runs on dev.
+ *  - Gold is resolved on the brain first (stable keys, live ids, title
+ *    substrings; the same `resolveGold` the manual harness uses). A case
+ *    whose gold lives nowhere is stale: skipped and named in `staleCases`.
+ *  - A gold set where EVERY case is stale alerts on its own, with
+ *    `reason: 'gold_set_unmatched'`, and writes no run. Drift reads 0 → 0 as
+ *    "no change", which is how a pasted-in set from another brain stayed
+ *    silent for nine weekly runs on dev.
  *
  * The db select chain is a queue of result batches (gold note first, previous
- * run second); embeddings, both retrievers and createNote are stubbed. The
- * scoring helpers from @mantle/search are real.
+ * run second); `db.execute` (gold resolution) answers from NODE_ROWS by its
+ * bound parameters; embeddings, both retrievers and createNote are stubbed.
+ * The scoring and gold helpers from @mantle/search are real.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const selectQueue: unknown[][] = [];
 const whereArgs: unknown[] = [];
+
+/** The nodes gold resolution sees, with their stable keys. */
+const NODE_ROWS = [
+  { id: 'n1', type: 'page', title: 'Q3 report', title_key: 'tk-q3', body_key: 'bk-q3' },
+  { id: 'n2', type: 'note', title: 'Board minutes', title_key: 'tk-board', body_key: null },
+];
+
+/** Bound parameter values of a drizzle SQL tree, in order. */
+function paramsOf(node: unknown, out: unknown[] = []): unknown[] {
+  if (!node || typeof node !== 'object') return out;
+  const o = node as { queryChunks?: unknown[]; value?: unknown; encoder?: unknown };
+  if (Array.isArray(o.queryChunks)) for (const c of o.queryChunks) paramsOf(c, out);
+  else if ('value' in o && 'encoder' in o) out.push(o.value);
+  return out;
+}
+
+/** Answers resolveGold's three reads: keys by id, keys by type, ids by a
+ *  title substring. Each is scoped to the owner (the first parameter). */
+function fakeExecute(q: unknown): unknown[] {
+  const [owner, ...rest] = paramsOf(q) as string[];
+  if (owner !== 'o1') return [];
+  const byKey = NODE_ROWS.filter((r) => rest.includes(r.id) || rest.includes(r.type));
+  if (byKey.length) return byKey;
+  return NODE_ROWS.filter((r) => r.title.toLowerCase().includes(rest[0]!.toLowerCase()));
+}
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
@@ -51,6 +80,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
     db: {
       ...actual.db,
       select: vi.fn(() => chain),
+      execute: vi.fn(async (q: unknown) => fakeExecute(q)),
       update: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
@@ -90,15 +120,6 @@ function errorOf(res: Result): string {
 function outputOf(res: Result): Record<string, unknown> {
   if (!res.ok) throw new Error(`expected success, got error: ${res.error}`);
   return res.output as Record<string, unknown>;
-}
-
-/** Bound parameter values of a drizzle SQL tree, in order. */
-function paramsOf(node: unknown, out: unknown[] = []): unknown[] {
-  if (!node || typeof node !== 'object') return out;
-  const o = node as { queryChunks?: unknown[]; value?: unknown; encoder?: unknown };
-  if (Array.isArray(o.queryChunks)) for (const c of o.queryChunks) paramsOf(c, out);
-  else if ('value' in o && 'encoder' in o) out.push(o.value);
-  return out;
 }
 
 const CASES = [{ id: 'q3', query: 'Q3 revenue', expectNodeIds: ['n1'] }];
@@ -248,9 +269,9 @@ describe('recall_eval', () => {
     expect(out.unmatchedCases).toEqual([]);
   });
 
-  it('alerts gold_set_unmatched when every case misses in both retrievers, even with no previous run', async () => {
+  it('a live case that every retriever misses is a real miss: scored, named, no stale alert', async () => {
     selectQueue.push(
-      [goldNote([...CASES, { id: 'x', query: 'other', expectTitleIncludes: ['nowhere'] }])],
+      [goldNote([...CASES, { id: 'x', query: 'other', expectTitleIncludes: ['board'] }])],
       [],
     );
     vi.mocked(searchNodes).mockResolvedValue([{ id: 'n7', title: 'Unrelated' }] as never);
@@ -259,30 +280,76 @@ describe('recall_eval', () => {
 
     expect(out).toMatchObject({
       casesUsed: 2,
+      staleCases: [],
       search: { mrr: 0, recallAt10: 0 },
-      chunks: { mrr: 0, recallAt10: 0 },
-      drift: null,
-      alert: true,
-      reason: 'gold_set_unmatched',
+      alert: false,
+      reason: null,
       unmatchedCases: ['q3', 'x'],
     });
-    expect(out.detail).toMatch(/every gold case \(2\) missed in BOTH retrievers/);
-    expect(out.detail).toMatch(/recall-eval-cases/);
-    expect(out.detail).toMatch(/expectTitleIncludes/);
-    // Still exactly one run note, and it records which cases went unmatched.
     expect(createNote).toHaveBeenCalledTimes(1);
-    const [, note] = vi.mocked(createNote).mock.calls[0]!;
-    expect(JSON.parse(note.content as string)).toMatchObject({ unmatchedCases: ['q3', 'x'] });
   });
 
-  it('keeps alerting gold_set_unmatched when the previous run was all-zero too (drift 0 is not health)', async () => {
-    selectQueue.push([goldNote(CASES)], [prevRun(0, 0)]);
-    vi.mocked(searchNodes).mockResolvedValue([]);
-    vi.mocked(searchChunks).mockResolvedValue([]);
+  it('matches gold by stable key: a re-made item with a new id still counts', async () => {
+    selectQueue.push(
+      [goldNote([{ id: 'k', query: 'Q3 revenue', expect: [{ type: 'page', titleKey: 'tk-q3' }] }])],
+      [],
+    );
     const out = outputOf(await evalTool.handler({}, ctx));
-    expect(out.drift).toMatchObject({ searchMrr: 0, searchR5: 0 });
-    expect(out.alert).toBe(true);
-    expect(out.reason).toBe('gold_set_unmatched');
+    expect(out).toMatchObject({ casesUsed: 1, staleCases: [], search: { mrr: 1 } });
+  });
+
+  it('a key of the wrong type, or with a hash nothing has, is stale', async () => {
+    selectQueue.push(
+      [
+        goldNote([
+          ...CASES,
+          { id: 'wrong-type', query: 'a', expect: [{ type: 'note', titleKey: 'tk-q3' }] },
+          { id: 'gone', query: 'b', expect: [{ type: 'page', bodyKey: 'bk-deleted' }] },
+        ]),
+      ],
+      [],
+    );
+    const out = outputOf(await evalTool.handler({}, ctx));
+    expect(out).toMatchObject({
+      casesUsed: 1,
+      staleCases: ['wrong-type', 'gone'],
+      alert: false,
+    });
+    expect(out.detail).toMatch(/2 stale case\(s\) skipped.*wrong-type, gone/);
+    expect(embed).toHaveBeenCalledTimes(1);
+    const [, note] = vi.mocked(createNote).mock.calls[0]!;
+    expect(JSON.parse(note.content as string)).toMatchObject({
+      staleCases: ['wrong-type', 'gone'],
+    });
+  });
+
+  it('alerts gold_set_unmatched when EVERY case is stale, and runs and writes nothing', async () => {
+    selectQueue.push(
+      [
+        goldNote([
+          { id: 'a', query: 'q', expectNodeIds: ['deleted-id'] },
+          { id: 'b', query: 'q', expectTitleIncludes: ['nowhere'] },
+          { id: 'c', query: 'q', expect: [{ type: 'page', titleKey: 'tk-gone' }] },
+        ]),
+      ],
+      [prevRun(1, 1)],
+    );
+    const out = outputOf(await evalTool.handler({}, ctx));
+    expect(out).toMatchObject({
+      alert: true,
+      reason: 'gold_set_unmatched',
+      staleCases: ['a', 'b', 'c'],
+    });
+    expect(out.detail).toMatch(/recall-eval-cases/);
+    expect(out.detail).toMatch(/--keys/);
+    expect(embed).not.toHaveBeenCalled();
+    expectNoWrites();
+  });
+
+  it('resolves gold under the caller owner only', async () => {
+    selectQueue.push([goldNote(CASES)], []);
+    await evalTool.handler({}, ctx);
+    for (const [q] of vi.mocked(dbmod.db.execute).mock.calls) expect(paramsOf(q)[0]).toBe('o1');
   });
 
   it('does not call the gold set unmatched while any case still ranks somewhere', async () => {

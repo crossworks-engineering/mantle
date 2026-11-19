@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { goldRank, parseEvalCases, scoreRanks, type RecallEvalCase } from './eval';
+import { goldRank, parseEvalCases, scoreRanks } from './eval';
 
-const hit = (id: string, title = 't') => ({ id, title });
+const hit = (id: string) => ({ id });
 
 describe('parseEvalCases', () => {
   it('accepts both expectTitleIncludes and the eval-recall.ts field name', () => {
@@ -17,23 +17,36 @@ describe('parseEvalCases', () => {
     expect(() => parseEvalCases([{ query: 'q' }])).toThrow(/expectNodeIds/);
     expect(() => parseEvalCases({})).toThrow(/array/);
   });
+  it('accepts stable keys as eval-recall --keys writes them', () => {
+    const [c] = parseEvalCases([
+      {
+        id: 'k',
+        query: 'q',
+        expect: [
+          { id: 'old-id', type: 'page', titleKey: 'aa11', bodyKey: null },
+          { type: 'note', bodyKey: 'bb22' },
+        ],
+      },
+    ]);
+    expect(c!.expect).toEqual([
+      { type: 'page', titleKey: 'aa11', bodyKey: null },
+      { type: 'note', titleKey: null, bodyKey: 'bb22' },
+    ]);
+  });
+  it('drops a key with no type or no hash, and a case left with no gold is refused', () => {
+    expect(() =>
+      parseEvalCases([{ query: 'q', expect: [{ titleKey: 'aa11' }, { type: 'page' }] }]),
+    ).toThrow(/needs "expect"/);
+  });
 });
 
 describe('goldRank', () => {
-  const c: RecallEvalCase = {
-    id: 'c',
-    query: 'q',
-    expectNodeIds: ['g'],
-    expectTitleIncludes: ['whitepaper'],
-  };
-  it('ranks by id match', () => {
-    expect(goldRank(c, [hit('a'), hit('g')])).toBe(2);
-  });
-  it('ranks by case-insensitive title substring', () => {
-    expect(goldRank(c, [hit('a', 'The WHITEPAPER v2')])).toBe(1);
+  const gold = new Set(['g', 'h']);
+  it('ranks the first hit in the gold set', () => {
+    expect(goldRank(gold, [hit('a'), hit('h'), hit('g')])).toBe(2);
   });
   it('null when gold never appears', () => {
-    expect(goldRank(c, [hit('a'), hit('b')])).toBeNull();
+    expect(goldRank(gold, [hit('a'), hit('b')])).toBeNull();
   });
 });
 

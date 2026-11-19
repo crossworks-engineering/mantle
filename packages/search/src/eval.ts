@@ -7,14 +7,11 @@
  * pure so the metric math is unit-testable and identical everywhere.
  */
 
-export type RecallEvalCase = {
-  id: string;
-  query: string;
-  /** Gold node ids — a hit with one of these ids is a gold hit. */
-  expectNodeIds?: string[];
-  /** Case-insensitive title substrings — a hit whose title contains one is gold. */
-  expectTitleIncludes?: string[];
-};
+import type { GoldKey, GoldSpec } from './gold-keys';
+
+/** A golden case. Gold is resolved on the brain first (`resolveGold`): a
+ *  stable key, a live id, or a title substring; any one match counts. */
+export type RecallEvalCase = GoldSpec & { query: string };
 
 export type RecallScores = {
   cases: number;
@@ -37,29 +34,33 @@ export function parseEvalCases(raw: unknown): RecallEvalCase[] {
       Array.isArray(v)
         ? v.filter((s): s is string => typeof s === 'string' && s.length > 0)
         : undefined;
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+    // Stable keys, as eval-recall.ts writes them (--keys=<nodeId>).
+    const expect = Array.isArray(o.expect)
+      ? o.expect.flatMap((k): GoldKey[] => {
+          const r = (k ?? {}) as Record<string, unknown>;
+          const type = str(r.type);
+          const titleKey = str(r.titleKey);
+          const bodyKey = str(r.bodyKey);
+          return type && (titleKey || bodyKey) ? [{ type, titleKey, bodyKey }] : [];
+        })
+      : undefined;
     const expectNodeIds = strArr(o.expectNodeIds);
     // Accept the eval-recall.ts field name too, so the repo golden set pastes in unchanged.
     const expectTitleIncludes = strArr(o.expectTitleIncludes) ?? strArr(o.expectNodeTitleIncludes);
-    if (!expectNodeIds?.length && !expectTitleIncludes?.length) {
-      throw new Error(`case ${id}: needs "expectNodeIds" or "expectTitleIncludes"`);
+    if (!expect?.length && !expectNodeIds?.length && !expectTitleIncludes?.length) {
+      throw new Error(`case ${id}: needs "expect", "expectNodeIds" or "expectTitleIncludes"`);
     }
-    return { id, query, expectNodeIds, expectTitleIncludes };
+    return { id, query, expect, expectNodeIds, expectTitleIncludes };
   });
 }
 
 /** 1-based rank of the first gold hit, or null when no gold hit is ranked. */
 export function goldRank(
-  c: RecallEvalCase,
-  hits: Array<{ id: string; title: string }>,
+  gold: ReadonlySet<string>,
+  hits: ReadonlyArray<{ id: string }>,
 ): number | null {
-  const ids = new Set(c.expectNodeIds ?? []);
-  const subs = (c.expectTitleIncludes ?? []).map((s) => s.toLowerCase());
-  for (let i = 0; i < hits.length; i++) {
-    const h = hits[i]!;
-    if (ids.has(h.id)) return i + 1;
-    const t = h.title.toLowerCase();
-    if (subs.some((s) => t.includes(s))) return i + 1;
-  }
+  for (let i = 0; i < hits.length; i++) if (gold.has(hits[i]!.id)) return i + 1;
   return null;
 }
 

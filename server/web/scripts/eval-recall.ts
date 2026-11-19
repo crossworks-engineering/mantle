@@ -63,10 +63,10 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, agents, nodes, type Agent } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { searchNodes, searchChunks } from '@mantle/search';
+import { goldNodeKeys, resolveGold, searchNodes, searchChunks, type GoldKey } from '@mantle/search';
 import {
   applyPassageScores,
   decisionUseEnabled,
@@ -100,10 +100,6 @@ const PASSAGE_RETRIEVERS: readonly Retriever[] = [
   'passage-scored',
 ];
 const K_VALUES = [1, 3, 5, 10] as const;
-
-/** A stable key for one gold item: its type and a hash of its title and/or
- *  the start of its body (see TITLE_KEY / BODY_KEY). Holds no content. */
-type GoldKey = { type: string; titleKey?: string | null; bodyKey?: string | null };
 
 type GoldCase = {
   id: string;
@@ -190,75 +186,6 @@ function parseArgs(argv: string[]): Args {
       const n = parseInt(a.slice('--passage-limit='.length), 10);
       if (!Number.isNaN(n) && n > 0) out.passageLimit = n;
     }
-  }
-  return out;
-}
-
-// The stable keys. Writing a case (--keys) and resolving it at run time use
-// these same SQL expressions, so the two sides cannot drift. Text is
-// lower-cased and every run of characters outside [a-z0-9] becomes one space;
-// a key is the first 16 hex characters of the sha256 of that. The body key
-// reads the first 400 normalised characters of the item's main text (a page's
-// doc_text, else data body / content / text / agent_text) and is null when
-// there is too little text to tell items apart.
-const NORM = (e: SQL) => sql`btrim(regexp_replace(lower(${e}), '[^a-z0-9]+', ' ', 'g'))`;
-const HASH = (e: SQL) => sql`left(encode(sha256(convert_to(${e}, 'UTF8')), 'hex'), 16)`;
-const TITLE_NORM = NORM(sql`coalesce(n.title, '')`);
-const BODY_NORM = sql`left(${NORM(
-  sql`left(coalesce(p.doc_text, n.data->>'body', n.data->>'content', n.data->>'text', n.data->>'agent_text', ''), 4000)`,
-)}, 400)`;
-const TITLE_KEY = sql`case when length(${TITLE_NORM}) >= 3 then ${HASH(TITLE_NORM)} end`;
-const BODY_KEY = sql`case when length(${BODY_NORM}) >= 40 then ${HASH(BODY_NORM)} end`;
-
-type KeyRow = { id: string; type: string; title_key: string | null; body_key: string | null };
-
-/** Keys of the owner's nodes: of the given ids, or of every node of the given types. */
-async function nodeKeys(
-  ownerId: string,
-  by: { ids: string[] } | { types: string[] },
-): Promise<KeyRow[]> {
-  const list = (xs: string[]) =>
-    sql.join(
-      xs.map((x) => sql`${x}`),
-      sql`, `,
-    );
-  const filter =
-    'ids' in by ? sql`n.id::text in (${list(by.ids)})` : sql`n.type::text in (${list(by.types)})`;
-  return (await db.execute<KeyRow>(sql`
-    select n.id::text as id, n.type::text as type,
-           ${TITLE_KEY} as title_key, ${BODY_KEY} as body_key
-    from nodes n left join pages p on p.node_id = n.id
-    where n.owner_id = ${ownerId} and ${filter}
-  `)) as unknown as KeyRow[];
-}
-
-/** The node ids on this brain that count as gold for each case: its keys, its
- *  ids that still exist, and the nodes whose title holds an expected
- *  substring. An empty set means the case is stale here. */
-async function resolveGold(ownerId: string, cases: GoldCase[]): Promise<Map<string, Set<string>>> {
-  const types = [...new Set(cases.flatMap((c) => (c.expect ?? []).map((k) => k.type)))];
-  const keyed = types.length ? await nodeKeys(ownerId, { types }) : [];
-  const ids = [...new Set(cases.flatMap((c) => c.expectNodeIds ?? []))];
-  const live = new Set(ids.length ? (await nodeKeys(ownerId, { ids })).map((r) => r.id) : []);
-  const out = new Map<string, Set<string>>();
-  for (const gc of cases) {
-    const gold = new Set<string>();
-    for (const k of gc.expect ?? [])
-      for (const r of keyed)
-        if (
-          r.type === k.type &&
-          ((k.titleKey && r.title_key === k.titleKey) || (k.bodyKey && r.body_key === k.bodyKey))
-        )
-          gold.add(r.id);
-    for (const id of gc.expectNodeIds ?? []) if (live.has(id)) gold.add(id);
-    for (const s of gc.expectNodeTitleIncludes ?? []) {
-      const rows = (await db.execute<{ id: string }>(sql`
-        select id::text as id from nodes
-        where owner_id = ${ownerId} and strpos(lower(title), lower(${s})) > 0
-      `)) as unknown as Array<{ id: string }>;
-      for (const r of rows) gold.add(r.id);
-    }
-    out.set(gc.id, gold);
   }
   return out;
 }
@@ -566,7 +493,7 @@ async function main() {
   if (args.keysFor) {
     // One JSON line per node: paste it into a case's `expect`. No titles, no
     // text: the keys are hashes, so the output is safe to commit.
-    const rows = await nodeKeys(ownerId, { ids: args.keysFor });
+    const rows = await goldNodeKeys(ownerId, { ids: args.keysFor });
     for (const id of args.keysFor) {
       const r = rows.find((x) => x.id === id);
       if (!r) console.error(`eval-recall: no node ${id} for this owner`);
@@ -618,7 +545,12 @@ async function main() {
 
   // Resolve each case's gold on THIS brain. A case with no live gold is
   // skipped and named: scoring it as a miss would read as a recall drop.
-  const golds = await resolveGold(ownerId, cases);
+  // The stable keys and their SQL live in @mantle/search (gold-keys.ts), the
+  // same code the in-brain recall_eval tool resolves its gold with.
+  const golds = await resolveGold(
+    ownerId,
+    cases.map((c) => ({ ...c, expectTitleIncludes: c.expectNodeTitleIncludes })),
+  );
   const skipped = cases.filter((c) => golds.get(c.id)!.size === 0).map((c) => c.id);
   cases = cases.filter((c) => golds.get(c.id)!.size > 0);
   if (cases.length === 0) {

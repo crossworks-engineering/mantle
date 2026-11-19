@@ -24,6 +24,16 @@ export {
   type RecallEvalCase,
   type RecallScores,
 } from './eval';
+export {
+  GOLD_BODY_KEY,
+  GOLD_TITLE_KEY,
+  goldNodeKeys,
+  matchGoldKeys,
+  resolveGold,
+  type GoldKey,
+  type GoldKeyRow,
+  type GoldSpec,
+} from './gold-keys';
 
 export {
   searchEntities,
