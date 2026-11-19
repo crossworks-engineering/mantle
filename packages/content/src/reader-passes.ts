@@ -113,7 +113,9 @@ export async function standingReaderPictures(
   if (run?.status !== 'ok' || !run.write?.pictures) return null;
   const pictures: BookPagePicture[] = [];
   for (const p of run.write.pictures) {
-    const page = p.page;
+    // The page of the original file: the Reader says it; else its name
+    // (`page-<NNNNN>.png`, the page of the original file in every window).
+    const page = p.page ?? Number(/page-(\d+)\.(?:png|jpg)$/.exec(p.file)?.[1] ?? NaN);
     if (typeof page !== 'number' || !Number.isInteger(page) || page < 1) continue;
     pictures.push({
       file: p.file,
