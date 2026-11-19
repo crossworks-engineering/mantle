@@ -13,8 +13,8 @@ import { runTableSql } from '@mantle/tabledb';
 export const VISION_METHOD = 'vision';
 
 /** The pages marked for vision, in order, at most PIPELINE_ASK_PAGE_MAX of
- *  them (a count: a page past 10,000 of a longer book is one like any; L2
- *  of the large-PDF audit, round 3); [] when the database has no `Pages` tab of the book reader or it cannot
+ *  them (a count: a page past 10,000 of a longer book is one like any); []
+ *  when the database has no `Pages` tab of the book reader or it cannot
  *  be read. */
 export async function bookVisionPagesOf(sqlite: string): Promise<number[]> {
   try {
@@ -43,8 +43,7 @@ export const OCR_METHOD = 'ocr';
 /**
  * The scanned pages of a book at these bytes: the pages its reader read by
  * OCR or left to vision (tab Pages, Method `ocr` or `vision`). The core's
- * picture pass keeps no picture of these pages (G1, M5 of the large-PDF
- * audit, round 3): the reader read the page, and a page left to vision has
+ * picture pass keeps no picture of these pages (G1): the reader read the page, and a page left to vision has
  * its page picture, so a scanned page is never pictured or asked by vision
  * twice. Empty when the database has no such tab or cannot be read.
  */

@@ -276,8 +276,7 @@ export async function maybeExtractEmbeddedImages(
       )
     : null;
   if (pageRun) {
-    // The Reader reads a book's scanned pages (G1, M5 of the audit, round
-    // 3): a core picture of a page it read by OCR or left to vision (the
+    // The Reader reads a book's scanned pages (G1): a core picture of a page it read by OCR or left to vision (the
     // page's scan, pictured whole above) is not kept a second time, so no
     // page is pictured or asked by vision twice.
     const scans = await bookScanPagesOf({ id: node.id, sha256: data.sha256 });
@@ -1087,7 +1086,7 @@ export async function describeBookPagePictures(
         sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
         sql`${nodes.data} ? 'bookPage'`,
         // Only the pictures of these bytes: a picture of an older revision
-        // keeps its own text (M1 of the audit, round 3).
+        // keeps its own text.
         sql`${nodes.data}->>'sourceSha256' = ${sha256}`,
       ),
     );

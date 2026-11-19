@@ -112,7 +112,7 @@ export const step: PipelineStep = async (req, job) => {
   if (base !== null) return { status: 'ok', kind: office ? 'book' : base };
   // An unsure file the decider calls a table, or a document on office
   // paper (a typed manual whose first pages hold charts): every office PDF
-  // is a book (M2 of the large-PDF audit, round 3). A `document` on drawing
+  // is a book. A `document` on drawing
   // sheets stays unsure, the drawing reader's.
   if (office && (decision.kind === 'table' || officePaperIn(req.state))) {
     return { status: 'ok', kind: 'book' };
