@@ -2351,8 +2351,10 @@ only for the pages OCR could not read well.
 PDF a book, with no ask, when the file is past the 256 MB pdfjs opens; when it
 has more than 20 pages (`job.pdfPageCount`, qpdf) and of its first 20 pages,
 read as every page is, 80% or more are on office paper (A4, Letter, A3; a
-fold-out sheet makes no drawing set), none is a P&ID or an isometric, and 80%
-or more are scans or typed text; when the page rules name it a `document`;
+fold-out sheet makes no drawing set), none is a P&ID or an isometric, 80%
+or more are scans or typed text, and its ruled scans (page kind `scan`) are
+a fifth of them at most or tables (the rule below), so a scanned drawing set
+on A4 or A3 paper stays a drawing; when the page rules name it a `document`;
 and when it has 20 pages or fewer, read whole, with the same office rule and
 typed or scanned text pages (page kind `document`) but for a few (75%,
 `DOCUMENT_MIN_SHARE`), or its ruled scans are tables: on A4 paper, every one
@@ -2366,7 +2368,8 @@ the Reader reads the file, window by window.
 
 What stays a drawing: a P&ID, an isometric (by its lines, or by the eye of a
 scanned page), another drawing, a file of large sheets, a short scan whose
-pages are all ruled (kind `scan`: a scanned sketch, a ruled form), and a file
+pages are all ruled (kind `scan`: a scanned sketch, a ruled form), a long
+scan whose ruled pages are more than a fifth and not tables, and a file
 the rules leave `unsure`. They keep `drawing-pdf` and `pdf-sheet-read`
 exactly as before. An ambiguous short scan, some text pages and some ruled
 ones (`bookUnsureOf`: a spec table or a drawing form? the lines cannot tell),
@@ -2374,7 +2377,9 @@ is put to the decider once where the run may ask: its `table` or `document`
 makes it a book, a drawing kind keeps it a drawing, and with no ask it stays
 the drawing reader's. An `unsure` file the decider calls a `table` (rows of
 data: an invoice, a list) is a book too, read with its Tables tab; its
-`document` is still never used for an unsure file (it keeps its database).
+`document` makes an unsure file a book only when its pages are office paper
+(A4, Letter or A3: a typed manual whose first pages hold charts); an unsure
+file on drawing sheets keeps its database and the drawing reader.
 Who claims what: `pdf-pages` claims `book`; `drawing-pdf` every other kind
 the router names (`pid`, `pfd`, `isometric`, `equipment_drawing`,
 `datasheet`, `scan`, `other_drawing`, `table` by an older read, `unsure`);

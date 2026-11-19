@@ -157,13 +157,6 @@ describe('the PDF router in a real read', () => {
         ['pdf-router', 'pdf-router', 'drawing-pdf'],
         ['pdf', 'pdf', 'facts'],
       ],
-      // The decider's document is never used: the reader reads, as for unsure.
-      [
-        'unsure',
-        async () => decision('document'),
-        ['pdf-router', 'pdf-router', 'drawing-pdf'],
-        ['pdf', 'pdf', 'facts'],
-      ],
     ];
     for (const [kind, decide, jobs, sent] of cases) {
       const ids = inProcess();
@@ -237,16 +230,16 @@ describe('the PDF router in a real read', () => {
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
   });
 
-  it("the decider's document keeps the database: one ask, one count", async () => {
-    inProcess();
+  it("the decider's document on office paper makes a book (M2): one ask, one count, no drawing reader", async () => {
+    const ids = inProcess();
     const decide = vi.fn(async () => decision('document'));
-    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
-      pipelines,
-      count,
-      pdfKind: decide,
-    });
-    expect(parsed.kind).toBe('sheets');
+    // The book reader is Python in the parser image: no job this process runs.
+    await expect(
+      parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { pipelines, count, pdfKind: decide }),
+    ).rejects.toThrow();
     expect(decide).toHaveBeenCalledTimes(1);
+    expect(ids.slice(0, 2)).toEqual(['pdf-router', 'pdf-router']);
+    expect(ids).not.toContain('drawing-pdf');
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
   });
 
