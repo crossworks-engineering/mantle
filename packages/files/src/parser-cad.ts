@@ -86,7 +86,7 @@ export type DwgCrops = {
   frame?: DwgFrame;
   /** Pattern hatches drawn as their outline only (too many dashes to draw:
    *  cad/cad_frontend.py); 0 from a CAD tier before it. */
-  hatchesOutlined: number;
+  hatchesOutlined?: number;
 };
 
 /**
