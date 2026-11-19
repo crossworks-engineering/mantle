@@ -374,17 +374,18 @@ function stagePrefixOf(fileId: string, sha256: unknown, run16: string): string |
 
 /**
  * The windows the stage keeps of one run of a file at these bytes, by their
- * first page: one read of the folder, then each file of the run read whole.
- * The caller checks what each holds (its sha256 and run key) before it uses
- * it. Empty with no folder, no files mount, or a row that names none. A file
- * that cannot be read is left out: its window is read again.
+ * first page, each read only when asked for (one window in memory at a
+ * time): one read of the folder now. The caller checks what each holds (its
+ * sha256 and run key) before it uses it. Empty with no folder, no files
+ * mount, or a row that names none. A file that cannot be read reads as null:
+ * its window is read again.
  */
 export async function readWindowStage(
   fileId: string,
   sha256: unknown,
   run16: string,
-): Promise<Map<number, string>> {
-  const out = new Map<number, string>();
+): Promise<Map<number, () => Promise<string | null>>> {
+  const out = new Map<number, () => Promise<string | null>>();
   const prefix = stagePrefixOf(fileId, sha256, run16);
   if (!prefix) return out;
   let entries: string[];
@@ -397,11 +398,8 @@ export async function readWindowStage(
     if (!name.startsWith(prefix)) continue;
     const m = STAGE_NAME.exec(name);
     if (!m) continue;
-    try {
-      out.set(Number(m[4]), await fs.readFile(path.join(fileDbsDir(), name), 'utf8'));
-    } catch {
-      // gone since the readdir, or unreadable: the window is read again
-    }
+    const abs = path.join(fileDbsDir(), name);
+    out.set(Number(m[4]), () => fs.readFile(abs, 'utf8').catch(() => null));
   }
   return out;
 }

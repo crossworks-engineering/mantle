@@ -42,8 +42,10 @@ import { fetchProviderModels } from '../model-explorer';
  *  MAX_OCR_PAGES): a document past it is read only to this page. */
 export const MAX_OCR_PAGES = 10;
 
-/** pg-boss queue the extractor consumes (server/api extract-queue.ts). */
-const EXTRACT_QUEUE = 'mantle.extract';
+/** The pg-boss queues the extractor consumes (server/api extract-queue.ts):
+ *  the main queue and the heavy and book lanes, where a drawing's or a
+ *  book's job goes on from it, so a job there is still pending. */
+const EXTRACT_QUEUES = ['mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book'];
 
 /** Why a node is a candidate. */
 export type RescanKind = 'markers_indexed' | 'stuck_too_short';
@@ -277,7 +279,10 @@ async function pendingJobs(ids: string[]): Promise<Set<string>> {
   if (!reg?.ok) return new Set();
   const rows = (await db.execute(sql`
     select distinct data->>'nodeId' as id from pgboss.job
-     where name = ${EXTRACT_QUEUE}
+     where name in (${sql.join(
+       EXTRACT_QUEUES.map((q) => sql`${q}`),
+       sql`, `,
+     )})
        and state in ('created', 'retry', 'active')
        and data->>'nodeId' in (${sql.join(
          ids.map((i) => sql`${i}`),

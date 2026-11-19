@@ -225,11 +225,14 @@ describe('the window stage', () => {
     // No temp file is left.
     expect(left().some((n) => n.includes('.build-'))).toBe(false);
     const kept = await readWindowStage(ID, SHA_A, RUN);
-    expect([...kept.entries()].sort((a, b) => a[0] - b[0])).toEqual([
-      [1, '{"one":1}'],
-      [51, '{"two":2}'],
-    ]);
-    expect([...(await readWindowStage(ID, SHA_B, RUN)).values()]).toEqual(['sha-b']);
+    expect([...kept.keys()].sort((a, b) => a - b)).toEqual([1, 51]);
+    expect(await kept.get(1)!()).toBe('{"one":1}');
+    expect(await kept.get(51)!()).toBe('{"two":2}');
+    const b = await readWindowStage(ID, SHA_B, RUN);
+    expect(await b.get(1)!()).toBe('sha-b');
+    // A file gone since the listing reads as null.
+    rmSync(path.join(fileDbsDir(), stageName(ID, SHA_A, RUN, 51)));
+    expect(await kept.get(51)!()).toBeNull();
   });
 
   it('names nothing from bad parts', async () => {
