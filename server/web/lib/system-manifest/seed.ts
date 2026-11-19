@@ -55,7 +55,12 @@ import {
   type ManifestSkill,
   type ManifestToolGroup,
 } from './manifest';
-import { convergeManifestSkills, specialistParamsTarget } from './reconcile-util';
+import {
+  convergeManifestSkills,
+  specialistParamsTarget,
+  TEAM_RESPONDER_SLUG,
+} from './reconcile-util';
+import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { adoptWorkerParams, resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
 import { seedCuratedModelPools } from '../model-pools-seed';
@@ -317,23 +322,39 @@ async function upsertAgent(
     .limit(1);
 
   if (!existing) {
-    await db.insert(agents).values({
-      ownerId,
-      slug: def.slug,
-      name: def.name,
-      description: def.description,
-      role: def.role,
-      provider: 'openrouter',
-      model,
-      apiKeyId,
-      systemPrompt: def.systemPrompt ?? '',
-      skillSlugs: def.skillSlugs,
-      toolGroupSlugs: groupSlugs,
-      params: def.params as AgentParams,
-      memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
-      priority: def.priority,
-      enabled: true,
-    });
+    const [made] = await db
+      .insert(agents)
+      .values({
+        ownerId,
+        slug: def.slug,
+        name: def.name,
+        description: def.description,
+        role: def.role,
+        provider: 'openrouter',
+        model,
+        apiKeyId,
+        systemPrompt: def.systemPrompt ?? '',
+        skillSlugs: def.skillSlugs,
+        toolGroupSlugs: groupSlugs,
+        params: def.params as AgentParams,
+        memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
+        priority: def.priority,
+        enabled: true,
+      })
+      .returning({ id: agents.id });
+    // The Team responder's paid `translate` is granted once
+    // (reconcileWorkspaceDelegation): a responder made holding it is
+    // recorded as granted, so an owner's removal before the first reconcile
+    // sticks too.
+    if (made && def.slug === TEAM_RESPONDER_SLUG && groupSlugs.includes('translate')) {
+      const granted = (await loadProfilePreferences(ownerId)).workspaceDelegationGranted ?? {};
+      const listed = granted[made.id] ?? [];
+      if (!listed.includes('group:translate')) {
+        await updateProfilePreferences(ownerId, {
+          workspaceDelegationGranted: { ...granted, [made.id]: [...listed, 'group:translate'] },
+        });
+      }
+    }
     return;
   }
 
