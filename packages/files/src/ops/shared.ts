@@ -5,10 +5,11 @@
  * Split out of ops.ts; bodies moved verbatim.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
 import { extractionOf, type FileExtraction } from '../extraction-status';
 import { readStampsOf, type PipelineReadStamp, type ReadByStamp } from '../read-stamp';
+import { DETAIL_ONLY_CUT_REASONS } from '../read-cut';
 import {
   db,
   isWriteRefused,
@@ -261,4 +262,15 @@ export async function rowNow(
     .limit(1);
   if (!r) throw new Error('the row cannot be read');
   return r;
+}
+
+/** Whether a node's `read_cut` holds a cut that makes the file `partial`:
+ *  a key whose reason (the part before any `:`) is not a detail only
+ *  (../read-cut.ts DETAIL_ONLY_CUT_REASONS, hasPartialReadCut, the same
+ *  test). Built at the call: a test that stubs @mantle/db loads this. */
+export function readCutMakesPartialSql(): SQL {
+  return sql`(case when jsonb_typeof(${nodes.data}->'read_cut') = 'object'
+    then exists (select 1 from jsonb_object_keys(${nodes.data}->'read_cut') as k
+                  where split_part(k, ':', 1) <> all (${`{${DETAIL_ONLY_CUT_REASONS.join(',')}}`}::text[]))
+    else false end)`;
 }

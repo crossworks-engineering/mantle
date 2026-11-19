@@ -34,6 +34,8 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
     sheet: randomUUID(),
     pictures: randomUUID(),
     noCut: randomUUID(),
+    icons: randomUUID(),
+    metafile: randomUUID(),
   };
   // A verdict stamped after the row's write, as the extractor stamps it.
   const later = new Date(Date.now() + 60_000).toISOString();
@@ -98,6 +100,28 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
             extract_completed_at: later,
             read_cut: {},
             images: { kept: 2, found: 2 },
+          })}::jsonb),
+        (${ids.icons}, ${owner}, 'file', 'letter.docx', ${folder},
+          ${JSON.stringify({
+            filename: 'letter.docx',
+            sha256: 'g',
+            indexing_applied: 'full',
+            extract_completed_at: later,
+            read_cut: {
+              pictures_small: { what: 'pictures', read: 1, total: 4 },
+              pictures_tiny: { what: 'pictures', read: 3, total: 4 },
+            },
+          })}::jsonb),
+        (${ids.metafile}, ${owner}, 'file', 'memo.docx', ${folder},
+          ${JSON.stringify({
+            filename: 'memo.docx',
+            sha256: 'h',
+            indexing_applied: 'full',
+            extract_completed_at: later,
+            read_cut: {
+              pictures_small: { what: 'pictures', read: 3, total: 4 },
+              pictures_metafile: { what: 'pictures', read: 3, total: 4 },
+            },
           })}::jsonb)`);
   }, 60_000);
 
@@ -130,6 +154,23 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
       pictures: { kept: 3, found: 5 },
     });
     expect(by.get(ids.noCut)?.extraction).toEqual({ state: 'indexed' });
+    // Icons and small pictures the size gate skipped are details only: the
+    // file stays indexed and carries them, with no hint.
+    const icons = by.get(ids.icons)?.extraction;
+    expect(icons).toMatchObject({
+      state: 'indexed',
+      cuts: [
+        expect.objectContaining({ key: 'pictures_small' }),
+        expect.objectContaining({ key: 'pictures_tiny' }),
+      ],
+    });
+    expect(icons?.hint).toBeUndefined();
+    // A metafile left out is a cut: partial, its sentence alone in the hint.
+    const memo = by.get(ids.metafile)?.extraction;
+    expect(memo?.state).toBe('partial');
+    expect(memo?.cuts).toHaveLength(2);
+    expect(memo?.hint).toMatch(/Windows metafiles/);
+    expect(memo?.hint).not.toMatch(/under 200 pixels/);
   });
 
   it("the stale list's partial is the same rule as the rows' (the exact SQL form)", async () => {
@@ -139,9 +180,9 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
       state: 'partial',
       installed: [],
     });
-    const want = [ids.partial, ids.sheet, ids.pictures].sort();
+    const want = [ids.partial, ids.sheet, ids.pictures, ids.metafile].sort();
     expect(page.files.map((f) => f.id).sort()).toEqual(want);
-    expect(page.total).toBe(3);
+    expect(page.total).toBe(4);
     for (const f of page.files) expect(f.extraction.state).toBe('partial');
   });
 
@@ -155,7 +196,7 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
       under: folder,
     });
     expect(partial.files.map((f) => f.id).sort()).toEqual(
-      [ids.partial, ids.sheet, ids.pictures].sort(),
+      [ids.partial, ids.sheet, ids.pictures, ids.metafile].sort(),
     );
     const elsewhere = await ops.listFilesByExtraction({
       ownerId: owner,

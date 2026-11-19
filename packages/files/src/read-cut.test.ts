@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   addReadCut,
+  cutMakesPartial,
+  hasPartialReadCut,
   hasReadCut,
   readCutHint,
   readCutReason,
@@ -204,5 +206,70 @@ describe('the sentences of the newer cuts', () => {
     expect(readCutHint('description', { what: 'characters', read: 0, total: 9000 })).toBe(
       'Its description (9,000 characters) was left out: the feed was too large to send with it.',
     );
+  });
+});
+
+describe('details only (the owner, 2026-11-19: "No, details only")', () => {
+  const done = { extract_completed_at: '2026-11-19T00:00:00Z' };
+
+  it('icons and small pictures the size gate skipped leave a file indexed, with the cuts as details', () => {
+    const x = extractionOf({
+      ...done,
+      read_cut: {
+        pictures_small: { what: 'pictures', read: 2, total: 9 },
+        pictures_tiny: { what: 'pictures', read: 8, total: 9 },
+      },
+    });
+    expect(x.state).toBe('indexed');
+    expect(x.hint).toBeUndefined();
+    expect(x.cuts?.map((c) => c.key)).toEqual(['pictures_small', 'pictures_tiny']);
+    expect(x.cuts?.[0]?.hint).toMatch(/under 200 pixels/);
+  });
+
+  it('every other cut still makes it partial; the hint leaves the details out', () => {
+    for (const key of [
+      'pictures_metafile',
+      'pictures_unreadable',
+      'pictures_large',
+      'sheet_rows',
+    ]) {
+      const x = extractionOf({
+        ...done,
+        read_cut: {
+          pictures_small: { what: 'pictures', read: 2, total: 9 },
+          [key]: { what: 'pictures', read: 8, total: 9 },
+        },
+      });
+      expect(x.state, key).toBe('partial');
+      expect(x.cuts, key).toHaveLength(2);
+      expect(x.hint, key).not.toMatch(/under 200 pixels/);
+    }
+  });
+
+  it('a local read with details only keeps its own reason', () => {
+    const x = extractionOf({
+      ...done,
+      indexing_applied: 'local',
+      read_cut: { pictures_tiny: { what: 'pictures', read: 1, total: 2 } },
+    });
+    expect(x).toMatchObject({ state: 'indexed', reason: 'local_only' });
+    expect(x.cuts).toHaveLength(1);
+  });
+
+  it('the key test, the map test', () => {
+    expect(cutMakesPartial('pictures_small')).toBe(false);
+    expect(cutMakesPartial('pictures_tiny')).toBe(false);
+    expect(cutMakesPartial('pictures_metafile')).toBe(true);
+    expect(cutMakesPartial('agent_text:pdf-sheet-read')).toBe(true);
+    expect(hasPartialReadCut({ pictures_small: { what: 'pictures', read: 1, total: 2 } })).toBe(
+      false,
+    );
+    expect(
+      hasPartialReadCut({
+        pictures_small: { what: 'pictures', read: 1, total: 2 },
+        markup_bytes: { what: 'bytes', read: 1, total: 2 },
+      }),
+    ).toBe(true);
+    expect(hasPartialReadCut({})).toBe(false);
   });
 });

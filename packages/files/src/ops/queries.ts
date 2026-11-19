@@ -15,6 +15,7 @@ import {
   fileRowFromNode,
   folderCounts,
   folderRowFromNode,
+  readCutMakesPartialSql,
   type FileRow,
   type FolderRow,
 } from './shared';
@@ -36,8 +37,9 @@ function extractionCut(state: ExtractionState): ReturnType<typeof sql> {
     case 'skipped':
       return sql`(${nodes.data} ? 'extract_skipped' and not ${failedReason})`;
     case 'partial':
-      // A scan's pages, the pictures kept, or a reader's cuts (read-cut.ts).
-      return sql`(jsonb_typeof(${nodes.data}->'ocr') = 'object' or jsonb_typeof(${nodes.data}->'images') = 'object' or ${nodes.data} ? 'read_cut')`;
+      // A scan's pages, the pictures kept, or a reader's cut that is no
+      // detail only (read-cut.ts, readCutMakesPartialSql).
+      return sql`(jsonb_typeof(${nodes.data}->'ocr') = 'object' or jsonb_typeof(${nodes.data}->'images') = 'object' or ${readCutMakesPartialSql()})`;
     case 'pending':
       return sql`not (${nodes.data} ?| array['extract_completed_at', 'extract_skipped', 'extract_parked']) and coalesce(${nodes.data}->>'indexing_applied', '') <> 'metadata'`;
     case 'indexed':

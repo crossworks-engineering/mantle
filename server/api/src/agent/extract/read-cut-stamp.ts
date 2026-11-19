@@ -6,6 +6,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db, FILE_READ_PARTIAL_CHANNEL, nodes } from '@mantle/db';
+import { cutMakesPartial } from '@mantle/files/read-cut';
 import { currentReadCuts } from '@mantle/files/read-cut-sink';
 import { log } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -27,12 +28,14 @@ export function readCutStampSql(): ReturnType<typeof sql> {
             then ${nodes.data}->'read_cut' else '{}'::jsonb end) || ${JSON.stringify(cuts)}::jsonb)`;
 }
 
-/** After a file's read wrote cuts: the admins' phones hear of it (the push
- *  worker, FILE_READ_PARTIAL_CHANNEL, throttled there). Notify only: nothing
+/** After a file's read wrote a cut that makes it partial: the admins'
+ *  phones hear of it (the push worker, FILE_READ_PARTIAL_CHANNEL, throttled
+ *  there). The details only (icons and small pictures the size gate
+ *  skipped: DETAIL_ONLY_CUT_REASONS) push nothing. Notify only: nothing
  *  that listens starts model work. Best effort: a lost notice only means no
  *  push. */
 export async function notifyReadPartial(node: { type: string; ownerId: string }): Promise<void> {
-  if (node.type !== 'file' || Object.keys(currentReadCuts()).length === 0) return;
+  if (node.type !== 'file' || !Object.keys(currentReadCuts()).some(cutMakesPartial)) return;
   try {
     await db.execute(sql`SELECT pg_notify(${FILE_READ_PARTIAL_CHANNEL}, ${node.ownerId}::text)`);
   } catch (err) {

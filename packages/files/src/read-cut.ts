@@ -177,12 +177,32 @@ export function readCutsOf(raw: unknown): ReadCuts {
   return out;
 }
 
+/** The cuts that are details only (the owner, 2026-11-19: "No, details
+ *  only"): pictures the size gate skipped as icons, bullets or small logos
+ *  (`pictures_small`, `pictures_tiny`). They stay in a file's `cuts` with
+ *  their sentence, but alone they never make it `partial` nor push the
+ *  admins. Every other cut does. The SQL form (ops/queries.ts
+ *  readCutMakesPartialSql) names the same reasons. */
+export const DETAIL_ONLY_CUT_REASONS: readonly string[] = ['pictures_small', 'pictures_tiny'];
+
+/** Whether a cut of this key makes the file `partial` (not a detail only). */
+export function cutMakesPartial(key: string): boolean {
+  return !DETAIL_ONLY_CUT_REASONS.includes(readCutReason(key));
+}
+
 /** True when a stored `read_cut` says anything was left out: a non-empty
- *  object. The SQL form (ops/stale.ts, ops/queries.ts) is the same test. */
+ *  object. */
 export function hasReadCut(raw: unknown): boolean {
   return (
     !!raw && typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw as object).length > 0
   );
+}
+
+/** True when a stored `read_cut` holds a cut that makes the file `partial`
+ *  (any key but the details only). The SQL form (ops/stale.ts,
+ *  ops/queries.ts: readCutMakesPartialSql) is the same test. */
+export function hasPartialReadCut(raw: unknown): boolean {
+  return hasReadCut(raw) && Object.keys(raw as object).some(cutMakesPartial);
 }
 
 /** Two cuts of one key in one read (two sheets, two pictures): the counts
