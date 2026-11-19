@@ -602,7 +602,7 @@ export async function loadExtractableBody(
           node_type: node.type,
           title: node.title,
           page: existingData.bookPage,
-          hint: "A page picture of a book: its description is the vision text of the Agent pdf-page-read for this page, with no second vision call. It is indexed when the Agent has read the page (it runs after the upload; run it on the book with pipeline_run if it did not). The picture is findable by its name meanwhile.",
+          hint: 'A page picture of a book: its description is the vision text of the Agent pdf-page-read for this page, with no second vision call. It is indexed when the Agent has read the page (it runs after the upload; run it on the book with pipeline_run if it did not). The picture is findable by its name meanwhile.',
         },
       },
       node,

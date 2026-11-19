@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { assemblePdf } from '../../../pdf-fixtures.test-helper';
-import { BOOK_MIN_PAGES, BOOK_SAMPLE_PAGES, bookOf } from '../../../pdf-kind';
+import { BOOK_MIN_PAGES, BOOK_SAMPLE_PAGES, bookOf, bookUnsureOf } from '../../../pdf-kind';
 import { PDF_MAX_BYTES } from '../../../pdf-open';
 import { renderPdfWindows } from '../../../rasterize';
 import { BUILTIN_PIPELINES } from '../../builtin';
@@ -173,6 +173,47 @@ describe('the router names a book', () => {
     const large = await routerStep(request(), jobOf(typedPdf(BOOK_MIN_PAGES + 2, A1)).job);
     expect(large.kind).not.toBe('book');
     expect(BOOK_SAMPLE_PAGES).toBe(20);
+  });
+});
+
+describe('the router: an ambiguous short scan, and a table, by the decider', () => {
+  const scannedText = { class: 'scan' as const, size: 'a4' as const, kind: 'document' as const };
+  const ruled = { class: 'scan' as const, size: 'a4' as const, kind: 'scan' as const };
+  const answer = (kind: string, used = true) => ({
+    ok: true as const,
+    output: { kind, confidence: 0.9, model: 'made-up', mode: 'live', used },
+  });
+
+  it("a short scan of text and ruled pages is the decider's; text only, or ruled only, is not", () => {
+    expect(bookUnsureOf(4, [scannedText, scannedText, ruled, ruled])).toBe(true);
+    // Text but for a few: a book by the rules, no ask.
+    expect(bookUnsureOf(7, [...Array(6).fill(scannedText), ruled])).toBe(false);
+    // Ruled only (a scanned sketch or form): the drawing reader's, no ask.
+    expect(bookUnsureOf(3, [ruled, ruled, ruled])).toBe(false);
+    // A long file: the sample rule decides.
+    expect(bookUnsureOf(40, [scannedText, ruled])).toBe(false);
+  });
+
+  it('the decider: table or document makes a mixed scan a book, a drawing kind keeps it a drawing', async () => {
+    const two = (kind: string, used = true) =>
+      routerStep(
+        request({ step: 2, answers: [answer(kind, used)], state: { mixedScanKind: 'scan' } }),
+        jobOf(typedPdf(1)).job,
+      );
+    expect((await two('table')).kind).toBe('book');
+    expect((await two('document')).kind).toBe('book');
+    expect((await two('isometric')).kind).toBe('scan');
+    // A shadow answer is not used: the rules' kind stands.
+    expect((await two('table', false)).kind).toBe('scan');
+  });
+
+  it('an unsure file the decider calls a table of rows is a book; a drawing kind stays', async () => {
+    const two = (kind: string) =>
+      routerStep(request({ step: 2, answers: [answer(kind)] }), jobOf(typedPdf(1)).job);
+    expect((await two('table')).kind).toBe('book');
+    expect((await two('pfd')).kind).toBe('pfd');
+    // A document is never used for an unsure file: it keeps its database.
+    expect((await two('document')).kind).toBe('unsure');
   });
 });
 

@@ -15,6 +15,11 @@ data: every page and picture is drawn here.
       pdfjs opens while its page windows stay small (qpdf keeps only the
       objects of the pages it copies).
 
+  gen_test_pdfs.py finish DIR
+      The large-PDF finish's set (finish(), below): 1 and 7 typed pages, 7
+      scanned, a 108-page scanned book with figure pages, and a typed file
+      of over 1,000,000 characters.
+
 Run with Python 3 and Pillow, with the DejaVu fonts at
 /usr/share/fonts/truetype/dejavu/.
 """
@@ -172,10 +177,46 @@ def pictures(out, count, pad_mb):
     pdf.close(first + stride * pages)
 
 
+def finish(out_dir):
+    """The large-PDF finish's e2e set (packages/content/src/
+    large-pdf-windows.e2e.test.ts), from the made-up book of the Reader's
+    own tests (server/parser/cad/tests/book_pdfs.py: prose, three ruled
+    tables, a whitespace table, a figure, a blank page):
+
+      one.pdf        1 typed page
+      typed7.pdf     7 typed pages with the tables
+      scanned7.pdf   the same 7 pages scanned
+      scanbook.pdf   the 9-page book scanned 12 times over (108 pages): its
+                     figure pages are left to vision (G1 page pictures)
+      longtext.pdf   460 typed pages of prose, over 1,000,000 characters
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(here, '..', '..', 'server', 'parser', 'cad', 'tests'))
+    import book_pdfs  # noqa: E402 - the Reader's own made-up book
+
+    os.makedirs(out_dir, exist_ok=True)
+    pages, _, _ = book_pdfs.book()
+    book_pdfs.write_pdf(os.path.join(out_dir, 'one.pdf'), pages[:1], scan=set())
+    book_pdfs.write_pdf(os.path.join(out_dir, 'typed7.pdf'), pages[:7], scan=set())
+    book_pdfs.write_pdf(os.path.join(out_dir, 'scanned7.pdf'), pages[:7], scan=set(range(1, 8)))
+    many = [p for _ in range(12) for p in pages]
+    book_pdfs.write_pdf(os.path.join(out_dir, 'scanbook.pdf'), many, scan=set(range(1, len(many) + 1)))
+    rng = random.Random('long-text')
+    long_pages = []
+    for p in range(1, 461):
+        m = []
+        book_pdfs.head(m, p)
+        book_pdfs.prose(m, rng, 220, 34)
+        long_pages.append(m)
+    book_pdfs.write_pdf(os.path.join(out_dir, 'longtext.pdf'), long_pages, scan=set())
+
+
 if __name__ == '__main__':
     if sys.argv[1] == 'scans':
         scans(sys.argv[2], int(sys.argv[3]))
     elif sys.argv[1] == 'pictures':
         pictures(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]))
+    elif sys.argv[1] == 'finish':
+        finish(sys.argv[2])
     else:
-        sys.exit('usage: gen_test_pdfs.py scans OUT PAGES | pictures OUT PICTURES PAD_MB')
+        sys.exit('usage: gen_test_pdfs.py scans OUT PAGES | pictures OUT PICTURES PAD_MB | finish DIR')

@@ -266,7 +266,9 @@ export async function maybeExtractEmbeddedImages(
   // Agent's vision text of the page (no second vision call): set now when
   // the Agent has read it (a read again), else by the Agent's run.
   const bookPages = new Map<EmbeddedImage, number>();
-  const pageRun = book ? await standingReaderPictures(ownerId, { id: node.id, sha256: data.sha256 }).catch(() => null) : null;
+  const pageRun = book
+    ? await standingReaderPictures(ownerId, { id: node.id, sha256: data.sha256 }).catch(() => null)
+    : null;
   if (pageRun) {
     for (const p of pageRun.pictures) {
       const bytes = pageRun.bytes.get(p.file);
@@ -289,7 +291,9 @@ export async function maybeExtractEmbeddedImages(
     }
   }
   const pageText =
-    bookPages.size > 0 ? await agentPageTextOf({ id: node.id, ownerId, sha256: data.sha256 }) : null;
+    bookPages.size > 0
+      ? await agentPageTextOf({ id: node.id, ownerId, sha256: data.sha256 })
+      : null;
   // The pictures of the file the cap keeps, those it had before too.
   const keptTotal = result.images.length;
   // The pictures a file leaves out are stamped on it once the new ones are
