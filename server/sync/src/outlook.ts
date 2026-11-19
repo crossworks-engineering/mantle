@@ -4,7 +4,7 @@
  * through Microsoft Graph. Every folder the account chose (as an IMAP
  * mailbox's folder choice: all but Deleted Items, Junk Email, Drafts,
  * Outbox and Sync Issues unless the account says otherwise), each from its
- * own receivedDateTime watermark (no delta). Each page's envelopes go
+ * own lastModifiedDateTime watermark (no delta; a move changes it). Each page's envelopes go
  * through the brain's one gate first, and only the wanted messages are
  * fetched in full and posted (mail.ts gateFor and ingestFor, the IMAP
  * path's own).
@@ -22,12 +22,23 @@ import { classifyDelivery } from '@mantle/email/classify';
 import { MAIL_MESSAGE_MAX_BYTES, type WireAttachment, type WireMessage } from '@mantle/email/wire';
 import { NET_TIMEOUTS } from '@mantle/std';
 import { egressFetch } from '@mantle/std/egress';
-import { fitBody, notesText, stageOne, type Stager } from './mail-stream';
-import { GraphError, accessToken, graph, graphAll, graphJson } from './microsoft';
+import { BrainError } from './brain';
+import {
+  fitBody,
+  notesText,
+  stageOne,
+  unreadStub,
+  type Stager,
+  type Tolerate,
+} from './mail-stream';
+import { GRAPH_ORIGIN, GraphError, accessToken, graph, graphAll, graphJson } from './microsoft';
+
+/** Graph's beta endpoint: a reference attachment's link is read there only. */
+const GRAPH_BETA = `${GRAPH_ORIGIN}/beta`;
 import type { BackfillMark, MsAccount, MsCursor, State } from './state';
 
 export const MAIL_SELECT =
-  'id,internetMessageId,conversationId,subject,bodyPreview,from,sender,toRecipients,ccRecipients,bccRecipients,receivedDateTime,isRead,hasAttachments,categories,flag,internetMessageHeaders';
+  'id,internetMessageId,conversationId,subject,bodyPreview,from,sender,toRecipients,ccRecipients,bccRecipients,receivedDateTime,lastModifiedDateTime,isRead,hasAttachments,categories,flag,internetMessageHeaders';
 const PAGE = 50;
 /** Pages one run reads at most across the folders (2 500 messages): pacing,
  *  the next run goes on from each folder's watermark. */
@@ -57,6 +68,7 @@ export type GraphMessage = {
   ccRecipients?: Addr[];
   bccRecipients?: Addr[];
   receivedDateTime?: string;
+  lastModifiedDateTime?: string;
   isRead?: boolean;
   hasAttachments?: boolean;
   categories?: string[];
@@ -200,8 +212,9 @@ async function attachmentBody(
   const long = { timeoutMs: NET_TIMEOUTS.syncFile };
   try {
     if (a['@odata.type'] === REFERENCE) {
-      // A link to a file in OneDrive or SharePoint: the file, through the share.
-      const ref = await graphJson<{ sourceUrl?: string }>(token, base);
+      // A link to a file in OneDrive or SharePoint: the file, through the
+      // share. Its link (sourceUrl) is on Graph's beta endpoint only.
+      const ref = await graphJson<{ sourceUrl?: string }>(token, `${GRAPH_BETA}${base}`);
       if (!ref.sourceUrl) return { note: `the linked file "${name}" (no link given)` };
       const item = await graphJson<{
         name?: string;
@@ -314,60 +327,108 @@ async function walkPage(
   wantedOf: WantedOf,
   onMessage: OnMessage,
   stage: Stager,
+  tolerate?: Tolerate,
 ): Promise<number> {
   const normal = messages.filter((m) => m.id).map((m) => ({ m, n: normalize(m, folder) }));
   const wanted = new Set(await wantedOf(normal.map((x) => x.n).filter((n) => n.fromAddr)));
-  for (const { m } of normal) {
+  for (const { m, n } of normal) {
     if (!wanted.has(m.id)) continue;
-    await onMessage(await fetchFull(token, m, folder, stage));
+    let full: WireMessage;
+    try {
+      full = await fetchFull(token, m, folder, stage);
+    } catch (err) {
+      // The brain's side, a token or a throttle stops the run (the
+      // watermark stays). Microsoft failing on this one message, run after
+      // run, ends in a stub with a note (MESSAGE_TRIES).
+      if (!messageFault(err) || !tolerate || !(await tolerate(m.id))) throw err;
+      full = unreadStub({ ...n, attachments: [] }, err);
+    }
+    await onMessage(full);
   }
   return normal.length;
+}
+
+/** A failure of this one message (Graph refused or broke on it), not of
+ *  the run: the brain, the account's token, a throttle. */
+function messageFault(err: unknown): boolean {
+  if (err instanceof BrainError) return false;
+  if (err instanceof GraphError) return ![401, 403, 429].includes(err.status);
+  return true;
 }
 
 const firstSince = (account: Pick<MsAccount, 'firstScanDays'>) =>
   new Date(Date.now() - (account.firstScanDays ?? FIRST_SCAN_DAYS) * 86_400_000).toISOString();
 
-const folderMessages = (folderId: string, filter: string, select = MAIL_SELECT) =>
-  `/me/mailFolders/${encodeURIComponent(folderId)}/messages?$select=${select}&$top=${PAGE}` +
-  `&$orderby=receivedDateTime asc&$filter=${encodeURIComponent(filter)}`;
+const folderMessages = (
+  folderId: string,
+  filter: string,
+  orderBy: 'receivedDateTime' | 'lastModifiedDateTime' = 'receivedDateTime',
+) =>
+  `/me/mailFolders/${encodeURIComponent(folderId)}/messages?$select=${MAIL_SELECT}&$top=${PAGE}` +
+  `&$orderby=${orderBy} asc&$filter=${encodeURIComponent(filter)}`;
 
-/** One run of an account's chosen folders, each from its watermark (moved
- *  after each page), RUN_PAGES pages in all; the next run goes on. */
+/**
+ * One run of an account's chosen folders. Each folder goes on from its own
+ * watermark on lastModifiedDateTime (moved after each page), so mail moved
+ * into a folder (out of Junk, filed from an excluded folder) is seen too:
+ * a move changes it, as an IMAP move gives a new UID. Every folder gets its
+ * first page each run (new mail anywhere comes in at once); the backlog
+ * then shares RUN_PAGES pages, and the next run goes on.
+ */
 export async function syncOutlook(
   state: State,
   account: MsAccount,
   wantedOf: WantedOf,
   onMessage: OnMessage,
   stage: Stager,
+  tolerate?: Tolerate,
 ): Promise<{ scanned: number }> {
   const token = await accessToken(state, account.id);
   const cursor: MsCursor = await state.msCursor(account.id);
   const marks = { ...(cursor.folders ?? {}) };
   const { folders, inboxId } = await chosenFolders(token, account);
+  const reach = firstSince(account);
   let scanned = 0;
-  let pages = 0;
+  const readPage = async (f: MailFolder, url: string): Promise<string | undefined> => {
+    const page: Page = await graphJson<Page>(token, url);
+    const messages = page.value ?? [];
+    scanned += await walkPage(token, messages, f.path, wantedOf, onMessage, stage, tolerate);
+    const last = messages[messages.length - 1]?.lastModifiedDateTime;
+    if (last) {
+      marks[f.id] = last;
+      await state.putMsCursor(account.id, { since: cursor.since, folders: marks });
+    }
+    return page['@odata.nextLink'];
+  };
+  const backlog: { f: MailFolder; next: string }[] = [];
   for (const f of folders) {
-    if (pages >= RUN_PAGES) break;
-    // The inbox goes on from the watermark it had before every folder synced.
-    const since =
-      marks[f.id] ?? (f.id === inboxId && cursor.since ? cursor.since : firstSince(account));
-    // `ge`: the boundary message comes back once more; the gate's dedup
-    // drops it.
-    let next: string | undefined = folderMessages(f.id, `receivedDateTime ge ${since}`);
-    while (next && pages < RUN_PAGES) {
-      const page: Page = await graphJson<Page>(token, next);
+    // The inbox goes on from the watermark it had before every folder
+    // synced (a receivedDateTime: never later than its lastModified, so
+    // nothing is skipped; the gate's dedup drops what comes again). `ge`:
+    // the boundary message comes back once more, and the dedup drops it.
+    const since = marks[f.id] ?? (f.id === inboxId && cursor.since ? cursor.since : reach);
+    const next = await readPage(
+      f,
+      folderMessages(
+        f.id,
+        `lastModifiedDateTime ge ${since} and receivedDateTime ge ${reach}`,
+        'lastModifiedDateTime',
+      ),
+    );
+    if (next) backlog.push({ f, next });
+  }
+  // The backlog a page at a time across the folders (round robin), so no
+  // folder's long backlog starves another's.
+  let pages = 0;
+  while (pages < RUN_PAGES && backlog.length > 0) {
+    for (let i = 0; i < backlog.length && pages < RUN_PAGES;) {
+      const b = backlog[i]!;
       pages += 1;
-      const messages = page.value ?? [];
-      scanned += await walkPage(token, messages, f.path, wantedOf, onMessage, stage);
-      const last = messages[messages.length - 1]?.receivedDateTime;
-      if (last) {
-        marks[f.id] = last;
-        await state.putMsCursor(account.id, {
-          since: f.id === inboxId ? last : cursor.since,
-          folders: marks,
-        });
-      }
-      next = page['@odata.nextLink'];
+      const next = await readPage(b.f, b.next);
+      if (next) {
+        b.next = next;
+        i += 1;
+      } else backlog.splice(i, 1);
     }
   }
   return { scanned };
@@ -392,6 +453,7 @@ export async function backfillOutlook(
   onMessage: OnMessage,
   stage: Stager,
   budget: number,
+  tolerate?: Tolerate,
 ): Promise<{ scanned: number; done: boolean }> {
   const want = target.trim().toLowerCase().replace(/^@/, '');
   if (!want) return { scanned: 0, done: true };
@@ -418,7 +480,7 @@ export async function backfillOutlook(
         const from = lower(m.from ?? m.sender);
         return isDomain ? from.endsWith(`@${want}`) : from === want;
       });
-      scanned += await walkPage(token, messages, f.path, wantedOf, onMessage, stage);
+      scanned += await walkPage(token, messages, f.path, wantedOf, onMessage, stage, tolerate);
       const last = all[all.length - 1]?.receivedDateTime;
       if (last) fm.since = last;
       next = page['@odata.nextLink'];

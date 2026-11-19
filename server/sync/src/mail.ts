@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
 import { errorMessage } from '@mantle/std';
 import { BrainError, type Brain } from './brain';
-import { stagerFor } from './mail-stream';
+import { stagerFor, tolerateFor } from './mail-stream';
 import { backfillSender, mask, recentSenders, syncMailbox } from './imap';
 import { backfillOutlook, recentOutlookSenders, syncOutlook } from './outlook';
 import type { BackfillJob, BackfillMark, MailAccount, MsAccount, State } from './state';
@@ -123,6 +123,7 @@ export async function runMailbox(brain: Brain, state: State, account: MailAccoun
       ingestFor(brain, account.id, counter),
       (c) => state.putCursor(account.id, c).then(() => undefined),
       stagerFor(brain, account.id),
+      tolerateFor(state, account.id),
     );
     scanned = r.scanned;
   } catch (err) {
@@ -172,6 +173,7 @@ export async function runOutlookMail(
       gateFor(brain, account.mailboxId),
       ingestFor(brain, account.mailboxId, counter),
       stagerFor(brain, account.mailboxId),
+      tolerateFor(state, account.mailboxId),
     );
     scanned = r.scanned;
   } catch (err) {
@@ -233,6 +235,7 @@ export async function runBackfill(brain: Brain, state: State, id: string): Promi
           ingestFor(brain, account.mailboxId, counter),
           stagerFor(brain, account.mailboxId),
           BACKFILL_RUN_PAGES,
+          tolerateFor(state, account.mailboxId),
         );
         m.done = r.done;
         if (!r.done) open = true;
@@ -262,6 +265,7 @@ export async function runBackfill(brain: Brain, state: State, id: string): Promi
           ingestFor(brain, account.id, counter),
           stagerFor(brain, account.id),
           BACKFILL_RUN_ENVELOPES,
+          tolerateFor(state, account.id),
         );
         m.done = r.done;
         if (!r.done) open = true;

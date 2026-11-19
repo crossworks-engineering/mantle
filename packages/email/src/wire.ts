@@ -134,8 +134,21 @@ export function clipEnvelope(e: WireEnvelope): WireEnvelope {
 /** A message within WIRE_LIMITS. */
 export function clipMessage(m: WireMessage): WireMessage {
   const L = WIRE_LIMITS;
+  // Past the most a message carries: the rest is counted in its body text,
+  // never dropped silently.
+  const over = m.attachments.length - L.attachments;
+  const bodyText =
+    over > 0
+      ? [
+          `(Not all of this message could be taken in: ${over} attachment(s) past the ${L.attachments} a message holds. Read it in your mail client.)`,
+          m.bodyText,
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : m.bodyText;
   return {
     ...m,
+    bodyText,
     ...clipEnvelope(m),
     threadId: cut(m.threadId, L.id),
     fromName: cut(m.fromName, L.name),

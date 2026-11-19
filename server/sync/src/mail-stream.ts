@@ -13,9 +13,11 @@
  * at the top of its body text.
  */
 import { Readable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { MailParser, type AttachmentStream, type MessageText } from 'mailparser';
-import { MAIL_BODY_INLINE_MAX, type WireAttachment } from '@mantle/email/wire';
+import { MAIL_BODY_INLINE_MAX, type WireAttachment, type WireMessage } from '@mantle/email/wire';
 import { BrainError, type Brain } from './brain';
+import type { State } from './state';
 
 /** Upload one attachment's bytes: what the brain stored. */
 export type Stager = (body: Readable, mime: string) => Promise<{ sha256: string; size: number }>;
@@ -25,11 +27,27 @@ export function stagerFor(brain: Brain, accountId: string): Stager {
     const ctrl = new AbortController();
     body.once('error', () => ctrl.abort());
     const q = new URLSearchParams({ accountId, mime: mime.slice(0, 255) });
-    return brain.stream<{ sha256: string; size: number }>(
-      `/api/sidecar/mail/attachment?${q}`,
-      Readable.toWeb(body) as unknown as ReadableStream<Uint8Array>,
-      ctrl.signal,
-    );
+    try {
+      return await brain.stream<{ sha256: string; size: number }>(
+        `/api/sidecar/mail/attachment?${q}`,
+        Readable.toWeb(body) as unknown as ReadableStream<Uint8Array>,
+        ctrl.signal,
+      );
+    } catch (err) {
+      // A brain from before streamed attachments (the sidecar rolled
+      // first): the run stops with a plain reason, the cursor stays, and
+      // the message is taken in once the brain is updated. Never a skip.
+      const old =
+        err instanceof BrainError &&
+        (err.status === 405 || (err.status === 404 && err.message !== 'no such mailbox'));
+      if (old) {
+        throw new BrainError(
+          503,
+          'the brain does not take streamed attachments yet (update the brain to this release)',
+        );
+      }
+      throw err;
+    }
   };
 }
 
@@ -57,19 +75,35 @@ export async function stageOne(
       },
     };
   } catch (err) {
-    // What is left of the stream is drained, so the parser goes on.
-    if (!body.readableEnded) {
-      body.resume();
-      await new Promise<void>((r) => {
-        body.once('end', r);
-        body.once('close', r);
-        body.once('error', () => r());
-      });
+    // Not a refusal of this one attachment (the source broke part way, the
+    // brain failed, a timeout): the message fails, and the run tries it
+    // again. The source is let go of at once, never waited on.
+    if (!refused(err)) {
+      body.destroy();
+      throw err;
     }
-    if (!refused(err)) throw err;
+    // Refused, but the source itself had already broken: that is the error.
+    if (body.errored) throw body.errored;
+    // Refused (over the brain's cap): what is left of the stream is drained,
+    // so the parser goes on. A stream already ended or destroyed has nothing
+    // left (its events have fired: waiting on them would hang the lane).
+    if (!body.destroyed && !body.readableEnded) {
+      body.resume();
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        finished(body).catch(() => undefined),
+        new Promise((r) => {
+          timer = setTimeout(r, DRAIN_WAIT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
     return { note: `the attachment "${meta.filename}" (${(err as Error).message})` };
   }
 }
+
+/** The longest a refused attachment's rest is drained for. */
+const DRAIN_WAIT_MS = 5 * 60_000;
 
 /** The body texts, within MAIL_BODY_INLINE_MAX: a larger one goes as an
  *  attachment (`message-body.html` / `.txt`) and the inline text says so. */
@@ -171,4 +205,39 @@ export function parseStreamed(source: Readable, stage: Stager): Promise<Streamed
 export function notesText(notes: string[]): string | undefined {
   if (notes.length === 0) return undefined;
   return `(Not all of this message could be taken in: ${notes.join('; ')}. Read it in your mail client.)`;
+}
+
+/** After this many runs a message that fails to read (the mail server
+ *  answers an error for it every time) is stored with its envelope and a
+ *  note saying so, so one message never holds a mailbox's sync for good. */
+export const MESSAGE_TRIES = 3;
+
+/** Whether a message that failed to read is now to be stored as a stub
+ *  (its tries counted across runs, in the brain). */
+export type Tolerate = (providerMsgId: string) => Promise<boolean>;
+
+export function tolerateFor(
+  state: Pick<State, 'msgFails' | 'putMsgFails'>,
+  mailboxId: string,
+): Tolerate {
+  return async (id) => {
+    const fails = await state.msgFails(mailboxId);
+    const n = (fails[id] ?? 0) + 1;
+    if (n >= MESSAGE_TRIES) delete fails[id];
+    else fails[id] = n;
+    const keys = Object.keys(fails);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 200))) delete fails[k];
+    await state.putMsgFails(mailboxId, fails);
+    return n >= MESSAGE_TRIES;
+  };
+}
+
+/** The stub of a message that could not be read. */
+export function unreadStub(base: WireMessage, err: unknown): WireMessage {
+  const why = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+  return {
+    ...base,
+    attachments: [],
+    bodyText: `(This message could not be read from the mail server in ${MESSAGE_TRIES} runs: ${why}. Read it in your mail client.)`,
+  };
 }

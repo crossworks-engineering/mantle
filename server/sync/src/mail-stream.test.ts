@@ -6,8 +6,17 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { BrainError } from './brain';
-import { fitBody, notesText, parseStreamed, type Stager } from './mail-stream';
+import { BrainError, type Brain } from './brain';
+import {
+  fitBody,
+  notesText,
+  parseStreamed,
+  stageOne,
+  stagerFor,
+  tolerateFor,
+  unreadStub,
+  type Stager,
+} from './mail-stream';
 import { shareIdOf } from './outlook';
 
 const CRLF = '\r\n';
@@ -112,5 +121,154 @@ describe('a large message read as a stream', () => {
 
   it('turns a sharing link into a Graph share id', () => {
     expect(shareIdOf('https://a.sharepoint.com/x?y=1')).toMatch(/^u![A-Za-z0-9_-]+$/);
+  });
+});
+
+describe('an attachment whose upload failed', () => {
+  const meta = { filename: 'big.bin', mimeType: 'application/octet-stream' };
+
+  it('returns its note at once when the refused stream is already destroyed', async () => {
+    const body = Readable.from([Buffer.alloc(10)]);
+    const stage: Stager = async (b) => {
+      b.destroy();
+      await new Promise((r) => setImmediate(r));
+      throw new BrainError(413, 'attachment too large');
+    };
+    const got = await stageOne(stage, body, meta);
+    expect(got).toEqual({ note: expect.stringContaining('big.bin') });
+  });
+
+  it('throws, never waits, when the source broke part way', async () => {
+    const body = new Readable({ read() {} });
+    body.on('error', () => {}); // as stagerFor's listener
+    const stage: Stager = async (b) => {
+      b.destroy(new Error('the Graph body was cut off'));
+      await new Promise((r) => setImmediate(r));
+      throw new BrainError(0, 'the brain did not answer: aborted');
+    };
+    await expect(stageOne(stage, body, meta)).rejects.toThrow(/did not answer/);
+    expect(body.destroyed).toBe(true);
+  });
+
+  it('throws the source error when a refusal came after the source broke', async () => {
+    const body = new Readable({ read() {} });
+    body.on('error', () => {}); // as stagerFor's listener
+    const stage: Stager = async (b) => {
+      b.destroy(new Error('socket hang up'));
+      await new Promise((r) => setImmediate(r));
+      throw new BrainError(413, 'attachment too large');
+    };
+    await expect(stageOne(stage, body, meta)).rejects.toThrow('socket hang up');
+  });
+
+  it('drains the rest of a refused stream that is still open', async () => {
+    const body = Readable.from([Buffer.alloc(5), Buffer.alloc(5), Buffer.alloc(5)]);
+    const stage: Stager = async () => {
+      throw new BrainError(413, 'attachment too large');
+    };
+    const got = await stageOne(stage, body, meta);
+    expect('note' in got).toBe(true);
+    expect(body.readableEnded).toBe(true);
+  });
+
+  it('goes on past a refused attachment whose stream the upload destroyed', async () => {
+    const source = mime([
+      { type: 'text/plain', body: 'Hi' },
+      {
+        type: 'video/mp4',
+        name: 'huge.mp4',
+        body: Buffer.alloc(200_000).toString('base64'),
+        b64: true,
+      },
+      {
+        type: 'application/pdf',
+        name: 'a.pdf',
+        body: Buffer.alloc(10).toString('base64'),
+        b64: true,
+      },
+    ]);
+    const stage: Stager = async (b, type) => {
+      if (type === 'video/mp4') {
+        b.destroy();
+        throw new BrainError(413, 'attachment too large');
+      }
+      let size = 0;
+      for await (const c of b) size += (c as Buffer).length;
+      return { sha256: 'a'.repeat(64), size };
+    };
+    const m = await parseStreamed(Readable.from([Buffer.from(source)]), stage);
+    expect(m.attachments.map((a) => a.filename)).toEqual(['a.pdf']);
+    expect(m.notes.join()).toContain('huge.mp4');
+  });
+});
+
+describe('a brain from before streamed attachments', () => {
+  it('stops the run with a plain reason, never a skip', async () => {
+    const brain = {
+      stream: async () => {
+        throw new BrainError(404, 'not found');
+      },
+    } as unknown as Brain;
+    const stage = stagerFor(brain, '00000000-0000-4000-8000-000000000001');
+    const err = await stage(Readable.from([Buffer.alloc(1)]), 'text/plain').catch((e) => e);
+    expect(err).toBeInstanceOf(BrainError);
+    expect((err as BrainError).status).toBe(503);
+    expect((err as Error).message).toContain('update the brain');
+  });
+
+  it('keeps a switched-off mailbox as its own 404', async () => {
+    const brain = {
+      stream: async () => {
+        throw new BrainError(404, 'no such mailbox');
+      },
+    } as unknown as Brain;
+    const err = await stagerFor(brain, '00000000-0000-4000-8000-000000000001')(
+      Readable.from([Buffer.alloc(1)]),
+      'text/plain',
+    ).catch((e) => e);
+    expect((err as BrainError).status).toBe(404);
+  });
+});
+
+describe('a message that fails to read run after run', () => {
+  it('is a stub on its third try, and its count then clears', async () => {
+    let kept: Record<string, number> = {};
+    const state = {
+      msgFails: async () => ({ ...kept }),
+      putMsgFails: async (_: string, f: Record<string, number>) => {
+        kept = f;
+      },
+    };
+    const tolerate = tolerateFor(state, 'box');
+    expect(await tolerate('m1')).toBe(false);
+    expect(await tolerate('m1')).toBe(false);
+    expect(await tolerate('m1')).toBe(true);
+    expect(kept).toEqual({});
+    const stub = unreadStub(
+      {
+        providerMsgId: 'm1',
+        fromAddr: 'a@b.test',
+        toAddrs: [],
+        internalDate: 'x',
+        attachments: [],
+      },
+      new Error('NO [UNAVAILABLE] fetch failed'),
+    );
+    expect(stub.bodyText).toContain('could not be read');
+    expect(stub.bodyText).toContain('UNAVAILABLE');
+  });
+
+  it('keeps at most 200 counts', async () => {
+    let kept: Record<string, number> = {};
+    const state = {
+      msgFails: async () => ({ ...kept }),
+      putMsgFails: async (_: string, f: Record<string, number>) => {
+        kept = f;
+      },
+    };
+    const tolerate = tolerateFor(state, 'box');
+    for (let i = 0; i < 250; i++) await tolerate(`m${i}`);
+    expect(Object.keys(kept)).toHaveLength(200);
+    expect(kept.m249).toBe(1);
   });
 });

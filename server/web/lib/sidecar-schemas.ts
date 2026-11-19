@@ -62,19 +62,25 @@ export const WireMessageBody = Envelope.extend({
   bodyHtml: z.string().optional(),
   attachments: z
     .array(
-      z.object({
-        filename: text(L.filename),
-        mimeType: text(L.mimeType).optional(),
-        sizeBytes: z.number().int().nonnegative().optional(),
-        contentB64: z.string().optional(),
-        /** Bytes streamed before (POST /api/sidecar/mail/attachment). */
-        staged: z
-          .object({
-            sha256: z.string().regex(/^[0-9a-f]{64}$/),
-            size: z.number().int().nonnegative(),
-          })
-          .optional(),
-      }),
+      z
+        .object({
+          filename: text(L.filename),
+          mimeType: text(L.mimeType).optional(),
+          sizeBytes: z.number().int().nonnegative().optional(),
+          contentB64: z.string().optional(),
+          /** Bytes streamed before (POST /api/sidecar/mail/attachment). */
+          staged: z
+            .object({
+              sha256: z.string().regex(/^[0-9a-f]{64}$/),
+              size: z.number().int().nonnegative(),
+            })
+            .optional(),
+        })
+        // Its bytes, inline or staged: one with neither would store an
+        // empty file.
+        .refine((a) => a.contentB64 !== undefined || a.staged !== undefined, {
+          message: 'an attachment carries contentB64 or staged',
+        }),
     )
     .max(L.attachments),
   clientCodeMail: z.boolean().optional(),

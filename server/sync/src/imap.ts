@@ -18,10 +18,24 @@ import { ImapFlow, type FetchMessageObject } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { classifyDelivery } from '@mantle/email/classify';
 import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
-import { MAIL_MESSAGE_MAX_BYTES, type WireMessage } from '@mantle/email/wire';
+import {
+  MAIL_BODY_INLINE_MAX,
+  MAIL_MESSAGE_MAX_BYTES,
+  type WireAttachment,
+  type WireMessage,
+} from '@mantle/email/wire';
 import { errorMessage } from '@mantle/std';
 import { checkedAddress, plaintextMailAllowed } from './net';
-import { fitBody, notesText, parseStreamed, type Stager } from './mail-stream';
+import {
+  fitBody,
+  notesText,
+  parseStreamed,
+  stageOne,
+  unreadStub,
+  type Stager,
+  type Tolerate,
+} from './mail-stream';
+import { BrainError } from './brain';
 import type { BackfillMark, MailAccount, MailCursor } from './state';
 
 /** Envelopes per batch: one gate call, then the full fetches. */
@@ -48,6 +62,10 @@ type RawMessage = {
   sizeBytes?: number;
   hasAttachments: boolean;
   attachments: RawAttachmentRef[];
+  /** The leaf parts of its body structure (for a huge body, read by part). */
+  leaves?: Leaf[];
+  /** The bytes of its body text parts (text/plain, text/html, no file). */
+  textBytes?: number;
   deliveryKind?: ReturnType<typeof classifyDelivery>;
   inReplyTo?: string;
   references?: string;
@@ -224,6 +242,44 @@ export function decodeMsgId(providerMsgId: string): {
   };
 }
 
+/** One leaf part of a body structure. */
+type Leaf = { part: string; type: string; size: number; attachment: boolean; filename?: string };
+
+/** Every leaf part of imapflow's bodyStructure, in order. */
+function leavesOf(bodyStructure: FetchMessageObject['bodyStructure'] | undefined): Leaf[] {
+  const out: Leaf[] = [];
+  type Node = NonNullable<FetchMessageObject['bodyStructure']>;
+  const visit = (node: Node | undefined) => {
+    if (!node) return;
+    const n = node as Node & {
+      childNodes?: Node[];
+      disposition?: string;
+      dispositionParameters?: { filename?: string };
+      parameters?: { name?: string };
+      part?: string;
+      type?: string;
+      subtype?: string;
+      size?: number;
+    };
+    const type =
+      n.subtype && !(n.type ?? '').includes('/') ? `${n.type}/${n.subtype}` : (n.type ?? '');
+    if (Array.isArray(n.childNodes) && !/^message\/rfc822$/i.test(type)) {
+      for (const c of n.childNodes) visit(c);
+      return;
+    }
+    const filename = n.dispositionParameters?.filename ?? n.parameters?.name;
+    out.push({
+      part: n.part ?? '1',
+      type: type || 'application/octet-stream',
+      size: n.size ?? 0,
+      attachment: n.disposition?.toLowerCase() === 'attachment' || !!filename,
+      filename,
+    });
+  };
+  visit(bodyStructure as Node | undefined);
+  return out;
+}
+
 /** Walk imapflow's bodyStructure tree and collect attachment leaves. */
 function extractAttachmentRefs(
   bodyStructure: FetchMessageObject['bodyStructure'] | undefined,
@@ -271,6 +327,10 @@ function normalizeHeader(
 
   const providerMsgId = encodeMsgId(folder, uidvalidity, msg.uid);
   const attachments = extractAttachmentRefs(msg.bodyStructure, providerMsgId);
+  const leaves = leavesOf(msg.bodyStructure);
+  const textBytes = leaves
+    .filter((l) => !l.attachment && /^text\/(plain|html)$/i.test(l.type))
+    .reduce((n, l) => n + l.size, 0);
 
   // Cross-folder dedup key. Envelope.messageId is the RFC 5322 Message-ID
   // header (per RFC 3501 envelope); see normalizeRfcMessageId for the
@@ -333,6 +393,8 @@ function normalizeHeader(
     sizeBytes: msg.size,
     hasAttachments: attachments.length > 0,
     attachments,
+    leaves,
+    textBytes,
     deliveryKind,
   };
 }
@@ -388,6 +450,67 @@ async function envelopes(
   return out;
 }
 
+/** A listed message as the wire shape, with no body yet. */
+export function baseOf(message: RawMessage): WireMessage {
+  const { hasAttachments: _h, leaves: _l, textBytes: _t, internalDate, ...rest } = message;
+  return { ...rest, internalDate: internalDate.toISOString(), attachments: [] };
+}
+
+/** A message whose body text is past the inline bound, read part by part
+ *  (imapflow's download of each part, decoded): each attachment and each
+ *  large text part staged as a stream, the small text parts kept as the
+ *  body. Its parts are known from the envelope's body structure. */
+async function byParts(
+  client: ImapFlow,
+  uid: number,
+  base: WireMessage,
+  leaves: Leaf[],
+  stage: Stager,
+): Promise<WireMessage> {
+  const attachments: WireAttachment[] = [];
+  const notes: string[] = [];
+  let text = '';
+  let html = '';
+  /** The body text kept inline so far: within MAIL_BODY_INLINE_MAX in all. */
+  let inline = 0;
+  let bodyStaged = false;
+  for (const [i, leaf] of leaves.entries()) {
+    const dl = await client.download(String(uid), leaf.part, { uid: true });
+    if (!dl || !('content' in dl) || !dl.content) {
+      notes.push(`part ${leaf.part} (the server gave nothing)`);
+      continue;
+    }
+    const isBody = !leaf.attachment && /^text\/(plain|html)$/i.test(leaf.type);
+    if (isBody && inline + leaf.size <= MAIL_BODY_INLINE_MAX) {
+      inline += leaf.size;
+      const chunks: Buffer[] = [];
+      for await (const c of dl.content) chunks.push(c as Buffer);
+      const s = Buffer.concat(chunks).toString('utf8');
+      if (/html/i.test(leaf.type)) html += s;
+      else text += s;
+      continue;
+    }
+    const name = isBody
+      ? `message-body-${i}.${/html/i.test(leaf.type) ? 'html' : 'txt'}`
+      : (leaf.filename ?? `unnamed-${i}`);
+    const got = await stageOne(stage, dl.content, { filename: name, mimeType: leaf.type });
+    if ('attachment' in got) {
+      attachments.push(got.attachment);
+      if (isBody) bodyStaged = true;
+    } else notes.push(got.note);
+  }
+  const note = notesText(notes);
+  const lead = bodyStaged
+    ? '(Part of the body of this message is stored whole as its message-body attachment.)'
+    : undefined;
+  return {
+    ...base,
+    bodyText: [note, lead, text].filter(Boolean).join('\n\n'),
+    bodyHtml: html || undefined,
+    attachments,
+  };
+}
+
 /** One message of the open folder, in full, as it crosses to the brain. */
 export async function fullMessage(
   client: ImapFlow,
@@ -395,12 +518,7 @@ export async function fullMessage(
   message: RawMessage,
   stage?: Stager,
 ): Promise<WireMessage> {
-  const base: WireMessage = {
-    ...message,
-    internalDate: message.internalDate.toISOString(),
-    attachments: [],
-  };
-  delete (base as { hasAttachments?: unknown }).hasAttachments;
+  const base = baseOf(message);
   // Past the cap, or a server that gave no size: the message as a stream,
   // each attachment staged as it is read (mail-stream.ts), never in memory.
   if (typeof message.sizeBytes !== 'number' || message.sizeBytes > MAIL_MESSAGE_MAX_BYTES) {
@@ -409,6 +527,11 @@ export async function fullMessage(
         ...base,
         bodyText: `(This message is past the ${MAIL_MESSAGE_MAX_BYTES / 1024 / 1024} MB the brain fetches in one piece. Read it in your mail client.)`,
       };
+    }
+    // A body text past the inline bound (a huge inline log or HTML) would
+    // sit whole in the parser's memory: read part by part instead.
+    if ((message.textBytes ?? 0) > MAIL_BODY_INLINE_MAX && message.leaves?.length) {
+      return byParts(client, uid, base, message.leaves, stage);
     }
     const dl = await client.download(String(uid), undefined, { uid: true });
     if (!dl || !('content' in dl) || !dl.content) {
@@ -478,6 +601,7 @@ async function walk(
   onMessage: OnMessage,
   afterBatch?: (maxUid: number) => Promise<void>,
   stage?: Stager,
+  tolerate?: Tolerate,
 ): Promise<number> {
   let scanned = 0;
   for (let i = 0; i < uids.length; i += BATCH_SIZE) {
@@ -487,7 +611,18 @@ async function walk(
     const wanted = new Set(await wantedOf(listed.map((l) => l.message)));
     for (const l of listed) {
       if (!wanted.has(l.message.providerMsgId)) continue;
-      await onMessage(await fullMessage(client, l.uid, l.message, stage));
+      let full: WireMessage;
+      try {
+        full = await fullMessage(client, l.uid, l.message, stage);
+      } catch (err) {
+        // The brain's side failing, or the connection gone, stops the run
+        // (the cursor stays). The server failing on this one message, run
+        // after run, ends in a stub with a note (MESSAGE_TRIES).
+        if (err instanceof BrainError || !client.usable || !tolerate) throw err;
+        if (!(await tolerate(l.message.providerMsgId))) throw err;
+        full = unreadStub(baseOf(l.message), err);
+      }
+      await onMessage(full);
     }
     if (afterBatch) await afterBatch(Math.max(...batch));
   }
@@ -506,6 +641,7 @@ export async function syncMailbox(
   onMessage: OnMessage,
   saveCursor: (c: MailCursor) => Promise<void>,
   stage?: Stager,
+  tolerate?: Tolerate,
 ): Promise<{ scanned: number }> {
   const client = await connect(account);
   let scanned = 0;
@@ -552,6 +688,7 @@ export async function syncMailbox(
             await saveCursor(cursor);
           },
           stage,
+          tolerate,
         );
       } finally {
         lock.release();
@@ -581,6 +718,7 @@ export async function backfillSender(
   onMessage: OnMessage,
   stage: Stager | undefined,
   budget: number,
+  tolerate?: Tolerate,
 ): Promise<{ scanned: number; done: boolean }> {
   const wantedSender = sender.trim().toLowerCase().replace(/^@/, '');
   if (!wantedSender) return { scanned: 0, done: true };
@@ -629,6 +767,7 @@ export async function backfillSender(
             await save(mark);
           },
           stage,
+          tolerate,
         );
         if (share.length < uids.length) return { scanned, done: false };
         fm.done = true;

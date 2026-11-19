@@ -45,8 +45,14 @@ attachment streams on to `POST /api/sidecar/mail/attachment` as it is
 parsed (spooled to disk there, stored in the object store under its
 sha256, up to the streamed upload cap), and the message posts naming them
 (`staged`). A body over 16 MB goes as a `message-body` attachment of its
-own. What could not be taken in (an attachment over the cap) is named in a
-note at the top of the body: nothing is dropped silently.
+own; a message over 40 MB whose body text alone is over 16 MB is read part
+by part (IMAP), each large text part staged the same way. What could not be
+taken in (an attachment over the cap, attachments past the 500 a message
+holds) is named in a note at the top of the body: nothing is dropped
+silently. A message the mail server fails on in three runs running is
+stored with its envelope and a note saying so (`msgfail:`), so one message
+never holds a mailbox; the brain's own failures stop the run and the cursor
+stays.
 
 ## A new contact
 

@@ -38,6 +38,17 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** A fetch to the brain that did not answer (down, a reset, a timeout):
+ *  a BrainError of status 0, so a caller tells the brain's side from the
+ *  mail server's. */
+async function reach(go: () => Promise<Response>): Promise<Response> {
+  try {
+    return await go();
+  } catch (err) {
+    throw new BrainError(0, `the brain did not answer: ${(err as Error).message}`);
+  }
+}
+
 export function createBrain(opts: { url: string; token: string }): Brain {
   const base = opts.url.replace(/\/+$/, '');
   async function answer<T>(res: Response): Promise<T> {
@@ -53,29 +64,33 @@ export function createBrain(opts: { url: string; token: string }): Brain {
     return parsed as T;
   }
   async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${base}${path}`, {
-      method,
-      headers: {
-        [TOKEN_HEADER]: opts.token,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: 'error',
-      signal: timeoutSignal(NET_TIMEOUTS.syncBrain),
-    });
+    const res = await reach(() =>
+      fetch(`${base}${path}`, {
+        method,
+        headers: {
+          [TOKEN_HEADER]: opts.token,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        redirect: 'error',
+        signal: timeoutSignal(NET_TIMEOUTS.syncBrain),
+      }),
+    );
     return answer<T>(res);
   }
   return {
     stream: async (path, body, signal) => {
-      const res = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/octet-stream' },
-        body,
-        // A streamed request body (Bun and undici both take it).
-        duplex: 'half',
-        redirect: 'error',
-        signal: AbortSignal.any([signal, timeoutSignal(NET_TIMEOUTS.syncFile)]),
-      } as RequestInit);
+      const res = await reach(() =>
+        fetch(`${base}${path}`, {
+          method: 'POST',
+          headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/octet-stream' },
+          body,
+          // A streamed request body (Bun and undici both take it).
+          duplex: 'half',
+          redirect: 'error',
+          signal: AbortSignal.any([signal, timeoutSignal(NET_TIMEOUTS.syncFile)]),
+        } as RequestInit),
+      );
       return answer(res);
     },
     get: (path) => call('GET', path),

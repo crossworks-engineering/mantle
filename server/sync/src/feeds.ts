@@ -8,7 +8,7 @@
  */
 import { errorMessage } from '@mantle/std';
 import type { Brain } from './brain';
-import { createFeedParser, fetchFeedLines } from './ics';
+import { createFeedParser, fetchFeedLines, holdKey } from './ics';
 import type { CalEvent } from './ics';
 import type { Feed, State } from './state';
 
@@ -63,7 +63,17 @@ export type FeedRun = {
   failed: number;
   removed: number;
   cuts: string[];
+  /** What was taken in with a field cut (no reason to hold removal). */
+  notes: string[];
+  /** The occurrence keys changed or cancelled this run, hashed (holdKey):
+   *  held next run. */
+  changedKeys: string[];
 };
+
+/** The most changed-occurrence keys kept for the next run (13 bytes each
+ *  in the state value, well under its 256 KB). Past it a change is written
+ *  over its plain occurrence once more each run: churn, never a loss. */
+export const HOLD_KEYS_MAX = 16_000;
 
 /** One run: every event read, posted in pages, then what left removed. */
 export async function syncFeed(
@@ -71,8 +81,24 @@ export async function syncFeed(
   feed: FeedRef,
   lines: AsyncIterable<string>,
   now = Date.now(),
+  hold: ReadonlySet<string> = new Set(),
 ): Promise<FeedRun> {
-  const run: FeedRun = { events: 0, upserted: 0, failed: 0, removed: 0, cuts: [] };
+  const run: FeedRun = {
+    events: 0,
+    upserted: 0,
+    failed: 0,
+    removed: 0,
+    cuts: [],
+    notes: [],
+    changedKeys: [],
+  };
+  // The brain's stored set first: a brain that cannot answer it (one from
+  // before pages) would take each page for the whole feed, so nothing is
+  // posted to it.
+  const stored = await brain.get<{ uids: string[] }>(
+    `/api/sidecar/events?feedId=${encodeURIComponent(feed.id)}`,
+  );
+  if (!Array.isArray(stored?.uids)) throw new Error('the brain does not page feeds yet');
   const seen = new Set<string>();
   const pager = createPager(async (events) => {
     const r = await brain.post<{ upserted?: number; failed?: number }>(
@@ -82,9 +108,12 @@ export async function syncFeed(
     run.upserted += r?.upserted ?? 0;
     run.failed += r?.failed ?? 0;
   });
-  const parser = createFeedParser(now);
+  const parser = createFeedParser(now, hold);
   for await (const line of lines) {
     for (const ev of parser.line(line)) {
+      // A uid the feed repeats: the first is kept (two writes of one event
+      // each run would mark it changed every run).
+      if (seen.has(ev.uid)) continue;
       seen.add(ev.uid);
       await pager.add(ev);
     }
@@ -95,17 +124,31 @@ export async function syncFeed(
     seen.add(ev.uid);
     await pager.add(ev);
   }
+  for (const ev of end.held) {
+    if (seen.has(ev.uid)) continue;
+    seen.add(ev.uid);
+    await pager.add(ev);
+  }
+  // A cancelled occurrence posted this run (its plain one, before the
+  // cancel was read) leaves again at once, cut or not: the feed says so.
+  const cancelledPosted = [...end.cancelled].filter((u) => seen.has(u));
   for (const uid of end.cancelled) seen.delete(uid);
   await pager.flush();
   run.events = seen.size;
   run.cuts = end.cuts;
-  if (run.cuts.length > 0) return run;
+  run.notes = end.notes;
+  run.changedKeys = [...new Set([...end.overrides.map((o) => o.uid), ...end.cancelled])]
+    .slice(0, HOLD_KEYS_MAX)
+    .map(holdKey);
 
-  // Read in full: what the brain holds and this run did not post left.
-  const stored = await brain.get<{ uids: string[] }>(
-    `/api/sidecar/events?feedId=${encodeURIComponent(feed.id)}`,
-  );
-  const gone = (stored?.uids ?? []).filter((u) => !seen.has(u));
+  // Read in full: what the brain held and this run did not post left. A
+  // run that cut anything removes only what the feed itself cancelled.
+  const gone = [
+    ...new Set([
+      ...cancelledPosted,
+      ...(run.cuts.length > 0 ? [] : stored.uids.filter((u) => !seen.has(u))),
+    ]),
+  ];
   for (let i = 0; i < gone.length; i += REMOVE_PAGE) {
     const r = await brain.post<{ removed?: number }>(
       '/api/sidecar/events',
@@ -118,7 +161,7 @@ export async function syncFeed(
 
 /** The status note of a run: what it could not take in, plainly. */
 export function feedNote(run: FeedRun): string | undefined {
-  const parts = [...run.cuts];
+  const parts = [...run.cuts, ...run.notes];
   if (run.failed) parts.push(`${run.failed} event(s) the brain refused`);
   if (run.cuts.length) parts.push('no event was removed this run');
   return parts.length ? parts.join('; ').slice(0, 300) : undefined;
@@ -126,7 +169,15 @@ export function feedNote(run: FeedRun): string | undefined {
 
 export async function runFeed(brain: Brain, state: State, feed: Feed): Promise<void> {
   try {
-    const run = await syncFeed(brain, feed, await fetchFeedLines(feed.url));
+    const hold = new Set(await state.feedKeys(feed.id));
+    const run = await syncFeed(brain, feed, await fetchFeedLines(feed.url), Date.now(), hold);
+    // A run that read the whole feed names next run's held keys. Keeping
+    // them is pacing of the writes only: a failure here fails nothing.
+    if (run.cuts.length === 0) {
+      await state.putFeedKeys(feed.id, run.changedKeys).catch((err: unknown) => {
+        console.warn(`[sync] feed ${feed.id}: the held keys were not kept: ${errorMessage(err)}`);
+      });
+    }
     const note = feedNote(run);
     await state.putStatus(feed.id, {
       at: new Date().toISOString(),

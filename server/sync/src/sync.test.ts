@@ -386,6 +386,8 @@ describe('the bounds the brain takes', () => {
     expect(m.subject!.length).toBe(WIRE_LIMITS.subject);
     expect(m.attachments).toHaveLength(WIRE_LIMITS.attachments);
     expect(m.attachments[0]!.filename.length).toBe(WIRE_LIMITS.filename);
+    // The attachments past the bound are counted in the body, never dropped silently.
+    expect(m.bodyText).toContain('100 attachment(s) past the 500');
   });
 
   it('pages a feed within the byte and count bounds, every description whole', async () => {

@@ -351,17 +351,28 @@ export async function runDrive(brain: Brain, state: State, drive: MsDrive): Prom
     });
     run.oversize = plan.oversize;
     // Past the cap: a node by name whose status says so, never a skip.
+    let stubFailed = 0;
     for (const item of plan.stub) {
-      await brain.post('/api/sidecar/files/stub', {
-        source: drive.id,
-        item: item.id,
-        path,
-        name: item.name,
-        hash: item.hash,
-        size: item.size,
-        mod: item.modTime,
-      });
+      try {
+        await brain.post('/api/sidecar/files/stub', {
+          source: drive.id,
+          item: item.id,
+          path,
+          name: item.name,
+          hash: item.hash,
+          size: item.size,
+          mod: item.modTime,
+        });
+      } catch (err) {
+        // One stub the brain refused, or a brain from before stubs (404,
+        // 405): counted, the run goes on (the file is still seen, so it is
+        // never taken for gone) and posts it again next run.
+        const one = err instanceof BrainError && [400, 404, 405, 413].includes(err.status);
+        if (!one) throw err;
+        stubFailed += 1;
+      }
     }
+    run.skipped += stubFailed;
     for (let i = 0; i < plan.relink.length; i += BATCH) {
       const r = await brain.post<{ relinked: number }>('/api/sidecar/files/relink', {
         source: drive.id,

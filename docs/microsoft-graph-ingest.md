@@ -81,9 +81,12 @@ Mail.Read Mail.Send Calendars.Read`.
   once (409). A removed one is taken over: its row, and its stored mail,
   stay.
 - Every 5 minutes every chosen mail folder is read, each from its own
-  `receivedDateTime` watermark (`server/sync/src/outlook.ts`, `mscursor:`
-  `folders`; the inbox goes on from the watermark it had before), a page at
-  a time, 50 pages a run in all (the next run goes on): the envelopes go
+  `lastModifiedDateTime` watermark (`server/sync/src/outlook.ts`, `mscursor:`
+  `folders`; the inbox goes on from the watermark it had before), so mail
+  moved into a folder (out of Junk, filed from a folder left out) is seen
+  as an IMAP move is. Every folder gets its first page each run, however
+  many there are; the backlog then shares 50 pages a run, a page a folder
+  in turn (the next run goes on). The envelopes go
   through the brain's one gate (`/api/sidecar/mail/gate`), and only the
   wanted messages are fetched in full and stored (`/api/sidecar/mail/ingest`),
   as for IMAP. The folders are an IMAP mailbox's choice: all but Deleted
