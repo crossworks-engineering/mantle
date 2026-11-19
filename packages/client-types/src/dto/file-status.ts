@@ -147,6 +147,20 @@ export type FileProcessing = {
    *  `readBy`: the pipeline and version that built it (null before stamps
    *  or when not built). `tables`: what it extracted, each tab and its
    *  rows; only when built and readable by the caller (as the Data view). */
+  /** A PDF book (read by the book reader): how its pages were read, counted
+   *  from its database (docs/ai-workers.md, "The Scan reader"): `text` (text
+   *  layer), `ocr` (local OCR), `blank`, `scanReader` and `vision` (the
+   *  Agent pdf-page-read's read of a page OCR read badly, or of a figure),
+   *  `unread` (marked for the Agent, with no text yet). Left out for any
+   *  other file. */
+  bookPages?: {
+    text: number;
+    ocr: number;
+    blank: number;
+    scanReader: number;
+    vision: number;
+    unread: number;
+  };
   database: {
     state: DataFileState;
     bytes: number | null;

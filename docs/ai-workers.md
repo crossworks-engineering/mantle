@@ -661,7 +661,7 @@ worker is an OCR engine, not a chat model: OpenRouter's PDF parser
 `mistral-ocr` (owner decision 2026-11-19, on the scan bench below).
 
 **The order of a scanned page** in the book reader of large PDFs (the Reader
-`pdf-pages`), to be wired in its second part:
+`pdf-pages`):
 
 1. the text layer (free);
 2. Tesseract, in the parser (free);
@@ -670,11 +670,23 @@ worker is an OCR engine, not a chat model: OpenRouter's PDF parser
 4. the vision worker, only for a page whose Scan reader read the check below
    judges bad.
 
-A page that every step fails is marked unread in the file's status. A page
-marked for vision because it holds a figure (ink besides the words) keeps
-vision as before: the Scan reader is for text. Pictures (photos,
-screenshots) are not its work. Today the worker, its call and its check
-exist; nothing calls them until the book reader wiring lands.
+A page that every step fails is counted `unread` (the file's processing
+details, `bookPages`). A page marked for vision because it holds a figure
+(ink besides the words) keeps vision as before: the Scan reader is for text.
+Pictures (photos, screenshots) are not its work.
+
+**The wiring** (docs/pipelines.md, "The book reader"): the book reader
+`pdf-pages` (1.3.0) marks a page read badly with Why `ocr` and keeps its
+free evidence (`Lines`, `Sure words`) in the tab `Pages`; the Agent
+`pdf-page-read` (1.2.0) cuts such a page as a one-page PDF beside its
+picture; the core's paid ask (`pipelineAskOf`,
+server/api/src/agent/extract/pipeline-ask.ts) reads it with `runScanReader`
+and the evidence, takes a read the check judges good (the row's Model
+`scan_reader:mistral-ocr`), and else asks vision on the picture, behind the
+same guards and day cap. Where no word of Tesseract vouches for the read
+(under 30 sure words), the decider's `scan_read_check` is asked too
+(docs/decisions.md): in shadow it is only logged. A book read by an older
+reader (no Why) keeps vision for its pages.
 
 **The worker.** `MANIFEST_WORKERS` entry `scan_reader`, name "Scan reader",
 provider `openrouter`, `params.engine` = `SCAN_READER_ENGINE`

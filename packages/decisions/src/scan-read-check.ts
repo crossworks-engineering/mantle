@@ -19,7 +19,8 @@
  * the answer (rule 6); the picture is the owner's document and leaves the box
  * under the worker's privacy setting, as every state does.
  *
- * Not called by the book reader yet: that is its wiring step.
+ * Asked by the paid ask of a book page (server/api pipeline-ask.ts) after a
+ * Scan reader read with too few sure words of Tesseract to vouch for it.
  */
 import type { DecisionQuestion } from '@mantle/voice';
 import { decide } from './decide';

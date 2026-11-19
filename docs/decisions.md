@@ -627,7 +627,7 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   goes `live`. Nothing asks again for those bytes: the rebuild
   (`dwg-reindex --pdf`) reads PDFs with no model.
 
-### `scan_read_check` (built; ships `shadow`; not called yet)
+### `scan_read_check` (built; ships `shadow`)
 
 Is a Scan reader's text a faithful reading of the scanned page in the
 picture? (`packages/decisions/src/scan-read-check.ts`; the Scan reader is in
@@ -655,8 +655,11 @@ confident words on it.
 - **What it can do.** Send a page on to vision, or keep a read. It never
   writes, retires or deletes. Text on the page can steer it (rule 6), as it
   can steer the Scan reader itself.
-- **Not called yet.** The book reader's wiring (the Scan reader's second
-  part) asks it; until then the use is defined and nothing calls it.
+- **Where.** The paid ask of a book page (server/api/src/agent/extract/pipeline-ask.ts)
+  asks it after a Scan reader read with under 30 sure words of Tesseract;
+  the answer is in the step's meta (`check`). Live, it stands for the
+  `unverified` rule only: another bad reason (a loop, a cut) is never
+  overruled.
 
 ### Declared, not built
 

@@ -2441,7 +2441,14 @@ window of 50 pages or 50 MB a job). For each page:
   (0.5% of the page or more: a figure, a drawing): the Agent reads the page.
   Few words read well with nothing else on the page (a scanned divider or
   cover) are `ocr`. A page pdfium cannot draw, or Tesseract cannot read, is
-  `vision` too;
+  `vision` too. The column `Why` says why (1.3.0): `ocr` (read badly: the
+  Agent reads it with the Scan reader first, docs/ai-workers.md "The Scan
+  reader"), `figure` (under 40 characters with ink besides them), `failed`
+  or `late` (vision). A page of Why `ocr` keeps the free evidence of the
+  Scan reader's check: `Lines` (its text lines, the more of Tesseract's and
+  of the ink bands of its picture, `band_lines`) and `Sure words` (the
+  words Tesseract read at 90 or more, of 3 characters or more, 400 at
+  most);
 - `blank`: no text layer and no ink, or under 0.1% ink and OCR found under
   40 characters (a speck, a stamp): no paid ask for a white page. What OCR
   read is kept in its row.
@@ -2455,7 +2462,13 @@ Agent's run does three things in one job, with no hand-over to another:
 - **render**: the Agent's step draws the page in the parser's pdfjs child
   (200 dpi, a PNG, or a JPEG past 4 MB), with no model;
 - **read**: the core answers the page's ask, from the tab `Page text` by the
-  hash of the picture when it is there, else with one paid vision call;
+  hash of the picture when it is there, else with one paid vision call. A
+  page of Why `ocr` is cut as a one-page PDF too (`job.pdfPage`, qpdf; the
+  PDFs take what the pictures leave of the answer's budget) and read by the
+  Scan reader first, with its free evidence from the tab `Pages`; vision
+  reads it only when the Scan reader's read is judged bad, or there is no
+  Scan reader (server/api/src/agent/extract/pipeline-ask.ts). The row's
+  `Model` says which: `scan_reader:mistral-ocr` or the vision model;
 - **save**: the core writes the page's text row, then saves the page's
   picture as one of the book's pictures (a part of the book, in its pictures
   folder, `data.bookPage` the page, `data.sourceSha256` the bytes) with that
@@ -2566,6 +2579,12 @@ table page that both table reads failed, with the header the Reader found
 as its fields. Every ask of one step names the same fields, and the list
 part of an ask holds identifiers, not rows; the page's text is read by
 vision as every `vision` page is, and the table is `text only` in `Tables`.
+
+How each page of a book was read is counted live from its database
+(`bookPageMethodsOf`, packages/content/src/book-pages.ts): `text`, `ocr`,
+`blank`, `scanReader`, `vision` and `unread` (marked for the Agent, with no
+text yet: its run has not read it, or every reader failed). The file's
+processing details carry it (`bookPages`, `file_processing`).
 
 **Tests** (made-up PDFs only). `server/parser/cad/tests/test_pdf_pages.py`
 draws a book (`tests/book_pdfs.py`): prose, a table over three pages with

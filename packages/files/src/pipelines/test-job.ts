@@ -33,7 +33,10 @@ async function* linesOf(text: string): AsyncGenerator<string> {
 /** Fakes of the native helpers a test may give (the CAD tier's reply, the
  *  PDF eye and pictures). */
 export type StepHelpers = Partial<
-  Pick<StepJob, 'cadRender' | 'pdfEye' | 'pdfPictures' | 'sheetPictures' | 'pdfPageCount'>
+  Pick<
+    StepJob,
+    'cadRender' | 'pdfEye' | 'pdfPictures' | 'sheetPictures' | 'pdfPageCount' | 'pdfPage'
+  >
 >;
 
 export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers = {}): StepJob {
@@ -54,6 +57,9 @@ export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers
       const n = body.toString('latin1').match(/\/Type\s*\/Page(?![a-zA-Z])/g)?.length ?? 0;
       return n > 0 ? n : null;
     },
+    // No qpdf in a test: no page is cut (the page is read by vision); a test
+    // may give its own.
+    pdfPage: async () => null,
     cadRender: helpers.cadRender ?? none('cadRender'),
     dwfRender: none('dwfRender'),
     sheetPictures: none('sheetPictures'),
@@ -72,12 +78,16 @@ function picturesOf(
   const out: { file: string; bytes_base64: string }[] = [];
   const sent = new Set<string>();
   for (const c of result.calls ?? []) {
-    const input = (c.input ?? {}) as { pictures?: { file: string }[]; picture?: unknown };
+    const input = (c.input ?? {}) as {
+      pictures?: { file: string }[];
+      picture?: unknown;
+      pdf?: unknown;
+    };
     const named =
       c.call === 'tool'
         ? (input.pictures ?? []).map((pic) => pic.file)
         : c.worker === VISION_WORKER && typeof input.picture === 'string'
-          ? [input.picture]
+          ? [input.picture, ...(typeof input.pdf === 'string' ? [input.pdf] : [])]
           : [];
     for (const file of named) {
       const at = path.join(dir, path.basename(file));

@@ -125,6 +125,29 @@ export async function runPdfSplitJob(
   }
 }
 
+/**
+ * One page of the PDF at `input` (1-based) as a PDF of its own at `out`
+ * (the Scan reader reads a scanned page as a one-page PDF: docs/ai-workers.md,
+ * "The Scan reader"). Its size in bytes, or null when qpdf could not cut it
+ * (the page is then read by vision as before). Never throws.
+ */
+export async function qpdfPage(
+  input: string,
+  page: number,
+  out: string,
+  dir: string,
+  timeoutMs: number,
+): Promise<number | null> {
+  if (!Number.isInteger(page) || page < 1) return null;
+  try {
+    await cut(input, page, page, out, dir, timeoutMs);
+    return (await fs.stat(out)).size;
+  } catch {
+    await fs.rm(out, { force: true }).catch(() => {});
+    return null;
+  }
+}
+
 /** The boot smoke's check: qpdf is in the image and answers its version. */
 export async function qpdfThere(dir: string): Promise<string> {
   const ended = await runChild(QPDF, ['--version'], {

@@ -424,8 +424,11 @@ export const BUILTIN_PIPELINES = [
       'Reads every office PDF (the router names it a book), typed or scanned, of any length, page by page: the text layer, else local OCR. It writes the tabs Pages and Tables, one tab for each table with the page of each row, and the text by page. It asks no model.',
     // 1.1.0 (2026-11-19): every office PDF, whatever its size (the kind
     // rules 4). 1.2.0 (2026-11-19): no page pictures (the Agent pdf-page-read
-    // owns them).
-    version: '1.2.0',
+    // owns them). 1.3.0 (2026-11-19): the tab Pages says Why a page goes to
+    // the Agent (`ocr`: read badly, for the Scan reader first; `figure`,
+    // `failed`, `late`: vision), and keeps a badly read page's Lines and
+    // Sure words (the Scan reader's check, docs/ai-workers.md).
+    version: '1.3.0',
     match: { ext: ['pdf'], kind: ['book'] },
     produces: { text: true, table: false, pages: true },
     // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy
@@ -476,10 +479,12 @@ export const BUILTIN_PIPELINES = [
     id: 'pdf-page-read',
     name: 'PDF page read',
     description:
-      'Reads by vision the pages of a PDF book that OCR read badly, or that hold a figure, one ask a page, into the tab Page text, and saves the picture of each page it read with that text. It runs after an upload and on demand, and reads no page the book reader read well, nor a page it read before.',
+      'Reads the pages of a PDF book that OCR read badly (the Scan reader first, vision when its read is bad) or that hold a figure (vision) into the tab Page text, and saves each page picture with its text. Runs after an upload and on demand; never a page read well or read before.',
     // 1.1.0 (2026-11-19): every marked page by default (option pages
     // 10,000, from 2,000), and only the windows that hold a marked page.
-    version: '1.1.0',
+    // 1.2.0 (2026-11-19): a page OCR read badly goes as a one-page PDF too,
+    // for the Scan reader's read before vision (docs/ai-workers.md).
+    version: '1.2.0',
     // The kind it reads: no window is cut and no job runs on a PDF of
     // another kind (runAgentOnFile).
     match: { ext: ['pdf'], kind: ['book'] },

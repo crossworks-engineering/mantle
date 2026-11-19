@@ -61,6 +61,20 @@ describe('checkAsks', () => {
     expect(asks[0]!.hash).not.toBe(asks[1]!.hash);
   });
 
+  it('takes the one-page PDF of a page ask (for the Scan reader), never into the hash', () => {
+    const pdf = Buffer.from('%PDF-1.4 one page');
+    const withPdf = new Map([...pictures, ['p.pdf', pdf], ['fake.pdf', Buffer.from('not a pdf')]]);
+    const ask = (file: string) =>
+      call('1', 'a.png', { input: { picture: 'a.png', fields: FIELDS, pdf: file } });
+    const [got] = checkAsks(AGENT, [ask('p.pdf')], withPdf);
+    expect(got!.pdf).toBe(pdf);
+    expect(got!.hash).toBe(askHashOf(AGENT, 'vision', FIELDS, PNG('a')));
+    // A PDF that is not there (the parser left it out past its budget) or
+    // is no PDF: the page is read by vision, no refusal.
+    expect(checkAsks(AGENT, [ask('gone.pdf')], withPdf)[0]!.pdf).toBeUndefined();
+    expect(checkAsks(AGENT, [ask('fake.pdf')], withPdf)[0]!.pdf).toBeUndefined();
+  });
+
   const refused: [string, (PipelineCall & { call: 'worker' })[]][] = [
     ['more asks than the cap', [call('1', 'a.png'), call('2', 'a.png'), call('3', 'a.png')]],
     ['a worker the manifest does not name', [call('1', 'a.png', { worker: 'extractor' })]],
