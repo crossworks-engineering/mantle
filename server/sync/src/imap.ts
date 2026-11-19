@@ -511,6 +511,51 @@ async function byParts(
   };
 }
 
+/** The emails attached to a message (message/rfc822 parts) that the
+ *  parse did not hand out as attachments: MailParser folds one sent
+ *  `inline` (as Apple Mail and nodemailer send it) into the body, and the
+ *  attached email itself was lost as a file. Each is read on its own from
+ *  the body structure: inline under the cap, staged past it. */
+async function attachedEmails(
+  client: ImapFlow,
+  uid: number,
+  leaves: Leaf[] | undefined,
+  have: WireAttachment[],
+  stage: Stager | undefined,
+): Promise<{ attachments: WireAttachment[]; notes: string[] }> {
+  const attachments: WireAttachment[] = [];
+  const notes: string[] = [];
+  const taken = new Set(
+    have.filter((a) => /^message\/rfc822$/i.test(a.mimeType ?? '')).map((a) => a.filename),
+  );
+  for (const [i, leaf] of (leaves ?? []).entries()) {
+    if (!/^message\/rfc822$/i.test(leaf.type)) continue;
+    const filename = leaf.filename ?? `attached-email-${i + 1}.eml`;
+    if (taken.has(filename)) continue;
+    const dl = await client.download(String(uid), leaf.part, { uid: true });
+    if (!dl || !('content' in dl) || !dl.content) {
+      notes.push(`the attached email "${filename}" (the server gave nothing)`);
+      continue;
+    }
+    if (stage && leaf.size > MAIL_MESSAGE_MAX_BYTES / 4) {
+      const got = await stageOne(stage, dl.content, { filename, mimeType: 'message/rfc822' });
+      if ('attachment' in got) attachments.push(got.attachment);
+      else notes.push(got.note);
+      continue;
+    }
+    const chunks: Buffer[] = [];
+    for await (const c of dl.content) chunks.push(c as Buffer);
+    const bytes = Buffer.concat(chunks);
+    attachments.push({
+      filename,
+      mimeType: 'message/rfc822',
+      sizeBytes: bytes.byteLength,
+      contentB64: bytes.toString('base64'),
+    });
+  }
+  return { attachments, notes };
+}
+
 /** One message of the open folder, in full, as it crosses to the brain. */
 export async function fullMessage(
   client: ImapFlow,
@@ -539,7 +584,8 @@ export async function fullMessage(
     }
     const parsed = await parseStreamed(dl.content, stage);
     const body = await fitBody(stage, parsed);
-    const note = notesText([...parsed.notes, ...body.notes]);
+    const mails = await attachedEmails(client, uid, message.leaves, parsed.attachments, stage);
+    const note = notesText([...parsed.notes, ...body.notes, ...mails.notes]);
     const h = parsed.headers;
     const header = (k: string) => {
       const v = h.get(k);
@@ -550,7 +596,7 @@ export async function fullMessage(
       ...base,
       bodyText: [note, body.text].filter(Boolean).join('\n\n') || undefined,
       bodyHtml: body.html,
-      attachments: [...parsed.attachments, ...body.attachments],
+      attachments: [...parsed.attachments, ...body.attachments, ...mails.attachments],
       clientCodeMail: touchesClientCodeMail({
         rfcMessageId: header('message-id') ?? null,
         clientCodeHeader: h.has('x-mantle-client-code'),
@@ -564,16 +610,19 @@ export async function fullMessage(
   // No HTML-to-text here: an HTML-only mail keeps its HTML, and the brain's
   // parser reads it.
   const parsed = await simpleParser(msg.source, { skipHtmlToText: true });
+  const parsedAttachments: WireAttachment[] = parsed.attachments.map((a, i) => ({
+    filename: a.filename ?? `unnamed-${i}`,
+    mimeType: a.contentType,
+    sizeBytes: a.size,
+    contentB64: a.content.toString('base64'),
+  }));
+  const mails = await attachedEmails(client, uid, message.leaves, parsedAttachments, undefined);
+  const mailNote = notesText(mails.notes);
   return {
     ...base,
-    bodyText: parsed.text || undefined,
+    bodyText: [mailNote, parsed.text].filter(Boolean).join('\n\n') || undefined,
     bodyHtml: typeof parsed.html === 'string' ? parsed.html : undefined,
-    attachments: parsed.attachments.map((a, i) => ({
-      filename: a.filename ?? `unnamed-${i}`,
-      mimeType: a.contentType,
-      sizeBytes: a.size,
-      contentB64: a.content.toString('base64'),
-    })),
+    attachments: [...parsedAttachments, ...mails.attachments],
     clientCodeMail: touchesClientCodeMail({
       rfcMessageId: parsed.messageId ?? null,
       clientCodeHeader: parsed.headers.has('x-mantle-client-code'),

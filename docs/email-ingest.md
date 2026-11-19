@@ -45,7 +45,9 @@ attachment streams on to `POST /api/sidecar/mail/attachment` as it is
 parsed (spooled to disk there, stored in the object store under its
 sha256, up to the streamed upload cap), and the message posts naming them
 (`staged`). A body over 16 MB goes as a `message-body` attachment of its
-own; a message over 40 MB whose body text alone is over 16 MB is read part
+own; an attached email (a `message/rfc822` part) is kept as its own `.eml`
+attachment even when it was sent `inline` (MailParser folds such a part
+into the body); a message over 40 MB whose body text alone is over 16 MB is read part
 by part (IMAP), each large text part staged the same way. What could not be
 taken in (an attachment over the cap, attachments past the 500 a message
 holds) is named in a note at the top of the body: nothing is dropped
