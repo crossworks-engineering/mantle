@@ -183,6 +183,7 @@ export {
   type VisionExtractOptions,
   type VisionExtractResult,
   type VisionModelInfo,
+  type VisionParsePdfOptions,
   type ImageGenDispatcher,
   type ImageGenModelInfo,
   type ImageGenParam,

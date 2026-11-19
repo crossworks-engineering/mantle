@@ -27,10 +27,18 @@ import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@m
 import {
   chatWithFailover,
   resolveChatRoutes,
+  cleanParsedText,
+  SCAN_READER_ENGINE_MAX_TOKENS,
   SCAN_READER_MAX_TOKENS,
   SCAN_READER_PROMPT,
   SCAN_READER_SYSTEM_TEXT,
 } from '@mantle/runtime/agent';
+
+/** The PDF parser engine of a Scan reader worker's params, or null. */
+function scanReaderEngine(params: unknown): string | null {
+  const e = (params as { engine?: unknown } | null)?.engine;
+  return typeof e === 'string' && e.trim() ? e.trim() : null;
+}
 import { getAiWorker } from '@/lib/ai-workers';
 import { testDecisionWorker, type DecisionTestResult } from '@mantle/decisions';
 import { errorMessage, publicErrorMessage } from '@mantle/std';
@@ -291,9 +299,13 @@ export async function testVision(
 }> {
   const worker = await getAiWorker(userId, workerId);
   if (!worker) throw new Error('worker not found');
-  // The Scan reader reads a page picture too: tested with its own prompt.
+  // A Scan reader with no PDF parser engine reads a page picture too: tested
+  // with its own prompt. One with an engine reads a PDF (testDocument).
   const scan = worker.kind === 'scan_reader';
   if (worker.kind !== 'vision' && !scan) throw new Error('worker is not a vision worker');
+  if (scan && scanReaderEngine(worker.params)) {
+    throw new Error('this Scan reader reads a one-page PDF with its engine: test it with a PDF');
+  }
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
   const credential = await getApiKeyById(worker.apiKeyId);
   if (!credential) throw new Error('api key not found or could not decrypt');
@@ -352,12 +364,35 @@ export async function testDocument(
 }> {
   const worker = await getAiWorker(userId, workerId);
   if (!worker) throw new Error('worker not found');
-  if (worker.kind !== 'document') throw new Error('worker is not a document worker');
+  // A Scan reader with a PDF parser engine is tested on a (one-page) PDF.
+  const engine = worker.kind === 'scan_reader' ? scanReaderEngine(worker.params) : null;
+  if (worker.kind !== 'document' && !engine) throw new Error('worker is not a document worker');
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
   const credential = await getApiKeyById(worker.apiKeyId);
   if (!credential) throw new Error('api key not found or could not decrypt');
 
   const adapter = getVisionAdapter(worker.provider);
+  if (engine) {
+    if (!adapter?.parsePdf) {
+      throw new Error(`provider '${worker.provider}' has no PDF parser engine`);
+    }
+    const pdf = Buffer.from(pdfBase64, 'base64');
+    if (pdf.length === 0) throw new Error('empty PDF buffer');
+    const parsed = await adapter.parsePdf(pdf, {
+      ...credential,
+      engine,
+      model: worker.model,
+      maxTokens: SCAN_READER_ENGINE_MAX_TOKENS,
+    });
+    return {
+      ok: true,
+      text: cleanParsedText(parsed.text),
+      model: parsed.model,
+      adapter: adapter.adapterName,
+      tokensIn: parsed.tokensIn ?? null,
+      tokensOut: parsed.tokensOut ?? null,
+    };
+  }
   if (!adapter?.extractDocument) {
     throw new Error(
       `provider '${worker.provider}' has no native-PDF adapter. Native PDF is wired for: ` +

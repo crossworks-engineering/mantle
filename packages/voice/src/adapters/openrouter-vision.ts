@@ -23,6 +23,7 @@ import type {
   VisionExtractOptions,
   VisionExtractResult,
   VisionModelInfo,
+  VisionParsePdfOptions,
   ProviderCredential,
 } from './types';
 import type { DiscoveryResult } from '../discover';
@@ -34,9 +35,35 @@ const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 
 type OrChatResponse = {
   model?: string;
-  choices?: Array<{ message?: { content?: unknown }; finish_reason?: string | null }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  choices?: Array<{
+    message?: { content?: unknown; annotations?: unknown };
+    finish_reason?: string | null;
+  }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
 };
+
+/**
+ * The parsed text of the file annotations of a reply (OpenRouter's PDF
+ * parser: `message.annotations[]`, each `{type: 'file', file: {content: [
+ * {type: 'text', text}, ...]}}`), joined in order. Pictures the parser cut
+ * out are left out.
+ */
+export function fileAnnotationText(annotations: unknown): string {
+  if (!Array.isArray(annotations)) return '';
+  const parts: string[] = [];
+  for (const a of annotations) {
+    if (!a || typeof a !== 'object' || (a as { type?: unknown }).type !== 'file') continue;
+    const content = (a as { file?: { content?: unknown } }).file?.content;
+    if (!Array.isArray(content)) continue;
+    for (const c of content) {
+      if (c && typeof c === 'object' && (c as { type?: unknown }).type === 'text') {
+        const t = (c as { text?: unknown }).text;
+        if (typeof t === 'string') parts.push(t);
+      }
+    }
+  }
+  return parts.join('\n');
+}
 
 function headers(apiKey: string): Record<string, string> {
   return {
@@ -69,7 +96,7 @@ async function post(
   apiKey: string,
   body: Record<string, unknown>,
   timeoutMs: number,
-): Promise<VisionExtractResult & { _model: string; finishReason?: string }> {
+): Promise<VisionExtractResult & { _model: string; finishReason?: string; annotations?: unknown }> {
   const res = await providerFetch(
     `${OPENROUTER_BASE_URL}/chat/completions`,
     {
@@ -92,6 +119,8 @@ async function post(
   const text = replyText(parsed.choices?.[0]?.message?.content).trim();
   const model = parsed.model || String(body.model);
   const finish = parsed.choices?.[0]?.finish_reason;
+  const cost = parsed.usage?.cost;
+  const annotations = parsed.choices?.[0]?.message?.annotations;
   return {
     text,
     model,
@@ -99,6 +128,8 @@ async function post(
     tokensOut: parsed.usage?.completion_tokens,
     _model: model,
     ...(typeof finish === 'string' && finish ? { finishReason: finish } : {}),
+    ...(typeof cost === 'number' && Number.isFinite(cost) ? { reportedCostUsd: cost } : {}),
+    ...(annotations !== undefined ? { annotations } : {}),
   };
 }
 
@@ -258,6 +289,47 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       PROVIDER_TIMEOUTS.visionDocument,
     );
     return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+  },
+
+  async parsePdf(pdf: Buffer, opts: VisionParsePdfOptions): Promise<VisionExtractResult> {
+    if (!opts.apiKey) throw new Error('openrouter-vision: apiKey required');
+    if (!pdf || pdf.length === 0) throw new Error('openrouter-vision: empty PDF buffer');
+    if (!opts.engine) throw new Error('openrouter-vision: a PDF parser engine is required');
+    const dataUrl = `data:application/pdf;base64,${pdf.toString('base64')}`;
+    // The parser reads the file; the model only gets its text as input, and
+    // its answer (16 tokens) is not used. `usage.include` asks for the billed
+    // cost, which holds the parser's fee.
+    const r = await post(
+      opts.apiKey,
+      {
+        model: opts.model,
+        max_tokens: opts.maxTokens ?? 16,
+        temperature: 0,
+        usage: { include: true },
+        plugins: [{ id: 'file-parser', pdf: { engine: opts.engine } }],
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Reply OK.' },
+              {
+                type: 'file',
+                file: { filename: opts.filename ?? 'page.pdf', file_data: dataUrl },
+              },
+            ],
+          },
+        ],
+      },
+      PROVIDER_TIMEOUTS.visionDocument,
+    );
+    return {
+      text: fileAnnotationText(r.annotations).trim(),
+      model: r.model,
+      tokensIn: r.tokensIn,
+      tokensOut: r.tokensOut,
+      ...(r.finishReason ? { finishReason: r.finishReason } : {}),
+      ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
+    };
   },
 
   async discoverModels({ apiKey }: ProviderCredential): Promise<DiscoveryResult<VisionModelInfo>> {

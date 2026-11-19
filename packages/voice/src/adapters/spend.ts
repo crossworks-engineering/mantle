@@ -34,6 +34,7 @@ import type {
   VisionDispatcher,
   VisionExtractOptions,
   VisionExtractResult,
+  VisionParsePdfOptions,
 } from './types';
 
 /** Record one call's usage, built by `build` after the call returned. Never
@@ -75,6 +76,7 @@ export function recordVision(
     priceAs: [opts.model, r.model],
     inputTokens: r.tokensIn ?? 0,
     outputTokens: r.tokensOut ?? 0,
+    ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
   }));
 }
 
@@ -167,6 +169,7 @@ export function recordingEmbedding(adapter: EmbeddingDispatcher): EmbeddingDispa
 export function recordingVision(adapter: VisionDispatcher): VisionDispatcher {
   return once(adapter, (a) => {
     const extractDocument = a.extractDocument?.bind(a);
+    const parsePdf = a.parsePdf?.bind(a);
     return {
       ...a,
       extract: async (image, opts) => {
@@ -181,6 +184,17 @@ export function recordingVision(adapter: VisionDispatcher): VisionDispatcher {
               assertModelAllowed('vision', a.providerId, opts.model);
               const r = await extractDocument(doc, opts);
               recordVision(a.providerId, opts, r);
+              return r;
+            },
+          }
+        : {}),
+      ...(parsePdf
+        ? {
+            parsePdf: async (pdf: Buffer, opts: VisionParsePdfOptions) => {
+              assertModelAllowed('vision', a.providerId, opts.model);
+              const r = await parsePdf(pdf, opts);
+              // The parser's fee is in the billed cost (reportedCostUsd).
+              recordVision(a.providerId, { ...opts, mimeType: 'application/pdf', prompt: '' }, r);
               return r;
             },
           }
