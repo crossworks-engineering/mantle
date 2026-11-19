@@ -79,6 +79,7 @@ import {
   effectiveBrainDepth,
   isParserUnavailable,
   removeFileDbNames,
+  removeOtherWindowStages,
   resolveEffectiveIndexing,
   metadataSpineText,
   readByStampOf,
@@ -569,6 +570,12 @@ export async function admitForExtraction(
   const indexing = node.type === 'file' ? await resolveEffectiveIndexing(ownerId, node) : null;
   const isPrivate = indexing?.effective === 'metadata';
   if (isPrivate) await removeFileDbNames(node.id);
+  // A book's page windows kept for older bytes go (window stage,
+  // packages/content/src/window-stage.ts): new bytes never take them, and a
+  // replace that builds no database would leave them.
+  else if (node.type === 'file') {
+    await removeOtherWindowStages(node.id, (node.data as Record<string, unknown> | null)?.sha256);
+  }
 
   // The file's database, and a Table on a box that still makes them, independent
   // of the text-extraction allowlist below (registers should reach /tables even

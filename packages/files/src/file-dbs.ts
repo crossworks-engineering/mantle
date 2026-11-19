@@ -3,6 +3,9 @@
  *
  *   <files root>/.file-dbs/<file id>.<sha16>.sqlite   the rows
  *   <files root>/.file-dbs/<file id>.<sha16>.none     one word: why there are none
+ *   <files root>/.file-dbs/<file id>.<sha16>.stage-<run16>-<first page>.json
+ *                                                     one page window a Reader
+ *                                                     read, kept until the build
  *
  * The word is the first line of a `.none`. A file whose Reader gave its text
  * and no tabs (docs/pipelines.md, "Text and pictures from every Reader") has
@@ -23,12 +26,27 @@
  * It matches a file's names by a readdir and a prefix, never a glob, and leaves
  * a `.build-*` alone: that is a write in flight, or residue for the orphans
  * list.
+ *
+ * The window stage (docs/pipelines.md, "Page windows"; a book read again
+ * after an expire or a restart): each page window a Reader read in a real
+ * read is kept here as it ends, one JSON file a window, named by the file's
+ * id, its bytes (the sha16 in the name, the whole sha256 inside), the run
+ * (`run16`: the hash of the Reader's run key: its id and version, the sha256,
+ * the options and the kind it was named) and the window's first page. A
+ * read of the same bytes by the same run takes the windows kept and reads on
+ * from the first one that is not. The stage is not a database: the lists
+ * below (finishedFileDbNames, fileIdsWithDatabase, listFileDbFolder) never
+ * show it. It goes at the end of the build (removeWindowStage), with every
+ * name of the file (removeFileDbNames: a delete, a file turned private), and
+ * when the file's bytes change (removeOtherFileDbNames and
+ * removeOtherWindowStages: the next extract).
  */
 import { randomUUID } from 'node:crypto';
 import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterOuterCommit } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { filesRoot } from './paths';
 
 /** Why a file has no rows. */
@@ -39,6 +57,11 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const SAFE_ID = /^[A-Za-z0-9-]+$/;
 /** A finished name: the file's id, the sha16, and a database's sidecars. */
 const FINISHED_NAME = /^([A-Za-z0-9-]+)\.([0-9a-f]{16})\.(?:none|sqlite(?:-journal|-wal|-shm)?)$/;
+/** A window kept by the stage: the file's id, the sha16, the run16 and the
+ *  window's first page. */
+const STAGE_NAME =
+  /^([A-Za-z0-9-]+)\.([0-9a-f]{16})\.stage-([0-9a-f]{16})-([1-9][0-9]{0,8})\.json$/;
+const RUN16 = /^[0-9a-f]{16}$/;
 
 /** A sha256 a name can be built from: 64 hex characters. */
 export function isFileSha256(sha: unknown): sha is string {
@@ -192,7 +215,8 @@ export async function removeFileDbNone(fileId: string, sha256: unknown): Promise
 }
 
 /** A file's finished names on disk, with the sha16 each carries. A database's
- *  sidecars count as its name. Never a `.build-*`. */
+ *  sidecars count as its name, and so does a window its stage keeps. Never a
+ *  `.build-*`. */
 async function namesOf(fileId: string): Promise<{ name: string; sha16: string }[]> {
   if (!SAFE_ID.test(fileId)) return [];
   let entries: string[];
@@ -203,7 +227,7 @@ async function namesOf(fileId: string): Promise<{ name: string; sha16: string }[
   }
   const out: { name: string; sha16: string }[] = [];
   for (const name of entries) {
-    const m = FINISHED_NAME.exec(name);
+    const m = FINISHED_NAME.exec(name) ?? STAGE_NAME.exec(name);
     if (m && m[1] === fileId) out.push({ name, sha16: m[2]! });
   }
   return out;
@@ -336,4 +360,112 @@ export function removeOtherFileDbNames(fileId: string, sha256: unknown): Promise
  */
 export async function removeFileDbNamesAfterCommit(fileId: string): Promise<void> {
   await afterOuterCommit(() => removeFileDbNames(fileId));
+}
+
+/** One window the stage keeps: its first page and its JSON as written. */
+export type StagedWindow = { from: number; body: string };
+
+/** The stage's names of one run of a file at these bytes, or null when the
+ *  row cannot name any. */
+function stagePrefixOf(fileId: string, sha256: unknown, run16: string): string | null {
+  if (!isFileSha256(sha256) || !SAFE_ID.test(fileId) || !RUN16.test(run16)) return null;
+  return `${fileId}.${sha256.slice(0, 16)}.stage-${run16}-`;
+}
+
+/**
+ * The windows the stage keeps of one run of a file at these bytes, by their
+ * first page: one read of the folder, then each file of the run read whole.
+ * The caller checks what each holds (its sha256 and run key) before it uses
+ * it. Empty with no folder, no files mount, or a row that names none. A file
+ * that cannot be read is left out: its window is read again.
+ */
+export async function readWindowStage(
+  fileId: string,
+  sha256: unknown,
+  run16: string,
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const prefix = stagePrefixOf(fileId, sha256, run16);
+  if (!prefix) return out;
+  let entries: string[];
+  try {
+    entries = await fs.readdir(fileDbsDir());
+  } catch {
+    return out;
+  }
+  for (const name of entries) {
+    if (!name.startsWith(prefix)) continue;
+    const m = STAGE_NAME.exec(name);
+    if (!m) continue;
+    try {
+      out.set(Number(m[4]), await fs.readFile(path.join(fileDbsDir(), name), 'utf8'));
+    } catch {
+      // gone since the readdir, or unreadable: the window is read again
+    }
+  }
+  return out;
+}
+
+/**
+ * Keep one window of a run: a temp name in the same folder, then a rename, so
+ * a reader never sees half a window. Returns false (and logs) when it could
+ * not be written: the run goes on, and only a resume loses that window.
+ */
+export async function writeWindowStage(
+  fileId: string,
+  sha256: unknown,
+  run16: string,
+  from: number,
+  body: string,
+): Promise<boolean> {
+  const prefix = stagePrefixOf(fileId, sha256, run16);
+  if (!prefix || !Number.isInteger(from) || from < 1) return false;
+  const abs = path.join(fileDbsDir(), `${prefix}${from}.json`);
+  const build = `${abs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
+  try {
+    await fs.mkdir(fileDbsDir(), { recursive: true });
+    await fs.writeFile(build, body);
+    await fs.rename(build, abs);
+    return true;
+  } catch (err) {
+    log('file-dbs').warn(`a window of ${fileId} was not kept: ${errorMessage(err)}`);
+    return false;
+  } finally {
+    await fs.rm(build, { force: true }).catch(() => {});
+  }
+}
+
+/** The stage of a file at these bytes, every run of it: its build is done.
+ *  Logs and never throws. */
+export async function removeWindowStage(fileId: string, sha256: unknown): Promise<void> {
+  if (!isFileSha256(sha256)) return;
+  const sha16 = sha256.slice(0, 16);
+  await removeStages(fileId, (s) => s !== sha16);
+}
+
+/** The stage of a file at any bytes but these (no valid sha256: all of it):
+ *  the bytes changed, and no read of the new ones takes the old windows.
+ *  Logs and never throws. */
+export async function removeOtherWindowStages(fileId: string, sha256: unknown): Promise<void> {
+  const current = isFileSha256(sha256) ? sha256.slice(0, 16) : null;
+  await removeStages(fileId, (s) => s === current);
+}
+
+async function removeStages(fileId: string, keep: (sha16: string) => boolean): Promise<void> {
+  if (!SAFE_ID.test(fileId)) return;
+  try {
+    const dir = fileDbsDir();
+    let entries: string[];
+    try {
+      entries = await fs.readdir(dir);
+    } catch {
+      return; // no folder, or no files mount in this process
+    }
+    for (const name of entries) {
+      const m = STAGE_NAME.exec(name);
+      if (m && m[1] === fileId && !keep(m[2]!)) await fs.rm(path.join(dir, name), { force: true });
+    }
+  } catch (err) {
+    log('file-dbs').warn(`could not remove the window stage of ${fileId}: ${errorMessage(err)}`);
+  }
 }

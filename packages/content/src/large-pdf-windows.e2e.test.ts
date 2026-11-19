@@ -16,6 +16,10 @@
  *    order, none lost; the first and the last page of each window, read by
  *    the local OCR inside the step, print the page number the request
  *    names on the ORIGINAL file;
+ *  - the scanned book read with a window stage (a real read) and stopped
+ *    before its last window reads on from that window, and gives the rows,
+ *    text and counts of the read in one go (./window-stage.ts; that the
+ *    kept windows are not read again is pinned in window-stage.test.ts);
  *  - a PDF past the 256 MB pdfjs opens gives its pictures window by window:
  *    500 kept of 520 found, in reading order with their true pages, so the
  *    file says "500 of 520 pictures kept"; a cap of 600 then finds the 20
@@ -28,9 +32,10 @@
  *    typed PDF of over 1,000,000 characters keeps every page whole; every
  *    picture of the 520 is kept, a small job size only paces the read.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { envDynamic } from '@mantle/config';
 import {
   BUILTIN_PIPELINES,
@@ -39,6 +44,7 @@ import {
   PDF_MAX_BYTES,
   effectiveOptions,
   extractionOf,
+  fileDbsDir,
   parserImages,
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
@@ -53,6 +59,7 @@ import {
   runWindowed,
   stepFileOf,
 } from './pipeline-runner';
+import { windowRunKey } from './window-stage';
 
 const DIR = envDynamic('LARGE_PDF_E2E_DIR');
 const LONG = 30 * 60_000;
@@ -102,6 +109,44 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       const printed = rows.filter((r) => r[2] !== null);
       for (const r of printed) expect(r[2], `page ${r[0]}`).toBe(r[0]);
       expect(printed.length).toBeGreaterThanOrEqual(Math.floor(spans.length * 2 * 0.9));
+
+      // The same read with a window stage: every window kept as it ends.
+      // Then the last one is taken out, as a run stopped before it, and a
+      // run again reads that window only and gives the read in one go.
+      const root = mkdtempSync(path.join(tmpdir(), 'mantle-e2e-stage-'));
+      vi.stubEnv('MANTLE_FILES_ROOT', root);
+      try {
+        const file = stepFileOf(bytes, 'pdf');
+        const stage = {
+          fileId: '11111111-1111-4111-8111-111111111111',
+          sha256: file.sha256,
+          runKey: windowRunKey(`test-window:${file.sha256}`, { kind: 'book' }, window),
+        };
+        const pipeline = { ...reader, needs: { ...reader.needs, window } } as never;
+        const opts = { options: {}, kind: 'book', state: { core: true }, stage };
+        const kept = await runWindowed(pipeline, bytes, file, opts);
+        expect(kept.write).toEqual(run.write);
+        const files = readdirSync(fileDbsDir()).filter((n) => n.includes('.stage-'));
+        expect(files).toHaveLength(spans.length);
+        const lastFrom = spans.at(-1)![0];
+        rmSync(
+          path.join(
+            fileDbsDir(),
+            files.find((n) => n.endsWith(`-${lastFrom}.json`))!,
+          ),
+        );
+        const resumed = await runWindowed(pipeline, bytes, file, opts);
+        expect(resumed.write).toEqual(run.write);
+        expect(resumed.counts).toEqual(run.counts);
+        expect(resumed.windows).toEqual(run.windows);
+        // The window read again is kept again.
+        expect(readdirSync(fileDbsDir()).filter((n) => n.includes('.stage-'))).toHaveLength(
+          spans.length,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+        rmSync(root, { recursive: true, force: true });
+      }
     },
     LONG,
   );

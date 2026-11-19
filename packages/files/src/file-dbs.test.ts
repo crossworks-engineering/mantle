@@ -13,13 +13,19 @@ import {
   fileDbSqlitePath,
   fileDbsDir,
   fileIdsWithDatabase,
+  finishedFileDbNames,
   isFileSha256,
+  listFileDbFolder,
   readFileDbNone,
   readFileDbNoneStamp,
+  readWindowStage,
   removeFileDbNames,
   removeFileDbNamesAfterCommit,
   removeOtherFileDbNames,
+  removeOtherWindowStages,
+  removeWindowStage,
   writeFileDbNone,
+  writeWindowStage,
 } from './file-dbs';
 
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -199,5 +205,86 @@ describe('the removals', () => {
     touch(`${ID}.${a}.sqlite`);
     await removeFileDbNamesAfterCommit(ID);
     expect(left()).toEqual([]);
+  });
+});
+
+describe('the window stage', () => {
+  const RUN = '0123456789abcdef';
+  const RUN2 = 'fedcba9876543210';
+  const stageName = (id: string, sha: string, run: string, from: number) =>
+    `${id}.${sha.slice(0, 16)}.stage-${run}-${from}.json`;
+
+  it('keeps a window under the file, its bytes and its run, read back by first page', async () => {
+    expect(await writeWindowStage(ID, SHA_A, RUN, 1, '{"one":1}')).toBe(true);
+    expect(await writeWindowStage(ID, SHA_A, RUN, 51, '{"two":2}')).toBe(true);
+    // Another run and other bytes of the same file, and another file.
+    await writeWindowStage(ID, SHA_A, RUN2, 1, 'run2');
+    await writeWindowStage(ID, SHA_B, RUN, 1, 'sha-b');
+    await writeWindowStage(OTHER, SHA_A, RUN, 1, 'other');
+    expect(left()).toContain(stageName(ID, SHA_A, RUN, 51));
+    // No temp file is left.
+    expect(left().some((n) => n.includes('.build-'))).toBe(false);
+    const kept = await readWindowStage(ID, SHA_A, RUN);
+    expect([...kept.entries()].sort((a, b) => a[0] - b[0])).toEqual([
+      [1, '{"one":1}'],
+      [51, '{"two":2}'],
+    ]);
+    expect([...(await readWindowStage(ID, SHA_B, RUN)).values()]).toEqual(['sha-b']);
+  });
+
+  it('names nothing from bad parts', async () => {
+    expect(await writeWindowStage(ID, 'nope', RUN, 1, 'x')).toBe(false);
+    expect(await writeWindowStage('../evil', SHA_A, RUN, 1, 'x')).toBe(false);
+    expect(await writeWindowStage(ID, SHA_A, 'NOT-HEX', 1, 'x')).toBe(false);
+    expect(await writeWindowStage(ID, SHA_A, RUN, 0, 'x')).toBe(false);
+    expect((await readWindowStage(ID, 'nope', RUN)).size).toBe(0);
+  });
+
+  it('is no database: the lists of names never show it', async () => {
+    await writeWindowStage(ID, SHA_A, RUN, 1, 'x');
+    expect(await fileIdsWithDatabase({ words: true })).toEqual([]);
+    expect((await finishedFileDbNames()).size).toBe(0);
+    expect(await listFileDbFolder()).toEqual({ names: [], builds: [] });
+    expect(await fileDbNameExists(ID, SHA_A)).toBe(false);
+  });
+
+  it('the end of a build removes every run of these bytes, and nothing else', async () => {
+    await writeWindowStage(ID, SHA_A, RUN, 1, 'x');
+    await writeWindowStage(ID, SHA_A, RUN2, 1, 'x');
+    await writeWindowStage(ID, SHA_B, RUN, 1, 'x');
+    await writeWindowStage(OTHER, SHA_A, RUN, 1, 'x');
+    touch(`${ID}.${'a'.repeat(16)}.sqlite`);
+    await removeWindowStage(ID, SHA_A);
+    expect(left()).toEqual(
+      [
+        `${ID}.${'a'.repeat(16)}.sqlite`,
+        stageName(ID, SHA_B, RUN, 1),
+        stageName(OTHER, SHA_A, RUN, 1),
+      ].sort(),
+    );
+  });
+
+  it('new bytes remove the stage of older ones (the extract, and the build of a database)', async () => {
+    await writeWindowStage(ID, SHA_A, RUN, 1, 'x');
+    await writeWindowStage(ID, SHA_B, RUN, 1, 'x');
+    await removeOtherWindowStages(ID, SHA_B);
+    expect(left()).toEqual([stageName(ID, SHA_B, RUN, 1)]);
+    await writeWindowStage(ID, SHA_A, RUN, 1, 'x');
+    await removeOtherFileDbNames(ID, SHA_B);
+    expect(left()).toEqual([stageName(ID, SHA_B, RUN, 1)]);
+  });
+
+  it('a delete, or a turn to private, removes it with every name of the file', async () => {
+    await writeWindowStage(ID, SHA_A, RUN, 1, 'x');
+    await writeWindowStage(ID, SHA_B, RUN2, 51, 'x');
+    await writeWindowStage(OTHER, SHA_A, RUN, 1, 'x');
+    await removeFileDbNames(ID);
+    expect(left()).toEqual([stageName(OTHER, SHA_A, RUN, 1)]);
+  });
+
+  it('a missing folder is not an error', async () => {
+    expect((await readWindowStage(ID, SHA_A, RUN)).size).toBe(0);
+    await removeWindowStage(ID, SHA_A);
+    await removeOtherWindowStages(ID, SHA_A);
   });
 });

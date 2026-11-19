@@ -14,11 +14,13 @@
  * same pg-boss already driving the email/telegram workers, schema `pgboss`):
  *
  *   1. Concurrency cap   — N independent `batchSize:1` workers (pg-boss v10
- *                          dropped teamSize) on the main queue, and one more
- *                          on the heavy lane (point 5). N is the hard ceiling
- *                          on in-flight extractions regardless of how big the
+ *                          dropped teamSize) on the main queue, one more
+ *                          on the heavy lane and B on the book lane (point
+ *                          5). N is the hard ceiling on in-flight light and
+ *                          heavy extractions regardless of how big the
  *                          insert burst is: one in-process ceiling holds the
- *                          N + 1 workers to N runs. Config row →
+ *                          N + 1 workers to N runs; the book lane has its
+ *                          own ceiling of B. Config row →
  *                          `EXTRACT_CONCURRENCY` env → 2, re-read every 30s
  *                          so a UI change is live.
  *   2. Retry w/ backoff  — a transient failure (rate-limit, flaky provider)
@@ -40,14 +42,18 @@
  *                          unextracted nodes with no restart
  *                          (provider-circuit.ts, docs/embeddings.md
  *                          "Provider outages").
- *   5. Two lanes         — a drawing (DWG, DXF, DGN, DWF) is a heavy
- *                          extraction. The main worker that takes its job
- *                          sends it on to `mantle.extract.heavy`, where one
- *                          worker runs heavy files one at a time; the main
- *                          workers stay free for light files. Every sender
- *                          still sends to `mantle.extract` only. One ceiling
- *                          holds light and heavy together at N
- *                          (extract-lanes.ts).
+ *   5. Three lanes:        a drawing (DWG, DXF, DGN, DWF) is a heavy
+ *                          extraction, and a book (a PDF of 10 MB or more,
+ *                          or of more than 200 pages) a long one. The main
+ *                          worker that takes such a job sends it on to
+ *                          `mantle.extract.heavy` (one worker, a drawing at
+ *                          a time) or `mantle.extract.book` (B workers,
+ *                          EXTRACT_BOOK_CONCURRENCY, default 1); the main
+ *                          workers stay free for light files, and a book
+ *                          never holds a drawing back. Every sender still
+ *                          sends to `mantle.extract` only. One ceiling holds
+ *                          light and heavy together at N; a book's place is
+ *                          its own lane's (extract-lanes.ts).
  *   6. A run on demand   — a job with `run` (enqueuePipelineRun, sent only
  *                          for a `pipeline_run` notify: the tool, its two
  *                          routes, `pipeline_reread` and its route,
@@ -111,9 +117,11 @@ import {
 import { parserPdfPageCount, readFileById } from '@mantle/files';
 import { extractNode } from './extractor.js';
 import {
+  BOOK_HOP_OUTPUT,
   bookExpireMinutes,
+  bookLaneWorkers,
   ExtractCeiling,
-  extractWeightOfNode,
+  extractLaneOfNode,
   HEAVY_HOP_OUTPUT,
   HEAVY_LANE_WORKERS,
 } from './extract-lanes.js';
@@ -129,6 +137,8 @@ const EXTRACT_QUEUE = 'mantle.extract';
  *  queue's own workers. Its failed jobs go to the same dead-letter queue, and
  *  a re-drive from there enters by the main queue again. */
 const HEAVY_QUEUE = 'mantle.extract.heavy';
+/** The book lane (extract-lanes.ts): the same as the heavy lane, for books. */
+const BOOK_QUEUE = 'mantle.extract.book';
 const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
 
 /** How long a worker may hold a single extraction before pg-boss declares the
@@ -178,8 +188,14 @@ const workerIds: string[] = [];
 /** The heavy lane's workers: HEAVY_LANE_WORKERS while the queue runs, none
  *  while it is paused. */
 const heavyWorkerIds: string[] = [];
+/** The book lane's workers: bookLaneWorkers() while the queue runs, none
+ *  while it is paused. */
+const bookWorkerIds: string[] = [];
 /** Light and heavy together never pass the configured worker count. */
 const ceiling = new ExtractCeiling(envNum('EXTRACT_CONCURRENCY'));
+/** Books never pass the book lane's count, and take no place of the one
+ *  above (extract-lanes.ts, rule 3). */
+const bookCeiling = new ExtractCeiling(bookLaneWorkers());
 let activeOwnerId: string | null = null;
 let activeExpireMin = EXTRACT_EXPIRE_MIN;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
@@ -312,6 +328,7 @@ export async function startExtractQueue(
 
   await boss.createQueue(EXTRACT_QUEUE, queueOptions);
   await boss.createQueue(HEAVY_QUEUE, queueOptions);
+  await boss.createQueue(BOOK_QUEUE, queueOptions);
   // createQueue is ON CONFLICT DO NOTHING, so an existing queue keeps the
   // settings it was first created with; updateQueue lands the resolved expiry
   // (which the user can change in the UI) on an already-created queue.
@@ -327,6 +344,7 @@ export async function startExtractQueue(
   const { policy: _policy, ...mutableQueueOptions } = queueOptions;
   await boss.updateQueue(EXTRACT_QUEUE, mutableQueueOptions);
   await boss.updateQueue(HEAVY_QUEUE, mutableQueueOptions);
+  await boss.updateQueue(BOOK_QUEUE, mutableQueueOptions);
 
   const redriven = await redriveDeadLetters();
   if (redriven > 0) {
@@ -360,19 +378,18 @@ export async function startExtractQueue(
   console.log(
     `[extract-queue] ${circuit.isPaused() ? `0 worker(s), PAUSED by a provider outage (${concurrency} when it works)` : `${concurrency} worker(s)`} on ${EXTRACT_QUEUE} ` +
       `(policy=short, ${expireMin}min budget, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE}); ` +
-      `heavy files ${HEAVY_LANE_WORKERS} at a time on ${HEAVY_QUEUE}`,
+      `heavy files ${HEAVY_LANE_WORKERS} at a time on ${HEAVY_QUEUE}; ` +
+      `books ${bookLaneWorkers()} at a time on ${BOOK_QUEUE}`,
   );
 }
 
-/** Whether a node's extraction is heavy (extract-lanes.ts). A node that is
- *  gone is light: the extractor finds that out and says so itself. A PDF's
- *  page count is read here (pdfPagesOf): a long one is heavy whatever its
- *  bytes, and its count sets the heavy job's time budget. */
-async function heavyNodeOf(
+/** The lane of a node's extraction (extract-lanes.ts). A node that is gone
+ *  is light: the extractor finds that out and says so itself. A PDF's page
+ *  count is read here (pdfPagesOf): a long one is a book whatever its bytes,
+ *  and its count sets the book job's time budget. */
+async function laneOfNode(
   nodeId: string,
-): Promise<
-  { heavy: false } | { heavy: true; pdf: boolean; ownerId: string; pages: number | null }
-> {
+): Promise<{ lane: 'light' | 'heavy' } | { lane: 'book'; pages: number | null }> {
   const [row] = await db
     .select({
       type: nodes.type,
@@ -384,13 +401,13 @@ async function heavyNodeOf(
     .from(nodes)
     .where(eq(nodes.id, nodeId))
     .limit(1);
-  if (!row) return { heavy: false };
+  if (!row) return { lane: 'light' };
   const sizeBytes = row.sizeBytes === null ? null : Number(row.sizeBytes);
   const name = (row.filename ?? row.title ?? '').toLowerCase();
   const pdf = row.type === 'file' && name.endsWith('.pdf');
   const pages = pdf ? await pdfPagesOf(row.ownerId, nodeId) : null;
-  if (extractWeightOfNode({ ...row, sizeBytes, pages }) !== 'heavy') return { heavy: false };
-  return { heavy: true, pdf, ownerId: row.ownerId, pages };
+  const lane = extractLaneOfNode({ ...row, sizeBytes, pages });
+  return lane === 'book' ? { lane, pages } : { lane };
 }
 
 /** A PDF's page count (qpdf in the parser, no page decode), or null when it
@@ -408,7 +425,7 @@ async function pdfPagesOf(ownerId: string, nodeId: string): Promise<number | nul
 /**
  * The time budget of a heavy PDF's job (extract-lanes.ts bookExpireMinutes,
  * decision 3 of the large-PDF finish): the base for its first window, more
- * for each page window, by its page count. Set on the job sent to the heavy
+ * for each page window, by its page count. Set on the job sent to the book
  * lane: pg-boss bounds a handler by the expiry it was fetched with. A count
  * that could not be read: the most, still bounded.
  */
@@ -416,50 +433,57 @@ function bookExpireSeconds(pages: number | null): number {
   return bookExpireMinutes(activeExpireMin, pages) * 60;
 }
 
-/** A job of the main queue: a heavy file goes on to the heavy lane, and this
- *  worker is free again at once. The 'short' policy collapses a second hop of
- *  the same node while the first still waits there. */
+/** A job of the main queue: a heavy file or a book goes on to its lane,
+ *  and this worker is free again at once. The 'short' policy collapses a
+ *  second hop of the same node while the first still waits there. */
 async function handleMainJob(
   jobs: { data: ExtractJob }[],
-): Promise<typeof HEAVY_HOP_OUTPUT | void> {
+): Promise<typeof HEAVY_HOP_OUTPUT | typeof BOOK_HOP_OUTPUT | void> {
   const job = jobs[0]?.data;
   // A run of an `after` pipeline stays here: a patch reads no bytes.
   const afterRun = !!job?.run && !!activeOwnerId && (await isAfterRun(activeOwnerId, job.run));
-  const heavy =
-    job?.nodeId && !afterRun && boss && heavyWorkerIds.length > 0
-      ? await heavyNodeOf(job.nodeId)
-      : { heavy: false as const };
-  if (job && boss && heavy.heavy) {
+  const lanes = heavyWorkerIds.length > 0 && bookWorkerIds.length > 0;
+  const lane =
+    job?.nodeId && !afterRun && boss && lanes
+      ? await laneOfNode(job.nodeId)
+      : { lane: 'light' as const };
+  if (job && boss && lane.lane === 'book') {
     // A book's time budget grows with its pages (bookExpireSeconds).
-    const expire = heavy.pdf ? bookExpireSeconds(heavy.pages) : null;
-    await boss.send(HEAVY_QUEUE, job, {
+    await boss.send(BOOK_QUEUE, job, {
       ...sendOptionsOf(job),
-      ...(expire !== null ? { expireInSeconds: expire } : {}),
+      expireInSeconds: bookExpireSeconds(lane.pages),
     });
+    return BOOK_HOP_OUTPUT;
+  }
+  if (job && boss && lane.lane === 'heavy') {
+    await boss.send(HEAVY_QUEUE, job, sendOptionsOf(job));
     return HEAVY_HOP_OUTPUT;
   }
-  return handleExtractJob(jobs);
+  return handleExtractJob(jobs, ceiling);
 }
 
 /** One pg-boss registration per worker: each polls on its own, pg-boss hands
  *  out distinct jobs via SKIP LOCKED, so N workers = up to N concurrent
  *  extractions, each retried independently. batchSize:1 keeps a slow/failing
  *  node from coupling its fate to a batch-mate. */
-async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
+async function handleExtractJob(
+  [job]: { data: ExtractJob }[],
+  under: ExtractCeiling,
+): Promise<void> {
   if (!job?.data?.nodeId || !activeOwnerId) return;
   const ownerId = activeOwnerId;
   const { nodeId, run: pipelineId } = job.data;
   // Serialise per node (parallel across nodes) — see module header.
   const prev = inflightByNode.get(nodeId);
-  // Under the ceiling: light and heavy together never pass the worker count.
-  // The wait for a place is inside the job's time budget (pg-boss counts from
-  // the fetch): with N + 1 workers and N places at most one run waits, for
-  // one run of another file.
+  // Under its ceiling: light and heavy together never pass the worker count;
+  // a book its own lane's. The wait for a place is inside the job's time
+  // budget (pg-boss counts from the fetch): with N + 1 workers and N places
+  // at most one run waits, for one run of another file.
   // A run on demand calls its job and nothing else (pipeline-run.ts): it
   // never throws, and it is sent with no retry, so past its time budget it
   // fails once.
   const extract = () =>
-    ceiling.run(() =>
+    under.run(() =>
       pipelineId
         ? runPipelineJob(ownerId, nodeId, pipelineId).then(() => {})
         : extractNode(nodeId, ownerId),
@@ -501,7 +525,7 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   }
 }
 
-/** One more worker on a queue of either lane. An extraction is the runner's
+/** One more worker on a queue of any lane. An extraction is the runner's
  *  own work: this is the one place a job is bound to it. */
 function addWorker(
   b: PgBoss,
@@ -518,14 +542,27 @@ function addWorker(
  *  mid-extraction. */
 async function setWorkerCount(target: number): Promise<void> {
   if (!boss) return;
-  // A paused queue (0) keeps the ceiling it had: the runs in flight finish
-  // under it.
-  if (target > 0) ceiling.setLimit(target);
-  // The heavy lane first, so a main worker never takes a heavy file while
-  // the lane has no worker to give it to; and last out, the same way.
+  // A paused queue (0) keeps the ceilings it had: the runs in flight finish
+  // under them.
+  const books = bookLaneWorkers();
+  if (target > 0) {
+    ceiling.setLimit(target);
+    bookCeiling.setLimit(books);
+  }
+  // The heavy and book lanes first, so a main worker never takes a heavy
+  // file or a book while its lane has no worker to give it to; and last
+  // out, the same way.
   const heavyTarget = target > 0 ? HEAVY_LANE_WORKERS : 0;
+  const bookTarget = target > 0 ? books : 0;
   while (heavyWorkerIds.length < heavyTarget) {
-    heavyWorkerIds.push(await addWorker(boss, HEAVY_QUEUE, handleExtractJob));
+    heavyWorkerIds.push(
+      await addWorker(boss, HEAVY_QUEUE, (jobs) => handleExtractJob(jobs, ceiling)),
+    );
+  }
+  while (bookWorkerIds.length < bookTarget) {
+    bookWorkerIds.push(
+      await addWorker(boss, BOOK_QUEUE, (jobs) => handleExtractJob(jobs, bookCeiling)),
+    );
   }
   while (workerIds.length < target) {
     workerIds.push(await addWorker(boss, EXTRACT_QUEUE, handleMainJob));
@@ -537,6 +574,10 @@ async function setWorkerCount(target: number): Promise<void> {
   while (heavyWorkerIds.length > heavyTarget) {
     const id = heavyWorkerIds.pop();
     if (id) await boss.offWork(HEAVY_QUEUE, { id, wait: false });
+  }
+  while (bookWorkerIds.length > bookTarget) {
+    const id = bookWorkerIds.pop();
+    if (id) await boss.offWork(BOOK_QUEUE, { id, wait: false });
   }
 }
 
@@ -570,6 +611,7 @@ async function reconcileWithConfig(): Promise<void> {
       const { policy: _policy, ...mutable } = EXTRACT_QUEUE_OPTIONS;
       await boss.updateQueue(EXTRACT_QUEUE, { ...mutable, expireInSeconds: expireMin * 60 });
       await boss.updateQueue(HEAVY_QUEUE, { ...mutable, expireInSeconds: expireMin * 60 });
+      await boss.updateQueue(BOOK_QUEUE, { ...mutable, expireInSeconds: expireMin * 60 });
       console.log(`[extract-queue] time budget ${activeExpireMin} → ${expireMin} min`);
       activeExpireMin = expireMin;
     }
@@ -604,8 +646,8 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
  * nothing else sends one. Its singleton key
  * is `<pipeline>:<node>`, so a second notify for the same file and
  * pipeline while the first waits sends no second job. A reader's run of a
- * heavy file goes on to the heavy lane as an extract does (handleMainJob);
- * an `after` run stays on this queue. No-op if the queue isn't started.
+ * heavy file or a book goes on to the heavy or the book lane as an extract
+ * does (handleMainJob); an `after` run stays on this queue. No-op if the queue isn't started.
  */
 export async function enqueuePipelineRun(nodeId: string, pipelineId: string): Promise<void> {
   assertNoViewer('enqueuePipelineRun');
@@ -632,6 +674,7 @@ export async function stopExtractQueue(): Promise<void> {
   reconcileTimer = null;
   workerIds.length = 0;
   heavyWorkerIds.length = 0;
+  bookWorkerIds.length = 0;
   circuit = null;
   routesFingerprint = null;
   if (!boss) return;

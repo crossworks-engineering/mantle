@@ -1,12 +1,13 @@
 /**
  * The extractor's queue counts (lib/extraction-queue.ts) and the backlog
- * count of the provider alerts (@mantle/db) on a real Postgres, with the two
- * queues that hold the work: `mantle.extract`, and `mantle.extract.heavy` for
- * drawings (server/api/src/agent/extract-lanes.ts).
+ * count of the provider alerts (@mantle/db) on a real Postgres, with the three
+ * queues that hold the work: `mantle.extract`, `mantle.extract.heavy` for
+ * drawings and `mantle.extract.book` for books
+ * (server/api/src/agent/extract-lanes.ts).
  *  - a job counts whichever queue holds it;
- *  - a drawing is one "done", not two: the main queue completes its job when
- *    it sends the file on (output `{ lane: 'heavy' }`), and that hop is not a
- *    finished extraction;
+ *  - a drawing or a book is one "done", not two: the main queue completes its
+ *    job when it sends the file on (output `{ lane: 'heavy' }` or
+ *    `{ lane: 'book' }`), and that hop is not a finished extraction;
  *  - a job of another queue is not counted;
  *  - a dead-lettered run on demand is no backlog to recover;
  *  - the busy rule of a run on demand (extractQueueBusy, @mantle/db).
@@ -19,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
+describe.skipIf(!URL)('the extract queue counts, with the heavy and book lanes', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let su: ReturnType<Ts['superuserClient']>;
@@ -52,6 +53,11 @@ describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
       -- a drawing: the hop on the main queue, then done on the heavy lane
       ('mantle.extract',       'completed', '{"lane":"heavy"}'::jsonb, now()),
       ('mantle.extract.heavy', 'completed', null, now()),
+      -- a book: the hop, then done on the book lane; one more runs, one waits
+      ('mantle.extract',       'completed', '{"lane":"book"}'::jsonb, now()),
+      ('mantle.extract.book',  'completed', null, now()),
+      ('mantle.extract.book',  'active',    null, null),
+      ('mantle.extract.book',  'created',   null, null),
       -- done long ago: not in the last ten minutes
       ('mantle.extract',       'completed', null, now() - interval '1 hour'),
       ('mantle.extract.dead',  'created',   null, null),
@@ -67,21 +73,21 @@ describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
     await scratch?.drop();
   });
 
-  it('counts both queues, and a drawing once', async () => {
+  it('counts the three queues, and a drawing or a book once', async () => {
     const { extractionQueueCounts } = await import('./extraction-queue');
     const counts = await m.runAsSystem('test:extraction-queue', () => extractionQueueCounts());
     expect(counts).toEqual({
-      running: 2,
-      waiting: 5,
+      running: 3,
+      waiting: 6,
       retrying: 2,
-      doneLast10Min: 2,
+      doneLast10Min: 3,
       deadLettered: 1,
     });
   }, 60_000);
 
-  it('the provider backlog holds the heavy lane too', async () => {
-    // 2 active + 5 created + 2 retry on the two queues, and 1 dead letter.
-    expect(await m.runAsSystem('test:extraction-queue', () => m.countExtractBacklog())).toBe(10);
+  it('the provider backlog holds the heavy and book lanes too', async () => {
+    // 3 active + 6 created + 2 retry on the three queues, and 1 dead letter.
+    expect(await m.runAsSystem('test:extraction-queue', () => m.countExtractBacklog())).toBe(12);
     expect(await m.runAsSystem('test:extraction-queue', () => m.countDeadLetteredExtracts())).toBe(
       1,
     );
@@ -98,11 +104,11 @@ describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
 
   it('the busy rule of a run on demand: more than EXTRACT_BUSY_JOBS waiting or retrying', async () => {
     const busy = () => m.runAsSystem('test:extraction-queue', () => m.extractQueueBusy());
-    // 5 created and 2 retry above.
+    // 6 created and 2 retry above.
     expect(m.EXTRACT_BUSY_JOBS).toBe(50);
     expect(await busy()).toBe(false);
     await su`insert into pgboss.job (name, state)
-      select 'mantle.extract.heavy', 'created' from generate_series(1, 43)`;
+      select 'mantle.extract.heavy', 'created' from generate_series(1, 42)`;
     expect(await busy()).toBe(false); // 50: not more than 50
     await su`insert into pgboss.job (name, state) values ('mantle.extract', 'retry')`;
     expect(await busy()).toBe(true);

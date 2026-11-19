@@ -113,8 +113,9 @@ Two things are easy to read wrong on a busy box, so they are stated here.
 - **The api container runs every extraction.** Its agent runtime
   (`startAgentRuntime`, `server/api/src/main.ts`) starts the workers of the
   extract queue (`server/api/src/agent/extract-queue.ts`): the main queue
-  `mantle.extract`, and `mantle.extract.heavy` for drawings, one at a time
-  (`docs/embeddings.md`, "Drawings have their own lane"). No other container
+  `mantle.extract`, `mantle.extract.heavy` for drawings, one at a time, and
+  `mantle.extract.book` for books (`docs/embeddings.md`, "Drawings and books
+  have their own lanes"). No other container
   takes an extract job.
 - **The files worker takes no extract job.** `worker_files`
   (`server/web/workers/files-watch.ts`) is the disk watcher: for each changed

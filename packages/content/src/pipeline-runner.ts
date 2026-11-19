@@ -48,6 +48,15 @@ import {
 } from '@mantle/files';
 import { scanTabColumns } from '@mantle/tabledb';
 import { AgentAskError, askCapOf } from './pipeline-agent';
+import {
+  keepWindow,
+  picturesFromStage,
+  picturesToStage,
+  stagedWindows,
+  windowRunKey,
+  type StagedOutcome,
+  type WindowStage,
+} from './window-stage';
 
 /** How the core answers one worker call of a step. */
 export type PipelineAsk = (call: PipelineCall & { call: 'worker' }) => Promise<PipelineCallAnswer>;
@@ -416,12 +425,23 @@ export function mergeWindowWrite(
  * goes on with the next window from the last good state; so is a window
  * past the first that ends with any status but `ok`. `not_mine` on window
  * 1 is the run's answer. A busy parser throws: the extract tries again.
+ *
+ * `stage` (a real read, ./window-stage.ts): each window is kept as it ends,
+ * and a run of the same bytes, Reader and options takes the windows kept
+ * from window 1 on and reads on from the first one that is not, so a book
+ * tried again after window 3 of 6 starts at window 4, with no parser job for
+ * the first three. The result is the one a run in one go gives.
  */
 export async function runWindowed(
   pipeline: PipelineManifest & { needs: { window: { pages: number; mb: number } } },
   bytes: Buffer,
   file: NonNullable<PipelineStepRequest['file']>,
-  opts: { options: Readonly<Record<string, unknown>>; kind?: string; state?: unknown },
+  opts: {
+    options: Readonly<Record<string, unknown>>;
+    kind?: string;
+    state?: unknown;
+    stage?: WindowStage;
+  },
 ): Promise<PipelineRunResult> {
   let write: FileTabsWriteInput | undefined;
   // The built-in book reader gives none: a book's page pictures are its
@@ -433,19 +453,70 @@ export async function runWindowed(
   let state = opts.state;
   let pagesTotal = 0;
   let first = true;
-  const lose = (from: number, to: number, why: string) => {
-    failed.push({ from, to });
-    warnings.push(`Pages ${from} to ${to} ${why}.`);
+  /** One window's outcome into the run, kept or read now. */
+  const take = (o: StagedOutcome, windowPictures: ReadonlyMap<string, Buffer>) => {
+    pagesTotal = o.pagesTotal;
     first = false;
+    if ('lost' in o) {
+      failed.push({ from: o.from, to: o.to });
+      warnings.push(`Pages ${o.from} to ${o.to} ${o.lost}.`);
+      return;
+    }
+    const { run } = o;
+    warnings.push(...run.warnings);
+    for (const [k, v] of Object.entries(run.counts)) counts[k] = (counts[k] ?? 0) + v;
+    if (run.state !== undefined) state = run.state;
+    if (!run.write) return;
+    // Each window's pictures under names of their own.
+    const prefix = `w${o.from}-`;
+    for (const [name, b] of windowPictures) pictures.set(prefix + name, b);
+    const renamed: FileTabsWriteInput = {
+      ...run.write,
+      ...(run.write.pictures
+        ? { pictures: run.write.pictures.map((p) => ({ ...p, file: prefix + p.file })) }
+        : {}),
+    };
+    write = mergeWindowWrite(write, renamed, warnings);
   };
-  for await (const w of pdfWindows(bytes, file.sha256, pipeline.needs.window)) {
+  /** A window read now: into the run, then kept. */
+  const done = async (o: StagedOutcome, windowPictures: ReadonlyMap<string, Buffer>) => {
+    take(o, windowPictures);
+    if (opts.stage) await keepWindow(opts.stage, o);
+  };
+
+  // The windows a run before kept, from window 1 on, in page order.
+  let from = 1;
+  let known: number | undefined;
+  let whole = false;
+  if (opts.stage) {
+    const kept = await stagedWindows(opts.stage);
+    for (let o = kept.get(from); o; o = kept.get(from)) {
+      take(o, 'run' in o ? picturesFromStage(o.run.pictures) : new Map());
+      known = o.pagesTotal;
+      if (o.to >= o.pagesTotal) {
+        whole = true;
+        break;
+      }
+      from = o.to + 1;
+    }
+  }
+
+  const windows = whole ? [] : pdfWindows(bytes, file.sha256, pipeline.needs.window, from, known);
+  for await (const w of windows) {
     if (!w.part) {
-      pagesTotal = w.pagesTotal;
-      lose(w.from, w.to, 'could not be cut from the file');
+      await done(
+        {
+          from: w.from,
+          to: w.to,
+          pagesTotal: w.pagesTotal,
+          lost: 'could not be cut from the file',
+        },
+        new Map(),
+      );
       continue;
     }
     const { part } = w;
-    pagesTotal = part.pagesTotal;
+    const pages = { from: part.pageFrom, to: part.pageTo, pagesTotal: part.pagesTotal };
     const run = await windowJob(() =>
       runPackaged(pipeline, part.bytes, file, {
         options: opts.options,
@@ -455,29 +526,30 @@ export async function runWindowed(
       }),
     );
     if (isWindowLost(run)) {
-      lose(part.pageFrom, part.pageTo, 'could not be read');
+      await done({ ...pages, lost: 'could not be read' }, new Map());
       continue;
     }
-    if (run.status === 'not_mine' && first) return { ...run, windows: { pagesTotal, failed } };
+    if (run.status === 'not_mine' && first) {
+      return { ...run, windows: { pagesTotal: part.pagesTotal, failed } };
+    }
     if (run.status !== 'ok') {
-      lose(part.pageFrom, part.pageTo, `ended ${run.status}`);
+      await done({ ...pages, lost: `ended ${run.status}` }, new Map());
       continue;
     }
-    first = false;
-    warnings.push(...run.warnings);
-    for (const [k, v] of Object.entries(run.counts)) counts[k] = (counts[k] ?? 0) + v;
-    if (run.state !== undefined) state = run.state;
-    if (!run.write) continue;
-    // Each window's pictures under names of their own.
-    const prefix = `w${part.pageFrom}-`;
-    for (const [name, b] of run.pictures) pictures.set(prefix + name, b);
-    const renamed: FileTabsWriteInput = {
-      ...run.write,
-      ...(run.write.pictures
-        ? { pictures: run.write.pictures.map((p) => ({ ...p, file: prefix + p.file })) }
-        : {}),
-    };
-    write = mergeWindowWrite(write, renamed, warnings);
+    await done(
+      {
+        ...pages,
+        run: {
+          status: 'ok',
+          ...(run.write ? { write: run.write } : {}),
+          warnings: run.warnings,
+          counts: { ...run.counts },
+          ...(run.state !== undefined ? { state: run.state } : {}),
+          pictures: opts.stage ? picturesToStage(run.pictures) : [],
+        },
+      },
+      run.pictures,
+    );
   }
   return {
     status: 'ok',
@@ -569,7 +641,8 @@ export function readerStandsOver(pipeline: Pick<PipelineManifest, 'produces' | '
  * the database pass makes it, and the text pass of the same extract
  * (load-body.ts, the Reader's text stands over the core's PDF read) takes
  * the same run, with no second job. A windowed Reader reads in windows
- * (runWindowed); its body is the file, never the router's facts.
+ * (runWindowed); its body is the file, never the router's facts. A real
+ * read (`real`) keeps its windows as they end (./window-stage.ts).
  */
 export async function routedReaderRun(
   pipeline: PipelineManifest & { source?: PipelineSource; draft?: string },
@@ -577,14 +650,30 @@ export async function routedReaderRun(
   ext: string,
   options: Readonly<Record<string, unknown>>,
   named: { kind: string; state: unknown },
+  /** A real read of a file (its id): a windowed run keeps its windows as
+   *  they end, and takes those a run before kept (./window-stage.ts). */
+  real?: { fileId: string },
 ): Promise<PipelineRunResult> {
   const file = stepFileOf(bytes, ext);
   const key = routedRunKey(pipeline, file.sha256, ext, options);
-  return memoReaderRun(key, () =>
-    readsInWindows(pipeline, ext)
-      ? runWindowed(pipeline, bytes, file, { options, kind: named.kind, state: named.state })
-      : runPackaged(pipeline, bytes, file, { options, kind: named.kind, state: named.state }),
-  );
+  return memoReaderRun(key, () => {
+    if (!readsInWindows(pipeline, ext)) {
+      return runPackaged(pipeline, bytes, file, { options, kind: named.kind, state: named.state });
+    }
+    const stage: WindowStage | undefined = real
+      ? {
+          fileId: real.fileId,
+          sha256: file.sha256,
+          runKey: windowRunKey(key, named, pipeline.needs.window),
+        }
+      : undefined;
+    return runWindowed(pipeline, bytes, file, {
+      options,
+      kind: named.kind,
+      state: named.state,
+      ...(stage ? { stage } : {}),
+    });
+  });
 }
 
 /** The most rows of a tab an `after` pipeline reads. */

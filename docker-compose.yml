@@ -344,6 +344,9 @@ x-app-env: &app-env
   # otherwise contend for the same cores and a big file's embed batch can blow
   # past the local-embedder timeout mid-run. Clamped 1..8 in code.
   EXTRACT_CONCURRENCY: ${EXTRACT_CONCURRENCY:-2}
+  # Books at once (a PDF of 10 MB or more, or of more than 200 pages), in their
+  # own lane beside the extractions at once. Default 1, clamped 1..4 in code.
+  EXTRACT_BOOK_CONCURRENCY: ${EXTRACT_BOOK_CONCURRENCY:-}
   # Texts per local-embedder HTTP request. Default 16 clears the per-request
   # timeout on a shared vCPU; lower (e.g. 8) on an especially slow box so each
   # request finishes inside the window, raise on a GPU. The embedding cache makes

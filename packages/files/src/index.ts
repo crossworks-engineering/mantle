@@ -132,12 +132,16 @@ export {
   listFileDbFolder,
   readFileDbNone,
   readFileDbNoneStamp,
+  readWindowStage,
   removeFileDbEntry,
   removeFileDbNames,
   removeFileDbNamesAfterCommit,
   removeFileDbNone,
   removeOtherFileDbNames,
+  removeOtherWindowStages,
+  removeWindowStage,
   writeFileDbNone,
+  writeWindowStage,
 } from './file-dbs';
 export type { FileDbNoneWord } from './file-dbs';
 // The pipeline contract and the built-in readers that make a file's

@@ -238,7 +238,7 @@ export async function countExtractBacklog(): Promise<number | null> {
   try {
     const rows = (await systemDb.execute(sql`
       SELECT count(*)::int AS n FROM pgboss.job
-      WHERE (name IN ('mantle.extract', 'mantle.extract.heavy')
+      WHERE (name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
              AND state IN ('created', 'retry', 'active'))
          OR (name = 'mantle.extract.dead' AND state = 'created')`)) as unknown as Array<{
       n: number;
@@ -256,9 +256,10 @@ export async function countExtractBacklog(): Promise<number | null> {
  * (packages/tools/src/pipeline-run.ts) read the job table through here
  * only. The busy rule is the one of scripts/box-maintain.sh ("Not into a
  * busy box"): more than EXTRACT_BUSY_JOBS jobs waiting (created or retry).
- * Change the two together. A drawing's job is completed on the main queue
- * when it is sent on to the heavy lane, with the output `{ lane: 'heavy' }`:
- * that hop is not a finished extraction, so "done" leaves it out.
+ * Change the two together. A drawing's or a book's job is completed on the
+ * main queue when it is sent on to its lane, with the output
+ * `{ lane: 'heavy' }` or `{ lane: 'book' }`: that hop is not a finished
+ * extraction, so "done" leaves it out.
  */
 
 /** More extract jobs waiting than this, and the box is busy: a start on
@@ -281,23 +282,23 @@ type QueueRow = {
   dead: number;
 };
 
-/** The counts of the two queues and the dead letters. */
+/** The counts of the three lanes' queues and the dead letters. */
 export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
   const rows = (await systemDb.execute(sql`
       SELECT
-        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
                            AND state = 'active')::int AS running,
-        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
                            AND state = 'created')::int AS waiting,
-        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
                            AND state = 'retry')::int AS retrying,
-        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
                            AND state = 'completed'
                            AND completed_on > now() - interval '10 minutes'
-                           AND (output->>'lane') IS DISTINCT FROM 'heavy')::int AS done_10m,
+                           AND coalesce(output->>'lane', '') NOT IN ('heavy', 'book'))::int AS done_10m,
         count(*) FILTER (WHERE name = 'mantle.extract.dead' AND state = 'created')::int AS dead
       FROM pgboss.job
-      WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.dead')`)) as unknown as QueueRow[];
+      WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book', 'mantle.extract.dead')`)) as unknown as QueueRow[];
   const q = rows[0];
   return {
     running: q?.running ?? 0,
@@ -313,7 +314,7 @@ export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
 export type ExtractJobState = 'queued' | 'running';
 
 /**
- * The extract jobs (both lanes) waiting or running for these node ids: ONE
+ * The extract jobs (every lane) waiting or running for these node ids: ONE
  * read for a whole list, never one per row (a file's status in Files,
  * docs/files.md "Status and processing"). The ids are rows the caller's
  * scope already read: this answers only for them. Running wins over
@@ -330,7 +331,7 @@ export async function extractJobsFor(
     const rows = (await systemDb.execute(sql`
       SELECT data->>'nodeId' AS id, bool_or(state = 'active') AS running
       FROM pgboss.job
-      WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+      WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
         AND state IN ('created', 'retry', 'active')
         AND data->>'nodeId' = any(string_to_array(${ids.join(',')}, ','))
       GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean }>;

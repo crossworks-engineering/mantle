@@ -205,7 +205,7 @@ fi
 # the busy rule of pipeline_run: change the two together.
 load=$(LC_ALL=C uptime 2>/dev/null | sed -n "s/.*load average[s]*: *\([0-9][0-9.]*\).*/\1/p" | head -1) || true
 cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null | head -1) || true
-waiting=$(docker exec "$PG" psql -U postgres -d postgres -Atc "select count(*) from pgboss.job where name in (\$\$mantle.extract\$\$, \$\$mantle.extract.heavy\$\$) and state in (\$\$created\$\$, \$\$retry\$\$)" 2>/dev/null | tr -d "[:space:]") || true
+waiting=$(docker exec "$PG" psql -U postgres -d postgres -Atc "select count(*) from pgboss.job where name in (\$\$mantle.extract\$\$, \$\$mantle.extract.heavy\$\$, \$\$mantle.extract.book\$\$) and state in (\$\$created\$\$, \$\$retry\$\$)" 2>/dev/null | tr -d "[:space:]") || true
 case "$load" in "" | *[!0-9.]*) load="" ;; esac
 case "$cores" in "" | *[!0-9]*) cores="" ;; esac
 case "$waiting" in "" | *[!0-9]*) waiting="" ;; esac

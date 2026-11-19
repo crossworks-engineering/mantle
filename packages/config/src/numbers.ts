@@ -67,6 +67,13 @@ export const ENV_NUMBERS = {
     max: 16,
     doc: 'extractions at once (a saved setting wins)',
   },
+  EXTRACT_BOOK_CONCURRENCY: {
+    default: 1,
+    atLeast: 1,
+    int: 'floor',
+    max: 4,
+    doc: 'books at once, in their own lane beside the extractions at once',
+  },
   MANTLE_EXTRACT_EXPIRE_MIN: { default: 60, positive: true, doc: 'extract job expiry, minutes' },
   MANTLE_PIPELINE_ASKS_PER_DAY: {
     default: 20_000,

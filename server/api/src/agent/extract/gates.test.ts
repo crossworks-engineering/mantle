@@ -40,6 +40,7 @@ const h = vi.hoisted(() => ({
   resolveChatKey: vi.fn(),
   resolveEffectiveIndexing: vi.fn(),
   removeFileDbNames: vi.fn(),
+  removeOtherWindowStages: vi.fn(),
   effectiveBrainDepth: vi.fn(),
   metadataSpineText: vi.fn(() => 'spine text'),
   embed: vi.fn(),
@@ -104,6 +105,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
     ...actual,
     resolveEffectiveIndexing: h.resolveEffectiveIndexing,
     removeFileDbNames: h.removeFileDbNames,
+    removeOtherWindowStages: h.removeOtherWindowStages,
     effectiveBrainDepth: h.effectiveBrainDepth,
     metadataSpineText: h.metadataSpineText,
   };
@@ -696,6 +698,13 @@ describe('admitForExtraction — metadata-only files', () => {
     expect(h.embeddedImages).toHaveBeenCalledTimes(1);
     expect(h.removeFileDbNames).not.toHaveBeenCalled();
     expect(h.resolveEffectiveIndexing).toHaveBeenCalledTimes(1);
+  });
+
+  it("a full file's extract removes the page windows a book kept for older bytes", async () => {
+    h.resolveEffectiveIndexing.mockResolvedValue({ effective: 'full', source: 'default' });
+    h.selectQueue.push([node({ type: 'file', data: { sha256: 'b'.repeat(64) } })]);
+    await admitForExtraction('n1', 'o1');
+    expect(h.removeOtherWindowStages).toHaveBeenCalledWith('n1', 'b'.repeat(64));
   });
 
   it('indexes the spine and refuses, without an LLM key check', async () => {
