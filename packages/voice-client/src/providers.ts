@@ -278,6 +278,9 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   // multimodal chat models). Runtime routing differs (native PDF document
   // block vs image OCR), but provider eligibility is identical.
   document: 'vision',
+  // The Scan reader reads a page picture: the vision capability too (the
+  // same image-reading chat models), with its own prompt at run time.
+  scan_reader: 'vision',
   image_gen: 'image_gen',
   embedding: 'embedding',
   // Web search runs a chat-completion call against a Perplexity Sonar model on

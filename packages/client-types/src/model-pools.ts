@@ -97,6 +97,14 @@ export const MODEL_POOLS: readonly ModelPoolDef[] = [
     modality: { input: ['image'], output: 'text' },
   },
   {
+    id: 'scan_reader',
+    label: 'Scan reader',
+    description:
+      'Reads the text of a scanned page that local OCR read badly, before the dearer vision read. An image-reading model strong at OCR and tables, and cheap per page.',
+    group: 'workers',
+    modality: { input: ['image'], output: 'text' },
+  },
+  {
     id: 'image_gen',
     label: 'Image generation',
     description: 'Generates images. Provider-specific catalog (Gemini image, DALL-E, …).',

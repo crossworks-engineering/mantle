@@ -294,6 +294,7 @@ const CHAT_CATALOG_KINDS = new Set([
   'summarizer',
   'vision',
   'document',
+  'scan_reader',
   'search',
   'search_advanced',
   'narrator',

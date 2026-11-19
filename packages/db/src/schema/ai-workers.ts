@@ -82,6 +82,12 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // only when someone calls the tool: no trigger starts it. When absent the
   // tool falls back to the summarizer's route. See migration 0389.
   'translator',
+  // Scan reader: reads the text of a scanned page picture, as written, for a
+  // fraction of the vision worker's price (an OCR-strong cheap model). The
+  // book reader asks it for a page Tesseract read badly, before vision.
+  // Optional; with none, a scanned page keeps its old path (Tesseract, then
+  // vision). See migration 0390 and docs/ai-workers.md, "The Scan reader".
+  'scan_reader',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -153,6 +159,17 @@ export type DocumentParams = {
    *  documents are tabular (invoices/statements) and the text layer mangles
    *  columns — the model reads the real layout. Costs one LLM call per PDF. */
   prefer_native?: boolean;
+};
+
+/** Params for `kind='scan_reader'` workers (a scanned page picture → its
+ *  text). The prompt is the runtime's own (runScanReader): its `[?]` mark
+ *  for a word the model cannot read is what the read-badly check counts, so
+ *  it is not a param. */
+export type ScanReaderParams = {
+  /** Max output tokens. A dense table page is about 3,000; the default
+   *  (SCAN_READER_MAX_TOKENS, 8000) leaves room, and an answer cut at the
+   *  cap is a bad read, never a short page. */
+  max_tokens?: number;
 };
 
 /** Params for `kind='image_gen'` workers. */
@@ -379,6 +396,7 @@ export type AiWorkerParams =
   | SttParams
   | VisionParams
   | DocumentParams
+  | ScanReaderParams
   | ImageGenParams
   | ReflectorParams
   | ExtractorParams

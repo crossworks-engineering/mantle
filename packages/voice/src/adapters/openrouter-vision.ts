@@ -221,7 +221,13 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       },
       PROVIDER_TIMEOUTS.vision,
     );
-    return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+    return {
+      text: r.text,
+      model: r.model,
+      tokensIn: r.tokensIn,
+      tokensOut: r.tokensOut,
+      ...(r.finishReason ? { finishReason: r.finishReason } : {}),
+    };
   },
 
   async extractDocument(pdf: Buffer, opts: VisionExtractOptions): Promise<VisionExtractResult> {

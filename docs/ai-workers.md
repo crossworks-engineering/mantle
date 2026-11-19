@@ -653,6 +653,83 @@ transcription, Imagen), not because anything is missing.
 
 ---
 
+## The Scan reader
+
+A `kind='scan_reader'` worker (migration `0390`): a cheap model strong at OCR
+that reads the text of a scanned page picture. It sits between the free
+reads and the vision worker. The order of a scanned page in the book reader
+of large PDFs (the Reader `pdf-pages`) is to be:
+
+1. the text layer (free);
+2. Tesseract, in the parser (free);
+3. the Scan reader, when Tesseract read the page badly (one paid call);
+4. the vision worker, only when the Scan reader read badly too.
+
+A page with a figure (ink besides the words) goes to vision as before: the
+Scan reader is for text, and scanned PDF pages only. Pictures (photos,
+screenshots) are not its work. The wiring into the book reader is the second
+part of this work and is not built yet: today the worker, its call and its
+check exist, and nothing calls them.
+
+**The worker.** `MANIFEST_WORKERS` entry `scan_reader`, name "Scan reader",
+`required: false`: a fresh brain gets it at onboarding, an existing brain
+does not, and a brain with none keeps the old path exactly (Tesseract, then
+vision). Its model is `SCAN_READER_MODEL` in
+`server/web/lib/system-manifest/manifest.ts`, the one line to change; today a
+placeholder, the workhorse `DEFAULT_WORKER_MODEL`, until the owner picks one.
+The provider eligibility is the vision capability (an image-reading chat
+model), and its model pool is `scan_reader`.
+
+**The call.** `runScanReader` (`packages/runtime/src/agent/scan-reader.ts`):
+one page picture (PNG, JPEG or WebP) in; out, the text, the model, the
+tokens, the provider's finish reason and the quality. Its prompt is fixed
+(`SCAN_READER_SYSTEM_TEXT`): the text as printed, a table one row a line with
+cells split by `|`, and `[?]` for a word the model cannot read. The page
+is data from a file, so the model has no tool and follows nothing written on
+it. One call a page; with `tries: 2` a provider that failed with no answer
+(a timeout, a 5xx) is asked one time more, never on a refusal and never
+because the answer read badly. With no worker it calls nothing and answers
+`model: null`, so the caller takes its old path. It never falls back to the
+vision worker itself. The spend is recorded by the vision adapter on the
+caller's trace step (docs/spend-recording.md). The worker's `max_tokens`
+param sets the answer cap (default `SCAN_READER_MAX_TOKENS`, 8000: a dense
+page of 42 table rows is about 3,000 tokens).
+
+**Read badly, with no second call.** `scanReadQualityOf`
+(`packages/runtime/src/agent/scan-reader-quality.ts`) judges the answer from
+what is in hand: the answer itself, Tesseract's words of the same page (the
+book reader has them, free), and the page's count of text lines from the
+free reads. A bad read is any of: no text; `cut` (stopped at the token cap);
+`short` (under 40 characters); `loop` (one line of 8 characters or more over
+4 times in a row); `too_few_lines` (under 80% of the 10 or more lines the
+free reads found); `illegible` (over 5% of the words are `[?]`);
+`disagrees` (Tesseract read 30 or more words of 3 characters or more at a
+confidence of 90 or more, and under 80% of them are in the answer).
+
+What the check can and cannot see (bench of 2026-11-19, made-up pages): on a
+page Tesseract still reads in part, a read that drops rows, stops early,
+loops or makes rows up is caught. On a page so bad that Tesseract reads no
+confident word, only the model's own signs (cut, loop, `[?]`) and the line
+count are left; there, made-up rows that look right pass. Tesseract's words
+at confidence 90 or more were right 95% to 99% of the time on the bench,
+which is why they can judge a read.
+
+**Bench.** `scripts/scan-reader/make_set.py` makes the page sets from the
+generated scan book (clean, fair, poor and bad copies, with the book
+reader's own Tesseract marking) in the parser image;
+`scripts/scan-reader/harness.py` scores Tesseract and any OpenRouter model or
+PDF parser engine on them: characters, words, table cells, rows read whole,
+the read-badly check, the cost per 1,000 pages as billed and the seconds a
+page, under a spend cap. Run it on a model before it goes into the manifest.
+
+**Cost on existing brains.** None today: the worker is optional and nothing
+calls it. When the book reader is wired, a page goes to the Scan reader only
+where it now goes to vision for a bad OCR read, and on to vision only when
+the Scan reader read badly too; so a page costs one cheap call instead of
+one vision call, or both when the Scan reader fails.
+
+---
+
 ## 5c. Image generation: out
 
 Saskia generates images via the `generate_image` builtin tool. The

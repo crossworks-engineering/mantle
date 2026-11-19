@@ -24,7 +24,13 @@ import {
   type VisionModelInfo,
 } from '@mantle/voice';
 import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@mantle/embeddings';
-import { chatWithFailover, resolveChatRoutes } from '@mantle/runtime/agent';
+import {
+  chatWithFailover,
+  resolveChatRoutes,
+  SCAN_READER_MAX_TOKENS,
+  SCAN_READER_PROMPT,
+  SCAN_READER_SYSTEM_TEXT,
+} from '@mantle/runtime/agent';
 import { getAiWorker } from '@/lib/ai-workers';
 import { testDecisionWorker, type DecisionTestResult } from '@mantle/decisions';
 import { errorMessage, publicErrorMessage } from '@mantle/std';
@@ -285,7 +291,9 @@ export async function testVision(
 }> {
   const worker = await getAiWorker(userId, workerId);
   if (!worker) throw new Error('worker not found');
-  if (worker.kind !== 'vision') throw new Error('worker is not a vision worker');
+  // The Scan reader reads a page picture too: tested with its own prompt.
+  const scan = worker.kind === 'scan_reader';
+  if (worker.kind !== 'vision' && !scan) throw new Error('worker is not a vision worker');
   if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
   const credential = await getApiKeyById(worker.apiKeyId);
   if (!credential) throw new Error('api key not found or could not decrypt');
@@ -305,10 +313,19 @@ export async function testVision(
   const result = await adapter.extract(bytes, {
     ...credential,
     mimeType: mimeType || 'image/jpeg',
-    prompt,
-    systemPrompt: worker.systemPrompt ?? undefined,
+    ...(scan
+      ? {
+          prompt: SCAN_READER_PROMPT,
+          systemPrompt: SCAN_READER_SYSTEM_TEXT,
+          maxTokens: params.max_tokens ?? SCAN_READER_MAX_TOKENS,
+          leastThinking: true,
+        }
+      : {
+          prompt,
+          systemPrompt: worker.systemPrompt ?? undefined,
+          maxTokens: params.max_tokens ?? 2000,
+        }),
     model: worker.model,
-    maxTokens: params.max_tokens ?? 2000,
   });
   return {
     ok: true,

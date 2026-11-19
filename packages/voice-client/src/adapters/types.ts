@@ -635,6 +635,9 @@ export interface VisionExtractResult {
   /** Token usage when the provider returns it. */
   tokensIn?: number;
   tokensOut?: number;
+  /** Why the model stopped, when the provider says (`length`: cut at
+   *  `maxTokens`). The Scan reader counts a cut answer as a bad read. */
+  finishReason?: string;
 }
 
 export interface VisionDispatcher extends AdapterMeta {

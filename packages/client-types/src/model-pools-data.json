@@ -1113,6 +1113,27 @@
     "note": "intelligence index 37.3; busier than most of the ranked field; 1M+ context"
   },
   {
+    "pool": "scan_reader",
+    "position": 0,
+    "name": "Google: Gemini 3.5 Flash Lite",
+    "vendor": "Google",
+    "routes": [
+      {
+        "provider": "openrouter",
+        "model": "google/gemini-3.5-flash-lite"
+      }
+    ],
+    "pricing": {
+      "inputPerM": 0.3,
+      "outputPerM": 2.5,
+      "currency": "USD",
+      "capturedAt": "2026-09-22T14:41:05.911Z",
+      "source": "openrouter"
+    },
+    "rating": 5,
+    "note": "the placeholder default for this pool until the owner picks the Scan reader model; the vision default"
+  },
+  {
     "pool": "image_gen",
     "position": 0,
     "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
