@@ -30,6 +30,8 @@ import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { noteReadCut } from '@mantle/files/read-cut-sink';
+import { readsAsDelimited } from '@mantle/files/sheet-to-grid';
+import { importMaxRows } from '@mantle/tabledb';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 import { askPdfKind } from './pdf-kind';
 import { inOwnTrace } from './trace';
@@ -240,15 +242,29 @@ async function readAndWrite(a: {
     return; // the Table alone: leave it as a plain file, as ever
   }
   const readMs = Date.now() - readStart;
-  // A delimited text past the database size gets no rows in file_sql: said
-  // on the file (docs/files.md, "Read in part"), not only in its db state.
-  if (parsed.kind === 'none' && parsed.word === 'too-large') {
+  // A file whose database is refused for its size gets no rows in file_sql:
+  // said on the file (docs/files.md, "Read in part"), not only in its db
+  // state. A delimited text past its byte limit (parseFileSheets' own
+  // test), and sheets past the import's row ceiling (buildFileDatabase's).
+  const csvMax = envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024;
+  if (
+    parsed.kind === 'none' &&
+    parsed.word === 'too-large' &&
+    loaded.bytes.length > csvMax &&
+    readsAsDelimited(loaded.bytes, fileExt)
+  ) {
     noteReadCut('database_size', {
       what: 'bytes',
       read: 0,
       total: loaded.bytes.length,
-      limit: envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024,
+      limit: csvMax,
     });
+  }
+  if (wantDb && parsed.kind === 'sheets') {
+    const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
+    if (rows > importMaxRows()) {
+      noteReadCut('database_rows', { what: 'rows', read: 0, total: rows, limit: importMaxRows() });
+    }
   }
 
   if (wantDb) {

@@ -32,11 +32,14 @@ export async function withReadCutSink<T>(
 }
 
 /** Say that the read under way took only part of an input. Two notes of one
- *  key add up (two sheets cut, two pictures left out). */
+ *  key add up (two sheets cut, two pictures left out). A note that left
+ *  nothing out (all of a known total read) is no cut. */
 export function noteReadCut(key: string, cut: ReadCutValue): void {
   const sink = store.getStore();
   if (!sink) return;
-  sink.cuts[key] = addReadCut(sink.cuts[key], cut);
+  if (cut.total !== undefined && cut.read >= cut.total && !cut.atLeast) return;
+  // Own entries only: a key like `constructor` is no inherited value.
+  sink.cuts[key] = addReadCut(Object.hasOwn(sink.cuts, key) ? sink.cuts[key] : undefined, cut);
 }
 
 /** Say again the cuts another process sent (a parser answer's `cuts`),

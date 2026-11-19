@@ -28,6 +28,8 @@ describe.skipIf(!URL)('ocr-rescan', () => {
     realText: randomUUID(), // a PDF with a real text layer
     metadata: randomUUID(), // markers, but content indexing is off
     docx: randomUUID(), // body_too_short, not a PDF
+    cuts: randomUUID(), // read in part: a reader's cut and an Agent's
+    readerCut: randomUUID(), // read in part: a reader's cut only
   };
   const markers = '-- 1 of 2 --\n\n-- 2 of 2 --';
 
@@ -62,6 +64,22 @@ describe.skipIf(!URL)('ocr-rescan', () => {
       indexing: 'metadata',
     });
     await file(id.docx, 'note.docx', { filename: 'note.docx' });
+    await file(id.cuts, 'cuts.docx', {
+      filename: 'cuts.docx',
+      text: 'body',
+      extract_completed_at: '2026-11-19T00:00:00Z',
+      agent_text: { a1: 'the tab' },
+      read_cut: {
+        markup_bytes: { what: 'bytes', read: 1, total: 2 },
+        'agent_text:a1': { what: 'characters', read: 64000, total: 70000 },
+      },
+    });
+    await file(id.readerCut, 'cut.docx', {
+      filename: 'cut.docx',
+      text: 'body',
+      extract_completed_at: '2026-11-19T00:00:00Z',
+      read_cut: { markup_bytes: { what: 'bytes', read: 1, total: 2 } },
+    });
     await admin`insert into traces (owner_id, kind, subject_id, subject_kind, status, data) values
       (${anchor}, 'extractor_run', ${id.stuck}, 'node', 'skipped', '{"disposition":"body_too_short"}'::jsonb),
       (${anchor}, 'extractor_run', ${id.noParser}, 'node', 'skipped', '{"disposition":"pdf_unreadable"}'::jsonb),
@@ -104,5 +122,23 @@ describe.skipIf(!URL)('ocr-rescan', () => {
       expect(data.extract_skipped).toBeUndefined();
       expect(data.filename).toBeDefined(); // provenance stays
     }
+  });
+
+  it("a rescan keeps the cuts whole while an Agent's is among them (never a part)", async () => {
+    expect(await rescan.clearForRescan(id.cuts)).toBe(true);
+    const [row] = await admin`select data from nodes where id = ${id.cuts}`;
+    const data = row!.data as Row;
+    expect(data.text).toBeUndefined();
+    expect(data.agent_text).toEqual({ a1: 'the tab' });
+    expect(data.read_cut).toEqual({
+      markup_bytes: { what: 'bytes', read: 1, total: 2 },
+      'agent_text:a1': { what: 'characters', read: 64000, total: 70000 },
+    });
+  });
+
+  it("a rescan drops a reader's cuts with the read", async () => {
+    expect(await rescan.clearForRescan(id.readerCut)).toBe(true);
+    const [row] = await admin`select data from nodes where id = ${id.readerCut}`;
+    expect((row!.data as Row).read_cut).toBeUndefined();
   });
 });

@@ -40,6 +40,7 @@ import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { readerPassOf, readerTextOf, standingReaderText } from '@mantle/content/reader-passes';
+import { withReadCutSink } from '@mantle/files/read-cut-sink';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
@@ -85,7 +86,10 @@ async function readerTakes(
   const loaded = await loadFileBytes(node);
   if (!loaded) return false;
   try {
-    return (await readerTextOf(reader, loaded.bytes)).trim() !== '';
+    // A probe: what it would leave out is said by the read that takes the
+    // text, so its own notes go to a sink of their own (never counted twice).
+    const probe = await withReadCutSink(() => readerTextOf(reader, loaded.bytes));
+    return probe.value.trim() !== '';
   } catch (err) {
     if (isParserError(err) && err.retryable) throw err;
     return false;

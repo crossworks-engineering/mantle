@@ -57,6 +57,7 @@ import {
   withHeads,
 } from '@mantle/db';
 import {
+  agentReadCutsOnly,
   BYTE_DERIVED_DATA_KEYS,
   emailAttachmentIds,
   extOf,
@@ -89,16 +90,6 @@ const REINDEX_DROP_KEYS: readonly string[] = [
   ),
   'extract_parked',
 ];
-
-/** A file's read cuts after a reindex: only the Agents' (`agent_text:<id>`,
- *  kept with their text); none when no such entry is there. Built at the
- *  call: a test that stubs @mantle/db loads this module. */
-const agentCutsOnly = () => sql`coalesce((
-  select jsonb_build_object('read_cut', jsonb_object_agg(e.k, e.v))
-    from jsonb_each(case when jsonb_typeof(${nodes.data}->'read_cut') = 'object'
-                         then ${nodes.data}->'read_cut' else '{}'::jsonb end) as e(k, v)
-   where e.k like 'agent_text:%'
-  having count(*) > 0), '{}'::jsonb)`;
 
 /** The keys of a sketch read's text, kept for a file whose database holds
  *  it (the read is paid for and is not asked again for these bytes). */
@@ -275,11 +266,11 @@ export async function reindexFiles(
         .update(nodes)
         .set({
           // A sketched file keeps its cuts with its text; another keeps
-          // only its Agents' (agentCutsOnly).
+          // them whole while an Agent's is among them (agentReadCutsOnly).
           data: sql`case when ${isSketched}
             then coalesce(${nodes.data}, '{}'::jsonb) - ${keys(SKETCH_DROP_KEYS)}
             else (coalesce(${nodes.data}, '{}'::jsonb) - ${keys(REINDEX_DROP_KEYS)} - 'read_cut')
-                 || ${agentCutsOnly()} end`,
+                 || ${agentReadCutsOnly()} end`,
         })
         .where(
           and(
