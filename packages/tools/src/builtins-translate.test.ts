@@ -135,7 +135,8 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   })),
   nodeUrl: (id: string) => `https://brain.test/n/${id}`,
 }));
-vi.mock('@mantle/content/tree', () => ({
+vi.mock('@mantle/content/tree', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   moveTreeItems: vi.fn(async () => ({ moved: 1, failed: [] })),
   notifyTreeChanged: vi.fn(async () => {}),
 }));
@@ -415,6 +416,27 @@ describe('translate: save', () => {
     expect(f.saved).toMatchObject({ kind: 'page', title: 'manual (Spanish)' });
     const t = out(await translate.handler({ text: 'Hola', to: 'en', save: true }, ownerCtx));
     expect(t.saved).toMatchObject({ kind: 'page', title: 'Translation (English)' });
+  });
+
+  it('a page that cannot go beside its original goes to the top level', async () => {
+    rows.set('page-1', { id: 'page-1', type: 'page', title: 'Spec', path: 'pages.a', md: 'Hi' });
+    vi.mocked(content.createPage).mockRejectedValueOnce(new Error('permission denied'));
+    const r = out(await translate.handler({ node_id: 'page-1', to: 'de', save: true }, ownerCtx));
+    expect(r.saved).toMatchObject({ kind: 'page', placed: 'the top level of Pages' });
+    const calls = vi.mocked(content.createPage).mock.calls;
+    expect(calls[0]![1]).toHaveProperty('siblingOf', 'page-1');
+    expect(calls[1]![1]).not.toHaveProperty('siblingOf');
+  });
+
+  it('a save that fails keeps the paid translation, with a fixed sentence', async () => {
+    vi.mocked(content.createPage).mockRejectedValueOnce(
+      new Error('insert or update on table "nodes" violates row-level security policy'),
+    );
+    const r = out(await translate.handler({ text: 'Hello.', to: 'de', save: true }, ownerCtx));
+    expect(r.translation).toBe('DE:Hello.');
+    expect(r.save_error).toContain('could not be saved');
+    expect(String(r.save_error)).not.toContain('row-level');
+    expect(r).not.toHaveProperty('saved');
   });
 
   it('a failed part fails the call: no translation, nothing saved', async () => {

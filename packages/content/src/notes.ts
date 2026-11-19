@@ -201,9 +201,9 @@ export type CreateNoteInput = {
   title: string;
   content: string;
   tags?: string[];
-  /** Extra `data` keys stamped on the new note (provenance: a translation
-   *  names its original, `translationOf`). `content` always wins. */
-  data?: Record<string, unknown>;
+  /** Provenance stamped on the new note: a translation names its original
+   *  (`translationOf`). Nothing else rides here. */
+  data?: { translationOf?: Readonly<Record<string, string>> };
 };
 
 export async function createNote(ownerId: string, input: CreateNoteInput): Promise<NoteRow> {

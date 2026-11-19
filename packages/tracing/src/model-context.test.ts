@@ -93,6 +93,17 @@ describe('parseCatalog', () => {
     expect(out['anthropic/claude-sonnet-4.6']?.contextLength).toBe(1_000_000);
   });
 
+  it('keeps the default route\u2019s output limit (top_provider.max_completion_tokens)', () => {
+    const out = parseCatalog([
+      { id: 'a/long', context_length: 1_048_576, top_provider: { max_completion_tokens: 65_536 } },
+      { id: 'a/none', context_length: 1000 },
+      { id: 'a/zero', context_length: 1000, top_provider: { max_completion_tokens: 0 } },
+    ]);
+    expect(out['a/long']?.maxOutput).toBe(65_536);
+    expect(out['a/none']).not.toHaveProperty('maxOutput');
+    expect(out['a/zero']).not.toHaveProperty('maxOutput');
+  });
+
   it('falls back to model-level context_length when top_provider is missing/null', () => {
     const out = parseCatalog([
       { id: 'a/one', context_length: 128_000, top_provider: null },
