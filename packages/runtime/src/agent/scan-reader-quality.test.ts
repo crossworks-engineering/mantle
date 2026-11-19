@@ -117,4 +117,24 @@ describe('scanReadQualityOf', () => {
     expect(scanReadQualityOf(two, { expectedLines: 9 }).ok).toBe(true);
     expect(scanReadQualityOf(two, { expectedLines: null }).ok).toBe(true);
   });
+
+  it('a long answer no free read can vouch for is unverified (a made-up page)', () => {
+    // A page too bad to read: Tesseract read no confident word and the ink
+    // bands found 14 lines, but the answer is a whole table of 41.
+    expect(scanReadQualityOf(PAGE, { ocrWords: [], expectedLines: 14 }).reasons).toEqual([
+      'unverified',
+    ]);
+    // The free reads found no line at all: still unverified.
+    expect(scanReadQualityOf(PAGE, { expectedLines: 0 }).reasons).toEqual(['unverified']);
+  });
+
+  it('a read whose lines the free reads counted stands with no confident word', () => {
+    // A poor copy: Tesseract read no confident word, the ink bands found the
+    // 41 lines, and so does the answer.
+    expect(scanReadQualityOf(PAGE, { ocrWords: [], expectedLines: 41 }).ok).toBe(true);
+    // Confident words that agree vouch for it whatever the line count.
+    expect(scanReadQualityOf(PAGE, { ocrWords: anchors(40), expectedLines: 14 }).ok).toBe(true);
+    // A short answer is not judged by this rule.
+    expect(scanReadQualityOf(ROWS.slice(0, 10).join('\n'), { expectedLines: 0 }).ok).toBe(true);
+  });
 });
