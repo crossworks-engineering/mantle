@@ -60,6 +60,7 @@ import { processRelations, reconcileEntities } from './extract/entities';
 import { processFacts, retireUnassertedFacts } from './extract/facts';
 import { retiresOnNoFacts } from './extract/rules';
 import { nodeParserFailures } from './extract/parser-failures';
+import { ProviderWaitError, providerWaitOf, providerWaitPaid } from '@mantle/std';
 
 /** Extract one node. Every parser exchange of the extract counts its
  *  failures on the node (./extract/parser-failures.ts), so a file the
@@ -171,6 +172,10 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
   const rowVersion = ver?.v ?? null;
   const seenWork = parseIndexWork(ver?.w);
 
+  // Set once the extraction call has answered (and been paid for): a
+  // provider's "not now" after it (an embed) re-pays it on a try again, so
+  // the queue bounds those waits (@mantle/std PAID_WAIT_RESENDS_MAX).
+  let paidCall = false;
   await startTrace(
     {
       kind: 'extractor_run',
@@ -202,6 +207,7 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
         body,
         existingData,
       );
+      paidCall = !parsed.reused;
 
       // ─── content_index pass ───────────────────────────────────────────
       // An app's or a canvas's published summary (its author's, or the one
@@ -308,7 +314,11 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
       await stampExtractCompleted(node);
       void bumpWorkerUsage(worker.id);
     },
-  );
+  ).catch((err: unknown) => {
+    const wait = paidCall && !providerWaitPaid(err) ? providerWaitOf(err) : null;
+    if (wait) throw new ProviderWaitError(wait, 'after the extraction call', { paid: true });
+    throw err;
+  });
 }
 
 /** Final step of a fully-successful extraction pass. The already_extracted

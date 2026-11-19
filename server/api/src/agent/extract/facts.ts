@@ -10,6 +10,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   db,
   facts,
+  llmWorkAllowed,
   nodes,
   withDeadlockRetry,
   withHeads,
@@ -236,10 +237,11 @@ export async function retireUnassertedFacts(ownerId: string, nodeId: string): Pr
  *  - the provider's "not now" on a classify call (a rate limit, no credit,
  *    busy: @mantle/std provider-wait.ts): the rest waits with the provider's
  *    growing gap.
- * A deferred pass retires nothing (the candidates after the stop were not
- * looked at yet) and marks the node `data.extract_incomplete` with
- * `reason: 'facts_deferred'`; the job that finishes the rest clears it
- * (processDeferredFacts). Returns the ADD/UPDATE/DELETE/NOOP/retired tally
+ * A deferred pass retires nothing yet (the candidates after the stop were
+ * not looked at yet): the facts not re-asserted keep their suspect flag,
+ * and the node is marked `data.extract_incomplete` with `reason:
+ * 'facts_deferred'`. The job that applies the last candidate retires what
+ * is still suspect and clears the marker (processDeferredFacts). Returns the ADD/UPDATE/DELETE/NOOP/retired tally
  * and `deferred`, the candidates left for later.
  */
 export async function processFacts(
@@ -311,23 +313,11 @@ export async function processFacts(
       const t = run.tally;
       // H4: retire facts this extraction didn't re-assert (still dirty) —
       // but only on a complete pass. A deferred pass leaves later
-      // candidates for later, so their facts must NOT be retired; just
-      // clear the suspect flag in that case.
+      // candidates for later, so their facts must NOT be retired yet: the
+      // last deferred job retires them (processDeferredFacts).
       let retired = 0;
       if (run.stoppedAt == null) {
-        const retiredRows = await db
-          .update(facts)
-          .set({ validTo: new Date(), dirty: false, updatedAt: new Date() })
-          .where(
-            and(
-              eq(facts.ownerId, ownerId),
-              eq(facts.sourceNodeId, node.id),
-              isNull(facts.validTo),
-              eq(facts.dirty, true),
-            ),
-          )
-          .returning({ id: facts.id });
-        retired = retiredRows.length;
+        retired = await retireSuspect(ownerId, node.id);
         // A complete pass clears any stale incomplete-marker from a prior
         // deferred run (guarded by `?` so it's a no-op when absent — no
         // write amplification on the normal path).
@@ -336,17 +326,10 @@ export async function processFacts(
         h.setOutput(output);
         return output;
       }
-      await db
-        .update(facts)
-        .set({ dirty: false })
-        .where(
-          and(
-            eq(facts.ownerId, ownerId),
-            eq(facts.sourceNodeId, node.id),
-            isNull(facts.validTo),
-            eq(facts.dirty, true),
-          ),
-        );
+      // The suspect flag stays on the facts not re-asserted yet: the job
+      // that applies the last deferred candidate retires what is still
+      // suspect then (H4 across the jobs; nothing but this protocol reads
+      // the flag).
       const deferred = await deferRest(
         node.id,
         items.slice(run.stoppedAt),
@@ -484,6 +467,24 @@ async function applyCandidates(
   return { tally, stoppedAt: null };
 }
 
+/** Retire this node's live facts still marked suspect (H4): not
+ *  re-asserted by the whole read. Returns how many. */
+async function retireSuspect(ownerId: string, nodeId: string): Promise<number> {
+  const rows = await db
+    .update(facts)
+    .set({ validTo: new Date(), dirty: false, updatedAt: new Date() })
+    .where(
+      and(
+        eq(facts.ownerId, ownerId),
+        eq(facts.sourceNodeId, nodeId),
+        isNull(facts.validTo),
+        eq(facts.dirty, true),
+      ),
+    )
+    .returning({ id: facts.id });
+  return rows.length;
+}
+
 /** Drop the node's incomplete marker (a no-op when absent). */
 async function clearIncomplete(nodeId: string): Promise<void> {
   await db
@@ -558,15 +559,18 @@ function reportDeferred(
  * left for later, in a trace of its own (so the cost cap is a fresh budget).
  * Nothing is read again and no extraction call is made. A job whose node
  * was read again since (its `extract_incomplete.at` is not this job's) or
- * is gone does nothing: the newer read has its own facts. Stops and defers
- * again on the cap or the provider's "not now"; the last job clears the
- * marker. Retires nothing: a deferred pass's old facts were kept.
+ * is gone does nothing: the newer read has its own facts. The guards of a
+ * read hold again (model work allowed, facts on). Stops and defers again on
+ * the cap or the provider's "not now"; the last job retires the facts the
+ * read never re-asserted (still suspect, H4) and clears the marker.
  */
 export async function processDeferredFacts(
   nodeId: string,
   ownerId: string,
   job: DeferredFacts,
+  deps: { llmAllowed?: (nodeId: string) => Promise<boolean> } = {},
 ): Promise<{ applied: number; deferred?: DeferredFactsOut }> {
+  const d = { llmAllowed: deps.llmAllowed ?? llmWorkAllowed };
   const [node] = await db
     .select()
     .from(nodes)
@@ -575,11 +579,16 @@ export async function processDeferredFacts(
   const marker = (node?.data as { extract_incomplete?: { at?: unknown } } | null)
     ?.extract_incomplete;
   if (!node || marker?.at !== job.at || job.candidates.length === 0) return { applied: 0 };
+  // The guards of every read, again at the time of spend: the file may
+  // have no model work now (moved to a workspace with no assistant), and
+  // facts may be off. Then nothing is classified; the marker stays and
+  // says the facts are not applied.
+  if (!(await d.llmAllowed(nodeId))) return { applied: 0 };
   const worker = await resolveExtractor(ownerId);
-  // No extractor any more: nothing can classify; the marker stays and says
-  // the facts are not applied.
+  // No extractor any more: nothing can classify; the marker stays.
   if (!worker) return { applied: 0 };
   const params = (worker.params ?? {}) as ExtractorParams;
+  if (params.extract_facts === false) return { applied: 0 };
   const costCap = resolveCostCap(params.extract_cost_cap_micro_usd);
   return startTrace(
     {
@@ -605,8 +614,11 @@ export async function processDeferredFacts(
           );
           const applied = run.stoppedAt ?? job.candidates.length;
           if (run.stoppedAt == null) {
+            // The last candidate of the read: retire what it never
+            // re-asserted (H4), then the marker goes.
+            const retired = await retireSuspect(ownerId, nodeId);
             await clearIncomplete(nodeId);
-            h.setOutput({ ...run.tally, applied });
+            h.setOutput({ ...run.tally, applied, retired });
             return { applied };
           }
           // Only a provider's "not now" on the first candidate leaves a job

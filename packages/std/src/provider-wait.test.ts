@@ -11,6 +11,8 @@ import {
   ProviderWaitError,
   providerWaitDelayMs,
   providerWaitOf,
+  providerWaitPaid,
+  tooLargeForLimit,
   type ProviderWait,
 } from './provider-wait';
 
@@ -64,6 +66,36 @@ describe('providerWaitOf', () => {
     expect(providerWaitOf(err)).toEqual({ reason: 'quota', status: 402 });
     expect(providerWaitOf(new Error('x', { cause: err }))?.reason).toBe('quota');
     expect(err.message).toContain('no credit');
+  });
+});
+
+describe('a 429 that no wait can pass', () => {
+  it('a request larger than the limit itself is a refusal, not a wait', () => {
+    const tooLarge = http(
+      429,
+      'Request too large for gpt-4o on tokens per min (TPM): Limit 30000, Requested 52000.',
+    );
+    expect(providerWaitOf(tooLarge)).toBeNull();
+    expect(tooLargeForLimit('Limit 30,000, Requested 52,000')).toBe(true);
+  });
+
+  it('a plain rate limit that names its numbers still waits', () => {
+    const plain = http(
+      429,
+      'Rate limit reached on tokens per min (TPM): Limit 30000, Used 29000, Requested 1500.',
+    );
+    expect(providerWaitOf(plain)?.reason).toBe('rate_limit');
+    expect(tooLargeForLimit('Limit 30000, Used 29000, Requested 1500')).toBe(false);
+  });
+});
+
+describe('a wait after paid calls', () => {
+  it('says so, also under a wrapper', () => {
+    const paid = new ProviderWaitError({ reason: 'rate_limit' }, 'vision', { paid: true });
+    expect(providerWaitPaid(paid)).toBe(true);
+    expect(providerWaitPaid(new Error('x', { cause: paid }))).toBe(true);
+    expect(providerWaitPaid(new ProviderWaitError({ reason: 'rate_limit' }, 'vision'))).toBe(false);
+    expect(providerWaitPaid(http(429))).toBe(false);
   });
 });
 

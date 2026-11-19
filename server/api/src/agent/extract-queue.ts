@@ -75,8 +75,15 @@
  *                          now" (429 rate limit, 402 no credit, 503/529
  *                          busy: @mantle/std provider-wait.ts) is no
  *                          failure: the job is sent again with a growing
- *                          gap (1, 2, 4 ... minutes, then hourly) and
- *                          never goes to the dead letters (waitAgain). An
+ *                          gap (1, 2, 4 ... minutes, then hourly; a try
+ *                          that got work done starts the gaps over) and
+ *                          never goes to the dead letters (waitAgain). A
+ *                          wait AFTER calls the try paid for (pages or
+ *                          pictures read before it, the extraction call
+ *                          before an embed) re-pays them on a try again:
+ *                          it is sent again PAID_WAIT_RESENDS_MAX times
+ *                          in a row, then takes the old bounded retries
+ *                          (cost safety; paidWaitResends). An
  *                          Agent's run held at the day cap of paid asks
  *                          is sent again once the cap has room. While it
  *                          waits the job carries `wait`, and a file's
@@ -153,8 +160,10 @@ import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
 import {
   errorMessage,
+  PAID_WAIT_RESENDS_MAX,
   providerWaitDelayMs,
   providerWaitOf,
+  providerWaitPaid,
   type ProviderWait,
   type ProviderWaitReason,
 } from '@mantle/std';
@@ -166,6 +175,8 @@ type ExtractJobWait = {
   for: 'provider' | 'day_cap';
   reason?: ProviderWaitReason;
   waits: number;
+  /** Waits after paid calls in a row (paidWaitResends). */
+  paid?: number;
   until: string;
 };
 
@@ -219,10 +230,17 @@ type ExtractJob = {
 };
 
 /** A job's singleton key: the node, `<pipeline>:<node>` for a run, or
- *  `facts:<node>` for deferred facts, so none of them collapse into
- *  another. */
+ *  `facts:<node>:<read token>` for deferred facts, so none of them
+ *  collapse into another. */
 const keyOf = (job: ExtractJob): string =>
-  job.run ? `${job.run}:${job.nodeId}` : job.facts ? `facts:${job.nodeId}` : job.nodeId;
+  job.run
+    ? `${job.run}:${job.nodeId}`
+    : job.facts
+      ? // The read's token in the key: a newer read's deferred facts never
+        // collapse into an older read's job still waiting (the 'short'
+        // policy keeps one created job a key).
+        `facts:${job.nodeId}:${job.facts.at}`
+      : job.nodeId;
 
 /** The send options of a job. A run is tried once (`retryLimit: 0` over the
  *  queue's 5): an expired run fails and is not run again by itself (only a
@@ -243,9 +261,14 @@ export async function waitAgain(
   job: ExtractJob,
   wait: ExtractJobWaitInput,
   now = Date.now(),
+  opts: { progressed?: boolean; paid?: boolean } = {},
 ): Promise<Date> {
-  const before = job.wait?.for === wait.for ? job.wait.waits : -1;
+  // `waits` counts the waits in a row: a try that got work done (asks
+  // answered, facts applied) starts the gaps over.
+  const before = job.wait?.for === wait.for && !opts.progressed ? job.wait.waits : -1;
   const waits = before + 1;
+  // The waits after paid calls, in a row (PAID_WAIT_RESENDS_MAX).
+  const paid = opts.paid ? (job.wait?.paid ?? 0) + 1 : 0;
   const due =
     wait.for === 'day_cap' ? wait.until : new Date(now + providerWaitDelayMs(waits, wait.provider));
   const next: ExtractJob = {
@@ -254,6 +277,7 @@ export async function waitAgain(
       for: wait.for,
       ...(wait.for === 'provider' ? { reason: wait.provider.reason } : {}),
       waits,
+      ...(paid > 0 ? { paid } : {}),
       until: due.toISOString(),
     },
   };
@@ -261,7 +285,17 @@ export async function waitAgain(
   return due;
 }
 
+/** Whether a wait after paid calls is sent again as a wait, or (past
+ *  PAID_WAIT_RESENDS_MAX in a row) takes the queue's old bounded retries:
+ *  each such try pays for those calls again. */
+export function paidWaitResends(job: ExtractJob): boolean {
+  return (job.wait?.paid ?? 0) < PAID_WAIT_RESENDS_MAX;
+}
+
 let boss: PgBoss | null = null;
+/** The same boss for the waits of jobs in flight (point 7): kept until a
+ *  graceful stop has let those jobs end, so a wait at a stop is still sent. */
+let waitBoss: PgBoss | null = null;
 
 /** Per-node in-flight chain — see the same-node concurrency note above. */
 const inflightByNode = new Map<string, Promise<unknown>>();
@@ -390,6 +424,7 @@ export async function startExtractQueue(
 ): Promise<void> {
   if (opts.sweepUnextracted) sweepUnextracted = opts.sweepUnextracted;
   boss = new PgBoss({ connectionString: databaseUrl, schema: 'pgboss' });
+  waitBoss = boss;
   boss.on('error', (err) => console.error('[extract-queue] pg-boss error:', err));
   await boss.start();
 
@@ -568,6 +603,9 @@ async function handleExtractJob(
   // never throws, and it is sent with no retry, so past its time budget it
   // fails once.
   const data = job.data;
+  // The queue as this job found it: a wait at a graceful stop is still
+  // sent (stopExtractQueue drops `boss` before the jobs end).
+  const b = waitBoss;
   const extract = () =>
     under.run(() =>
       pipelineId
@@ -576,10 +614,12 @@ async function handleExtractJob(
             // run again later (point 7). Never a retry of anything else.
             if (out.wait) {
               await sendWaiting(
+                b,
                 data,
                 out.wait.for === 'provider'
                   ? { for: 'provider', provider: { reason: out.wait.reason } }
                   : { for: 'day_cap', until: out.wait.until },
+                { progressed: out.status === 'asked' && out.made > 0 },
               );
             }
           })
@@ -587,7 +627,9 @@ async function handleExtractJob(
           ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
               // Facts left for later (the cost cap again, or the provider's
               // "not now"): the rest in a job of their own.
-              if (out.deferred) await sendDeferredFacts(data, out.deferred);
+              if (out.deferred) {
+                await sendDeferredFacts(b, data, out.deferred, { progressed: out.applied > 0 });
+              }
             })
           : extractNode(nodeId, ownerId),
     );
@@ -626,9 +668,13 @@ async function handleExtractJob(
       .catch((e) => console.error('[extract-queue] circuit:', errorMessage(e)));
     // The provider's "not now": the job waits and is sent again, never a
     // failure that ends in the dead letters (point 7).
+    // A wait after paid calls (pages, pictures or the extraction call this
+    // try paid for and a try again pays for again) is sent again a few
+    // times only, then takes the old bounded retries (paidWaitResends).
     const wait = providerWaitOf(err);
-    if (wait) {
-      await sendWaiting(data, { for: 'provider', provider: wait });
+    const paid = providerWaitPaid(err);
+    if (wait && (!paid || paidWaitResends(data))) {
+      await sendWaiting(b, data, { for: 'provider', provider: wait }, { paid });
       return;
     }
     throw err;
@@ -637,10 +683,16 @@ async function handleExtractJob(
 
 /** Send a waiting job again (waitAgain) on the main queue, which takes it
  *  to its lane when it is due. Logged once a wait. */
-async function sendWaiting(job: ExtractJob, wait: ExtractJobWaitInput): Promise<void> {
-  const b = boss;
-  if (!b) return;
-  const due = await waitAgain((d, o) => b.send(EXTRACT_QUEUE, d, o), job, wait);
+async function sendWaiting(
+  b: PgBoss | null,
+  job: ExtractJob,
+  wait: ExtractJobWaitInput,
+  opts: { progressed?: boolean; paid?: boolean } = {},
+): Promise<void> {
+  // No queue to send to: fail the job, so pg-boss keeps it, rather than
+  // ending it as done with its work lost.
+  if (!b) throw new Error('the extract queue is not running: the wait was not sent');
+  const due = await waitAgain((d, o) => b.send(EXTRACT_QUEUE, d, o), job, wait, Date.now(), opts);
   console.log(
     `[extract-queue] ${job.run ? `run ${job.run} of` : job.facts ? 'facts of' : 'read of'} ${job.nodeId} waits ` +
       `(${wait.for === 'provider' ? `provider: ${wait.provider.reason}` : 'day cap'}) until ${due.toISOString()}`,
@@ -650,19 +702,24 @@ async function sendWaiting(job: ExtractJob, wait: ExtractJobWaitInput): Promise<
 /** The facts a read left for later, in a job of their own: soon after a
  *  cost cap (a pace, so other files get their turn), with the provider's
  *  gap after its "not now". */
-async function sendDeferredFacts(job: ExtractJob, deferred: DeferredFactsOut): Promise<void> {
+async function sendDeferredFacts(
+  b: PgBoss | null,
+  job: ExtractJob,
+  deferred: DeferredFactsOut,
+  opts: { progressed?: boolean } = {},
+): Promise<void> {
   const next: ExtractJob = { nodeId: job.nodeId, facts: deferred.facts };
   if (deferred.wait) {
     await sendWaiting(
+      b,
       { ...next, ...(job.wait ? { wait: job.wait } : {}) },
-      {
-        for: 'provider',
-        provider: deferred.wait,
-      },
+      { for: 'provider', provider: deferred.wait },
+      opts,
     );
     return;
   }
-  await boss?.send(EXTRACT_QUEUE, next, {
+  if (!b) throw new Error('the extract queue is not running: the deferred facts were not sent');
+  await b.send(EXTRACT_QUEUE, next, {
     ...sendOptionsOf(next),
     startAfter: new Date(Date.now() + FACTS_PACE_MS),
   });
@@ -787,8 +844,8 @@ export async function enqueueDeferredFacts(
   nodeId: string,
   deferred: DeferredFactsOut,
 ): Promise<void> {
-  if (!boss || !nodeId) return;
-  await sendDeferredFacts({ nodeId }, deferred);
+  if (!waitBoss || !nodeId) return;
+  await sendDeferredFacts(waitBoss, { nodeId }, deferred);
 }
 
 /**
@@ -838,5 +895,7 @@ export async function stopExtractQueue(): Promise<void> {
     await b.stop({ graceful: true });
   } catch (err) {
     console.error('[extract-queue] stop error:', err instanceof Error ? err.message : err);
+  } finally {
+    waitBoss = null;
   }
 }

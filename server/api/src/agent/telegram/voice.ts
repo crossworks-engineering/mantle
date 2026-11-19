@@ -147,7 +147,9 @@ export async function transcribeInboundVoice(args: {
       }
       const result = tried.result;
       if (sttWorker) void bumpAiWorkerUsage(sttWorker.id);
-      const long = result.durationSeconds != null && result.durationSeconds > longSeconds;
+      // 0 (the adapters' "no cap") marks no note long.
+      const long =
+        longSeconds > 0 && result.durationSeconds != null && result.durationSeconds > longSeconds;
       h.setOutput({
         model: result.model,
         language: result.language,

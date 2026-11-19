@@ -10,7 +10,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { runWaitOf, DAY_CAP_MIN_GAP_MS, type PipelineRunResult } from './pipeline-run';
-import { waitAgain } from '../extract-queue';
+import { paidWaitResends, waitAgain } from '../extract-queue';
+import { PAID_WAIT_RESENDS_MAX } from '@mantle/std';
 
 const asked = (stopped?: string): PipelineRunResult => ({
   status: 'asked',
@@ -136,6 +137,41 @@ describe('waitAgain', () => {
       { for: 'provider', provider: { reason: 'overloaded' } },
       at,
     );
-    expect(sent[0]!.opts.singletonKey).toBe('facts:n3');
+    expect(sent[0]!.opts.singletonKey).toBe('facts:n3:x');
+  });
+
+  it('a try that got work done starts the gaps over', async () => {
+    sent.length = 0;
+    const due = await waitAgain(
+      send,
+      {
+        nodeId: 'n1',
+        run: 'pdf-page-read',
+        wait: { for: 'provider', reason: 'rate_limit', waits: 7, until: NOW.toISOString() },
+      },
+      { for: 'provider', provider: { reason: 'rate_limit' } },
+      at,
+      { progressed: true },
+    );
+    expect(due).toEqual(new Date(at + 60_000));
+    expect((sent[0]!.data.wait as { waits: number }).waits).toBe(0);
+  });
+
+  it('a wait after paid calls is counted, and sent again only a few times in a row', async () => {
+    sent.length = 0;
+    let job: Parameters<typeof waitAgain>[1] = { nodeId: 'n4' };
+    let resends = 0;
+    while (paidWaitResends(job)) {
+      await waitAgain(send, job, { for: 'provider', provider: { reason: 'overloaded' } }, at, {
+        paid: true,
+      });
+      job = sent.at(-1)!.data as typeof job;
+      resends++;
+    }
+    expect(resends).toBe(PAID_WAIT_RESENDS_MAX);
+    // A wait before any paid call keeps no count: it waits as long as it
+    // must.
+    await waitAgain(send, job, { for: 'provider', provider: { reason: 'overloaded' } }, at);
+    expect((sent.at(-1)!.data.wait as { paid?: number }).paid).toBeUndefined();
   });
 });
