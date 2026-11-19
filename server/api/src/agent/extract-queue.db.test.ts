@@ -71,9 +71,11 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
   };
   const pdfOf = async (name: string, sizeBytes: number): Promise<string> => {
     const id = randomUUID();
-    const data = { filename: name, size_bytes: sizeBytes };
+    // Built in SQL: a JSON text bound as a parameter lands as one jsonb
+    // string, with no keys to read.
     await su`insert into nodes (id, owner_id, type, title, path, data)
-      values (${id}, ${owner}, 'file', ${name}, 'files', ${JSON.stringify(data)}::jsonb)`;
+      values (${id}, ${owner}, 'file', ${name}, 'files',
+              jsonb_build_object('filename', ${name}::text, 'size_bytes', ${sizeBytes}::bigint))`;
     return id;
   };
   const jobs = (nodeId: string) =>

@@ -42,7 +42,9 @@ import { readWindowStage, writeWindowStage, type FileTabsWriteInput } from '@man
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
-const logger = log('window-stage');
+/** The log of this module, made at the call (a test's mock of the tracing
+ *  module may have no `log` until then). */
+const logger = () => log('window-stage');
 
 /** Where a run keeps its windows: the file's id, the sha256 of the bytes and
  *  the run's key. */
@@ -144,7 +146,7 @@ export async function openWindowStage(stage: WindowStage): Promise<{
   try {
     kept = await readWindowStage(stage.fileId, stage.sha256, run16Of(stage.runKey));
   } catch (err) {
-    logger.warn(`the window stage of ${stage.fileId} was not read: ${errorMessage(err)}`);
+    logger().warn(`the window stage of ${stage.fileId} was not read: ${errorMessage(err)}`);
     kept = new Map();
   }
   return {
@@ -179,6 +181,6 @@ export async function keepWindow(
       JSON.stringify(file),
     );
   } catch (err) {
-    logger.warn(`a window of ${stage.fileId} was not kept: ${errorMessage(err)}`);
+    logger().warn(`a window of ${stage.fileId} was not kept: ${errorMessage(err)}`);
   }
 }
