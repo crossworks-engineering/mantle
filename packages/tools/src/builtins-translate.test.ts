@@ -468,15 +468,44 @@ describe('translate: save', () => {
     });
   });
 
-  it('on a team surface nothing is saved and nothing is spent; the translation itself runs', async () => {
+  it('a member saves in their own workspace, with their rights; a turn with no login saves nothing', async () => {
     rows.set('page-1', { id: 'page-1', type: 'page', title: 'Spec', path: 'pages.a', md: 'Hi' });
-    const r = await translate.handler({ node_id: 'page-1', to: 'de', save: true }, teamCtx);
-    expect((r as { error: string }).error).toContain('no copy is saved');
+    // A member's own turn: the copy is the member's create (the write
+    // gateway decides), at the top level of their workspace (filing in a
+    // folder is the owner's).
+    const memberCtx = {
+      ownerId: 'owner-1',
+      surface: { kind: 'team', privateReads: false, loginId: 'member-1' },
+    } as unknown as Ctx;
+    const r = out(await translate.handler({ node_id: 'page-1', to: 'de', save: true }, memberCtx));
+    expect(r.saved).toMatchObject({ kind: 'page', placed: 'the top level of Pages' });
+    expect(vi.mocked(content.createPage).mock.calls[0]![1]).not.toHaveProperty('siblingOf');
+    // The Team responder with no member signed in: nobody to write as.
+    chatCalls.length = 0;
+    vi.mocked(content.createPage).mockClear();
+    const none = await translate.handler({ node_id: 'page-1', to: 'de', save: true }, teamCtx);
+    expect((none as { error: string }).error).toContain('no copy can be saved');
     expect(chatCalls).toHaveLength(0);
     expect(content.createPage).not.toHaveBeenCalled();
     expect(out(await translate.handler({ node_id: 'page-1', to: 'de' }, teamCtx)).translation).toBe(
       'DE:Hi',
     );
+  });
+
+  it('a member the write gateway refuses keeps the paid translation, with save_error', async () => {
+    const memberCtx = {
+      ownerId: 'owner-1',
+      surface: { kind: 'team', privateReads: false, loginId: 'member-1' },
+    } as unknown as Ctx;
+    vi.mocked(content.createPage).mockRejectedValueOnce(
+      Object.assign(new Error('new row violates row-level security policy for table "nodes"'), {
+        code: '42501',
+      }),
+    );
+    const r = out(await translate.handler({ text: 'Hello.', to: 'de', save: true }, memberCtx));
+    expect(r.translation).toBe('DE:Hello.');
+    expect(r.save_error).toBeTruthy();
+    expect(r).not.toHaveProperty('saved');
   });
 
   it('a file becomes a page; pasted text becomes a page', async () => {

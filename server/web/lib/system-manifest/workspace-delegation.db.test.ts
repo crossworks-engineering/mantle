@@ -136,12 +136,13 @@ describe.skipIf(!URL)(
       const changes = await rec.reconcileWorkspaceDelegation(owner);
       expect(changes.sort()).toEqual(
         [
-          `${tag}-other:+delegation,diagrammer`,
+          `${tag}-other:+delegation,translate,diagrammer`,
           'team-responder:+delegation,translate,diagrammer,presenter',
         ].sort(),
       );
       const other = await rowOf('other');
-      expect(other.g).toEqual(['memory-core', `${tag}-own`, 'delegation']);
+      // Every workspace assistant's `translate` (2026-11-19), once.
+      expect(other.g).toEqual(['memory-core', `${tag}-own`, 'delegation', 'translate']);
       expect(other.mc).toEqual({
         max_iterations: 7,
         delegate_to: ['researcher', 'presenter', 'diagrammer'],
@@ -162,9 +163,11 @@ describe.skipIf(!URL)(
       for (const k of ['none', 'off', 'presenter']) {
         expect((await rowOf(k)).mc.delegate_to, k).toEqual([]);
         expect((await rowOf(k)).g, k).not.toContain('delegation');
+        expect((await rowOf(k)).g, k).not.toContain('translate');
       }
       expect((await granted())[ids.other!]).toEqual([
         'group:delegation',
+        'group:translate',
         'delegate:diagrammer',
         'delegate:presenter',
       ]);
@@ -177,7 +180,7 @@ describe.skipIf(!URL)(
       memory_config = jsonb_set(memory_config, '{delegate_to}', '["researcher"]')
       where id in (${ids.other!}, ${ids.team!})`);
       await x(sql`update agents set tool_group_slugs = array_remove(tool_group_slugs, 'translate')
-      where id = ${ids.team!}`);
+      where id in (${ids.other!}, ${ids.team!})`);
       expect(await rec.reconcileWorkspaceDelegation(owner)).toEqual([]);
       // The whole reconcile: it provisions the specialists the brain misses
       // (Appsmith among them), unions each manifest agent's groups (the Team
@@ -195,6 +198,8 @@ describe.skipIf(!URL)(
       for (const k of ['other', 'team']) {
         const row = await rowOf(k);
         expect(row.g, k).not.toContain('delegation');
+        // The owner's removal of the paid `translate` sticks too.
+        expect(row.g, k).not.toContain('translate');
         expect(row.mc.delegate_to, k).toContain('appsmith');
         expect(row.mc.delegate_to, k).not.toContain('presenter');
         expect(row.mc.delegate_to, k).not.toContain('diagrammer');
@@ -232,10 +237,11 @@ describe.skipIf(!URL)(
     it('a later assistant gets them once', async () => {
       await agent('later', { role: 'assistant', workspaceId: otherWs, groups: [] });
       expect(await rec.reconcileWorkspaceDelegation(owner)).toEqual([
-        `${tag}-later:+delegation,diagrammer,presenter,appsmith`,
+        `${tag}-later:+delegation,translate,diagrammer,presenter,appsmith`,
       ]);
       expect((await rowOf('later')).mc.delegate_to).toEqual(THREE);
-      expect((await rowOf('later')).g).toEqual(['delegation']);
+      // A hand-made assistant made later gets `translate` once too.
+      expect((await rowOf('later')).g).toEqual(['delegation', 'translate']);
       expect(await rec.reconcileWorkspaceDelegation(owner)).toEqual([]);
     });
 
