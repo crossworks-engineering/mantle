@@ -272,14 +272,18 @@ attachment, a thumbnail, a drawing tool, a maintenance run). A PDF of 10 MB
 or more (`BOOK_HEAVY_MIN_BYTES`, packages/files/src/slug.ts) is heavy too:
 every office PDF is a book read by the local OCR window by window, and a
 PDF's bytes are what its OCR costs, so many small PDFs never queue behind a
-book, and a book never holds light work. A heavy PDF's job gets a time budget
+book, and a book never holds light work. So is a PDF of more than 200 pages
+(`BOOK_HEAVY_MIN_PAGES`) whatever its bytes: a typed catalogue of 4,000
+pages is a few MB. The main queue reads every PDF's page count (qpdf in the
+parser, no page decode) before it picks the lane. A heavy PDF's job gets a time budget
 that grows with its pages (`bookExpireMinutes`,
 server/api/src/agent/extract-lanes.ts): the base budget
 (`MANTLE_EXTRACT_EXPIRE_MIN`, 60) plus 5 minutes for each page window of 50,
 at most 8 hours, so a 1,000-page OCR book (about 50 minutes on 2 CPUs) gets
 160 minutes and does not expire and start again. The page count is qpdf's,
 read when the job goes on to the heavy lane; one that cannot be read gives
-the 8 hours. A PDF under 10 MB is light and keeps the base budget.
+the 8 hours. A PDF under 10 MB of 200 pages or fewer is light and keeps the
+base budget.
 Light and heavy together never pass the extractor count: a box set to 1 runs
 one extraction at a time, whatever it is. Every sender still sends to
 `mantle.extract` only, and the panel's counts add the two queues

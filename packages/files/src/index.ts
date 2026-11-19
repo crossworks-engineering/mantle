@@ -24,6 +24,7 @@ export {
   extractWeightOfExt,
   extractWeightOfFile,
   BOOK_HEAVY_MIN_BYTES,
+  BOOK_HEAVY_MIN_PAGES,
   SOME_FILES_EXTS,
   type CadExt,
   type ExtractWeight,

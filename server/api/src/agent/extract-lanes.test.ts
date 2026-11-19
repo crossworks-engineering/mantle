@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CAD_EXTS, extractWeightOfExt } from '@mantle/files';
-import { BOOK_HEAVY_MIN_BYTES } from '@mantle/files';
+import { BOOK_HEAVY_MIN_BYTES, BOOK_HEAVY_MIN_PAGES } from '@mantle/files';
 import {
   BOOK_EXPIRE_MAX_MIN,
   bookExpireMinutes,
@@ -30,6 +30,26 @@ describe('extractWeightOfNode', () => {
     // Only a PDF: a large Word file stays light.
     expect(
       extractWeightOfNode({ type: 'file', title: 'a.docx', filename: 'a.docx', sizeBytes: 1e9 }),
+    ).toBe('light');
+  });
+
+  it('a PDF of more than BOOK_HEAVY_MIN_PAGES pages is heavy whatever its bytes (M6)', () => {
+    const pdf = (pages: number | null) =>
+      extractWeightOfNode({
+        type: 'file',
+        title: 'b.pdf',
+        filename: 'b.pdf',
+        sizeBytes: 8e6,
+        pages,
+      });
+    expect(BOOK_HEAVY_MIN_PAGES).toBe(200);
+    // A typed catalogue of 4,000 pages in 8 MB.
+    expect(pdf(4000)).toBe('heavy');
+    expect(pdf(BOOK_HEAVY_MIN_PAGES + 1)).toBe('heavy');
+    expect(pdf(BOOK_HEAVY_MIN_PAGES)).toBe('light');
+    expect(pdf(null)).toBe('light');
+    expect(
+      extractWeightOfNode({ type: 'file', title: 'a.docx', filename: 'a.docx', pages: 4000 }),
     ).toBe('light');
   });
 

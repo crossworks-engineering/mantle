@@ -365,10 +365,14 @@ export async function startExtractQueue(
 }
 
 /** Whether a node's extraction is heavy (extract-lanes.ts). A node that is
- *  gone is light: the extractor finds that out and says so itself. */
+ *  gone is light: the extractor finds that out and says so itself. A PDF's
+ *  page count is read here (pdfPagesOf): a long one is heavy whatever its
+ *  bytes, and its count sets the heavy job's time budget. */
 async function heavyNodeOf(
   nodeId: string,
-): Promise<{ heavy: false } | { heavy: true; pdf: boolean; ownerId: string }> {
+): Promise<
+  { heavy: false } | { heavy: true; pdf: boolean; ownerId: string; pages: number | null }
+> {
   const [row] = await db
     .select({
       type: nodes.type,
@@ -382,27 +386,33 @@ async function heavyNodeOf(
     .limit(1);
   if (!row) return { heavy: false };
   const sizeBytes = row.sizeBytes === null ? null : Number(row.sizeBytes);
-  if (extractWeightOfNode({ ...row, sizeBytes }) !== 'heavy') return { heavy: false };
   const name = (row.filename ?? row.title ?? '').toLowerCase();
-  return { heavy: true, pdf: name.endsWith('.pdf'), ownerId: row.ownerId };
+  const pdf = row.type === 'file' && name.endsWith('.pdf');
+  const pages = pdf ? await pdfPagesOf(row.ownerId, nodeId) : null;
+  if (extractWeightOfNode({ ...row, sizeBytes, pages }) !== 'heavy') return { heavy: false };
+  return { heavy: true, pdf, ownerId: row.ownerId, pages };
+}
+
+/** A PDF's page count (qpdf in the parser, no page decode), or null when it
+ *  cannot be read (the parser busy, the bytes gone): then its bytes alone
+ *  say its lane. */
+async function pdfPagesOf(ownerId: string, nodeId: string): Promise<number | null> {
+  try {
+    const file = await readFileById({ ownerId, fileId: nodeId });
+    return file ? await parserPdfPageCount(file.bytes) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * The time budget of a heavy PDF's job (extract-lanes.ts bookExpireMinutes,
  * decision 3 of the large-PDF finish): the base for its first window, more
- * for each page window, by its page count (qpdf in the parser, no page
- * decode). Set on the job sent to the heavy lane: pg-boss bounds a handler
- * by the expiry it was fetched with. A count that cannot be read (the
- * parser busy, the bytes gone): the most, still bounded.
+ * for each page window, by its page count. Set on the job sent to the heavy
+ * lane: pg-boss bounds a handler by the expiry it was fetched with. A count
+ * that could not be read: the most, still bounded.
  */
-async function bookExpireSeconds(ownerId: string, nodeId: string): Promise<number> {
-  let pages: number | null = null;
-  try {
-    const file = await readFileById({ ownerId, fileId: nodeId });
-    if (file) pages = await parserPdfPageCount(file.bytes);
-  } catch {
-    pages = null;
-  }
+function bookExpireSeconds(pages: number | null): number {
   return bookExpireMinutes(activeExpireMin, pages) * 60;
 }
 
@@ -421,7 +431,7 @@ async function handleMainJob(
       : { heavy: false as const };
   if (job && boss && heavy.heavy) {
     // A book's time budget grows with its pages (bookExpireSeconds).
-    const expire = heavy.pdf ? await bookExpireSeconds(heavy.ownerId, job.nodeId) : null;
+    const expire = heavy.pdf ? bookExpireSeconds(heavy.pages) : null;
     await boss.send(HEAVY_QUEUE, job, {
       ...sendOptionsOf(job),
       ...(expire !== null ? { expireInSeconds: expire } : {}),
