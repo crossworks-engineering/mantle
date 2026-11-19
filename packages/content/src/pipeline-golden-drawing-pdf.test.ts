@@ -274,33 +274,13 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
         expect(r.jobs).toBe(r.parsed.kind === 'sheets' ? 3 : 2);
       });
     }
-    it(`${name}, a live document: the file keeps the database it has with the decider off`, async () => {
-      const r = await read(fixture(name), { decide: DOCUMENT });
-      expect(r.parsed.kind).toBe('sheets');
-      const old = golden(`${name}.decider-document.json`);
-      if (old.kind === 'sheets') {
-        // A file with something not read kept its database on the old path too.
-        expect(gold(r.parsed)).toEqual(old);
-      } else {
-        // The old path's answer for a file read whole, which the rule
-        // changed on purpose: the database of the read with the decider off.
-        expect(old).toEqual({ kind: 'none', word: 'no-rows' });
-        expect(gold(deciderLeftOut(r.parsed))).toEqual(golden(`${name}.json`));
-      }
-      if (r.parsed.kind !== 'sheets') return;
-      const file = r.parsed.sheets.find((t) => t.name === 'File')!;
-      const row = Object.fromEntries(file.columns.map((c, i) => [c.name, file.rows[0]![i]]));
-      expect(row).toMatchObject({
-        Kind: 'unsure',
-        'Kind source': 'rules',
-        'Decider answer': 'document',
-        'Decider confidence': 0.95,
-        'Decider mode': 'live',
-        'Decider model': 'made-up-model',
-      });
-      expect(r.asked).toHaveLength(1);
-      expect(r.routed).toBe(1);
-      expect(r.jobs).toBe(3);
+    it(`${name}, a live document on office paper: a book, read by the book reader, not the drawing reader`, async () => {
+      // Every office PDF is a book: the decider's document on A4 pages
+      // sends the file to pdf-pages (Python in the parser image, no job
+      // this process runs), never to drawing-pdf.
+      await expect(read(fixture(name), { decide: DOCUMENT })).rejects.toThrow();
+      expect(counted.filter((id) => id === 'pdf-router')).toHaveLength(1);
+      expect(counted).not.toContain('drawing-pdf');
     });
   }
 
