@@ -128,6 +128,8 @@ export {
   SCAN_WINDOW,
   SCAN_PAGES_AT_ONCE,
   SCAN_UNREAD_REASONS,
+  SCAN_RETRY_REASONS,
+  scanPageFinal,
   type ScanPage,
   type ScanPageMethod,
   type ScanUnreadReason,

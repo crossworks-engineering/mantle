@@ -217,7 +217,7 @@ describe('ocrIngestPdfNode: the pages and their record', () => {
     });
     const r = await ocrIngestPdfNode(pdfNode({ ocr: { resume } }), 'o1');
     expect(h.readScannedPdf).toHaveBeenCalledWith(
-      expect.objectContaining({ startPage: 3, pagesTotal: 3 }),
+      expect.objectContaining({ done: new Set([1, 2]), pagesTotal: 3 }),
     );
     expect(r.text).toBe('[Page 1]\nkept one\n\n[Page 3]\nthree');
     expect(r.unread).toEqual({ bad_read: 1 });
@@ -231,7 +231,54 @@ describe('ocrIngestPdfNode: the pages and their record', () => {
       }),
       'o1',
     );
-    expect(h.readScannedPdf.mock.calls[0]![0]).not.toHaveProperty('startPage');
+    expect(h.readScannedPdf.mock.calls[0]![0]).not.toHaveProperty('done');
+  });
+
+  it('reads again a page a try before left with no answer, and keeps only final pages', async () => {
+    const resume = {
+      sha256: sha256(bytes),
+      total: 2,
+      pages: [
+        [1, 'unread', 'failed', ''],
+        [2, 'scan_reader', '', 'two'],
+      ],
+    };
+    h.readScannedPdf.mockImplementation(
+      async (o: { onWindow: (p: ScanPage[], t: number) => Promise<void> }) => {
+        await o.onWindow([page(1, 'scan_reader', 'one\u0000')], 2);
+        return { pages: [page(1, 'scan_reader', 'one')], pagesTotal: 2, ran: true, model: 'm' };
+      },
+    );
+    await ocrIngestPdfNode(pdfNode({ ocr: { resume } }), 'o1');
+    expect(h.readScannedPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ done: new Set([2]), pagesTotal: 2 }),
+    );
+    // The kept text has no NUL (jsonb refuses it).
+    expect(holds(h.sets[0], '\u0000')).toBe(false);
+    expect(holds(h.sets[0], '"one"')).toBe(true);
+  });
+
+  it('a white page beside pages with no Scan reader is no verdict: read again, pages kept', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'blank'), page(2, 'unread', '', 'no_scan_reader')],
+      pagesTotal: 2,
+      ran: false,
+      model: null,
+    });
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
+    expect(r).toMatchObject({ text: null, ran: false, unread: { no_scan_reader: 1 } });
+    // Nothing removed: the kept pages stay for the read again.
+    expect(h.sets).toHaveLength(0);
+  });
+
+  it('a figure vision could not describe is a verdict: no read again pays for it', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'unread', '', 'figure')],
+      pagesTotal: 1,
+      ran: true,
+      model: 'm',
+    });
+    expect(await ocrIngestPdfNode(pdfNode(), 'o1')).toMatchObject({ text: null, ran: true });
   });
 
   it('a white file is a verdict (terminal), no Scan reader is none (read again)', async () => {

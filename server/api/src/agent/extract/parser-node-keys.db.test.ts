@@ -222,7 +222,10 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
       model: 'm',
     });
     const r = await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner));
-    expect(h.readScannedPdf.mock.calls[1]![0]).toMatchObject({ startPage: 3, pagesTotal: 3 });
+    expect(h.readScannedPdf.mock.calls[1]![0]).toMatchObject({
+      done: new Set([1, 2]),
+      pagesTotal: 3,
+    });
     expect(r.text).toBe('[Page 1]\nPage one read.\n\n[Page 3]\nPage three read.');
     const data = await dataOf(id);
     expect(data.ocr).toEqual({ pages_read: 2, pages_total: 3, unread: { bad_read: 1 } });

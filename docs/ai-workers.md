@@ -809,23 +809,28 @@ and the chat turn (`scanPdfForTurn`, ./attachments.ts):
 
 Each page ends `text`, `blank`, `scan_reader`, `vision` or `unread` with a
 reason (`ScanUnreadReason`, packages/files/src/read-cut.ts): `bad_read`,
-`no_scan_reader`, `failed` (no answer), `too_large`, `not_cut`, `time` (a
-chat turn's budget). The file's status says them: `data.ocr` is `true` for a
+`no_scan_reader`, `failed` (no answer), `too_large`, `figure` (mostly a
+figure, and vision gave no description of it), `not_cut`, `time` (a chat
+turn's budget). The file's status says them: `data.ocr` is `true` for a
 whole read, else `{ pages_read, pages_total, unread: { <reason>: n } }` and
 the file is `partial` with one sentence per reason (extractionOf). A scan
 that read no text records the `no_text_layer` skip with the reasons (the
-stamp's `pages`), terminal only when the read reached a verdict (a page
-blank or read badly); no Scan reader, or a provider that failed, leaves it
-to be read again. A brain with no Scan reader says so (an OpenRouter key and
+stamp's `pages`), terminal only when every page is final (read, blank, read
+badly, too large, a figure not described); a page with no Scan reader yet,
+no answer or not cut leaves the file to be read again (`scanPageFinal`,
+`SCAN_RETRY_REASONS`). A brain with no Scan reader says so (an OpenRouter key and
 the worker); nothing falls back to vision or a native read.
 
 **Money.** One paid call a page (two only when the provider gave no answer).
 The parser's work of a window (its cut, marks and page cuts) is done before
 the window's first paid call, so a busy parser fails the extract (pg-boss
-retries it) with nothing of that window paid. The pages each window read are
-kept on the node as it ends (`data.ocr.resume`, with the sha256 of the
-bytes), and a retry (a busy parser, a restart, the job's time) goes on after
-them: no page is paid for twice. A picture drawn after a paid call (a figure,
+retries it) with nothing of that window paid. The final pages of each window
+are kept on the node as it ends (`data.ocr.resume`, with the sha256 of the
+bytes; text cleaned of NUL), and a read again (a retry after a busy parser, a
+restart, the job's time, or the drain after a Scan reader is added) reads only
+the pages not kept (`done`, windows cut only where such a page is:
+`pdfWindowsAt`): no page is paid for twice. A read with no text and every
+page final drops them (a person's read again starts afresh). A picture drawn after a paid call (a figure,
 the check) that fails is no throw: the figure page is unread, the free rule
 stands. No new trigger: the extract runs on an upload as before, and
 `ocr-rescan` / `blank-scans` stay person-started (dry run first; their

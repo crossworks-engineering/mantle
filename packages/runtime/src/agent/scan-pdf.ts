@@ -52,9 +52,11 @@ import {
 import {
   isWindowLost,
   pdfWindows,
+  pdfWindowsAt,
   runPackaged,
   windowJob,
   type PdfWindowPart,
+  type PdfWindowStep,
 } from '@mantle/content/pipeline-runner';
 import { SCAN_WHY, VISION_METHOD } from '@mantle/content/book-pages';
 import {
@@ -201,7 +203,14 @@ export type ScanPdfDeps = {
   scan: typeof runScanReader;
   vision: typeof runVisionWorker;
   check: typeof checkScanRead;
-  windows: typeof pdfWindows;
+  /** The page windows: every page (`needed` null), or those that hold the
+   *  pages `needed`. */
+  windows(
+    bytes: Buffer,
+    sha256: string,
+    window: { pages: number; mb: number },
+    needed: readonly number[] | null,
+  ): AsyncGenerator<PdfWindowStep>;
 };
 
 const defaultDeps: ScanPdfDeps = {
@@ -235,7 +244,10 @@ const defaultDeps: ScanPdfDeps = {
   scan: (o) => runScanReader(o),
   vision: (o) => runVisionWorker(o),
   check: (o, p, s) => checkScanRead(o, p, s),
-  windows: (...a) => pdfWindows(...a),
+  windows: (bytes, sha256, window, needed) =>
+    needed === null
+      ? pdfWindows(bytes, sha256, window)
+      : pdfWindowsAt(bytes, sha256, window, needed),
 };
 
 /** At most `n` of `jobs` at once, the answers in order. */
@@ -249,8 +261,25 @@ async function inTurn<T>(jobs: (() => Promise<T>)[], n: number): Promise<T[]> {
   return out;
 }
 
+/** Why a page is unread that a later read may cure with no page paid for
+ *  twice: no Scan reader yet, no answer, a page not cut, no time. A read
+ *  that kept its pages (`done`) reads these again; every other page is
+ *  final (read, blank, read badly, too large, a figure not described). */
+export const SCAN_RETRY_REASONS: ReadonlySet<ScanUnreadReason> = new Set([
+  'no_scan_reader',
+  'failed',
+  'not_cut',
+  'time',
+]);
+
+/** Whether a page is final: read, or unread for good (a later read of the
+ *  same bytes would pay for it again to no end). */
+export function scanPageFinal(p: Pick<ScanPage, 'method' | 'why'>): boolean {
+  return p.method !== 'unread' || !SCAN_RETRY_REASONS.has(p.why ?? 'failed');
+}
+
 export type ScanPdfResult = {
-  /** Every page from `startPage` on, in order. */
+  /** Every page but those `done`, in order. */
   pages: ScanPage[];
   /** The pages of the file. */
   pagesTotal: number;
@@ -271,8 +300,9 @@ export async function readScannedPdf(opts: {
   bytes: Buffer;
   sha256: string;
   filename: string;
-  /** The first page to read (a read that kept pages before goes on). */
-  startPage?: number;
+  /** The pages a read before kept as final (scanPageFinal): not read
+   *  again, nor returned. Needs `pagesTotal`. */
+  done?: ReadonlySet<number>;
   /** The page count, when a read before learnt it. */
   pagesTotal?: number;
   deadline?: number;
@@ -294,24 +324,28 @@ export async function readScannedPdf(opts: {
       why,
     }));
 
-  for await (const w of d.windows(
-    opts.bytes,
-    opts.sha256,
-    SCAN_WINDOW,
-    opts.startPage ?? 1,
-    opts.pagesTotal,
-  )) {
+  const done = opts.pagesTotal !== undefined ? (opts.done ?? null) : null;
+  const needed =
+    done === null
+      ? null
+      : Array.from({ length: opts.pagesTotal! }, (_, i) => i + 1).filter((n) => !done.has(n));
+  if (needed !== null && needed.length === 0) {
+    return { pages: [], pagesTotal: opts.pagesTotal!, ran, model };
+  }
+  const todo = (n: number) => done === null || !done.has(n);
+
+  for await (const w of d.windows(opts.bytes, opts.sha256, SCAN_WINDOW, needed)) {
     if (late()) {
       // The pages from here on are not read in this turn: said, never cut
       // in silence.
       const from = w.part ? w.part.pageFrom : w.from;
       total = w.part ? w.part.pagesTotal : w.pagesTotal;
-      all.push(...unread(from, total, 'time'));
+      all.push(...unread(from, total, 'time').filter((p) => todo(p.page)));
       break;
     }
     if (!w.part) {
       total = w.pagesTotal;
-      const lost = unread(w.from, w.to, 'not_cut');
+      const lost = unread(w.from, w.to, 'not_cut').filter((p) => todo(p.page));
       all.push(...lost);
       await opts.onWindow?.(lost, total);
       continue;
@@ -332,6 +366,7 @@ export async function readScannedPdf(opts: {
     const cuts = new Map<number, Buffer | ScanUnreadReason>();
     const window: ScanPage[] = [];
     for (let n = part.pageFrom; n <= part.pageTo; n += 1) {
+      if (!todo(n)) continue;
       const m = marked.get(n);
       if (m?.method === 'text') {
         window.push({ page: n, method: 'text', text: m.text.trim() });
@@ -400,12 +435,31 @@ async function readPage(
       input: { page, mime: 'application/pdf', bytes: pdf.length },
     },
     async (h) => {
-      const out = await d.scan({
-        ownerId,
-        pdf,
-        ...(lines !== null ? { expectedLines: lines } : {}),
-        tries: 2,
-      });
+      // A throw (not the provider's: runScanReader answers those) is no
+      // answer: the window's other pages stand and are kept.
+      const out = await d
+        .scan({
+          ownerId,
+          pdf,
+          ...(lines !== null ? { expectedLines: lines } : {}),
+          tries: 2,
+        })
+        .catch((err: unknown): ScanReaderResult => ({
+          ran: false,
+          attempted: true,
+          text: '',
+          pictures: 0,
+          note: errorMessage(err),
+          model: null,
+          engine: 'mistral-ocr',
+          quality: {
+            ok: false,
+            reasons: ['no_text'],
+            illegibleShare: 0,
+            anchors: 0,
+            agreement: null,
+          },
+        }));
       if (!out.attempted) {
         h.setSkipped('no_scan_reader');
         h.setMeta({ page, note: out.note });
@@ -437,8 +491,11 @@ async function readPage(
   if (read.verdict === 'good') return { page, method: 'scan_reader', text: read.out.text };
 
   // Mostly a figure: one vision call describes it from the page's picture.
+  // A figure vision cannot describe (no picture, no vision worker, no text)
+  // is unread for good (`figure`): its Scan reader read is paid, and a later
+  // read would pay it again to the same end.
   const pic = await picture();
-  if (!pic) return unreadAs('failed');
+  if (!pic) return unreadAs('figure');
   const seen = await step(
     {
       name: 'extract_vision',
@@ -464,7 +521,7 @@ async function readPage(
     },
   );
   saw(seen.ran, seen.model);
-  return seen.text.trim() ? { page, method: 'vision', text: seen.text.trim() } : unreadAs('failed');
+  return seen.text.trim() ? { page, method: 'vision', text: seen.text.trim() } : unreadAs('figure');
 }
 
 /** The text of the pages read, each under a `[Page N]` line when the file

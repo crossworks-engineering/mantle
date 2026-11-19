@@ -36,6 +36,7 @@ import {
 } from '@mantle/files';
 import { getVisionAdapter, isProviderId } from '@mantle/voice';
 import { SCAN_READER_ENGINE } from '@mantle/runtime/agent';
+import { resolveDefaultWorker } from '@mantle/api-keys';
 import { fallbackCostMicroUsd } from '@mantle/tracing';
 import { sleep as stdSleep } from '@mantle/std';
 import { fetchProviderModels } from '../model-explorer';
@@ -205,13 +206,18 @@ export function estimateOcrCost(args: {
  *  reader (usable: its provider has a PDF parser engine) and vision (a page
  *  mostly a figure). */
 export async function ocrWorkers(ownerId: string) {
-  const scan = await getDefaultWorker(ownerId, 'scan_reader');
+  // Resolved as runScanReader resolves it: a worker with a key whose
+  // provider has a PDF parser engine, or none.
+  const scan = await resolveDefaultWorker(
+    ownerId,
+    'scan_reader',
+    (w) => typeof getVisionAdapter(w.provider)?.parsePdf === 'function',
+  );
   const vision = await getDefaultWorker(ownerId, 'vision');
   return {
-    scanReader:
-      scan && typeof getVisionAdapter(scan.provider)?.parsePdf === 'function'
-        ? { provider: scan.provider, model: scan.model, engine: SCAN_READER_ENGINE }
-        : null,
+    scanReader: scan.ok
+      ? { provider: scan.worker.provider, model: scan.worker.model, engine: SCAN_READER_ENGINE }
+      : null,
     vision: vision ? { provider: vision.provider, model: vision.model } : null,
   };
 }
