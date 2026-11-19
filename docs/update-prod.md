@@ -1822,6 +1822,32 @@ Contacts stay.
   takes 0378 off the ledger. The deleted shares, codes and trail rows do
   not come back: only the pre-roll backup has them.
 
+## Going up to the System workspace (migration 0391)
+
+The migration makes the System workspace ([workspaces.md](workspaces.md),
+"System") and adds every Admin user to it, each a Moderator, so the roll
+day shows no change: every Admin user still holds every area. After it,
+the settings, assistants, connectors and keys areas are held only by
+System users; an Admin user removed from System keeps the users area
+(users and workspaces, branding, pending approvals, the Inbox).
+
+- **Roll the brain and the client as a pair.** An older client keys the
+  journal, Inbox, pending and appearance screens to the settings area and
+  hides them from an Admin user outside System.
+- **After the roll:** a System user takes out of System the Admin users
+  who should not hold the technical areas, on **Settings > Workspaces >
+  System**. Each removal stops the vault keys, connectors and model routes
+  that user paired: pair them again as a System user first.
+- **Locked out of System:** `docker exec mantle_web pnpm -C server/web
+system:add --email <address>` adds that login to Admin (when needed) and
+  to System. Numbers only; exit 2 names why it refused.
+- **Rolling back below it:** run its revert first
+  (`packages/db/rollback/*_system_workspace.revert.sql`, as the
+  superuser, in one transaction, as for 0378 above). It puts the earlier
+  rule back (every Admin user holds every area again) and removes the
+  System workspace. It refuses while an item is granted to System: remove
+  those grants first.
+
 ## Rollback
 
 Roll back with `scripts/roll.sh`. It refreshes the compose to the old

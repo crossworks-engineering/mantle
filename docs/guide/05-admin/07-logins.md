@@ -57,6 +57,10 @@ A new login gets only its own private workspace. Add it to the workspaces it sho
 
 Open **Settings > Workspaces > Admin** and add the user. An admin manages the brain, and reads only what is shared with the workspaces they are in. No admin reads another user's private workspace or chats.
 
+An admin manages users and workspaces, branding, the pending approvals and the Inbox. The technical side (settings, models, assistants, connectors and keys) belongs to the **System** workspace, a smaller group of admins. To give an admin that too, a System user opens **Settings > Workspaces > System** and adds them. Only an admin can be added there. Removing someone from System stops the keys, connectors and model routes they set up.
+
+If nobody in System can sign in any more, the operator adds one login back on the box: `pnpm -C server/web system:add --email <address>` ([docs/workspaces.md](../../workspaces.md), "Operator notes").
+
 ## End someone's access
 
 - Remove them from a workspace in **Settings > Workspaces**. They lose its items at once.

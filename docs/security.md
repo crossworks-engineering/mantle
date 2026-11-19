@@ -242,6 +242,14 @@ may edit there; everything they do is attributable.
   (`MANTLE_MEMBER_DAILY_TOKENS`), checked when a turn is queued, on a
   queue of their own, so a leaked login is a bounded nuisance, not a wallet
   drain. Writes are rate limited per login.
+- **Admin and System.** The users of the Admin workspace manage users,
+  workspaces, branding, pending approvals and the Inbox. The technical
+  areas (settings, the terminal and sandboxes, models, assistants,
+  connectors, keys) are held only by the users of the System workspace, a
+  subset of the Admin users that only a System user adds to, and never an
+  agent or a key. The owner always stays in both. An operator on the box
+  recovers a locked-out System with `system:add`
+  ([workspaces.md](./workspaces.md), "Operator notes").
 - **Accepted trade-offs, stated plainly:** (1) a user can surface anything
   their workspaces hold, including via injection in content; that is what
   sharing with a workspace means. (2) Users see the same live status

@@ -54,7 +54,10 @@ Every tool is listed and called through the one gate
 Admin-only tool needs a login that is a user of the Admin workspace, and a
 tool that manages the brain (model pools, assistants and tool groups,
 connectors, Telegram, mail, peers, sandboxes, secrets) needs that login's
-matching area switched on. Listing equals calling: a tool the scope may
+matching area switched on. The users area (logins and workspaces, the
+pending queue, mail reading and sending) is every Admin user's; settings,
+assistants, connectors and keys need the login to be a System user too
+([workspaces.md](./workspaces.md), "Admin areas"). Listing equals calling: a tool the scope may
 not call is not on the list, and the call is refused anyway. A login that
 is a user of no workspace lists no tools at all, and the server
 instructions say why (A5 step 4).
@@ -388,7 +391,7 @@ adds the app again.
 - Pending peers verify, as for the federation routes.
 - The admin's connected-clients list in Settings, MCP shows every login's
   grants without naming the login. A member sees only their own (above).
-- A key of a login that is not in the Admin workspace with the keys area
+- A key of a login without the keys area (one that is not a System user)
   names no risky tool (W8a), so it cannot change an app's code; its OAuth
   grant can.
 - Clients: removed (W8a, [client-logins.md](./client-logins.md)). A client

@@ -26,7 +26,7 @@ A connection may write unless it is read only: a read-only API key, a peer with 
 
 Some tools are kept for the Admin workspace:
 
-- A tool that manages the brain (assistants, tool groups, connectors, keys, settings) needs a user of the Admin workspace with that area switched on.
+- A tool that manages the brain (assistants, tool groups, connectors, keys, settings) needs a user of the Admin workspace with that area switched on: for those four, a user of the System workspace too. The users area (logins, workspaces, pending approvals, mail) is every Admin user's.
 - A tool that spends on the brain owner's provider keys (a web search, an image, a summary, a crawl, a route map, a turn of another agent) is not offered to a login outside the Admin workspace.
 - The Telegram inbox tools work for the brain owner only.
 

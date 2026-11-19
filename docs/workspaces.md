@@ -57,6 +57,25 @@ The workspaces a brain has:
   `admin_workspace`), an add to Admin is one with the tick, and removing
   the user from Admin (the role change to member) is the only way to take
   it away. Migration 0298 ticked every Admin user who was not.
+- **System**: exactly one, a subset of the Admin users (owner decision
+  2026-11-19, "super admins"). Its users hold the technical areas
+  (settings, assistants, connectors, keys: see "Admin areas"); an Admin
+  user outside it keeps the users area only. Only an Admin user can be
+  added (409 `not_admin_user`, "Make them an Admin user first."), and only
+  a System user adds someone (403 `system_users_only`). Every user there is
+  a Moderator: the tick is stored on and never cleared (409
+  `admin_workspace`). Anyone may leave; removing another user needs a
+  System user. The last System user cannot leave or be removed, and the
+  owner (the anchor) always stays. Taking a user out of Admin takes them
+  out of System too (refused for the last System user); whoever may remove
+  them from Admin may do it, System user or not. System keeps its name,
+  cannot be archived and grants no reading: being in it opens areas, not
+  items. Admin users with the users area see it and its users, read only.
+  The migration that made it added every Admin user, each a Moderator.
+  Adding a user to System is a person's act on its screen: no agent, MCP
+  tool or key does it (`system_user_add` on the person-only list,
+  `workspace_user_set` refuses System). It is marked by its `bridge_key`
+  (`system`, read by `mantle_ws_system_id`), never by its name.
 - **Team**: on a brain switched to workspaces before migration 0286, the
   shared workspace the switch made. Since 0286 (owner decision 2026-10-13)
   it is a normal workspace: renamed, archived and moderated like any
@@ -104,8 +123,11 @@ Who may change a workspace:
 - **Archiving** a workspace (a Moderator of it, or an Admin user) removes
   its grants from the items granted to it. The confirm lists the counts
   first. It is refused while any item still has its home there: move those
-  items first. The Admin workspace cannot be archived; Team can, like any
-  other, since 0286.
+  items first. The Admin and System workspaces cannot be archived; Team
+  can, like any other, since 0286.
+- **The System workspace** has the rules in its entry above: only a System
+  user adds (an Admin user only) and removes another; no Moderator tick to
+  set.
 
 Every change of users, Moderator ticks, grants and resources writes a
 `workspace_events` row. A workspace or a login the caller may not see
@@ -340,8 +362,8 @@ A folder is an item with a home and grants like any other.
 
 ## Assistants and chats
 
-- **One assistant per workspace, one workspace per assistant.** An Admin
-  user with the assistants area attaches it on the workspace screen.
+- **One assistant per workspace, one workspace per assistant.** A System
+  user (the assistants area) attaches it on the workspace screen.
 - **It reads only its workspace's items**, also when the user who asks is
   in other workspaces. Its memory (digests, facts learned from chat) stays
   in that workspace.
@@ -462,8 +484,8 @@ A key acts as the login that made it, as that login is now. Its access
 
 - Every login types its password to make a key.
 - A key lasts at most 90 days. A key that never expires, or lasts longer,
-  and a key that names risky tools, need a login in the Admin workspace
-  with the keys area.
+  and a key that names risky tools, need a login with the keys area: a
+  System user.
 - A password change, **Sign out everywhere**, an admin's End sessions and
   disabling the login end its keys.
 - **On `/api/v1`** a route answers a key as the route it stands for in the
@@ -495,13 +517,14 @@ sent to needs the keys area (or the owner). This covers tools that use
 API Console proxy, a mail account's stored password against a new host,
 and model routes with a base URL. A tool, group, connector or route
 records who paired it, and resolves its key only while that login still
-holds the keys area.
+holds the keys area. So removing a user from System (or from Admin) stops
+what they paired: the remove confirm on the System screen says so.
 
 ## Connectors
 
 A connector (an MCP or OpenAPI connector) is a resource of a workspace,
-with its own **Write** tick. An Admin user with the connectors area
-attaches it on the workspace screen.
+with its own **Write** tick. A System user (the connectors area) attaches
+it on the workspace screen.
 
 - Every user of the workspace may use its read tools.
 - A tool that changes data needs the resource's Write on, the user to be a
@@ -585,19 +608,24 @@ workspaces allow, like any user. It is special only where stated:
 
 ## Admin areas
 
-The users of the Admin workspace manage the brain through five areas:
+The users of the Admin workspace manage the brain through five areas. The
+users area is every Admin user's; the other four are the System
+workspace's: an Admin user holds them only while they are also a user of
+System (`mantle_area_rule`, the one rule every reader asks).
 
-| Area                 | What it opens                                                                                                                     |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Settings             | brain settings, models, pools and AI workers, runs, traces and pending approvals, sandboxes, the terminal, MCP settings, branding |
-| Users and workspaces | logins and invites, every workspace's users, blocking or unpairing any Telegram chat, who opened an app                           |
-| Assistants           | assistants, skills, tools, tool groups, Studio, heartbeats, attaching an assistant to a workspace                                 |
-| Connectors           | MCP and OpenAPI connectors, peers, mail, calendar and Telegram accounts, attaching a connector to a workspace                     |
-| Keys                 | vault keys, secrets and PDF passwords, pairing a key with a host, keys that never expire, keys with risky tools                   |
+| Area                 | Held by        | What it opens                                                                                                                                                                                      |
+| -------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Users and workspaces | Admin          | logins and invites, every workspace's users, blocking or unpairing any Telegram chat, who opened an app, branding (Settings > Appearance), pending approvals, the Inbox (reading and sending mail) |
+| Settings             | Admin + System | brain settings, models, pools and AI workers, runs and traces, sandboxes, the terminal, MCP settings, the reminder channel                                                                         |
+| Assistants           | Admin + System | assistants, skills, tools, tool groups, Studio, heartbeats, attaching an assistant to a workspace                                                                                                  |
+| Connectors           | Admin + System | MCP and OpenAPI connectors, peers, mail and calendar accounts, Telegram bots, attaching a connector to a workspace                                                                                 |
+| Keys                 | Admin + System | vault keys, secrets and PDF passwords, pairing a key with a host, keys that never expire, keys with risky tools                                                                                    |
 
-- Today every Admin user holds every area. Each user's row in the Admin
-  workspace can switch an area off (`workspace_users.limits`); no screen
-  sets it yet.
+- The Admin content screens (journal, contacts, Recall, nodes, tasks,
+  events, formulas) are Admin kinds: every Admin user reads them, as before.
+- Each user's row in the Admin workspace can switch an area off
+  (`workspace_users.limits`); no screen sets it yet. The limits stay on the
+  Admin row only: System has none.
 - Being an Admin user is management, not reading. An Admin user reads what
   is granted to the workspaces they are in, like anyone. A user's private
   workspace is not granted to Admin.
@@ -700,4 +728,14 @@ workspace with its users in it, like any other.
   resources is `workspace_events`.
 - **Database roles and restore**: [access-levels.md](./access-levels.md),
   "Operations".
+- **Locked out of System.** When no System user is left who can sign in
+  (each left, was disabled, or lost the password), the operator on the box
+  adds one login back: `pnpm -C server/web system:add --email <address>`
+  (in the web container: `docker exec <web container> pnpm -C server/web
+system:add --email <address>`). It adds the login to Admin first when it
+  is not an Admin user, then to System, through the workspace screen's own
+  definer as workspace system work (`system:system-add`), each with its
+  `workspace_events` row. A disabled or archived login is refused (enable
+  it first). It prints numbers only. Exit 0 done, 1 a bad argument or a
+  crash, 2 refused.
 - **Security overview**: [security.md](./security.md).

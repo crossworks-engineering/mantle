@@ -438,7 +438,8 @@ granted them), so a box Admin with the users area can call them too:
 
 - `users_list` (read): each login's id, email, display name, role, owner,
   disabled and archived, last sign-in, when made, and its workspaces with
-  the Moderator tick; and the live shared workspaces (`{ id, name, admin }`;
+  the Moderator tick; and the live shared workspaces (`{ id, name, admin }`,
+  with `system: true` on the System workspace;
   never a private or a former user's one; on the first page only, held to
   about 24 000 characters, with `workspacesCut` when cut). Paged by email
   (`offset`, `limit` at most 150; a page also stops at about 56 000
@@ -449,7 +450,9 @@ granted them), so a box Admin with the users area can call them too:
 - `workspace_user_set` (write): 1 to 20 changes `{ loginId, workspaceId,
 role }`, role `user`, `moderator` or `none` (out). It refuses the box
   owner (`owner`), the Admin workspace (`admin`: who is an Admin is a role,
-  set on the Users screen), a workspace that is not live and shared
+  set on the Users screen), the System workspace (`system`: a System user
+  adds people there on its screen, a person's act), a workspace that is not
+  live and shared
   (`workspace`), an unknown login (`login`), and a new place for a disabled
   or archived login (`disabled`; taking it out is allowed). Then the
   workspace definers run in the acting login's own scope (the caller's;
@@ -595,8 +598,11 @@ the Control Center at ... (tool scope: admin)`.
   (`REVIEWED_USERS_TOOLS`: `users_list`, `workspace_user_set`, the Fleet
   users screen's; each never touches the box owner, never changes a role,
   never sets a password); less code and
-  run execution (`sandbox_*`, `run_*`, `run_terminal`). The other areas hold
-  data (`connectors`: email, peers, Telegram; `admin`: recall, crawl) and
+  run execution (`sandbox_*`, `run_*`, `run_terminal`). The users area's
+  mail tools (`USERS_MAIL_TOOLS`: `email_list`, `email_get`, `email_page`,
+  `email_send`, which moved there from connectors with the System
+  workspace) stay out. The other areas hold
+  data (`connectors`: peers, Telegram; `admin`: recall, crawl) and
   stay out, with every tool of no area (files, pages, chats, tables, tasks,
   search, apps, code).
 - **`full`**: every builtin, less the never lists below.

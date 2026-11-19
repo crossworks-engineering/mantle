@@ -20,7 +20,7 @@ Every other route refuses a key, so a key can never change settings, logins or o
 5. Leave **All areas** on, or turn it off and tick only the areas the key needs.
 6. Type your password, press **Make key** and copy the key. It is shown once. MantleOS keeps only a hash of it.
 
-A key lasts at most 90 days. A key that never expires or lasts longer, and a key that names risky tools, need a login in the Admin workspace with the keys area.
+A key lasts at most 90 days. A key that never expires or lasts longer, and a key that names risky tools, need a login with the keys area: a user of the System workspace.
 
 Each login makes keys for itself. A key acts as its login as the login is now: it reads what that login's workspaces hold, and its access and areas only take away from that. Nobody can make a key that acts as another login.
 
@@ -59,8 +59,8 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 ## Keys on MCP
 
 - Every key gets the same tools as everyone, in its login's workspaces, held to its access and areas. There is no per-login **MCP** or **Write** switch: a key writes when its access is **Read and write**, and then only what its login may change there.
-- Tools that manage the brain need a login in the Admin workspace with the matching area. Tools that spend on the owner's provider keys are not offered to a login outside the Admin workspace.
-- Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key. Only a login in the Admin workspace with the keys area can name them.
+- Tools that manage the brain need a login in the Admin workspace with the matching area (settings, assistants, connectors and keys: a user of the System workspace too). Tools that spend on the owner's provider keys are not offered to a login outside the Admin workspace.
+- Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key. Only a login with the keys area (a System user) can name them.
 - A key may not change the content of a page or a note others read: one granted to a workspace other than Admin, or with a public link. What it embeds would become readable to them, and a key cannot confirm that. Change it in the app. This holds on `/api/v1` too, and for a peer MantleOS acting as a login.
 - **API only**: a member's key made before every login had MCP was made for `/api/v1`, so the move to one MCP for every login marked it API only (`api_only`). It keeps working on `/api/v1`, and `/api/mcp` refuses it. Make a new key for MCP. A key made since is never API only.
 
