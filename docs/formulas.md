@@ -37,8 +37,9 @@ table**; a spec is a few kilobytes of JSON and lives entirely in `nodes.data`.
 768-dim embedding land automatically on the next `pg_notify('node_ingested')`.
 The extractor renders the body through `formulaToText`.
 
-The rendered text is **not persisted**. `nodes.search_tsv` is generated from the
-whole `data` blob, so FTS already covers the spec JSON; storing a second
+The rendered text is **not persisted**. `nodes.search_tsv` is generated from
+`data` (its small fields as JSON text, migration 0388), so FTS already covers
+the spec JSON; storing a second
 rendering would create a copy that can drift from the spec it describes, and for
 a calculation transcribed out of a safety standard two disagreeing copies is a
 worse failure than a slightly noisier FTS vector.

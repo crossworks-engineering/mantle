@@ -1,10 +1,11 @@
 /**
  * The fields in the file's text (docs/pipelines.md, "Agents"): after an
  * Agent's run wrote its tabs, the text of those tabs goes on the file node,
- * `data.agent_text`, one text for each Agent by its id. `search_tsv` is
- * generated over the whole data blob, so a plain search finds a drawing by
- * its line number, its tags or its title block. `file_sql` reads the same
- * values from the tabs. The same text goes into the file's passages
+ * `data.agent_text`, one text for each Agent by its id. `search_tsv` takes
+ * it first in the file's long text (migration 0388: the first 90,000
+ * characters, the Agents' text before the file's), so a plain search finds
+ * a drawing by its line number, its tags or its title block. `file_sql`
+ * reads the same values from the tabs. The same text goes into the file's passages
  * (`content_chunks`, ./index-writes.ts writeRetrievalChunks), so a search
  * of the passages finds them too: the extract adds it, and a run that
  * changed it builds the passages again from the stored text.

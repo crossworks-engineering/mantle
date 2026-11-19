@@ -795,7 +795,7 @@ const generate_image: BuiltinToolDef = {
     // the prompt.
     //
     // Title + prompt are set explicitly because the filename alone makes the
-    // image UNFINDABLE. `nodes.search_tsv` weights title A and data B, but a
+    // image UNFINDABLE. `nodes.search_tsv` weights title A above data, but a
     // slug filename tokenizes as ONE long hyphenated term, so an FTS query of
     // the prompt's own words missed it; the vector arm can't help either until
     // the extractor has run. A freshly generated image was therefore invisible

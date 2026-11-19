@@ -719,8 +719,8 @@ export async function admitForExtraction(
           // them. A fresh upload has none; the delete is a no-op there.
           await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
           // Strip the content CACHES too (`- 'text' - 'agent_text' - 'content'`), not just the
-          // chunks: `search_tsv` is a generated column over the whole data blob,
-          // so extracted text left in `data` keeps matching keyword search —
+          // chunks: `search_tsv` is a generated column over data (its long text
+          // capped, 0388), so extracted text left in `data` keeps matching keyword search —
           // exactly the leak this mode promises not to have (2026-08-22 audit).
           // Disk keeps the bytes; a flip back to full re-reads from there
           // (readNodeBodyRaw's documented fallback), so nothing is lost.
