@@ -28,7 +28,7 @@ import {
   getDefaultWorker,
   nodes,
   onNarrowSpots,
-  scopeHasArea,
+  callerHasArea,
   type AiWorker,
   type TranslatorParams,
 } from '@mantle/db';
@@ -48,6 +48,7 @@ import {
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { fileById, parserText, readFileById } from '@mantle/files';
 import {
+  log,
   catalogHasModel,
   catalogModalities,
   contextLimitForRoute,
@@ -70,6 +71,8 @@ import {
   type ModelRoute,
   type PartCall,
 } from './translate-parts';
+
+const logger = log('translate');
 
 /** The answer for an item the caller does not read, a hidden kind and a
  *  random id alike: it never says the item exists. */
@@ -180,7 +183,7 @@ async function readSource(
     case 'email': {
       // Mail is the owner's private corpus: an Admin user with Connectors,
       // as the mail tools ask.
-      if (!(await scopeHasArea('connectors'))) {
+      if (!(await callerHasArea('connectors'))) {
         return {
           error:
             'Reading mail needs the Connectors area of the Admin workspace. Ask an Admin user to translate it.',
@@ -283,10 +286,7 @@ async function saveCopy(
           }
         }
       } catch (err) {
-        console.error(
-          '[translate] could not file the note beside its original:',
-          errorMessage(err),
-        );
+        logger.warn(`could not file the note beside its original: ${errorMessage(err)}`);
       }
     }
     return { id: note.id, kind: 'note', title: note.title, url: nodeUrl(note.id), placed };
@@ -319,7 +319,7 @@ async function saveCopy(
         isScopeWriteRefusal(err) ||
         visibilityRefusal(err) !== null;
       if (!placement) throw err;
-      console.error('[translate] the copy cannot go beside its original:', errorMessage(err));
+      logger.warn(`the copy cannot go beside its original: ${errorMessage(err)}`);
     }
   }
   const page = await createPage(ctx.ownerId, input);
@@ -567,7 +567,7 @@ export const translateTool: BuiltinToolDef = {
       } catch (err) {
         // The translation is paid for: it is returned, with why it was not
         // saved (a fixed sentence; the database's own text goes to the log).
-        console.error('[translate] the copy could not be saved:', errorMessage(err));
+        logger.warn(`the copy could not be saved: ${errorMessage(err)}`);
         saveError =
           visibilityRefusal(err) ??
           'The copy could not be saved where you may write. The translation is below; save it by hand or ask the owner.';
@@ -680,7 +680,7 @@ export const translator_settings: BuiltinToolDef = {
       return {
         ok: false,
         error:
-          'This brain has no Translator worker (it is made on upgrade when an OpenRouter key is set): add one at Settings, AI workers.',
+          'No default translator worker on this brain (it is made on upgrade when an OpenRouter key is set): add one at Settings, AI workers.',
       };
     }
     const params = { ...((row.params ?? {}) as TranslatorParams) };
