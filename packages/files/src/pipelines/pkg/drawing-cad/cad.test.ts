@@ -22,6 +22,9 @@ import { isParserError, resetParserFailures, withParserScope } from '../../../pa
 import { inProcessPipelineFetch } from '../../test-job';
 import { cadGrids, dwgTableDescription as tableDescription, formatOf, type DwgGrids } from './cad';
 import { cadReplyOf } from './cad-reply';
+import { withReadCutSink } from '../../../read-cut-sink';
+import { FILE_TABS_WRITE } from '../../contract';
+import { checkStepResult } from '../../step-check';
 
 const parseDwg = (bytes: Buffer) => parseCadFile(bytes, 'dwg');
 const extractDwgImages = (bytes: Buffer) => extractCadFileImages(bytes, 'dwg');
@@ -1369,5 +1372,69 @@ describe('dwgRenderDpi', () => {
     vi.stubEnv('DWG_RENDER_DPI', '5000');
     expect(dwgRenderDpi()).toBe(600);
     vi.unstubAllEnvs();
+  });
+});
+
+describe('a drawing read in part says so (docs/files.md, "Read in part")', () => {
+  it("the CAD tier's text caps and the digest's budgets reach the extract's sink", async () => {
+    // A registry past its text cap, with long texts cut, past its layer cap
+    // and a geometry list past its budget: the counts the CAD tier sends
+    // (cad/cad.py), on a synthetic reply.
+    const labels = Array.from({ length: 2000 }, (_, i) => ({
+      text: `TAG-${i}-${'x'.repeat(10)}`,
+      layer: 'ANNOTATION',
+      x: i,
+      y: i,
+    }));
+    stubSidecar({
+      ...sidecarReply(),
+      capped: true,
+      texts: labels,
+      texts_seen: 26_000,
+      texts_shortened: 7,
+      layers_total: 1_200,
+      segments_capped: true,
+    });
+    try {
+      const { value, cuts } = await withReadCutSink(() => parseDwg(dwgFixture(91)));
+      expect(value).toContain('more unique labels');
+      expect(cuts.cad_texts).toEqual({ what: 'texts', read: 2000, total: 26_000, limit: 20_000 });
+      expect(cuts.cad_text_length).toEqual({
+        what: 'texts',
+        read: 26_000 - 7,
+        total: 26_000,
+        limit: 512,
+      });
+      expect(cuts.cad_layers).toEqual({ what: 'layers', read: 2, total: 1_200, limit: 1_000 });
+      expect(cuts.cad_labels).toMatchObject({ what: 'labels', total: 2000, limit: 12_000 });
+      expect(cuts.cad_labels!.read).toBeLessThan(2000);
+      expect(cuts.cad_geometry).toEqual({ what: 'geometry lists', read: 5, total: 6 });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('a drawing within every cap says nothing', async () => {
+    stubSidecar();
+    try {
+      const { cuts } = await withReadCutSink(() => parseDwg(dwgFixture(92)));
+      expect(cuts).toEqual({});
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("a write's cuts are checked by the step check", () => {
+    const write = (readCuts: unknown) => ({
+      status: 'ok',
+      calls: [{ call: 'tool', tool: FILE_TABS_WRITE, input: { tabs: [], readCuts } }],
+    });
+    expect(checkStepResult(write({ cad_texts: { what: 'texts', read: 1, total: 2 } })).ok).toBe(
+      true,
+    );
+    expect(checkStepResult(write({ cad_texts: { what: 'texts', read: -1 } })).ok).toBe(false);
+    expect(checkStepResult(write('all of it')).ok).toBe(false);
   });
 });

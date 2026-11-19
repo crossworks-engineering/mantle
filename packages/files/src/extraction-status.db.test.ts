@@ -5,7 +5,10 @@
  * `indexing_applied` still said 'full' and nothing on any screen said its
  * content was missing. Now its file row says `failed` with the reason, the
  * `extraction` list finds it, also after a rename. A scan the OCR read 10
- * pages of is `partial`. Seeds its own owner and rows
+ * pages of is `partial`, as is a file whose reader said a cut (`read_cut`:
+ * docs/files.md, "Read in part") or that kept fewer pictures than it
+ * found; the stale list's `partial` (the exact SQL form) finds the same
+ * files. Seeds its own owner and rows
  * and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/files/src/extraction-status.db.test.ts
  */
@@ -24,7 +27,14 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
   const owner = randomUUID();
   const tag = `xstat-${owner.slice(0, 8)}`;
   const folder = `files.${tag.replace(/-/g, '_')}`;
-  const ids = { refused: randomUUID(), partial: randomUUID(), read: randomUUID() };
+  const ids = {
+    refused: randomUUID(),
+    partial: randomUUID(),
+    read: randomUUID(),
+    sheet: randomUUID(),
+    pictures: randomUUID(),
+    noCut: randomUUID(),
+  };
   // A verdict stamped after the row's write, as the extractor stamps it.
   const later = new Date(Date.now() + 60_000).toISOString();
 
@@ -63,6 +73,31 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
             sha256: 'c',
             indexing_applied: 'full',
             extract_completed_at: later,
+          })}::jsonb),
+        (${ids.sheet}, ${owner}, 'file', 'ledger.xlsx', ${folder},
+          ${JSON.stringify({
+            filename: 'ledger.xlsx',
+            sha256: 'd',
+            indexing_applied: 'full',
+            extract_completed_at: later,
+            read_cut: { sheet_rows: { what: 'rows', read: 5000, total: 12000, limit: 5000 } },
+          })}::jsonb),
+        (${ids.pictures}, ${owner}, 'file', 'manual.docx', ${folder},
+          ${JSON.stringify({
+            filename: 'manual.docx',
+            sha256: 'e',
+            indexing_applied: 'full',
+            extract_completed_at: later,
+            images: { kept: 3, found: 5 },
+          })}::jsonb),
+        (${ids.noCut}, ${owner}, 'file', 'whole.xlsx', ${folder},
+          ${JSON.stringify({
+            filename: 'whole.xlsx',
+            sha256: 'f',
+            indexing_applied: 'full',
+            extract_completed_at: later,
+            read_cut: {},
+            images: { kept: 2, found: 2 },
           })}::jsonb)`);
   }, 60_000);
 
@@ -85,6 +120,29 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
       pages: { read: 10, total: 679 },
     });
     expect(by.get(ids.read)?.extraction).toEqual({ state: 'indexed' });
+    expect(by.get(ids.sheet)?.extraction).toMatchObject({
+      state: 'partial',
+      cuts: [expect.objectContaining({ key: 'sheet_rows', read: 5000, total: 12000 })],
+    });
+    expect(by.get(ids.sheet)?.extraction.hint).toMatch(/5,000 of 12,000 rows/);
+    expect(by.get(ids.pictures)?.extraction).toMatchObject({
+      state: 'partial',
+      pictures: { kept: 3, found: 5 },
+    });
+    expect(by.get(ids.noCut)?.extraction).toEqual({ state: 'indexed' });
+  });
+
+  it("the stale list's partial is the same rule as the rows' (the exact SQL form)", async () => {
+    const { listFilesNeedingAttention } = await import('./ops/stale');
+    const page = await listFilesNeedingAttention({
+      ownerId: owner,
+      state: 'partial',
+      installed: [],
+    });
+    const want = [ids.partial, ids.sheet, ids.pictures].sort();
+    expect(page.files.map((f) => f.id).sort()).toEqual(want);
+    expect(page.total).toBe(3);
+    for (const f of page.files) expect(f.extraction.state).toBe('partial');
   });
 
   it('the extraction list finds each file in its state, under a folder or in the tree', async () => {
@@ -96,7 +154,9 @@ describe.skipIf(!DB_URL)('a file the brain could not read says so', () => {
       state: 'partial',
       under: folder,
     });
-    expect(partial.files.map((f) => f.id)).toEqual([ids.partial]);
+    expect(partial.files.map((f) => f.id).sort()).toEqual(
+      [ids.partial, ids.sheet, ids.pictures].sort(),
+    );
     const elsewhere = await ops.listFilesByExtraction({
       ownerId: owner,
       state: 'failed',

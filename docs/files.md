@@ -210,14 +210,14 @@ routes) and `node_read` of a file carry `extraction`
 (`packages/files/src/extraction-status.ts`), derived live from keys the
 extractor already writes, so there is no new state:
 
-| `state`     | When                                                                                                                                                           | Also                                                                               |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `indexed`   | the read ended (`extract_completed_at`)                                                                                                                        | `reason: local_only` for a file read with no model (no assistant in its workspace) |
-| `partial`   | a scan read in part: `data.ocr = { pages_read, pages_total }` (the OCR reads 10 pages)                                                                         | `pages: { read, total }`                                                           |
-| `failed`    | a terminal skip that is a read failure (`READ_FAILURE_SKIPS`: `document_unreadable`, `pdf_too_large`, `encrypted_pdf`, `bytes_unavailable`), or a parked write | `reason`, `hint`                                                                   |
-| `skipped`   | any other terminal skip (nothing to read: `body_too_short`, `no_parser`, ...)                                                                                  | `reason`, `hint`                                                                   |
-| `pending`   | not read yet: queued, or retrying                                                                                                                              |                                                                                    |
-| `name_only` | the indexing mode is name only                                                                                                                                 |                                                                                    |
+| `state`     | When                                                                                                                                                             | Also                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `indexed`   | the read ended (`extract_completed_at`)                                                                                                                          | `reason: local_only` for a file read with no model (no assistant in its workspace) |
+| `partial`   | read in part (see "Read in part" below): a reader's cut (`data.read_cut`), a scan's `data.ocr = { pages_read, pages_total }`, or pictures kept below those found | `cuts`, `hint`; `pages`, `pictures`                                                |
+| `failed`    | a terminal skip that is a read failure (`READ_FAILURE_SKIPS`: `document_unreadable`, `pdf_too_large`, `encrypted_pdf`, `bytes_unavailable`), or a parked write   | `reason`, `hint`                                                                   |
+| `skipped`   | any other terminal skip (nothing to read: `body_too_short`, `no_parser`, ...)                                                                                    | `reason`, `hint`                                                                   |
+| `pending`   | not read yet: queued, or retrying                                                                                                                                |                                                                                    |
+| `name_only` | the indexing mode is name only                                                                                                                                   |                                                                                    |
 
 `file_list` with `extraction: 'failed'` (or another state) lists the files in
 that state in every folder, or under `parent_path`, newest first; the route
@@ -225,8 +225,66 @@ is `GET /api/files/files?extraction=failed[&under=]`. A new read failure
 sends the box admins' devices a push that opens Files' Not read list
 (`/files?unread=1`): the extractor notifies `file_read_failed`
 (`FILE_READ_FAILED_CHANNEL`), and the push worker sends at most one in 30
-minutes (`pushReadFailed`). A partial read sends none: every scan past 10
-pages is one.
+minutes (`pushReadFailed`). A read in part sends its own push (below).
+
+#### Read in part
+
+The owner's rule (2026-11-19): everything uploaded is
+consumed in full. Until each cap is gone, a cut is never silent: every reader
+that takes only part of an input says so, one shape for every input type
+(`packages/files/src/read-cut.ts`). A node keeps them in `data.read_cut`,
+one entry per kind of cut by its key:
+
+```json
+{ "sheet_rows": { "what": "rows", "read": 5000, "total": 12000, "limit": 5000 } }
+```
+
+`read` of `total` (`atLeast`: the total is a lower bound) in the unit `what`,
+and the cap (`limit`). A file with any entry is `partial`, and
+`extraction.cuts` lists each with its sentence (the `hint` is them all):
+"5,000 of 12,000 rows are in its text ...", "64 of 120 sheets ...". The
+scan's pages and the pictures kept (`data.images`) are entries of the same
+list (`ocr_pages`, `pictures`), so there is one model.
+
+How a cut reaches the node: a reader calls `noteReadCut` in the sink of the
+read (`read-cut-sink.ts`, async-local). The extractor opens one per node and
+writes what was said with the stamp that ends the read (`read-cut-stamp.ts`:
+merged onto the node's own, a key said again replacing its entry, so a read
+from the stored text keeps the cuts of the read that made it). A parser job
+opens its own and sends `cuts` with its answer, which the parser client says
+again in the caller's sink; a Reader pipeline's write carries `readCuts`
+(the step check checks them, the core says them where it takes the text).
+`read_cut` is a byte key (migration 0387): new bytes drop it; a reindex drops
+it too but an Agent's entries (kept with their text) and a sketched file's
+(kept with its text).
+
+The cuts said today, each with its key:
+
+| Key                                                                                                                      | Where                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text_store`                                                                                                             | the stored text past 1,000,000 characters (file_read reads it; search passages cover all)                                                                                                               |
+| `sheet_rows`, `sheet_columns`, `sheet_text`                                                                              | a workbook's text: 5,000 rows and 256 columns a sheet, 1,000,000 characters a workbook (`xlsx.ts`)                                                                                                      |
+| `legacy_cells`                                                                                                           | `.xls`/`.xlsb` sheets past 1,000,000 cells (`read-document.ts`)                                                                                                                                         |
+| `database_size`                                                                                                          | a delimited text past `MANTLE_FILE_DB_CSV_MAX_MB`: no database (`auto-table.ts`)                                                                                                                        |
+| `markup_bytes`                                                                                                           | HTML and XML past 32 MB (`markup.ts`)                                                                                                                                                                   |
+| `cad_texts`, `cad_text_length`, `cad_layers`, `cad_blocks_cap`, `cad_geometry`, `cad_labels`, `cad_blocks`, `layer_list` | DWG/DXF/DGN: the CAD tier's 20,000 texts, 512 characters a text (and a DGN's attribute values), 1,000 layers, 20,000 blocks, the geometry lists' budgets, and the digest's budgets                      |
+| `dwf_sheets`, `dwf_scan`, `dwf_labels`, `layer_list`                                                                     | DWF: 64 sheets, a stream past 16 MB or past a sheet's layer or label cap, the digest's label and layer budgets                                                                                          |
+| `agent_text:<id>`                                                                                                        | an Agent's text past 64,000 characters (`agent-text.ts`; file_sql reads every row)                                                                                                                      |
+| `vision_answer`                                                                                                          | a vision or document answer that used its whole token budget (where the provider counts the tokens)                                                                                                     |
+| `pictures_small`, `pictures_metafile`, `pictures_unreadable`, `pictures_tiny`                                            | pictures the gate left out (`embedded-images.ts`, said by the picture pass once its read is whole; a duplicate is no cut). The cap and the parser's answer budget are `data.images` (`{ kept, found }`) |
+| `pictures_large`                                                                                                         | Visio pictures past 32 MB, or past 256 MB a drawing (`vsdx.ts`)                                                                                                                                         |
+| `description`                                                                                                            | a calendar feed's event whose description was cut to 4,000 characters (the Sync sidecar; on the event node)                                                                                             |
+
+A calendar feed's own cuts (events past 5,000, a series past 400
+occurrences, events outside the window) are on the feed's status in the
+Sync sidecar (`ics.ts` `feedCutText`), as the feed has no node.
+
+`file_list` with `extraction: 'partial'` lists the files read in part;
+`node_read` of another item read in part (an event) carries its `cuts`. A
+read that ends with a cut notifies `file_read_partial`
+(`FILE_READ_PARTIAL_CHANNEL`), and the push worker sends the box admins'
+devices one notice in 30 minutes (`pushReadPartial`, opening
+`/files?partial=1`), as for a failure.
 
 A verdict holds while its key is there: new bytes drop it (it is a byte
 key) and a good read removes it. A rename or a move keeps it, as they read
@@ -582,9 +640,10 @@ New bytes over a file keep the bytes they replace (owner's decisions,
 - **Host edits keep no version.** A file changed on disk outside Mantle
   (section 10) is read again, but its old bytes are not kept: file
   history keeps what a write through Mantle replaced.
-- **Scans are read in part.** A scanned PDF is read by OCR up to a page
-  cap; a file read in part shows `partial` (pages read of the total), and
-  the other pages are not in search.
+- **Reads in part.** A scanned PDF is read by OCR up to a page cap, and
+  other readers have caps of their own (section 8a, "Read in part"); a file
+  read in part shows `partial` with what was left out, and that part is not
+  in search.
 - **Concurrent writes**: two simultaneous saves on the same file
   race at the disk layer. Single-user system, fine for now.
 

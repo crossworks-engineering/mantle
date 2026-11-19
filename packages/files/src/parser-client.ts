@@ -70,6 +70,7 @@ import {
 } from './pdf-sketch';
 import { PAGE_KINDS, PDF_KINDS, type PdfKind } from './pdf-kind';
 import { TITLE_BLOCK_MM, type TitleBlockMm } from './pdf-rows';
+import { noteReadCuts } from './read-cut-sink';
 
 export type { ParserErrorCode } from './parser-wire';
 
@@ -536,6 +537,9 @@ export async function parserJson(
 /** Document → plain text ('' when it holds none). Throws a ParserError. */
 export async function parserText(bytes: Buffer, ext: string): Promise<string> {
   const body = jsonOf(await exchange('text', bytes, { ext }, PARSER_ANSWER_MAX_BYTES));
+  // What the reader left out, said again in the caller's sink (an
+  // extract's: ./read-cut-sink.ts).
+  noteReadCuts(body.cuts);
   return typeof body.text === 'string' ? body.text : '';
 }
 
@@ -559,6 +563,8 @@ export async function parserImages(
     ),
   );
   const { describeImageBytes } = await import('./embedded-images');
+  // Pictures a reader skipped before its gate (a Visio part past its size).
+  noteReadCuts(body.cuts);
   const images: import('./embedded-images').EmbeddedImage[] = [];
   for (const raw of Array.isArray(body.images) ? body.images : []) {
     const o = raw as Record<string, unknown>;

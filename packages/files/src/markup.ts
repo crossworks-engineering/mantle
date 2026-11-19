@@ -18,6 +18,7 @@
  */
 
 import { SaxesParser } from 'saxes';
+import { noteReadCut } from './read-cut-sink';
 import { forwardFinder } from './xml-scan';
 
 /** Elements whose content is never readable text. */
@@ -256,13 +257,22 @@ export function xmlToText(xml: string): string {
 /** Only this much of a markup file is read. Tags are most of a page, so 32 MB
  *  of markup is far more text than any document holds, and the cap keeps a
  *  huge export (uploads go to 512 MB) from holding the whole file as a
- *  string in the parse job. */
+ *  string in the parse job. A cut is said on the file (read_cut). */
 const MAX_MARKUP_BYTES = 32 * 1024 * 1024;
 
 /** File-ingest entry: `.xml` takes the XML reader, everything else the HTML
  *  scanner. A UTF-8 BOM is dropped first. */
 export function parseMarkupBytes(bytes: Buffer, ext: string): string {
   const head = bytes.length > MAX_MARKUP_BYTES ? bytes.subarray(0, MAX_MARKUP_BYTES) : bytes;
+  // The rest is not read: said on the file (./read-cut.ts).
+  if (head.length < bytes.length) {
+    noteReadCut('markup_bytes', {
+      what: 'bytes',
+      read: head.length,
+      total: bytes.length,
+      limit: MAX_MARKUP_BYTES,
+    });
+  }
   const source = head.toString('utf8').replace(/^\uFEFF/, '');
   return ext === 'xml' ? xmlToText(source) : htmlToText(source);
 }

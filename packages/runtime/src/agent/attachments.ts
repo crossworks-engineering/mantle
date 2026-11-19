@@ -32,6 +32,7 @@ import {
   isCadExt,
   parserRouteForExt,
 } from '@mantle/files';
+import { noteReadCut } from '@mantle/files/read-cut-sink';
 import { readerPassOf, readerTextOf } from '@mantle/content/reader-passes';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { step } from '@mantle/tracing';
@@ -118,6 +119,7 @@ export async function runVisionWorker(opts: {
   const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
   // Vision providers can't read HEIC (iPhone default) — transcode to JPEG.
   const forVision = await transcodeImageForVision(opts.bytes, opts.mimeType, opts.filename);
+  const maxTokens = opts.maxTokens ?? params.max_tokens ?? 2000;
   const call = () =>
     adapter.extract(forVision.bytes, {
       ...credential,
@@ -125,7 +127,7 @@ export async function runVisionWorker(opts: {
       prompt,
       systemPrompt: opts.systemPrompt ?? worker.systemPrompt ?? undefined,
       model: worker.model,
-      maxTokens: opts.maxTokens ?? params.max_tokens ?? 2000,
+      maxTokens,
       ...(opts.leastThinking ? { leastThinking: true } : {}),
     });
   try {
@@ -140,6 +142,7 @@ export async function runVisionWorker(opts: {
     const r = await (opts.tries === 2 ? call().catch(again) : call());
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';
+    noteAnswerCut(r.tokensOut, maxTokens);
     // The call's spend (tokens, cost from the price table) was recorded by the
     // adapter registry on the step in context: the extractor's photo_ingest
     // extract_vision, or a conversational turn's attachment step
@@ -161,6 +164,15 @@ export async function runVisionWorker(opts: {
       model: worker.model,
     };
   }
+}
+
+/** A model's answer that used its whole token budget stopped there, most
+ *  likely in mid-description: said in the read's sink (an extract's;
+ *  @mantle/files read-cut-sink.ts), so the file shows as read in part. Only
+ *  where the provider counts the answer's tokens; a chat turn has no sink. */
+function noteAnswerCut(tokensOut: number | undefined, maxTokens: number): void {
+  if (tokensOut === undefined || !Number.isFinite(tokensOut) || tokensOut < maxTokens) return;
+  noteReadCut('vision_answer', { what: 'answers', read: 0, total: 1, limit: maxTokens });
 }
 
 /** True if the owner's resolved document worker is set to `prefer_native` —
@@ -224,6 +236,9 @@ export async function runDocumentWorker(opts: {
   }
   const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
   const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
+  // Documents transcribe in one call — honour the worker's max_tokens, but
+  // default generous (8000) since the per-image vision default is too small.
+  const maxTokens = opts.maxTokens ?? params.max_tokens ?? 8000;
   try {
     const r = await adapter.extractDocument(opts.bytes, {
       ...credential,
@@ -231,12 +246,11 @@ export async function runDocumentWorker(opts: {
       prompt,
       systemPrompt: opts.systemPrompt ?? worker.systemPrompt ?? undefined,
       model: worker.model,
-      // Documents transcribe in one call — honour the worker's max_tokens, but
-      // default generous (8000) since the per-image vision default is too small.
-      maxTokens: opts.maxTokens ?? params.max_tokens ?? 8000,
+      maxTokens,
     });
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';
+    noteAnswerCut(r.tokensOut, maxTokens);
     return {
       ran: true,
       text,

@@ -576,7 +576,9 @@ export async function agentRows(
   };
 }
 
-/** The longest text of an Agent's tabs in a file's text, in characters. */
+/** The longest text of an Agent's tabs in a file's text, in characters:
+ *  the write (server/api/src/agent/extract/agent-text.ts) cuts there and
+ *  says so on the file (`read_cut`, docs/files.md "Read in part"). */
 export const AGENT_TEXT_MAX_CHARS = 64_000;
 
 /** The columns of an Agent's tab that say nothing to a search: the key of
@@ -593,7 +595,8 @@ const NOT_TEXT_COLUMNS: ReadonlySet<string> = new Set([
  * "Agents"), so a plain search finds the fields and the list: the name of
  * each tab, then one line a row, `column: value` for each cell with a
  * value. A line a second time is left out (the same list item on two
- * pages). '' for no row. Cut at AGENT_TEXT_MAX_CHARS.
+ * pages). '' for no row. Whole: the write cuts it at
+ * AGENT_TEXT_MAX_CHARS and stamps the cut, so it is never silent.
  */
 export function agentTextOf(sheets: readonly (ParsedSheet | null)[]): string {
   const parts: string[] = [];
@@ -610,5 +613,5 @@ export function agentTextOf(sheets: readonly (ParsedSheet | null)[]): string {
     }
     if (lines.size > 0) parts.push(`${sheet.name}\n${[...lines].join('\n')}`);
   }
-  return parts.join('\n\n').slice(0, AGENT_TEXT_MAX_CHARS);
+  return parts.join('\n\n');
 }

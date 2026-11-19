@@ -408,6 +408,9 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     if converter == "ezdgn":
         # What the DGN held that the document does not: counted, never lost.
         index["dgn"] = notes
+        # Attribute values the DGN reader cut to its length (said on the file).
+        if isinstance(notes, dict):
+            notes["values_cut"] = dgn_read.values_cut()
     elif converter == "ezdwg":
         # The same for a DWG. Its document is made as R2010 in memory, so
         # the version is the one the file was saved in.
@@ -1011,6 +1014,10 @@ def dwg_registry(doc, converter) -> dict:
     entities = 0
     texts_capped = False
     blocks_capped = False
+    # Every text met (past the cap too) and those cut to max_text_len: the
+    # brain says both on the file (read_cut), so no cut is silent.
+    texts_seen = 0
+    texts_shortened = 0
     # Every attribute value is also in `texts`; this bounds what `blocks`
     # adds to the reply, whatever the per-block tag count.
     max_block_chars = 2_000_000
@@ -1157,11 +1164,14 @@ def dwg_registry(doc, converter) -> dict:
         add_value(raw, layer, layout, hide, block)
 
     def add_value(raw, layer: str, layout, hide: bool = False, block: str = "") -> None:
-        nonlocal texts_capped
+        nonlocal texts_capped, texts_seen, texts_shortened
         whole = " ".join(plain_line(raw).split())
         text = whole[:max_text_len]
         if not text:
             return
+        texts_seen += 1
+        if len(whole) > max_text_len:
+            texts_shortened += 1
         into = hidden if hide else texts
         if len(into) >= max_texts:
             texts_capped = True
@@ -1313,6 +1323,9 @@ def dwg_registry(doc, converter) -> dict:
         "blocks": blocks,
         # Its own bit: a blocks cap must not make the app call Texts truncated.
         "blocks_capped": blocks_capped,
+        "texts_seen": texts_seen,
+        "texts_shortened": texts_shortened,
+        "layers_total": len(layers),
         "counts": type_counts,
         "render_error": None,
         "shapes": shapes,

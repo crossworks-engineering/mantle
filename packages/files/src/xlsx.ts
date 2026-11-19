@@ -29,6 +29,7 @@
  * only loaded when a spreadsheet actually shows up.
  */
 
+import { noteReadCut } from './read-cut-sink';
 import { loadWorkbook, worksheetToRows, type RawCell } from './sheet-read';
 
 /** Rows rendered per sheet. Generous for recall + summary. */
@@ -94,27 +95,58 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
   const parts: string[] = [];
   let total = 0;
   let truncated = false;
+  // What the text leaves out, said on the file (./read-cut.ts): the rows and
+  // columns past the caps of a sheet, and the sheets past the text budget.
+  const rows = { read: 0, total: 0 };
+  const cols = { read: 0, total: 0 };
+  let sheetsWhole = 0;
+  let sheetsLeft = 0;
 
-  for (const ws of wb.worksheets) {
+  for (const [i, ws] of wb.worksheets.entries()) {
     // Hidden sheets are usually lookup tables and scratch space the author
     // chose not to show; index them anyway — recall wants the content, and a
     // hidden sheet is not a private one.
-    const { rows, truncated: sheetTruncated } = worksheetToRows(ws, {
+    const sheet = worksheetToRows(ws, {
       maxRows: MAX_ROWS_PER_SHEET,
       maxCols: MAX_COLS_PER_SHEET,
     });
-    if (sheetTruncated) truncated = true;
-    const csv = rowsToCsv(rows).trim();
+    if (sheet.truncated) truncated = true;
+    if (sheet.rowsTotal > sheet.rows.length) {
+      rows.read += sheet.rows.length;
+      rows.total += sheet.rowsTotal;
+    }
+    if (sheet.colsTotal > MAX_COLS_PER_SHEET) {
+      cols.read += MAX_COLS_PER_SHEET;
+      cols.total += sheet.colsTotal;
+    }
+    const csv = rowsToCsv(sheet.rows).trim();
     if (csv.length === 0) continue;
 
     if (total + csv.length > MAX_TEXT_CHARS) {
       const room = MAX_TEXT_CHARS - total;
       if (room > 0) parts.push(`# Sheet: ${ws.name}\n${csv.slice(0, room)}`);
       truncated = true;
+      // This sheet in part, and every sheet after it not read at all.
+      sheetsLeft = wb.worksheets.length - i;
       break; // stop before rendering any further sheets
     }
     parts.push(`# Sheet: ${ws.name}\n${csv}`);
     total += csv.length;
+    sheetsWhole += 1;
+  }
+  if (rows.total > 0) {
+    noteReadCut('sheet_rows', { what: 'rows', ...rows, limit: MAX_ROWS_PER_SHEET });
+  }
+  if (cols.total > 0) {
+    noteReadCut('sheet_columns', { what: 'columns', ...cols, limit: MAX_COLS_PER_SHEET });
+  }
+  if (sheetsLeft > 0) {
+    noteReadCut('sheet_text', {
+      what: 'sheets',
+      read: sheetsWhole,
+      total: sheetsWhole + sheetsLeft,
+      limit: MAX_TEXT_CHARS,
+    });
   }
 
   let out = parts.join('\n\n').trim();

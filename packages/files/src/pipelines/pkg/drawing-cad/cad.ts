@@ -21,6 +21,7 @@
  */
 import type { DgnFacts, DwgFacts, DwgRender, DwgSymbolFacts } from './cad-reply';
 import type { ParsedSheet } from '../../../sheet-to-grid';
+import { addReadCut, type ReadCuts, type ReadCutValue } from '../../../read-cut';
 
 /** The formats this reader serves; picks the wording. */
 export type CadFormat = 'DWG' | 'DXF' | 'DGN';
@@ -88,6 +89,75 @@ const DIGEST_CIRCUIT_LINE_CHARS = 600;
 
 /** The indexable text digest of one reply. */
 export function cadDigest(r: DwgRender, format: CadFormat): string {
+  return cadDigestWithCuts(r, format).text;
+}
+
+/** The registry caps of the CAD tier's text (cad/cad.py dwg_registry). */
+const REGISTRY_TEXTS = 20_000;
+const REGISTRY_TEXT_CHARS = 512;
+const REGISTRY_LAYERS = 1_000;
+const REGISTRY_BLOCKS = 20_000;
+
+/** What a reply and its digest left out (docs/files.md, "Read in part"): the
+ *  step sends it with the text (FileTabsWriteInput.readCuts) and the brain
+ *  says it on the file. Exported for the tests. */
+export function cadReplyCuts(r: DwgRender): ReadCuts {
+  const cuts: ReadCuts = {};
+  const say = (key: string, c: ReadCutValue) => {
+    cuts[key] = addReadCut(cuts[key], c);
+  };
+  const seen = r.textsSeen;
+  if (seen !== undefined ? seen > r.texts.length : r.capped && r.texts.length >= REGISTRY_TEXTS) {
+    say('cad_texts', {
+      what: 'texts',
+      read: r.texts.length,
+      ...(seen !== undefined ? { total: seen } : {}),
+      limit: REGISTRY_TEXTS,
+    });
+  }
+  const shortened = (r.textsShortened ?? 0) + (r.dgn?.valuesCut ?? 0);
+  if (shortened > 0) {
+    const total = Math.max(seen ?? r.texts.length, shortened);
+    say('cad_text_length', {
+      what: 'texts',
+      read: total - shortened,
+      total,
+      limit: REGISTRY_TEXT_CHARS,
+    });
+  }
+  if (r.layersTotal !== undefined && r.layersTotal > r.layers.length) {
+    say('cad_layers', {
+      what: 'layers',
+      read: r.layers.length,
+      total: r.layersTotal,
+      limit: REGISTRY_LAYERS,
+    });
+  }
+  if (r.blocksCapped) {
+    say('cad_blocks_cap', { what: 'blocks', read: r.blocks.length, limit: REGISTRY_BLOCKS });
+  }
+  const lists = [
+    r.segmentsCapped,
+    r.nodesCapped,
+    r.insertsCapped,
+    r.circuitsCapped,
+    r.placementsCapped,
+    r.shapesCapped,
+  ];
+  const cut = lists.filter(Boolean).length;
+  if (cut > 0) {
+    say('cad_geometry', { what: 'geometry lists', read: lists.length - cut, total: lists.length });
+  }
+  return cuts;
+}
+
+/** The digest of one reply and what it left out: the reply's own cuts
+ *  (cadReplyCuts) and the labels and blocks past the digest's budgets. */
+export function cadDigestWithCuts(
+  r: DwgRender,
+  format: CadFormat,
+): { text: string; cuts: ReadCuts } {
+  const cuts = cadReplyCuts(r);
   const out: string[] = [];
   // A DGN's document is made in memory: its DXF version names no release, so
   // a DGN states the reader's own format ("V7 2D" already says its
@@ -131,6 +201,12 @@ export function cadDigest(r: DwgRender, format: CadFormat): string {
     }
     if (r.layers.length > DIGEST_LAYERS) {
       out.push(`  … ${r.layers.length - DIGEST_LAYERS} more layers`);
+      cuts.layer_list = {
+        what: 'layers',
+        read: DIGEST_LAYERS,
+        total: r.layers.length,
+        limit: DIGEST_LAYERS,
+      };
     }
   }
 
@@ -150,7 +226,15 @@ export function cadDigest(r: DwgRender, format: CadFormat): string {
       spent += line.length;
       shown++;
     }
-    if (shown < ordered.length) out.push(`  … ${ordered.length - shown} more unique labels`);
+    if (shown < ordered.length) {
+      out.push(`  … ${ordered.length - shown} more unique labels`);
+      cuts.cad_labels = {
+        what: 'labels',
+        read: shown,
+        total: ordered.length,
+        limit: DIGEST_LABEL_CHARS,
+      };
+    }
   }
 
   // One line per attribute-bearing block, its tags kept together: this is
@@ -179,10 +263,18 @@ export function cadDigest(r: DwgRender, format: CadFormat): string {
       spent += shownLine.length;
       shown++;
     }
-    if (shown < ordered.length) out.push(`  … ${ordered.length - shown} more unique blocks`);
+    if (shown < ordered.length) {
+      out.push(`  … ${ordered.length - shown} more unique blocks`);
+      cuts.cad_blocks = {
+        what: 'block lines',
+        read: shown,
+        total: ordered.length,
+        limit: DIGEST_BLOCK_CHARS,
+      };
+    }
   }
   out.push(...geometryDigest(r));
-  return out.join('\n');
+  return { text: out.join('\n'), cuts };
 }
 
 /** The network in a sentence, then one retrievable line per circuit, so

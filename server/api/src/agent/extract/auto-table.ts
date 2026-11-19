@@ -29,6 +29,7 @@ import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-regist
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { noteReadCut } from '@mantle/files/read-cut-sink';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 import { askPdfKind } from './pdf-kind';
 import { inOwnTrace } from './trace';
@@ -239,6 +240,16 @@ async function readAndWrite(a: {
     return; // the Table alone: leave it as a plain file, as ever
   }
   const readMs = Date.now() - readStart;
+  // A delimited text past the database size gets no rows in file_sql: said
+  // on the file (docs/files.md, "Read in part"), not only in its db state.
+  if (parsed.kind === 'none' && parsed.word === 'too-large') {
+    noteReadCut('database_size', {
+      what: 'bytes',
+      read: 0,
+      total: loaded.bytes.length,
+      limit: envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024,
+    });
+  }
 
   if (wantDb) {
     try {

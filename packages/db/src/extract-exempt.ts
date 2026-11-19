@@ -135,6 +135,12 @@ export const NOT_READ_NO_MODEL = 'not_read_no_model';
  *  nothing that listens starts model work. */
 export const FILE_READ_FAILED_CHANNEL = 'file_read_failed';
 
+/** The NOTIFY channel of a file read only in part (payload: the owner id;
+ *  docs/files.md, "Read in part"): the push worker sends the box admins'
+ *  devices one notice, at most one in READ_FAILED_PUSH_EVERY_MS, as for a
+ *  read failure. Notify only: nothing that listens starts model work. */
+export const FILE_READ_PARTIAL_CHANNEL = 'file_read_partial';
+
 /** The jsonb to merge onto `nodes.data` for a terminal skip. `at` is the
  *  database clock, the same clock the drain compares with `updated_at`.
  *  `extra`: what else the verdict answers (an app's failed summary call

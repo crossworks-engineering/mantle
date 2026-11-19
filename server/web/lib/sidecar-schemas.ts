@@ -129,6 +129,9 @@ export const FeedEventsBody = z.object({
         allDay: z.boolean().optional(),
         location: text(1000).nullish(),
         description: text(20_000).optional(),
+        /** The description's whole length when the sidecar cut it: the
+         *  event says the cut (`read_cut`). */
+        descriptionChars: z.number().int().nonnegative().max(1_000_000_000).optional(),
         timezone: text(64).optional(),
       }),
     )

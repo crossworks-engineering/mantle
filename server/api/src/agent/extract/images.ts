@@ -240,8 +240,13 @@ export async function maybeExtractEmbeddedImages(
     return;
   }
 
-  const { extractEmbeddedImages, buildImageTitles, buildImageFilename, buildSourceSlug } =
-    await import('@mantle/files/embedded-images');
+  const {
+    extractEmbeddedImages,
+    notePicturesLeftOut,
+    buildImageTitles,
+    buildImageFilename,
+    buildSourceSlug,
+  } = await import('@mantle/files/embedded-images');
   // A PDF past the size pdfjs opens is read in page windows (G2); so are the
   // pages of a long PDF past the ones one read scans, and a PDF whose one
   // read left pictures out.
@@ -268,6 +273,9 @@ export async function maybeExtractEmbeddedImages(
     isPdf && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
       ? await picturesByWindows(loaded.bytes, cap, whole, undefined, { scanBook: book })
       : { ...whole!, windowsFailed: 0 };
+  // The pictures the gate left out, said once the read is whole (docs/
+  // files.md, "Read in part"); the cap's are `data.images` below.
+  notePicturesLeftOut(result);
   // G1: a page the book reader left to vision has its page picture, saved
   // by the book's Agent with the text it read (pdf-page-read). The pictures
   // here that together cover half such a page or more (IMAGE_PAGE_COVER:

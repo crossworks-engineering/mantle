@@ -17,6 +17,7 @@ import {
 } from '@mantle/db';
 import { withoutDwgAnswers } from '@mantle/files/dwg';
 import { extractionOf } from '@mantle/files/extraction-status';
+import { hasReadCut, readCutViews, readCutsOf } from '@mantle/files/read-cut';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -114,10 +115,16 @@ export const node_read: BuiltinToolDef = {
         tags: row.tags,
         url: nodeUrl(row.id),
         data: row.data && withoutDwgAnswers(row.data),
-        // A file: whether its content was read (FileRow.extraction).
+        // A file: whether its content was read (FileRow.extraction), with
+        // what a read in part left out (`cuts`). Another item read in part
+        // (a feed's event whose description was cut) says its cuts too.
         ...(row.type === 'file'
           ? { extraction: extractionOf(row.data as Record<string, unknown>) }
-          : {}),
+          : hasReadCut((row.data as Record<string, unknown> | null)?.read_cut)
+            ? {
+                cuts: readCutViews(readCutsOf((row.data as Record<string, unknown>).read_cut)),
+              }
+            : {}),
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
         ...(succ

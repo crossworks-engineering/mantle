@@ -187,17 +187,26 @@ export function rawCellValue(value: ExcelJS.CellValue): RawCell {
 export function worksheetToRows(
   ws: ExcelJS.Worksheet,
   opts: { maxRows: number; maxCols: number },
-): { rows: RawCell[][]; truncated: boolean } {
+): {
+  rows: RawCell[][];
+  truncated: boolean;
+  /** Rows with a value in the sheet, the ones past `maxRows` too. */
+  rowsTotal: number;
+  /** Columns of the sheet (its column count), the ones past `maxCols` too. */
+  colsTotal: number;
+} {
   const width = Math.min(Math.max(ws.columnCount, 0), opts.maxCols);
   const truncatedCols = ws.columnCount > opts.maxCols;
   const rows: RawCell[][] = [];
   let truncatedRows = false;
+  let rowsTotal = 0;
 
   // `eachRow` visits only rows that exist, in order, so a sparse sheet costs
   // nothing for its gaps. `includeEmpty: false` skips wholly-blank rows, which
   // is what both consumers want — but it also means row numbers are not
   // contiguous, and neither consumer depends on the original row index.
   ws.eachRow({ includeEmpty: false }, (row) => {
+    rowsTotal += 1;
     if (rows.length >= opts.maxRows) {
       truncatedRows = true;
       return;
@@ -209,5 +218,10 @@ export function worksheetToRows(
     rows.push(out);
   });
 
-  return { rows, truncated: truncatedRows || truncatedCols };
+  return {
+    rows,
+    truncated: truncatedRows || truncatedCols,
+    rowsTotal,
+    colsTotal: Math.max(ws.columnCount, 0),
+  };
 }

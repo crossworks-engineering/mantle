@@ -17,6 +17,8 @@
     "./shapes": "./src/pipelines/shapes.ts",
     "./dwg": "./src/dwg.ts",
     "./extraction-status": "./src/extraction-status.ts",
+    "./read-cut": "./src/read-cut.ts",
+    "./read-cut-sink": "./src/read-cut-sink.ts",
     "./dwg-keys": "./src/dwg-keys.ts",
     "./cad-sniff": "./src/cad-sniff.ts",
     "./parser-wire": "./src/parser-wire.ts",

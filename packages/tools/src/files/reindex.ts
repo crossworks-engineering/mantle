@@ -80,11 +80,25 @@ import type { BuiltinToolDef } from '../types';
 
 /** The keys a reindex drops: what the extractor derived from the bytes,
  *  but the Agents' text and the pipeline's stamp (no database is rebuilt by
- *  the extract), and a parked verdict, so the read runs again. */
+ *  the extract), and a parked verdict, so the read runs again. The cuts of
+ *  the read (`read_cut`) go apart from these: an Agent's cut stays with its
+ *  text, and a sketched file keeps them all with its text (readCutAfter). */
 const REINDEX_DROP_KEYS: readonly string[] = [
-  ...BYTE_DERIVED_DATA_KEYS.filter((k) => k !== 'agent_text' && k !== 'pipeline_read'),
+  ...BYTE_DERIVED_DATA_KEYS.filter(
+    (k) => k !== 'agent_text' && k !== 'pipeline_read' && k !== 'read_cut',
+  ),
   'extract_parked',
 ];
+
+/** A file's read cuts after a reindex: only the Agents' (`agent_text:<id>`,
+ *  kept with their text); none when no such entry is there. Built at the
+ *  call: a test that stubs @mantle/db loads this module. */
+const agentCutsOnly = () => sql`coalesce((
+  select jsonb_build_object('read_cut', jsonb_object_agg(e.k, e.v))
+    from jsonb_each(case when jsonb_typeof(${nodes.data}->'read_cut') = 'object'
+                         then ${nodes.data}->'read_cut' else '{}'::jsonb end) as e(k, v)
+   where e.k like 'agent_text:%'
+  having count(*) > 0), '{}'::jsonb)`;
 
 /** The keys of a sketch read's text, kept for a file whose database holds
  *  it (the read is paid for and is not asked again for these bytes). */
@@ -254,13 +268,19 @@ export async function reindexFiles(
       list.map((k) => sql`${k}`),
       sql`, `,
     )}]::text[]`;
-  const drop = sql`case when ${nodes.id} = any (${`{${sketched.join(',')}}`}::uuid[])
-    then ${keys(SKETCH_DROP_KEYS)} else ${keys(REINDEX_DROP_KEYS)} end`;
+  const isSketched = sql`${nodes.id} = any (${`{${sketched.join(',')}}`}::uuid[])`;
   await withDeadlockRetry(() =>
     withHeads(take, 'update', async (tx) => {
       await tx
         .update(nodes)
-        .set({ data: sql`coalesce(${nodes.data}, '{}'::jsonb) - (${drop})` })
+        .set({
+          // A sketched file keeps its cuts with its text; another keeps
+          // only its Agents' (agentCutsOnly).
+          data: sql`case when ${isSketched}
+            then coalesce(${nodes.data}, '{}'::jsonb) - ${keys(SKETCH_DROP_KEYS)}
+            else (coalesce(${nodes.data}, '{}'::jsonb) - ${keys(REINDEX_DROP_KEYS)} - 'read_cut')
+                 || ${agentCutsOnly()} end`,
+        })
         .where(
           and(
             eq(nodes.type, 'file'),

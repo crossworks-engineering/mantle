@@ -31,7 +31,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { CAD_EXT_LIST, sniffCad } from '../../../cad-sniff';
 import { FILE_TABS_WRITE, type FileTabsWriteInput, type PipelineStep } from '../../contract';
-import { CAD_FTS_SKIP_COLUMNS, cadDigest, cadGrids, dwgTableDescription, formatOf } from './cad';
+import {
+  CAD_FTS_SKIP_COLUMNS,
+  cadDigestWithCuts,
+  cadGrids,
+  dwgTableDescription,
+  formatOf,
+} from './cad';
 import { cadReplyOf, type DwgRender } from './cad-reply';
 
 /** The picture's file in the job's folder. */
@@ -74,13 +80,16 @@ export const step: PipelineStep = async (req, job) => {
     await fs.writeFile(path.join(job.dir, CAD_PICTURE), r.png);
     pictures.push({ file: CAD_PICTURE, mime: 'image/png', caption: 'Model space' });
   }
+  // The digest and what it left out, said on the file by the core.
+  const digest = cadDigestWithCuts(r, format);
   return {
     status: 'ok',
     calls: write({
       ...base,
       tabs: grids.sheets,
       ...(grids.sheets.length > 0 ? { description: dwgTableDescription(format, grids) } : {}),
-      text: cadDigest(r, format),
+      text: digest.text,
+      ...(Object.keys(digest.cuts).length > 0 ? { readCuts: digest.cuts } : {}),
       pictures,
     }),
     counts: factsOf(r),

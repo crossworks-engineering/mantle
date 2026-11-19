@@ -18,6 +18,8 @@ import {
 import { SKETCH_MAX_PAGES, SKETCH_SCALE } from '@mantle/files/pdf-sketch';
 import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
 import { MAX_EMBEDDED_IMAGES_CEILING } from '@mantle/files/embedded-images';
+import type { ReadCuts } from '@mantle/files/read-cut';
+import { withReadCutSink } from '@mantle/files/read-cut-sink';
 import { dwfRenderer, dwgCrop, extractAudio, pdfEye, pdfPagePieces } from './cad';
 import { errorMessage } from '@mantle/std';
 import { JobFailure } from './job-failure';
@@ -67,6 +69,11 @@ async function writeJson(file: string, value: unknown): Promise<void> {
   await fs.writeFile(file, JSON.stringify(value));
 }
 
+/** The answer's `cuts`, only when a reader said any. */
+function cutsField(cuts: ReadCuts): { cuts?: ReadCuts } {
+  return Object.keys(cuts).length > 0 ? { cuts } : {};
+}
+
 /** Run one job. Throws on failure (see the module note). */
 export async function runJob(
   job: ParserJob,
@@ -77,17 +84,24 @@ export async function runJob(
   switch (job) {
     case 'text': {
       const { readDocumentText } = await import('@mantle/files/readers/document');
-      const text = await readDocumentText(await fs.readFile(p.input), str(opts.ext, 'ext'));
-      return writeJson(p.outJson, { ok: true, text });
+      // What a reader left out goes back with the text (`cuts`: the parser
+      // client says it again in the extract's sink; docs/files.md, "Read in
+      // part").
+      const { value: text, cuts } = await withReadCutSink(async () =>
+        readDocumentText(await fs.readFile(p.input), str(opts.ext, 'ext')),
+      );
+      return writeJson(p.outJson, { ok: true, text, ...cutsField(cuts) });
     }
     case 'images': {
       const { readEmbeddedImages } = await import('@mantle/files/readers/images');
-      const result = await readEmbeddedImages(await fs.readFile(p.input), str(opts.ext, 'ext'), {
-        maxImages: int(opts.maxImages, 30, 0, MAX_EMBEDDED_IMAGES_CEILING),
-        ...(typeof opts.dpi === 'number' ? { dpi: int(opts.dpi, 300, 50, 600) } : {}),
-        ...(opts.notScan === true ? { notScan: true as const } : {}),
-        render: dwfRenderer(p.dir, timeoutMs),
-      });
+      const { value: result, cuts } = await withReadCutSink(async () =>
+        readEmbeddedImages(await fs.readFile(p.input), str(opts.ext, 'ext'), {
+          maxImages: int(opts.maxImages, 30, 0, MAX_EMBEDDED_IMAGES_CEILING),
+          ...(typeof opts.dpi === 'number' ? { dpi: int(opts.dpi, 300, 50, 600) } : {}),
+          ...(opts.notScan === true ? { notScan: true as const } : {}),
+          render: dwfRenderer(p.dir, timeoutMs),
+        }),
+      );
       // The answer's budget: the pictures in reading order until it is
       // spent; the rest are counted as rejected, never an error.
       const rejected: Record<string, number> = { ...result.rejected };
@@ -106,6 +120,7 @@ export async function runJob(
         candidates: result.candidates,
         rejected,
         ...(result.pdf ? { pdf: result.pdf } : {}),
+        ...cutsField(cuts),
         images: kept.map((img) => ({
           bytes_base64: img.bytes.toString('base64'),
           ext: img.ext,

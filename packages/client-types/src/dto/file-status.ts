@@ -18,7 +18,8 @@ import type { DataFileState, FileDatabaseReadBy } from './file-databases';
 
 /** Was the file's content read into the brain:
  *  - `done`: read, in search (facts and mentions where the reader makes them);
- *  - `partial`: read in part (a scan's first pages: `FileProcessing.extraction.pages`);
+ *  - `partial`: read in part (rows, sheets, characters, pictures or pages left
+ *    out: `FileProcessing.extraction.cuts`, its `hint` the sentence);
  *  - `waiting`: not read yet (queued, retrying, or about to be queued);
  *  - `failed`: the read failed (`FileProcessing.error` says why);
  *  - `none`: not read on purpose: kept to its name, or nothing to read. */
@@ -62,8 +63,28 @@ export type FilePipelineRead = { id: string; name: string; version: string };
 export type FileProcessingExtraction = {
   state: 'indexed' | 'partial' | 'failed' | 'skipped' | 'pending' | 'name_only';
   reason?: string;
+  /** One sentence for a person (a `partial` file: what was left out, each
+   *  cut in turn). The client shows it as is. */
   hint?: string;
   pages?: { read: number; total: number };
+  /** Pictures left out: the pictures kept and found (`more`: at least). */
+  pictures?: { kept: number; found: number; more?: true };
+  /** A `partial` file: each kind of cut (docs/files.md, "Read in part"):
+   *  its key (`sheet_rows`, `text_store`, `pictures_small`, `ocr_pages`,
+   *  ...), the unit, how many were read of how many (`atLeast`: the total
+   *  is a lower bound), the limit, and its own sentence. */
+  cuts?: FileReadCut[];
+};
+
+/** One kind of cut of a file read in part (FileProcessingExtraction.cuts). */
+export type FileReadCut = {
+  key: string;
+  what: string;
+  read: number;
+  total?: number;
+  atLeast?: true;
+  limit?: number;
+  hint: string;
 };
 
 /** One item made from the file (its `data.sourceFileId`): an extracted

@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PARSER_ROUTES } from '@mantle/files/parser-wire';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
+import { withReadCutSink } from '@mantle/files/read-cut-sink';
 import {
   isParserError,
   parserHealth,
@@ -219,6 +220,21 @@ describe('the parser server', () => {
   it('reads a small text end to end', async () => {
     expect(await parserText(Buffer.from('hello parser'), 'txt')).toBe('hello parser');
   });
+
+  it('a reader\'s cut comes back with the text, end to end (docs/files.md, "Read in part")', async () => {
+    // A generated page past the 32 MB a markup read takes.
+    const limit = 32 * 1024 * 1024;
+    const page = Buffer.alloc(limit + 1024, 0x61);
+    const { value, cuts } = await withReadCutSink(() => parserText(page, 'html'));
+    expect(value.length).toBeGreaterThan(0);
+    expect(cuts).toEqual({
+      markup_bytes: { what: 'bytes', read: limit, total: limit + 1024, limit },
+    });
+    // Within it: no cut.
+    expect(
+      (await withReadCutSink(() => parserText(Buffer.from('<p>hi</p>'), 'html'))).cuts,
+    ).toEqual({});
+  }, 120_000);
 
   it('reads a PDF drawing (the package drawing-pdf) with the title block box its options carry, the default with none', async () => {
     // A made-up A1 sheet: a tag in the body, and a word 300 mm left of the
