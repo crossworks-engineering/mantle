@@ -393,10 +393,15 @@ describe('translate: save', () => {
     });
   });
 
-  it('on a team surface the copy is not filed in a folder (filing is the owner’s)', async () => {
+  it('on a team surface nothing is saved and nothing is spent; the translation itself runs', async () => {
     rows.set('page-1', { id: 'page-1', type: 'page', title: 'Spec', path: 'pages.a', md: 'Hi' });
-    out(await translate.handler({ node_id: 'page-1', to: 'de', save: true }, teamCtx));
-    expect(vi.mocked(content.createPage).mock.calls[0]![1]).not.toHaveProperty('siblingOf');
+    const r = await translate.handler({ node_id: 'page-1', to: 'de', save: true }, teamCtx);
+    expect((r as { error: string }).error).toContain('no copy is saved');
+    expect(chatCalls).toHaveLength(0);
+    expect(content.createPage).not.toHaveBeenCalled();
+    expect(out(await translate.handler({ node_id: 'page-1', to: 'de' }, teamCtx)).translation).toBe(
+      'DE:Hi',
+    );
   });
 
   it('a file becomes a page; pasted text becomes a page', async () => {

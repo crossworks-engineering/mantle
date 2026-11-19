@@ -784,11 +784,14 @@ can run for the same worker without conflicting.
 One tool, `translate` (`packages/tools/src/builtins-translate.ts`), on the
 MCP surface and in two groups: its own `translate` group (the persona, the
 Team responder and Pages hold it; the boot reconcile adds it to the Admin
-workspace's assistants and to those two specialists on existing brains) and
+workspace's assistants and to Pages on existing brains, and to the Team
+responder once, so an owner's removal sticks; in a team chat it saves no
+copy, the Team responder stays read-only) and
 `media-workers` (so every assistant that holds that group, a workspace
 assistant copied from the persona included, has it too). A workspace
 assistant other than Admin's that holds neither gets it only when the owner
-adds the group: it spends, so no reconcile grants it there by itself.
+adds the group: it spends, so no reconcile grants it there by itself (the
+Team responder aside, granted once as above).
 Owner's rules:
 
 - **Called, never started by itself.** No trigger, timer or sweep runs it.

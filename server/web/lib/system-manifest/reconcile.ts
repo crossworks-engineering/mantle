@@ -332,6 +332,10 @@ export async function reconcileAssistantContentKinds(ownerId: string): Promise<s
 
 /** The record's token for the delegation group, and for one delegate. */
 const GROUP_TOKEN = `group:${WORKSPACE_DELEGATION_GROUP}`;
+/** The Team responder's `translate` group (2026-11-19): it spends, so it is
+ *  granted once like `delegation`, and an owner's removal sticks. */
+const TEAM_TRANSLATE_GROUP = 'translate';
+const TRANSLATE_TOKEN = `group:${TEAM_TRANSLATE_GROUP}`;
 const delegateToken = (slug: string) => `delegate:${slug}`;
 
 /**
@@ -383,13 +387,23 @@ export async function reconcileWorkspaceDelegation(ownerId: string): Promise<str
     const groupDue =
       !listed.includes(GROUP_TOKEN) &&
       groupsForAgent([WORKSPACE_DELEGATION_GROUP], a, adminOnly).length > 0;
+    // The Team responder's `translate`, once (it spends: the owner's
+    // removal sticks).
+    const translateDue =
+      a.slug === TEAM_RESPONDER_SLUG &&
+      !listed.includes(TRANSLATE_TOKEN) &&
+      groupsForAgent([TEAM_TRANSLATE_GROUP], a, adminOnly).length > 0;
     const delegatesDue = WORKSPACE_DELEGATE_SLUGS.filter(
       (d) => present.has(d) && !listed.includes(delegateToken(d)),
     );
-    if (!groupDue && delegatesDue.length === 0) continue;
+    if (!groupDue && !translateDue && delegatesDue.length === 0) continue;
     const added: string[] = [];
-    if (groupDue) {
-      const missing = missingPersonaGroups(a.groups, [WORKSPACE_DELEGATION_GROUP]);
+    const groupsDue = [
+      ...(groupDue ? [WORKSPACE_DELEGATION_GROUP] : []),
+      ...(translateDue ? [TEAM_TRANSLATE_GROUP] : []),
+    ];
+    if (groupsDue.length) {
+      const missing = missingPersonaGroups(a.groups, groupsDue);
       if (await addAgentGroups(a.id, missing)) added.push(...missing);
     }
     const cur = (a.memoryConfig as { delegate_to?: unknown } | null)?.delegate_to;
@@ -400,6 +414,7 @@ export async function reconcileWorkspaceDelegation(ownerId: string): Promise<str
     next[a.id] = [
       ...listed,
       ...(groupDue ? [GROUP_TOKEN] : []),
+      ...(translateDue ? [TRANSLATE_TOKEN] : []),
       ...delegatesDue.map(delegateToken),
     ];
     marked = true;
@@ -442,11 +457,13 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
     if (a.isPersona) continue;
     const row = bySlug.get(a.slug);
     if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
-    // The team responder's `delegation` is granted once instead
-    // (reconcileWorkspaceDelegation), so an owner's removal sticks.
+    // The team responder's `delegation` and `translate` are granted once
+    // instead (reconcileWorkspaceDelegation), so an owner's removal sticks.
     const unionGroups =
       a.slug === TEAM_RESPONDER_SLUG
-        ? (a.toolGroupSlugs ?? []).filter((g) => g !== WORKSPACE_DELEGATION_GROUP)
+        ? (a.toolGroupSlugs ?? []).filter(
+            (g) => g !== WORKSPACE_DELEGATION_GROUP && g !== TEAM_TRANSLATE_GROUP,
+          )
         : (a.toolGroupSlugs ?? []);
     const missingGroups = groupsForAgent(
       missingPersonaGroups(row.groups, unionGroups),

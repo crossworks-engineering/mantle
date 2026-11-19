@@ -137,7 +137,7 @@ describe.skipIf(!URL)(
       expect(changes.sort()).toEqual(
         [
           `${tag}-other:+delegation,diagrammer`,
-          'team-responder:+delegation,diagrammer,presenter',
+          'team-responder:+delegation,translate,diagrammer,presenter',
         ].sort(),
       );
       const other = await rowOf('other');
@@ -146,7 +146,14 @@ describe.skipIf(!URL)(
         max_iterations: 7,
         delegate_to: ['researcher', 'presenter', 'diagrammer'],
       });
-      expect((await rowOf('team')).g).toEqual(['team-read', 'delegation']);
+      // The Team responder's `translate` (2026-11-19), once like `delegation`.
+      expect((await rowOf('team')).g).toEqual(['team-read', 'delegation', 'translate']);
+      expect((await granted())[ids.team!]).toEqual([
+        'group:delegation',
+        'group:translate',
+        'delegate:diagrammer',
+        'delegate:presenter',
+      ]);
       expect((await rowOf('team')).mc.delegate_to).toEqual(['diagrammer', 'presenter']);
       expect(await rowOf('persona')).toMatchObject({
         g: ['memory-core', 'delegation'],
@@ -169,6 +176,8 @@ describe.skipIf(!URL)(
       await x(sql`update agents set tool_group_slugs = array_remove(tool_group_slugs, 'delegation'),
       memory_config = jsonb_set(memory_config, '{delegate_to}', '["researcher"]')
       where id in (${ids.other!}, ${ids.team!})`);
+      await x(sql`update agents set tool_group_slugs = array_remove(tool_group_slugs, 'translate')
+      where id = ${ids.team!}`);
       expect(await rec.reconcileWorkspaceDelegation(owner)).toEqual([]);
       // The whole reconcile: it provisions the specialists the brain misses
       // (Appsmith among them), unions each manifest agent's groups (the Team
@@ -194,6 +203,8 @@ describe.skipIf(!URL)(
       expect(await rec.reconcileWorkspaceDelegation(owner)).toEqual([]);
       expect((await rec.reconcileOwner(owner)).delegationChanges).toEqual([]);
       expect((await rowOf('team')).g).not.toContain('delegation');
+      // The owner's removal of the paid `translate` sticks too.
+      expect((await rowOf('team')).g).not.toContain('translate');
     }, 240_000);
 
     it('a specialist’s reset or adopt does not give a workspace assistant back a delegate its owner removed', async () => {
