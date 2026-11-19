@@ -420,9 +420,10 @@ export const translateTool: BuiltinToolDef = {
     }
     if (!to) return { ok: false, error: 'Say which language to translate into (`to`).' };
     const save = boolOpt(input.save) === true;
-    // The Team assistant changes nothing (its prompt and its groups say so):
-    // in a team chat the translation is the answer, never a saved copy.
-    if (save && ctx.surface?.kind === 'team') {
+    // Off the owner's surfaces (a team chat): the Team assistant changes
+    // nothing (its prompt and its groups say so), so the translation is the
+    // answer, never a saved copy.
+    if (save && !isOwnerSurface(ctx.surface)) {
       return {
         ok: false,
         error:
