@@ -22,12 +22,13 @@
  * the paid rows of a run before stay (the rule "fewer asks replace rows",
  * docs/pipelines.md, "Agents"). No state, no second step.
  *
- * A page OCR read badly (`state.scanPages`, the Reader's Why `ocr`) is also
- * cut as a one-page PDF (`job.pdfPage`, qpdf) and named in its ask (`pdf`):
- * the core reads it with the Scan reader first and with vision on the
- * picture only when that read is judged bad (docs/ai-workers.md, "The Scan
- * reader"). The PDFs take what the pictures leave of the answer's budget; a
- * page whose PDF does not fit, or cannot be cut, is read by vision.
+ * A scanned page (`state.scanPages`, the Reader's Why `scan`) is also cut as
+ * a one-page PDF (`job.pdfPage`, qpdf) and named in its ask (`pdf`): the
+ * core reads it with the Scan reader alone (docs/ai-workers.md, "The Scan
+ * reader"), vision only for a page the engine finds mostly a figure. The
+ * PDFs take what the pictures leave of the answer's budget; a page whose PDF
+ * does not fit, or cannot be cut, is not asked (no vision backup): it stays
+ * unread, with a warning, and a run again tries it.
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -181,19 +182,33 @@ export const step: PipelineStep = async (req, job) => {
   // left of the budget (the parser sends every picture before any PDF, so a
   // PDF never takes a picture's place).
   const scan = scanPagesOf(req.state);
+  const unsent: number[] = [];
   for (const c of calls) {
     if (c.call !== 'worker') continue;
     const input = c.input as { page: number };
     if (!scan.has(input.page)) continue;
     const file = `${c.key}.pdf`;
     const size = await job.pdfPage(input.page - from + 1, file);
-    if (size === null) continue;
-    if (size > left || size > PIPELINE_ASK_PICTURE_MAX_BYTES) {
+    if (size !== null && (size > left || size > PIPELINE_ASK_PICTURE_MAX_BYTES)) {
       await fs.rm(path.join(job.dir, file), { force: true });
+    }
+    if (size === null || size > left || size > PIPELINE_ASK_PICTURE_MAX_BYTES) {
+      // No vision backup for a scanned page (owner decision 2026-11-19):
+      // a page that cannot go to the Scan reader is not asked. It stays
+      // unread, said so; a run again tries it again.
+      unsent.push(input.page);
       continue;
     }
     left -= size;
     (c as { input: Record<string, unknown> }).input = { ...input, pdf: file };
   }
-  return { status: 'ok', calls, ...(warnings.length > 0 ? { warnings } : {}) };
+  if (unsent.length > 0) {
+    warnings.push(
+      `Pages ${unsent.join(', ')} could not be cut for the Scan reader (or are past the window's answer budget), and are not read.`,
+    );
+  }
+  const asked = calls.filter(
+    (c) => c.call !== 'worker' || !unsent.includes((c.input as { page: number }).page),
+  );
+  return { status: 'ok', calls: asked, ...(warnings.length > 0 ? { warnings } : {}) };
 };

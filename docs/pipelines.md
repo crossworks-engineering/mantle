@@ -2430,28 +2430,17 @@ window of 50 pages or 50 MB a job). For each page:
 - `text`: its text layer (pdfplumber) holds 40 or more characters that are
   not spaces (the option `text_min_chars`), or fewer on a page with no
   picture over half of it that draws fewer than 10 lines, boxes and curves
-  (a section divider, a title page: a typed page never goes to vision);
-- `ocr`: else the page is drawn (pypdfium2) at its scan's own dots, from 200
-  up to the option `ocr_dpi` (300), and read by Tesseract with `--psm 3`
-  (never 6: rows cross the ruled lines), TSV out. A 200 dpi scan drawn at
-  300 read 90% of the table cells right on the made-up spec book, drawn at
-  its own 200 dots 96%;
-- `vision`: the OCR's mean confidence is under `ocr_min_confidence` (70), or
-  it gave under 40 characters on a page with ink besides the words it read
-  (0.5% of the page or more: a figure, a drawing): the Agent reads the page.
-  Few words read well with nothing else on the page (a scanned divider or
-  cover) are `ocr`. A page pdfium cannot draw, or Tesseract cannot read, is
-  `vision` too. The column `Why` says why (1.3.0): `ocr` (read badly: the
-  Agent reads it with the Scan reader first, docs/ai-workers.md "The Scan
-  reader"), `figure` (under 40 characters with ink besides them), `failed`
-  or `late` (vision). A page of Why `ocr` keeps the free evidence of the
-  Scan reader's check: `Lines` (its text lines, the more of Tesseract's and
-  of the ink bands of its picture, `band_lines`) and `Sure words` (the
-  words Tesseract read at 90 or more, of 3 characters or more, 400 at
-  most);
-- `blank`: no text layer and no ink, or under 0.1% ink and OCR found under
-  40 characters (a speck, a stamp): no paid ask for a white page. What OCR
-  read is kept in its row.
+  (a section divider, a title page: a typed page is never sent to a model);
+- else the page is a scan, and the book reader runs no local OCR on it
+  (1.3.0, owner decision 2026-11-19: "quality is of too much importance,
+  let's hit the worker always"). It is drawn at 150 dpi (pypdfium2) only to
+  see its shape (`page_bands`: the ink bands of ten vertical strips, after a
+  3 px median), and marked `vision` for the Agent with the column `Why`
+  `scan` and its `Lines` (its text lines by those bands, the free evidence
+  of the Scan reader's check). A page pdfium cannot draw is `vision`, Why
+  `failed`;
+- `blank`: no text layer and no ink, or under 0.1% ink and no line of text
+  (a speck, a stamp): no paid ask for a white page.
 
 G1, a book's page pictures: ONE owner, the Agent `pdf-page-read`, in its
 own run. The book reader writes no picture (1.2.0): it marks the pages in
@@ -2462,13 +2451,20 @@ Agent's run does three things in one job, with no hand-over to another:
 - **render**: the Agent's step draws the page in the parser's pdfjs child
   (200 dpi, a PNG, or a JPEG past 4 MB), with no model;
 - **read**: the core answers the page's ask, from the tab `Page text` by the
-  hash of the picture when it is there, else with one paid vision call. A
-  page of Why `ocr` is cut as a one-page PDF too (`job.pdfPage`, qpdf; the
-  PDFs take what the pictures leave of the answer's budget) and read by the
-  Scan reader first, with its free evidence from the tab `Pages`; vision
-  reads it only when the Scan reader's read is judged bad, or there is no
-  Scan reader (server/api/src/agent/extract/pipeline-ask.ts). The row's
-  `Model` says which: `scan_reader:mistral-ocr` or the vision model;
+  hash of the picture when it is there, else with one paid call. A page of
+  Why `scan` is cut as a one-page PDF too (`job.pdfPage`, qpdf; the PDFs
+  take what the pictures leave of the answer's budget, and a page whose PDF
+  cannot be sent is not asked: unread, with a warning) and read by the Scan
+  reader alone, with its `Lines` from the tab `Pages`
+  (server/api/src/agent/extract/pipeline-ask.ts): a read the check judges
+  good is the page's text; a read judged bad is a row with no text (the page
+  stays unread, and a run again pays nothing for it); a page the engine
+  finds mostly a figure (a picture and under 40 characters) goes on to one
+  vision call, its description; with no Scan reader on the brain the page
+  is skipped with no stop, unread, and the run is not done. No local OCR
+  and no vision backup. The row's `Model` says which:
+  `scan_reader:mistral-ocr` or the vision model. Any other marked page
+  (Why `failed`, or a book read by an older reader) is read by vision;
 - **save**: the core writes the page's text row, then saves the page's
   picture as one of the book's pictures (a part of the book, in its pictures
   folder, `data.bookPage` the page, `data.sourceSha256` the bytes) with that
@@ -2504,25 +2500,19 @@ none), and its count is `data.images.embedded`. `data.images.kept` and
 `found` are the sums of the two parts (extraction-status.ts,
 picturesStampOf).
 
-A window stops its OCR after 180 s, and stops a Tesseract run at 225 s (the
-job ends at 240 s and would lose the whole window): the pages after it are
-`vision`, and a warning says so. A window whose text layer pdfminer cannot
-parse is read by OCR, page by page. The tab
-`Pages` holds one row a page: `Page` (of the original file), `Paper`,
-`Method`, `Confidence` (OCR's mean, none for a text page), `Chars`, `Text`.
-The text is the pages with a `## Page N` line before each. The tab `File`
-holds the kind `book`, the rules version and the page count, written by the
-first window read (a lost window 1 does not lose the kind).
+A window whose text layer pdfminer cannot parse is drawn page by page, and
+its pages are marked for the Scan reader. The tab `Pages` holds one row a
+page: `Page` (of the original file), `Paper`, `Method`, `Why`, `Chars`,
+`Lines`, `Text`. The text is the pages with a `## Page N` line before each
+(a scanned page has no text of its own: the Agent's stands for it). The tab
+`File` holds the kind `book`, the rules version and the page count, written
+by the first window read (a lost window 1 does not lose the kind).
 `produces.table: false`: the upload makes no Table of these tabs.
 
-**Tables** (the brief, section 4). On a text page, pdfplumber's
-`find_tables`; on a scanned page, the ruled lines (OpenCV: a morphology open
-with long kernels; each line fitted straight, so a skewed scan keeps its
-rows) give the grid, and each Tesseract word goes in the cell that holds the
-centre of its box. The picture Tesseract reads leaves out the row lines (a
-ruled line read as `|` or a dash breaks a cell; with the column lines gone too,
-Tesseract loses whole narrow columns), and a cell's edge marks of a ruled
-line are cut. A page with no ruled lines: a run of three or more rows of
+**Tables** (the brief, section 4), of the typed pages: pdfplumber's
+`find_tables`. A scanned page's tables are in its Scan reader text (one
+row a line, cells split by ` | `), not in tabs (1.3.0: no local OCR).
+A page with no ruled lines: a run of three or more rows of
 three or more word groups whose left edges fall in the same columns (a
 whitespace table). A table runs on over the next page (one tab) when the
 table before ran to the bottom of its page (no word under it but the
@@ -2544,13 +2534,11 @@ A table's tab is named by its nearest heading above it and its pages
 end of a window is `SPEC X1 REV 0 p48 on`), cut to 48 characters of heading; a second of
 a name gets ` (2)`. Every row starts with the column `Page`, the page of the
 original file it came from. The tab `Tables` indexes them: `Tab`, `Title`,
-`Pages`, `Rows`, `Columns`, `Method` (`text`, `ocr`), `Quality`, `Note`.
-Quality is `ok` (every row fills the header's columns, under 10% of the
-cells empty, no cell under the OCR floor), `partial` with a note that says
-which (`12 of 40 rows do not fill the header's 6 columns`), or `text only`
-(a ruled table on a page OCR read badly: vision reads the page, and its
-text is in the passages). The description of the database says how many are
-partial or text only. Libraries: MIT, Apache-2.0 or BSD only; no Camelot
+`Pages`, `Rows`, `Columns`, `Method` (`text`), `Quality`, `Note`. Quality
+is `ok` (every row fills the header's columns, under 10% of the cells
+empty) or `partial` with a note that says which (`12 of 40 rows do not fill
+the header's 6 columns`). The description of the database says how many
+are partial. Libraries: MIT, Apache-2.0 or BSD only; no Camelot
 (Ghostscript), Tabula or PyMuPDF.
 
 **The Agent `pdf-page-read`** (`./pkg/pdf-page-read`). It claims the kind
@@ -2560,7 +2548,9 @@ windows of 15 pages (P4), so its pictures (4 MB at most each) stay under
 the 64 MB of one answer; a window past it fails, and its stored rows stay. The core gives its step the
 pages the Reader marked `vision` (`state.visionPages`, read from the tab
 `Pages` by `bookVisionPagesOf`, `packages/content/src/book-pages.ts`), so a
-page the Reader read well is never asked. One ask a page, keyed `page-<N>`,
+typed page is never asked, and of them the scanned pages
+(`state.scanPages`, Why `scan`, `bookScanPagesOf`), which it sends as
+one-page PDFs for the Scan reader. One ask a page, keyed `page-<N>`,
 with the one field `Text`; its text stands over the Reader's for the
 page's passage (P3). An Agent that says `produces.pages` asks with the token
 cap of a list ask (12,000) and keeps up to 60,000 characters of a page
@@ -2574,27 +2564,24 @@ cut, not 112. The box's day cap bounds a run. A
 marked page that cannot be drawn ends the window `failed` (no ask); a blank
 picture is not read.
 
-Not built (a deviation from the brief, section 4.1): the vision ask of a
-table page that both table reads failed, with the header the Reader found
-as its fields. Every ask of one step names the same fields, and the list
-part of an ask holds identifiers, not rows; the page's text is read by
-vision as every `vision` page is, and the table is `text only` in `Tables`.
-
 How each page of a book was read is counted live from its database
 (`bookPageMethodsOf`, packages/content/src/book-pages.ts): `text`, `ocr`,
 `blank`, `scanReader`, `vision` and `unread` (marked for the Agent, with no
-text yet: its run has not read it, or every reader failed). The file's
-processing details carry it (`bookPages`, `file_processing`).
+text: its run has not read it, the brain has no Scan reader, or the Scan
+reader's read was judged bad). The file's processing details carry it
+(`bookPages`, `file_processing`), with `noScanReader` when pages are
+unread and the brain has no Scan reader: the reason.
 
 **Tests** (made-up PDFs only). `server/parser/cad/tests/test_pdf_pages.py`
 draws a book (`tests/book_pdfs.py`): prose, a table over three pages with
 its header on each, a table over two pages with its header on the first
 only, a table with no ruled lines, a figure and a blank page, as a scan and
-as a text twin. The scan: every page gets its method, each table is one tab
-with the right pages, 95% or more of the cells right, every row's page
-right, and with the option on one picture (the figure's). The twin: every page is `text`, nothing
-is asked or drawn, the cells are exact. Two windows carry a table over
-their edge.
+as a text twin. The scan: every page with ink is the Scan reader's (Why
+`scan`, with its lines), the blank page is blank, no tab and no picture, and
+the reader runs no OCR. The twin: every page is `text`, nothing is asked or
+drawn, the cells are exact. Two windows carry a table over their edge. The
+paid ask's chain (Scan reader, figure to vision, a bad read unread, no
+Scan reader skipped) is in server/api/src/agent/extract/pipeline-ask.test.ts.
 
 ## Text and pictures from every Reader
 

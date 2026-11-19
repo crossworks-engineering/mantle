@@ -16,7 +16,7 @@
  * one (mayBePointedAtTable). The route and the tool pass the same reach.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, getDefaultWorker } from '@mantle/db';
 import {
   currentReaderVersion,
   fileById,
@@ -163,10 +163,15 @@ export async function fileProcessing(
   // A book: how each page was read (text, OCR, Scan reader, vision, unread),
   // live from its database.
   const dbFiles = ready ? fileDbPaths(row.id, row.sha256) : null;
-  const bookPages =
+  const methods =
     dbFiles && tables?.some((t) => t.name === PAGES_TAB)
       ? await bookPageMethodsOf(dbFiles.sqlite)
       : null;
+  // Unread pages on a brain with no Scan reader: the status says why.
+  const bookPages =
+    methods && methods.unread > 0 && !(await getDefaultWorker(ownerId, 'scan_reader'))
+      ? { ...methods, noScanReader: true as const }
+      : methods;
   const ex = row.extraction;
   const failed = ex.state === 'failed' || ex.state === 'skipped';
   return {

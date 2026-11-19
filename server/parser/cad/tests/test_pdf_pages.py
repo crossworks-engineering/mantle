@@ -1,12 +1,12 @@
 """Tests for the built-in Reader pdf-pages (pdf_pages.py): the text layer,
-Tesseract on scanned pages, the tables (ruled, on several pages, with no ruled
+the scanned pages marked with no OCR (the Scan reader's, or
+blank), the tables of typed pages (ruled, on several pages, with no ruled
 lines), the Tables index, no page picture (G1: the Agent pdf-page-read
-draws and saves the picture of a vision page itself) and the windows. Every
-PDF here is made up by this test (book_pdfs.py; the repo is public).
+draws and saves the picture of a page it reads) and the windows. Every PDF
+here is made up by this test (book_pdfs.py; the repo is public).
 
 Run (stdlib unittest; skipped when pdfplumber, pypdfium2 or OpenCV is
-missing, unless PARSER_TESTS_REQUIRE_CAD is set; the OCR cases skip when
-the `tesseract` program is missing, unless PARSER_TESTS_REQUIRE_OCR is set):
+missing, unless PARSER_TESTS_REQUIRE_CAD is set):
     /opt/cad/bin/python -m unittest discover -s server/parser/cad/tests -v
 """
 
@@ -40,9 +40,7 @@ except ImportError:  # pragma: no cover - depends on the environment
         raise
     HAVE = False
 
-HAVE_OCR = shutil.which("tesseract") is not None
-if not HAVE_OCR and os.environ.get("PARSER_TESTS_REQUIRE_OCR"):  # pragma: no cover
-    raise RuntimeError("PARSER_TESTS_REQUIRE_OCR is set and tesseract is missing")
+
 
 STEP_PY = os.path.join(os.path.dirname(HERE), "pdf_pages.py")
 
@@ -167,16 +165,6 @@ class PureParts(unittest.TestCase):
         self.assertIn("2 of 10 rows", note)
         self.assertIn("5 of 20 cells are empty", note)
 
-    def test_tsv(self):
-        tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
-               "5\t1\t1\t1\t1\t1\t10\t10\t40\t20\t95.5\tHELLO\n"
-               "5\t1\t1\t1\t1\t2\t60\t10\t40\t20\t85.5\tWORLD\n"
-               "5\t1\t2\t1\t1\t1\t10\t60\t40\t20\t60\tNEXT\n")
-        words, text, mean = pdf_pages.parse_tsv(tsv)
-        self.assertEqual(text, "HELLO WORLD\n\nNEXT")
-        self.assertEqual(len(words), 3)
-        self.assertAlmostEqual(mean, (95.5 + 85.5 + 60) / 3)
-
 
 @unittest.skipUnless(HAVE, "pdfplumber, pypdfium2 or OpenCV is missing")
 class TextLayer(unittest.TestCase):
@@ -196,7 +184,7 @@ class TextLayer(unittest.TestCase):
         self.assertEqual([r[2] for r in self.tabs["Pages"]["rows"]], ["text"] * 7)
         self.assertNotIn("pictures", self.input)
         self.assertEqual(self.result["counts"]["vision"], 0)
-        self.assertEqual(self.result["counts"]["ocr"], 0)
+        self.assertEqual(self.result["counts"]["scan"], 0)
 
     def test_a_short_typed_page_is_text_a_vector_figure_is_not(self):
         # M4 of the large-PDF audit, round 3: a section divider or a title
@@ -212,7 +200,7 @@ class TextLayer(unittest.TestCase):
         r, _ = run(pdf)
         rows = tabs_of(r)[0]["Pages"]["rows"]
         self.assertEqual([row[2] for row in rows][:2], ["text", "text"])
-        self.assertEqual(rows[0][8], "SECTION 16")
+        self.assertEqual(rows[0][6], "SECTION 16")
         self.assertNotEqual(rows[2][2], "text")
 
     def test_text_has_a_page_line_before_each_page(self):
@@ -279,7 +267,7 @@ class TextLayer(unittest.TestCase):
         self.assertEqual(tabs_of(r3)[0]["File"]["rows"][0][:2], ["book", "book"])
         self.assertEqual([r[0] for r in t2["Pages"]["rows"]], [4, 5, 6, 7])
         # The last window says the whole book: its description stands.
-        self.assertTrue(tabs_of(r2)[1]["description"].startswith("A book of 7 pages: 7 text, 0 OCR"))
+        self.assertTrue(tabs_of(r2)[1]["description"].startswith("A book of 7 pages: 7 text, 0 scanned"))
         self.assertEqual(r1["state"]["totals"]["text"], 3)
 
     def test_a_lost_window_ends_the_open_table(self):
@@ -320,8 +308,8 @@ class TextLayer(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE, "pdfplumber, pypdfium2 or OpenCV is missing")
-class ScanReaderEvidence(unittest.TestCase):
-    """The free evidence of a page OCR read badly (the Scan reader's check)."""
+class PageBands(unittest.TestCase):
+    """The text lines of a scanned page, counted with no OCR."""
 
     def page(self, lines, dpi=150, skew=0):
         import numpy as np
@@ -343,21 +331,16 @@ class ScanReaderEvidence(unittest.TestCase):
         # A skew of a few pixels across the page keeps its rows.
         self.assertEqual(pdf_pages.band_lines(self.page(40, skew=12), 150), 40)
 
-    def test_band_lines_of_a_white_page_is_none(self):
+    def test_a_white_page_has_no_line(self):
         self.assertEqual(pdf_pages.band_lines(self.page(0), 150), 0)
 
-    def test_sure_words(self):
-        w = lambda t, c: {"text": t, "conf": c}  # noqa: E731
-        got = pdf_pages.sure_words([w("FLANGE", 96), w("WN", 99), w("A105", 91), w("~~~", 99), w("PIPE", 60), w("CAP", None)])
-        self.assertEqual(got, "FLANGE A105")
-        many = [w("WORD%d" % i, 95) for i in range(pdf_pages.SURE_WORDS_MAX + 5)]
-        self.assertEqual(len(pdf_pages.sure_words(many).split()), pdf_pages.SURE_WORDS_MAX)
 
-
-@unittest.skipUnless(HAVE and HAVE_OCR, "pdfplumber, pypdfium2, OpenCV or tesseract is missing")
+@unittest.skipUnless(HAVE, "pdfplumber, pypdfium2 or OpenCV is missing")
 class Scans(unittest.TestCase):
-    """The scanned book: Tesseract reads it, the figure goes to vision (the
-    Agent draws its picture), the blank page is blank."""
+    """The scanned book, with no OCR: every page with ink is the Scan reader's
+    (Why `scan`, with its lines; its engine finds a figure, and the core sends
+    that page on to vision), the blank page is blank. Nothing is read here:
+    the Agent reads the marked pages."""
 
     @classmethod
     def setUpClass(cls):
@@ -368,125 +351,68 @@ class Scans(unittest.TestCase):
         cls.result, cls.job = run(cls.pdf)
         cls.tabs, cls.input = tabs_of(cls.result)
 
-    def test_methods(self):
-        got = {r[0]: r[2] for r in self.tabs["Pages"]["rows"]}
-        self.assertEqual(got, self.methods)
-        conf = {r[0]: r[4] for r in self.tabs["Pages"]["rows"]}
+    def rows(self):
+        cols = [c["name"] for c in self.tabs["Pages"]["columns"]]
+        return [dict(zip(cols, r)) for r in self.tabs["Pages"]["rows"]]
+
+    def test_the_pages_columns(self):
+        cols = [c["name"] for c in self.tabs["Pages"]["columns"]]
+        self.assertEqual(cols, ["Page", "Paper", "Method", "Why", "Chars", "Lines", "Text"])
+
+    def test_methods_and_why(self):
+        got = {r["Page"]: (r["Method"], r["Why"]) for r in self.rows()}
+        want = {}
         for n, m in self.methods.items():
-            if m == "ocr":
-                self.assertGreaterEqual(conf[n], 70, n)
+            # The book's OCR pages and its figure are the Scan reader's now;
+            # the blank page is blank.
+            want[n] = ("vision", "scan") if m in ("ocr", "vision") else (m, None)
+        self.assertEqual(got, want)
 
-    def test_tables_from_the_scan(self):
-        names = [n for n in self.tabs if n not in ("Pages", "Tables", "File")]
-        self.assertEqual(
-            names,
-            ["PIPING MATERIAL SPECIFICATION A2C3 REV 1 p2-4", "VALVE DATA SHEET B1 REV 2 p5-6", "INSTRUMENT INDEX p7"],
-        )
-        cells = good = 0
-        for name, truth in zip(names, self.truth):
-            tab = self.tabs[name]
-            self.assertEqual(len(tab["rows"]), len(truth["rows"]), name)
-            right, pages_ok = score(tab, truth)
-            self.assertEqual(pages_ok, len(truth["rows"]), name)
-            n = len(truth["rows"]) * len(truth["header"])
-            cells += n
-            good += right * n
-        self.assertGreaterEqual(good / cells, 0.95)
-        idx = {r[0]: r for r in self.tabs["Tables"]["rows"]}
-        self.assertEqual(idx[names[0]][2], "2-4")
-        self.assertEqual(idx[names[0]][5], "ocr")
-        self.assertIn(idx[names[0]][6], ("ok", "partial"))
+    def test_a_scanned_page_of_text_has_its_lines_and_no_text_of_its_own(self):
+        for r in self.rows():
+            if r["Why"] == "scan" and r["Page"] != 8:
+                self.assertGreaterEqual(r["Lines"], 10, r["Page"])
+            if r["Why"] == "scan":
+                self.assertEqual((r["Text"], r["Chars"]), ("", 0), r["Page"])
 
-    def test_g1_no_page_picture_a_vision_page_is_only_marked(self):
-        # G1: the Agent pdf-page-read draws a vision page and saves its
-        # picture with the text it read; this Reader writes no picture, and
-        # an old option to ask for one changes nothing.
-        pages, _, _ = book_pdfs.book()
-        pdf = os.path.join(self.dir, "fig.pdf")
-        book_pdfs.write_pdf(pdf, [pages[7]], scan={1})
-        for opts in ({}, {"options": {"page_pictures": True}}):
-            r, job = run(pdf, opts)
-            self.assertEqual(tabs_of(r)[0]["Pages"]["rows"][0][2], "vision")
-            self.assertNotIn("pictures", tabs_of(r)[1])
-            self.assertFalse(any(f.endswith((".png", ".jpg")) for f in os.listdir(job)))
+    def test_no_tables_and_no_picture_from_a_scan(self):
+        names = [n for n in self.tabs if n not in ("Pages", "File")]
+        self.assertEqual(names, [])
+        self.assertNotIn("pictures", self.input)
+        self.assertFalse(any(f.endswith((".png", ".jpg")) for f in os.listdir(self.job)))
 
-    def test_a_faint_page_is_read_and_blank_when_ocr_finds_nothing(self):
+    def test_a_faint_line_is_a_page_to_read_a_speck_is_blank(self):
         pdf = os.path.join(self.dir, "faint.pdf")
-        book_pdfs.write_pdf(pdf, [[("line", 800, 1100, 812, 1100, 3)], [("text", 90, 1100, 24, False, "SIGNED AND DATED BY THE MADE-UP INSPECTOR OF RECORD")]], scan={1, 2}, noise=False)
+        book_pdfs.write_pdf(
+            pdf,
+            [[("line", 800, 1100, 812, 1100, 3)], [("text", 90, 1100, 24, False, "SIGNED AND DATED BY THE MADE-UP INSPECTOR OF RECORD")]],
+            scan={1, 2},
+            noise=False,
+        )
         r, _ = run(pdf)
         rows = tabs_of(r)[0]["Pages"]["rows"]
         self.assertEqual(rows[0][2], "blank")
-        self.assertEqual(rows[1][2], "ocr")
-        self.assertIn("INSPECTOR", rows[1][8])
+        self.assertEqual((rows[1][2], rows[1][3]), ("vision", "scan"))
 
-    def test_no_picture_is_left_in_the_job(self):
-        self.assertNotIn("pictures", self.input)
-        self.assertFalse(any(f.startswith(("ocr-", "page-")) for f in os.listdir(self.job)))
-
-    def test_a_scanned_divider_read_well_is_ocr_a_figure_is_vision(self):
-        # M4 of the large-PDF audit, round 3: few words read well, and nothing
-        # else on the page, are no reason for a paid ask.
+    def test_a_scanned_divider_and_a_figure_are_the_scan_readers(self):
         pdf = os.path.join(self.dir, "divider-scan.pdf")
         pages, _, _ = book_pdfs.book()
         book_pdfs.write_pdf(pdf, [[("text", 300, 1000, 60, True, "SECTION 16")], pages[7]], scan={1, 2})
         r, _ = run(pdf)
         rows = tabs_of(r)[0]["Pages"]["rows"]
-        self.assertEqual([row[2] for row in rows], ["ocr", "vision"])
-        self.assertIn("SECTION", rows[0][8])
-        # A figure keeps vision: Why `figure`, no Scan reader evidence.
-        self.assertEqual(rows[1][3], "figure")
-        self.assertEqual((rows[1][6], rows[1][7]), (None, None))
-
-    def test_the_pages_columns(self):
-        cols = [c["name"] for c in self.tabs["Pages"]["columns"]]
-        self.assertEqual(
-            cols, ["Page", "Paper", "Method", "Why", "Confidence", "Chars", "Lines", "Sure words", "Text"]
-        )
-        for r in self.tabs["Pages"]["rows"]:
-            if r[2] != "vision":
-                self.assertEqual((r[3], r[6], r[7]), (None, None, None), r[0])
-
-    def test_a_page_read_badly_is_for_the_scan_reader_with_its_evidence(self):
-        # Every scanned text page under the floor (100): Why `ocr`, with the
-        # page's lines and the words Tesseract read surely.
-        pages, _, _ = book_pdfs.book()
-        pdf = os.path.join(self.dir, "floor.pdf")
-        book_pdfs.write_pdf(pdf, [pages[1]], scan={1})
-        r, _ = run(pdf, {"options": {"ocr_min_confidence": 100}})
-        row = tabs_of(r)[0]["Pages"]["rows"][0]
-        self.assertEqual((row[2], row[3]), ("vision", "ocr"))
-        self.assertGreaterEqual(row[6], 10)
-        sure = row[7].split()
-        self.assertGreater(len(sure), 20)
-        self.assertTrue(all(len(w) >= pdf_pages.SURE_MIN_CHARS for w in sure))
-        self.assertTrue(set(sure) <= set(row[8].split()))
+        self.assertEqual([(row[2], row[3]) for row in rows], [("vision", "scan"), ("vision", "scan")])
 
     def test_counts_and_description(self):
         c = self.result["counts"]
-        self.assertEqual((c["ocr"], c["vision"], c["blank"], c["tables"]), (7, 1, 1, 3))
-        self.assertNotIn("pictures", c)
-        self.assertIn("1 for vision", self.input["description"])
+        self.assertEqual((c["text"], c["scan"], c["vision"], c["blank"], c["tables"]), (0, 8, 8, 1, 0))
+        self.assertIn("8 scanned (the Scan reader), 0 for vision", self.input["description"])
+
+    def test_no_tesseract_is_run(self):
+        # The book reader runs no local OCR (owner decision 2026-11-19).
+        src = open(pdf_pages.__file__).read()
+        self.assertNotIn("tesseract", src.lower())
+        self.assertNotIn("subprocess", src)
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-@unittest.skipUnless(HAVE, "pdfplumber, pypdfium2 or OpenCV is missing")
-class OcrBudget(unittest.TestCase):
-    def test_pages_past_the_ocr_budget_go_to_vision(self):
-        d = tempfile.mkdtemp(prefix="pdf-pages-late-")
-        pages, _, _ = book_pdfs.book()
-        pdf = os.path.join(d, "late.pdf")
-        book_pdfs.write_pdf(pdf, pages[1:3], scan={1, 2})
-        old = pdf_pages.OCR_BUDGET_S
-        pdf_pages.OCR_BUDGET_S = -1
-        try:
-            r, job = run(pdf)
-        finally:
-            pdf_pages.OCR_BUDGET_S = old
-        tabs, inp = tabs_of(r)
-        self.assertEqual([row[2] for row in tabs["Pages"]["rows"]], ["vision", "vision"])
-        self.assertEqual([row[3] for row in tabs["Pages"]["rows"]], ["late", "late"])
-        self.assertNotIn("pictures", inp)
-        self.assertIn(pdf_pages.OCR_LATE, r["warnings"])

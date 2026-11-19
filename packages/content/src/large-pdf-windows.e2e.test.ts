@@ -214,22 +214,25 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
   );
 
   it.skipIf(!DIR || !has('scanned7.pdf'))(
-    'a 7-page scanned PDF with tables: a book, every page read by the local OCR, the Tables tab',
+    'a 7-page scanned PDF: a book, every page marked for the Scan reader with its lines, no local OCR',
     async () => {
       const { bytes, file, kind } = await routed('scanned7.pdf');
       expect(kind).toBe('book');
       const run = await readBook(bytes, file);
       expect(run.windows).toEqual({ pagesTotal: 7, failed: [] });
       expect(col(run, 'Pages', 'Page')).toEqual([1, 2, 3, 4, 5, 6, 7]);
-      expect(col(run, 'Pages', 'Method')).toEqual(Array(7).fill('ocr'));
-      expect(run.counts).toMatchObject({ vision: 0 });
-      expect(tab(run, 'Tables')!.rows.length).toBeGreaterThanOrEqual(2);
+      expect(col(run, 'Pages', 'Method')).toEqual(Array(7).fill('vision'));
+      expect(col(run, 'Pages', 'Why')).toEqual(Array(7).fill('scan'));
+      for (const n of col(run, 'Pages', 'Lines') as number[]) expect(n).toBeGreaterThanOrEqual(10);
+      expect(run.counts).toMatchObject({ scan: 7, vision: 7 });
+      // A scanned page's tables are in its Scan reader text, not in tabs.
+      expect(tab(run, 'Tables')).toBeFalsy();
     },
     LONG,
   );
 
   it.skipIf(!DIR || !has('scanbook.pdf'))(
-    "a scanned book: the reader marks its vision pages and writes no picture; the Agent's step draws each marked page",
+    "a scanned book: the reader marks its scanned pages and writes no picture; the Agent's step draws each and cuts it as a one-page PDF",
     async () => {
       const { bytes, file, kind } = await routed('scanbook.pdf');
       expect(kind).toBe('book');
@@ -238,7 +241,8 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       expect(pages).toEqual(Array.from({ length: 108 }, (_, i) => i + 1));
       const methods = col(run, 'Pages', 'Method');
       const vision = pages.filter((_, i) => methods[i] === 'vision');
-      expect(vision.length).toBeGreaterThanOrEqual(12);
+      // Every scanned page with ink is marked (the blank ones are not).
+      expect(vision.length).toBeGreaterThanOrEqual(96);
       // G1: no page picture from the reader.
       expect(run.write!.pictures ?? []).toEqual([]);
       expect(run.pictures.size).toBe(0);
@@ -250,15 +254,20 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       const here = vision.filter((n) => n >= part.pageFrom && n <= part.pageTo);
       const step = await agentStep(AGENT as never, part.bytes, file, effectiveOptions(AGENT, {}), {
         kind: 'book',
-        state: { readerOptions: {}, visionPages: vision },
+        state: { readerOptions: {}, visionPages: vision, scanPages: vision },
         window: { pageFrom: part.pageFrom, pageTo: part.pageTo, pagesTotal: part.pagesTotal },
       });
       expect(step.status).toBe('ok');
       const asked = step.asks.map((a) => (a.input as { page: number }).page);
       expect(asked).toEqual(here);
       for (const a of step.asks) {
-        const picture = step.pictures.get((a.input as { picture: string }).picture);
+        const input = a.input as { picture: string; pdf?: string };
+        const picture = step.pictures.get(input.picture);
         expect(picture!.length).toBeGreaterThan(1024);
+        // Each scanned page also goes as a one-page PDF (qpdf), for the Scan
+        // reader.
+        const pdf = step.pictures.get(input.pdf ?? '');
+        expect(pdf!.subarray(0, 5).toString('latin1')).toBe('%PDF-');
       }
       // The core's picture read of the same window: each scan is painted
       // over its page (pageCover), so a book leaves it out where the Agent

@@ -149,10 +149,11 @@ export type FileProcessing = {
    *  rows; only when built and readable by the caller (as the Data view). */
   /** A PDF book (read by the book reader): how its pages were read, counted
    *  from its database (docs/ai-workers.md, "The Scan reader"): `text` (text
-   *  layer), `ocr` (local OCR), `blank`, `scanReader` and `vision` (the
-   *  Agent pdf-page-read's read of a page OCR read badly, or of a figure),
-   *  `unread` (marked for the Agent, with no text yet). Left out for any
-   *  other file. */
+   *  layer), `ocr` (local OCR, a book read by an older reader), `blank`,
+   *  `scanReader` (the Agent pdf-page-read's read of a scanned page),
+   *  `vision` (its description of a figure), `unread` (marked for the Agent,
+   *  with no text: not read yet, no Scan reader, or a read judged bad). Left
+   *  out for any other file. */
   bookPages?: {
     text: number;
     ocr: number;
@@ -160,6 +161,9 @@ export type FileProcessing = {
     scanReader: number;
     vision: number;
     unread: number;
+    /** There are unread pages and this brain has no Scan reader: that is
+     *  why (an OpenRouter key and the Scan reader worker read them). */
+    noScanReader?: true;
   };
   database: {
     state: DataFileState;

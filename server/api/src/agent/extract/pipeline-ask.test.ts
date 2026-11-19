@@ -283,15 +283,15 @@ describe('the paid ask of an Agent', () => {
 });
 
 /**
- * A page of a book OCR read badly: the Scan reader first, vision only when
- * its read is judged bad (docs/ai-workers.md, "The Scan reader"), the Jev
- * check in shadow where no word of Tesseract can vouch for the read.
+ * A scanned page of a book: the Scan reader alone (docs/ai-workers.md, "The
+ * Scan reader"): its good read is the text, a bad read leaves the page
+ * unread with no vision call, a figure goes to vision, no Scan reader skips
+ * the page with no stop. The Jev check in shadow.
  */
-describe('the Scan reader before vision', () => {
-  type ScanDep = NonNullable<Parameters<typeof import('./pipeline-ask').pipelineAskOf>[3]>['scan'];
-  type CheckDep = NonNullable<
-    Parameters<typeof import('./pipeline-ask').pipelineAskOf>[3]
-  >['check'];
+describe('the Scan reader of a scanned page', () => {
+  type Deps = NonNullable<Parameters<typeof import('./pipeline-ask').pipelineAskOf>[3]>;
+  type ScanDep = Deps['scan'];
+  type CheckDep = Deps['check'];
   let mod: typeof import('./pipeline-ask');
   let visionCalls: number;
   let scanCalls: Parameters<NonNullable<ScanDep>>[0][];
@@ -316,14 +316,14 @@ describe('the Scan reader before vision', () => {
     mime: 'image/png',
     hash: 'b'.repeat(64),
     pdf: Buffer.from('%PDF-1.4 page'),
-    scan: { words: ['FLANGE', 'ASTM'], lines: 44 },
+    scan: { lines: 44 },
   };
-  const quality = (ok: boolean, reasons: string[] = [], anchors = 40) => ({
+  const quality = (ok: boolean, reasons: string[] = []) => ({
     ok,
     reasons: reasons as never,
     illegibleShare: 0,
-    anchors,
-    agreement: anchors >= 30 ? 1 : null,
+    anchors: 0,
+    agreement: null,
   });
   const deps = (over: Record<string, unknown> = {}) => ({
     offHere: async () => false,
@@ -334,7 +334,7 @@ describe('the Scan reader before vision', () => {
       visionCalls += 1;
       return {
         ran: true,
-        text: '{"Text":"PAGE 7 BY VISION"}',
+        text: '{"Text":"A FIGURE OF A VALVE"}',
         note: null,
         model: 'made-up-vision',
       };
@@ -350,6 +350,8 @@ describe('the Scan reader before vision', () => {
     ...over,
   });
   const paid = () => h.steps.filter((s) => s.meta.use === PIPELINE_ASK_USE);
+  const run = (over: Record<string, unknown> = {}, ask: AgentAsk = PAGE) =>
+    mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps(over))(ask);
 
   beforeEach(async () => {
     mod = await import('./pipeline-ask');
@@ -363,6 +365,7 @@ describe('the Scan reader before vision', () => {
       ran: true,
       attempted: true,
       text: 'PAGE 7\nFLANGE | ASTM',
+      pictures: 0,
       note: null,
       model: 'meta-llama/llama-3.1-8b-instruct',
       engine: 'mistral-ocr',
@@ -370,39 +373,48 @@ describe('the Scan reader before vision', () => {
     };
   });
 
-  it('a good read is the page text, recorded as the Scan reader; vision is not called', async () => {
-    const out = await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(out).toEqual({
+  it('a good read is the page text, recorded as the Scan reader; no vision', async () => {
+    expect(await run()).toEqual({
       ok: true,
       output: { values: { Text: 'PAGE 7\nFLANGE | ASTM' }, model: 'scan_reader:mistral-ocr' },
     });
     expect(visionCalls).toBe(0);
     expect(paid()).toHaveLength(1);
     expect(paid()[0]!.meta).toMatchObject({ reader: 'scan_reader', judged: 'good' });
-    // The PDF, the picture and the free evidence go to the reader.
-    expect(scanCalls[0]).toMatchObject({
-      pdf: PAGE.pdf,
-      picture: { bytes: PAGE.picture, mimeType: 'image/png' },
-      expectedLines: 44,
-      ocrWords: [
-        { text: 'FLANGE', conf: 90 },
-        { text: 'ASTM', conf: 90 },
-      ],
-    });
-    // Words vouched for it: no Jev check.
-    expect(checkCalls).toBe(0);
+    expect(scanCalls[0]).toMatchObject({ pdf: PAGE.pdf, expectedLines: 44 });
   });
 
-  it('a read judged bad goes on to vision: two paid steps, the vision text stands', async () => {
-    scanOut = { ...scanOut, quality: quality(false, ['unverified'], 0) };
-    const out = await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(out).toMatchObject({ ok: true, output: { values: { Text: 'PAGE 7 BY VISION' } } });
+  it('a read judged bad leaves the page unread: a row with no text, no vision call', async () => {
+    scanOut = { ...scanOut, quality: quality(false, ['loop']) };
+    expect(await run()).toEqual({
+      ok: true,
+      output: { values: { Text: null }, model: 'scan_reader:mistral-ocr' },
+    });
+    expect(visionCalls).toBe(0);
+    expect(paid()).toHaveLength(1);
+    expect(paid()[0]!.meta).toMatchObject({ judged: 'bad', quality: ['loop'] });
+  });
+
+  it('a figure with next to no text goes to vision for its description', async () => {
+    scanOut = { ...scanOut, text: 'FIG 1', pictures: 1 };
+    const out = await run();
+    expect(out).toMatchObject({ ok: true, output: { values: { Text: 'A FIGURE OF A VALVE' } } });
     expect(visionCalls).toBe(1);
     expect(paid()).toHaveLength(2);
-    expect(paid()[0]!.meta).toMatchObject({ judged: 'bad', quality: ['unverified'] });
+    // A page of text with a figure on it is the Scan reader's.
+    visionCalls = 0;
+    scanOut = {
+      ...scanOut,
+      text: 'A whole page of text about the valve and its parts.',
+      pictures: 1,
+    };
+    expect((await run()) as { output: { model: string } }).toMatchObject({
+      output: { model: 'scan_reader:mistral-ocr' },
+    });
+    expect(visionCalls).toBe(0);
   });
 
-  it('a brain with no Scan reader: vision, as before, and no step of the day count for it', async () => {
+  it('no Scan reader the box can use: a skip with no stop, no call, no step of the day count', async () => {
     scanOut = {
       ...scanOut,
       ran: false,
@@ -411,118 +423,80 @@ describe('the Scan reader before vision', () => {
       model: null,
       note: 'No Scan reader worker.',
     };
-    const out = await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(out.ok).toBe(true);
-    expect(visionCalls).toBe(1);
-    expect(paid()).toHaveLength(1);
+    expect(await run()).toEqual({
+      ok: false,
+      error: 'not_available',
+      reason: 'no_scan_reader',
+    });
+    expect(visionCalls).toBe(0);
+    expect(paid()).toHaveLength(0);
     expect(h.steps[0]!.skipped).toBe('no_scan_reader');
   });
 
-  it('a failed Scan reader call goes on to vision', async () => {
+  it('a failed call is failed (the run stops; the next run reads the page), and counts', async () => {
     scanOut = { ...scanOut, ran: false, text: '', note: 'Scan reader failed: timeout' };
-    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(visionCalls).toBe(1);
-    expect(h.steps[0]!.error).toContain('timeout');
-    // A call that went out and failed counts: the provider may bill it.
-    expect(paid()).toHaveLength(2);
-  });
-
-  it('a Scan reader that could not call (a bad key) is no step of the day count', async () => {
-    scanOut = { ...scanOut, ran: false, attempted: false, text: '', note: 'bad key' };
-    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(visionCalls).toBe(1);
+    expect(await run()).toEqual({ ok: false, error: 'failed', reason: 'scan_reader_failed' });
+    expect(visionCalls).toBe(0);
     expect(paid()).toHaveLength(1);
   });
 
-  it('the check is not asked where its answer cannot matter, and a check that throws is no answer', async () => {
-    scanOut = { ...scanOut, quality: quality(false, ['loop'], 0) };
-    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(checkCalls).toBe(0);
-    scanOut = { ...scanOut, quality: quality(true, [], 0) };
-    const out = await mod.pipelineAskOf(
-      'owner',
-      'node',
-      PAGES_AGENT,
-      deps({
-        check: async () => {
-          throw new Error('parser busy');
-        },
-      }),
-    )(PAGE);
-    expect(out).toMatchObject({ ok: true, output: { model: 'scan_reader:mistral-ocr' } });
-  });
-
-  it('no PDF, no evidence, a list ask or an Agent of no page text: vision only', async () => {
-    const run = (agent: PipelineManifest, ask: AgentAsk) =>
-      mod.pipelineAskOf('owner', 'node', agent, deps())(ask);
+  it('no PDF, no line count, a list ask or an Agent of no page text: vision as before', async () => {
     const { pdf: _p, ...noPdf } = PAGE;
     const { scan: _s, ...noScan } = PAGE;
-    await run(PAGES_AGENT, noPdf);
-    await run(PAGES_AGENT, noScan);
-    await run(PAGES_AGENT, { ...PAGE, list: true });
-    await run(AGENT, PAGE);
+    await run({}, noPdf);
+    await run({}, noScan);
+    await run({}, { ...PAGE, list: true });
+    await mod.pipelineAskOf('owner', 'node', AGENT, deps())(PAGE);
     expect(scanCalls).toHaveLength(0);
     expect(visionCalls).toBe(4);
   });
 
-  it('the day cap is read again before vision: a page that used the last ask stops there', async () => {
-    scanOut = { ...scanOut, quality: quality(false, ['too_few_lines']) };
-    const ask = mod.pipelineAskOf(
-      'owner',
-      'node',
-      PAGES_AGENT,
-      deps({
-        asksToday: async () => {
-          const n = today;
-          today = 500;
-          return n;
-        },
-      }),
-    );
-    expect(await ask(PAGE)).toEqual({ ok: false, error: 'not_available', reason: 'day_cap' });
+  it('the day cap is read again before a figure goes to vision', async () => {
+    scanOut = { ...scanOut, text: '', pictures: 2 };
+    const out = await run({
+      asksToday: async () => {
+        const n = today;
+        today = 500;
+        return n;
+      },
+    });
+    expect(out).toEqual({ ok: false, error: 'not_available', reason: 'day_cap' });
     expect(visionCalls).toBe(0);
   });
 
-  it('no word to vouch: the Jev check is asked; in shadow it is only logged', async () => {
-    scanOut = { ...scanOut, quality: quality(true, [], 2) };
-    checkOut = {
-      faithful: 0.1,
-      model: 'typesafe/jev-1.14',
-      mode: 'shadow',
-      used: false,
-      passes: false,
-      threshold: 0.5,
-    };
-    const out = await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(checkCalls).toBe(1);
-    expect(out).toMatchObject({ ok: true, output: { model: 'scan_reader:mistral-ocr' } });
-    expect(visionCalls).toBe(0);
-    expect(paid()[0]!.meta).toMatchObject({ check: { faithful: 0.1, mode: 'shadow' } });
-  });
-
-  it('live, the Jev answer stands for the line rule only', async () => {
-    const live = (faithful: number) => ({
+  it('the Jev check: shadow is only logged; live stands for the line rule only', async () => {
+    const answer = (faithful: number, mode: 'shadow' | 'live') => ({
       faithful,
       model: 'typesafe/jev-1.14',
-      mode: 'live' as const,
-      used: true,
-      passes: faithful >= 0.5,
+      mode,
+      used: mode === 'live',
+      passes: mode === 'live' && faithful >= 0.5,
       threshold: 0.5,
     });
-    // `unverified` alone, Jev says faithful: the read stands.
-    scanOut = { ...scanOut, quality: quality(false, ['unverified'], 0) };
-    checkOut = live(0.9);
-    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(visionCalls).toBe(0);
-    // A read the rules call good, Jev says not faithful: vision.
-    scanOut = { ...scanOut, quality: quality(true, [], 0) };
-    checkOut = live(0.2);
-    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(visionCalls).toBe(1);
-    // Another reason (a loop) is never overruled.
-    scanOut = { ...scanOut, quality: quality(false, ['loop', 'unverified'], 0) };
-    checkOut = live(0.95);
-    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
-    expect(visionCalls).toBe(2);
+    checkOut = answer(0.1, 'shadow');
+    expect(await run()).toMatchObject({ output: { values: { Text: 'PAGE 7\nFLANGE | ASTM' } } });
+    expect(paid()[0]!.meta).toMatchObject({ check: { faithful: 0.1, mode: 'shadow' } });
+    // Live: an unverified read Jev calls faithful stands; a read the rules
+    // call good Jev calls made up is unread.
+    scanOut = { ...scanOut, quality: quality(false, ['unverified']) };
+    checkOut = answer(0.9, 'live');
+    expect(await run()).toMatchObject({ output: { values: { Text: 'PAGE 7\nFLANGE | ASTM' } } });
+    scanOut = { ...scanOut, quality: quality(true) };
+    checkOut = answer(0.2, 'live');
+    expect(await run()).toMatchObject({ output: { values: { Text: null } } });
+    // Another reason (a loop) is never asked about nor overruled.
+    const asked = checkCalls;
+    scanOut = { ...scanOut, quality: quality(false, ['loop', 'unverified']) };
+    checkOut = answer(0.95, 'live');
+    expect(await run()).toMatchObject({ output: { values: { Text: null } } });
+    expect(checkCalls).toBe(asked);
+    // A check that throws is no answer.
+    scanOut = { ...scanOut, quality: quality(true) };
+    const thrown = await run({
+      check: async () => {
+        throw new Error('parser busy');
+      },
+    });
+    expect(thrown).toMatchObject({ output: { values: { Text: 'PAGE 7\nFLANGE | ASTM' } } });
   });
 });

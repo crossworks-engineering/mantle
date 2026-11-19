@@ -120,12 +120,7 @@ describe('the built-in pipelines', () => {
     expect(book.produces).toEqual({ text: true, table: false, pages: true });
     expect(book.match).toEqual({ ext: ['pdf'], kind: ['book'] });
     expect(book.needs.window).toEqual(PIPELINE_WINDOW_DEFAULT);
-    expect(Object.keys(book.options ?? {})).toEqual([
-      'text_min_chars',
-      'ocr_min_confidence',
-      'ocr_dpi',
-      'tables',
-    ]);
+    expect(Object.keys(book.options ?? {})).toEqual(['text_min_chars', 'tables']);
     const iso = python[0] as PipelineManifest;
     expect(iso.needs.workers).toBeUndefined();
     expect(iso.produces).toEqual({ text: true, pictures: true, table: false });

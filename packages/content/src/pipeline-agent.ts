@@ -42,6 +42,11 @@ import {
 } from '@mantle/files';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 
+/** The reason of an ask the box cannot answer now with no stop of the run:
+ *  a scanned page of a book on a brain with no Scan reader (its pages stay
+ *  unread, said so; a figure after it is still read). */
+export const ASK_SKIPPED_NO_SCAN_READER = 'no_scan_reader';
+
 /** The form of the core's question. Raise it when {@link askQuestionOf} or
  *  the system text changes: every stored hash then differs, and a run asks
  *  again. */
@@ -74,14 +79,14 @@ export type AgentAsk = {
   picture: Buffer;
   mime: string;
   hash: string;
-  /** A page of a book OCR read badly: the page as a one-page PDF (the step
-   *  wrote it), for the Scan reader's read before vision. The hash is the
-   *  picture's: the same page is the same ask, whoever read it. */
+  /** A scanned page of a book: the page as a one-page PDF (the step wrote
+   *  it), read by the Scan reader. The hash is the picture's: the same page
+   *  is the same ask, whoever read it. */
   pdf?: Buffer;
   /** The free evidence of the Scan reader's check, from the book reader's
-   *  tab Pages (the caller adds it, ./file-database.ts): the words Tesseract
-   *  read surely and the page's text lines. */
-  scan?: { words: readonly string[]; lines: number | null };
+   *  tab Pages (the caller adds it, ./file-database.ts): the page's text
+   *  lines counted from its picture. */
+  scan?: { lines: number | null };
 };
 
 /** How the caller answers one ask: the one paid call, behind its guards
@@ -448,6 +453,9 @@ export type AgentRows = {
   made: number;
   /** Asks answered from the tab, with no call. */
   reused: number;
+  /** Asks the box cannot answer now, with no stop (a scanned page with no
+   *  Scan reader, ASK_SKIPPED_NO_SCAN_READER): not read, no row. */
+  skipped?: number;
   /** Why the calls stopped, when they did: the reason word of the answer
    *  (`day_cap`, `off`, `no_llm_work`, `no_worker`), else its error. */
   stopped?: string;
@@ -525,6 +533,7 @@ export async function agentRows(
   };
   let made = 0;
   let reused = 0;
+  let skipped = 0;
   let stopped: string | undefined;
   for (const a of asks) {
     const hit = byHash.get(a.hash);
@@ -562,6 +571,18 @@ export async function agentRows(
         );
         continue;
       }
+      // A page the box cannot read now (no Scan reader): no row, no stop;
+      // the asks after it (a figure for vision) are still made, and the
+      // run is not done.
+      if (answer.error === 'not_available' && answer.reason === ASK_SKIPPED_NO_SCAN_READER) {
+        skipped += 1;
+        const old = byKey.get(a.key);
+        if (old) {
+          rows.push(rowOf(a.key, old));
+          keepList(text(old[AGENT_HASH_COLUMN]), a);
+        }
+        continue;
+      }
       stopped = answer.reason ?? answer.error;
     } else if (!ask) {
       stopped ??= 'no_ask';
@@ -590,6 +611,7 @@ export async function agentRows(
         : null,
     made,
     reused,
+    ...(skipped > 0 ? { skipped } : {}),
     ...(stopped !== undefined ? { stopped } : {}),
   };
 }

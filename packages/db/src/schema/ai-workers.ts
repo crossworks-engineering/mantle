@@ -89,10 +89,9 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // vision). See migration 0390 and docs/ai-workers.md, "The Scan reader".
   // Scan reader: reads the text of a scanned page, as written, for about half
   // the vision worker's price (an OCR engine: OpenRouter's mistral-ocr on a
-  // one-page PDF). The book reader asks it for a page Tesseract read with low
-  // confidence, before vision. A brain with none keeps the old path
-  // (Tesseract, then vision). See migration 0390 and docs/ai-workers.md, "The
-  // Scan reader".
+  // one-page PDF). It reads every scanned page of a PDF book; a brain with
+  // none leaves those pages unread, said so. See migration 0390 and
+  // docs/ai-workers.md, "The Scan reader".
   'scan_reader',
 ]);
 
@@ -167,22 +166,11 @@ export type DocumentParams = {
   prefer_native?: boolean;
 };
 
-/** Params for `kind='scan_reader'` workers (a scanned page → its text).
- *  With `engine` the page goes as a one-page PDF through the provider's PDF
- *  parser and the text is the parser's (the worker's model is only the text
- *  model behind it); without, the page picture goes to the worker's model
- *  with the runtime's own prompt (runScanReader). The prompt is not a param:
- *  its `[?]` mark is what the read-badly check counts. */
-export type ScanReaderParams = {
-  /** The PDF parser engine, e.g. OpenRouter's `mistral-ocr` (the shipped
-   *  worker). Blank: a picture read by an image model. */
-  engine?: string;
-  /** Max output tokens of a picture read. A dense table page is about
-   *  3,000; the default (SCAN_READER_MAX_TOKENS, 8000) leaves room, and an
-   *  answer cut at the cap is a bad read, never a short page. Not used with
-   *  an engine (its model answers 16 tokens). */
-  max_tokens?: number;
-};
+/** Params for `kind='scan_reader'` workers: none. The engine is fixed
+ *  (OpenRouter's PDF parser `mistral-ocr`, SCAN_READER_ENGINE in
+ *  @mantle/runtime), and the worker's model is the text model behind it; the
+ *  page goes as a one-page PDF and its text is the parser's. */
+export type ScanReaderParams = Record<string, never>;
 
 /** Params for `kind='image_gen'` workers. */
 export type ImageGenParams = {

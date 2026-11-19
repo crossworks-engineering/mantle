@@ -1561,16 +1561,11 @@ export const FACT_WORKER_MODEL = 'openai/gpt-6-luna';
  *  worker, and the Reader specialist. */
 export const READ_WORKER_MODEL = 'google/gemini-3.8-flash';
 
-/** The Scan reader's PDF parser engine (owner decision 2026-11-19, on the
- *  scan bench): OpenRouter's `mistral-ocr`, $2 per 1,000 pages ($2.20 in the
- *  US region). It reads a ONE-PAGE PDF of a scanned page; its text is the
- *  parser's own. Measured on made-up scans: every table cell of a fair or
- *  poor copy right, as vision, for $2.03 against vision's $3.94 a 1,000
- *  pages (docs/ai-workers.md, "The Scan reader"). */
-export const SCAN_READER_ENGINE = 'mistral-ocr';
-
-/** The text model the parsed page is handed to (its 16-token answer is not
- *  used; it is billed for the page's text as input, about $0.00003 a page).
+/** The Scan reader's model: the text model a page parsed by its engine
+ *  (OpenRouter's `mistral-ocr`, fixed in @mantle/runtime SCAN_READER_ENGINE:
+ *  $2 per 1,000 pages, $2.20 in the US region) is handed to. Its 16-token
+ *  answer is not used; it is billed for the page's text as input, about
+ *  $0.00003 a page.
  *  The cheapest text-only model the live catalog had that answers reliably;
  *  text-only, so the parser forwards no picture. Checked against the live
  *  OpenRouter catalog 2026-11-19 ($0.02/M in, $0.04/M out). */
@@ -2263,22 +2258,17 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     provider: 'openrouter',
     model: READ_WORKER_MODEL,
   },
-  // Scan reader: reads the text of a scanned page that Tesseract read with
-  // low confidence, before the vision worker (docs/ai-workers.md, "The Scan
-  // reader"). REQUIRED (owner decision 2026-11-19): it reaches existing
-  // brains on upgrade. Cost effect: a scanned page Tesseract reads badly
-  // costs the parser's $0.002 instead of a vision call (~$0.004), about half;
-  // the page goes to OpenRouter and Mistral as a vision page goes to
-  // OpenRouter today. A brain with no OpenRouter key gets none and keeps the
-  // old path (Tesseract, then vision). The worker's model is the text model
-  // behind the parser; `params.engine` is the parser.
+  // Scan reader: reads every scanned page of a PDF book (docs/ai-workers.md,
+  // "The Scan reader"), with OpenRouter's mistral-ocr; no local OCR first,
+  // no vision backup (owner decisions 2026-11-19). REQUIRED: it reaches
+  // existing brains on upgrade. A brain with no OpenRouter key gets none,
+  // and its scanned book pages stay unread, said so in the file's status.
   {
     kind: 'scan_reader',
     name: 'Scan reader',
     required: true,
     provider: 'openrouter',
     model: SCAN_READER_MODEL,
-    params: { engine: SCAN_READER_ENGINE },
   },
   {
     kind: 'image_gen',
