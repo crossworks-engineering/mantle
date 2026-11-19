@@ -1512,10 +1512,12 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       });
     });
 
-    it('a document gets no name, and the decider is not asked', async () => {
+    it('a document is a book (rules 4): the decider is not asked, and the book reader reads it', async () => {
       reply = drawing('document');
       const file = await upload(unique('pdf'), 'a letter');
-      await pass(file.id);
+      // The book reader is Python in the parser image, which this stub is
+      // not: its first job is refused, and the pass is tried again later.
+      await expect(pass(file.id)).rejects.toThrow();
       expect(namesOf(file.id)).toEqual([]);
       expect(h.kindCalls).toEqual([]);
       expect(await tablesOf(file.id)).toEqual([]);
@@ -1655,7 +1657,9 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       await pass(pid.id);
       reply = drawing('document');
       const letter = await upload(unique('pdf'), 'unlisted letter', team, folder);
-      await pass(letter.id);
+      // A book now (rules 4): its reader is no job of this stub, so it has
+      // no database here.
+      await expect(pass(letter.id)).rejects.toThrow();
       reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
       h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
       // The decider's document is never used: the file keeps its database.

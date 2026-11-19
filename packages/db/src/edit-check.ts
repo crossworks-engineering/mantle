@@ -129,4 +129,6 @@ export const GATEWAY_KEY_WRITERS: Readonly<Record<string, { module: string; how:
 export const EXTRACTOR_USER_KEYS: Readonly<Record<string, string>> = {
   sourceFileId:
     'a child item made from a file names its file (images.ts, auto-table.ts); the video tool sets it in a user turn too',
+  bookPageTextSha:
+    "a book's page picture (G1): the hash of its book Agent's text of the page, set with that text as the picture's content (images.ts describeBookPagePictures, a content change through markContentChanged), so a run again that read the page the same way writes nothing",
 };

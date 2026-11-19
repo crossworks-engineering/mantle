@@ -979,16 +979,18 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       }
     });
 
-    it('a document gets no name, is counted, and the next run reads it again', async () => {
+    it('a document is a book (rules 4): its book reader is asked, and nothing is written while it cannot run', async () => {
       const file = await upload(unique('pdf'), 'a made-up letter');
       reply = drawing('document');
       const { code, text } = await run(scoped(file.id), '--pdf', '--apply');
       expect(code).toBe(0);
-      expect(text).toContain(`${file.id}: skipped: not-drawing`);
+      // The book reader is Python in the parser image, which this stub is
+      // not: the run says so, writes nothing, and the next run reads again.
+      expect(text).toContain(`${file.id}: nothing written: parser unavailable`);
       expect(namesOf(file.id)).toEqual([]);
       await run(scoped(file.id), '--pdf', '--apply');
-      // One job a run: the router's, which names a document.
-      expect(parserCalls).toEqual([RUN, RUN]);
+      // The router's job each run, then the book reader's first.
+      expect(parserCalls.filter((c) => c === RUN)).toHaveLength(2);
     });
 
     it('an unsure file gets a database that says unsure: the parser is the only call', async () => {
