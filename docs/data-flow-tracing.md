@@ -248,8 +248,8 @@ force it.
   linked back via `email_attachments.file_node_id`. They extract through
   the same path as any file (PDF via pdf-parse, Word via mammoth, Excel
   via exceljs). A **scanned / image-only PDF** (no text layer) is
-  rasterized to PNG and run through the vision worker (OCR), a
-  `photo_ingest` trace with `data.mode='pdf_ocr'`, page-capped at
-  `MAX_OCR_PAGES`; only if OCR yields nothing does the extractor record
-  `skipped: no_text_layer`. Standalone **photos** still go through the
+  read page by page by the Scan reader, every page, a `photo_ingest`
+  trace with `data.mode='pdf_scan'` (one `extract_scan_reader` step a
+  page; docs/ai-workers.md, "Scanned PDFs outside a book"); only if it
+  reads no text does the extractor record `skipped: no_text_layer`. Standalone **photos** still go through the
   image vision path (`isImageNeedingVision`).

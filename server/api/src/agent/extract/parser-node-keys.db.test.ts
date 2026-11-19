@@ -8,13 +8,16 @@
  *    `get` reads nothing before a failure, `add` counts per key and keeps
  *    the code, a `final` refusal goes straight to terminal (2), and the
  *    node's other data stays;
- *  - the native read of a PDF that found no text
- *    (`data.native_pdf.empty_sha256`, images.ts): a second extract of the
- *    same bytes, from the node as the database holds it (as a redrive after
- *    a restart reads it), makes no native read; new bytes do.
+ *  - the native read of a typed PDF that found no text
+ *    (`data.native_pdf.empty_sha256`, images.ts nativeReadPdfNode): a second
+ *    extract of the same bytes, from the node as the database holds it (as a
+ *    redrive after a restart reads it), makes no native read; new bytes do;
+ *  - the pages a scan read kept (`data.ocr.resume`, images.ts
+ *    ocrIngestPdfNode): a retry after a busy parser goes on after them, and
+ *    the end puts the final `ocr` in their place.
  *
- * The parser, the document worker, the file bytes and tracing are stubbed;
- * the writes and the reads are real.
+ * The page read, the document worker, the file bytes and tracing are
+ * stubbed; the writes and the reads are real.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/extract/parser-node-keys.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -26,7 +29,7 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({
   bytes: Buffer.alloc(0),
   runDocumentWorker: vi.fn(),
-  parserRasterizePdf: vi.fn(),
+  readScannedPdf: vi.fn(),
 }));
 
 vi.mock('@mantle/tracing', async (importOriginal) => {
@@ -41,11 +44,11 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
 });
 vi.mock('@mantle/runtime/agent', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runtime/agent')>();
-  return { ...actual, runDocumentWorker: h.runDocumentWorker };
-});
-vi.mock('@mantle/files', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@mantle/files')>();
-  return { ...actual, parserRasterizePdf: h.parserRasterizePdf };
+  return {
+    ...actual,
+    runDocumentWorker: h.runDocumentWorker,
+    readScannedPdf: h.readScannedPdf,
+  };
 });
 vi.mock('./file-bytes', () => ({
   loadFileBytes: async () => ({ bytes: h.bytes, filename: 'scan.pdf' }),
@@ -57,6 +60,7 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
   let m: typeof import('@mantle/db');
   let ledgerOf: typeof import('./parser-failures').nodeParserFailures;
   let ocrIngestPdfNode: typeof import('./images').ocrIngestPdfNode;
+  let nativeReadPdfNode: typeof import('./images').nativeReadPdfNode;
   const owner = randomUUID();
   const tag = `pnk${randomUUID().slice(0, 6)}`;
 
@@ -93,7 +97,7 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     ({ nodeParserFailures: ledgerOf } = await import('./parser-failures'));
-    ({ ocrIngestPdfNode } = await import('./images'));
+    ({ ocrIngestPdfNode, nativeReadPdfNode } = await import('./images'));
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
@@ -159,30 +163,71 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
 
   it('a second extract of the same bytes makes no native read; new bytes do', async () => {
     const id = await fileNode();
-    h.bytes = Buffer.from(`%PDF-1.4 ${tag} scan`);
-    // The provider reads PDFs natively and finds nothing; the render then
-    // fails on a busy parser, so the job is retried.
+    h.bytes = Buffer.from(`%PDF-1.4 ${tag} typed`);
+    // The provider reads PDFs natively and finds nothing: the text layer is
+    // kept, and the marker says so for these bytes.
     h.runDocumentWorker.mockResolvedValue({ ran: true, text: '', note: null, model: 'm' });
-    const { ParserError } = await import('@mantle/files');
-    h.parserRasterizePdf.mockRejectedValue(
-      new ParserError('busy', 'busy', { retryable: true, terminal: false }),
-    );
 
-    await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner)).catch(() => {});
+    await extract(async () => nativeReadPdfNode(await nodeRow(id), owner));
     expect(h.runDocumentWorker).toHaveBeenCalledTimes(1);
     const sha = createHash('sha256').update(h.bytes).digest('hex');
     expect((await dataOf(id)).native_pdf).toEqual({ empty_sha256: sha });
     expect((await dataOf(id)).keep).toBe('me');
 
     // The retry (or a redrive after a restart) reads the node afresh.
-    await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner)).catch(() => {});
+    await extract(async () => nativeReadPdfNode(await nodeRow(id), owner));
     expect(h.runDocumentWorker).toHaveBeenCalledTimes(1);
-    expect(h.parserRasterizePdf).toHaveBeenCalledTimes(2);
 
     // New bytes: the marker is not theirs.
-    h.bytes = Buffer.from(`%PDF-1.4 ${tag} another scan`);
-    await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner)).catch(() => {});
+    h.bytes = Buffer.from(`%PDF-1.4 ${tag} another typed`);
+    await extract(async () => nativeReadPdfNode(await nodeRow(id), owner));
     expect(h.runDocumentWorker).toHaveBeenCalledTimes(2);
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+
+  it('a scan read goes on after the pages a try before kept, and pays for none again', async () => {
+    const id = await fileNode();
+    h.bytes = Buffer.from(`%PDF-1.4 ${tag} scan`);
+    const sha = createHash('sha256').update(h.bytes).digest('hex');
+    await x(
+      sql`update nodes set data = data || jsonb_build_object('sha256', ${sha}::text) where id = ${id}`,
+    );
+    const { ParserError } = await import('@mantle/files');
+    // Try 1: the first window is read and kept, then the parser is busy.
+    h.readScannedPdf.mockImplementationOnce(
+      async (o: { onWindow: (p: unknown[], t: number) => Promise<void> }) => {
+        await o.onWindow(
+          [
+            { page: 1, method: 'scan_reader', text: 'Page one read.' },
+            { page: 2, method: 'unread', text: '', why: 'bad_read' },
+          ],
+          3,
+        );
+        throw new ParserError('busy', 'busy', { retryable: true, terminal: false });
+      },
+    );
+    const err = await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner)).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ParserError);
+    const kept = (await dataOf(id)).ocr as { resume: { sha256: string; pages: unknown[] } };
+    expect(kept.resume.sha256).toBe(sha);
+    expect(kept.resume.pages).toHaveLength(2);
+
+    // Try 2: from page 3 on, with the page count it learnt.
+    h.readScannedPdf.mockResolvedValueOnce({
+      pages: [{ page: 3, method: 'scan_reader', text: 'Page three read.' }],
+      pagesTotal: 3,
+      ran: true,
+      model: 'm',
+    });
+    const r = await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner));
+    expect(h.readScannedPdf.mock.calls[1]![0]).toMatchObject({ startPage: 3, pagesTotal: 3 });
+    expect(r.text).toBe('[Page 1]\nPage one read.\n\n[Page 3]\nPage three read.');
+    const data = await dataOf(id);
+    expect(data.ocr).toEqual({ pages_read: 2, pages_total: 3, unread: { bad_read: 1 } });
+    expect(data.text).toBe(r.text);
+    expect(data.keep).toBe('me');
     expect(m.takeActorMisses()).toEqual([]);
   });
 });

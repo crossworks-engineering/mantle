@@ -11,7 +11,7 @@
  *   bytes_unavailable — we never had the file; re-fetch it
  *   pdf_unreadable  — the rasterizer threw; the PIPELINE is broken, not the file
  *   pdf_too_large     every page is past the render limit (terminal)
- *   no_text_layer   — genuinely nothing to read, or no Scan reader wired up
+ *   no_text_layer:  genuinely nothing to read, or no Scan reader wired up
  *
  * `pdf_unreadable` is the one this file was added for. A throw inside the
  * rasterize step used to be swallowed into `pages: 0`, which is indistinguishable
