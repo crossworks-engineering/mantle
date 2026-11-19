@@ -10,10 +10,12 @@
  * from true reads at 0.5 on 59 of 60 cases, and a read of ANOTHER page with
  * the right line count at 0.02 to 0.13, for about $0.00027 a page.
  *
- * Ships in shadow: the answer lands in the trace and in `used: false`; the
- * caller's free rules (scanReadQualityOf in @mantle/runtime) decide. Live,
- * at or over the use's threshold (0.5 by default) the read is judged
- * faithful, under it not. It never writes, retires or deletes: the worst a
+ * Ships LIVE on fresh brains at 0.5 (owner decision 2026-11-19): at or over
+ * the use's threshold the read is judged faithful, under it not, and a read
+ * it rejects is stored as unread, never as text. In shadow (an owner's
+ * choice) the answer lands in the trace with `used: false` and the caller's
+ * free rules (scanReadQualityOf in @mantle/runtime) decide; so they do with
+ * no answer (no decider, the use off, a failure). It never writes, retires or deletes: the worst a
  * wrong answer does is leave a page unread, or keep a read that the free
  * rules would also have kept. Text on the page can steer
  * the answer (rule 6); the picture is the owner's document and leaves the box

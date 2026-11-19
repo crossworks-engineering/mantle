@@ -2402,10 +2402,11 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
         // New (2026-11): measured in shadow first. The answer is stored in
         // the file's database and not used until this is set to live.
         pdf_kind: { enabled: true, mode: 'shadow' },
-        // New (2026-11-19): on a scanned page no free read can vouch for,
-        // is the Scan reader's text faithful to the page picture? Shadow:
-        // logged; the free `unverified` rule decides (docs/decisions.md).
-        scan_read_check: { enabled: true, mode: 'shadow', threshold: 0.5 },
+        // New (2026-11-19): is the Scan reader's text of a scanned book page
+        // faithful to the page picture? LIVE at 0.5 (owner decision
+        // 2026-11-19): a read it rejects is stored as unread, never as
+        // text; with no answer the free checks decide (docs/decisions.md).
+        scan_read_check: { enabled: true, mode: 'live', threshold: 0.5 },
         model_routing: { enabled: false, mode: 'shadow' },
       },
     },
