@@ -80,8 +80,13 @@ export const PIPELINE_ASK_LIST_CLASSES = ['tag', 'line number', 'sheet', 'other'
 export type PipelineAskListClass = (typeof PIPELINE_ASK_LIST_CLASSES)[number];
 export const PIPELINE_ASK_LIST_MAX = 400;
 export const PIPELINE_ASK_LIST_TEXT_MAX = 120;
-/** The highest page number an ask may name. */
+/** The most pages of one file an Agent asks for (a count; the option
+ *  `pages` of pdf-page-read and its worker cap). */
 export const PIPELINE_ASK_PAGE_MAX = 10_000;
+/** The largest page number an ask may name (`input.page`): a bound on the
+ *  number, not on the count of pages asked, so a marked page past 10,000
+ *  of a longer book is asked like any (L2 of the large-PDF audit, round 3). */
+export const PIPELINE_PAGE_NUMBER_MAX = 10_000_000;
 
 /** One field an ask wants: its name (the column of the Agent's tab) and a
  *  short hint for the model. */

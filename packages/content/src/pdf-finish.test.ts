@@ -26,6 +26,7 @@ const { picturesByWindows, picturesLeftOutOf, picturesNeedWindows } =
   await import('./pdf-picture-windows');
 const { SpooledPictures } = await import('./picture-spool');
 const { drawBookPages } = await import('./reader-passes');
+const { keptUnseenRows } = await import('./file-database');
 
 const TOTAL = 1679;
 
@@ -242,5 +243,22 @@ describe("a book's marked pages with no picture are drawn, with no model (H1, au
     expect(out.pictures.map((p) => p.page)).toEqual([3]);
     expect(out.lost).toBe(2);
     spool.drop();
+  });
+});
+
+describe("an Agent's paid page text is kept for a page still marked (L3, audit round 3)", () => {
+  const rows = ['page-3', 'page-9', 'page-12', 'page-40'].map((Key) => ({ Key, Text: Key }));
+  it('a run that asked fewer pages (the option) keeps the rows of the marked pages it did not ask', () => {
+    const seen = new Set(['page-3']);
+    // The last write: page 9 and page 40 are marked still, page 12 no more.
+    expect(
+      keptUnseenRows(rows, seen, new Set(['page-3', 'page-9', 'page-40'])).map((r) => r.Key),
+    ).toEqual(['page-9', 'page-40']);
+    // A write while the run goes on, or a run that lost a window: every row.
+    expect(keptUnseenRows(rows, seen, 'all').map((r) => r.Key)).toEqual([
+      'page-9',
+      'page-12',
+      'page-40',
+    ]);
   });
 });

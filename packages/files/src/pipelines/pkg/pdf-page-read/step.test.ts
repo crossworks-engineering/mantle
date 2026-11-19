@@ -22,6 +22,7 @@ import { BUILTIN_PIPELINES } from '../../builtin';
 import {
   PIPELINE_API,
   PIPELINE_ASK_PAGE_MAX,
+  PIPELINE_PAGE_NUMBER_MAX,
   VISION_WORKER,
   type PictureAskInput,
   type PipelineStepRequest,
@@ -359,8 +360,11 @@ describe('the step of pdf-page-read', () => {
 
   it('reads the marked pages and the option with care', () => {
     expect(
-      visionPagesOf({ visionPages: [3, 1, 3, 0, -1, 1.5, 'x', PIPELINE_ASK_PAGE_MAX + 1] }),
-    ).toEqual([1, 3]);
+      visionPagesOf({
+        visionPages: [3, 1, 3, 0, -1, 1.5, 'x', 12_000, PIPELINE_PAGE_NUMBER_MAX + 1],
+      }),
+      // A page past 10,000 of a longer book is a page like any (L2).
+    ).toEqual([1, 3, 12_000]);
     expect(visionPagesOf(null)).toEqual([]);
     expect(pagesOf({})).toBe(PAGES_DEFAULT);
     expect(pagesOf({ pages: 0 })).toBe(1);

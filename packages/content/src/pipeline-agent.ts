@@ -29,7 +29,7 @@ import {
   PIPELINE_ASK_LIST_CLASSES,
   PIPELINE_ASK_LIST_MAX,
   PIPELINE_ASK_LIST_TEXT_MAX,
-  PIPELINE_ASK_PAGE_MAX,
+  PIPELINE_PAGE_NUMBER_MAX,
   PIPELINE_ASK_PICTURE_MAX_BYTES,
   VISION_WORKER,
   type PipelineAskField,
@@ -222,9 +222,9 @@ export function checkAsks(
       (typeof page !== 'number' ||
         !Number.isInteger(page) ||
         page < 1 ||
-        page > PIPELINE_ASK_PAGE_MAX)
+        page > PIPELINE_PAGE_NUMBER_MAX)
     ) {
-      refuse(`a page is a whole number from 1 to ${PIPELINE_ASK_PAGE_MAX}`);
+      refuse(`a page is a whole number from 1 to ${PIPELINE_PAGE_NUMBER_MAX}`);
     }
     out.push({
       key: call.key!,

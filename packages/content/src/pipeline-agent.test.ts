@@ -350,7 +350,7 @@ describe('the list part of an ask', () => {
     ],
     ['a page of 0', [listCall('1', 'a.png', 0)], LISTER],
     ['a page that is no whole number', [listCall('1', 'a.png', 1.5)], LISTER],
-    ['a page past the cap', [listCall('1', 'a.png', 10_001)], LISTER],
+    ['a page past the cap', [listCall('1', 'a.png', 10_000_001)], LISTER],
   ];
   it.each(refused)('refuses %s', (_n, calls, pipeline) => {
     expect(() => checkAsks(pipeline as Parameters<typeof checkAsks>[0], calls, pictures)).toThrow(

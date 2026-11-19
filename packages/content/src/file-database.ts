@@ -27,6 +27,7 @@ import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-
 import { envNum } from '@mantle/config';
 import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
+  PAGE_ASK_KEY_PREFIX,
   afterEntryIn,
   afterMatches,
   effectiveOptions,
@@ -1289,28 +1290,31 @@ async function runAgentWindowed(args: {
       ),
     },
   };
-  /** The stored rows of the keys no window has asked yet (or of a window
-   *  that failed), kept over each write so no paid row is lost. */
-  const unseen = (rows: readonly Readonly<Record<string, unknown>>[], to: ParsedSheet | null) => {
-    if (!to) return [];
-    return rows
-      .filter((r) => !seen.has(String(r.Key ?? '')))
-      .map((r) => to.columns.map((c) => (r[c.name] ?? null) as string | number | null));
-  };
+  /** The stored rows kept over each write (keptUnseenRows): on the last
+   *  write of a run that read every window, only those of a page still
+   *  marked for vision. */
+  const stillMarked = new Set(
+    (input.state.visionPages ?? []).map((n) => `${PAGE_ASK_KEY_PREFIX}${n}`),
+  );
+  const unseen = (
+    rows: readonly Readonly<Record<string, unknown>>[],
+    to: ParsedSheet | null,
+    all: boolean,
+  ) =>
+    to
+      ? keptUnseenRows(rows, seen, all ? 'all' : stillMarked).map((r) =>
+          to.columns.map((c) => (r[c.name] ?? null) as string | number | null),
+        )
+      : [];
   const write = async (final: boolean): Promise<FileAgentRun | null> => {
     const out = await writeUnderRow(fileId, ownerId, sha256, async () => {
       const meta = readDocMeta(sqlite, ['pipelines_after']);
       if (!meta) return 'no-database' as const;
       const keepOld = !final || lost;
       const sheets = [
-        sheet
-          ? { ...sheet, rows: [...sheet.rows, ...(keepOld ? unseen(stored, sheet) : [])] }
-          : null,
+        sheet ? { ...sheet, rows: [...sheet.rows, ...unseen(stored, sheet, keepOld)] } : null,
         listSheet
-          ? {
-              ...listSheet,
-              rows: [...listSheet.rows, ...(keepOld ? unseen(storedList, listSheet) : [])],
-            }
+          ? { ...listSheet, rows: [...listSheet.rows, ...unseen(storedList, listSheet, keepOld)] }
           : null,
       ].filter((t): t is ParsedSheet => t !== null);
       const done = final && stopped === undefined && !lost;
@@ -1456,6 +1460,26 @@ async function runAgentWindowed(args: {
     // text of its tab: no copy of every page in the node's data.
     text: pipeline.produces.pages === true ? '' : agentTextOf(sheets),
   };
+}
+
+/**
+ * The stored rows of an Agent's tab a windowed run keeps over its write:
+ * those of the keys no window has asked (`seen`). While the run goes on, or
+ * when a window was lost (`keep` 'all'), every one, so no paid row is lost.
+ * On the last write of a run that read every window, only the rows of the
+ * keys in `keep`: the pages still marked for vision that this run did not
+ * ask (past the option `pages`; L3 of the large-PDF audit, round 3), so
+ * their paid text stays, and a page no longer marked goes.
+ */
+export function keptUnseenRows<R extends Readonly<Record<string, unknown>>>(
+  rows: readonly R[],
+  seen: ReadonlySet<string>,
+  keep: 'all' | ReadonlySet<string>,
+): R[] {
+  return rows.filter((r) => {
+    const key = String(r.Key ?? '');
+    return !seen.has(key) && (keep === 'all' || keep.has(key));
+  });
 }
 
 /**

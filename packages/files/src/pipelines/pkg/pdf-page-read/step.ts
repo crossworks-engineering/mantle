@@ -27,6 +27,7 @@ import {
   PAGE_ASK_KEY_PREFIX,
   PAGE_TEXT_COLUMN,
   PIPELINE_ASK_PAGE_MAX,
+  PIPELINE_PAGE_NUMBER_MAX,
   PIPELINE_PICTURES_MAX_BYTES,
   VISION_WORKER,
   type PipelineAskField,
@@ -59,11 +60,11 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The pages the core marked for vision (`state.visionPages`), each a
- *  whole number from 1 to PIPELINE_ASK_PAGE_MAX, once each, in order. */
+ *  whole number from 1 to PIPELINE_PAGE_NUMBER_MAX, once each, in order. */
 export function visionPagesOf(state: unknown): number[] {
   const raw = isObject(state) && Array.isArray(state.visionPages) ? state.visionPages : [];
   const pages = raw.filter(
-    (n): n is number => Number.isInteger(n) && n >= 1 && n <= PIPELINE_ASK_PAGE_MAX,
+    (n): n is number => Number.isInteger(n) && n >= 1 && n <= PIPELINE_PAGE_NUMBER_MAX,
   );
   return [...new Set(pages)].sort((a, b) => a - b);
 }
