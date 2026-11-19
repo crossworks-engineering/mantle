@@ -22,6 +22,10 @@ export const TRANSLATE_PROMPT_TOKENS = 2_000;
 /** The output limit assumed when the catalog gives none: a careful one that
  *  every current chat model meets. */
 export const TRANSLATE_UNKNOWN_OUTPUT_TOKENS = 8_192;
+/** The context window assumed when the catalog gives none (a local or a
+ *  direct model with no OpenRouter id): a careful one, so a server that
+ *  trims a long prompt by itself never gets a part it would trim. */
+export const TRANSLATE_UNKNOWN_CONTEXT_TOKENS = 8_192;
 /** The smallest part, whatever the model says. */
 export const TRANSLATE_MIN_PART_TOKENS = 256;
 /** Tries per part for an error, an empty answer or a refusal. */
@@ -50,13 +54,14 @@ export type PartBudget = {
  * never for larger ones than the model holds.
  */
 export function partBudgetFor(limits: ModelLimits, partTokensParam?: number | null): PartBudget {
-  const context = limits.context && limits.context > 0 ? limits.context : null;
+  const context =
+    limits.context && limits.context > 0 ? limits.context : TRANSLATE_UNKNOWN_CONTEXT_TOKENS;
   let output = limits.output && limits.output > 0 ? limits.output : TRANSLATE_UNKNOWN_OUTPUT_TOKENS;
   // A catalog that gives the window as the output limit: the answer may not
   // take the whole window, the part needs room too.
-  if (context) output = Math.min(output, Math.floor(context / 2));
+  output = Math.min(output, Math.floor(context / 2));
   const byOutput = Math.floor((output * 0.9) / TRANSLATE_EXPANSION);
-  const byContext = context ? context - output - TRANSLATE_PROMPT_TOKENS : Infinity;
+  const byContext = context - output - TRANSLATE_PROMPT_TOKENS;
   let partTokens = Math.min(byOutput, byContext);
   if (partTokensParam && partTokensParam > 0) partTokens = Math.min(partTokens, partTokensParam);
   partTokens = Math.max(TRANSLATE_MIN_PART_TOKENS, Math.floor(partTokens));
@@ -78,9 +83,17 @@ export function estimateTokens(text: string): number {
 const FENCE_LINE = /^\s*(```|~~~)/;
 const HEADING = /^#{1,6}\s/;
 
+/** Whether a line closes the fence `mark` opened: the mark (or longer) and
+ *  nothing else. */
+const closesFence = (line: string, mark: string) => {
+  const t = line.trim();
+  return t.startsWith(mark) && /^(`+|~+)$/.test(t) && t[0] === mark[0];
+};
+
 /**
- * The text's blocks, exactly: a run of lines with text (a fenced code block
- * whole, its blank lines included), with the blank lines after it. The
+ * The text's blocks, exactly: a run of lines with text, with the blank
+ * lines after it. A fenced code block is always a block of its own (its
+ * blank lines included), whatever is written right before or after it. The
  * blocks joined are the text.
  */
 export function blocksOf(text: string): string[] {
@@ -90,12 +103,15 @@ export function blocksOf(text: string): string[] {
   let inFence = false;
   let fenceMark = '';
   let trailingBlank = false;
+  let afterFence = false;
   for (const line of lines) {
     const blank = line.trim() === '';
     if (inFence) {
       cur += line;
-      const m = line.match(FENCE_LINE);
-      if (m && line.trim().startsWith(fenceMark)) inFence = false;
+      if (closesFence(line, fenceMark)) {
+        inFence = false;
+        afterFence = true;
+      }
       continue;
     }
     if (blank) {
@@ -103,22 +119,27 @@ export function blocksOf(text: string): string[] {
       trailingBlank = cur.trim() !== '';
       continue;
     }
-    // A line with text after blank lines starts the next block.
-    if (trailingBlank) {
+    const fence = line.match(FENCE_LINE);
+    // A line with text after blank lines, after a closed fence, or a fence
+    // opening after text, starts the next block.
+    if (cur.trim() !== '' && (trailingBlank || afterFence || fence)) {
       blocks.push(cur);
       cur = '';
-      trailingBlank = false;
     }
+    trailingBlank = false;
+    afterFence = false;
     cur += line;
-    const m = line.match(FENCE_LINE);
-    if (m) {
+    if (fence) {
       inFence = true;
-      fenceMark = m[1]!;
+      fenceMark = fence[1]!;
     }
   }
   if (cur) blocks.push(cur);
   return blocks;
 }
+
+/** Whether a block is a fenced code block (with its trailing blank lines). */
+export const isFenceBlock = (block: string) => FENCE_LINE.test(block.trimStart().split('\n')[0]!);
 
 /** One character's share of {@link estimateTokens}. */
 const charTokens = (code: number) => (code < 128 ? 0.25 : 1);
@@ -209,7 +230,9 @@ export function splitForTranslation(text: string, maxTokens: number): string[] {
       if (cur) parts.push(cur);
       cur = '';
       curSize = 0;
-      parts.push(...cutLong(block, max));
+      // Code is never sent to the model (maskCode): a long code block is a
+      // part of its own, whole, never cut.
+      parts.push(...(isFenceBlock(block) ? [block] : cutLong(block, max)));
       continue;
     }
     const full = cur && curSize + size > max;
@@ -239,35 +262,46 @@ export function framePart(part: string): { lead: string; body: string; tail: str
 /** A fenced code block's stand-in in what the model is sent: the code is
  *  never sent, so it cannot be translated (a live check, 2026-11-19, found
  *  a model translating a string inside a shell block), and is put back
- *  byte for byte. */
-const CODE_MARK = (n: number) => `@@CODE${n}@@`;
-const CODE_MARK_RE = /@@CODE(\d+)@@/g;
+ *  byte for byte. The stand-in carries a per-call nonce, so a source that
+ *  happens to hold one is never mistaken for it. */
+const CODE_MARK = (nonce: string, n: number) => `@@CODE-${nonce}-${n}@@`;
 
 /** The body with each fenced code block replaced by its stand-in. */
-export function maskCode(body: string): { masked: string; blocks: string[] } {
+export function maskCode(
+  body: string,
+  // Digits only: a model that changes the case of a line keeps it.
+  nonce: string = String(Math.floor(1e7 + Math.random() * 9e7)),
+): { masked: string; blocks: string[]; nonce: string } {
   const blocks: string[] = [];
   const masked = blocksOf(body)
     .map((block) => {
-      const m = block.match(/^(\s*)((```|~~~)[\s\S]*?\3)([ \t]*\n?\s*)$/);
-      if (!m || !FENCE_LINE.test(block.trimStart())) return block;
-      blocks.push(m[2]!);
-      return `${m[1]}${CODE_MARK(blocks.length)}${m[4]}`;
+      if (!isFenceBlock(block)) return block;
+      const lead = block.match(/^\s*/)![0];
+      const rest = block.slice(lead.length);
+      const tail = rest.match(/\s*$/)![0];
+      blocks.push(rest.slice(0, rest.length - tail.length));
+      return `${lead}${CODE_MARK(nonce, blocks.length)}${tail}`;
     })
     .join('');
-  return { masked, blocks };
+  return { masked, blocks, nonce };
 }
 
 /** The answer with the code put back, or null when a stand-in is missing,
  *  repeated or unknown (the answer is then not taken). */
-export function unmaskCode(answer: string, blocks: readonly string[]): string | null {
+export function unmaskCode(
+  answer: string,
+  blocks: readonly string[],
+  nonce: string,
+): string | null {
+  const re = new RegExp(`@@CODE-${nonce}-(\\d+)@@`, 'g');
   const seen = new Map<number, number>();
-  for (const m of answer.matchAll(CODE_MARK_RE)) {
+  for (const m of answer.matchAll(re)) {
     const n = Number(m[1]);
     seen.set(n, (seen.get(n) ?? 0) + 1);
   }
   if (seen.size !== blocks.length) return null;
   for (let n = 1; n <= blocks.length; n++) if (seen.get(n) !== 1) return null;
-  return answer.replace(CODE_MARK_RE, (_, n: string) => blocks[Number(n) - 1]!);
+  return answer.replace(re, (_, n: string) => blocks[Number(n) - 1]!);
 }
 
 /** The rules every part is translated by. */
@@ -275,7 +309,7 @@ export const TRANSLATE_RULES = [
   'You are a professional translator. Translate the text you are given and output ONLY the translation: no preamble, no notes, no closing remarks, no quotation marks around it.',
   'Translate every sentence. Never summarize, shorten, skip, merge or add content.',
   'Keep the layout exactly: Markdown headings, lists, tables (same rows and columns), block quotes, line breaks and blank lines.',
-  'A line like @@CODE1@@ stands for a code block: keep every such line exactly as it is, once, in its place.',
+  'A line like @@CODE-x1y2-1@@ stands for a code block: keep every such line exactly as it is, once, in its place.',
   'Do not translate code: code blocks, inline code, commands, file paths, URLs, link targets, image paths, e-mail addresses, ids and markup (HTML tags, anything in curly braces, `media:` lines) stay exactly as they are. Translate only the visible text of a link.',
   'Keep numbers, dates, units, currency amounts, product names and the names of people, companies and places as they are (use a name’s usual form in the target language only where one is well established).',
   'If a part is already in the target language, output it unchanged.',
@@ -321,8 +355,12 @@ export function cleanAnswer(text: string, fence: Fence): string {
 /** One model answer, as the loop needs it. */
 export type PartAnswer = {
   text: string;
-  /** 'length': the answer hit the output limit and is cut short. */
+  /** Only 'stop' is a finished answer. 'length': cut at the output limit.
+   *  Anything else, none included, is not taken (a stream that closed
+   *  early ends with no finish). */
   finishReason?: string;
+  /** The prompt tokens the provider reports it read, when it says. */
+  tokensIn?: number;
 };
 
 /** Raised when a part cannot be translated in full: the call fails. */
@@ -342,10 +380,21 @@ export class TranslatePartError extends Error {
 }
 
 /** Why an answer is not a translation of its part, or null when it is. */
-function answerProblem(source: string, answer: PartAnswer, clean: string): string | null {
+function answerProblem(
+  source: string,
+  answer: PartAnswer,
+  clean: string,
+  sentTokens: number,
+): string | null {
   if (answer.finishReason === 'content_filter') return 'the provider refused it';
   if (answer.finishReason === 'error') return 'the provider sent a broken answer';
+  if (answer.finishReason !== 'stop') return 'the answer ended without a finish';
   if (!clean) return 'the answer was empty';
+  // A server that trimmed the prompt by itself read far less than was sent
+  // (the estimate is on the high side, so only a large gap counts).
+  if (answer.tokensIn !== undefined && answer.tokensIn > 0 && answer.tokensIn < sentTokens * 0.25) {
+    return 'the model read only part of the text';
+  }
   // A long part answered with a few lines is a summary, not a translation.
   if (source.length > 2_000 && clean.length < source.length * 0.1) {
     return 'the answer was far shorter than the text';
@@ -379,13 +428,21 @@ async function translateOnePart(opts: {
   depth: number;
   done: () => number;
   onFallback: () => void;
+  /** True once another part has failed: no further call is made. */
+  cancelled: () => boolean;
 }): Promise<string> {
   let lastReason = 'no answer';
   let cutShort = 0;
+  const stopped = () =>
+    new TranslatePartError(opts.index, opts.total, 'another part failed first', opts.done());
+  // A part that is only code: nothing to translate, no call.
+  const probe = maskCode(opts.body);
+  if (!probe.masked.replace(/@@CODE-[a-z0-9]+-\d+@@/g, '').trim()) return opts.body;
   for (let attempt = 1; attempt <= TRANSLATE_TRIES; attempt++) {
+    if (opts.cancelled()) throw stopped();
     const onFallback = opts.fallback !== null && attempt % 2 === 0;
     const route = onFallback ? opts.fallback! : opts.primary;
-    const { masked, blocks } = maskCode(opts.body);
+    const { masked, blocks, nonce } = maskCode(opts.body);
     const { system, user, fence } = opts.prompt(masked);
     let answer: PartAnswer;
     try {
@@ -412,15 +469,16 @@ async function translateOnePart(opts: {
       }
       const out: string[] = [];
       for (const half of halves) {
+        if (opts.cancelled()) throw stopped();
         const { lead, body, tail } = framePart(half);
         out.push(lead + (await translateOnePart({ ...opts, body, depth: opts.depth + 1 })) + tail);
       }
       return out.join('');
     }
     const clean = cleanAnswer(answer.text, fence);
-    const restored = unmaskCode(clean, blocks);
+    const restored = unmaskCode(clean, blocks, nonce);
     const problem =
-      answerProblem(masked, answer, clean) ??
+      answerProblem(masked, answer, clean, estimateTokens(system) + estimateTokens(user)) ??
       (restored === null ? 'the answer lost or repeated a code block' : null);
     if (!problem && restored !== null) {
       if (onFallback) opts.onFallback();
@@ -516,6 +574,7 @@ export async function translateInParts(opts: {
             onFallback: () => {
               fallbackParts++;
             },
+            cancelled: () => failed !== null,
           });
           results[i] = lead + translated + tail;
         } catch (err) {

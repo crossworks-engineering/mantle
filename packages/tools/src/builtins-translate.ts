@@ -303,8 +303,10 @@ async function saveCopy(
         placed: "the original's folder",
       };
     } catch (err) {
-      // The original's folder is not one the copy can go in: the top level.
-      if (!errorMessage(err).includes('parent page not found')) throw err;
+      // The original's folder is not one the copy can go in (gone, or the
+      // caller may not write there): the top level, where the database
+      // checks the create again.
+      console.error('[translate] the copy cannot go beside its original:', errorMessage(err));
     }
   }
   const page = await createPage(ctx.ownerId, input);
@@ -495,7 +497,11 @@ export const translateTool: BuiltinToolDef = {
         const result = adapter.chatStream
           ? await adapter.chatStream(opts, () => {})
           : await adapter.chat(opts);
-        return { text: result.text, finishReason: result.finishReason };
+        return {
+          text: result.text,
+          finishReason: result.finishReason,
+          ...(result.tokensIn !== undefined ? { tokensIn: result.tokensIn } : {}),
+        };
       } catch (err) {
         throw new Error(publicProviderErrorMessage(err, 'translate', ctx.step), { cause: err });
       }
@@ -535,16 +541,18 @@ export const translateTool: BuiltinToolDef = {
     });
 
     let saved: Saved | null = null;
+    let saveError: string | null = null;
     if (save) {
       const title = strOpt(input.title)?.trim().slice(0, 200) || translatedTitle(source.title, to);
       try {
         saved = await saveCopy(source, done.text, title, { to, from }, ctx);
       } catch (err) {
-        const refusal = visibilityRefusal(err);
-        return {
-          ok: false,
-          error: `The translation is done but could not be saved: ${refusal ?? errorMessage(err)}`,
-        };
+        // The translation is paid for: it is returned, with why it was not
+        // saved (a fixed sentence; the database's own text goes to the log).
+        console.error('[translate] the copy could not be saved:', errorMessage(err));
+        saveError =
+          visibilityRefusal(err) ??
+          'The copy could not be saved where you may write. The translation is below; save it by hand or ask the owner.';
       }
     }
 
@@ -563,6 +571,7 @@ export const translateTool: BuiltinToolDef = {
         ...(done.fallbackParts
           ? { fallback_model: fallbackModel, fallback_parts: done.fallbackParts }
           : {}),
+        ...(saveError ? { save_error: saveError } : {}),
         ...(saved
           ? {
               saved: {

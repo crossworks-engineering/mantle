@@ -21,6 +21,7 @@ import {
   TRANSLATE_MIN_PART_TOKENS,
   TRANSLATE_PROMPT_TOKENS,
   TRANSLATE_TRIES,
+  TRANSLATE_UNKNOWN_CONTEXT_TOKENS,
   TRANSLATE_UNKNOWN_OUTPUT_TOKENS,
   type ModelRoute,
   type PartAnswer,
@@ -75,11 +76,16 @@ describe('partBudgetFor: the part size is the model’s own', () => {
     expect(b.partTokens + TRANSLATE_PROMPT_TOKENS + b.maxOutputTokens).toBeLessThanOrEqual(16_000);
   });
 
-  it('an unknown model gets a careful default', () => {
+  it('an unknown model gets a careful window and output limit', () => {
     const b = partBudgetFor({ context: null, output: null });
-    expect(b.maxOutputTokens).toBe(TRANSLATE_UNKNOWN_OUTPUT_TOKENS);
-    expect(b.partTokens).toBe(
-      Math.floor((TRANSLATE_UNKNOWN_OUTPUT_TOKENS * 0.9) / TRANSLATE_EXPANSION),
+    // The answer takes at most half the careful window.
+    expect(b.maxOutputTokens).toBe(TRANSLATE_UNKNOWN_CONTEXT_TOKENS / 2);
+    expect(b.partTokens + TRANSLATE_PROMPT_TOKENS + b.maxOutputTokens).toBeLessThanOrEqual(
+      TRANSLATE_UNKNOWN_CONTEXT_TOKENS,
+    );
+    // An output limit known, the window not: still the careful window.
+    expect(partBudgetFor({ context: null, output: 65_536 }).maxOutputTokens).toBeLessThanOrEqual(
+      TRANSLATE_UNKNOWN_OUTPUT_TOKENS,
     );
   });
 
@@ -364,7 +370,7 @@ describe('translateInParts', () => {
       },
     });
     expect(sent[0]).not.toContain('echo');
-    expect(sent[0]).toContain('@@CODE1@@');
+    expect(sent[0]).toMatch(/@@CODE-[a-z0-9]+-1@@/);
     expect(r.text).toBe('RUN THIS:\n\n```bash\necho "done"\n\nexit 0\n```\n\nTHEN STOP.');
     await expect(
       translateInParts({
@@ -379,10 +385,101 @@ describe('translateInParts', () => {
 
   it('maskCode and unmaskCode are exact', () => {
     const body = doc(14);
-    const { masked, blocks } = maskCode(body);
+    const { masked, blocks, nonce } = maskCode(body, 'n0');
     expect(blocks.length).toBe(3);
-    expect(unmaskCode(masked, blocks)).toBe(body);
-    expect(unmaskCode(masked.replace('@@CODE2@@', ''), blocks)).toBeNull();
-    expect(unmaskCode(`${masked}\n@@CODE1@@`, blocks)).toBeNull();
+    expect(unmaskCode(masked, blocks, nonce)).toBe(body);
+    expect(unmaskCode(masked.replace('@@CODE-n0-2@@', ''), blocks, nonce)).toBeNull();
+    expect(unmaskCode(`${masked}\n@@CODE-n0-1@@`, blocks, nonce)).toBeNull();
+    // A source that holds a stand-in of its own is never mistaken for one.
+    const own = 'Write @@CODE-n0-1@@ literally.\n\n```\nx\n```';
+    const m = maskCode(own, 'zz');
+    expect(unmaskCode(m.masked, m.blocks, m.nonce)).toBe(own);
+  });
+
+  it('masks a fence right after text, text right after a fence, and a long fence whole', () => {
+    for (const text of [
+      'Run this:\n```sh\necho "hello world"\n```\n\nAfter.',
+      'Before.\n\n```sh\necho "hi"\n```\nRight after.',
+      '~~~\ncode\n~~~\nThen text.',
+    ]) {
+      const { masked, blocks, nonce } = maskCode(text, 'k');
+      expect(blocks.length, text).toBe(1);
+      expect(masked).not.toContain('echo');
+      expect(unmaskCode(masked, blocks, nonce)).toBe(text);
+    }
+    const long = `Intro.\n\n\`\`\`\n${'line of code\n'.repeat(400)}\`\`\`\n\nEnd.`;
+    const parts = splitForTranslation(long, 100);
+    expect(parts.join('')).toBe(long);
+    expect(parts.filter((p) => p.includes('line of code'))).toHaveLength(1);
+  });
+
+  it('an answer with no finish (a stream that closed early) is not taken', async () => {
+    let calls = 0;
+    await expect(
+      translateInParts({
+        text: 'Hello there.',
+        to: 'de',
+        partTokens: 100,
+        primary: { model: 'primary', maxOutputTokens: 100 },
+        call: async () => {
+          calls++;
+          return { text: 'Hallo' };
+        },
+      }),
+    ).rejects.toThrow('ended without a finish');
+    expect(calls).toBe(TRANSLATE_TRIES);
+  });
+
+  it('a model that read far less than it was sent is not taken', async () => {
+    await expect(
+      translateInParts({
+        text: 'Word. '.repeat(500),
+        to: 'de',
+        partTokens: 100_000,
+        primary: { model: 'primary', maxOutputTokens: 100_000 },
+        call: async (r, s, u) => ({ ...(await upper(r, s, u)), tokensIn: 50 }),
+      }),
+    ).rejects.toThrow('read only part of the text');
+  });
+
+  it('a part that is only code makes no call', async () => {
+    let calls = 0;
+    const text = '```\nonly code\n```\n';
+    const r = await translateInParts({
+      text,
+      to: 'de',
+      partTokens: 100,
+      primary: { model: 'primary', maxOutputTokens: 100 },
+      call: async (route, s, u) => {
+        calls++;
+        return upper(route, s, u);
+      },
+    });
+    expect(r.text).toBe(text);
+    expect(calls).toBe(0);
+  });
+
+  it('once a part fails, no other part makes another call', async () => {
+    let calls = 0;
+    await expect(
+      translateInParts({
+        text: doc(40),
+        to: 'de',
+        partTokens: 60,
+        primary: { model: 'primary', maxOutputTokens: 1_000 },
+        call: async (r, s, u) => {
+          calls++;
+          await new Promise((res) => setTimeout(res, 5));
+          if (calls === 1) return { text: '', finishReason: 'content_filter' };
+          if (fenced(u).includes('Section')) return { text: '', finishReason: 'error' };
+          return upper(r, s, u);
+        },
+      }),
+    ).rejects.toBeInstanceOf(TranslatePartError);
+    const settle = calls;
+    await new Promise((res) => setTimeout(res, 50));
+    expect(calls).toBe(settle);
+    // Far fewer calls than every part tried three times.
+    expect(calls).toBeLessThan(splitForTranslation(doc(40), 60).length);
   });
 });
