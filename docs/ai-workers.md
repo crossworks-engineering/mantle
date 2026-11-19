@@ -704,13 +704,20 @@ free reads. A bad read is any of: no text; `cut` (stopped at the token cap);
 4 times in a row); `too_few_lines` (under 80% of the 10 or more lines the
 free reads found); `illegible` (over 5% of the words are `[?]`);
 `disagrees` (Tesseract read 30 or more words of 3 characters or more at a
-confidence of 90 or more, and under 80% of them are in the answer).
+confidence of 90 or more, and under 80% of them are in the answer);
+`unverified` (Tesseract read under 30 such words, and the answer has over
+1.5 times the lines the free reads found, and over 10). The last one is for
+a page too bad to read: on the bench a cheap model wrote a whole plausible
+spec table onto such a page, none of it on the page. A true read of a page
+that bad is sent on too: with no free read to vouch for it, no answer is
+taken as the page's text.
 
 What the check can and cannot see (bench of 2026-11-19, made-up pages): on a
 page Tesseract still reads in part, a read that drops rows, stops early,
 loops or makes rows up is caught. On a page so bad that Tesseract reads no
 confident word, only the model's own signs (cut, loop, `[?]`) and the line
-count are left; there, made-up rows that look right pass. Tesseract's words
+count are left; there, a long answer is `unverified` and goes on to vision,
+right or wrong. Tesseract's words
 at confidence 90 or more were right 95% to 99% of the time on the bench,
 which is why they can judge a read.
 

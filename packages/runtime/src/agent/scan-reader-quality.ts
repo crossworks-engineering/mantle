@@ -31,6 +31,15 @@
  *    model left out or made up text that a free read saw plainly. On a page
  *    Tesseract read with no confident word, this check has nothing to stand
  *    on and is not made.
+ *  - `unverified`: no free read can vouch for the answer: Tesseract read
+ *    under SCAN_READ_ANCHORS_MIN confident words, and the answer has more
+ *    than SCAN_READ_LINES_MAX_SHARE times the lines the free reads found
+ *    (and more than SCAN_READ_LINES_MIN_EXPECTED). On the bench
+ *    (2026-11-19) a page too bad to read made a cheap model write a whole
+ *    plausible spec table that was not on it (42 to 52 lines where the free
+ *    reads saw 7 to 20); a true read of a page the free reads can count
+ *    keeps its count. A made-up page must never be indexed as the page.
+ *    Made only with `expectedLines` given: the book reader always gives it.
  *
  * Pure: no model, no database. The bench harness scores the same rules
  * (the research notes of 2026-11-19 say how).
@@ -46,12 +55,13 @@ export const SCAN_READ_ANCHORS_MIN = 30;
 export const SCAN_READ_AGREE_MIN = 0.8;
 export const SCAN_READ_LINES_MIN_EXPECTED = 10;
 export const SCAN_READ_LINES_MIN_SHARE = 0.8;
+export const SCAN_READ_LINES_MAX_SHARE = 1.5;
 
 /** The mark the prompt asks for in place of a word the model cannot read. */
 export const ILLEGIBLE_MARK = '[?]';
 
 export type ScanReadBadReason =
-  'no_text' | 'cut' | 'short' | 'loop' | 'too_few_lines' | 'illegible' | 'disagrees';
+  'no_text' | 'cut' | 'short' | 'loop' | 'too_few_lines' | 'illegible' | 'disagrees' | 'unverified';
 
 /** One word Tesseract read: its text and its confidence (0-100, or null). */
 export type OcrWord = { text: string; conf: number | null };
@@ -151,6 +161,16 @@ export function scanReadQualityOf(
     for (const [w, n] of counts(anchorList)) hit += Math.min(n, have.get(w) ?? 0);
     agreement = hit / anchorList.length;
     if (agreement < SCAN_READ_AGREE_MIN) reasons.push('disagrees');
+  }
+
+  // Made only when the caller gave the free reads' line count (0 counts:
+  // the free reads found no line); with none, there is nothing to weigh.
+  if (
+    opts.expectedLines != null &&
+    anchorList.length < SCAN_READ_ANCHORS_MIN &&
+    lines.length > Math.max(SCAN_READ_LINES_MIN_EXPECTED, SCAN_READ_LINES_MAX_SHARE * expected)
+  ) {
+    reasons.push('unverified');
   }
 
   return {
