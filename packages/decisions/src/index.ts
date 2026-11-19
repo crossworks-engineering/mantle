@@ -9,6 +9,8 @@ export {
   resolveDecider,
   resolveUse,
   summarizeAnswers,
+  timeoutOf,
+  USE_TIMEOUT_FLOOR_MS,
   type DecideInput,
   type DecideOutcome,
   type DecisionMode,
@@ -27,6 +29,7 @@ export {
   PLAN_HEADROOM,
   estimateTokens,
   limitsForModel,
+  requestTokens,
   planGroups,
   requestOverLimit,
   type DecisionRequestLimits,
@@ -138,3 +141,20 @@ export {
 export { scoreInGroups, type GroupScoring, type ScoredItem } from './group-scoring';
 export { DecisionCache } from './cache';
 export { CircuitBreaker } from './breaker';
+export {
+  PICTURE_PIXELS_PER_TOKEN,
+  decisionPictureOf,
+  pictureRefusal,
+  pictureTokens,
+  statePictures,
+  type DecisionPicturePart,
+  type ShrinkFn,
+  type StatePicture,
+} from './picture';
+export {
+  SCAN_READ_CHECK_MAX_CHARS,
+  SCAN_READ_CHECK_QUESTIONS,
+  SCAN_READ_CHECK_THRESHOLD,
+  checkScanRead,
+  type ScanReadCheck,
+} from './scan-read-check';
