@@ -180,17 +180,21 @@ const SCAN_READER_MODEL_LIKE = 'scan_reader:%';
  * never stored.
  */
 export async function bookPageMethodsOf(sqlite: string): Promise<BookPageMethods | null> {
+  // Every column has its own name: a reply row is keyed by name, so two
+  // unnamed `0`s would be one.
   const counts = (joined: boolean) =>
-    `SELECT sum(p."Method" = 'text'), sum(p."Method" = 'ocr'), sum(p."Method" = 'blank'), ` +
+    `SELECT sum(p."Method" = 'text') AS n_text, sum(p."Method" = 'ocr') AS n_ocr, ` +
+    `sum(p."Method" = 'blank') AS n_blank, ` +
     (joined
-      ? `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') <> '' AND t."Model" LIKE '${SCAN_READER_MODEL_LIKE}'), ` +
-        `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') <> '' AND coalesce(t."Model", '') NOT LIKE '${SCAN_READER_MODEL_LIKE}'), ` +
-        `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') = '') ` +
+      ? `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') <> '' AND t."Model" LIKE '${SCAN_READER_MODEL_LIKE}') AS n_scan, ` +
+        `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') <> '' AND coalesce(t."Model", '') NOT LIKE '${SCAN_READER_MODEL_LIKE}') AS n_vision, ` +
+        `sum(p."Method" = '${VISION_METHOD}' AND coalesce(t."Text", '') = '') AS n_unread ` +
         `FROM "${PAGES_TAB}" p LEFT JOIN "${PAGE_TEXT_TAB}" t ` +
         // A number column is a REAL: 5 reads as '5.0' in text, the Agent's key
         // is 'page-5'.
         `ON t."Key" = 'page-' || CAST(p."${PAGE_COLUMN}" AS INTEGER)`
-      : `0, 0, sum(p."Method" = '${VISION_METHOD}') FROM "${PAGES_TAB}" p`);
+      : `0 AS n_scan, 0 AS n_vision, sum(p."Method" = '${VISION_METHOD}') AS n_unread ` +
+        `FROM "${PAGES_TAB}" p`);
   const read = async (joined: boolean) => {
     const r = await runTableSql(sqlite, counts(joined), { cap: 1 });
     const [text, ocr, blank, scanReader, vision, unread] = (r.rows[0] ?? []).map((v) =>
