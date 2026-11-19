@@ -1,8 +1,7 @@
 /**
  * The System workspace in SQL (owner decisions 2026-11-19; migration
- * 0386_system_workspace, renumbered 0391 at the merge), on a database of its
- * own (so mantle_brain_id() is this file's anchor) that the workspaces
- * switch made live:
+ * 0391_system_workspace), on a database of its own (so mantle_brain_id() is
+ * this file's anchor) that the workspaces switch made live:
  *
  *  - the area rule per persona and area: an Admin user in System holds every
  *    area, an Admin user outside System only `users`, the Admin row's limits
@@ -50,7 +49,7 @@ import { OWNER_ROLE } from './runtime-role';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIR = join(__dirname, '..', 'migrations');
-const TAG = '0386_system_workspace';
+const TAG = '0391_system_workspace';
 const REVERT = join(__dirname, '..', 'rollback', `${TAG}.revert.sql`);
 const AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
 
@@ -85,7 +84,7 @@ const revertStatements = (): string[] =>
 class Rollback extends Error {}
 type Out = { ok: true; v: unknown } | { ok: false; state: string; msg: string };
 
-describe('0386 is stamped above every `when` before it (renumber proof)', () => {
+describe('0391 is stamped above every `when` before it (renumber proof)', () => {
   it('is stamped above its predecessor; the revert names its own `when`', () => {
     expect(at).toBeGreaterThan(0);
     expect(journal[at]!.when).toBeGreaterThan(journal[at - 1]!.when);
@@ -603,7 +602,7 @@ describe.skipIf(!URL)('the System workspace (rules and areas)', () => {
   });
 });
 
-describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the revert', () => {
+describe.skipIf(!URL)('a database just before 0391 runs 0391 and only it; the revert', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let sql: ReturnType<typeof postgres>;
   const all = readMigrationFiles({ migrationsFolder: DIR });
@@ -687,7 +686,7 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
     await scratch?.drop();
   });
 
-  it('the runner applies 0386 and only it: System with every Admin user (a disabled one too), ticked; again nothing', async () => {
+  it('the runner applies 0391 and only it: System with every Admin user (a disabled one too), ticked; again nothing', async () => {
     expect(await added()).toBe(0);
     expect(await system()).toEqual([]);
     expect(await apply()).toBe(1);
@@ -701,8 +700,8 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
   }, 120_000);
 
   it('rollback: refused while System holds a grant; else the bodies back byte for byte, System and the ledger row gone; a roll forward applies it again', async () => {
-    const at0386 = await defs();
-    expect(at0386).not.toEqual(atBefore);
+    const at0391 = await defs();
+    expect(at0391).not.toEqual(atBefore);
     // A grant to System: the revert refuses, nothing changes.
     let refusal: { code?: string; message?: string } = {};
     await sql
@@ -726,7 +725,7 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
       });
     expect(refusal.code).toBe('55000');
     expect(refusal.message).toMatch(/System holds 1 grant/);
-    expect(await defs()).toEqual(at0386);
+    expect(await defs()).toEqual(at0391);
     // No grant: it reverts.
     await sql.begin(async (tx) => {
       for (const st of revertStatements()) await tx.unsafe(st);
@@ -739,7 +738,7 @@ describe.skipIf(!URL)('a database just before 0386 runs 0386 and only it; the re
     const [r] = await sql<{ a: string[] }[]>`select mantle_login_areas(${L.a1}::uuid) as a`;
     expect(r!.a).toEqual([...AREAS]);
     expect(await apply()).toBe(1);
-    expect(await defs()).toEqual(at0386);
+    expect(await defs()).toEqual(at0391);
     expect((await system()).map((u) => u.id)).toEqual([brain, L.a1, L.a2].sort());
   }, 120_000);
 

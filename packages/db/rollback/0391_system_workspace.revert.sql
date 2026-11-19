@@ -1,4 +1,4 @@
--- Rollback of 0386_system_workspace: what an operator runs BEFORE pinning the
+-- Rollback of 0391_system_workspace: what an operator runs BEFORE pinning the
 -- image one release back (plan v3.2 rule 2, a one-image rollback). Not a
 -- migration: nothing runs it on its own.
 --
@@ -20,7 +20,7 @@
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
---   docker exec mantle_web cat /app/packages/db/rollback/0386_system_workspace.revert.sql \
+--   docker exec mantle_web cat /app/packages/db/rollback/0391_system_workspace.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
 SET LOCAL lock_timeout = '30s';

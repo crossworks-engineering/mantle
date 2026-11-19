@@ -53,7 +53,7 @@
 --
 -- No table, column, CHECK or trigger is added (one index is redefined). No
 -- LLM work.
--- Revert: packages/db/rollback/0386_system_workspace.revert.sql.
+-- Revert: packages/db/rollback/0391_system_workspace.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 -- 1. The brain's System workspace: an id only, as mantle_ws_admin_id.
