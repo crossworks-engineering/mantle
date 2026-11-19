@@ -60,6 +60,8 @@ export {
 export {
   contextLimitFor,
   contextLimitForRoute,
+  outputLimitFor,
+  outputLimitForRoute,
   contextSourceFor,
   contextSourceForRoute,
   openRouterIdCandidates,

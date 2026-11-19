@@ -77,6 +77,11 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // (answer logged, behaviour unchanged) until the owner flips it. See
   // migration 0158 and docs/decisions.md.
   'decider',
+  // Translator: the `translate` tool's chat model (text or an item into a
+  // language; long texts in parts sized by the model's own limits). Paid work
+  // only when someone calls the tool: no trigger starts it. When absent the
+  // tool falls back to the summarizer's route. See migration 0389.
+  'translator',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -242,6 +247,21 @@ export type NarratorParams = ChatLlmParams;
  *  `max_tokens` (a suggestion is one short question, so the cap stays tiny). */
 export type SuggesterParams = ChatLlmParams;
 
+/** Params for `kind='translator'` (the `translate` tool). The models are ids
+ *  on the worker's own provider; each is used only as said here, never as a
+ *  second pass over a part that was translated. */
+export type TranslatorParams = ChatLlmParams & {
+  /** The model a part goes to when the worker's own model fails it (an
+   *  error, a refusal, an empty answer, or one cut at the output limit). */
+  fallback_model?: string;
+  /** The model a call with `quality: 'high'` runs on instead of the
+   *  worker's own (terminology or style work the caller asks for). */
+  high_model?: string;
+  /** Smaller parts than the model's own limits allow (tokens of source
+   *  text). Never larger: the model's limits cap it. */
+  part_tokens?: number;
+};
+
 /** Params for `kind='embedding'`. Deliberately tiny — embedding is a pure
  *  text→vector transformation; there's no system_prompt, no temperature,
  *  no max_tokens, no streaming choice to make. Just the model (which lives
@@ -365,6 +385,7 @@ export type AiWorkerParams =
   | SummarizerParams
   | NarratorParams
   | SuggesterParams
+  | TranslatorParams
   | EmbeddingParams
   | SearchParams
   | DeciderParams;

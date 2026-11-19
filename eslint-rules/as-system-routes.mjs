@@ -178,6 +178,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/app/api/runs/[id]/route.ts': ['run-control'],
   'packages/tools/src/builtins-runs.ts': ['run-control'],
   'server/web/lib/ai-workers.ts': ['model-route', 'skill-text'],
+  // translator_settings: the Translator's model and params (MCP, Admin).
+  'packages/tools/src/builtins-translate.ts': ['model-route', 'skill-text'],
   'server/web/lib/embedding-config.ts': ['model-route'],
   'packages/tools/src/crud.ts': ['tool-config', 'tool-group-grant'],
   'packages/tools/src/external-access.ts': ['tool-config'],

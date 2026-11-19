@@ -197,6 +197,8 @@ const HTTP_SURFACE = [
   'task_update',
   'telegram_mark_processed',
   'tool_group_ensure',
+  'translate',
+  'translator_settings',
   'tree_folder_create',
   'tree_folder_update',
   'tree_item_move',

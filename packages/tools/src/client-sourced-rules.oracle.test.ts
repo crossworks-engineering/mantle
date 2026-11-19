@@ -178,6 +178,8 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   note_delete: onNodes('id'),
   note_from_file: creates(),
   note_from_page: creates(),
+  translate: creates(),
+  translator_settings: always('changes which models the Translator runs'),
 
   // ── Tables ───────────────────────────────────────────────────────────────
   table_create: creates(),

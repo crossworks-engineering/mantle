@@ -2717,6 +2717,13 @@
       "when": 1792240000000,
       "tag": "0388_search_tsv_parts",
       "breakpoints": true
+    },
+    {
+      "idx": 389,
+      "version": "7",
+      "when": 1792250000000,
+      "tag": "0389_ai_worker_kind_translator",
+      "breakpoints": true
     }
   ]
 }

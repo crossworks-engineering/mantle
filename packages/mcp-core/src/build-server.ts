@@ -33,6 +33,8 @@ import {} from '@mantle/files';
 import {
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
+  TRANSLATE_TOOLS,
+  TRANSLATOR_SETTINGS_TOOLS,
   EXPORT_TOOLS,
   DOCUMENT_TOOLS,
   ACCESS_TOOLS,
@@ -325,6 +327,11 @@ export function registerMantleTools(
   registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
     skip: (def) => def.slug === 'synthesize_speech',
   });
+  // translate: text or an item into a language, the copy saved with `save`
+  // (builtins-translate.ts). Headless like summarize_text.
+  registerBuiltinTools(TRANSLATE_TOOLS);
+  // Its models, an Admin setting (the settings area): MCP only.
+  registerBuiltinTools(TRANSLATOR_SETTINGS_TOOLS);
   registerResponderTools(ctx);
 
   // ─── Export (Word / Excel) ───────────────────────────────────────────────────

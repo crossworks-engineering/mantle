@@ -104,6 +104,10 @@ export type LiveModelInfo = {
   inputPricePerM?: number;
   /** USD per 1M output/completion tokens. Same semantics as inputPricePerM. */
   outputPricePerM?: number;
+  /** The default route's longest answer in tokens
+   *  (`top_provider.max_completion_tokens`); undefined when the catalog gave
+   *  none. Read it through {@link outputLimitFor}. */
+  maxOutput?: number;
 };
 
 let liveModels: Record<string, LiveModelInfo> | null = null;
@@ -125,7 +129,10 @@ let lastRefreshError: string | null = null;
 type OpenRouterModel = {
   id?: string;
   context_length?: number | null;
-  top_provider?: { context_length?: number | null } | null;
+  top_provider?: {
+    context_length?: number | null;
+    max_completion_tokens?: number | null;
+  } | null;
   architecture?: {
     input_modalities?: string[] | null;
     output_modalities?: string[] | null;
@@ -195,6 +202,7 @@ export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveMode
     const tokenBilled = ctx > 0;
     const inputPricePerM = tokenBilled ? parsePerMillion(m.pricing?.prompt) : undefined;
     const outputPricePerM = tokenBilled ? parsePerMillion(m.pricing?.completion) : undefined;
+    const maxOut = m.top_provider?.max_completion_tokens;
     out[id] = {
       contextLength: ctx,
       vision,
@@ -203,6 +211,7 @@ export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveMode
       outputModalities,
       inputPricePerM,
       outputPricePerM,
+      ...(typeof maxOut === 'number' && maxOut > 0 ? { maxOutput: maxOut } : {}),
     };
   }
   return out;
@@ -297,6 +306,28 @@ export function contextLimitFor(modelSlug: string | null | undefined): number | 
   const live = liveModels?.[key]?.contextLength;
   if (live != null && live > 0) return live;
   return FALLBACK_CONTEXT_LIMITS[key] ?? null;
+}
+
+/** The longest answer a model gives in one call, in tokens, from the live
+ *  catalog (`top_provider.max_completion_tokens`); null when the catalog has
+ *  not loaded or gives none. No static fallback: a caller that needs a
+ *  number picks its own careful default. */
+export function outputLimitFor(modelSlug: string | null | undefined): number | null {
+  if (!modelSlug) return null;
+  return liveModels?.[modelSlug.toLowerCase()]?.maxOutput ?? null;
+}
+
+/** {@link outputLimitFor} for a provider + model pair, as
+ *  {@link contextLimitForRoute} reads the context window. */
+export function outputLimitForRoute(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+): number | null {
+  for (const slug of openRouterIdCandidates(provider, model)) {
+    const limit = outputLimitFor(slug);
+    if (limit) return limit;
+  }
+  return null;
 }
 
 /**

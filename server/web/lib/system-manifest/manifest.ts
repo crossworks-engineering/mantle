@@ -1231,12 +1231,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'media-workers',
     name: 'Media workers',
-    description: 'Delegate to TTS / vision / summarizer / image workers.',
+    description: 'Delegate to TTS / vision / summarizer / translator / image workers.',
     toolSlugs: [
       'synthesize_speech',
       'speech_file_create',
       'extract_from_image',
       'summarize_text',
+      'translate',
       'generate_image',
     ],
   },
@@ -2289,6 +2290,24 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     required: true,
     provider: 'openrouter',
     model: DEFAULT_WORKER_MODEL,
+  },
+  // Translator: the `translate` tool's model (text or an item into a
+  // language). Required, so it reaches existing brains on upgrade: it costs
+  // nothing until someone calls the tool (no trigger starts it). Without one
+  // the tool falls back to the summarizer. Owner's models (2026-11-19,
+  // checked in the live catalog): the fallback runs a part only when the
+  // primary fails it, the high model only for a call that asks
+  // `quality: 'high'`; never a second pass.
+  {
+    kind: 'translator',
+    name: 'Translator',
+    required: true,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+    params: {
+      fallback_model: 'mistralai/mistral-small-2603',
+      high_model: 'mistralai/mistral-medium-3-5',
+    },
   },
   // Suggester: proposes one follow-up question after a completed turn (the
   // accept-with-Enter chip above the chat composer). OPTIONAL: fresh onboarding

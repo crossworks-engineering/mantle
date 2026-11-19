@@ -293,4 +293,6 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   // The decider is the first kind whose output is neither prose nor media: a
   // typed-decision model behind its own endpoint, so its own capability.
   decider: 'decision',
+  // The translator runs a plain chat-completion per part of the text.
+  translator: 'chat',
 };
