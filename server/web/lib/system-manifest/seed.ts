@@ -27,6 +27,7 @@ import {
   db,
   agents,
   heartbeats,
+  profiles,
   skills,
   toolGroups,
   tools,
@@ -346,7 +347,20 @@ async function upsertAgent(
     // (reconcileWorkspaceDelegation): a responder made holding it is
     // recorded as granted, so an owner's removal before the first reconcile
     // sticks too.
-    if (made && def.slug === TEAM_RESPONDER_SLUG && groupSlugs.includes('translate')) {
+    if (
+      made &&
+      def.slug === TEAM_RESPONDER_SLUG &&
+      groupSlugs.includes('translate') &&
+      // Only onto a profile that exists: the stamp never makes the owner's
+      // profile row ahead of onboarding.
+      (
+        await db
+          .select({ id: profiles.userId })
+          .from(profiles)
+          .where(eq(profiles.userId, ownerId))
+          .limit(1)
+      ).length > 0
+    ) {
       const granted = (await loadProfilePreferences(ownerId)).workspaceDelegationGranted ?? {};
       const listed = granted[made.id] ?? [];
       if (!listed.includes('group:translate')) {
