@@ -336,11 +336,13 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
       addedToAdmin: false,
       addedToSystem: false,
     });
-    // Each add wrote its event, with no actor (system work).
+    // Each add wrote its event, with no actor (system work); the
+    // migration's own adds say `by`.
     const [ev] = await sql<{ n: number }[]>`
       select count(*)::int as n from workspace_events
        where action = 'user.add' and actor_id is null
          and subject->>'login' in (${rec1}, ${rec2})
+         and subject->>'by' is null
          and workspace_id in (${adminWs}, ${systemWs})`;
     expect(ev!.n).toBe(3);
   });

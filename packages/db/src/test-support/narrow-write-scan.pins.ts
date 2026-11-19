@@ -665,7 +665,7 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
   mantle_ws_set_moderator:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_ws_system_id:
-    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces and users screens and tools), or full system work (system:add)',
+    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces screens), or full system work (system:add)',
   mantle_ws_update_about:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
 });
@@ -750,7 +750,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/tools/src/builtins-users.ts mantle_ws_add_user': 1,
   'packages/tools/src/builtins-users.ts mantle_ws_remove_user': 1,
   'packages/tools/src/builtins-users.ts mantle_ws_set_moderator': 1,
-  'packages/tools/src/builtins-users.ts mantle_ws_system_id': 1,
   'packages/tools/src/client-sourced.ts mantle_conversation_taint': 1,
   'packages/tools/src/client-sourced.ts mantle_conversation_taint_keep': 1,
   'packages/tools/src/client-sourced.ts mantle_mark_created_client_sourced': 1,

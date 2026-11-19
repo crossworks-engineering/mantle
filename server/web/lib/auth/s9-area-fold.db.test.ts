@@ -305,6 +305,8 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
    * of that class the record holds; every other cell is main's, byte for
    * byte.
    */
+  const AREA_REFUSAL_USERS =
+    '{"error":"forbidden","reason":"area","area":"users","message":"You cannot manage this part of the brain."}';
   const CHANGED: Readonly<Record<string, string>> = {
     'GET /api/keys fail:once cookie': '500 {"error":"internal error"}',
     'GET /api/users fail:once cookie': '500 {"error":"internal error"}',
@@ -315,6 +317,10 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
     // The Users list names each login's archive (docs/control-center.md).
     'GET /api/users bearer:adm':
       '200 {"users":[{"id":"<uuid>","email":"test-anchor@example.invalid","displayName":null,"isOwner":true,"role":"admin","contactId":null,"disabledAt":null,"archivedAt":null,"createdAt":"<ts>","lastLoginAt":null,"description":null,"agent":null},{"id":"<uuid>","email":"<email>","dis',
+    // The Inbox reader moved from connectors to users (the System workspace).
+    'GET /api/email/accounts cookie:noArea': `403 ${AREA_REFUSAL_USERS}`,
+    'GET attachment cookie:noArea': `403 ${AREA_REFUSAL_USERS}`,
+    'GET attachment at:noArea': `403 ${AREA_REFUSAL_USERS}`,
   };
 
   it('the record: written on main (S9_AREA_RECORD=1), compared line for line after', () => {

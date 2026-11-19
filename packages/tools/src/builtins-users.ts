@@ -81,10 +81,11 @@ type Role = 'user' | 'moderator' | 'none';
 
 /** The live shared workspaces of the brain: not archived, not a login's
  *  private workspace, not a former user's; or the one `id` names. Admin
- *  and System say so (`admin`, `system`): who sits there is set by hand. */
+ *  and System say so (`admin`, `system`: its bridge_key, as
+ *  mantle_ws_system_id reads it): who sits there is set by hand. */
 async function shared(ownerId: string, id?: string) {
   const rows = (await db.execute(sql`select w.id::text as id, w.name, w.is_admin as admin,
-           coalesce(w.id = mantle_ws_system_id(${ownerId}::uuid), false) as system
+           coalesce(w.bridge_key = 'system', false) as system
       from workspaces w
      where w.owner_id = ${ownerId}::uuid
        and ${liveWorkspaceSql('w')}
