@@ -687,7 +687,14 @@ async function retryFailed(
           await failures.clear(one.id);
           continue;
         }
-        const [listed] = await envelopes(client, [one.uid], folder, uidvalidity);
+        let listed;
+        try {
+          [listed] = await envelopes(client, [one.uid], folder, uidvalidity);
+        } catch (err) {
+          if (!messageFault(err, client)) throw err;
+          await failures.record(one.id, folder);
+          continue;
+        }
         if (!listed) {
           await failures.clear(one.id);
           continue;
@@ -768,7 +775,6 @@ export async function syncMailbox(
   const client = await connect(account);
   let scanned = 0;
   try {
-    if (failures) await retryFailed(client, failures, onMessage, stage);
     for (const folder of await scanFolders(client, account)) {
       let lock;
       try {
@@ -817,6 +823,8 @@ export async function syncMailbox(
         lock.release();
       }
     }
+    // The messages that failed before, after the new mail.
+    if (failures) await retryFailed(client, failures, onMessage, stage);
   } finally {
     await client.logout().catch(() => {});
   }

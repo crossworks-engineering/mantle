@@ -54,7 +54,9 @@ holds) is named in a note at the top of the body: nothing is dropped
 silently. A message the mail server (or Microsoft) fails on never holds a
 mailbox: the run goes on past it and keeps it to try again (`msgfail:`,
 at most 500 a mailbox; past that the run stops rather than let one go).
-Each run tries those again first; one that reads is stored whole. Only
+Each run tries those again after its new mail, at most 25 a run, each
+after a wait that doubles from 5 minutes to 6 hours; one that reads is
+stored whole. Only
 after three tries over a day is it stored with what could be read and a
 note saying what could not, so an outage never turns mail into stubs. The
 brain's own failures, a token, a throttle or the network stop the run, and

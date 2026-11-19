@@ -348,21 +348,45 @@ async function walkPage(
 ): Promise<number> {
   const normal = messages.filter((m) => m.id).map((m) => ({ m, n: normalize(m, folder) }));
   const wanted = new Set(await wantedOf(normal.map((x) => x.n).filter((n) => n.fromAddr)));
+  // One that failed before is the retry's, after its wait (retryFailed).
+  const failing = failures && wanted.size > 0 ? await failures.ids() : new Set<string>();
   for (const { m } of normal) {
-    if (!wanted.has(m.id)) continue;
+    if (!wanted.has(m.id) || failing.has(m.id)) continue;
     let full: WireMessage;
     try {
       full = await fetchFull(token, m, folder, stage);
     } catch (err) {
       // The brain's side, the account's token, a throttle or the network
-      // stops the run (the watermark stays).
-      if (!messageFault(err) || !failures) throw err;
+      // stops the run (the watermark stays). A timeout or a broken read of
+      // this one message, with Graph answering, is the message's.
+      if (!failures || !(await faultOfMessage(token, err))) throw err;
       if (!(err instanceof GraphError && err.status === 404)) await failures.record(m.id, folder);
       continue;
     }
     await onMessage(full);
   }
   return normal.length;
+}
+
+/** A timeout or a network error (fetch failed, a body cut off): the
+ *  message's or the run's, as a cheap Graph call answers. */
+const netError = (err: unknown) => {
+  const name = (err as Error | undefined)?.name;
+  return err instanceof TypeError || name === 'AbortError' || name === 'TimeoutError';
+};
+
+/** Whether `err` is this one message's failure. A network-class error
+ *  after a good listing is the message's (a body that always takes past
+ *  the deadline, a read that breaks) when Graph still answers a cheap call
+ *  at once; when that call fails too, the network is down: the run's. */
+async function faultOfMessage(token: string, err: unknown): Promise<boolean> {
+  if (!netError(err)) return messageFault(err);
+  try {
+    await graphJson(token, '/me/mailFolders/inbox?$select=id');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** A failure of this one message (Graph refused or broke on it, its
@@ -372,9 +396,8 @@ function messageFault(err: unknown): boolean {
   if (err instanceof MessageFault) return true;
   if (err instanceof BrainError) return false;
   if (err instanceof GraphError) return ![401, 403, 429].includes(err.status);
-  const name = (err as Error | undefined)?.name;
-  if (err instanceof TypeError || name === 'AbortError' || name === 'TimeoutError') return false;
-  return true;
+  // A network-class error is judged by faultOfMessage (a probe call).
+  return !netError(err);
 }
 
 /** The messages that failed to read in earlier runs, tried again: stored
@@ -398,7 +421,7 @@ async function retryFailed(
         await failures.clear(p.id);
         continue;
       }
-      if (!messageFault(err)) throw err;
+      if (!(await faultOfMessage(token, err))) throw err;
       await failures.record(p.id, p.folder);
       continue;
     }
@@ -410,7 +433,7 @@ async function retryFailed(
         await failures.clear(p.id);
         continue;
       }
-      if (!messageFault(err)) throw err;
+      if (!(await faultOfMessage(token, err))) throw err;
       if (!p.last) {
         await failures.record(p.id, p.folder);
         continue;
@@ -428,10 +451,10 @@ const firstSince = (account: Pick<MsAccount, 'firstScanDays'>) =>
 const folderMessages = (
   folderId: string,
   filter: string,
-  orderBy: 'receivedDateTime' | 'lastModifiedDateTime' = 'receivedDateTime',
+  orderBy: string = 'receivedDateTime asc',
 ) =>
   `/me/mailFolders/${encodeURIComponent(folderId)}/messages?$select=${MAIL_SELECT}&$top=${PAGE}` +
-  `&$orderby=${orderBy} asc&$filter=${encodeURIComponent(filter)}`;
+  `&$orderby=${encodeURIComponent(orderBy)}&$filter=${encodeURIComponent(filter)}`;
 
 /**
  * One run of an account's chosen folders. Each folder goes on from its own
@@ -442,13 +465,20 @@ const folderMessages = (
  * Paging is by key, not by Graph's $skip: each page asks again from the
  * last time read, so a message changed while the run reads (read, flagged,
  * moved) never shifts another past the page. The ids read this run are
- * skipped when they come again. A page whose every message shares one time
- * (a bulk change past a page) is crossed by Graph's own next link, and that
- * folder goes on until it is past the group.
+ * skipped when they come again.
+ *
+ * A full page whose every message shares one time (a bulk change: mark
+ * all read, a retention stamp, an import) is a group: it is read on the
+ * second key, receivedDateTime (`lastModifiedDateTime eq T` ordered by
+ * both, as Graph's $orderby asks), and where it got to is kept in the
+ * cursor (`ties`), so a group of any size is crossed over as many runs as
+ * it takes and the folder never stalls. Once past it, the folder reads on
+ * from `gt T`.
  *
  * Every folder gets its first page each run (each folder's oldest change
  * after its watermark); the backlog then shares RUN_PAGES pages, a page a
- * folder in turn, starting each run where the last one stopped.
+ * folder in turn, starting each run where the last one stopped. Messages
+ * that failed before are tried again after the new mail (retryFailed).
  */
 export async function syncOutlook(
   state: State,
@@ -461,46 +491,107 @@ export async function syncOutlook(
   const token = await accessToken(state, account.id);
   const cursor: MsCursor = await state.msCursor(account.id);
   const { folders, inboxId } = await chosenFolders(token, account);
-  if (failures) await retryFailed(token, failures, onMessage, stage);
   // Marks of folders no longer chosen (or gone) are let go.
   const chosen = new Set(folders.map((f) => f.id));
-  const marks: Record<string, string> = Object.fromEntries(
-    Object.entries(cursor.folders ?? {}).filter(([id]) => chosen.has(id)),
-  );
+  const keep = <T>(r: Record<string, T> | undefined): Record<string, T> =>
+    Object.fromEntries(Object.entries(r ?? {}).filter(([id]) => chosen.has(id)));
+  const marks = keep(cursor.folders);
+  const ties = keep(cursor.ties);
+  const past = keep(cursor.past);
   const reach = firstSince(account);
   let scanned = 0;
   let rr = cursor.rr ?? 0;
-  const save = () => state.putMsCursor(account.id, { since: cursor.since, folders: marks, rr });
+  const save = () =>
+    state.putMsCursor(account.id, { since: cursor.since, folders: marks, ties, past, rr });
 
-  type Walker = { f: MailFolder; mark: string; tie?: string; seen: Set<string>; done: boolean };
-  const step = async (w: Walker) => {
-    const url =
-      w.tie ??
-      folderMessages(
-        w.f.id,
-        `lastModifiedDateTime ge ${w.mark} and receivedDateTime ge ${reach}`,
-        'lastModifiedDateTime',
-      );
-    const page: Page = await graphJson<Page>(token, url);
-    const all = (page.value ?? []).filter((m) => m.id);
+  type Walker = {
+    f: MailFolder;
+    mark: string;
+    /** Inside a group at one time: its time and the receivedDateTime read to. */
+    tie?: { at: string; after: string };
+    /** A group at one receivedDateTime too, past a page: Graph's next link. */
+    dtie?: string;
+    seen: Set<string>;
+    done: boolean;
+  };
+  const walk = async (w: Walker, all: GraphMessage[]) => {
     const fresh = all.filter((m) => !w.seen.has(m.id));
     for (const m of all) w.seen.add(m.id);
     scanned += await walkPage(token, fresh, w.f.path, wantedOf, onMessage, stage, failures);
+    return fresh;
+  };
+  const step = async (w: Walker) => {
+    if (w.tie) {
+      const url =
+        w.dtie ??
+        folderMessages(
+          w.f.id,
+          `lastModifiedDateTime eq ${w.tie.at} and receivedDateTime ge ${w.tie.after}`,
+          'lastModifiedDateTime asc,receivedDateTime asc',
+        );
+      const page: Page = await graphJson<Page>(token, url);
+      const all = (page.value ?? []).filter((m) => m.id);
+      const fresh = await walk(w, all);
+      const first = all[0]?.receivedDateTime;
+      const last = all[all.length - 1]?.receivedDateTime;
+      const next = page['@odata.nextLink'];
+      if (!next || all.length < PAGE) {
+        // Past the group: the folder reads on from after its time.
+        past[w.f.id] = w.tie.at;
+        marks[w.f.id] = w.tie.at;
+        w.mark = w.tie.at;
+        delete ties[w.f.id];
+        w.tie = undefined;
+        w.dtie = undefined;
+        await save();
+        return;
+      }
+      if (last && last !== w.tie.after) {
+        w.tie.after = last;
+        ties[w.f.id] = { ...w.tie };
+        await save();
+      }
+      // A full page at one receivedDateTime too, nothing new on it: the
+      // next link crosses it.
+      w.dtie = first === last && fresh.length === 0 ? next : undefined;
+      return;
+    }
+    const after = past[w.f.id] === w.mark ? 'gt' : 'ge';
+    const page: Page = await graphJson<Page>(
+      token,
+      folderMessages(
+        w.f.id,
+        `lastModifiedDateTime ${after} ${w.mark} and receivedDateTime ge ${reach}`,
+        'lastModifiedDateTime asc',
+      ),
+    );
+    const all = (page.value ?? []).filter((m) => m.id);
+    await walk(w, all);
     const first = all[0]?.lastModifiedDateTime;
     const last = all[all.length - 1]?.lastModifiedDateTime;
-    if (last && last !== w.mark) {
-      w.mark = last;
-      marks[w.f.id] = last;
-      await save();
-    }
-    const next = page['@odata.nextLink'];
-    if (!next || all.length < PAGE) {
+    if (!page['@odata.nextLink'] || all.length < PAGE) {
+      if (last && last !== w.mark) {
+        w.mark = last;
+        marks[w.f.id] = last;
+        delete past[w.f.id];
+        await save();
+      }
       w.done = true;
       return;
     }
-    // A full page all at one time: a group past a page, crossed by
-    // Graph's own next link.
-    w.tie = first && first === last ? next : undefined;
+    if (first && first === last) {
+      // A full page all at one time: a group, read on its second key.
+      w.tie = { at: first, after: reach };
+      ties[w.f.id] = { ...w.tie };
+      await save();
+      return;
+    }
+    if (last && last !== w.mark) {
+      w.mark = last;
+      marks[w.f.id] = last;
+      delete past[w.f.id];
+      await save();
+    }
   };
 
   const walkers: Walker[] = folders.map((f) => ({
@@ -509,6 +600,7 @@ export async function syncOutlook(
     // synced (a receivedDateTime: never later than its lastModified, so
     // nothing is skipped; the gate's dedup drops what comes again).
     mark: marks[f.id] ?? (f.id === inboxId && cursor.since ? cursor.since : reach),
+    tie: ties[f.id] ? { ...ties[f.id]! } : undefined,
     seen: new Set(),
     done: false,
   }));
@@ -521,13 +613,16 @@ export async function syncOutlook(
     rr = (rr + 1) % Math.max(1, walkers.length);
     pages += 1;
     await step(w);
-    // A folder inside a group at one time goes on until it is past it.
+    // A folder inside a group goes on with it while the run has pages
+    // (where it got to is kept, so the next run goes on from there).
     while (w.tie && !w.done && pages < RUN_PAGES) {
       pages += 1;
       await step(w);
     }
   }
   await save();
+  // The messages that failed before, after the new mail.
+  if (failures) await retryFailed(token, failures, onMessage, stage);
   return { scanned };
 }
 

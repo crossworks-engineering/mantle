@@ -86,8 +86,12 @@ Mail.Read Mail.Send Calendars.Read`.
   moved into a folder (out of Junk, filed from a folder left out) is seen
   as an IMAP move is. Pages go by key (each asks again from the last time
   read, so a message read or moved during the run never shifts another
-  past a page; a group changed in one second is crossed by Graph's own
-  next link). Every folder gets its first page each run, however many
+  past a page). A group changed in one second (mark all read, a retention
+  stamp, an import) is read on its second key, receivedDateTime, and where
+  it got to is kept in the cursor (`ties`), so a group of any size is
+  crossed over as many runs as it takes and the folder never stalls. A
+  timeout or a broken read of one message, while Graph still answers a
+  cheap call, is that message's failure: it is skipped and tried again. Every folder gets its first page each run, however many
   there are; the backlog then shares 50 pages a run, a page a folder in
   turn, starting where the last run stopped. The envelopes go
   through the brain's one gate (`/api/sidecar/mail/gate`), and only the

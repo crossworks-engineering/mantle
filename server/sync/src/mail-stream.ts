@@ -229,7 +229,19 @@ export const MESSAGE_GIVE_UP_MS = 24 * 60 * 60 * 1000;
  *  stops (its cursor stays) rather than let one go. */
 export const FAILURES_MAX = 500;
 
-export type FailEntry = { n: number; first: number; folder: string };
+/** The most failed messages one run tries again (after its new mail):
+ *  the rest wait for the next run, so a full queue never holds new mail
+ *  back nor spends a run's calls. */
+export const RETRY_PER_RUN = 25;
+/** The wait before a failed message is tried again: 5 minutes, doubled
+ *  each try, at most 6 hours (so about ten tries in its first day). */
+export function retryWaitMs(tries: number): number {
+  return Math.min(5 * 60_000 * 2 ** Math.max(0, tries - 1), 6 * 60 * 60_000);
+}
+
+/** A failed message: its tries, its first failure, its folder, and when
+ *  it is next tried (ms since the epoch). */
+export type FailEntry = { n: number; first: number; folder: string; next?: number };
 
 /** The messages of a mailbox that failed to read, kept in the brain
  *  (`msgfail:`): a run goes on past such a message, and the next runs try
@@ -237,10 +249,14 @@ export type FailEntry = { n: number; first: number; folder: string };
 export type Failures = {
   /** This message failed to read: kept to try again. */
   record(id: string, folder: string): Promise<void>;
-  /** The messages to try again; `last`: this try ends in a stub. */
+  /** The messages due to be tried again (their wait passed), the longest
+   *  waiting first, RETRY_PER_RUN at most; `last`: this try ends in a stub. */
   pending(): Promise<{ id: string; folder: string; last: boolean }[]>;
   /** Read, stored as a stub, or gone: forgotten. */
   clear(id: string): Promise<void>;
+  /** The ids kept to try again: a walk that meets one again (the
+   *  watermark's boundary) leaves it to the retry and its wait. */
+  ids(): Promise<Set<string>>;
 };
 
 export function failuresFor(
@@ -257,16 +273,25 @@ export function failuresFor(
           `${FAILURES_MAX} messages of this mailbox fail to read; the run stops here until they read`,
         );
       }
-      fails[id] = { n: (known?.n ?? 0) + 1, first: known?.first ?? now(), folder };
+      const n = (known?.n ?? 0) + 1;
+      fails[id] = { n, first: known?.first ?? now(), folder, next: now() + retryWaitMs(n) };
       await state.putMsgFails(mailboxId, fails);
     },
     async pending() {
       const fails = await state.msgFails(mailboxId);
-      return Object.entries(fails).map(([id, e]) => ({
-        id,
-        folder: e.folder,
-        last: e.n >= MESSAGE_TRIES && now() - e.first >= MESSAGE_GIVE_UP_MS,
-      }));
+      const t = now();
+      return Object.entries(fails)
+        .filter(([, e]) => (e.next ?? 0) <= t)
+        .sort(([, a], [, b]) => (a.next ?? 0) - (b.next ?? 0))
+        .slice(0, RETRY_PER_RUN)
+        .map(([id, e]) => ({
+          id,
+          folder: e.folder,
+          last: e.n >= MESSAGE_TRIES && t - e.first >= MESSAGE_GIVE_UP_MS,
+        }));
+    },
+    async ids() {
+      return new Set(Object.keys(await state.msgFails(mailboxId)));
     },
     async clear(id) {
       const fails = await state.msgFails(mailboxId);

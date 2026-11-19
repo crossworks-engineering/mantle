@@ -254,6 +254,9 @@ describe('a message that fails to read', () => {
     await failures.record('m1', 'INBOX');
     await failures.record('m1', 'INBOX');
     await failures.record('m1', 'INBOX');
+    // Not before its wait.
+    expect(await failures.pending()).toEqual([]);
+    clock += 6 * 60 * 60_000;
     expect(await failures.pending()).toEqual([{ id: 'm1', folder: 'INBOX', last: false }]);
     clock += MESSAGE_GIVE_UP_MS;
     expect(await failures.pending()).toEqual([{ id: 'm1', folder: 'INBOX', last: true }]);
@@ -301,5 +304,13 @@ describe('a source that broke part way', () => {
     ).catch((e) => e);
     expect(err).toBeInstanceOf(MessageFault);
     expect((err as Error).message).toContain('Graph body terminated');
+  });
+});
+
+describe('the wait before a failed message is tried again', () => {
+  it('doubles from 5 minutes to at most 6 hours', async () => {
+    const { retryWaitMs } = await import('./mail-stream');
+    expect([1, 2, 3, 4].map(retryWaitMs)).toEqual([300_000, 600_000, 1_200_000, 2_400_000]);
+    expect(retryWaitMs(30)).toBe(6 * 60 * 60_000);
   });
 });
