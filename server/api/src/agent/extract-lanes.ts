@@ -64,9 +64,11 @@ export function extractWeightOfNode(node: {
  *  minutes of OCR on 2 CPUs a window (1.8 s a page a CPU), the picture pass
  *  besides, doubled. */
 export const BOOK_EXPIRE_MIN_PER_WINDOW = 5;
-/** The longest a book's extract may run, in minutes: 8 hours. A book that
- *  needs more (about 4,500 pages) keeps what it read (each window is
- *  written as it goes, and a run again takes what is written). */
+/** The longest a book's extract may run, in minutes: 8 hours, about 4,500
+ *  pages of OCR on 2 CPUs. A book past it expires and is tried again as
+ *  every extract is (the Reader's database is written when its last window
+ *  is read), so it is the one bound of this path that can leave a book
+ *  unread: said in the job's failure, never silent. */
 export const BOOK_EXPIRE_MAX_MIN = 480;
 
 /**
