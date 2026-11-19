@@ -842,6 +842,7 @@ export async function ocrIngestPdfNode(
 
       const parts: string[] = [];
       let model: string | null = null;
+      let pagesPaid = 0;
       for (const pg of pages) {
         const res = await step(
           {
@@ -874,8 +875,12 @@ export async function ocrIngestPdfNode(
         );
         // Still "not now": the read waits in the queue; a page is never
         // read as empty because the provider was busy.
-        if (res.wait) throw new ProviderWaitError(res.wait, 'vision');
-        if (res.ran) ran = true;
+        // A wait after pages this read paid for: the queue bounds it.
+        if (res.wait) throw new ProviderWaitError(res.wait, 'vision', { paid: pagesPaid > 0 });
+        if (res.ran) {
+          ran = true;
+          pagesPaid += 1;
+        }
         if (res.model) model = res.model;
         if (res.text.trim()) {
           parts.push(

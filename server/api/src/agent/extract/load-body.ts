@@ -35,7 +35,7 @@ import {
   type ParserError,
 } from '@mantle/files';
 import { log, recordSkippedTrace, step } from '@mantle/tracing';
-import { errorMessage, ProviderWaitError } from '@mantle/std';
+import { errorMessage, ProviderWaitError, providerWaitOf } from '@mantle/std';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
@@ -731,7 +731,7 @@ export async function loadExtractableBody(
           if (isParserError(err) && err.retryable) throw err;
           // The provider's "not now": the read waits in the queue, never
           // on to a whole-page read paid on top of it.
-          if (err instanceof ProviderWaitError) throw err;
+          if (providerWaitOf(err)) throw err;
           log('extractor').error(`pdf sketch read failed for ${node.id}: ${errorMessage(err)}`);
           return null;
         })
@@ -929,7 +929,7 @@ export async function loadExtractableBody(
     try {
       native = await ocrIngestPdfNode(node, ownerId);
     } catch (err) {
-      if (!isParserError(err) && !(err instanceof ProviderWaitError)) throw err;
+      if (!isParserError(err) && !providerWaitOf(err)) throw err;
       native = null;
     }
     // Only replace the text-layer body if native produced something usable;

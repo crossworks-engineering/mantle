@@ -192,10 +192,11 @@ describe('processFacts — the cost cap paces, it never drops', () => {
     );
     expect(h.inserts).toEqual([]); // not one candidate was processed in this pass
     expect(tally.retired).toBe(0);
-    // The suspect flag is cleared but no validTo is written: the later
-    // candidates were not looked at yet, so "not re-asserted" proves nothing.
+    // No validTo is written and the suspect flag stays: the later
+    // candidates were not looked at yet, so "not re-asserted" proves nothing
+    // until the last deferred job (which retires what is still suspect).
     expect(patches().some((p) => 'validTo' in p)).toBe(false);
-    expect(patches().some((p) => p.dirty === false)).toBe(true);
+    expect(patches().some((p) => p.dirty === false)).toBe(false);
     // The marker says deferred, not dropped.
     const marker = h.updates.find((u) =>
       sqlValues(u.patch.data).some((v) => String(v).includes('facts_deferred')),
@@ -325,28 +326,47 @@ describe('processDeferredFacts — the job of the facts left for later', () => {
       { content: 'b', kind: 'factual' as const, confidence: 0.9, entityId: 'e1' },
     ],
   };
+  const ALLOWED = { llmAllowed: async () => true };
   const nodeWith = (at: string) => ({
     ...(NODE as object),
     data: { extract_incomplete: { reason: 'facts_deferred', at } },
   });
 
-  it('applies every candidate and clears the marker', async () => {
+  it('applies every candidate, retires what the read never re-asserted, clears the marker', async () => {
     h.selectRows.push([nodeWith(JOB.at)]);
-    const out = await processDeferredFacts('n1', 'o1', JOB);
+    const out = await processDeferredFacts('n1', 'o1', JOB, ALLOWED);
     expect(out).toEqual({ applied: 2 });
     expect(h.inserts).toHaveLength(2);
     const cleared = h.updates.find((u) =>
       sqlValues(u.patch.data).some((v) => String(v).includes('extract_incomplete')),
     );
     expect(cleared).toBeDefined();
-    // Retires nothing: the old facts of a deferred pass were kept.
-    expect(patches().some((p) => 'validTo' in p)).toBe(false);
+    // H4 across the jobs: the last one retires the still-suspect facts,
+    // scoped to this owner and node.
+    const retire = h.updates.find((u) => 'validTo' in u.patch);
+    expect(retire?.patch).toMatchObject({ dirty: false });
+    expect(sqlValues(retire?.where)).toEqual(expect.arrayContaining(['o1', 'n1']));
+  });
+
+  it('no model work allowed now, or facts off: nothing is classified, the marker stays', async () => {
+    h.selectRows.push([nodeWith(JOB.at)]);
+    expect(await processDeferredFacts('n1', 'o1', JOB, { llmAllowed: async () => false })).toEqual({
+      applied: 0,
+    });
+    h.selectRows.push([nodeWith(JOB.at)]);
+    h.resolveExtractor.mockResolvedValue({
+      ...(WORKER as object),
+      params: { extract_facts: false },
+    });
+    expect(await processDeferredFacts('n1', 'o1', JOB, ALLOWED)).toEqual({ applied: 0 });
+    expect(h.inserts).toEqual([]);
+    expect(h.updates).toEqual([]);
   });
 
   it('a node read again since (another marker) or gone: nothing to do', async () => {
     h.selectRows.push([nodeWith('2026-11-19T11:00:00.000Z')]);
-    expect(await processDeferredFacts('n1', 'o1', JOB)).toEqual({ applied: 0 });
-    expect(await processDeferredFacts('n1', 'o1', JOB)).toEqual({ applied: 0 });
+    expect(await processDeferredFacts('n1', 'o1', JOB, ALLOWED)).toEqual({ applied: 0 });
+    expect(await processDeferredFacts('n1', 'o1', JOB, ALLOWED)).toEqual({ applied: 0 });
     expect(h.inserts).toEqual([]);
     expect(h.embedBatch).not.toHaveBeenCalled();
   });
@@ -358,7 +378,7 @@ describe('processDeferredFacts — the job of the facts left for later', () => {
       params: { extract_cost_cap_micro_usd: 1 },
     });
     h.cost = 5_000;
-    const out = await processDeferredFacts('n1', 'o1', JOB);
+    const out = await processDeferredFacts('n1', 'o1', JOB, ALLOWED);
     expect(out.applied).toBe(1);
     expect(out.deferred?.facts.candidates.map((c) => c.content)).toEqual(['b']);
     expect(out.deferred?.facts.at).toBe(JOB.at);
