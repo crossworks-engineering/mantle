@@ -696,6 +696,9 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
       'assistant-grant',
       'heartbeat-maker',
       'model-route',
+      // The Translator (2026-11-19): a Team responder the adopt makes holding
+      // `translate` is recorded as granted once, in the owner's profile.
+      'profile-row',
       'skill-text',
       'tool-config',
       'tool-group-grant',
