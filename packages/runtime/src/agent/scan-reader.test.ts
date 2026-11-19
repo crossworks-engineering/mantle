@@ -221,7 +221,12 @@ describe('runScanReader, both ways', () => {
     h.route = 'none';
     const out = await read();
     expect(h.calls).toBe(0);
-    expect(out).toMatchObject({ ran: false, model: null, quality: { ok: false } });
+    expect(out).toMatchObject({
+      ran: false,
+      attempted: false,
+      model: null,
+      quality: { ok: false },
+    });
   });
 
   it('a worker with no key, a provider with no reader, a bad key: nothing is called', async () => {
@@ -255,6 +260,7 @@ describe('runScanReader, both ways', () => {
     expect(h.calls).toBe(1);
     expect(out.ran).toBe(false);
     expect(out.note).toMatch(/^Scan reader failed/);
+    expect(out.attempted).toBe(true);
   });
 
   it('nothing to read: no worker is even looked up', async () => {

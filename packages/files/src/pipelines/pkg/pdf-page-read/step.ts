@@ -80,7 +80,6 @@ export function visionPagesOf(state: unknown): number[] {
   return [...new Set(pages)].sort((a, b) => a - b);
 }
 
-/** The pages done already (`state.donePages`): a set, any number. */
 /** The marked pages the Scan reader reads first (`state.scanPages`). */
 export function scanPagesOf(state: unknown): Set<number> {
   const raw = isObject(state) && Array.isArray(state.scanPages) ? state.scanPages : [];
@@ -89,6 +88,7 @@ export function scanPagesOf(state: unknown): Set<number> {
   );
 }
 
+/** The pages done already (`state.donePages`): a set, any number. */
 export function donePagesOf(state: unknown): Set<number> {
   const raw = isObject(state) && Array.isArray(state.donePages) ? state.donePages : [];
   return new Set(raw.filter((n): n is number => Number.isInteger(n) && n >= 1));
@@ -178,7 +178,7 @@ export const step: PipelineStep = async (req, job) => {
     });
   }
   // The Scan reader's pages, each as a one-page PDF, in what the pictures
-  // left of the budget (the parser sends each picture before its PDF, so a
+  // left of the budget (the parser sends every picture before any PDF, so a
   // PDF never takes a picture's place).
   const scan = scanPagesOf(req.state);
   for (const c of calls) {

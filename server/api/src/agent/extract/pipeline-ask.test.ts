@@ -361,6 +361,7 @@ describe('the Scan reader before vision', () => {
     checkOut = null;
     scanOut = {
       ran: true,
+      attempted: true,
       text: 'PAGE 7\nFLANGE | ASTM',
       note: null,
       model: 'meta-llama/llama-3.1-8b-instruct',
@@ -402,7 +403,14 @@ describe('the Scan reader before vision', () => {
   });
 
   it('a brain with no Scan reader: vision, as before, and no step of the day count for it', async () => {
-    scanOut = { ...scanOut, ran: false, text: '', model: null, note: 'No Scan reader worker.' };
+    scanOut = {
+      ...scanOut,
+      ran: false,
+      attempted: false,
+      text: '',
+      model: null,
+      note: 'No Scan reader worker.',
+    };
     const out = await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
     expect(out.ok).toBe(true);
     expect(visionCalls).toBe(1);
@@ -415,6 +423,33 @@ describe('the Scan reader before vision', () => {
     await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
     expect(visionCalls).toBe(1);
     expect(h.steps[0]!.error).toContain('timeout');
+    // A call that went out and failed counts: the provider may bill it.
+    expect(paid()).toHaveLength(2);
+  });
+
+  it('a Scan reader that could not call (a bad key) is no step of the day count', async () => {
+    scanOut = { ...scanOut, ran: false, attempted: false, text: '', note: 'bad key' };
+    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
+    expect(visionCalls).toBe(1);
+    expect(paid()).toHaveLength(1);
+  });
+
+  it('the check is not asked where its answer cannot matter, and a check that throws is no answer', async () => {
+    scanOut = { ...scanOut, quality: quality(false, ['loop'], 0) };
+    await mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps())(PAGE);
+    expect(checkCalls).toBe(0);
+    scanOut = { ...scanOut, quality: quality(true, [], 0) };
+    const out = await mod.pipelineAskOf(
+      'owner',
+      'node',
+      PAGES_AGENT,
+      deps({
+        check: async () => {
+          throw new Error('parser busy');
+        },
+      }),
+    )(PAGE);
+    expect(out).toMatchObject({ ok: true, output: { model: 'scan_reader:mistral-ocr' } });
   });
 
   it('no PDF, no evidence, a list ask or an Agent of no page text: vision only', async () => {

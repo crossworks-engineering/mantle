@@ -68,6 +68,9 @@ const MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 export type ScanReaderResult = {
   /** True when the provider answered (its text may still read badly). */
   ran: boolean;
+  /** True when a call went out (it may have failed: the provider may still
+   *  bill it). False when nothing was called. */
+  attempted: boolean;
   text: string;
   /** Why there is no text, or why the call did not run. */
   note: string | null;
@@ -85,8 +88,9 @@ export type ScanReaderResult = {
   quality: ScanReadQuality;
 };
 
-const notRun = (note: string, model: string | null): ScanReaderResult => ({
+const notRun = (note: string, model: string | null, attempted = false): ScanReaderResult => ({
   ran: false,
+  attempted,
   text: '',
   note,
   model,
@@ -103,8 +107,9 @@ const PICTURE = /^!\[[^\]]*\]\([^)]*\)$/;
 /**
  * A PDF parser's markdown as the Scan reader's plain text: the `<file>`
  * wrapper, markdown table dividers and picture links out; a table row as
- * its cells split by ` | ` with no outer bars; heading marks off; runs of
- * blank lines as one. Every word of the page is kept.
+ * its cells split by ` | ` with no outer bars; heading, bold and italic
+ * marks (`#`, `**`, `__`) off; runs of blank lines as one. Every word of
+ * the page is kept.
  */
 export function cleanParsedText(text: string): string {
   const out: string[] = [];
@@ -118,7 +123,9 @@ export function cleanParsedText(text: string): string {
         .map((c) => c.trim())
         .join(' | ');
     }
-    line = line.replace(/^#{1,6}\s+/, '');
+    // Heading marks and bold or italic marks off (`**`, `__`): markup, not
+    // the page's words.
+    line = line.replace(/^#{1,6}\s+/, '').replace(/\*\*|__/g, '');
     if (line === '' && (out.length === 0 || out[out.length - 1] === '')) continue;
     out.push(line);
   }
@@ -226,6 +233,7 @@ export async function runScanReader(opts: {
     const text = engine ? cleanParsedText(r.text ?? '') : (r.text ?? '').trim();
     return {
       ran: true,
+      attempted: true,
       text,
       note: text ? null : 'Scan reader returned no text.',
       model: worker.model,
@@ -247,6 +255,7 @@ export async function runScanReader(opts: {
     return notRun(
       `Scan reader failed: ${publicProviderErrorMessage(err, 'scan-reader')}`,
       worker.model,
+      true,
     );
   }
 }

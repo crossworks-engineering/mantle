@@ -66,8 +66,9 @@ export type ScanReadCheck = {
 /**
  * Ask the decider whether a Scan reader's text is faithful to the page.
  * Null when the use is off, there is no decider, the text is empty or past
- * SCAN_READ_CHECK_MAX_CHARS, the picture cannot be made one Jev reads, the
- * model takes no picture, or the call failed: the caller keeps its own rule.
+ * SCAN_READ_CHECK_MAX_CHARS, the picture cannot be made one Jev reads (the
+ * parser could not shrink it), the model takes no picture, or the call
+ * failed: the caller keeps its own rule. Never throws for those.
  */
 export async function checkScanRead(
   ownerId: string,
@@ -76,7 +77,9 @@ export async function checkScanRead(
 ): Promise<ScanReadCheck | null> {
   const text = page.text.trim();
   if (!text || text.length > SCAN_READ_CHECK_MAX_CHARS) return null;
-  const picture = await decisionPictureOf(page.picture, page.mimeType, shrink);
+  // The parser shrinks a large picture: busy, restarting or slow, that is no
+  // answer, never a throw (the check must not cost the caller its read).
+  const picture = await decisionPictureOf(page.picture, page.mimeType, shrink).catch(() => null);
   if (!picture) return null;
   const outcome = await decide({
     ownerId,

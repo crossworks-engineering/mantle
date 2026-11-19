@@ -164,7 +164,9 @@ export function pipelineAskOf(
           return null;
         }
         h.setMeta({
-          use: PIPELINE_ASK_USE,
+          // One of the day count only when a call went out (a provider that
+          // failed may bill it); a worker that could not call is not.
+          ...(out.attempted ? { use: PIPELINE_ASK_USE } : {}),
           pipeline: pipeline.id,
           reader: 'scan_reader',
           ran: out.ran,
@@ -182,13 +184,17 @@ export function pipelineAskOf(
         let good = out.quality.ok;
         // No word of Tesseract can vouch for the read: the decider is asked
         // too (scan_read_check). Shadow: logged. Live: it stands for the
-        // line rule `unverified`, the other reasons stay.
-        if (out.quality.anchors < SCAN_READ_ANCHORS_MIN) {
-          const c = await d.check(ownerId, {
-            picture: ask.picture,
-            mimeType: ask.mime,
-            text: out.text,
-          });
+        // line rule `unverified`, the other reasons stay; so it is asked
+        // only when its answer can matter. A check that throws (the parser
+        // busy shrinking the picture) is no answer: the read stands as
+        // the rules judge it.
+        if (
+          out.quality.anchors < SCAN_READ_ANCHORS_MIN &&
+          out.quality.reasons.every((r) => r === 'unverified')
+        ) {
+          const c = await d
+            .check(ownerId, { picture: ask.picture, mimeType: ask.mime, text: out.text })
+            .catch(() => null);
           if (c) {
             h.setMeta({
               check: { faithful: Math.round(c.faithful * 1000) / 1000, mode: c.mode },

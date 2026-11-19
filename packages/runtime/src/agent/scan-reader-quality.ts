@@ -19,9 +19,14 @@
  *    never a whole line.
  *  - `too_few_lines`: the free reads found SCAN_READ_LINES_MIN_EXPECTED text
  *    lines or more on the page (`expectedLines`: the more of Tesseract's
- *    lines and the picture's ink bands), and the answer has fewer than
- *    SCAN_READ_LINES_MIN_SHARE of them: rows were left out. A count that
- *    finds too few lines (a very bad scan) only weakens this check.
+ *    lines and the picture's ink bands), and the answer holds fewer than
+ *    SCAN_READ_LINES_MIN_SHARE of them: rows were left out. The answer's
+ *    lines are the more of its own lines and its characters (not spaces)
+ *    over SCAN_READ_CHARS_PER_LINE: an OCR engine writes a paragraph of
+ *    prose as one line (mistral-ocr on a scanned prose page: 30 printed
+ *    lines, 1 paragraph), so its lines alone would call every prose page
+ *    short. A count that finds too few lines (a very bad scan) only weakens
+ *    this check.
  *  - `illegible`: more than SCAN_READ_ILLEGIBLE_MAX of the words are the
  *    `[?]` the prompt asks for in place of a word the model cannot read: its
  *    own word that the page is hard for it.
@@ -56,6 +61,10 @@ export const SCAN_READ_AGREE_MIN = 0.8;
 export const SCAN_READ_LINES_MIN_EXPECTED = 10;
 export const SCAN_READ_LINES_MIN_SHARE = 0.8;
 export const SCAN_READ_LINES_MAX_SHARE = 1.5;
+/** Characters (not spaces) a printed line holds at least, for the answer's
+ *  line count by its length: lower than a line of prose (about 65) or of a
+ *  spec table row (about 45), so a whole read is never short by it. */
+export const SCAN_READ_CHARS_PER_LINE = 45;
 
 /** The mark the prompt asks for in place of a word the model cannot read. */
 export const ILLEGIBLE_MARK = '[?]';
@@ -132,7 +141,8 @@ export function scanReadQualityOf(
   const expected = opts.expectedLines ?? 0;
   if (
     expected >= SCAN_READ_LINES_MIN_EXPECTED &&
-    lines.length < SCAN_READ_LINES_MIN_SHARE * expected
+    Math.max(lines.length, Math.ceil(text.replace(/\s/g, '').length / SCAN_READ_CHARS_PER_LINE)) <
+      SCAN_READ_LINES_MIN_SHARE * expected
   ) {
     reasons.push('too_few_lines');
   }

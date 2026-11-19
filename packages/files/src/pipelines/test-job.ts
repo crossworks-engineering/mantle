@@ -81,13 +81,12 @@ function picturesOf(
     const input = (c.input ?? {}) as {
       pictures?: { file: string }[];
       picture?: unknown;
-      pdf?: unknown;
     };
     const named =
       c.call === 'tool'
         ? (input.pictures ?? []).map((pic) => pic.file)
         : c.worker === VISION_WORKER && typeof input.picture === 'string'
-          ? [input.picture, ...(typeof input.pdf === 'string' ? [input.pdf] : [])]
+          ? [input.picture]
           : [];
     for (const file of named) {
       const at = path.join(dir, path.basename(file));
@@ -95,6 +94,16 @@ function picturesOf(
       sent.add(file);
       out.push({ file, bytes_base64: readFileSync(at).toString('base64') });
     }
+  }
+  // Then the one-page PDFs of the page asks, after every picture (as the
+  // parser sends them).
+  for (const c of result.calls ?? []) {
+    const pdf = (c.input as { pdf?: unknown } | undefined)?.pdf;
+    if (c.call !== 'worker' || c.worker !== VISION_WORKER || typeof pdf !== 'string') continue;
+    const at = path.join(dir, path.basename(pdf));
+    if (sent.has(pdf) || !existsSync(at)) continue;
+    sent.add(pdf);
+    out.push({ file: pdf, bytes_base64: readFileSync(at).toString('base64') });
   }
   return out;
 }
