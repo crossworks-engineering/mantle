@@ -379,12 +379,13 @@ export function buildTranslateInput(opts: {
     extra ? `${TRANSLATE_RULES}\n\nAdditional instructions:\n${extra}` : TRANSLATE_RULES,
     fence,
   );
-  const from = opts.from?.trim() ? ` from ${opts.from.trim()}` : '';
+  const from = opts.from?.trim() ? ` from the language "${opts.from.trim()}"` : '';
   const where =
     opts.parts > 1
       ? ` This is part ${opts.part} of ${opts.parts} of one document: translate this part only, it may start or end mid-section.`
       : '';
-  const user = `Translate the text below${from} into ${opts.to}.${where}\n\n${fence.wrap(opts.body)}`;
+  // The languages are names, quoted: never instructions.
+  const user = `Translate the text below${from} into the language "${opts.to}".${where}\n\n${fence.wrap(opts.body)}`;
   return { system, user };
 }
 
@@ -583,6 +584,9 @@ export async function translateInParts(opts: {
   onPart?: (done: number, total: number) => void;
   /** Why to stop before the next call (a budget run out), or null. */
   stopReason?: () => string | null;
+  /** Parts in flight at once (TRANSLATE_CONCURRENCY when unset; 1 while a
+   *  budget applies, so no call runs past it). */
+  concurrency?: number;
 }): Promise<{ text: string; parts: number; fallbackParts: number }> {
   const parts = splitForTranslation(opts.text, opts.partTokens);
   const total = parts.length;
@@ -640,7 +644,15 @@ export async function translateInParts(opts: {
     }
   };
   await Promise.all(
-    Array.from({ length: Math.min(TRANSLATE_CONCURRENCY, Math.max(1, total)) }, () => worker()),
+    Array.from(
+      {
+        length: Math.min(
+          Math.max(1, opts.concurrency ?? TRANSLATE_CONCURRENCY),
+          Math.max(1, total),
+        ),
+      },
+      () => worker(),
+    ),
   );
   if (failed !== null) throw failed;
   return { text: results.join(''), parts: total, fallbackParts };

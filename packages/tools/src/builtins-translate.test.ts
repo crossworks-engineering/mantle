@@ -135,6 +135,11 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   })),
   nodeUrl: (id: string) => `https://brain.test/n/${id}`,
 }));
+const pagesOfFile = vi.fn(async () => null as null | { pages: { page: number; text: string }[] });
+vi.mock('@mantle/content/page-passages', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  filePagesOf: (...a: unknown[]) => pagesOfFile(...(a as [])),
+}));
 vi.mock('@mantle/content/tree', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   moveTreeItems: vi.fn(async () => ({ moved: 1, failed: [] })),
@@ -364,6 +369,88 @@ describe('translate: what it reads', () => {
     expect(String(ok.translation)).toContain('THE END');
     vi.mocked(files.fileById).mockReset();
     vi.mocked(files.readFileById).mockReset();
+  });
+
+  it('a file its reader took only in part is refused, nothing spent', async () => {
+    rows.set('sheet-1', {
+      id: 'sheet-1',
+      type: 'file',
+      title: 's',
+      path: 'files',
+      data: {
+        text: 'Row 1\nRow 2',
+        read_cut: { sheet_rows: { what: 'rows', read: 5000, total: 12000, limit: 5000 } },
+      },
+    });
+    vi.mocked(files.fileById).mockResolvedValueOnce({
+      id: 'sheet-1',
+      isText: false,
+      filename: 'big.xlsx',
+    } as never);
+    const r = await translate.handler({ node_id: 'sheet-1', to: 'de' }, ownerCtx);
+    expect((r as { error: string }).error).toContain('read only in part');
+    expect(chatCalls).toHaveLength(0);
+    // A scan whose OCR stopped early: the same.
+    rows.set('scan-2', {
+      id: 'scan-2',
+      type: 'file',
+      title: 's',
+      path: 'files',
+      data: { text: 'Page one text', ocr: { pages_read: 30, pages_total: 80 } },
+    });
+    vi.mocked(files.fileById).mockResolvedValueOnce({
+      id: 'scan-2',
+      isText: false,
+      filename: 'scan.pdf',
+    } as never);
+    const s = await translate.handler({ node_id: 'scan-2', to: 'de' }, ownerCtx);
+    expect((s as { error: string }).error).toContain('30 of 80 pages');
+    // A picture left out as an icon is a detail only: translated.
+    rows.set('doc-3', {
+      id: 'doc-3',
+      type: 'file',
+      title: 'd',
+      path: 'files',
+      data: {
+        text: 'Words',
+        read_cut: { pictures_small: { what: 'pictures', read: 0, total: 3 } },
+      },
+    });
+    vi.mocked(files.fileById).mockResolvedValueOnce({
+      id: 'doc-3',
+      isText: false,
+      filename: 'doc.docx',
+    } as never);
+    expect(out(await translate.handler({ node_id: 'doc-3', to: 'de' }, ownerCtx)).translation).toBe(
+      'DE:Words',
+    );
+  });
+
+  it('a stored copy cut at the ceiling is read from its pages first', async () => {
+    const cut = 'y '.repeat(STORED_TEXT_MAX_CHARS / 2);
+    rows.set('book-1', {
+      id: 'book-1',
+      type: 'file',
+      title: 'b',
+      path: 'files',
+      data: {
+        text: cut,
+        read_cut: { text_store: { what: 'characters', read: STORED_TEXT_MAX_CHARS } },
+      },
+    });
+    vi.mocked(files.fileById).mockResolvedValueOnce({
+      id: 'book-1',
+      isText: false,
+      filename: 'book.pdf',
+    } as never);
+    pagesOfFile.mockResolvedValueOnce({
+      pages: [
+        { page: 1, text: cut },
+        { page: 2, text: 'LAST PAGE' },
+      ],
+    });
+    const r = out(await translate.handler({ node_id: 'book-1', to: 'de' }, ownerCtx));
+    expect(String(r.translation)).toContain('LAST PAGE');
   });
 
   it('the stand-in text of a file no reader reads is no text to translate', async () => {

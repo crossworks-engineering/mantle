@@ -854,15 +854,21 @@ Owner's rules:
   translation is still returned, with `save_error`); a turn that acts for
   no signed-in person (the Team responder with no member, a heartbeat)
   saves no copy.
-- **A file's whole text.** A file's stored text is cut at the extractor's
-  1,000,000 characters; a text that long is read again in full by the
-  parser service, or nothing is translated (never the first part as if it
-  were all). A file no reader reads (its stand-in text names the file only)
-  has no text to translate.
+- **A file's whole text.** A file its reader took only in part (its
+  `read_cut` record, a sheet's rows, an OCR that stopped early) is refused:
+  nothing is translated, and the reason is named. A small picture left out
+  as an icon is a detail only and does not refuse. A stored text cut at the
+  extractor's 1,000,000 characters is read whole: the file's pages from its
+  database (a PDF book, as `file_read` does), else the parser service once
+  more; any cut it reports, or no longer text, refuses. A file no reader
+  reads (its stand-in text names the file only) has no text to translate.
 - **Budgets.** In a workspace user's turn, a translation that cannot fit the
-  user's daily tokens left is refused before any spend, and one that runs
-  past them stops between parts. `to` and `from` are a language's name or
-  code only (letters, spaces, hyphens, brackets).
+  user's daily tokens left (estimated on the high side: the text, its
+  answer and each part's prompt) is refused before any spend; while a
+  budget applies the parts go one at a time and the run stops before a
+  part that would pass it. `to` and `from` are a language's name or code
+  only (letters, digits in a code, spaces, hyphens, brackets; at most four
+  words), and the prompt quotes them as names.
 - **No translator worker.** The tool runs on the summarizer worker's route
   with the translation rules (never the summarizer's own prompt or params).
 - **Required worker.** It is made on existing brains by the boot reconcile
