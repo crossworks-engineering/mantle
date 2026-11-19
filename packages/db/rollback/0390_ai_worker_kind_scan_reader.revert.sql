@@ -13,4 +13,4 @@
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792260000000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792290000000;

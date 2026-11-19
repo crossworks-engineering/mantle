@@ -457,4 +457,4 @@ DROP FUNCTION IF EXISTS "public"."mantle_ws_ensure_system"();
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_ws_system_id"(uuid);
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792270000000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792300000000;

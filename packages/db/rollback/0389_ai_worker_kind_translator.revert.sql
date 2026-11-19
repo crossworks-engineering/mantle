@@ -18,4 +18,4 @@ SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 DELETE FROM "public"."ai_workers" WHERE "kind" = 'translator';
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792250000000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792280000000;
