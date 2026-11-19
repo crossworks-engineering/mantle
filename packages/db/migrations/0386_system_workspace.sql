@@ -38,7 +38,7 @@
 --    - mantle_ws_update_about: System keeps its name (admin_keeps_name).
 -- 5. mantle_ws_last_admin_mod_trg (0241): fires for System too, so the last
 --    System user is never removed by any path (a login's delete included).
--- 6. mantle_ws_system_work (0321): one more pair,
+-- 6. mantle_ws_system_work (0321, as 0322 left it): one more pair,
 --    ('system:system-add', 'mantle_ws_add_user'): the operator's recovery
 --    command (server/web system:add) puts a login in Admin, then in System,
 --    as system work.
@@ -505,8 +505,8 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
--- 6. The system work allowlist (0321's body, one more pair: the operator's
--- recovery command, server/web system:add).
+-- 6. The system work allowlist (0321's body, its actor read as 0322 rewrote
+-- it, one more pair: the operator's recovery command, server/web system:add).
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"(fn text)
   RETURNS boolean LANGUAGE sql STABLE
   SET search_path = "public", pg_temp AS $$
@@ -523,7 +523,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"(fn text)
            SELECT r.rolname::text FROM pg_catalog.pg_roles r WHERE r.rolsuper)
      AND (CASE WHEN current_setting('role') = 'none' THEN session_user::text
                ELSE current_setting('role') END) <> 'mantle_system_narrow'
-     AND (coalesce(current_setting('mantle.actor', true), ''), fn) IN (
+     AND (coalesce("public"."mantle_identity_actor"(), ''), fn) IN (
            ('system:ws-clear-ticks', 'mantle_ws_set_moderator'),
            ('system:boot:migrate-workspaces', 'mantle_ws_attach_assistants'),
            ('system:snapshot-copies', 'mantle_file_restamp_home'),

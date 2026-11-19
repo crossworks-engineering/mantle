@@ -347,6 +347,7 @@ describe.skipIf(!DB_URL)('hotfix: app_snapshot_delete asks the manage of the app
     }
     await raw`delete from workspace_users u using workspaces w
                where w.id = u.workspace_id and not w.is_admin
+                 and w.bridge_key is distinct from 'system'
                  and u.login_id in (${owner}, ${adm}, ${mem})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.H}, ${mem}, true), (${ws.R}, ${mem}, false), (${ws.W}, ${mem}, false)`;

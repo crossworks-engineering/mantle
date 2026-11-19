@@ -243,9 +243,11 @@ export async function buildA8Fixture(sql: Sql): Promise<A8Fixture> {
     }
   }
   // Only the fixture's seats: a Team seat, if the brain still makes one,
-  // goes (nothing is granted to it).
+  // goes (nothing is granted to it). System's stay (0391): the owner and
+  // the admin hold the technical areas through it, as on a box.
   await sql`delete from workspace_users u using workspaces w
              where w.id = u.workspace_id and not w.is_admin
+               and w.bridge_key is distinct from 'system'
                and w.id <> all(${arr(Object.values(ws))}::uuid[])
                and u.login_id = any(${arr(Object.values(L))}::uuid[])`;
   const privateWs: Partial<Record<GuideRole, string>> = {};

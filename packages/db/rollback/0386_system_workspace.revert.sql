@@ -4,7 +4,7 @@
 --
 -- It takes the System workspace out (its users and its rows go with it; its
 -- events stay, their workspace set to NULL), puts back the bodies the image
--- before it shipped (mantle_ws_system_work 0321, mantle_area_rule,
+-- before it shipped (mantle_ws_system_work 0321 as 0322 left it, mantle_area_rule,
 -- mantle_ws_add_user and mantle_ws_remove_user 0330, mantle_ws_set_moderator
 -- 0307, mantle_ws_archive and mantle_ws_update_about 0309,
 -- mantle_ws_last_admin_mod_trg 0241, mantle_ws_migrate 0286), drops the two
@@ -40,7 +40,7 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
--- mantle_ws_system_work: 0321's body.
+-- mantle_ws_system_work: 0321's body, its actor read as 0322 rewrote it.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"(fn text)
   RETURNS boolean LANGUAGE sql STABLE
   SET search_path = "public", pg_temp AS $$
@@ -57,7 +57,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_system_work"(fn text)
            SELECT r.rolname::text FROM pg_catalog.pg_roles r WHERE r.rolsuper)
      AND (CASE WHEN current_setting('role') = 'none' THEN session_user::text
                ELSE current_setting('role') END) <> 'mantle_system_narrow'
-     AND (coalesce(current_setting('mantle.actor', true), ''), fn) IN (
+     AND (coalesce("public"."mantle_identity_actor"(), ''), fn) IN (
            ('system:ws-clear-ticks', 'mantle_ws_set_moderator'),
            ('system:boot:migrate-workspaces', 'mantle_ws_attach_assistants'),
            ('system:snapshot-copies', 'mantle_file_restamp_home'))
