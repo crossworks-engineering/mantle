@@ -425,6 +425,12 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       (${adminWs}, ${adm}, true, '{}'::jsonb),
       (${adminWs}, ${admNo}, true, ${JSON.stringify({ areas: { settings: false } })}::jsonb)
       on conflict (workspace_id, login_id) do update set limits = excluded.limits`);
+    // Both in System (the settings area needs it); the limit on the Admin
+    // row still switches it off for the second.
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+      (mantle_ws_system_id(mantle_brain_id()), ${adm}, true),
+      (mantle_ws_system_id(mantle_brain_id()), ${admNo}, true)
+      on conflict do nothing`);
     const tzOf = async (login: string) =>
       (
         await x<{ tz: string | null }>(
@@ -840,6 +846,12 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       (${adminWs}, ${withS}, true, '{}'::jsonb),
       (${adminWs}, ${noS}, true, ${JSON.stringify({ areas: { settings: false } })}::jsonb)
       on conflict (workspace_id, login_id) do update set limits = excluded.limits`);
+    // Both in System (the settings area needs it); the limit on the Admin
+    // row still switches it off for the second.
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+      (mantle_ws_system_id(mantle_brain_id()), ${withS}, true),
+      (mantle_ws_system_id(mantle_brain_id()), ${noS}, true)
+      on conflict do nothing`);
     const channelOf = async () =>
       (
         await x<{ c: string | null }>(

@@ -366,15 +366,16 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
       db,
       // Whether a workspace is the login's own private one, by its definer
       // (mantle_ws_private_for, 0293): no role reads private_workspaces.
-      // Which one is System, by its definer too (mantle_ws_system_id).
-      sql`select w.id, w.name, w.is_admin, coalesce(w.id = s.id, false) as is_system,
+      // Which one is System: its bridge_key, the mark mantle_ws_system_id
+      // reads (this read also runs on the login-self narrow exit, which may
+      // not run that definer).
+      sql`select w.id, w.name, w.is_admin, coalesce(w.bridge_key = 'system', false) as is_system,
                  u.moderator, ${WS_LOOK_COLUMNS},
                  "public"."mantle_ws_private_for"(w.id, ${caller.loginId}::uuid) as private
             from workspaces w
             join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
-            cross join (select mantle_ws_system_id(${caller.anchorId}::uuid) as id) s
            where w.owner_id = ${caller.anchorId} and ${liveWorkspaceSql('w')}
-           order by w.is_admin desc, coalesce(w.id = s.id, false) desc, lower(w.name)`,
+           order by w.is_admin desc, coalesce(w.bridge_key = 'system', false) desc, lower(w.name)`,
     ),
   ]);
   return {

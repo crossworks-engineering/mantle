@@ -252,8 +252,9 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       { ws: admin, write: false, is_home: true, via: null, excluded: false },
     ]);
     // Addable: every Moderator workspace of the owner it is not in, Team
-    // included.
-    expect(own.body.addable.map((w: Json) => w.name)).toEqual(['Proj', 'Quay', 'Team']);
+    // included, and System (the brain keeps it grantable, KISS; the client
+    // hides System from the Grant Access picker).
+    expect(own.body.addable.map((w: Json) => w.name)).toEqual(['Proj', 'Quay', 'System', 'Team']);
     expect(own.body.item).toEqual({ id: note, title: 'a new note', type: 'note' });
     expect(own.body.hasLink).toBe(false);
     expect(own.body.link).toBeNull();

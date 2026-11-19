@@ -146,6 +146,11 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
       await su`delete from workspace_users where workspace_id = ${a!.id as string} and login_id = ${out}`;
       await su`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${a!.id as string}, ${memIn}, false) on conflict do nothing`;
+      // And of System, as the migration seats every Admin user (the
+      // technical areas need it).
+      await su`insert into workspace_users (workspace_id, login_id, moderator)
+                values (mantle_ws_system_id(mantle_brain_id()), ${memIn}, true)
+                on conflict do nothing`;
       await su`update workspace_users set limits = '{"areas": {"keys": false}}'::jsonb
                 where workspace_id = ${a!.id as string} and login_id = ${lim}`;
     } finally {

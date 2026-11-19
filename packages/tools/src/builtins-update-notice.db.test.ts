@@ -73,6 +73,9 @@ describe.skipIf(!URL)('the update notice tools, in the caller scope', () => {
     )) as { id: string }[];
     await su(sqlTag`insert into workspace_users (workspace_id, login_id) values (${adminWs!.id}, ${adminB})
       on conflict do nothing`);
+    // And of System: the settings area needs it (the System workspace).
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+      values (mantle_ws_system_id(${owner}::uuid), ${adminB}, true) on conflict do nothing`);
     await su(
       sqlTag`insert into workspaces (id, owner_id, name) values (${W}, ${owner}, ${`${tag} W`})`,
     );

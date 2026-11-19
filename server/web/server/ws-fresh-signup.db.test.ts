@@ -200,12 +200,22 @@ describe.skipIf(!URL)('the first sign-up on a fresh brain, actor check on', () =
     expect(users).toEqual([{ id: expect.any(String), email, owner: true, role: 'admin' }]);
     expect((await su`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
     const ws = await su<{ key: string; admin: boolean; owner: string }[]>`
-      select bridge_key as key, is_admin as admin, owner_id::text as owner from workspaces`;
-    expect(ws).toEqual([{ key: 'admin', admin: true, owner: users[0]!.id }]);
-    const inAdmin = await su<{ moderator: boolean }[]>`
-      select u.moderator from workspace_users u join workspaces w on w.id = u.workspace_id
-       where w.is_admin and u.login_id = ${users[0]!.id}`;
-    expect(inAdmin).toEqual([{ moderator: true }]);
+      select bridge_key as key, is_admin as admin, owner_id::text as owner from workspaces
+       order by bridge_key`;
+    // A fresh brain has Admin and System (the switch ends with
+    // mantle_ws_ensure_system), the owner a Moderator of both.
+    expect(ws).toEqual([
+      { key: 'admin', admin: true, owner: users[0]!.id },
+      { key: 'system', admin: false, owner: users[0]!.id },
+    ]);
+    const inAdmin = await su<{ key: string; moderator: boolean }[]>`
+      select w.bridge_key as key, u.moderator from workspace_users u
+        join workspaces w on w.id = u.workspace_id
+       where u.login_id = ${users[0]!.id} order by w.bridge_key`;
+    expect(inAdmin).toEqual([
+      { key: 'admin', moderator: true },
+      { key: 'system', moderator: true },
+    ]);
     // The switch's writes ran as the first owner's exit (the Team workspace
     // it made and removed, then Admin).
     const seen = await su<{ key: string; actor: string }[]>`
@@ -253,8 +263,9 @@ describe.skipIf(!URL)('the first sign-up on a fresh brain, actor check on', () =
       createFirstOwner(`wizard-${email}`, password),
     );
     expect(res).toMatchObject({ ok: true, email: `wizard-${email}` });
-    const ws = await sql<{ key: string }[]>`select bridge_key as key from workspaces`;
-    expect(ws).toEqual([{ key: 'admin' }]);
+    const ws = await sql<{ key: string }[]>`select bridge_key as key from workspaces
+                                             order by bridge_key`;
+    expect(ws).toEqual([{ key: 'admin' }, { key: 'system' }]);
     const seen = await sql<{ actor: string }[]>`select distinct actor from fsu_ws_actor`;
     expect(seen).toEqual([{ actor: 'system:script:onboard' }]);
     expect(await sql`select source from actor_check_misses`).toEqual([]);

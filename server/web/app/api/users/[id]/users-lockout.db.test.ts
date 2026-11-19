@@ -259,6 +259,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
                         and w.owner_id = mantle_brain_id()) as in_admin,
              (select count(*)::int from workspace_events e
                where e.action = 'user.remove' and e.actor_id = ${anchor}
+                 and e.workspace_id = mantle_ws_admin_id(mantle_brain_id())
                  and e.subject->>'login' = u.id::text) as removed
         from auth.users u where u.id = ${cal}`;
     expect(after).toEqual({ role: 'member', in_admin: false, removed: 1 });
@@ -475,6 +476,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
                           and w.owner_id = mantle_brain_id()) as in_admin,
                (select count(*)::int from workspace_events e
                  where e.action in ('user.add', 'user.remove')
+                   and e.workspace_id = mantle_ws_admin_id(mantle_brain_id())
                    and e.subject->>'login' = u.id::text) as events
           from auth.users u where u.id = ${id}`
     )[0];

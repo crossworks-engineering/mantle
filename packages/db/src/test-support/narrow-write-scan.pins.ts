@@ -802,6 +802,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/workspaces.ts mantle_ws_set_assistant': 1,
   'server/web/lib/workspaces.ts mantle_ws_set_contact': 1,
   'server/web/lib/workspaces.ts mantle_ws_set_landing': 1,
-  'server/web/lib/workspaces.ts mantle_ws_system_id': 2,
+  'server/web/lib/workspaces.ts mantle_ws_system_id': 1,
   'server/web/lib/workspaces.ts mantle_ws_update_about': 1,
 });
