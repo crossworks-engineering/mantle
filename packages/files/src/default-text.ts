@@ -10,8 +10,15 @@
  *   - ZIP: the directory at the end of the file. Nothing is inflated.
  *   - TAR: the 512-byte headers. The data between them is jumped over.
  * A gzip (`.gz`, `.tgz`, `.tar.gz`) gets no list: the brain does not inflate
- * outside bytes. Its type line says "gzip file". `.7z` and `.rar` get no
- * list: their directories need a decoder.
+ * outside bytes. Its type line says "gzip file". A 7z or a RAR is named by
+ * its first bytes ("7z archive", "RAR archive") and gets no list: their
+ * directories need a decoder.
+ *
+ * An archive is an archive (the owner, 2026-11-19): what is in it is never
+ * read here, only listed by name. The read says so as a detail of the file's
+ * status, never as a read in part (read-cut.ts `archive`, `archive_sealed`):
+ * its files are read only when a person asks to extract its contents
+ * (./archive-extract.ts, docs/files.md "Archives").
  *
  * The file is an outside input, so the work has limits: {@link MAX_NAMES}
  * names, {@link MAX_NAME_CHARS} characters a name (at most
@@ -23,6 +30,9 @@
  * where it is decoded. A broken or hostile archive gives the text with no
  * list, or with the names read before the fault. It never throws.
  */
+
+import { archiveKindOfHead } from './archive-read';
+import { noteReadCut } from './read-cut-sink';
 
 /** Names one list holds. The rest is one line: "and N more". */
 export const MAX_NAMES = 500;
@@ -42,7 +52,7 @@ export const MAX_WALK_MS = 1_000;
  *  when the walk stopped before the end. A gzip has no names: it is not
  *  inflated. */
 export type ArchiveListing = {
-  kind: 'ZIP archive' | 'TAR archive' | 'gzip file';
+  kind: 'ZIP archive' | 'TAR archive' | 'gzip file' | '7z archive' | 'RAR archive';
   names: string[];
   total: number | null;
 };
@@ -261,6 +271,10 @@ export async function archiveNames(
     if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
       return { kind: 'gzip file', names: [], total: null };
     }
+    // A 7z or a RAR: named by its signature, never listed.
+    const sealed = archiveKindOfHead(bytes.subarray(0, 8));
+    if (sealed === '7z') return { kind: '7z archive', names: [], total: null };
+    if (sealed === 'rar') return { kind: 'RAR archive', names: [], total: null };
     return tarNames(bytes, deadline);
   } catch {
     return null;
@@ -268,6 +282,24 @@ export async function archiveNames(
 }
 
 // ─── The text ──────────────────────────────────────────────────────────
+
+/**
+ * Say, in the read under way, that the file is an archive whose contents
+ * were not read: a detail of its status (read-cut.ts), never a read in part.
+ * ZIP, TAR and gzip can be extracted on request (`archive`); 7z and RAR
+ * cannot here (`archive_sealed`). The count is the entries when the walk
+ * knows it.
+ */
+function noteArchive(listing: ArchiveListing): void {
+  const sealed = listing.kind === '7z archive' || listing.kind === 'RAR archive';
+  // An empty archive leaves nothing out.
+  if (listing.total === 0) return;
+  noteReadCut(sealed ? 'archive_sealed' : 'archive', {
+    what: 'entries',
+    read: 0,
+    ...(listing.total !== null ? { total: listing.total } : {}),
+  });
+}
 
 /** The line every default text has. */
 const DEFAULT_TEXT_NOTE =
@@ -308,6 +340,7 @@ export async function defaultFileText(file: {
   sizeBytes?: number | null;
 }): Promise<string> {
   const listing = file.bytes ? await archiveNames(file.bytes) : null;
+  if (listing) noteArchive(listing);
   const ext = file.ext ? `.${file.ext}` : 'no extension';
   const mime = file.mime && file.mime !== 'application/octet-stream' ? `, ${file.mime}` : '';
   const type = listing ? `${listing.kind} (${ext}${mime})` : `${ext}${mime}`;

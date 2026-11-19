@@ -318,7 +318,8 @@ export type ExtractJobState = 'queued' | 'running';
  * read for a whole list, never one per row (a file's status in Files,
  * docs/files.md "Status and processing"). The ids are rows the caller's
  * scope already read: this answers only for them. Running wins over
- * queued. An empty map when pg-boss has no schema or job table yet (a
+ * queued. An archive's extraction is no read of the file: its state is on
+ * the archive's own stamp (data.archive_extract), not here. An empty map when pg-boss has no schema or job table yet (a
  * fresh brain) or no database is reached; any other database error is
  * thrown.
  */
@@ -334,6 +335,7 @@ export async function extractJobsFor(
       WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.book')
         AND state IN ('created', 'retry', 'active')
         AND data->>'nodeId' = any(string_to_array(${ids.join(',')}, ','))
+        AND NOT coalesce(data ? 'archive', false)
       GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean }>;
     for (const r of rows) out.set(r.id, r.running ? 'running' : 'queued');
   } catch (err) {
@@ -361,14 +363,15 @@ export async function extractQueueBusy(): Promise<boolean> {
 }
 
 /** Jobs in the extract dead-letter queue: whether a config change has a
- *  backlog to recover. A run on demand (data with `run`) is no backlog: it
- *  is never re-driven. 0 when pg-boss has no schema yet. */
+ *  backlog to recover. A run on demand (data with `run`) or an archive's
+ *  extraction (`archive`) is no backlog: neither is ever re-driven. 0 when
+ *  pg-boss has no schema yet. */
 export async function countDeadLetteredExtracts(): Promise<number> {
   try {
     const rows = (await systemDb.execute(sql`
       SELECT count(*)::int AS n FROM pgboss.job
       WHERE name = 'mantle.extract.dead' AND state = 'created'
-        AND NOT coalesce(data ? 'run', false)`)) as unknown as Array<{
+        AND NOT coalesce(data ? 'run', false) AND NOT coalesce(data ? 'archive', false)`)) as unknown as Array<{
       n: number;
     }>;
     return rows[0]?.n ?? 0;

@@ -453,6 +453,96 @@ itself (cost safety: no trigger, no timer).
   indexes (migration 0385), not by a pass over every file's data.
 - **MCP `file_list`** rows carry `status` too, as the HTTP list.
 
+### 8e. Archives
+
+An archive is an archive (the owner, 2026-11-19): a ZIP, TAR, gzip, 7z or
+RAR upload is stored as it is and never unpacked or read on upload. Its
+text is its name, type, size and entry names (`default-text.ts`,
+docs/parser.md "A file no reader takes"; names only, at most 500), so it is
+found by meaning search as what it is. Its status says so honestly: the
+read stamps a detail cut `archive` (ZIP, TAR, gzip: `{ what: 'entries',
+read: 0, total }`) or `archive_sealed` (7z, RAR), so the file is `indexed`
+with `reason: 'archive'` and the sentence "its N entries are not read, only
+their names are in search. Extract its contents to read them as files." A
+detail cut never makes a file `partial` (`DETAIL_ONLY_CUT_REASONS`), so an
+archive is never in the `partial` list just for being one.
+
+**Extract contents.** Only a person asks, by hand or through an agent or
+MCP client acting for them; no trigger, timer or sweep starts one:
+
+- `POST /api/files/files/:id/extract` (body `{}` or none) and the tool
+  `file_extract_archive { file_id }` (agents hold it through the `files`
+  group; MCP too), one function (`extractArchive` in `@mantle/tools`,
+  `startArchiveExtract` in `@mantle/files archive-extract.ts`).
+  `GET /api/files/files/:id/extract` and the tool with `check: true` read
+  the state and start nothing. The answer is an `ArchiveExtractAnswer`
+  (`@mantle/client-types`): `extractable` (and `why` when not) and
+  `extract`, the last extraction (`queued`, `running` with the files so far,
+  `done`, `failed`), its folder, `files`, `folders`, `bytes`, `skipped`,
+  `flattened`, the first 100 entries `refused` with their reason, and
+  `refusedCount`.
+- **Checks, in the caller's scope, before anything is written:** the file
+  is one the caller reads (else 404), the caller may change it (the edit
+  right, as a reindex asks; else 403), its name AND its first bytes say ZIP,
+  TAR or gzip (`.zip`, `.tar`, `.tar.gz`, `.tgz`, `.gz`; a `.docx` is a ZIP
+  and a document: 400; 7z and RAR: 400, no free reader runs here), no
+  extraction of it is under way (409), and there is room for a folder
+  beside it (an archive in a folder three levels deep: 400, move it up).
+- **Where the files land:** a new folder beside the archive, named after it
+  without its archive ending (`Report 2026.tar.gz` makes `Report 2026`;
+  `-2`, `-3` when taken). The folder is made as the caller, so its create
+  checks the caller may add to the archive's folder (else 403) and it lands
+  by the caller's home rule (docs/workspaces.md). A folder beside the
+  archive, not a child of it, because a file in the Files tree holds no
+  items: the contents are ordinary files the person can move, share and
+  delete, apart from the archive.
+- **The job.** The archive is stamped `queued` (`data.archive_extract`, one
+  atomic update, so two asks never both run) and the `archive_extract`
+  notify sends one job on the extract queue's heavy lane (one at a time,
+  tried once, never re-driven). It runs only for a queued stamp. It reads
+  the archive from disk as a stream (an archive only in object storage is
+  spooled to a temporary file first; no archive is held in memory), checks
+  the whole archive's file count and bytes before writing anything, then
+  writes each file through the upload path (`spoolUpload`, then
+  `upsertFile`) into the new folder, as the system: each file and folder it
+  makes takes the home of the folder it lands in. Each new file is an
+  ordinary upload: the extract queue reads it as any other (and a nested
+  archive gets the default text and its own "Extract contents"). Each file
+  carries `data.from_archive { id, path }`; it is no derived item of the
+  archive (deleting the archive leaves them). Progress is written on the
+  stamp every 50 files or 3 seconds. A stamp `queued` or `running` older
+  than 3 hours is taken as dead (the agent was down when it was sent), so
+  the person may ask again.
+- **Folders inside** are kept while the tree has room (three folder levels
+  below Files): past that, the deeper folder names go into the file's name
+  (`a/b/c/d.txt` with room for one level lands in `a` as `b-c-d.txt`, its
+  title `b/c/d.txt`), counted in `flattened`; never dropped. Names are
+  cleaned as for any upload (`sanitizeFilename`, `folderSlugOf`); two names
+  that clean to one (`A.txt`, `a.txt`, or the same name twice) are both
+  kept as `a.txt`, `a-2.txt`. A folder named twice in two spellings is one
+  folder.
+- **Limits** (`archive-read.ts`): the ZIP guard's own caps (`zip-guard.ts`):
+  an entry at most 128 MB (or the box's upload cap, if lower), all the
+  files together at most 512 MB, and at most 10,000 files. Past the total
+  or the count the archive is refused whole (`failed`, nothing written); an
+  entry past 128 MB is refused and the others are written. A ZIP entry is
+  held to its declared size as it inflates and checked against its CRC; a
+  TAR's every entry counts against the total (each is read to pass it); a
+  lone gzip is held to the entry cap as it inflates.
+- **Refused, and named in `refused`, never dropped in silence:** a path
+  that climbs (`..` anywhere: `traversal`), an absolute path (`/x`, `C:\x`,
+  `\\host`: `absolute`), a name with a NUL or a part over 255 characters
+  (`bad-name`), a symbolic or hard link (`link`), a device, FIFO or socket
+  (`device`), an encrypted entry (`encrypted`), a ZIP method other than
+  stored or deflated (`method`), a TAR entry type this reader does not
+  know (`unsupported`), an entry past the entry cap (`too-large`), bytes
+  that do not match the archive's word (more than declared, another CRC, a
+  short range: `damaged`), and a write that failed (`not-written`).
+  Skipped and counted in `skipped`: the macOS and Windows folder files
+  (`__MACOSX/`, `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`). No entry's
+  path is ever used as a disk path: every file lands by its cleaned name
+  through `upsertFile`, inside the new folder.
+
 ---
 
 ## 9. MCP tools
@@ -471,6 +561,7 @@ Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 | `file_processing` | What the brain did with a file, and the items made from it (§8c) |
 | `file_reindex`    | Read files again through the whole pipeline (§8d)                |
 | `file_stale_list` | The files that need attention: stale, failed, partial (§8d)      |
+| `file_extract_archive` | An archive's contents into a new folder beside it, on request (§8e) |
 | `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)        |
 | `file_delete`     | Delete a file (both DB row and disk)                             |
 | `screenshots`     | The area screenshots it reads: a list, or one with its image     |

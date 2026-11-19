@@ -514,3 +514,49 @@ describe('isDefaultFileText', () => {
     expect(isDefaultFileText('Minutes of the meeting')).toBe(false);
   });
 });
+
+describe('an archive is an archive: its status says its contents are not read', () => {
+  it('a ZIP notes a detail cut of its entries, which never makes it partial', async () => {
+    const { withReadCutSink } = await import('./read-cut-sink');
+    const { extractionOf } = await import('./extraction-status');
+    const { cuts } = await withReadCutSink(() =>
+      defaultFileText({ filename: 'a.zip', ext: 'zip', bytes: zip(['a.txt', 'b.txt']) }),
+    );
+    expect(cuts).toEqual({ archive: { what: 'entries', read: 0, total: 2 } });
+    const status = extractionOf({ extract_completed_at: 'x', read_cut: cuts });
+    expect(status.state).toBe('indexed');
+    expect(status.reason).toBe('archive');
+    expect(status.hint).toMatch(/2 entries are not read.*Extract its contents/);
+  });
+
+  it('a 7z and a RAR are named by their first bytes and cannot be extracted here', async () => {
+    const { withReadCutSink } = await import('./read-cut-sink');
+    const { extractionOf } = await import('./extraction-status');
+    const sevenZ = Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4, 1, 2, 3]);
+    const { value, cuts } = await withReadCutSink(() =>
+      defaultFileText({ filename: 'a.7z', ext: '7z', bytes: sevenZ }),
+    );
+    expect(value).toContain('File type: 7z archive (.7z)');
+    expect(cuts).toEqual({ archive_sealed: { what: 'entries', read: 0 } });
+    expect(extractionOf({ extract_completed_at: 'x', read_cut: cuts })).toMatchObject({
+      state: 'indexed',
+      reason: 'archive_sealed',
+    });
+    const rar = Buffer.from('Rar!\x1a\x07\x01\x00 more', 'latin1');
+    expect(await defaultFileText({ filename: 'b.rar', ext: 'rar', bytes: rar })).toContain(
+      'File type: RAR archive (.rar)',
+    );
+  });
+
+  it('an empty ZIP and a file that is no archive note nothing', async () => {
+    const { withReadCutSink } = await import('./read-cut-sink');
+    const empty = await withReadCutSink(() =>
+      defaultFileText({ filename: 'e.zip', ext: 'zip', bytes: zip([]) }),
+    );
+    expect(empty.cuts).toEqual({});
+    const plain = await withReadCutSink(() =>
+      defaultFileText({ filename: 'x.bin', ext: 'bin', bytes: Buffer.from('nothing here') }),
+    );
+    expect(plain.cuts).toEqual({});
+  });
+});

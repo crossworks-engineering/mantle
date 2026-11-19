@@ -152,6 +152,32 @@ export function pipelineRunOfPayload(
   return { pipelineId, nodeId: nodeId.toLowerCase() };
 }
 
+/** The channel of an archive's "Extract contents" (docs/files.md,
+ *  "Archives"): its own, so nothing but a person's ask starts one. */
+export const ARCHIVE_EXTRACT_CHANNEL = 'archive_extract';
+
+/**
+ * Ask the api to extract the archive `nodeId` into the folder its queued
+ * stamp names (@mantle/files archive-extract.ts startArchiveExtract, after
+ * its rights and busy checks; nothing else calls it). The api's listener
+ * (runtime.ts) sends one job for it on the extract queue
+ * (enqueueArchiveExtract). A notify while the api is down is lost and sent
+ * by nothing: the stamp stays `queued`, and a person may ask again once it
+ * is old. Outside any transaction; it throws on a failed notify.
+ */
+export async function notifyArchiveExtract(nodeId: string): Promise<void> {
+  if (!UUID_RE.test(nodeId)) throw new Error('notifyArchiveExtract: not a node id');
+  await executeWrite(
+    sql`SELECT pg_notify(${ARCHIVE_EXTRACT_CHANNEL}, ${nodeId.toLowerCase()}::text)`,
+  );
+}
+
+/** The archive an `archive_extract` notify names, or null. */
+export function archiveExtractOfPayload(payload: string | null | undefined): string | null {
+  const id = (payload ?? '').trim();
+  return UUID_RE.test(id) ? id.toLowerCase() : null;
+}
+
 /** The names among `pairs` whose two values differ: the fields a write
  *  changed, for markContentChanged. Compared as JSON with object keys in one
  *  order (a value read back from jsonb has its keys in jsonb's order), and

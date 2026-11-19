@@ -106,6 +106,7 @@
   "file_copy": "write",
   "file_create": "write",
   "file_delete": "delete",
+  "file_extract_archive": "write",
   "file_get": "read",
   "file_history_delete": "delete",
   "file_history_list": "read",

@@ -69,6 +69,15 @@
  *                          It takes the same lanes, ceiling and per-node
  *                          chain. A run job has no retry; a
  *                          dead-lettered one is never re-driven.
+ *   7. An archive's      : a job with `archive` (enqueueArchiveExtract,
+ *      extraction          sent only for an `archive_extract` notify: a
+ *                          person's "Extract contents", docs/files.md
+ *                          "Archives") unpacks the archive into the folder
+ *                          its queued stamp names and does nothing else
+ *                          (@mantle/files archive-extract.ts). It always
+ *                          takes the heavy lane (one at a time), is tried
+ *                          once and is never re-driven: nothing extracts an
+ *                          archive by itself.
  *
  * Same-node concurrency is excluded by two layers:
  *
@@ -127,6 +136,7 @@ import {
 } from './extract-lanes.js';
 import { probeExtractionModel } from './extract/model.js';
 import { isAfterRun, runPipelineJob } from './extract/pipeline-run.js';
+import { runArchiveExtract } from '@mantle/files/archive-extract';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
@@ -165,18 +175,23 @@ const EXTRACT_QUEUE_OPTIONS = {
 };
 
 /** A job of a file. With `run`, a run on demand of that pipeline
- *  (enqueuePipelineRun): it builds or patches the file's database only. */
-type ExtractJob = { nodeId: string; run?: string };
+ *  (enqueuePipelineRun): it builds or patches the file's database only.
+ *  With `archive`, an archive's extraction (enqueueArchiveExtract). */
+type ExtractJob = { nodeId: string; run?: string; archive?: true };
 
-/** A job's singleton key: the node, or `<pipeline>:<node>` for a run, so a
- *  run and an extract of one file never collapse into each other. */
-const keyOf = (job: ExtractJob): string => (job.run ? `${job.run}:${job.nodeId}` : job.nodeId);
+/** A job's singleton key: the node, `<pipeline>:<node>` for a run, or
+ *  `archive:<node>` for an extraction, so none of them collapse into
+ *  another of the same file. */
+const keyOf = (job: ExtractJob): string =>
+  job.archive ? `archive:${job.nodeId}` : job.run ? `${job.run}:${job.nodeId}` : job.nodeId;
 
-/** The send options of a job. A run is tried once (`retryLimit: 0` over the
- *  queue's 5): an expired run fails and is not run again by itself. An
- *  extract keeps the queue's policy. */
+/** The send options of a job. A run and an extraction are tried once
+ *  (`retryLimit: 0` over the queue's 5): one that expired fails and is not
+ *  run again by itself. An extract keeps the queue's policy. */
 const sendOptionsOf = (job: ExtractJob) =>
-  job.run ? { singletonKey: keyOf(job), retryLimit: 0 } : { singletonKey: keyOf(job) };
+  job.run || job.archive
+    ? { singletonKey: keyOf(job), retryLimit: 0 }
+    : { singletonKey: keyOf(job) };
 
 let boss: PgBoss | null = null;
 
@@ -283,8 +298,9 @@ async function redriveDeadLetters(): Promise<number> {
     const jobs = await boss.fetch<ExtractJob>(DEAD_LETTER_QUEUE, { batchSize: 20 });
     if (!jobs || jobs.length === 0) break;
     for (const job of jobs) {
-      // A run on demand is never sent again: nothing starts by itself.
-      if (job.data?.nodeId && !job.data.run) {
+      // A run on demand or an extraction is never sent again: nothing
+      // starts by itself.
+      if (job.data?.nodeId && !job.data.run && !job.data.archive) {
         await boss.send(EXTRACT_QUEUE, job.data, { singletonKey: job.data.nodeId });
       }
       await boss.complete(DEAD_LETTER_QUEUE, job.id);
@@ -440,6 +456,11 @@ async function handleMainJob(
   jobs: { data: ExtractJob }[],
 ): Promise<typeof HEAVY_HOP_OUTPUT | typeof BOOK_HOP_OUTPUT | void> {
   const job = jobs[0]?.data;
+  // An archive's extraction: always the heavy lane, one at a time.
+  if (job?.archive && boss && heavyWorkerIds.length > 0) {
+    await boss.send(HEAVY_QUEUE, job, sendOptionsOf(job));
+    return HEAVY_HOP_OUTPUT;
+  }
   // A run of an `after` pipeline stays here: a patch reads no bytes.
   const afterRun = !!job?.run && !!activeOwnerId && (await isAfterRun(activeOwnerId, job.run));
   const lanes = heavyWorkerIds.length > 0 && bookWorkerIds.length > 0;
@@ -472,7 +493,7 @@ async function handleExtractJob(
 ): Promise<void> {
   if (!job?.data?.nodeId || !activeOwnerId) return;
   const ownerId = activeOwnerId;
-  const { nodeId, run: pipelineId } = job.data;
+  const { nodeId, run: pipelineId, archive } = job.data;
   // Serialise per node (parallel across nodes) — see module header.
   const prev = inflightByNode.get(nodeId);
   // Under its ceiling: light and heavy together never pass the worker count;
@@ -482,11 +503,15 @@ async function handleExtractJob(
   // A run on demand calls its job and nothing else (pipeline-run.ts): it
   // never throws, and it is sent with no retry, so past its time budget it
   // fails once.
+  // An extraction calls its job and nothing else (archive-extract.ts): it
+  // says its own failures on the archive's stamp, and is sent with no retry.
   const extract = () =>
     under.run(() =>
-      pipelineId
-        ? runPipelineJob(ownerId, nodeId, pipelineId).then(() => {})
-        : extractNode(nodeId, ownerId),
+      archive
+        ? runArchiveExtract(ownerId, nodeId).then(() => {})
+        : pipelineId
+          ? runPipelineJob(ownerId, nodeId, pipelineId).then(() => {})
+          : extractNode(nodeId, ownerId),
     );
   const run = prev ? prev.catch(() => {}).then(extract) : extract();
   const tracked: Promise<unknown> = run
@@ -653,6 +678,22 @@ export async function enqueuePipelineRun(nodeId: string, pipelineId: string): Pr
   assertNoViewer('enqueuePipelineRun');
   if (!boss || !nodeId || !pipelineId) return;
   const job = { nodeId, run: pipelineId } satisfies ExtractJob;
+  await boss.send(EXTRACT_QUEUE, job, sendOptionsOf(job));
+}
+
+/**
+ * Enqueue an archive's extraction: the `archive_extract` notify's job
+ * (runtime.ts), sent only after a person's ask (@mantle/files
+ * archive-extract.ts startArchiveExtract), and nothing else sends one. Its
+ * singleton key is `archive:<node>`, so a second notify while the first
+ * waits sends no second job; the job itself runs only for a queued stamp.
+ * It goes on to the heavy lane (handleMainJob). No-op if the queue isn't
+ * started.
+ */
+export async function enqueueArchiveExtract(nodeId: string): Promise<void> {
+  assertNoViewer('enqueueArchiveExtract');
+  if (!boss || !nodeId) return;
+  const job = { nodeId, archive: true } satisfies ExtractJob;
   await boss.send(EXTRACT_QUEUE, job, sendOptionsOf(job));
 }
 

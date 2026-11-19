@@ -231,6 +231,12 @@ const FILE_NO_VERSION =
 const FILE_VERSION_MODERATORS =
   'restore and delete of a version are a Moderator’s (of the home, of a workspace that holds the file, or an Admin user): a user with Write on edits the file and does not restore it';
 
+/** "Extract contents" (docs/files.md, "Archives") on the fixture's file,
+ *  which is no archive: the right passed, and the file is refused as no
+ *  archive this box extracts, before anything is stamped or made. */
+const FILE_NOT_ARCHIVE =
+  'the right passed; the fixture file is no archive, so the ask is the 400 of not-archive and changes nothing';
+
 /** Every route the cells run, by its row key. */
 export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'PATCH /api/notes/:id': { kind: 'note', action: 'edit', body: title, warnMade: true },
@@ -603,6 +609,13 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     seed: 'file_rename',
     body: () => ({ copy_to: '/' }),
     refusedOnly: COPY,
+  },
+  'POST /api/files/files/:id/extract': {
+    kind: 'file',
+    action: 'edit',
+    seed: 'file_rename',
+    body: () => ({}),
+    allowedStatus: { status: 400, why: FILE_NOT_ARCHIVE },
   },
   // The run on demand: the allowed cell is its dry run, which queues nothing.
   'POST /api/files/files/:id/run': {

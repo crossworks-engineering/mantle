@@ -311,6 +311,7 @@ const LISTS: Record<string, readonly string[]> = {
     'api_tool_update',
     'circuit_verify',
     'config_models_check',
+    'file_extract_archive',
     'file_reindex',
     'file_upload',
     'gateway_service_list',

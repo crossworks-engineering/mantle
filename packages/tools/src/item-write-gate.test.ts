@@ -222,6 +222,12 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   // Each file: the handler asks edit of all of them at once
   // (itemWriteVerdicts), before anything is dropped or queued.
   ['file_reindex', entry('file_ids', 'edit', lib('reindexFiles, before any write or notify'))],
+  // The archive: the handler asks its edit (itemWriteVerdicts) before the
+  // stamp, the folder or the notify; the folder's create is the database's.
+  [
+    'file_extract_archive',
+    entry('file_id', 'edit', lib('startArchiveExtract, before any write or notify')),
+  ],
   ['access_set', entry('node_id', 'manage', 'it writes nothing (the levels went)')],
   [
     'node_unshare',
@@ -370,8 +376,9 @@ describe('the writes the database checks (the pre-check removal)', () => {
     // app_source_from_bundle; the three app timer writes; less the three Recall
     // acts that are a person's (person-only-acts.ts); the two task file writes;
     // the two submission acts; drawing_redraw; pipeline_run; the two file
-    // history acts (restore, delete a version); file_reindex.
-    expect(DATABASE_CHECKED.size).toBe(116);
+    // history acts (restore, delete a version); file_reindex;
+    // file_extract_archive.
+    expect(DATABASE_CHECKED.size).toBe(117);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

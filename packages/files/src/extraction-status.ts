@@ -31,6 +31,7 @@
 import {
   cutMakesPartial,
   hasPartialReadCut,
+  readCutReason,
   readCutViews,
   readCutsOf,
   type ReadCutView,
@@ -66,6 +67,10 @@ export type FileExtraction = {
    *  DETAIL_ONLY_CUT_REASONS), with no hint of them. */
   cuts?: ReadCutView[];
 };
+
+/** The cuts of an archive's contents (read-cut.ts), the reason of an
+ *  indexed archive. */
+const ARCHIVE_REASONS: readonly string[] = ['archive', 'archive_sealed'];
 
 /** Verdicts that mean the content is there but could not be read. Every
  *  other terminal skip is a file with nothing to read (`skipped`). */
@@ -242,6 +247,17 @@ export function extractionOf(
     const details = views.length > 0 ? { cuts: views } : {};
     if (d.indexing_applied === 'local') {
       return { state: 'indexed', reason: 'local_only', hint: HINTS.local_only, ...details };
+    }
+    // An archive is read as what it is (its name, type and entry names):
+    // indexed, and its sentence says its contents are not read.
+    const archive = views.find((v) => ARCHIVE_REASONS.includes(readCutReason(v.key)));
+    if (archive) {
+      return {
+        state: 'indexed',
+        reason: readCutReason(archive.key),
+        hint: archive.hint,
+        ...details,
+      };
     }
     return { state: 'indexed', ...details };
   }

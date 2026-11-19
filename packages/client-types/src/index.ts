@@ -189,6 +189,10 @@ export type {
   FileReindexAnswer,
   FileStaleState,
   FileStaleAnswer,
+  ArchiveEntryRefusal,
+  ArchiveExtractAnswer,
+  ArchiveExtractStateName,
+  ArchiveExtractView,
 } from './dto/file-status';
 export { FILE_DERIVED_MAX } from './dto/file-status';
 export { FILE_REINDEX_MAX, FILE_STALE_MAX } from './dto/file-status';

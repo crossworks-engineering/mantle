@@ -103,6 +103,7 @@ import { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
 import { FILE_OPERATOR_TOOLS, FILE_PROCESSING_TOOLS } from './builtins-files';
 import { FILE_HISTORY_TOOLS } from './builtins-files';
 import { FILE_REINDEX_TOOLS } from './builtins-files';
+import { FILE_EXTRACT_TOOLS } from './builtins-files';
 import { NOTE_OPERATOR_TOOLS } from './builtins-notes';
 import { invoke_agent } from './builtins-delegation';
 
@@ -256,6 +257,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...FILE_PROCESSING_TOOLS,
   // Read files again, and the files that need it.
   ...FILE_REINDEX_TOOLS,
+  // An archive's contents, extracted on a person's ask.
+  ...FILE_EXTRACT_TOOLS,
   ...DIAGRAM_RENDER_TOOLS,
   ...PRESENT_TOOLS,
   ...CANVAS_LIBRARY_TOOLS,
@@ -366,6 +369,7 @@ export {
 } from './builtins-files';
 export { FILE_HISTORY_TOOLS } from './builtins-files';
 export { FILE_REINDEX_TOOLS } from './builtins-files';
+export { FILE_EXTRACT_TOOLS } from './builtins-files';
 export { TELEGRAM_TOOLS, TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 export { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
 export { DELEGATION_TOOLS } from './builtins-delegation';

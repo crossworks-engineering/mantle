@@ -72,7 +72,9 @@ export type FileProcessingExtraction = {
   /** Each kind of cut (docs/files.md, "Read in part"). A `partial` file
    *  has the cuts that made it so; an `indexed` file may carry details
    *  only (`pictures_small`, `pictures_tiny`: icons and small pictures the
-   *  size gate skipped), which are no reason for a partial badge. Each cut:
+   *  size gate skipped; `archive`, `archive_sealed`: an archive's contents,
+   *  never read but on a person's "Extract contents", which also make its
+   *  `reason` and `hint`), which are no reason for a partial badge. Each cut:
    *  its key (`sheet_rows`, `text_store`, `pictures_small`, `ocr_pages`,
    *  `pictures`, `page_pictures`, ...), the unit, how many were read of how many (`atLeast`: the total
    *  is a lower bound), the limit, and its own sentence. */
@@ -221,4 +223,69 @@ export type FileStaleAnswer<Row = { id: string; status: FileStatus }> = {
   files: Row[];
   next: string | null;
   total: number;
+};
+
+/**
+ * An archive's "Extract contents" (docs/files.md, "Archives"): never on
+ * upload, only on a person's ask. GET /api/files/files/:id/extract answers
+ * this for any file the caller reads; POST to the same path asks for the
+ * extraction and answers it with the `queued` state. The tool
+ * `file_extract_archive` does the same (with `check: true`, the GET).
+ */
+export type ArchiveExtractStateName = 'queued' | 'running' | 'done' | 'failed';
+
+/** Why one entry of the archive was not written: a path that climbs out
+ *  (`traversal`) or starts at a root (`absolute`), a name that cannot be
+ *  one (`bad-name`), a link, a device or FIFO, an encrypted entry, a
+ *  compression method or entry type this box does not read (`method`,
+ *  `unsupported`), past the entry cap (`too-large`), bytes that do not
+ *  match the archive's word (`damaged`), or a write that failed
+ *  (`not-written`). */
+export type ArchiveEntryRefusal =
+  | 'traversal'
+  | 'absolute'
+  | 'bad-name'
+  | 'link'
+  | 'device'
+  | 'encrypted'
+  | 'method'
+  | 'unsupported'
+  | 'too-large'
+  | 'damaged'
+  | 'not-written';
+
+export type ArchiveExtractView = {
+  state: ArchiveExtractStateName;
+  /** The folder made beside the archive for its contents (null only for a
+   *  request whose folder could not be made). */
+  folder: { id: string; path: string | null } | null;
+  /** When it was asked, started and finished (ISO). */
+  queuedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  /** So far while running; in all when done. */
+  files: number;
+  folders: number;
+  bytes: number;
+  /** macOS and Windows folder files left out (`__MACOSX/`, `.DS_Store`, ...). */
+  skipped: number;
+  /** Files whose deeper folders went into their name (the tree holds
+   *  three folder levels below Files). */
+  flattened: number;
+  /** The first 100 entries not written, each with its reason;
+   *  `refusedCount` counts them all. */
+  refused: { name: string; reason: ArchiveEntryRefusal }[];
+  refusedCount: number;
+  /** A failed extraction: why, in a sentence. */
+  error?: string;
+};
+
+export type ArchiveExtractAnswer = {
+  file: { id: string; name: string };
+  /** Whether "Extract contents" applies: a ZIP, TAR or gzip by its name and
+   *  its first bytes. `why` says it when not. */
+  extractable: boolean;
+  why?: string;
+  /** The last extraction asked, or null when none was. */
+  extract: ArchiveExtractView | null;
 };

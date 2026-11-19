@@ -1230,9 +1230,12 @@ An archive is found by its first bytes, not by its extension (a
 | ZIP                      | the directory at the end of the file; no inflate                                  |
 | TAR                      | the 512-byte headers; the data is jumped over                                     |
 | `.gz`, `.tgz`, `.tar.gz` | no list: the brain does not inflate outside bytes; the type line says "gzip file" |
-| `.7z`, `.rar`            | no list: the directory needs a decoder                                            |
+| `.7z`, `.rar`            | no list: the directory needs a decoder; the type line says "7z archive" or "RAR archive" by the first bytes |
 
-Nothing is unpacked and no entry's contents are read. The limits
+Nothing is unpacked and no entry's contents are read: an archive is an
+archive. Its status is `indexed` with the detail cut `archive` (or
+`archive_sealed` for 7z and RAR), never `partial`; its contents are read
+only when a person asks to extract them (docs/files.md, "8e. Archives"). The limits
 (constants in `default-text.ts`): 500 names, then one line "and N more"
 (or "and more" when the count is not known); 200 characters a name (at
 most 800 bytes of a name are read; a pax header block is read up to 8 KB
