@@ -1180,19 +1180,19 @@ const V1_CREATES: readonly string[] = [
 describe.skipIf(!hasManifest)('S9 part 2: every area row is answered by the Admin step', () => {
   it('an area row whose caller the Admin step does not answer is refused at boot', async () => {
     const manifest = (await import('../../server/route-manifest.gen')).routeManifest;
-    // The asset reader on the attachment bytes (the connectors area): its
+    // The asset reader on the attachment bytes (the users area): its
     // guard is served there, but the gate's step 5 holds no view for it.
     expect(() =>
       buildRoutePolicy([
         { pattern: '/api/attachments/:id', methods: ['GET'], reads: { GET: 'readerAsset' } },
       ]),
-    ).toThrow(/manages the connectors area but reads the readerAsset caller/);
+    ).toThrow(/manages the users area but reads the readerAsset caller/);
     // The app's own: the owner guard and its asset form.
     expect(
       buildRoutePolicy([
         { pattern: '/api/attachments/:id', methods: ['GET'], reads: { GET: 'ownerAsset' } },
       ]).get('GET /api/attachments/:id')?.area,
-    ).toBe('connectors');
+    ).toBe('users');
     expect(ADMIN_STEP_CALLERS).toEqual(new Set(['owner', 'ownerAsset']));
     const callers = new Set(
       [...buildRoutePolicyOf(manifest).values()]

@@ -599,9 +599,9 @@ the Control Center at ... (tool scope: admin)`.
   users screen's; each never touches the box owner, never changes a role,
   never sets a password); less code and
   run execution (`sandbox_*`, `run_*`, `run_terminal`). The users area's
-  mail tools (`USERS_MAIL_TOOLS`: `email_list`, `email_get`, `email_page`,
-  `email_send`, which moved there from connectors with the System
-  workspace) stay out. The other areas hold
+  mail tools (`email_list`, `email_get`, `email_page`, `email_send`, which
+  moved there from connectors with the System workspace) are not reviewed
+  users tools, so they stay out. The other areas hold
   data (`connectors`: peers, Telegram; `admin`: recall, crawl) and
   stay out, with every tool of no area (files, pages, chats, tables, tasks,
   search, apps, code).

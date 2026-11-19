@@ -27,7 +27,6 @@ const {
   listToolsForCenter,
   NONCE_MAX,
   REVIEWED_USERS_TOOLS,
-  USERS_MAIL_TOOLS,
   NONCE_TTL_MS,
   runToolCall,
   takeNonce,
@@ -165,6 +164,8 @@ describe('the lists', () => {
     for (const name of [...admin, ...full]) expect(name).not.toMatch(/^control_/);
   });
 
+  const MAIL_TOOLS = ['email_get', 'email_list', 'email_page', 'email_send'];
+
   it('never: a login tool only once reviewed for the owner rule; a vault value stays sealed', () => {
     // A builtin of the users area, or one named for logins, users, members
     // or the owner, must be on the reviewed list (it never touches the box
@@ -176,17 +177,15 @@ describe('the lists', () => {
       const loginish =
         area === 'users' ||
         /^(user|users|login|logins|owner|member|members|workspace_user)_/.test(d.slug);
-      // The mail tools are the users area's too (the owner's Inbox), named
-      // and kept out of admin.
-      if (loginish && !USERS_MAIL_TOOLS.has(d.slug)) {
-        expect(REVIEWED_USERS_TOOLS.has(d.slug), d.slug).toBe(true);
+      // The mail tools (the owner's Inbox) moved to the users area with the
+      // System workspace: not reviewed, so they stay out of admin, as they
+      // did under connectors.
+      if (MAIL_TOOLS.includes(d.slug)) {
+        expect(area, d.slug).toBe('users');
+        expect(toolAllowed('admin', d), d.slug).toBe(false);
+        continue;
       }
-    }
-    for (const slug of USERS_MAIL_TOOLS) {
-      const d = listBuiltins().find((b) => b.slug === slug)!;
-      const s = (d.policy as { scope?: unknown }).scope;
-      expect(typeof s === 'object' && s ? (s as { area?: string }).area : null, slug).toBe('users');
-      expect(toolAllowed('admin', d), slug).toBe(false);
+      if (loginish) expect(REVIEWED_USERS_TOOLS.has(d.slug), d.slug).toBe(true);
     }
     // The vault's own reads hand out no plaintext (their own tests pin it);
     // no tool of any scope is named to reveal one.
