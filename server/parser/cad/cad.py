@@ -390,10 +390,11 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt  # noqa: PLC0415
-    from ezdxf.addons.drawing import Frontend, RenderContext  # noqa: PLC0415
+    from ezdxf.addons.drawing import RenderContext  # noqa: PLC0415
     from ezdxf.addons.drawing.matplotlib import MatplotlibBackend  # noqa: PLC0415
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
 
+    import cad_frontend  # noqa: PLC0415 - child-only; sits next to this file
     import dwg_frame  # noqa: PLC0415 - child-only; sits next to this file
 
     max_pixels = 30_000_000
@@ -458,9 +459,11 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             # stroke weight: ezdxf floors every stroke at a width in POINTS,
             # so a small page makes hairlines ~5× too heavy and fills small
             # text in solid. dpi cannot fix that; only a bigger page can.
-            Frontend(
+            front = cad_frontend.Frontend(
                 RenderContext(document), MatplotlibBackend(ax, adjust_figure=False)
-            ).draw_layout(msp_layout, finalize=True, layout_properties=lp)
+            )
+            front.draw_layout(msp_layout, finalize=True, layout_properties=lp)
+            index["hatches_outlined"] = front.outlined
             # The note stays drawn, outside the axes' limits. Saved at the
             # whole page: a tight bbox would measure the note too. The aspect
             # stays equal, so a sheet past the page's clamped shape gains a
@@ -512,9 +515,15 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     # Registry without pixels still ships; the parent tolerates a missing
     # model.png. The reason is recorded so the app side can say WHY the
     # drawing has no image child instead of silently emitting nothing.
+    # Pattern hatches too fine to draw (cad_frontend.MAX_DASHES), drawn as
+    # their outline: the picture is partial, and says so. A DWG says it in
+    # its `partial` list too, as the digest's "Partly read".
+    index["hatches_outlined"] = 0
     render_error = render_png(doc)
 
     index["render_error"] = render_error
+    if index["hatches_outlined"] and converter == "ezdwg":
+        notes["partial"].append({"reason": cad_frontend.OUTLINED, "count": index["hatches_outlined"]})
     # After the picture: the SVGs draw in temporary layouts of the same
     # document, and never cost the registry or model.png.
     index.update(symbols_of(doc, started + SYMBOL_BUDGET_S, started + SYMBOL_STOP_S))

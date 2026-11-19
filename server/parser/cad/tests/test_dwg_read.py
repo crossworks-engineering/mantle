@@ -333,6 +333,26 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(bare.dxf.pattern_name, "ANSI31")
         self.assertEqual(partial(notes), {"hatch pattern not known (drawn as ANSI31)": 1})
 
+    def test_a_hatch_far_up_and_upside_down_keeps_its_small_boundary(self):
+        # The reader gives each boundary point as (x, y, elevation). The
+        # elevation is no bulge: read as one, these edges were arcs km wide.
+        up = 1.06e7
+        square = [{"closed": True, "points": [(0, 0, up), (10, 0, up), (10, 10, up), (0, 10, up), (0, 0, up)]}]
+        doc, notes = dwg_read.build_document(
+            fake([ent(0x194, "HATCH", pattern_name="ANSI31", solid_fill=False, paths=square, elevation=up,
+                      extrusion=(0.0, 0.0, -1.0))])
+        )
+        (hatch,) = list(doc.modelspace())
+        self.assertEqual(not_converted(notes), {})
+        self.assertEqual(tuple(hatch.dxf.extrusion), (0.0, 0.0, -1.0))
+        self.assertEqual(hatch.dxf.elevation.z, up)
+        (path,) = hatch.paths
+        self.assertEqual([v[2] for v in path.vertices], [0.0] * len(path.vertices))
+        from ezdxf import bbox  # noqa: PLC0415
+
+        box = bbox.extents([hatch])
+        self.assertLessEqual(max(box.size.x, box.size.y), 10.0 + 1e-9)
+
     def test_an_entity_that_fails_after_it_is_made_leaves_nothing(self):
         # The hatch is made, then its pattern line is not finite.
         square = [{"closed": True, "points": [(0, 0, 0), (10, 0, 0), (10, 10, 0)]}]

@@ -328,9 +328,11 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
     import matplotlib.pyplot as plt  # noqa: PLC0415
     from matplotlib.collections import LineCollection  # noqa: PLC0415
     from matplotlib.patches import Circle, Rectangle  # noqa: PLC0415
-    from ezdxf.addons.drawing import Frontend, RenderContext  # noqa: PLC0415
+    from ezdxf.addons.drawing import RenderContext  # noqa: PLC0415
     from ezdxf.addons.drawing.matplotlib import MatplotlibBackend  # noqa: PLC0415
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
+
+    import cad_frontend  # noqa: PLC0415 - imports ezdxf; sits next to this file
 
     texts = doc_texts(doc)
     msp = doc.modelspace()
@@ -343,9 +345,8 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
     ax.set_axis_off()
     lp = LayoutProperties.from_layout(msp)
     lp.set_colors("#FFFFFF")  # white page: colour 7 resolves to black
-    Frontend(RenderContext(doc), MatplotlibBackend(ax, adjust_figure=False)).draw_layout(
-        msp, finalize=True, layout_properties=lp
-    )
+    front = cad_frontend.Frontend(RenderContext(doc), MatplotlibBackend(ax, adjust_figure=False))
+    front.draw_layout(msp, finalize=True, layout_properties=lp)
     full = (ax.get_xlim(), ax.get_ylim())
     ax.set_aspect("auto")
     if views:
@@ -428,7 +429,8 @@ def render(doc, spec: dict, outdir: str, deadline: float) -> dict:
         overview = {"file": "overview.png", "window": [fx0, fy0, fx1, fy1],
                     "width": wpx, "height": hpx}
     plt.close("all")
-    result = {"crops": out_crops, "overview": overview, "capped": sorted(set(cut))}
+    result = {"crops": out_crops, "overview": overview, "capped": sorted(set(cut)),
+              "hatches_outlined": front.outlined}
     if frame is not None:
         result["frame"] = frame
     return result

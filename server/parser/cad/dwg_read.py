@@ -716,7 +716,11 @@ class _Build:
         if t == "HATCH":
             rows = []
             for p in g.get("paths") or []:
-                pts = [_p3(q) for q in (p.get("points") or [])]
+                # x and y only: a polyline path reads a third value as a
+                # BULGE, and the reader's third value is the elevation (kept
+                # below). A hatch far up would turn each edge into an arc
+                # kilometres wide, and its pattern into billions of lines.
+                pts = [_p3(q)[:2] for q in (p.get("points") or [])]
                 rows.append((pts, bool(p.get("closed", True))))
             if g.get("elevation"):
                 a["elevation"] = (0.0, 0.0, _num(g["elevation"]))

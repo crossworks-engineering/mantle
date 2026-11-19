@@ -313,13 +313,16 @@ def _copies(e) -> int:
         return 1
 
 
-def draw_svg(doc, ctx, name: str, n: int):
+def draw_svg(doc, ctx, name: str, n: int, facts: dict | None = None):
     """One block drawn once: (svg, (x0, y0, width, height)), or None when it
     draws nothing. Raises what the drawing raises. The INSERT sits on LAYER,
-    which symbols_index makes before the render contexts read the layers."""
-    from ezdxf.addons.drawing import Frontend, layout, svg  # noqa: PLC0415
+    which symbols_index makes before the render contexts read the layers.
+    A pattern hatch drawn as its outline counts in `facts`."""
+    from ezdxf.addons.drawing import layout, svg  # noqa: PLC0415
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
     from ezdxf.math import BoundingBox2d  # noqa: PLC0415
+
+    import cad_frontend  # noqa: PLC0415 - imports ezdxf; sits next to this file
 
     lname = f"{LAYOUT_PREFIX}{n}"
     while lname in doc.layouts:
@@ -334,7 +337,12 @@ def draw_svg(doc, ctx, name: str, n: int):
         # model.png, and a rebuild can lay the SVG over its own page.
         props.set_colors("#FFFFFF00")
         backend = svg.SVGBackend()
-        Frontend(ctx, backend).draw_layout(lay, layout_properties=props)
+        front = cad_frontend.Frontend(ctx, backend)
+        try:
+            front.draw_layout(lay, layout_properties=props)
+        finally:
+            if facts is not None:
+                facts["hatches_outlined"] += front.outlined
         box = backend.player().bbox()
         if not box.has_data:
             return None
@@ -371,6 +379,8 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
         "hidden": 0,
         "draw_errors": 0,
         "not_drawn": {"too_large": 0, "total_cap": 0, "time": 0},
+        # Pattern hatches drawn as their outline (cad_frontend.MAX_DASHES).
+        "hatches_outlined": 0,
     }
     placements: list = []
     found: dict = {}  # key -> {"name", "count"}, in first-seen order
@@ -452,10 +462,10 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
             facts["not_drawn"]["too_large"] += 1
             continue
         try:
-            drawn = draw_svg(doc, ctx, seen["name"], n)
+            drawn = draw_svg(doc, ctx, seen["name"], n, facts)
             hidden = drawn is None
             if hidden:
-                drawn = draw_svg(doc, every_layer, seen["name"], n)
+                drawn = draw_svg(doc, every_layer, seen["name"], n, facts)
             # A page with nothing on it is no symbol either.
             if drawn is None or "<path" not in drawn[0]:
                 raise ValueError("the block draws nothing")
