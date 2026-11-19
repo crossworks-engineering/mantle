@@ -290,8 +290,9 @@ export type FileTabsWriteInput = {
    *  (docs/pipelines.md, "Text and pictures from every Reader"). A picture
    *  is a file the step wrote in `job.dir`; the job sends its bytes. */
   text?: string;
-  /** `page`: the page of the original file a picture is of (a book's page
-   *  pictures, G1). */
+  /** `page`: the page of the original file a picture is of (a Reader that
+   *  reads in page windows names it; a book's page pictures are its Agent's,
+   *  G1, never its Reader's). */
   pictures?: readonly { file: string; mime: string; caption?: string; page?: number }[];
 };
 

@@ -11,7 +11,10 @@
  * tab Pages, read by bookVisionPagesOf in packages/content/src/
  * book-pages.ts), so a page the Reader read well is never asked. The step
  * reads them in the page window the core gives (`pageFrom`, `pageTo`) and
- * asks only the first `pages` of the file's marked pages (the option).
+ * asks only the first `pages` of the file's marked pages (the option), but
+ * those in `state.donePages`: a page whose picture and text are saved
+ * already (G1, packages/content/src/book-page-pictures.ts), never drawn or
+ * asked again.
  *
  * Its one step draws the pictures with no model, in the parser's pdfjs
  * child (`job.pdfPictures`), before any paid call. A marked page that
@@ -69,6 +72,12 @@ export function visionPagesOf(state: unknown): number[] {
   return [...new Set(pages)].sort((a, b) => a - b);
 }
 
+/** The pages done already (`state.donePages`): a set, any number. */
+export function donePagesOf(state: unknown): Set<number> {
+  const raw = isObject(state) && Array.isArray(state.donePages) ? state.donePages : [];
+  return new Set(raw.filter((n): n is number => Number.isInteger(n) && n >= 1));
+}
+
 /** The option `pages`: the most marked pages of a file to read. */
 export function pagesOf(options: Readonly<Record<string, unknown>>): number {
   const n = options.pages;
@@ -83,10 +92,13 @@ export const step: PipelineStep = async (req, job) => {
   const ext = (req.file?.ext ?? '').toLowerCase();
   if (ext !== 'pdf' || req.kind !== KIND) return { status: 'not_mine' };
   const failed = (why: string) => ({ status: 'failed' as const, warnings: [why] });
-  // The file's first marked pages, up to the option; of them, this window's.
+  // The file's first marked pages, up to the option, but those done; of
+  // them, this window's. The option counts every marked page of the file,
+  // done or not, so a run again never reaches past it.
   const all = visionPagesOf(req.state);
   const cap = pagesOf(req.options);
-  const marked = all.slice(0, cap);
+  const done = donePagesOf(req.state);
+  const marked = all.slice(0, cap).filter((n) => !done.has(n));
   const from = req.pageFrom ?? 1;
   let to = req.pageTo;
   if (to === undefined) {

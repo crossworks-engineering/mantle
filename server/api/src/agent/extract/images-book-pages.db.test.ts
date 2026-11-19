@@ -161,8 +161,18 @@ describe.skipIf(!URL)("a book's page pictures, saved by its Agent", () => {
     );
     expect((await dataOf(rows[1]!.id)).text).toBe('the text of page 4');
     // A picture whose text was taken off is not done.
-    await x(sqlTag`update nodes set data = data - 'text' where id = ${rows[1]!.id}`);
+    await x(sqlTag`update nodes set data = data - 'text' - 'index_work' where id = ${rows[1]!.id}`);
     expect([...(await extract(() => pics.done()))]).toEqual([2]);
+    // Saved again over the same bytes: its text is back and it is indexed
+    // again (the work stamp of a re-index).
+    await extract(() =>
+      pics.save([
+        { page: 4, bytes: PNG(4, ' again'), mime: 'image/png', text: 'the text of page 4' },
+      ]),
+    );
+    const back = await dataOf(rows[1]!.id);
+    expect(back.text).toBe('the text of page 4');
+    expect(back.index_work).toBe('extract');
   });
 
   it('the count is of what is saved and marked; the core part stands; all saved clears it', async () => {

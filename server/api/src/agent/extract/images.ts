@@ -269,20 +269,16 @@ export async function maybeExtractEmbeddedImages(
       ? await picturesByWindows(loaded.bytes, cap, whole, undefined, { scanBook: book })
       : { ...whole!, windowsFailed: 0 };
   // G1: a page the book reader left to vision has its page picture, saved
-  // by the book's Agent with the text it read (pdf-page-read). A picture
-  // here that covers such a page (IMAGE_PAGE_COVER or more: the page's
-  // scan) is that page again: it is left out, so no page is pictured or
-  // read by vision twice. Every other picture of a book is kept, a figure
-  // on a vision page too.
+  // by the book's Agent with the text it read (pdf-page-read). The pictures
+  // here that together cover half such a page or more (IMAGE_PAGE_COVER:
+  // its scan, whole or in strips) are that page again: they are left out,
+  // so no page is pictured or read by vision twice. Every other picture of
+  // a book is kept, a figure on a vision page too. A picture whose cover is
+  // not known counts as none: kept.
   if (book) {
     const vision = await bookVisionPageSetOf({ id: node.id, sha256: data.sha256 });
     if (vision.size > 0) {
-      result.images = result.images.filter(
-        (img) =>
-          img.location?.page == null ||
-          !vision.has(img.location.page) ||
-          (img.pageCover ?? 0) < IMAGE_PAGE_COVER,
-      );
+      result.images = withoutVisionPageScans(result.images, vision);
       result.images.forEach((img, i) => (img.ordinal = i + 1));
     }
   }
@@ -917,6 +913,27 @@ async function extractedPicturesOf(
   return new Set(rows.map((r) => r.sha ?? '').filter((s) => s !== ''));
 }
 
+/** A book's pictures but those of a page left to vision (`vision`) that
+ *  together cover half the page or more (IMAGE_PAGE_COVER: its scan, whole
+ *  or in strips): that page's picture is the Agent's (G1). A picture whose
+ *  cover is not known counts as none. */
+export function withoutVisionPageScans<T extends Pick<EmbeddedImage, 'location' | 'pageCover'>>(
+  images: readonly T[],
+  vision: ReadonlySet<number>,
+): T[] {
+  const cover = new Map<number, number>();
+  for (const img of images) {
+    const page = img.location?.page;
+    if (page != null && vision.has(page)) {
+      cover.set(page, (cover.get(page) ?? 0) + (img.pageCover ?? 0));
+    }
+  }
+  return images.filter((img) => {
+    const page = img.location?.page;
+    return page == null || (cover.get(page) ?? 0) < IMAGE_PAGE_COVER;
+  });
+}
+
 /** The bytes of a picture to save. A picture read from disk that is gone
  *  (its spool was dropped) is a failed save, counted as one not kept, never
  *  an empty picture saved as if it were the page. */
@@ -1070,8 +1087,33 @@ export function bookPagePicturesFor(
         sourceTitle: fileKey,
       });
       const stem = sourceTitle.replace(/\.[a-z0-9]{1,6}$/i, '');
+      // The text each page picture of these bytes holds now: a save again
+      // that changes it is indexed again.
+      const before = new Map(
+        (
+          await db
+            .select({ id: nodes.id, text: sql<string | null>`${nodes.data}->>'text'` })
+            .from(nodes)
+            .where(
+              and(
+                eq(nodes.ownerId, ownerId),
+                eq(nodes.type, 'file'),
+                sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
+                sql`${nodes.data}->>'sourceSha256' = ${sha}`,
+                sql`${nodes.data} ? 'bookPage'`,
+              ),
+            )
+        ).map((r) => [r.id, r.text]),
+      );
       let saved = 0;
       for (const p of pictures) {
+        // The book may take new bytes while a window saves: a picture of
+        // the old ones is not saved after that.
+        const [still] = await db
+          .select({ sha: sql<string | null>`${nodes.data}->>'sha256'` })
+          .from(nodes)
+          .where(and(eq(nodes.id, fileId), eq(nodes.ownerId, ownerId)));
+        if (still?.sha !== sha) break;
         const ext = describeImageBytes(p.bytes, p.mime === 'image/jpeg' ? 'jpg' : 'png').ext;
         try {
           const part = await createPartOfFile(
@@ -1099,13 +1141,16 @@ export function bookPagePicturesFor(
             (f) => deleteFileById({ ownerId, fileId: f.id }).then((r) => r.ok),
           );
           // A write over a page picture of other bytes (a page drawn again
-          // whose picture differs) drops the text with the old bytes' keys:
-          // it is set again, through the one door of a re-index.
+          // whose picture differs) drops the text with the old bytes' keys,
+          // and a write over the same bytes with new text indexes nothing
+          // by itself: either way the text is set, through the one door of
+          // a re-index. A new picture is indexed as it is made.
           const [now] = await db
             .select({ text: sql<string | null>`${nodes.data}->>'text'` })
             .from(nodes)
             .where(and(eq(nodes.id, part.id), eq(nodes.ownerId, ownerId)));
-          if (now && now.text !== p.text) {
+          const wasThere = before.has(part.id);
+          if (now && (now.text !== p.text || (wasThere && before.get(part.id) !== p.text))) {
             await db.transaction(async (tx) => {
               await tx
                 .update(nodes)

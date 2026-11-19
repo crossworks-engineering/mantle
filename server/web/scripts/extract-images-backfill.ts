@@ -256,17 +256,27 @@ async function main() {
       and n.data->>'sourceFileId' is null
       -- and skip anything that already yielded pictures, unless it left
       -- pictures out (data.images, kept < found): a raised cap fetches the
-      -- rest, and the extractor keeps the pictures it has by their sha256
+      -- rest, and the extractor keeps the pictures it has by their sha256.
+      -- A book's page pictures (bookPage) are its Agent's, not this pass's:
+      -- they count as none here, and so does their part of the stamp
+      -- (data.images.pages); a stamp with parts is read by its embedded one.
       and (
         not exists (
           select 1 from nodes c
           where c.owner_id = n.owner_id
             and c.type = 'file'
             and c.data->>'sourceFileId' = n.id::text
+            and not (c.data ? 'bookPage')
         )
         or (
           jsonb_typeof(n.data->'images') = 'object'
-          and (n.data->'images'->>'kept')::int < (n.data->'images'->>'found')::int
+          and (
+            case when n.data->'images' ? 'embedded' or n.data->'images' ? 'pages'
+              then (n.data->'images'->'embedded'->>'kept')::int
+                     < (n.data->'images'->'embedded'->>'found')::int
+              else (n.data->'images'->>'kept')::int < (n.data->'images'->>'found')::int
+            end
+          )
         )
       )
     order by n.created_at desc
