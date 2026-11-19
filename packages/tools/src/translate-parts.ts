@@ -80,66 +80,104 @@ export function estimateTokens(text: string): number {
   return Math.ceil(tokens);
 }
 
-const FENCE_LINE = /^\s*(```|~~~)/;
 const HEADING = /^#{1,6}\s/;
 
-/** Whether a line closes the fence `mark` opened: the mark (or longer) and
- *  nothing else. */
-const closesFence = (line: string, mark: string) => {
-  const t = line.trim();
-  return t.startsWith(mark) && /^(`+|~+)$/.test(t) && t[0] === mark[0];
-};
+/** The run a line opens a fenced code block with (CommonMark: up to three
+ *  spaces, three or more backticks or tildes; a backtick run's info string
+ *  holds no backtick), or null. */
+function fenceOpens(line: string): string | null {
+  const m = line.replace(/\r?\n$/, '').match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+  if (!m) return null;
+  if (m[1]![0] === '`' && m[2]!.includes('`')) return null;
+  return m[1]!;
+}
+
+/** Whether a line closes the fence `run` opened: the same character, at
+ *  least as many, and nothing else on the line. */
+function fenceCloses(line: string, run: string): boolean {
+  const m = line.replace(/\r?\n$/, '').match(/^ {0,3}(`{3,}|~{3,})\s*$/);
+  return !!m && m[1]![0] === run[0] && m[1]!.length >= run.length;
+}
+
+/** The fenced code blocks of `lines`, by first and last line. A fence that
+ *  never closes is no code block: its lines stay text (a separator line of
+ *  tildes, an unclosed fence), so they are translated, never skipped. */
+function fenceSpans(lines: readonly string[]): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const run = fenceOpens(lines[i]!);
+    if (!run) continue;
+    let j = i + 1;
+    while (j < lines.length && !fenceCloses(lines[j]!, run)) j++;
+    if (j < lines.length) {
+      spans.push({ start: i, end: j });
+      i = j;
+    }
+  }
+  return spans;
+}
 
 /**
  * The text's blocks, exactly: a run of lines with text, with the blank
- * lines after it. A fenced code block is always a block of its own (its
- * blank lines included), whatever is written right before or after it. The
- * blocks joined are the text.
+ * lines after it. A closed fenced code block is always a block of its own
+ * (its blank lines included), whatever is written right before or after
+ * it. The blocks joined are the text.
  */
 export function blocksOf(text: string): string[] {
   const lines = text ? linesOf(text) : [];
+  const spans = new Map(fenceSpans(lines).map((s) => [s.start, s.end]));
   const blocks: string[] = [];
   let cur = '';
-  let inFence = false;
-  let fenceMark = '';
   let trailingBlank = false;
   let afterFence = false;
-  for (const line of lines) {
-    const blank = line.trim() === '';
-    if (inFence) {
-      cur += line;
-      if (closesFence(line, fenceMark)) {
-        inFence = false;
-        afterFence = true;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const end = spans.get(i);
+    if (end !== undefined) {
+      if (cur.trim() !== '') {
+        blocks.push(cur);
+        cur = '';
       }
+      cur += lines.slice(i, end + 1).join('');
+      i = end;
+      trailingBlank = false;
+      afterFence = true;
       continue;
     }
-    if (blank) {
+    if (line.trim() === '') {
       cur += line;
       trailingBlank = cur.trim() !== '';
       continue;
     }
-    const fence = line.match(FENCE_LINE);
-    // A line with text after blank lines, after a closed fence, or a fence
-    // opening after text, starts the next block.
-    if (cur.trim() !== '' && (trailingBlank || afterFence || fence)) {
+    // A line with text after blank lines or after a fence starts a block.
+    if (cur.trim() !== '' && (trailingBlank || afterFence)) {
       blocks.push(cur);
       cur = '';
     }
     trailingBlank = false;
     afterFence = false;
     cur += line;
-    if (fence) {
-      inFence = true;
-      fenceMark = fence[1]!;
-    }
   }
   if (cur) blocks.push(cur);
   return blocks;
 }
 
-/** Whether a block is a fenced code block (with its trailing blank lines). */
-export const isFenceBlock = (block: string) => FENCE_LINE.test(block.trimStart().split('\n')[0]!);
+/** Whether a block is a closed fenced code block (with blank lines around
+ *  it only). */
+export function isFenceBlock(block: string): boolean {
+  const lines = linesOf(block.trimStart());
+  const first = fenceSpans(lines)[0];
+  if (!first || first.start !== 0) return false;
+  return lines.slice(first.end + 1).every((l) => l.trim() === '');
+}
+
+/** Tokens of a text counted on the LOW side (six ASCII characters or eight
+ *  others to a token): what any tokenizer reads at least. */
+export function lowTokens(text: string): number {
+  let ascii = 0;
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) < 128) ascii++;
+  return Math.floor(ascii / 6 + (text.length - ascii) / 8);
+}
 
 /** One character's share of {@link estimateTokens}. */
 const charTokens = (code: number) => (code < 128 ? 0.25 : 1);
@@ -390,9 +428,10 @@ function answerProblem(
   if (answer.finishReason === 'error') return 'the provider sent a broken answer';
   if (answer.finishReason !== 'stop') return 'the answer ended without a finish';
   if (!clean) return 'the answer was empty';
-  // A server that trimmed the prompt by itself read far less than was sent
-  // (the estimate is on the high side, so only a large gap counts).
-  if (answer.tokensIn !== undefined && answer.tokensIn > 0 && answer.tokensIn < sentTokens * 0.25) {
+  // A server that trimmed the prompt by itself read far less than was sent.
+  // `sentTokens` is a low-side count, so a tokenizer that packs a script
+  // tightly is never refused; only a large gap counts.
+  if (answer.tokensIn !== undefined && answer.tokensIn > 0 && answer.tokensIn < sentTokens * 0.5) {
     return 'the model read only part of the text';
   }
   // A long part answered with a few lines is a summary, not a translation.
@@ -478,7 +517,7 @@ async function translateOnePart(opts: {
     const clean = cleanAnswer(answer.text, fence);
     const restored = unmaskCode(clean, blocks, nonce);
     const problem =
-      answerProblem(masked, answer, clean, estimateTokens(system) + estimateTokens(user)) ??
+      answerProblem(masked, answer, clean, lowTokens(system) + lowTokens(user)) ??
       (restored === null ? 'the answer lost or repeated a code block' : null);
     if (!problem && restored !== null) {
       if (onFallback) opts.onFallback();

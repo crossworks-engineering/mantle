@@ -793,7 +793,8 @@ holds that group can call it, and on the MCP surface. Owner's rules:
   part is translated, three at a time, and the answers are joined in the
   text's order. Only an answer that finished (`finish_reason: stop`) is
   taken: one that ended with no finish, an empty or far too short one, or
-  one from a model that read far less than it was sent is tried again; an
+  one from a self-hosted model (`local`, `custom`) that says it read far
+  less than it was sent is tried again; an
   answer cut at the output limit is cut in two and each half done again; a
   part that still fails fails the whole call, with which part and why, and
   no other part is sent after that. A shortened text is never returned.
@@ -802,14 +803,19 @@ holds that group can call it, and on the MCP surface. Owner's rules:
   `@mantle/tracing`) and the context window. A part's answer must fit the
   output limit even when the target language takes 2.5 times the tokens of
   the source; the part, the prompt and the answer must fit the window. A
-  model the catalog does not know gets a careful 8,192-token window (a
-  local server trims a prompt longer than its window by itself).
+  model the catalog does not know, and every self-hosted model, gets a
+  careful 8,192-token window (a local server trims a prompt longer than its
+  window by itself).
   `params.part_tokens` asks for smaller parts, never larger ones.
-- **Code is never sent.** A fenced code block is always a block of its own
-  (a long one a part of its own, never cut), goes to the model as a
-  stand-in line carrying a per-call number, and is put back byte for byte;
-  an answer that loses or repeats a stand-in is not taken, and a part that
-  is only code makes no call.
+- **Code is never sent.** A closed fenced code block (three or more
+  backticks or tildes, closed by the same or a longer run) is always a
+  block of its own (a long one a part of its own, never cut), goes to the
+  model as a stand-in line carrying a per-call number, and is put back byte
+  for byte; an answer that loses or repeats a stand-in is not taken, and a
+  part that is only code makes no call. A fence that never closes, or a
+  line of tildes used as a separator, is text and is translated. Code the
+  stand-ins do not cover (a fence inside a quote or a list item, indented
+  code, inline code) goes to the model with the rule to keep it as it is.
 - **Layout kept.** The rules ask for Markdown, tables, inline code, links,
   numbers, units and names unchanged. The text is fenced as data.
 - **Models.** The worker's own model runs every part (shipped:

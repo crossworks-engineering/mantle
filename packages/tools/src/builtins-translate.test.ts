@@ -420,12 +420,24 @@ describe('translate: save', () => {
 
   it('a page that cannot go beside its original goes to the top level', async () => {
     rows.set('page-1', { id: 'page-1', type: 'page', title: 'Spec', path: 'pages.a', md: 'Hi' });
-    vi.mocked(content.createPage).mockRejectedValueOnce(new Error('permission denied'));
+    vi.mocked(content.createPage).mockRejectedValueOnce(new content.ParentPageNotFoundError());
     const r = out(await translate.handler({ node_id: 'page-1', to: 'de', save: true }, ownerCtx));
     expect(r.saved).toMatchObject({ kind: 'page', placed: 'the top level of Pages' });
     const calls = vi.mocked(content.createPage).mock.calls;
     expect(calls[0]![1]).toHaveProperty('siblingOf', 'page-1');
     expect(calls[1]![1]).not.toHaveProperty('siblingOf');
+  });
+
+  it('any other error beside the original is the save\u2019s own, never a quiet top-level copy', async () => {
+    rows.set('page-1', { id: 'page-1', type: 'page', title: 'Spec', path: 'pages.a', md: 'Hi' });
+    vi.mocked(content.createPage).mockRejectedValueOnce(
+      new Error('canceling statement: lock timeout'),
+    );
+    const r = out(await translate.handler({ node_id: 'page-1', to: 'de', save: true }, ownerCtx));
+    expect(r).not.toHaveProperty('saved');
+    expect(r.save_error).toBeTruthy();
+    expect(r.translation).toBe('DE:Hi');
+    expect(vi.mocked(content.createPage).mock.calls).toHaveLength(1);
   });
 
   it('a save that fails keeps the paid translation, with a fixed sentence', async () => {

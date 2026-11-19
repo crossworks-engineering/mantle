@@ -42,6 +42,8 @@ import {
   markdownToDoc,
   nodeUrl,
   NOTES_ROOT_LABEL,
+  PageFolderNotFoundError,
+  ParentPageNotFoundError,
 } from '@mantle/content';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { fileById, parserText, readFileById } from '@mantle/files';
@@ -53,7 +55,7 @@ import {
   refreshModelCatalog,
 } from '@mantle/tracing';
 import { getChatAdapter, type ProviderCredential } from '@mantle/voice';
-import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
+import { errorMessage, isScopeWriteRefusal, publicProviderErrorMessage } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { boolOpt, strOpt } from './coerce';
 import { defaultWorkerOrError } from './builtins-workers';
@@ -73,6 +75,10 @@ import {
  *  random id alike: it never says the item exists. */
 export const TRANSLATE_NOT_FOUND = (id: string) =>
   `Item ${id} not found: it may have been deleted or the id mistyped. Find it with search_nodes or tree_list, then try again.`;
+
+/** The providers that run a model on a server of the owner's own, which may
+ *  trim a prompt longer than its window by itself. */
+const SELF_HOSTED_PROVIDERS: ReadonlySet<string> = new Set(['local', 'custom']);
 
 /** The longest `to` / `from` (a language's name or code). */
 const LANGUAGE_MAX = 64;
@@ -305,7 +311,14 @@ async function saveCopy(
     } catch (err) {
       // The original's folder is not one the copy can go in (gone, or the
       // caller may not write there): the top level, where the database
-      // checks the create again.
+      // checks the create again. Any other error (a busy folder, the
+      // database) is the save's own: it is reported, never hidden.
+      const placement =
+        err instanceof ParentPageNotFoundError ||
+        err instanceof PageFolderNotFoundError ||
+        isScopeWriteRefusal(err) ||
+        visibilityRefusal(err) !== null;
+      if (!placement) throw err;
       console.error('[translate] the copy cannot go beside its original:', errorMessage(err));
     }
   }
@@ -459,10 +472,13 @@ export const translateTool: BuiltinToolDef = {
     // output limit from the live catalog (a careful default when it gives
     // none). Each model is asked for its own output limit.
     await refreshModelCatalog();
+    // A self-hosted route's model is not the catalog's, whatever its id
+    // looks like: the careful window, never a hosted one.
+    const selfHosted = SELF_HOSTED_PROVIDERS.has(worker.provider);
     const limitsOf = (model: string) => {
-      const catalogOutput = outputLimitForRoute(worker.provider, model);
+      const catalogOutput = selfHosted ? null : outputLimitForRoute(worker.provider, model);
       return {
-        context: contextLimitForRoute(worker.provider, model),
+        context: selfHosted ? null : contextLimitForRoute(worker.provider, model),
         output:
           params.max_tokens && params.max_tokens > 0
             ? Math.min(params.max_tokens, catalogOutput ?? params.max_tokens)
@@ -500,7 +516,9 @@ export const translateTool: BuiltinToolDef = {
         return {
           text: result.text,
           finishReason: result.finishReason,
-          ...(result.tokensIn !== undefined ? { tokensIn: result.tokensIn } : {}),
+          // A self-hosted server may trim a long prompt by itself: what it
+          // says it read is checked. A hosted route refuses instead.
+          ...(selfHosted && result.tokensIn !== undefined ? { tokensIn: result.tokensIn } : {}),
         };
       } catch (err) {
         throw new Error(publicProviderErrorMessage(err, 'translate', ctx.step), { cause: err });
