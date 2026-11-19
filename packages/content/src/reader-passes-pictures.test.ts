@@ -152,3 +152,29 @@ describe("a book's page pictures (G1, H1 of audit round 3)", () => {
     expect(got!.lost).toBe(2);
   });
 });
+
+describe('a draw that fails costs only its pages', () => {
+  it('a first cut that fails (not busy): the marked pages are counted lost, the kept ones stand, no throw', async () => {
+    keptRun([2]);
+    marked.mockResolvedValue([2, 30]);
+    split.mockRejectedValue(
+      new files.ParserError('timeout', 'the cut took too long', {
+        retryable: true,
+        terminal: false,
+      }),
+    );
+    const got = await standingReaderPictures('owner', FILE, Buffer.from('pdf'));
+    expect(got!.pictures.map((p) => p.page)).toEqual([2]);
+    expect(got!.lost).toBe(1);
+    got!.drop();
+  });
+
+  it('a busy parser throws: the extract tries again', async () => {
+    kept.mockReturnValue(undefined);
+    marked.mockResolvedValue([30]);
+    split.mockRejectedValue(
+      new files.ParserError('busy', 'busy', { retryable: true, terminal: false }),
+    );
+    await expect(standingReaderPictures('owner', FILE, Buffer.from('pdf'))).rejects.toThrow();
+  });
+});

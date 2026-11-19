@@ -14,8 +14,14 @@
  * made, kept for the extract (readerRun), so the three passes cost one job.
  * No model is asked: the run is model-free.
  */
-import { PIPELINE_ASK_PAGE_MAX, effectiveOptions, fileDbPaths, keptReaderRun } from '@mantle/files';
-import { bookScanPagesOf, bookVisionPagesOf } from './book-pages';
+import {
+  PIPELINE_ASK_PAGE_MAX,
+  effectiveOptions,
+  fileDbPaths,
+  isParserUnavailable,
+  keptReaderRun,
+} from '@mantle/files';
+import { bookVisionPageSetOf, bookVisionPagesOf } from './book-pages';
 import { readFileDbStamp, readFileRowNow } from './file-database';
 import { filePagesOf, pagesText } from './page-passages';
 import { SpooledPictures } from './picture-spool';
@@ -36,7 +42,7 @@ import {
 } from './pipeline-runner';
 import { pipelineOffHere, pipelineStateOf } from './pipeline-state';
 
-export { bookScanPagesOf, readerGivesText };
+export { bookVisionPageSetOf, readerGivesText };
 
 export type ReaderPass = 'text' | 'pictures';
 
@@ -261,9 +267,18 @@ export async function standingReaderPictures(
   if (missing.length > 0) {
     const agent = bookAgentOf(pipelines);
     if (agent && readsInWindows(agent, 'pdf')) {
-      const out = await drawBookPages(agent, bytes, sha256, missing, drawn);
-      pictures.push(...out.pictures);
-      lost = out.lost;
+      try {
+        const out = await drawBookPages(agent, bytes, sha256, missing, drawn);
+        pictures.push(...out.pictures);
+        lost = out.lost;
+      } catch (err) {
+        // A busy or down parser: the extract tries again. Any other failure
+        // (the first cut, which no window rule covers) costs these pages,
+        // counted, never the book's other pictures.
+        drawn.drop();
+        if (isParserUnavailable(err)) throw err;
+        lost = missing.length;
+      }
     } else {
       lost = missing.length;
     }

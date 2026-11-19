@@ -85,8 +85,9 @@ export const step: PipelineStep = async (req, job) => {
     if (drawing.kind === 'document' || (count <= BOOK_MIN_PAGES && bookOf(count, drawing.pages))) {
       return { status: 'ok', kind: 'book' };
     }
-    // A short scan of typed pages and ruled pages (a table or a drawing
-    // form?): the decider says, once, where the run may ask (bookUnsureOf).
+    // A scan of typed pages and ruled pages (a table or a drawing form?),
+    // short or long: the decider says, once, where the run may ask
+    // (bookUnsureOf).
     const mixed = bookUnsureOf(count, drawing.pages);
     if ((drawing.kind !== 'unsure' && !mixed) || req.asks !== true) {
       return { status: 'ok', kind: drawing.kind, ...factsOf(drawing) };

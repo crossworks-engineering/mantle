@@ -608,8 +608,8 @@ export function officePagesOf(sample: readonly BookSamplePage[]): boolean {
 }
 
 /**
- * A short scan the rules cannot name a book or a drawing (the large-PDF
- * finish, routing check 1): office pages by {@link officePagesOf}, some of
+ * A scan the rules cannot name a book or a drawing, short or long (the
+ * large-PDF finish, routing check 1): office pages by {@link officePagesOf}, some of
  * them typed or scanned text (`document`), the others ruled scans (kind
  * `scan`: a table, a form, a sketch). The rules cannot tell a spec table
  * from a ruled drawing form by its lines, so the decider is asked once,
@@ -618,7 +618,9 @@ export function officePagesOf(sample: readonly BookSamplePage[]): boolean {
  * before.
  */
 export function bookUnsureOf(pageCount: number, sample: readonly BookSamplePage[]): boolean {
-  if (pageCount > BOOK_MIN_PAGES || bookOf(pageCount, sample)) return false;
+  // A long file of typed letters and filled forms is asked about too: its
+  // ruled pages past a fifth keep it from the long book rule (bookOf).
+  if (bookOf(pageCount, sample)) return false;
   if (!officePagesOf(sample)) return false;
   return sample.some((p) => p.kind === 'document') && sample.some((p) => p.kind === 'scan');
 }

@@ -238,8 +238,18 @@ describe('the router: an ambiguous short scan, and a table, by the decider', () 
     expect(bookUnsureOf(7, [...Array(6).fill(scannedText), ruled])).toBe(false);
     // Ruled only (a scanned sketch or form): the drawing reader's, no ask.
     expect(bookUnsureOf(3, [ruled, ruled, ruled])).toBe(false);
-    // A long file: the sample rule decides.
-    expect(bookUnsureOf(40, [scannedText, ruled])).toBe(false);
+    // A long file of typed letters and forms past a fifth of its pages: no
+    // book by the long rule, so the decider is asked too (a QA dossier).
+    expect(bookUnsureOf(300, [...Array(6).fill(scannedText), ...Array(4).fill(ruled)])).toBe(true);
+    // A long file the long rule names a book: no ask.
+    expect(bookUnsureOf(300, [...Array(9).fill(scannedText), ruled])).toBe(false);
+    // A long scanned set of large sheets with a cover page: no office pages, no ask.
+    expect(
+      bookUnsureOf(300, [
+        { ...scannedText, size: 'a1' },
+        ...Array(9).fill({ ...ruled, size: 'a1' }),
+      ]),
+    ).toBe(false);
   });
 
   it('the decider: table or document makes a mixed scan a book, a drawing kind keeps it a drawing', async () => {

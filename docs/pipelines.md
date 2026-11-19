@@ -2371,8 +2371,9 @@ scanned page), another drawing, a file of large sheets, a short scan whose
 pages are all ruled (kind `scan`: a scanned sketch, a ruled form), a long
 scan whose ruled pages are more than a fifth and not tables, and a file
 the rules leave `unsure`. They keep `drawing-pdf` and `pdf-sheet-read`
-exactly as before. An ambiguous short scan, some text pages and some ruled
-ones (`bookUnsureOf`: a spec table or a drawing form? the lines cannot tell),
+exactly as before. An ambiguous scan, short or long, some text pages and
+some ruled ones (`bookUnsureOf`: a spec table or a drawing form? the lines
+cannot tell; a long file of letters and filled forms),
 is put to the decider once where the run may ask: its `table` or `document`
 makes it a book, a drawing kind keeps it a drawing, and with no ask it stays
 the drawing reader's. An `unsure` file the decider calls a `table` (rows of
@@ -2428,9 +2429,13 @@ Agent's step with no model, only the windows that hold such pages
 asks are never sent. A page with a picture of these bytes already is not
 drawn again, and a page that cannot be drawn is counted in the file's
 pictures left out (`data.images`), so the book shows `partial`, never
-`indexed`. The core keeps no picture of its own of a page the Reader read
-by OCR or left to vision (a scanned page of a mixed book), so no page is
-pictured or read by vision twice. Their description
+`indexed`. The core keeps no picture of its own of a page the Reader
+left to vision (it has its page picture), so no page is pictured or read
+by vision twice; a page read by OCR or its text layer keeps the core's
+pictures (a screenshot over a short caption is a figure). A page picture
+gone from disk before it is saved (its spool dropped) is a failed save,
+counted, and drawn again on the next read; a page that cannot be drawn
+counts as left out, and the book's other pictures are still saved. Their description
 is the Agent `pdf-page-read`'s vision text of the page: a page picture never
 takes a vision call of its own (`load-body.ts`). The Agent runs after the
 extract; its run sets each picture's text and indexes it again through the
