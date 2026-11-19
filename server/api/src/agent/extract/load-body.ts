@@ -31,6 +31,7 @@ import {
   MEDIA_EXTS,
   parserRouteForExt,
   exportHintForExt,
+  fileTooLargeToRead,
   type ParserError,
 } from '@mantle/files';
 import { log, recordSkippedTrace, step } from '@mantle/tracing';
@@ -479,6 +480,33 @@ export async function loadExtractableBody(
     );
     return { ok: false };
   };
+
+  // Past the box's read cap (a disk-sync or drive file larger than
+  // MANTLE_MAX_UPLOAD_MB): stored as a node, never loaded whole here (every
+  // read is one Buffer, readFileNodeBytes refuses it). Said so, before any
+  // byte read, rather than looking like a file with nothing in it.
+  if (node.type === 'file' && !existingData.text && fileTooLargeToRead(existingData)) {
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'file_too_large',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          extension: fileExt,
+          size_bytes: existingData.size_bytes ?? existingData.sizeBytes,
+          hint: 'The file is larger than this box reads (MANTLE_MAX_UPLOAD_MB). It is stored and findable by its name; its content is not in search.',
+        },
+      },
+      node,
+    );
+    return { ok: false };
+  }
 
   const exportHint = node.type === 'file' ? exportHintForExt(fileExt) : undefined;
   if (exportHint) {

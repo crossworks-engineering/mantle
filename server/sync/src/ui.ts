@@ -93,13 +93,13 @@ function postButton(req: UiRequest, path: string, label: string, cls = ''): stri
 }
 
 function statusLine(
-  s: { at: string; ok: boolean; error?: string; count?: number } | null,
+  s: { at: string; ok: boolean; error?: string; count?: number; note?: string } | null,
   unit: string,
 ): string {
   if (!s) return '<span class="muted">Not run yet.</span>';
   const at = esc(new Date(s.at).toISOString().replace('T', ' ').slice(0, 16));
   return s.ok
-    ? `<span class="ok">Last run ${at} UTC</span>${s.count !== undefined ? ` <span class="muted">(${esc(s.count)} ${unit})</span>` : ''}`
+    ? `<span class="ok">Last run ${at} UTC</span>${s.count !== undefined ? ` <span class="muted">(${esc(s.count)} ${unit})</span>` : ''}${s.note ? ` <span class="bad">Not all taken in: ${esc(s.note)}</span>` : ''}`
     : `<span class="bad">Failed ${at} UTC: ${esc(s.error ?? 'error')}</span>`;
 }
 

@@ -20,7 +20,7 @@ New mail arrives every 5 minutes. The first sync reads back one year by default.
 Your contacts decide whose mail the brain keeps when mail sync runs.
 
 - Mail is kept only when it comes from a contact, or from one of your own logins.
-- Add a contact and the last 90 days of their mail comes in.
+- Add a contact and their mail comes in, as far back as the mailbox's first scan reaches (a year unless set).
 - Remove a contact and their new mail is no longer kept.
 
 **Settings > Sync > Find senders** lists recent senders who are not contacts yet, with **Add as contact**.

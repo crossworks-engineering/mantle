@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FILE_MAX_BYTES,
+  stubHash,
   goneIds,
   parseLsjsonLine,
   pickHash,
@@ -19,7 +20,7 @@ import { normalize } from './outlook';
 import { outlookSenderFor } from './send';
 import type { MsAccount } from './state';
 
-const plan = (): Plan => ({ fetch: [], relink: [], seen: new Set(), oversize: 0 });
+const plan = (): Plan => ({ fetch: [], relink: [], seen: new Set(), stub: [], oversize: 0 });
 
 describe("rclone lsjson's lines", () => {
   it('reads a file with its id and QuickXorHash, and skips the array lines', () => {
@@ -111,15 +112,31 @@ describe('what a drive run does with each file', () => {
     expect(goneIds(map, p.seen).sort()).toEqual(['gone', 'out']);
   });
 
-  it('skips a file over the cap and keeps its old copy', () => {
+  it('posts a file over the cap as a stub once, and fetches it when it fits', () => {
     const map = new Map<string, MapRow>([
       ['big', { itemId: 'big', hash: 'h', size: 1, modTime: null }],
+      [
+        'stubbed',
+        { itemId: 'stubbed', hash: stubHash('h3', FILE_MAX_BYTES + 1), size: 1, modTime: null },
+      ],
     ]);
     const p = plan();
     planItem(p, map, { selections: [] }, file('big', FILE_MAX_BYTES + 1, 'h2'));
+    planItem(p, map, { selections: [] }, file('stubbed', FILE_MAX_BYTES + 1, 'h3'));
     expect(p.fetch).toEqual([]);
-    expect(p.oversize).toBe(1);
+    expect(p.stub.map((i) => i.id)).toEqual(['big']);
+    expect(p.oversize).toBe(2);
     expect(goneIds(map, p.seen)).toEqual([]);
+    // The cap raised: the stubbed file is fetched (its stub hash is no match).
+    const q = plan();
+    planItem(
+      q,
+      map,
+      { selections: [] },
+      file('stubbed', FILE_MAX_BYTES + 1, 'h3'),
+      FILE_MAX_BYTES * 2,
+    );
+    expect(q.fetch.map((i) => i.id)).toEqual(['stubbed']);
   });
 });
 

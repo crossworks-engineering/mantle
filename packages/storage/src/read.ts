@@ -9,6 +9,7 @@ export {
   bucketStatus,
   clientConfig,
   contentKey,
+  contentStored,
   getContent,
   hashBuffer,
   listKeys,

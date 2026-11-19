@@ -10,7 +10,7 @@ people whose mail Mantle will ingest. It does **two** jobs at once:
    (`alice@example.com`) or a `@domain` wildcard (`@example.com` = all mail from
    that domain). With zero contacts, _sending_ is open (bootstrap) but _inbound_
    ingests nothing. Adding a contact unlocks mailing them AND lets their mail
-   into the brain (with a 90-day backfill). See §2 for the deliberate
+   into the brain (with a backfill back to the mailbox's first-scan reach). See §2 for the deliberate
    send-vs-ingest asymmetry.
 
 Companion docs:

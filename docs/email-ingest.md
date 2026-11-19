@@ -37,17 +37,28 @@ Every 5 minutes, one mailbox at a time:
    `service_state`) and reports the run: `POST /api/sidecar/mail/run`
    (a `sync_runs` row, the mailbox's last sync stamp or error).
 
-A message over 40 MB is never downloaded: it lands with its headers and a
-note. What crosses is the old adapter's parsed shape
+What crosses is the old adapter's parsed shape
 (`packages/email/src/wire.ts`), attachments in base64; the ingest route's
-body ceiling is 64 MB.
+body ceiling is 64 MB. A message over 40 MB (or one whose server names no
+size) is read as a stream instead (`server/sync/src/mail-stream.ts`): each
+attachment streams on to `POST /api/sidecar/mail/attachment` as it is
+parsed (spooled to disk there, stored in the object store under its
+sha256, up to the streamed upload cap), and the message posts naming them
+(`staged`). A body over 16 MB goes as a `message-body` attachment of its
+own. What could not be taken in (an attachment over the cap) is named in a
+note at the top of the body: nothing is dropped silently.
 
 ## A new contact
 
 A new contact address (made in the app, by `contact_create` or
 `contact_update`, or from Discover) asks the sidecar for a backfill
-(`enqueueBackfills`, `POST /backfill`): each mailbox's last 90 days from that
-sender, through the same gate and store. With Sync off nothing is asked.
+(`enqueueBackfills`, `POST /backfill`): that sender's mail in every mailbox,
+back to the mailbox's first-scan reach (`firstScanDays`, 365 days unless
+set), through the same gate and store. The backfill is a job kept in
+`service_state` (`backfill:<id>`) until it reaches the end: each run reads
+a share of each mailbox (2 500 envelopes, or 50 Outlook pages) and keeps
+its place per folder, and the scheduler goes on with it every 5 minutes,
+after a failure or a restart too. With Sync off nothing is asked.
 
 ## Discover
 

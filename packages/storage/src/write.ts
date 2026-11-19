@@ -3,4 +3,4 @@
  * only the store brokers import it; the store-brokers lint pins who does.
  * Readers keep `@mantle/storage`.
  */
-export { copyMissingFrom, deleteContent, ensureBucket, putContent } from './index';
+export { copyMissingFrom, deleteContent, ensureBucket, putContent, putContentFile } from './index';

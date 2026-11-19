@@ -8,7 +8,6 @@
  *
  * Every function runs inside asSidecar (the system actor worker:sync).
  */
-import { promises as fs } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   db,
@@ -24,7 +23,7 @@ import {
 import { deleteFileWithDerived } from '@mantle/content';
 import { ensureBranchPath } from '@mantle/email';
 import { extOf, mimeForExt, sanitizeFilename, type SpooledUpload } from '@mantle/files';
-import { stageFileObject } from '@mantle/files/broker';
+import { stageSpooledObject } from '@mantle/files/broker';
 
 /** The service whose rows these are (one today). */
 export const FILE_SERVICE = 'sync';
@@ -77,8 +76,9 @@ async function fileNodeFor(
   const mime = meta.mimeType || mimeForExt(extOf(meta.name)) || 'application/octet-stream';
   // The bytes first, under their content address (the files store's
   // broker): the object is the stage, the node's INSERT below the flip.
-  // A file here is at most MAX_UPLOAD_BYTES (the route's ceiling).
-  await stageFileObject(await fs.readFile(spooled.tempPath), mime);
+  // Streamed from the spool, so a file up to the route's cap
+  // (maxStreamedUploadBytes) keeps memory flat.
+  await stageSpooledObject(spooled, mime);
   const title = sanitizeFilename(meta.name) ?? 'file';
   const [row] = await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'file', path: meta.path }], (tx) =>
@@ -144,6 +144,59 @@ export async function storeSyncedFile(
   const retired =
     !!before && before.nodeId !== nodeId ? await retireNode(ownerId, before.nodeId) : false;
   return { nodeId, deduped, retired };
+}
+
+/** The map hash of a stub: the listing's hash (else its size) behind
+ *  `stub:`, so an unchanged file over the cap is not posted again, and one
+ *  that changed, or fits once the cap is raised, is fetched. */
+export function stubHash(hash: string | null, size: number): string {
+  return `stub:${hash ?? `size:${size}`}`.slice(0, 200);
+}
+
+/** A drive file past the box's streamed upload cap: a file node with no
+ *  bytes, its size, and the terminal `file_too_large` stamp, so the file is
+ *  in the brain by name and its status says it was not taken in (the
+ *  extractor never loads it, file-read.ts fileTooLargeToRead). A stub of an
+ *  item replaces the node it had, as a fetched file does. */
+export async function storeSyncedStub(
+  ownerId: string,
+  meta: Omit<FileMeta, 'size'> & { size: number },
+): Promise<{ nodeId: string; retired: boolean }> {
+  await ensureBranchPath(ownerId, meta.path);
+  const mime = meta.mimeType || mimeForExt(extOf(meta.name)) || 'application/octet-stream';
+  const title = sanitizeFilename(meta.name) ?? 'file';
+  const before = await getSyncItem(FILE_SERVICE, meta.source, meta.itemId);
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'file', path: meta.path }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'file',
+          title,
+          path: meta.path,
+          data: {
+            mimeType: mime,
+            sizeBytes: meta.size,
+            source: 'sync',
+            not_taken_in: { reason: 'over_upload_cap', size: meta.size },
+            extract_skipped: { reason: 'file_too_large', at: new Date().toISOString() },
+          },
+        } as NewNode)
+        .returning({ id: nodes.id }),
+    ),
+  );
+  if (!row) throw new Error('insert into nodes (file stub) returned no row');
+  await putSyncItem(FILE_SERVICE, meta.source, {
+    itemId: meta.itemId,
+    nodeId: row.id,
+    hash: stubHash(meta.hash, meta.size),
+    size: meta.size,
+    modTime: meta.modTime,
+  });
+  const retired =
+    !!before && before.nodeId !== row.id ? await retireNode(ownerId, before.nodeId) : false;
+  return { nodeId: row.id, retired };
 }
 
 /** Items the map knows whose file is unchanged: take the listing's hash,

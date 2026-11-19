@@ -58,7 +58,14 @@ Mail.Read Mail.Send Calendars.Read`.
      drive, or out of its selections, leaves the map, and its node when no
      other row holds it (`POST /api/sidecar/files/remove`). A node a person
      uploaded, an attachment or a drawing holds is never removed.
-- A file over 64 MB (the buffered upload cap) is skipped and counted.
+- A file is streamed at any size up to the brain's streamed upload cap
+  (`maxStreamedUploadBytes`, 512 MB unless `MANTLE_MAX_UPLOAD_MB` says more;
+  `GET /api/sidecar/files` names it as `maxBytes`): spooled to disk and on to
+  the object store as a stream, so memory stays flat. A file past it is
+  posted as a stub (`POST /api/sidecar/files/stub`): a node by name and
+  size with the terminal `file_too_large`, so its status says it was not
+  taken in. An unchanged stub is not posted again; a changed file, or one
+  that fits a raised cap, is fetched.
 - Selections: none chosen is the whole drive; a folder holds its path and
   everything below; a file matches by id or path. Each run reads every
   choice's path again by its id, so a renamed or moved folder keeps syncing.
@@ -73,11 +80,27 @@ Mail.Read Mail.Send Calendars.Read`.
   An address cannot be a live IMAP mailbox and a live Outlook inbox at
   once (409). A removed one is taken over: its row, and its stored mail,
   stay.
-- Every 5 minutes the inbox is read from a `receivedDateTime` watermark
-  (`server/sync/src/outlook.ts`), a page at a time: the envelopes go through
-  the brain's one gate (`/api/sidecar/mail/gate`), and only the wanted
-  messages are fetched in full and stored (`/api/sidecar/mail/ingest`), as
-  for IMAP. Backfill and discover read the inbox too.
+- Every 5 minutes every chosen mail folder is read, each from its own
+  `receivedDateTime` watermark (`server/sync/src/outlook.ts`, `mscursor:`
+  `folders`; the inbox goes on from the watermark it had before), a page at
+  a time, 50 pages a run in all (the next run goes on): the envelopes go
+  through the brain's one gate (`/api/sidecar/mail/gate`), and only the
+  wanted messages are fetched in full and stored (`/api/sidecar/mail/ingest`),
+  as for IMAP. The folders are an IMAP mailbox's choice: all but Deleted
+  Items, Junk Email, Drafts, Outbox and Sync Issues (and what is below
+  them), unless the account names `excludedFolders` or `includedFolders`
+  (folder paths, `Inbox/Projects`; the `/admin/microsoft/mail` admin call
+  takes them, and `firstScanDays`, 365 unless set). A new contact's backfill
+  reads the same folders back to that reach, as a job that goes on across
+  runs (email-ingest.md). Discover reads the inbox.
+- A message is taken in whole: file attachments, item attachments (an
+  attached email as `.eml`, an event as `.ics`, a contact as `.vcf`: Graph's
+  `$value` of the item) and reference attachments (a OneDrive or SharePoint
+  link: the linked file, through `/shares/{id}/driveItem`). Each attachment
+  is read on its own (`$value`); past 40 MB in all, each streams to
+  `POST /api/sidecar/mail/attachment` instead of riding in the message.
+  What Microsoft will not hand out (a link not shared to the account) is
+  named in a note at the top of the message's body.
 - Send: `email_send` and `email_page` reach the sidecar's `/send`. When the
   sender is a Microsoft account with its mail on and `Mail.Send` granted
   (or no IMAP mailbox sends), it goes out through Graph `/me/sendMail`:

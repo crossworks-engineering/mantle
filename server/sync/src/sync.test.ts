@@ -5,8 +5,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { clipEnvelope, clipMessage, envelopeFits, WIRE_LIMITS } from '@mantle/email/wire';
-import { feedBody } from './feeds';
-import { parseFeed } from './ics';
+import { createPager, FEED_PAGE_BYTES, FEED_PAGE_EVENTS, syncFeed } from './feeds';
+import { DESCRIPTION_MAX, parseFeed } from './ics';
+import type { Brain } from './brain';
 import { SendRefusedError, senderFor } from './send';
 import { tokenOk } from './server';
 import { uiReply, type UiDeps } from './ui';
@@ -87,6 +88,119 @@ describe('the feed parser', () => {
       NOW,
     );
     expect(ev?.allDay).toBe(true);
+  });
+
+  it('keeps a series from its first occurrence and a far single event: the window is pacing', () => {
+    const events = parseFeed(
+      feed(
+        [
+          'BEGIN:VEVENT',
+          'UID:old@test',
+          'DTSTART:20200106T080000Z',
+          'RRULE:FREQ=WEEKLY;COUNT=3',
+          'SUMMARY:Old series',
+          'END:VEVENT',
+          'BEGIN:VEVENT',
+          'UID:far@test',
+          'DTSTART:20300101T080000Z',
+          'SUMMARY:Far away',
+          'END:VEVENT',
+        ].join('\r\n'),
+      ),
+      NOW,
+    );
+    expect(events.map((e) => e.uid)).toEqual([
+      'old@test:2020-01-06T08:00:00.000Z',
+      'old@test:2020-01-13T08:00:00.000Z',
+      'old@test:2020-01-20T08:00:00.000Z',
+      'far@test',
+    ]);
+  });
+
+  it('puts a changed occurrence in place of the plain one, and leaves out a cancelled one', () => {
+    const events = parseFeed(
+      feed(
+        [
+          'BEGIN:VEVENT',
+          'UID:s@test',
+          'DTSTART:20261119T080000Z',
+          'RRULE:FREQ=DAILY;COUNT=3',
+          'SUMMARY:Daily',
+          'END:VEVENT',
+          'BEGIN:VEVENT',
+          'UID:s@test',
+          'RECURRENCE-ID:20261120T080000Z',
+          'DTSTART:20261120T100000Z',
+          'SUMMARY:Daily, moved',
+          'END:VEVENT',
+          'BEGIN:VEVENT',
+          'UID:s@test',
+          'RECURRENCE-ID:20261121T080000Z',
+          'DTSTART:20261121T080000Z',
+          'STATUS:CANCELLED',
+          'SUMMARY:Daily',
+          'END:VEVENT',
+        ].join('\r\n'),
+      ),
+      NOW,
+    );
+    expect(events.map((e) => [e.uid, e.title, e.startsAt])).toEqual([
+      ['s@test:2026-11-19T08:00:00.000Z', 'Daily', '2026-11-19T08:00:00.000Z'],
+      ['s@test:2026-11-20T08:00:00.000Z', 'Daily, moved', '2026-11-20T10:00:00.000Z'],
+    ]);
+  });
+});
+
+/** A fake brain for a feed run: the stored uids, and what was posted. */
+function feedBrain(stored: string[]) {
+  const posts: { events: { uid: string }[]; remove?: string[]; partial?: boolean }[] = [];
+  const brain = {
+    get: async () => ({ uids: stored }) as never,
+    post: async (_path: string, body: unknown) => {
+      posts.push(body as (typeof posts)[number]);
+      const b = body as { events: unknown[]; remove?: unknown[] };
+      return { upserted: b.events.length, failed: 0, removed: b.remove?.length ?? 0 } as never;
+    },
+  } as unknown as Brain;
+  return { brain, posts };
+}
+
+async function* linesFrom(text: string) {
+  for (const l of text.split('\r\n')) yield l;
+}
+
+describe('a feed run', () => {
+  const big = (n: number) =>
+    feed(
+      Array.from({ length: n }, (_, i) =>
+        [
+          'BEGIN:VEVENT',
+          `UID:e${i}@test`,
+          'DTSTART:20261120T090000Z',
+          'SUMMARY:x',
+          `DESCRIPTION:${'d'.repeat(5000)}`,
+          'END:VEVENT',
+        ].join('\r\n'),
+      ).join('\r\n'),
+    );
+
+  it('takes in 6 000 events in pages, then removes only what left', async () => {
+    const { brain, posts } = feedBrain(['e1@test', 'gone@test']);
+    const run = await syncFeed(brain, { id: 'f', name: 'n' }, linesFrom(big(6000)), NOW);
+    const upserted = posts.flatMap((p) => p.events.map((e) => e.uid));
+    expect(upserted).toHaveLength(6000);
+    expect(posts.every((p) => p.partial)).toBe(true);
+    expect(posts.flatMap((p) => p.remove ?? [])).toEqual(['gone@test']);
+    expect(run.events).toBe(6000);
+    expect(run.cuts).toEqual([]);
+  });
+
+  it('removes nothing when the feed ends part way', async () => {
+    const { brain, posts } = feedBrain(['gone@test']);
+    const cut = big(3).replace(/END:VEVENT\r\nEND:VCALENDAR$/, '');
+    const run = await syncFeed(brain, { id: 'f', name: 'n' }, linesFrom(cut), NOW);
+    expect(run.cuts.length).toBeGreaterThan(0);
+    expect(posts.flatMap((p) => p.remove ?? [])).toEqual([]);
   });
 });
 
@@ -274,20 +388,29 @@ describe('the bounds the brain takes', () => {
     expect(m.attachments[0]!.filename.length).toBe(WIRE_LIMITS.filename);
   });
 
-  it('keeps a feed post under the byte ceiling: descriptions go first', () => {
+  it('pages a feed within the byte and count bounds, every description whole', async () => {
     const ev = (i: number) => ({
       uid: `u${i}`,
       title: 't',
       startsAt: '2026-11-20T09:00:00.000Z',
-      description: '漢'.repeat(4000),
+      description: '漢'.repeat(DESCRIPTION_MAX),
     });
-    const events = Array.from({ length: 5000 }, (_, i) => ev(i));
-    type Body = { events: { description?: string }[] };
-    const body = JSON.parse(feedBody({ id: 'f', name: 'n' }, events)) as Body;
-    expect(body.events).toHaveLength(5000);
-    expect(body.events[0]!.description).toBeUndefined();
-    const small = JSON.parse(feedBody({ id: 'f', name: 'n' }, events.slice(0, 10))) as Body;
-    expect(small.events[0]!.description).toHaveLength(4000);
+    const pages: { length: number; bytes: number; whole: boolean }[] = [];
+    const pager = createPager(async (events) => {
+      pages.push({
+        length: events.length,
+        bytes: Buffer.byteLength(JSON.stringify(events)),
+        whole: events.every((e) => e.description?.length === DESCRIPTION_MAX),
+      });
+    });
+    for (let i = 0; i < 6000; i++) await pager.add(ev(i));
+    await pager.flush();
+    expect(pages.reduce((n, p) => n + p.length, 0)).toBe(6000);
+    for (const p of pages) {
+      expect(p.length).toBeLessThanOrEqual(FEED_PAGE_EVENTS);
+      expect(p.bytes).toBeLessThanOrEqual(FEED_PAGE_BYTES + 100_000);
+      expect(p.whole).toBe(true);
+    }
   });
 
   it("clips a feed event's long text", () => {
@@ -306,7 +429,7 @@ describe('the bounds the brain takes', () => {
       NOW,
     );
     expect(ev!.uid.length).toBeLessThanOrEqual(1000);
-    expect(ev!.description!.length).toBe(4000);
+    expect(ev!.description!.length).toBe(DESCRIPTION_MAX);
     expect(ev!.location!.length).toBe(1000);
   });
 });

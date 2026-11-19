@@ -110,7 +110,7 @@ export {
   clampFilesFolderPath,
 } from './paths';
 
-export { readFileNodeBytes, loadFileHead } from './file-read';
+export { fileTooLargeToRead, readFileNodeBytes, loadFileHead } from './file-read';
 export type { FileReadNode, LoadedFileBytes } from './file-read';
 export {
   filesRootMounted,

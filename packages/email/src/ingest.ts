@@ -35,11 +35,11 @@ import {
   type NewNode,
 } from '@mantle/db';
 import { runRules } from '@mantle/rules';
-import { hashBuffer } from '@mantle/storage';
+import { contentKey, contentStored, hashBuffer } from '@mantle/storage';
 import { stageFileObject } from '@mantle/files/broker';
 import { loadContactGate } from '@mantle/content';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
-import { ConflictError } from '@mantle/std';
+import { ConflictError, InputError } from '@mantle/std';
 import { accountBranchPath } from './accounts';
 import { redactSigninCodes, touchesClientCodeMail } from './client-code-mail';
 import { salienceForDeliveryKind } from './classify';
@@ -47,6 +47,16 @@ import type { WireEnvelope, WireMessage, WireRun } from './wire';
 
 /** The longest error text an account's status keeps. */
 const RUN_ERROR_MAX = 500;
+
+/** A message named an attachment the sidecar streamed, and the store has no
+ *  such bytes (an upload that never finished): the route answers 400, and
+ *  the sidecar records the message as refused. */
+export class StagedAttachmentMissingError extends InputError {
+  constructor(filename: string) {
+    super(`the attachment "${filename.slice(0, 100)}" was not uploaded first`);
+    this.name = 'StagedAttachmentMissingError';
+  }
+}
 
 class DuplicateRaceError extends Error {
   constructor(public providerMsgId: string) {
@@ -254,17 +264,40 @@ export async function ingestWireMessage(
   const path = effects.movePath ?? account.branchPath;
   await ensureBranchPath(account.userId, path);
 
-  const attachments = message.attachments.map((a) => ({
-    ...a,
-    content: Buffer.from(a.contentB64, 'base64'),
-  }));
-
   // The attachments' bytes first, under their content address (the files
-  // store's broker), never inside the transaction (a network write).
-  const stagedKeys: string[] = [];
-  for (const att of attachments) {
-    const { key } = await stageFileObject(att.content, att.mimeType ?? 'application/octet-stream');
-    stagedKeys.push(key);
+  // store's broker), never inside the transaction (a network write). One
+  // the sidecar streamed before (a large message) is in the store already:
+  // it is named by its sha256, and refused when the store has no such bytes.
+  const attachments: {
+    filename: string;
+    mimeType?: string;
+    size: number;
+    sha256: string;
+    key: string;
+  }[] = [];
+  for (const a of message.attachments) {
+    if (a.staged) {
+      if (!(await contentStored(a.staged.sha256))) {
+        throw new StagedAttachmentMissingError(a.filename);
+      }
+      attachments.push({
+        filename: a.filename,
+        mimeType: a.mimeType,
+        size: a.staged.size,
+        sha256: a.staged.sha256,
+        key: contentKey(a.staged.sha256),
+      });
+      continue;
+    }
+    const content = Buffer.from(a.contentB64 ?? '', 'base64');
+    const { key } = await stageFileObject(content, a.mimeType ?? 'application/octet-stream');
+    attachments.push({
+      filename: a.filename,
+      mimeType: a.mimeType,
+      size: a.sizeBytes ?? content.byteLength,
+      sha256: hashBuffer(content),
+      key,
+    });
   }
 
   const headItems = [
@@ -315,24 +348,23 @@ export async function ingestWireMessage(
         .returning({ id: emails.id });
       if (!insertedEmail) throw new DuplicateRaceError(message.providerMsgId);
 
-      for (const [i, att] of attachments.entries()) {
-        const sha256 = hashBuffer(att.content);
+      for (const att of attachments) {
         const fileNodeId = await getOrCreateFileNode(tx, {
           ownerId: account.userId,
           path: `${path}.attachments`,
-          sha256,
+          sha256: att.sha256,
           filename: att.filename,
           mimeType: att.mimeType,
-          sizeBytes: att.sizeBytes ?? att.content.byteLength,
+          sizeBytes: att.size,
         });
         const row: NewEmailAttachment = {
           emailId: insertedEmail.id,
           fileNodeId,
           filename: att.filename,
           mimeType: att.mimeType ?? null,
-          sizeBytes: att.sizeBytes ?? att.content.byteLength,
-          sha256,
-          storageKey: stagedKeys[i]!,
+          sizeBytes: att.size,
+          sha256: att.sha256,
+          storageKey: att.key,
           extractedText: null,
         };
         await tx.insert(emailAttachments).values(row);

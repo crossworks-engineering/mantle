@@ -14,6 +14,7 @@ import { contentKey, getContent } from '@mantle/storage';
 import { diskPathForFile } from './paths';
 import { extOf, mimeForExt } from './slug';
 import { foldedFilePath } from './space-disk';
+import { maxStreamedUploadBytes } from './limits';
 
 /** A file row's fields a read needs. */
 export type FileReadNode = Pick<Node, 'id' | 'path' | 'title' | 'data'>;
@@ -27,13 +28,35 @@ function diskPathOf(node: FileReadNode, filename: string): string | null {
   return foldedFilePath(node) ?? diskPathForFile(node.path, filename);
 }
 
+/** The size a file row records (`size_bytes` for the files tree, `sizeBytes`
+ *  for attachments and drive files), or null. */
+export function recordedFileSize(
+  data: Readonly<Record<string, unknown>> | null | undefined,
+): number | null {
+  const v = data?.size_bytes ?? data?.sizeBytes;
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/** Whether a file row is past the box's read cap (the streamed upload cap,
+ *  MANTLE_MAX_UPLOAD_MB): such a file is stored as a node (the disk-sync
+ *  watcher, a drive file) but never loaded whole, since every read here is
+ *  one Buffer. Its extract records the terminal `file_too_large`. */
+export function fileTooLargeToRead(
+  data: Readonly<Record<string, unknown>> | null | undefined,
+): boolean {
+  const size = recordedFileSize(data);
+  return size !== null && size > maxStreamedUploadBytes();
+}
+
 /**
- * The whole bytes of a file row, or null when neither place has them. Ext and
- * mime derive from `data.filename` when present, else the title (which IS the
- * filename for an attachment) and `data.mimeType`.
+ * The whole bytes of a file row, or null when neither place has them (or the
+ * row is past the read cap, fileTooLargeToRead). Ext and mime derive from
+ * `data.filename` when present, else the title (which IS the filename for an
+ * attachment) and `data.mimeType`.
  */
 export async function readFileNodeBytes(node: FileReadNode): Promise<LoadedFileBytes | null> {
   const data = (node.data ?? {}) as Record<string, unknown>;
+  if (fileTooLargeToRead(data)) return null;
   const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
   const ext = extOf(nameForExt);
   const mime = typeof data.mimeType === 'string' ? data.mimeType : mimeForExt(ext);

@@ -9,12 +9,14 @@ import { errorMessage } from '@mantle/std';
 import type { Brain } from './brain';
 import { runFeed } from './feeds';
 import { runDrive } from './files';
-import { outlookAccounts, runMailbox, runOutlookMail } from './mail';
+import { outlookAccounts, runBackfill, runMailbox, runOutlookMail } from './mail';
 import type { State } from './state';
 
 export const MAIL_EVERY_MS = 5 * 60_000;
 export const FEED_EVERY_MS = 30 * 60_000;
 export const DRIVE_EVERY_MS = 5 * 60_000;
+/** A backfill job not at its end yet goes on this often. */
+export const BACKFILL_EVERY_MS = 5 * 60_000;
 const TICK_MS = 60_000;
 
 export type Lane = {
@@ -74,12 +76,14 @@ export function createScheduler(brain: Brain, state: State, lane: Lane): Schedul
     let feeds;
     let drives;
     let outlook;
+    let backfills;
     try {
-      [accounts, feeds, drives, outlook] = await Promise.all([
+      [accounts, feeds, drives, outlook, backfills] = await Promise.all([
         state.accounts(),
         state.feeds(),
         state.msDrives(),
         outlookAccounts(state),
+        state.backfills(),
       ]);
     } catch (err) {
       console.warn(`[sync] could not read the accounts from the brain: ${errorMessage(err)}`);
@@ -99,6 +103,13 @@ export function createScheduler(brain: Brain, state: State, lane: Lane): Schedul
       if (!due(a.mailboxId, MAIL_EVERY_MS, now)) continue;
       lastRun.set(a.mailboxId, now);
       void lane.run('Outlook run', () => runOutlookMail(brain, state, a));
+    }
+    // A backfill that stopped part way (its share for the run, a failure,
+    // a restart) goes on from its marks.
+    for (const j of backfills) {
+      if (!due(j.id, BACKFILL_EVERY_MS, now)) continue;
+      lastRun.set(j.id, now);
+      void lane.run('backfill run', () => runBackfill(brain, state, j.id));
     }
     for (const d of drives) {
       if (!d.enabled || !due(d.id, DRIVE_EVERY_MS, now)) continue;

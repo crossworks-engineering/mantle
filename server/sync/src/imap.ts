@@ -8,8 +8,8 @@
  * the messages of the last `firstScanDays`), fetch their envelopes in
  * batches, hand each batch's envelopes to `onBatch` (which asks the brain
  * which it wants), fetch those in full on the same connection, and move the
- * cursor after the batch. A message over MAIL_MESSAGE_MAX_BYTES is never
- * downloaded: it lands with its headers and a note.
+ * cursor after the batch. A message over MAIL_MESSAGE_MAX_BYTES is read as a
+ * stream, its attachments staged one by one (mail-stream.ts).
  *
  * providerMsgId: `<folder>:<uidvalidity>:<uid>`, stable unless the server
  * rolls uidvalidity.
@@ -21,7 +21,8 @@ import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
 import { MAIL_MESSAGE_MAX_BYTES, type WireMessage } from '@mantle/email/wire';
 import { errorMessage } from '@mantle/std';
 import { checkedAddress, plaintextMailAllowed } from './net';
-import type { MailAccount, MailCursor } from './state';
+import { fitBody, notesText, parseStreamed, type Stager } from './mail-stream';
+import type { BackfillMark, MailAccount, MailCursor } from './state';
 
 /** Envelopes per batch: one gate call, then the full fetches. */
 export const BATCH_SIZE = 50;
@@ -388,10 +389,11 @@ async function envelopes(
 }
 
 /** One message of the open folder, in full, as it crosses to the brain. */
-async function fullMessage(
+export async function fullMessage(
   client: ImapFlow,
   uid: number,
   message: RawMessage,
+  stage?: Stager,
 ): Promise<WireMessage> {
   const base: WireMessage = {
     ...message,
@@ -399,23 +401,43 @@ async function fullMessage(
     attachments: [],
   };
   delete (base as { hasAttachments?: unknown }).hasAttachments;
-  if (typeof message.sizeBytes === 'number' && message.sizeBytes > MAIL_MESSAGE_MAX_BYTES) {
+  // Past the cap, or a server that gave no size: the message as a stream,
+  // each attachment staged as it is read (mail-stream.ts), never in memory.
+  if (typeof message.sizeBytes !== 'number' || message.sizeBytes > MAIL_MESSAGE_MAX_BYTES) {
+    if (!stage) {
+      return {
+        ...base,
+        bodyText: `(This message is past the ${MAIL_MESSAGE_MAX_BYTES / 1024 / 1024} MB the brain fetches in one piece. Read it in your mail client.)`,
+      };
+    }
+    const dl = await client.download(String(uid), undefined, { uid: true });
+    if (!dl || !('content' in dl) || !dl.content) {
+      throw new Error('a listed message could not be fetched');
+    }
+    const parsed = await parseStreamed(dl.content, stage);
+    const body = await fitBody(stage, parsed);
+    const note = notesText([...parsed.notes, ...body.notes]);
+    const h = parsed.headers;
+    const header = (k: string) => {
+      const v = h.get(k);
+      return typeof v === 'string' ? v : undefined;
+    };
+    const refs = h.get('references');
     return {
       ...base,
-      bodyText: `(This message is ${Math.round(message.sizeBytes / 1024 / 1024)} MB, past the ${MAIL_MESSAGE_MAX_BYTES / 1024 / 1024} MB the brain fetches in full. Read it in your mail client.)`,
+      bodyText: [note, body.text].filter(Boolean).join('\n\n') || undefined,
+      bodyHtml: body.html,
+      attachments: [...parsed.attachments, ...body.attachments],
+      clientCodeMail: touchesClientCodeMail({
+        rfcMessageId: header('message-id') ?? null,
+        clientCodeHeader: h.has('x-mantle-client-code'),
+        inReplyTo: header('in-reply-to') ?? null,
+        references: Array.isArray(refs) ? refs.join(' ') : typeof refs === 'string' ? refs : null,
+      }),
     };
   }
-  // A server that gave no size: read at most one byte past the cap.
-  const source =
-    typeof message.sizeBytes === 'number' ? true : { maxLength: MAIL_MESSAGE_MAX_BYTES + 1 };
-  const msg = await client.fetchOne(String(uid), { source }, { uid: true });
+  const msg = await client.fetchOne(String(uid), { source: true }, { uid: true });
   if (!msg || !msg.source) throw new Error('a listed message could not be fetched');
-  if (msg.source.length > MAIL_MESSAGE_MAX_BYTES) {
-    return {
-      ...base,
-      bodyText: `(This message is past the ${MAIL_MESSAGE_MAX_BYTES / 1024 / 1024} MB the brain fetches in full. Read it in your mail client.)`,
-    };
-  }
   // No HTML-to-text here: an HTML-only mail keeps its HTML, and the brain's
   // parser reads it.
   const parsed = await simpleParser(msg.source, { skipHtmlToText: true });
@@ -455,6 +477,7 @@ async function walk(
   wantedOf: WantedOf,
   onMessage: OnMessage,
   afterBatch?: (maxUid: number) => Promise<void>,
+  stage?: Stager,
 ): Promise<number> {
   let scanned = 0;
   for (let i = 0; i < uids.length; i += BATCH_SIZE) {
@@ -464,7 +487,7 @@ async function walk(
     const wanted = new Set(await wantedOf(listed.map((l) => l.message)));
     for (const l of listed) {
       if (!wanted.has(l.message.providerMsgId)) continue;
-      await onMessage(await fullMessage(client, l.uid, l.message));
+      await onMessage(await fullMessage(client, l.uid, l.message, stage));
     }
     if (afterBatch) await afterBatch(Math.max(...batch));
   }
@@ -482,6 +505,7 @@ export async function syncMailbox(
   wantedOf: WantedOf,
   onMessage: OnMessage,
   saveCursor: (c: MailCursor) => Promise<void>,
+  stage?: Stager,
 ): Promise<{ scanned: number }> {
   const client = await connect(account);
   let scanned = 0;
@@ -527,6 +551,7 @@ export async function syncMailbox(
             cursor.folders[folder] = { uidvalidity, lastUid: maxUid };
             await saveCursor(cursor);
           },
+          stage,
         );
       } finally {
         lock.release();
@@ -540,22 +565,30 @@ export async function syncMailbox(
 
 /**
  * A new contact's backfill: every scanned folder's messages from `sender`
- * (an address, or a bare domain) since `since`, through the same gate and
- * ingest. IMAP's FROM search is a substring match, so each hit is checked:
- * the exact address, or the exact domain. The cursor is not touched.
+ * (an address, or a bare domain) back to the mailbox's first-scan reach
+ * (`firstScanDays`), through the same gate and ingest. IMAP's FROM search is
+ * a substring match, so each hit is checked: the exact address, or the
+ * exact domain. At most `budget` envelopes this run: the mark keeps each
+ * folder's last UID read, so the next run goes on and the backfill always
+ * reaches the end. The mailbox's cursor is not touched.
  */
 export async function backfillSender(
   account: MailAccount,
   sender: string,
-  since: Date,
+  mark: BackfillMark,
+  save: (mark: BackfillMark) => Promise<void>,
   wantedOf: WantedOf,
   onMessage: OnMessage,
-): Promise<{ scanned: number }> {
+  stage: Stager | undefined,
+  budget: number,
+): Promise<{ scanned: number; done: boolean }> {
   const wantedSender = sender.trim().toLowerCase().replace(/^@/, '');
-  if (!wantedSender) return { scanned: 0 };
+  if (!wantedSender) return { scanned: 0, done: true };
   const isDomain = !wantedSender.includes('@');
   const matches = (from: string) =>
     isDomain ? from.split('@')[1] === wantedSender : from === wantedSender;
+  const since = new Date(Date.now() - account.firstScanDays * 86_400_000);
+  const folders = (mark.folders ??= {});
   const client = await connect(account);
   let scanned = 0;
   try {
@@ -570,16 +603,36 @@ export async function backfillSender(
         const mbox = client.mailbox;
         if (!mbox || typeof mbox === 'boolean') continue;
         const uidvalidity = Number(mbox.uidValidity);
+        const prev = folders[folder];
+        const same = prev?.uidvalidity === uidvalidity;
+        if (same && prev?.done) continue;
+        const from = same ? (prev?.lastUid ?? 0) : 0;
         const found = await client.search({ from: wantedSender, since }, { uid: true });
-        const uids = Array.isArray(found) ? found : [];
+        const uids = (Array.isArray(found) ? found : [])
+          .filter((u) => u > from)
+          .sort((a, b) => a - b);
+        const share = uids.slice(0, Math.max(0, budget - scanned));
+        const fm: { uidvalidity: number; lastUid: number; done?: boolean } = {
+          uidvalidity,
+          lastUid: from,
+        };
+        folders[folder] = fm;
         scanned += await walk(
           client,
-          uids,
+          share,
           folder,
           uidvalidity,
           (envs) => wantedOf(envs.filter((e) => matches(e.fromAddr))),
           onMessage,
+          async (maxUid) => {
+            fm.lastUid = maxUid;
+            await save(mark);
+          },
+          stage,
         );
+        if (share.length < uids.length) return { scanned, done: false };
+        fm.done = true;
+        await save(mark);
       } finally {
         lock.release();
       }
@@ -587,7 +640,7 @@ export async function backfillSender(
   } finally {
     await client.logout().catch(() => {});
   }
-  return { scanned };
+  return { scanned, done: true };
 }
 
 /** A sender seen in recent mail (the discover screen). */

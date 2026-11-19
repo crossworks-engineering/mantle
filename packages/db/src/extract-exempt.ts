@@ -100,6 +100,9 @@ export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
   'encrypted_pdf',
   'pdf_too_large',
   'bytes_unavailable',
+  // Past the box's read cap (MANTLE_MAX_UPLOAD_MB): stored as a node, never
+  // loaded whole (file-read.ts fileTooLargeToRead).
+  'file_too_large',
   'type_not_in_allowlist',
   'conversation_digest',
   'chat_archive',
@@ -116,6 +119,7 @@ export const READ_FAILURE_SKIPS: readonly string[] = [
   'pdf_too_large',
   'encrypted_pdf',
   'bytes_unavailable',
+  'file_too_large',
 ];
 
 /** The verdict of a file indexed with no model (no assistant reads its

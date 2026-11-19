@@ -2,7 +2,7 @@
  * POST /api/sidecar/contacts (Sync service plan M2): the discover screen's
  * "Add as contact", from the Sync sidecar. The normal contact create (the
  * person chose the sender on the screen); its new address starts the
- * sender's 90-day backfill, as any new contact does.
+ * sender's backfill, as any new contact does.
  */
 import { NextResponse } from '@/server/http-compat';
 import { createContact } from '@mantle/content';
