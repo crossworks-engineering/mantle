@@ -179,7 +179,7 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
       workspacesWithoutModerator: 2,
       adminWithoutModerator: 1,
     });
-    expect(workspacesCheckFindings(adminLess)).toBe(1);
+    expect(workspacesCheckFindings(adminLess)).toBe(2);
   });
 
   it('counts assistants not in exactly one workspace', async () => {
