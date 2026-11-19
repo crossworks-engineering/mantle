@@ -9,19 +9,23 @@ and scores `recall@k` + `MRR`. Run it before and after any retrieval change; the
 Companion to [`memory.md`](./memory.md) (the layers) and the audit findings that
 motivated it. Lives at [`server/web/scripts/eval-recall.ts`](../server/web/scripts/eval-recall.ts).
 
-> **The gold set is yours, and it is local-only.** A case pins node ids from ONE
-> brain, so a shared set names its author's real pages and resolves to nothing on
-> anyone else's. the eval case file next to `server/web/scripts/eval-recall.ts` is **gitignored and
-> not shipped** — write your own before the first run (see _Adding a case_). The
-> repo carried one until 2026-08-21; it leaked the owner's bank, a company
-> expense figure and their full name into a public repo, which is exactly the
-> failure this note exists to prevent.
+> **Two case files, and only one is committed (since 2026-11-19).**
+> `server/web/scripts/eval/recall-gold.json` is in the repo: each case holds a
+> query and **hashed match keys**, never a title, a node id or any brain text.
+> `recall-cases.json`, next to it, is **gitignored**: it holds the
+> cases whose query would itself reveal private content (a personal event, a
+> client's name). The harness reads both. The repo carried a plain set until
+> 2026-08-21; it leaked the owner's bank, a company expense figure and their
+> full name into a public repo, which is exactly the failure this note exists
+> to prevent. Committed queries name only public product topics.
 
 ## Run it
 
 ```bash
 ALLOWED_USER_ID=<uuid> pnpm -C server/web eval:recall
 pnpm -C server/web eval:recall --case=<your-case-id>      # one case
+pnpm -C server/web eval:recall --retrievers=fts           # keyword only: no embed call at all
+pnpm -C server/web eval:recall --keys=<nodeId>,<nodeId>   # print the match keys for new cases
 pnpm -C server/web eval:recall --rank-k=30                    # deeper candidate set
 pnpm -C server/web eval:recall --baseline=scripts/eval/last-run.json   # Δ vs a prior run
 pnpm -C server/web eval:recall --json                        # machine-readable
@@ -44,29 +48,63 @@ the headroom in one run:
 | `rrf`     | Reciprocal-Rank Fusion of vector+fts+chunks                                                                                  | A naive-hybrid baseline for the recommended Tier-0 upgrade    |
 
 **Metrics:** `recall@{1,3,5,10}` (fraction of cases whose gold node appears in
-top-k) and `MRR` (mean reciprocal rank of the first gold hit). A node counts as
-gold if its id is in `expectNodeIds` **or** its title contains an
-`expectNodeTitleIncludes` substring (id = precise, title = authorable/resilient).
+top-k) and `MRR` (mean reciprocal rank of the first gold hit). Before the run,
+each case's gold is resolved to the node ids that exist on THIS brain (see
+_Stable keys_ below); a node counts as gold if it is in that set. A case with
+no live gold is **skipped and named**, never scored as a miss: a stale gold set
+reads as "unmeasured", not as a recall drop. When cases carry a `group`, the
+run also prints document MRR per group.
 
 ## Adding cases
 
-Append to `recall-cases.json`. Write the query the way _you'd actually ask it_,
-vague, paraphrased, avoiding the node's title words, that's the recall the
-product promises. Anchor with a stable node id and a title substring:
+Write the query the way _you'd actually ask it_. Then print the gold item's
+match keys and paste them into the case:
+
+```bash
+pnpm -C server/web eval:recall --keys=<nodeId>
+# {"id":"…","type":"page","titleKey":"9735a5cb98f39adf","bodyKey":"8bfb25c108684d16"}
+```
 
 ```json
 {
   "id": "short-slug",
+  "group": "paraphrase",
   "query": "the natural, vague way you'd refer to it",
-  "expectNodeIds": ["<uuid>"],
-  "expectNodeTitleIncludes": ["distinctive title fragment"],
-  "expectFactIncludes": ["optional fact substring the prompt should carry"],
-  "note": "what this node is + what the query is testing"
+  "expect": [{ "type": "page", "titleKey": "9735a5cb98f39adf", "bodyKey": "8bfb25c108684d16" }]
 }
 ```
 
+Drop the `id` the tool prints: it is brain-specific and adds nothing the keys
+do not. Put the case in `recall-gold.json` when the query names only public
+product topics, and in the gitignored `recall-cases.json` when the query
+itself would reveal private content. `expectNodeIds`,
+`expectNodeTitleIncludes`, `expectFactIncludes`, `avoidTitleIncludes` and
+`expectChunks` still work, for local cases only (they carry ids or text).
+
 Grow this set whenever you hit a real "she should have found that" miss; those
 are the highest-signal cases.
+
+### Stable keys
+
+A case names its gold by `{ type, titleKey, bodyKey }`. A node matches when its
+type is the same **and** its title key **or** its body key is the same. Both
+keys are the first 16 hex characters of a sha256 over text that is
+lower-cased, with every run of characters outside `[a-z0-9]` turned into one
+space:
+
+- **titleKey**: the title (null under 3 characters).
+- **bodyKey**: the first 400 such characters of the item's main text: a page's
+  `doc_text`, else `data` `body`, `content`, `text` or `agent_text` (null under
+  40 characters, so near-empty items do not all share one key).
+
+So a case survives the item being deleted and made again, a re-sync that
+gives it a new id, a rename (the body key still holds) or an edit to its
+start (the title key still holds). It breaks only when both change at once;
+the run then names the case as skipped. Writing a case (`--keys`) and
+resolving it at run time use the same SQL expressions
+(`packages/search/src/gold-keys.ts`, shared with the in-brain `recall_eval`
+tool), so the sides cannot drift. A hash of a short, guessable title can be
+recovered by guessing, which is why committed cases stay on public topics.
 
 ## First baseline (2026-06-03, 12 cases, pages + events)
 
@@ -875,7 +913,7 @@ questions, without any client text leaving the box.
 ### Method (on the box only)
 
 - Every step runs in a throwaway sibling container (`docker run --rm
-  --network container:mantle_web --memory 1.5g`, the web container's env
+--network container:mantle_web --memory 1.5g`, the web container's env
   file written mode 600 and deleted right after start, a 700 folder mounted
   at `/eval`). One container per box at a time. The folder is deleted at
   the end; only counts, rates, timings and costs leave the box.
@@ -916,16 +954,94 @@ enrichment on real T1 labels.
   none of the real follow-ups: they are longer.
 - Full numbers: the routing plan page, section 11 (dev brain).
 
+## Stable-key gold set: baseline (2026-11-19)
+
+The old set had gone stale: on 2026-11-19 none of its 13 cases resolved on the
+dev brain (their nodes had been made again with new ids), so only the keyword
+paths could be read. It was rebuilt as `recall-gold.json`: 51 cases on public
+product topics, gold named by stable keys (see _Stable keys_), five query
+styles (`group`):
+
+| Group        | Cases | The query uses                                 |
+| ------------ | ----: | ---------------------------------------------- |
+| `title`      |     9 | words of the title                             |
+| `summary`    |    14 | words of the summary that are not in the title |
+| `body`       |    10 | words found only in the body                   |
+| `two-word`   |     9 | two words                                      |
+| `paraphrase` |     9 | no content word of the item                    |
+
+Kinds: 16 pages, 12 tasks, 9 journal entries, 7 notes and 7 files (one page
+case also accepts the file the page was made from). One more case, on a
+personal event, stays in the local file and is not in these numbers.
+
+**Method.** A copy of the dev brain database on a workstation, read only on the
+dev box (`pg_dump`, then restore). The copy holds the brain's own stored
+vectors (`openai/text-embedding-3-large`, 768 dims). The 51 query vectors came
+from ONE call to the same model and dimensions (524 tokens, under USD 0.0001)
+and were put into the copy's `embedding_cache` under the key `embed()` reads
+(`sha256("<model>:t:<query>")`), so every later run of these queries is free
+and the copy needs no provider key. Two runs gave identical numbers.
+
+```
+  document              R@1   R@3   R@5  R@10   MRR    n
+  vector                55%   76%   78%   80%   0.67   51
+  fts                   47%   53%   57%   59%   0.51   51
+  search                61%   78%   80%   84%   0.70   51
+  chunks                37%   49%   59%   67%   0.46   51
+  rrf                   59%   75%   84%   92%   0.70   51
+  passage               41%   51%   57%   73%   0.50   51
+  passage-vector        31%   43%   53%   61%   0.40   51
+  passage-keyword       25%   35%   37%   37%   0.30   51
+
+  document MRR           vector    fts  search  chunks    rrf  passage  pass-v  pass-k   n
+  body                     0.25   0.30    0.41    0.20   0.40     0.47    0.20    0.68  10
+  paraphrase               0.58   0.00    0.48    0.48   0.66     0.41    0.36    0.00   9
+  summary                  0.72   0.55    0.81    0.40   0.67     0.39    0.33    0.29  14
+  title                    0.94   0.92    0.92    0.83   0.92     0.74    0.72    0.22   9
+  two-word                 0.84   0.79    0.87    0.45   0.89     0.54    0.44    0.25   9
+```
+
+What it says:
+
+1. **The shipped `search` tool is the best single path** (MRR 0.70, R@10 84%).
+   Naive `rrf` ties it on MRR and finds more by rank 10 (92%).
+2. **Body-only words are the weak spot of every node-level ranker** (MRR 0.20
+   to 0.41): a node vector is built from the whole item, and a few words deep
+   in the body barely move it. The passage keyword arm is best there (0.68):
+   the rare-term rule (step (j)) earns its place.
+3. **Paraphrases need vectors.** `fts` and the keyword arm score 0.00 there,
+   as they must; `rrf` scores 0.66 and `vector` 0.58.
+4. **`passage` (the `search_chunks` path) finds the document by rank 10 in 73%
+   of cases**, with 7.2 distinct documents per 10 passages.
+
+Not measured on the copy: `prod` (its context load opens the narrow database
+role, which needs the box's `MANTLE_MASTER_KEY`; a copy is kept without it so
+no stored key can be decrypted) and `passage-scored` (one paid decider call
+per case). Measure those on a live box when a change touches them.
+
+Regression gate from here: keep the run's snapshot beside the copy and pass it
+as `--baseline=` after a retrieval change; the number must not drop. A new
+query needs one more embed into the copy's cache, or it reaches the embedder.
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
 half runs the same idea inside the brain, on a schedule:
 
 - **Golden cases live in the brain**: a note tagged `recall-eval-cases` whose
-  content is a JSON array of `{id, query, expectNodeIds? | expectTitleIncludes?}`
-  (the field name `expectNodeTitleIncludes` from `recall-cases.json` is accepted
-  unchanged). Editable in the UI like any note, add a case the moment a recall
-  miss annoys you.
+  content is a JSON array of
+  `{id, query, expect?: [{type, titleKey, bodyKey}] | expectNodeIds? | expectTitleIncludes?}`.
+  `expect` holds the same stable keys as `recall-gold.json` (since 2026-11-19),
+  so a case written for the manual harness pastes in unchanged (the field name
+  `expectNodeTitleIncludes` is accepted too). Get the keys of an item with
+  `pnpm -C server/web eval:recall --keys=<nodeId>` on the box. Prefer keys: an
+  id dies when an item is made again, a key does not. Editable in the UI like
+  any note, add a case the moment a recall miss annoys you.
+- **Gold is resolved once per run, by the same code as the harness**
+  (`resolveGold` and the key SQL in `packages/search/src/gold-keys.ts`): a key
+  match (same type, and the title key or the body key equal), a live id, or a
+  title substring. A case with no live gold is **stale**: it is skipped, not
+  scored as a miss, and named in the run's `staleCases`.
 - **`recall_eval` (builtin tool)** runs every case through the shipped
   retrievers as agents call them (hybrid `search_nodes` + hybrid passage
   `search_chunks`), scores
@@ -946,15 +1062,17 @@ half runs the same idea inside the brain, on a schedule:
   only against a run that also measured hybrid, so the switch raises no false
   alert. The capacity dial's `retrieval` number (the `chunks` R@10) now reads
   the arm agents use.
-- **A gold set that matches nothing alerts on its own.** When EVERY case
-  misses in both retrievers the run scores exactly 0/0, which drift reads as
-  "no change" — that state sat silent for nine weekly runs on the dev brain
-  (2026-07-20 → 2026-09-15; the set had been pasted in from another brain, so
-  none of its node ids or titles existed). `recall_eval` now returns
-  `alert: true, reason: 'gold_set_unmatched'` with `unmatchedCases` and a
-  `detail` naming the fix (repair the `recall-eval-cases` note; prefer
-  `expectTitleIncludes` for documentation nodes, whose ids churn on re-sync).
-  Retrieval is unmeasured in that state, not degraded.
+- **A gold set that matches nothing alerts on its own.** A run where every
+  case scores 0 reads to drift as "no change": that state sat silent for nine
+  weekly runs on the dev brain (2026-07-20 to 2026-09-15; the set had been
+  pasted in from another brain, so none of its node ids or titles existed).
+  Since 2026-11-19 the test is staleness, not misses: when EVERY case is
+  stale, `recall_eval` returns `alert: true, reason: 'gold_set_unmatched'`
+  with `staleCases` and a `detail` naming the fix, and writes no run note (a
+  zero run would mask the next real drift). Some stale cases with others live
+  is no alert: the live ones are scored and the stale ones named. A live case
+  that no retriever ranks is a real miss and stays in the scores
+  (`unmatchedCases` names it).
 - **The `brain_health` heartbeat** ships in the system manifest, so every brain
   gets it — new ones at onboarding, existing ones on the next boot reconcile.
   It fires weekly ±6h with quiet hours, calls `brain_capacity` + `recall_eval`

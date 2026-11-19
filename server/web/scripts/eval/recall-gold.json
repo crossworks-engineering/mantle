@@ -1,0 +1,311 @@
+[
+  {
+    "id": "sync-sidecar-plan",
+    "group": "title",
+    "query": "sync service plan for mail, files, calendars and contacts",
+    "expect": [{ "type": "page", "titleKey": "9735a5cb98f39adf", "bodyKey": "8bfb25c108684d16" }]
+  },
+  {
+    "id": "chat-service-plan",
+    "group": "title",
+    "query": "chat service plan for Slack, Google Chat and WhatsApp",
+    "expect": [{ "type": "page", "titleKey": "fbfbd25c456ff448", "bodyKey": "011dc11a00a2443b" }]
+  },
+  {
+    "id": "bun-server-conversion",
+    "group": "title",
+    "query": "Bun server conversion plan",
+    "expect": [{ "type": "page", "titleKey": "82d4b734c25c239e", "bodyKey": "268036685ab3030f" }]
+  },
+  {
+    "id": "tika-4-migration",
+    "group": "title",
+    "query": "migrate Apache Tika to 4.x",
+    "expect": [{ "type": "task", "titleKey": "2f1f799d5969a8bc", "bodyKey": "a3400c7f5a3de6a6" }]
+  },
+  {
+    "id": "folder-counts-readable",
+    "group": "title",
+    "query": "folder counts show only what the viewer can read",
+    "expect": [{ "type": "task", "titleKey": "866ec0e840ef3f19", "bodyKey": "69d27733869f8638" }]
+  },
+  {
+    "id": "theme-generator-seeds",
+    "group": "title",
+    "query": "theme generator, the colour system derived from seeds",
+    "expect": [{ "type": "journal", "titleKey": "adc65129efa80c48", "bodyKey": "886616d50c58034d" }]
+  },
+  {
+    "id": "repo-size-cloc",
+    "group": "title",
+    "query": "repo size with cloc, written code only",
+    "expect": [{ "type": "note", "titleKey": "2d53ca5d1634a999", "bodyKey": "ee32578fa024e450" }]
+  },
+  {
+    "id": "docx-advanced-styling",
+    "group": "title",
+    "query": "extend docx export with advanced styling",
+    "expect": [{ "type": "note", "titleKey": "4c6318c64f91a615", "bodyKey": "78fa98aeef00bc5e" }]
+  },
+  {
+    "id": "ai-sdk-adoption",
+    "group": "title",
+    "query": "ai sdk adoption",
+    "expect": [{ "type": "file", "titleKey": "e87db74c42361204", "bodyKey": "9e77319ac9a3855d" }]
+  },
+  {
+    "id": "messenger-realtime",
+    "group": "summary",
+    "query": "direct chats, groups, attachments and real-time delivery across web, desktop and mobile",
+    "expect": [{ "type": "page", "titleKey": "eb6397bc5f761038", "bodyKey": "654eaf434acb2c51" }]
+  },
+  {
+    "id": "tool-cost-deferred",
+    "group": "summary",
+    "query": "cut token costs by 75% with deferred loading",
+    "expect": [{ "type": "page", "titleKey": "62195453818d321c", "bodyKey": "e53abf45e7ba4c7b" }]
+  },
+  {
+    "id": "archive-time-ranges",
+    "group": "summary",
+    "query": "previous conversations kept as time ranges so messages do not move",
+    "expect": [{ "type": "page", "titleKey": "8c1aac264915c37e", "bodyKey": "b9d1dc5e60635df0" }]
+  },
+  {
+    "id": "db-explorer-sql-box",
+    "group": "summary",
+    "query": "Data view, a read-only SQL box and a Files list filter",
+    "expect": [{ "type": "page", "titleKey": "ad2026ebcd50d142", "bodyKey": "e1ff5806e4d653b8" }]
+  },
+  {
+    "id": "ingest-sidecar-isolation",
+    "group": "summary",
+    "query": "ingest sidecar kept isolated from the database and secrets",
+    "expect": [{ "type": "task", "titleKey": "8d9e044eddaecf1f", "bodyKey": "979ffbaf623e216c" }]
+  },
+  {
+    "id": "colbert-limit-paper",
+    "group": "summary",
+    "query": "ColBERT style vectors and the geometric ceiling in the LIMIT paper",
+    "expect": [{ "type": "task", "titleKey": "5638aaa28b2657c4", "bodyKey": "4ab2018df3422fca" }]
+  },
+  {
+    "id": "anding-every-stem",
+    "group": "summary",
+    "query": "stop ANDing every stem, a fix from the hindsight audit",
+    "expect": [{ "type": "task", "titleKey": "dcc697b3cbed3013", "bodyKey": "5fbb9ba5319892f1" }]
+  },
+  {
+    "id": "turbopack-security-error",
+    "group": "summary",
+    "query": "Turbopack cross-origin URL SecurityError in the console during commit",
+    "expect": [{ "type": "task", "titleKey": "ebebc959e8660d3c", "bodyKey": "5c9ed06ac3cd2c7d" }]
+  },
+  {
+    "id": "hono-shimming",
+    "group": "summary",
+    "query": "smaller image footprint and memory, routes kept compatible through shimming",
+    "expect": [{ "type": "journal", "titleKey": "0ddf0325cb56376f", "bodyKey": "03bc99b1a169da75" }]
+  },
+  {
+    "id": "cors-fencing-session",
+    "group": "summary",
+    "query": "native-level CORS fencing and session persistence for authenticated connectivity",
+    "expect": [{ "type": "journal", "titleKey": "7b118625814543e2", "bodyKey": "cfd190c71b10aeba" }]
+  },
+  {
+    "id": "profile-index-sqlite",
+    "group": "summary",
+    "query": "profile-based index instead of embedding raw rows, an isolated SQLite database per sheet",
+    "expect": [{ "type": "file", "titleKey": "68bca30fd16288a2", "bodyKey": "6d91a2e8e999efd9" }]
+  },
+  {
+    "id": "formula-calling-contract",
+    "group": "summary",
+    "query": "signature-based calling contract and validation for technical calculations",
+    "expect": [{ "type": "file", "titleKey": "8f0a882890090525", "bodyKey": "9d6606200beab25f" }]
+  },
+  {
+    "id": "ink-from-surface-hues",
+    "group": "summary",
+    "query": "derive text ink colours from surface hues to fix contrast and accessibility",
+    "expect": [{ "type": "file", "titleKey": "716dc45ee93f71ec", "bodyKey": "9fb896bab51d2a05" }]
+  },
+  {
+    "id": "vendored-diagram-subset",
+    "group": "summary",
+    "query": "vendored subset with overrides for system font stacks and the geometry verifiers removed",
+    "expect": [{ "type": "note", "titleKey": "dbf29971f204a3c7", "bodyKey": "60118b1f5509087e" }]
+  },
+  {
+    "id": "pg-autovacuum-scoring",
+    "group": "body",
+    "query": "parallel autovacuum and autovacuum table scoring weights",
+    "expect": [{ "type": "page", "titleKey": "c2f12d7ddf0a6b5e", "bodyKey": "4827b0c8ff3b55b7" }]
+  },
+  {
+    "id": "key-limit-per-login",
+    "group": "body",
+    "query": "at most 50 live keys per login, and an admin may revoke every key",
+    "expect": [{ "type": "page", "titleKey": "c2a304629494530c", "bodyKey": "9e81615179b0bd99" }]
+  },
+  {
+    "id": "pgboss-options-used",
+    "group": "body",
+    "query": "singletonKey, expireIn and group concurrency options that are hardest to copy",
+    "expect": [{ "type": "page", "titleKey": "a24854815e25c95f", "bodyKey": "cbcfb734d534e7fb" }]
+  },
+  {
+    "id": "token-vault-safestorage",
+    "group": "body",
+    "query": "bearers encrypted with safeStorage, Keychain, DPAPI or libsecret",
+    "expect": [{ "type": "page", "titleKey": "57ce8cc5cd2f1aeb", "bodyKey": "b0c1cccd4374487b" }]
+  },
+  {
+    "id": "cv2-beside-numpy",
+    "group": "body",
+    "query": "import cv2 beside the pinned numpy, matplotlib and ezdxf",
+    "expect": [{ "type": "task", "titleKey": "7f73fed12ba1e6c9", "bodyKey": "74d4c02dafc7918d" }]
+  },
+  {
+    "id": "busboy-abort-part",
+    "group": "body",
+    "query": "busboy file stream destroyed on abort so no .part file is left",
+    "expect": [{ "type": "journal", "titleKey": "65bab4f94f0b34e9", "bodyKey": "e24ea91a6700ba4e" }]
+  },
+  {
+    "id": "ghidra-hopper-jadx",
+    "group": "body",
+    "query": "bridges for Hopper, Ghidra and JADX, plus mitmproxy captures",
+    "expect": [{ "type": "note", "titleKey": "4046e3b986f46ac2", "bodyKey": "1cedecc78145cf68" }]
+  },
+  {
+    "id": "overseer-claim-evidence",
+    "group": "body",
+    "query": "the overseer function inline, a claim versus evidence lens",
+    "expect": [{ "type": "file", "titleKey": "345a3d7d320c9408", "bodyKey": "6b5479ddd2e7a419" }]
+  },
+  {
+    "id": "guild-hallmark",
+    "group": "body",
+    "query": "a guild of wrights and the hallmark a passed assay leaves behind",
+    "expect": [{ "type": "file", "titleKey": "37c28cee7f2a2de9", "bodyKey": "56e611f9c04262c9" }]
+  },
+  {
+    "id": "prosemirror-hot-path",
+    "group": "body",
+    "query": "single-row database reads on the hot path, no ProseMirror parsing",
+    "expect": [{ "type": "file", "titleKey": "7dd6730706676010", "bodyKey": "b54b6a953890bb3d" }]
+  },
+  {
+    "id": "livekit-calls",
+    "group": "two-word",
+    "query": "LiveKit calls",
+    "expect": [{ "type": "page", "titleKey": "9e113ac6b4fcba50", "bodyKey": "094f3f10d859266f" }]
+  },
+  {
+    "id": "locomo-benchmark",
+    "group": "two-word",
+    "query": "LoCoMo benchmark",
+    "expect": [{ "type": "page", "titleKey": "a46272d46282df5b", "bodyKey": "0ad9e3ebd76cea8d" }]
+  },
+  {
+    "id": "screen-aware",
+    "group": "two-word",
+    "query": "screen aware",
+    "expect": [{ "type": "task", "titleKey": "9fa2a9fdb571c68e", "bodyKey": "611a86152e53bb18" }]
+  },
+  {
+    "id": "saved-queries",
+    "group": "two-word",
+    "query": "saved queries",
+    "expect": [{ "type": "task", "titleKey": "b124b815329c3d3d", "bodyKey": "5fc9f6ef2f5e455d" }]
+  },
+  {
+    "id": "exact-timing",
+    "group": "two-word",
+    "query": "exact timing",
+    "expect": [{ "type": "journal", "titleKey": "d5cedf2cda581456", "bodyKey": "88fbe79e10a3b8bd" }]
+  },
+  {
+    "id": "encrypt-outage",
+    "group": "two-word",
+    "query": "Encrypt outage",
+    "expect": [{ "type": "journal", "titleKey": "0d186293d3460a02", "bodyKey": "64a13c4028321dd0" }]
+  },
+  {
+    "id": "sqlite-native",
+    "group": "two-word",
+    "query": "sqlite native",
+    "expect": [{ "type": "journal", "titleKey": "b3b8a6b95a096c54", "bodyKey": "6c164b6c436d9368" }]
+  },
+  {
+    "id": "dev-topology",
+    "group": "two-word",
+    "query": "dev topology",
+    "expect": [{ "type": "note", "titleKey": "b048aa8763f06960", "bodyKey": "b86f18ee37c22aeb" }]
+  },
+  {
+    "id": "institutional-memory",
+    "group": "two-word",
+    "query": "institutional memory",
+    "expect": [{ "type": "note", "titleKey": "0f7d6abd38f5bb06", "bodyKey": "5ce42a54ad46d51f" }]
+  },
+  {
+    "id": "gotenberg-second-engine",
+    "group": "paraphrase",
+    "query": "a second engine that turns office files and web pages into PDFs next to the headless Chrome service",
+    "expect": [
+      { "type": "page", "titleKey": "e4c6ef59b69410bd", "bodyKey": "866ca1a5b2ecbf6c" },
+      { "type": "file", "titleKey": "3ca715ca10a3dfb7", "bodyKey": "e63c0d5cc31daecf" }
+    ]
+  },
+  {
+    "id": "vault-use-not-read",
+    "group": "paraphrase",
+    "query": "let an assistant log in to a server with a password it never gets to see",
+    "expect": [{ "type": "page", "titleKey": "692be193e2a5bcef", "bodyKey": "361f970a78786e74" }]
+  },
+  {
+    "id": "official-brand-colors",
+    "group": "paraphrase",
+    "query": "the house shades the product is allowed to use",
+    "expect": [{ "type": "page", "titleKey": "0eae441c289687c6", "bodyKey": "955a882bdf91a6a7" }]
+  },
+  {
+    "id": "reveal-typed-password",
+    "group": "paraphrase",
+    "query": "let people unmask hidden characters while typing a login phrase",
+    "expect": [{ "type": "task", "titleKey": "716644c82747b82a", "bodyKey": "fe76522c370976b7" }]
+  },
+  {
+    "id": "wallpaper-needs-reload",
+    "group": "paraphrase",
+    "query": "a new wallpaper only appears after reloading the page",
+    "expect": [{ "type": "task", "titleKey": "28639f7af2525068", "bodyKey": "d38306bbf4f26a27" }]
+  },
+  {
+    "id": "llm-for-one-message",
+    "group": "paraphrase",
+    "query": "choose another LLM for just one message",
+    "expect": [{ "type": "task", "titleKey": "248b543252fda3c6", "bodyKey": "d2397f8bc6ddf08d" }]
+  },
+  {
+    "id": "check-said-fine",
+    "group": "paraphrase",
+    "query": "a check that said everything was fine and was wrong",
+    "expect": [{ "type": "journal", "titleKey": "c0028b29a7a56fdd", "bodyKey": "58d532f6c9b609c5" }]
+  },
+  {
+    "id": "git-line-split",
+    "group": "paraphrase",
+    "query": "a git line of work split quietly between two computers",
+    "expect": [{ "type": "journal", "titleKey": "6aa43e48c0dcef17", "bodyKey": "9a744d0fe5da5f9f" }]
+  },
+  {
+    "id": "box-name-in-corner",
+    "group": "paraphrase",
+    "query": "let every server show its own label in the corner instead of the logo",
+    "expect": [{ "type": "note", "titleKey": "63d542f0815738ae", "bodyKey": "ecb8f624b3f85a84" }]
+  }
+]

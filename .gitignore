@@ -85,8 +85,8 @@ skills-lock.json
 .github/hooks/
 .github/skills/
 
-# Recall-eval run snapshots — regenerated per run, contain personal queries.
-# The gold cases (recall-cases.json) and the runner ARE committed.
+# Recall-eval run snapshots: regenerated per run, they carry the queries.
+# The runner and recall-gold.json (queries and hashed keys only) ARE committed.
 server/web/scripts/eval/last-run.json
 server/web/scripts/eval/*.run.json
 
@@ -122,12 +122,11 @@ server/web/public/share-runtime/
 .mantle-fleet.json
 .impeccable/
 
-# Recall-eval gold cases are LOCAL ONLY — never commit them.
-# A gold case pairs a query with node ids from ONE brain, so the set is both
-# personal (it names the owner's real pages) and useless anywhere else (the
-# ids don't resolve). The repo shipped one until 2026-08-21; it carried the
-# owner's bank, a company expense figure and their full name into a public
-# repo. Build your own with docs/recall-eval.md.
+# The LOCAL recall-eval cases: those whose query would reveal private content,
+# or that name gold by node id or title text. Never commit them. The repo
+# shipped such a set until 2026-08-21; it carried the owner's bank, a company
+# expense figure and their full name into a public repo. Public cases go in
+# recall-gold.json with hashed keys only (docs/recall-eval.md).
 server/web/scripts/eval/recall-cases.json
 __pycache__/
 

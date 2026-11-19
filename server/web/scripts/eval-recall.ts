@@ -43,10 +43,19 @@
  * so the passage retrievers also run against a bare corpus copy (the scale
  * curve in docs/recall-eval.md does exactly that).
  *
- * Reads gold cases from scripts/eval/recall-cases.json. Writes a snapshot to
+ * Reads gold cases from scripts/eval/recall-gold.json (committed: queries
+ * and match keys only, no brain content) plus scripts/eval/recall-cases.json
+ * when it exists (local and gitignored: cases whose query would reveal private
+ * content). `--cases=<path>` reads one file instead. Writes a snapshot to
  * scripts/eval/last-run.json (override with --out=). Pass --baseline= to print
  * per-metric deltas against a prior snapshot — the regression gate when you
  * change retrieval.
+ *
+ * A case names its gold item by stable keys (`expect`), not only by node id,
+ * so it survives the item being deleted and made again: same type, and the
+ * same title key OR the same body key. Print the keys of items you want as
+ * gold with `--keys=<nodeId>[,<nodeId>...]`. A case none of whose gold resolves
+ * on this brain is skipped and named, never scored as a miss.
  *
  * Read-only: it never writes to the brain. Safe to run against prod.
  */
@@ -57,7 +66,7 @@ import { fileURLToPath } from 'node:url';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, agents, nodes, type Agent } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { searchNodes, searchChunks } from '@mantle/search';
+import { goldNodeKeys, resolveGold, searchNodes, searchChunks, type GoldKey } from '@mantle/search';
 import {
   applyPassageScores,
   decisionUseEnabled,
@@ -95,6 +104,8 @@ const K_VALUES = [1, 3, 5, 10] as const;
 type GoldCase = {
   id: string;
   query: string;
+  /** Gold items by stable key; any one match counts. */
+  expect?: GoldKey[];
   expectNodeIds?: string[];
   expectNodeTitleIncludes?: string[];
   expectFactIncludes?: string[];
@@ -115,7 +126,10 @@ type Candidate = { id: string; title: string; ordinal?: number };
 
 type Args = {
   rankK: number;
-  casesPath: string;
+  /** Case files to read; `optional` ones may be absent. */
+  casesPaths: Array<{ path: string; optional: boolean }>;
+  /** --keys=: print the stable keys of these nodes and exit. */
+  keysFor: string[] | null;
   outPath: string;
   baselinePath: string | null;
   onlyCase: string | null;
@@ -129,7 +143,11 @@ type Args = {
 function parseArgs(argv: string[]): Args {
   const out: Args = {
     rankK: 20,
-    casesPath: resolve(HERE, 'eval/recall-cases.json'),
+    casesPaths: [
+      { path: resolve(HERE, 'eval/recall-gold.json'), optional: false },
+      { path: resolve(HERE, 'eval/recall-cases.json'), optional: true },
+    ],
+    keysFor: null,
     outPath: resolve(HERE, 'eval/last-run.json'),
     baselinePath: null,
     onlyCase: null,
@@ -142,7 +160,15 @@ function parseArgs(argv: string[]): Args {
       const n = parseInt(a.slice('--rank-k='.length), 10);
       if (!Number.isNaN(n) && n > 0) out.rankK = n;
     } else if (a.startsWith('--cases=')) {
-      out.casesPath = resolve(process.cwd(), a.slice('--cases='.length));
+      out.casesPaths = [
+        { path: resolve(process.cwd(), a.slice('--cases='.length)), optional: false },
+      ];
+    } else if (a.startsWith('--keys=')) {
+      out.keysFor = a
+        .slice('--keys='.length)
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
     } else if (a.startsWith('--out=')) {
       out.outPath = resolve(process.cwd(), a.slice('--out='.length));
     } else if (a.startsWith('--baseline=')) {
@@ -164,19 +190,9 @@ function parseArgs(argv: string[]): Args {
   return out;
 }
 
-/** A candidate matches the gold if its id is expected OR its title contains an
- *  expected substring (case-insensitive). Title match keeps cases authorable and
- *  resilient, id match keeps them precise. */
-function isGold(c: Candidate, gc: GoldCase): boolean {
-  const ids = gc.expectNodeIds ?? [];
-  if (ids.includes(c.id)) return true;
-  const title = c.title.toLowerCase();
-  return (gc.expectNodeTitleIncludes ?? []).some((s) => title.includes(s.toLowerCase()));
-}
-
 /** 1-based rank of the first gold candidate, or 0 if none within the list. */
-function goldRank(list: Candidate[], gc: GoldCase): number {
-  for (let i = 0; i < list.length; i++) if (isGold(list[i]!, gc)) return i + 1;
+function goldRank(list: Candidate[], gold: Set<string>): number {
+  for (let i = 0; i < list.length; i++) if (gold.has(list[i]!.id)) return i + 1;
   return 0;
 }
 
@@ -272,13 +288,18 @@ type CaseResult = {
 
 async function runCase(
   gc: GoldCase,
+  gold: Set<string>,
   agent: Agent | null,
   ownerId: string,
   args: Args,
 ): Promise<CaseResult> {
   const { rankK } = args;
   const want = new Set(args.retrievers);
-  const queryVec = await embed(ownerId, gc.query.slice(0, 2000));
+  // `fts` alone needs no query vector, so a keyword-only run never reaches
+  // the embedder (a brain copy without the embedder's key can still measure).
+  const queryVec = args.retrievers.every((r) => r === 'fts')
+    ? []
+    : await embed(ownerId, gc.query.slice(0, 2000));
   const lists: Partial<Record<Retriever, Candidate[]>> = {};
 
   let ctx: Awaited<ReturnType<typeof loadConversationContext>> | null = null;
@@ -378,10 +399,10 @@ async function runCase(
     const pl = passageLists[r];
     if (pl) {
       passageDocs[r] = new Set(pl.map((c) => c.id)).size;
-      ranks[r] = goldRank(dedup(pl), gc);
+      ranks[r] = goldRank(dedup(pl), gold);
       if (gc.expectChunks?.length) passageRanks[r] = passageRank(pl, gc);
     } else if (lists[r]) {
-      ranks[r] = goldRank(lists[r]!, gc);
+      ranks[r] = goldRank(lists[r]!, gold);
     }
   }
   const prod = lists.prod ?? [];
@@ -465,6 +486,25 @@ async function main() {
     process.exit(1);
   }
 
+  if (args.keysFor?.length === 0) {
+    console.error('eval-recall: --keys= needs one or more node ids');
+    process.exit(1);
+  }
+  if (args.keysFor) {
+    // One JSON line per node: paste it into a case's `expect`. No titles, no
+    // text: the keys are hashes, so the output is safe to commit.
+    const rows = await goldNodeKeys(ownerId, { ids: args.keysFor });
+    for (const id of args.keysFor) {
+      const r = rows.find((x) => x.id === id);
+      if (!r) console.error(`eval-recall: no node ${id} for this owner`);
+      else
+        console.log(
+          JSON.stringify({ id: r.id, type: r.type, titleKey: r.title_key, bodyKey: r.body_key }),
+        );
+    }
+    process.exit(0);
+  }
+
   // Only `prod` needs a responder agent; the other retrievers run on a bare
   // corpus (a throwaway copy with no agents is fine).
   let agent: Agent | null = null;
@@ -483,30 +523,45 @@ async function main() {
     }
   }
 
-  // The gold set is deliberately NOT in the repo: a case pins node ids from ONE
-  // brain, so a shared set is both personal and useless elsewhere. Say how to
-  // make one rather than dying on ENOENT.
-  let raw: string;
-  try {
-    raw = readFileSync(args.casesPath, 'utf8');
-  } catch {
-    console.error(
-      `No gold cases at ${args.casesPath}.\n` +
-        'The set is local-only and gitignored — it names your own pages by id, so it cannot ship.\n' +
-        'Write a JSON array of { id, query, expectNodeIds?|expectNodeTitleIncludes? } there, ' +
-        'or point elsewhere with --cases=<path>. See docs/recall-eval.md.',
-    );
-    process.exit(1);
+  // The committed set holds queries and hashed keys only; the local file holds
+  // the cases whose query would itself reveal private content.
+  let cases: GoldCase[] = [];
+  for (const f of args.casesPaths) {
+    let raw: string;
+    try {
+      raw = readFileSync(f.path, 'utf8');
+    } catch {
+      if (f.optional) continue;
+      console.error(
+        `No gold cases at ${f.path}.\n` +
+          'Write a JSON array of { id, query, expect: [{ type, titleKey, bodyKey }] } there ' +
+          '(keys from --keys=<nodeId>), or point elsewhere with --cases=<path>. See docs/recall-eval.md.',
+      );
+      process.exit(1);
+    }
+    cases.push(...(JSON.parse(raw) as GoldCase[]));
   }
-  let cases: GoldCase[] = JSON.parse(raw);
   if (args.onlyCase) cases = cases.filter((c) => c.id === args.onlyCase);
+
+  // Resolve each case's gold on THIS brain. A case with no live gold is
+  // skipped and named: scoring it as a miss would read as a recall drop.
+  // The stable keys and their SQL live in @mantle/search (gold-keys.ts), the
+  // same code the in-brain recall_eval tool resolves its gold with.
+  const golds = await resolveGold(
+    ownerId,
+    cases.map((c) => ({ ...c, expectTitleIncludes: c.expectNodeTitleIncludes })),
+  );
+  const skipped = cases.filter((c) => golds.get(c.id)!.size === 0).map((c) => c.id);
+  cases = cases.filter((c) => golds.get(c.id)!.size > 0);
   if (cases.length === 0) {
-    console.error('eval-recall: no cases to run');
+    console.error(
+      `eval-recall: no case resolves on this brain (${skipped.length} stale: ${skipped.join(', ')})`,
+    );
     process.exit(1);
   }
 
   const results: CaseResult[] = [];
-  for (const gc of cases) results.push(await runCase(gc, agent, ownerId, args));
+  for (const gc of cases) results.push(await runCase(gc, golds.get(gc.id)!, agent, ownerId, args));
 
   const retrievers = args.retrievers;
   const passageRetrievers = retrievers.filter((r) => PASSAGE_RETRIEVERS.includes(r));
@@ -518,11 +573,14 @@ async function main() {
   // Per-group passage scores (only when cases carry a group label).
   const groups = [...new Set(results.map((r) => r.group).filter((g): g is string => !!g))].sort();
   const groupMetrics: Record<string, Partial<Record<Retriever, Metrics>>> = {};
+  const groupDocMetrics: Record<string, Partial<Record<Retriever, Metrics>>> = {};
   for (const g of groups) {
     const inGroup = results.filter((r) => r.group === g);
     groupMetrics[g] = {};
+    groupDocMetrics[g] = {};
     for (const r of passageRetrievers)
       groupMetrics[g]![r] = aggregate(inGroup, r, (c) => c.passageRanks);
+    for (const r of retrievers) groupDocMetrics[g]![r] = aggregate(inGroup, r);
   }
 
   const snapshot = {
@@ -532,9 +590,11 @@ async function main() {
     rankK: args.rankK,
     passageLimit: args.passageLimit,
     cases: results,
+    skipped,
     metrics,
     passageMetrics,
     groupMetrics,
+    groupDocMetrics,
   };
   mkdirSync(dirname(args.outPath), { recursive: true });
   writeFileSync(args.outPath, JSON.stringify(snapshot, null, 2));
@@ -546,8 +606,13 @@ async function main() {
 
   // ── Per-case ranks ──────────────────────────────────────────────────────
   console.log(
-    `\nRecall eval · agent=${agent?.slug ?? '-'} · ${results.length} cases · RANK_K=${args.rankK}\n`,
+    `\nRecall eval · agent=${agent?.slug ?? '-'} · ${results.length} cases · RANK_K=${args.rankK}`,
   );
+  if (skipped.length)
+    console.log(
+      `  skipped ${skipped.length} stale case(s), no gold on this brain: ${skipped.join(', ')}`,
+    );
+  console.log('');
   console.log(
     `  ${'case'.padEnd(22)} ${retrievers.map((r) => r.slice(0, 9).padStart(10)).join('')}`,
   );
@@ -567,6 +632,18 @@ async function main() {
     'document',
     retrievers.map((r) => [r, metrics[r]!]),
   );
+  if (groups.length) {
+    // MRR per query style (title words, body-only words, paraphrase, ...).
+    console.log(
+      `\n  ${'document MRR'.padEnd(18)} ${retrievers.map((r) => r.slice(0, 9).padStart(10)).join('')}    n`,
+    );
+    for (const g of groups)
+      console.log(
+        `  ${g.slice(0, 18).padEnd(18)} ${retrievers
+          .map((r) => groupDocMetrics[g]![r]!.mrr.toFixed(2).padStart(10))
+          .join('')}  ${String(groupDocMetrics[g]![retrievers[0]!]!.n).padStart(3)}`,
+      );
+  }
   if (passageRetrievers.some((r) => passageMetrics[r]!.n > 0)) {
     printTable(
       'passage (exact)',

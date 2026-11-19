@@ -5153,7 +5153,7 @@
  },
  {
   "name": "recall_eval",
-  "description": "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases`, a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) runs through the retrievers agents use (hybrid node and passage search; with passage_scoring's pool set, also the Jev-scored path, about USD 0.0007 per 25 passages per case), is scored (recall@k, MRR), saved as one run note and compared to the previous run. `alert: true` with `reason: 'quality_dropped'` when quality fell, or `reason: 'gold_set_unmatched'` when EVERY case missed both retrievers (repair the gold set, see `unmatchedCases`). `skipped: true, alert: false` when no gold set exists: unmeasured, not degraded, say nothing. Capacity is `brain_capacity`; this measures QUALITY.",
+  "description": "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases`: a JSON array of {id, query} with gold by `expect` keys, `expectNodeIds` or `expectTitleIncludes`) runs through the retrievers agents use (hybrid node and passage search; with passage_scoring's pool set, also the Jev-scored path, about USD 0.0007 per 25 passages per case), is scored (recall@k, MRR), saved as one run note and compared to the previous run. A case with no live gold is skipped, named in `staleCases`. `alert: true` with `reason: 'quality_dropped'` when quality fell, or `reason: 'gold_set_unmatched'` when EVERY case is stale (repair the gold set). `skipped: true, alert: false` when no gold set exists: unmeasured, not degraded, say nothing. Capacity is `brain_capacity`; this measures QUALITY.",
   "inputSchema": {
    "type": "object",
    "properties": {},
