@@ -84,8 +84,10 @@
  *                          it is sent again PAID_WAIT_RESENDS_MAX times
  *                          (a wait in between with no paid call keeps
  *                          the count; only a try that got work done
- *                          starts it over), then takes the old bounded
- *                          retries (cost safety; paidWaitResends). An
+ *                          starts it over); past that ANY wait, paid or
+ *                          not, takes the old bounded retries (cost
+ *                          safety; paidWaitResends): a wait sent again is
+ *                          a new job, whose retries would start over. An
  *                          Agent's run held at the day cap of paid asks
  *                          is sent again once the cap has room. While it
  *                          waits the job carries `wait`, and a file's
@@ -307,9 +309,10 @@ export async function waitAgain(
   return due;
 }
 
-/** Whether a wait after paid calls is sent again as a wait, or (past
- *  PAID_WAIT_RESENDS_MAX) takes the queue's old bounded retries:
- *  each such try pays for those calls again. */
+/** Whether a wait of this job is sent again as a wait, or (past
+ *  PAID_WAIT_RESENDS_MAX waits after paid calls) takes the queue's old
+ *  bounded retries, paid or not: each such try pays for those calls
+ *  again. */
 export function paidWaitResends(job: ExtractJob): boolean {
   return (job.wait?.paid ?? 0) < PAID_WAIT_RESENDS_MAX;
 }
@@ -699,13 +702,19 @@ async function handleExtractJob(
       .catch((e) => console.error('[extract-queue] circuit:', errorMessage(e)));
     // The provider's "not now": the job waits and is sent again, never a
     // failure that ends in the dead letters (point 7).
-    // A wait after paid calls (pages, pictures or the extraction call this
-    // try paid for and a try again pays for again) is sent again a few
-    // times only, then takes the old bounded retries (paidWaitResends).
+    // Waits after paid calls (pages, pictures or the extraction call a try
+    // paid for and a try again pays for again) are sent again a few times
+    // only (paidWaitResends). Past that ANY wait throws, paid or not: a
+    // wait sent again is a new job, whose retries start over, so paid and
+    // unpaid waits in turn would never reach the dead letters.
     const wait = providerWaitOf(err);
-    const paid = providerWaitPaid(err);
-    if (wait && (!paid || paidWaitResends(data))) {
-      await sendWaiting(b, data, { for: 'provider', provider: wait }, { paid });
+    if (wait && paidWaitResends(data)) {
+      await sendWaiting(
+        b,
+        data,
+        { for: 'provider', provider: wait },
+        { paid: providerWaitPaid(err) },
+      );
       return;
     }
     throw err;

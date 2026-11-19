@@ -12,11 +12,15 @@
  *    document waits for the drawing that runs, and runs when it ends;
  *  - a book (a PDF of 10 MB or more) hops to `mantle.extract.book` and holds
  *    no place of the light and heavy ceiling: while it runs, a drawing and a
- *    document both run and end, on a box set to one extraction at a time.
+ *    document both run and end, on a box set to one extraction at a time;
+ *  - past PAID_WAIT_RESENDS_MAX waits after paid calls, a wait with no paid
+ *    call is no new job either: the job takes the queue's retries, which
+ *    count to the dead letters.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { PAID_WAIT_RESENDS_MAX } from '@mantle/std';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -30,19 +34,28 @@ const runs = vi.hoisted(() => ({
   heavy: new Set<string>(),
   release: new Map<string, () => void>(),
   held: new Set<string>(),
+  /** The provider's "not now" each try of a node meets, in turn. */
+  waits: new Map<string, { paid?: boolean }[]>(),
 }));
-vi.mock('./extractor.js', () => ({
-  extractNode: vi.fn(async (nodeId: string) => {
-    runs.started.push(nodeId);
-    const isHeavy = runs.heavy.has(nodeId);
-    if (isHeavy) runs.heavyMost = Math.max(runs.heavyMost, ++runs.heavyAtOnce);
-    if (runs.held.has(nodeId)) {
-      await new Promise<void>((resolve) => runs.release.set(nodeId, resolve));
-    }
-    if (isHeavy) runs.heavyAtOnce--;
-    runs.ended.push(nodeId);
-  }),
-}));
+vi.mock('./extractor.js', async () => {
+  const { ProviderWaitError } = await import('@mantle/std');
+  return {
+    extractNode: vi.fn(async (nodeId: string) => {
+      runs.started.push(nodeId);
+      const wait = runs.waits.get(nodeId)?.shift();
+      if (wait) {
+        throw new ProviderWaitError({ reason: 'rate_limit' }, 'scan_reader', wait);
+      }
+      const isHeavy = runs.heavy.has(nodeId);
+      if (isHeavy) runs.heavyMost = Math.max(runs.heavyMost, ++runs.heavyAtOnce);
+      if (runs.held.has(nodeId)) {
+        await new Promise<void>((resolve) => runs.release.set(nodeId, resolve));
+      }
+      if (isHeavy) runs.heavyAtOnce--;
+      runs.ended.push(nodeId);
+    }),
+  };
+});
 // No provider is asked: the circuit's probes are not part of this test.
 vi.mock('./extract/model.js', () => ({ probeExtractionModel: vi.fn(async () => {}) }));
 
@@ -229,4 +242,40 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     const counts = await m.extractionQueueCounts();
     expect(counts.running + counts.waiting).toBe(0);
   }, 120_000);
+  it('past the bound of waits after paid calls, a wait with no paid call takes the retries: no new job', async () => {
+    const pdf = await file('scan-past-the-bound.pdf');
+    // Paid waits up to the bound, then a wait before any paid call.
+    runs.waits.set(pdf, [
+      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => ({ paid: true })),
+      {},
+    ]);
+    const main = () =>
+      su<{ state: string; paid: number | null }[]>`
+        select state, (data->'wait'->>'paid')::int as paid from pgboss.job
+        where data->>'nodeId' = ${pdf} and name = 'mantle.extract' order by created_on`;
+    await q.enqueueExtract(pdf);
+    for (let sent = 1; sent <= PAID_WAIT_RESENDS_MAX; sent += 1) {
+      await until(`wait ${sent} is sent`, async () => (await main()).length === sent + 1);
+      // Due now, not after the wait's gap.
+      await su`update pgboss.job set start_after = now()
+        where data->>'nodeId' = ${pdf} and state = 'created'`;
+    }
+    await until(
+      'the try past the bound ran',
+      () => runs.started.filter((id) => id === pdf).length === PAID_WAIT_RESENDS_MAX + 1,
+    );
+    await until('it ended', async () => (await main()).at(-1)!.state !== 'active');
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const all = await main();
+    // The waits under the bound were sent again, each counted; the last
+    // try threw into pg-boss's retries, and sent no job of its own.
+    expect(all.map((j) => j.paid)).toEqual([
+      null,
+      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, (_, i) => i + 1),
+    ]);
+    expect(all.map((j) => j.state)).toEqual([
+      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => 'completed'),
+      'retry',
+    ]);
+  }, 90_000);
 });
