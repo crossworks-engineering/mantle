@@ -193,6 +193,9 @@ describe.skipIf(!URL)('the login facts answer as the text they replace (S2a a0)'
       (${adminWs}, ${L.dis}, true, '{}'), (${ws.team}, ${L.mem}, true, '{}'),
       (${ws.otherAdmin}, ${L.otherUser}, true, '{}')
       on conflict do nothing`;
+    // Every Admin user here is in System too (0391), as on a box when it
+    // came: the area rule's System half is system-workspace.db.test.ts's.
+    await sql`select mantle_ws_ensure_system()`;
   }, 300_000);
 
   afterAll(async () => {

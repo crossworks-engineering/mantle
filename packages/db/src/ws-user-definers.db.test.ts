@@ -123,6 +123,8 @@ const WRITERS: Readonly<Record<string, string>> = {
   mantle_ws_review_off: 'exemption: migrator only (the switch)',
   mantle_ws_spaces_fold: 'exemption: migrator only (the switch)',
   mantle_ws_migrate_bridged: 'exemption: migrator only (the switch)',
+  mantle_ws_ensure_system:
+    'exemption: migrator only (System made once by 0391, and at the end of the switch)',
   mantle_ws_landing_held_trg: 'exemption: a guard trigger',
   mantle_ws_last_admin_mod_trg: 'exemption: a guard trigger',
 };
@@ -1100,6 +1102,7 @@ describe.skipIf(!URL)('the workspace user definers (S2a a1)', () => {
       'public.mantle_ws_review_off()',
       'public.mantle_ws_spaces_fold()',
       'public.mantle_ws_migrate_bridged()',
+      'public.mantle_ws_ensure_system()',
     ]) {
       expect(await mayRun(fn), fn).toEqual([]);
     }

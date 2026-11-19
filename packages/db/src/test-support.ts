@@ -97,7 +97,8 @@ export async function ensureTestAnchor(sql: Sql): Promise<string> {
  * Make `logins` users and Moderators of the brain's live Admin workspace,
  * with the anchor (an Admin login is role admin AND a user of
  * Admin, so a test's admin login needs the row a box with no role drift
- * gives it). Makes the Admin workspace when the brain has none, as the
+ * gives it), and users of its System workspace (made when missing), so each
+ * holds every area. Makes the Admin workspace when the brain has none, as the
  * workspaces switch would. Safe when many test files ask at once. Answers
  * the Admin workspace's id.
  */
@@ -118,6 +119,16 @@ export async function ensureAdminUsers(sql: Sql, logins: readonly string[]): Pro
   for (const login of [anchor, ...logins]) {
     await sql`insert into workspace_users (workspace_id, login_id, moderator)
               values (${ws.id}, ${login}, true) on conflict do nothing`;
+  }
+  // And of System (0391), as every Admin user a brain had when System came:
+  // the technical areas need it (mantle_area_rule). A test of an Admin user
+  // outside System seats that login by hand.
+  await sql`select mantle_ws_ensure_system()`;
+  for (const login of [anchor, ...logins]) {
+    await sql`insert into workspace_users (workspace_id, login_id, moderator)
+              select w.id, ${login}::uuid, true from workspaces w
+               where w.owner_id = ${anchor} and w.bridge_key = 'system'
+              on conflict do nothing`;
   }
   return ws.id;
 }

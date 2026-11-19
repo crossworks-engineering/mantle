@@ -2731,6 +2731,13 @@
       "when": 1792260000000,
       "tag": "0390_ai_worker_kind_scan_reader",
       "breakpoints": true
+    },
+    {
+      "idx": 391,
+      "version": "7",
+      "when": 1792270000000,
+      "tag": "0386_system_workspace",
+      "breakpoints": true
     }
   ]
 }

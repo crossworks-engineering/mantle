@@ -49,7 +49,10 @@ export const workspaces = pgTable(
      *  rule reads it. */
     adminModerated: boolean('admin_moderated').notNull().default(false),
     /** The workspace the login bridge keeps: 'admin' (0250). 'team' named
-     *  the old built-in Team workspace until 0286 made it a normal one. */
+     *  the old built-in Team workspace until 0286 made it a normal one.
+     *  'system' marks the System workspace (0391): a subset of Admin whose
+     *  users hold the settings, assistants, connectors and keys areas
+     *  (mantle_area_rule, mantle_ws_system_id). */
     bridgeKey: text('bridge_key'),
     /** The workspace's home app (0276): its landing page shows it in place
      *  of the built-in Desk while the workspace holds the app and its
