@@ -239,6 +239,7 @@
     },
     "GET /api/files/files": { "tool": "file_list", "gap": "no recent view across folders" },
     "GET /api/files/files/:id": ["file_get", "file_read"],
+    "GET /api/files/files/:id/extract": "file_extract_archive",
     "GET /api/files/files/:id/history": "file_history_list",
     "GET /api/files/files/:id/history/:sid/download": {
       "none": "the bytes of a kept version for a person to save; an agent restores it (file_history_restore) and reads the file (file_read)"
@@ -790,6 +791,7 @@
     "POST /api/files/files": "file_upload",
     "POST /api/files/files/:id": "file_copy",
     "POST /api/files/files/:id/database": "file_sql",
+    "POST /api/files/files/:id/extract": "file_extract_archive",
     "POST /api/files/files/:id/history/:sid/restore": "file_history_restore",
     "POST /api/files/files/:id/run": "pipeline_run",
     "POST /api/files/folders": "folder_create",
