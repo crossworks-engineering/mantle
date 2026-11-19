@@ -26,6 +26,8 @@ const collected = new FinalizationRegistry<string>((dir) => {
 
 /** Remove the spool folders of an earlier process: older than SPOOL_STALE_MS. */
 function sweepStale(now: number): void {
+  // A folder last written before this is one no process takes any more.
+  const staleBefore = now - SPOOL_STALE_MS;
   let names: string[];
   try {
     names = readdirSync(tmpdir());
@@ -36,7 +38,7 @@ function sweepStale(now: number): void {
     if (!name.startsWith(PREFIX)) continue;
     const dir = path.join(tmpdir(), name);
     try {
-      if (now - statSync(dir).mtimeMs > SPOOL_STALE_MS) {
+      if (statSync(dir).mtimeMs < staleBefore) {
         rmSync(dir, { recursive: true, force: true });
       }
     } catch {
