@@ -40,7 +40,7 @@ const showAll = args.includes('--all');
 const fleetArg = args.find((a) => a.startsWith('--fleet='));
 const labels = args.filter((a) => !a.startsWith('--'));
 
-const ALIAS = /^[A-Za-z0-9_.@-]+$/;
+const ALIAS = /^[A-Za-z0-9][A-Za-z0-9_.@-]*$/;
 const BOX_CMD = 'docker exec mantle_web bun server/web/scripts/model-check.ts --json';
 
 function boxes() {

@@ -9,26 +9,15 @@
  * On a box (what scripts/fleet-model-check.mjs runs over ssh):
  *   docker exec mantle_web bun server/web/scripts/model-check.ts --json
  *
- * The brain: ALLOWED_USER_ID when set, else the box's one owner. Exit code
+ * The brain: ALLOWED_USER_ID when set, else the box's anchor
+ * (resolveSingleOwnerId). Exit code
  * 0 when the report was made (drift or not: it reports, it does not gate),
  * 1 when it could not be made.
  */
-import { db, agents } from '@mantle/db';
+import { resolveSingleOwnerId } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { computeModelCheck } from '../lib/system-manifest/model-check-db';
-
-async function ownerId(): Promise<string> {
-  const set = env('ALLOWED_USER_ID');
-  if (set) return set;
-  const rows = await db.selectDistinct({ ownerId: agents.ownerId }).from(agents);
-  if (rows.length !== 1) {
-    throw new Error(
-      `${rows.length} owners have agents here: set ALLOWED_USER_ID to the brain's anchor`,
-    );
-  }
-  return rows[0]!.ownerId;
-}
 
 function route(r: { provider: string; model: string; paramModels?: Record<string, string> }) {
   const extra = Object.entries(r.paramModels ?? {})
@@ -42,7 +31,12 @@ async function main(): Promise<number> {
     console.error('model-check: DATABASE_URL must be set');
     return 1;
   }
-  const report = await computeModelCheck(await ownerId());
+  const owner = await resolveSingleOwnerId();
+  if (!owner) {
+    console.error('model-check: no brain owner yet (finish onboarding, or set ALLOWED_USER_ID)');
+    return 1;
+  }
+  const report = await computeModelCheck(owner);
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify(report));
     return 0;
