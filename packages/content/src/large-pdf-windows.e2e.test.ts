@@ -8,6 +8,7 @@
  *
  *   gen_test_pdfs.py scans    $DIR/scans.pdf 140          (about 80 MB)
  *   gen_test_pdfs.py pictures $DIR/pictures.pdf 520 260   (past 256 MB)
+ *   gen_test_pdfs.py finish   $DIR                        (the finish set)
  *
  * What is pinned:
  *  - a scanned book is read in windows of at most 50 pages and 10 MB here,
@@ -19,15 +20,29 @@
  *    500 kept of 520 found, in reading order with their true pages, so the
  *    file says "500 of 520 pictures kept"; a cap of 600 then finds the 20
  *    it did not have, and nothing is left out.
+ *  - the large-PDF finish (2026-11-19): a 1-page and a 7-page typed PDF and
+ *    a 7-page scan are books, every page read (text layer, local OCR), the
+ *    Tables tab, no vision for a typed page; a scanned book gives one page
+ *    picture a vision page, on disk (G1), the brain's memory sampled; a
+ *    typed PDF of over 1,000,000 characters keeps every page whole; every
+ *    picture of the 520 is kept, a small job size only paces the read.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { envDynamic } from '@mantle/config';
-import { PDF_MAX_BYTES, extractionOf } from '@mantle/files';
+import {
+  BUILTIN_PIPELINES,
+  MAX_EMBEDDED_IMAGES_CEILING,
+  PDF_MAX_BYTES,
+  effectiveOptions,
+  extractionOf,
+} from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { picturesByWindows, picturesLeftOutOf } from './pdf-picture-windows';
-import { pagesReadOf, pdfWindows, runWindowed, stepFileOf } from './pipeline-runner';
+import { pagesText } from './page-passages';
+import { SpooledPictures } from './picture-spool';
+import { pagesReadOf, pdfWindows, runPackaged, runWindowed, stepFileOf } from './pipeline-runner';
 
 const DIR = envDynamic('LARGE_PDF_E2E_DIR');
 const LONG = 30 * 60_000;
@@ -81,39 +96,171 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
     LONG,
   );
 
+  // The large-PDF finish (2026-11-19): every office PDF takes the book
+  // reader, whatever its size. The set of `gen_test_pdfs.py finish $DIR`.
+  const ROUTER = BUILTIN_PIPELINES.find((p) => p.id === 'pdf-router')!;
+  const PAGES = BUILTIN_PIPELINES.find((p) => p.id === 'pdf-pages')!;
+  const has = (name: string) => existsSync(path.join(DIR!, name));
+  async function routed(name: string) {
+    const bytes = readFileSync(path.join(DIR!, name));
+    const file = stepFileOf(bytes, 'pdf');
+    const named = await runPackaged(ROUTER, bytes, file, { options: {} });
+    return { bytes, file, kind: named.kind };
+  }
+  async function readBook(bytes: Buffer, file: ReturnType<typeof stepFileOf>) {
+    return runWindowed(PAGES as never, bytes, file, {
+      options: effectiveOptions(PAGES, {}),
+      kind: 'book',
+    });
+  }
+  const tab = (run: Awaited<ReturnType<typeof readBook>>, name: string) =>
+    run.write!.tabs.find((t) => t.name === name);
+  const col = (run: Awaited<ReturnType<typeof readBook>>, tabName: string, column: string) => {
+    const t = tab(run, tabName)!;
+    const i = t.columns.findIndex((c) => c.name === column);
+    return t.rows.map((r) => r[i]);
+  };
+
+  it.skipIf(!DIR || !has('one.pdf'))(
+    'a 1-page typed PDF is a book: its one page read from the text layer, no vision, no picture',
+    async () => {
+      const { bytes, file, kind } = await routed('one.pdf');
+      expect(kind).toBe('book');
+      const run = await readBook(bytes, file);
+      expect(run.status).toBe('ok');
+      expect(run.windows).toEqual({ pagesTotal: 1, failed: [] });
+      expect(col(run, 'Pages', 'Method')).toEqual(['text']);
+      expect(run.write!.pictures ?? []).toEqual([]);
+      expect(run.write!.text).toMatch(/GENERAL NOTES/);
+    },
+    LONG,
+  );
+
+  it.skipIf(!DIR || !has('typed7.pdf'))(
+    'a 7-page typed PDF with tables: every page from the text layer, the Tables tab, each row with its page, no vision',
+    async () => {
+      const { bytes, file, kind } = await routed('typed7.pdf');
+      expect(kind).toBe('book');
+      const run = await readBook(bytes, file);
+      expect(col(run, 'Pages', 'Page')).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(col(run, 'Pages', 'Method')).toEqual(Array(7).fill('text'));
+      expect(run.counts).toMatchObject({ vision: 0, ocr: 0 });
+      expect(run.write!.pictures ?? []).toEqual([]);
+      const index = tab(run, 'Tables')!;
+      expect(index.rows.length).toBeGreaterThanOrEqual(3);
+      // Each table's tab: its rows start with the page of the original file.
+      for (const name of col(run, 'Tables', 'Tab') as string[]) {
+        const t = tab(run, name)!;
+        expect(t.columns[0]!.name).toBe('Page');
+        for (const r of t.rows) expect(r[0]).toBeGreaterThanOrEqual(2);
+      }
+    },
+    LONG,
+  );
+
+  it.skipIf(!DIR || !has('scanned7.pdf'))(
+    'a 7-page scanned PDF with tables: a book, every page read by the local OCR, the Tables tab',
+    async () => {
+      const { bytes, file, kind } = await routed('scanned7.pdf');
+      expect(kind).toBe('book');
+      const run = await readBook(bytes, file);
+      expect(run.windows).toEqual({ pagesTotal: 7, failed: [] });
+      expect(col(run, 'Pages', 'Page')).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(col(run, 'Pages', 'Method')).toEqual(Array(7).fill('ocr'));
+      expect(run.counts).toMatchObject({ vision: 0 });
+      expect(tab(run, 'Tables')!.rows.length).toBeGreaterThanOrEqual(2);
+    },
+    LONG,
+  );
+
+  it.skipIf(!DIR || !has('scanbook.pdf'))(
+    'a scanned book: G1 page pictures of its vision pages, on disk, one a vision page, with their pages',
+    async () => {
+      const { bytes, file, kind } = await routed('scanbook.pdf');
+      expect(kind).toBe('book');
+      let peak = 0;
+      const sample = setInterval(() => {
+        peak = Math.max(peak, process.memoryUsage().rss);
+      }, 100);
+      const before = process.memoryUsage().rss;
+      const run = await readBook(bytes, file).finally(() => clearInterval(sample));
+      const pages = col(run, 'Pages', 'Page') as number[];
+      expect(pages).toEqual(Array.from({ length: 108 }, (_, i) => i + 1));
+      const methods = col(run, 'Pages', 'Method');
+      const vision = pages.filter((_, i) => methods[i] === 'vision');
+      expect(vision.length).toBeGreaterThanOrEqual(12);
+      // One picture a vision page, each of its page; their bytes on disk.
+      const pics = run.write!.pictures ?? [];
+      expect(pics.map((p) => p.page)).toEqual(vision);
+      expect(run.pictures).toBeInstanceOf(SpooledPictures);
+      const spool = run.pictures as InstanceType<typeof SpooledPictures>;
+      expect(spool.size).toBe(vision.length);
+      expect(spool.diskBytes).toBeGreaterThan(0);
+      for (const p of pics) expect(spool.get(p.file)!.length).toBeGreaterThan(1024);
+      console.log(
+        `G1 memory: rss before ${Math.round(before / 2 ** 20)} MiB, peak ${Math.round(peak / 2 ** 20)} MiB; ` +
+          `${pics.length} page pictures, ${Math.round(spool.diskBytes / 2 ** 20)} MiB on disk`,
+      );
+      spool.drop();
+    },
+    LONG,
+  );
+
+  it.skipIf(!DIR || !has('longtext.pdf'))(
+    'a typed PDF of over 1,000,000 characters: every page in full in its Pages tab, none cut',
+    async () => {
+      const { bytes, file, kind } = await routed('longtext.pdf');
+      expect(kind).toBe('book');
+      const run = await readBook(bytes, file);
+      const pages = col(run, 'Pages', 'Page') as number[];
+      const texts = col(run, 'Pages', 'Text') as string[];
+      expect(pages).toEqual(Array.from({ length: 460 }, (_, i) => i + 1));
+      // Each page is whole: its own head line is in it.
+      texts.forEach((t, i) => expect(t, `page ${i + 1}`).toMatch(new RegExp(`PAGE ${i + 1}\\b`)));
+      const joined = pagesText(pages.map((page, i) => ({ page, text: texts[i]! })));
+      expect(joined.length).toBeGreaterThan(1_000_000);
+      expect(joined).toMatch(/## Page 460\n/);
+    },
+    LONG,
+  );
+
   it(
-    'gives a PDF past 256 MB its pictures window by window, says what it left out, and fetches the rest at a raised cap',
+    'gives a PDF past 256 MB every one of its pictures window by window, with no cap: a small job size only paces it',
     async () => {
       const bytes = readFileSync(path.join(DIR!, 'pictures.pdf'));
       expect(bytes.length).toBeGreaterThan(PDF_MAX_BYTES);
-      const first = await picturesByWindows(bytes, 500, null);
-      expect(first.windowsFailed).toBe(0);
-      expect(first.images).toHaveLength(500);
-      expect(picturesLeftOutOf(first)).toBe(20);
+      // Jason, 2026-11-19: "Yes, no cap". Every picture is kept.
+      const all = await picturesByWindows(bytes, MAX_EMBEDDED_IMAGES_CEILING, null);
+      expect(all.windowsFailed).toBe(0);
+      expect(all.images).toHaveLength(520);
+      expect(picturesLeftOutOf(all)).toBe(0);
       // Reading order over every window, each with its page of the file
-      // (four a page).
-      expect(first.images.map((i) => i.ordinal)).toEqual(
-        Array.from({ length: 500 }, (_, i) => i + 1),
+      // (four a page); the bytes on disk, read when asked for.
+      expect(all.images.map((i) => i.ordinal)).toEqual(
+        Array.from({ length: 520 }, (_, i) => i + 1),
       );
-      expect(first.images.map((i) => i.location?.page)).toEqual(
-        Array.from({ length: 500 }, (_, i) => Math.floor(i / 4) + 1),
+      expect(all.images.map((i) => i.location?.page)).toEqual(
+        Array.from({ length: 520 }, (_, i) => Math.floor(i / 4) + 1),
       );
+      expect(all.spool!.size).toBe(520);
+      expect(all.images[519]!.bytes.length).toBeGreaterThan(0);
+      all.spool!.drop();
+      // A job of 60 pictures at most (a window of 50 pages holds 200): each
+      // window is read again in halves, and still every picture is kept.
+      const paced = await picturesByWindows(bytes, 60, null);
+      expect(paced.images).toHaveLength(520);
+      expect(picturesLeftOutOf(paced)).toBe(0);
+      expect(new Set(paced.images.map((i) => i.sha256))).toEqual(
+        new Set(all.images.map((i) => i.sha256)),
+      );
+      paced.spool!.drop();
+      // The honest status of a file that truly left some out (a window lost).
       const status = extractionOf({
         extract_completed_at: '2026-11-18T00:00:00.000Z',
-        images: {
-          kept: first.images.length,
-          found: first.images.length + picturesLeftOutOf(first),
-        },
+        images: { kept: 500, found: 520 },
       });
       expect(status.state).toBe('partial');
       expect(status.hint).toMatch(/^500 of 520 pictures kept\./);
-
-      // A raised cap: the 20 it did not have, and nothing left out.
-      const again = await picturesByWindows(bytes, 600, null);
-      expect(again.images).toHaveLength(520);
-      expect(picturesLeftOutOf(again)).toBe(0);
-      const had = new Set(first.images.map((i) => i.sha256));
-      expect(again.images.filter((i) => !had.has(i.sha256))).toHaveLength(20);
     },
     LONG,
   );

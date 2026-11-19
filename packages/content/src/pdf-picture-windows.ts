@@ -32,10 +32,7 @@ import {
   parserImages,
   parserPdfSplit,
 } from '@mantle/files';
-import type {
-  EmbeddedImage,
-  ExtractEmbeddedImagesResult,
-} from '@mantle/files/embedded-images';
+import type { EmbeddedImage, ExtractEmbeddedImagesResult } from '@mantle/files/embedded-images';
 import { SpooledPictures } from './picture-spool';
 import { isWindowLost, pdfWindows, windowJob, type PdfWindowPart } from './pipeline-runner';
 

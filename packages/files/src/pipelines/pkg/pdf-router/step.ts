@@ -100,7 +100,8 @@ export const step: PipelineStep = async (req, job) => {
   // A table of rows (an invoice, a list, a spec table) is an office PDF:
   // the book reader reads it, with its Tables tab. So is a short mixed scan
   // the decider calls a document or a table.
-  const office = decision?.used === true && (decision.kind === 'table' || decision.kind === 'document');
+  const office =
+    decision?.used === true && (decision.kind === 'table' || decision.kind === 'document');
   const base = mixedBaseOf(req.state);
   if (base !== null) return { status: 'ok', kind: office ? 'book' : base };
   if (office && decision.kind === 'table') return { status: 'ok', kind: 'book' };

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { CAD_EXTS, extractWeightOfExt } from '@mantle/files';
-import { ExtractCeiling, extractWeightOfNode, HEAVY_LANE_WORKERS } from './extract-lanes';
+import { BOOK_HEAVY_MIN_BYTES } from '@mantle/files';
+import {
+  BOOK_EXPIRE_MAX_MIN,
+  bookExpireMinutes,
+  ExtractCeiling,
+  extractWeightOfNode,
+  HEAVY_LANE_WORKERS,
+} from './extract-lanes';
 
 describe('extractWeightOfNode', () => {
   it('a drawing file is heavy, by the name the extractor types it by', () => {
@@ -13,7 +20,30 @@ describe('extractWeightOfNode', () => {
     expect(extractWeightOfNode({ type: 'file', title: 'P-101.DWG', filename: null })).toBe('heavy');
   });
 
-  it('every other file is light, a PDF included: its kind is known only after the read', () => {
+  it('a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy (a book read by OCR); a smaller one light', () => {
+    const pdf = (sizeBytes: number | null) =>
+      extractWeightOfNode({ type: 'file', title: 'b.pdf', filename: 'b.pdf', sizeBytes });
+    expect(BOOK_HEAVY_MIN_BYTES).toBe(10 * 1024 * 1024);
+    expect(pdf(BOOK_HEAVY_MIN_BYTES)).toBe('heavy');
+    expect(pdf(BOOK_HEAVY_MIN_BYTES - 1)).toBe('light');
+    expect(pdf(null)).toBe('light');
+    // Only a PDF: a large Word file stays light.
+    expect(
+      extractWeightOfNode({ type: 'file', title: 'a.docx', filename: 'a.docx', sizeBytes: 1e9 }),
+    ).toBe('light');
+  });
+
+  it('the time budget of a book grows with its page windows, bounded', () => {
+    expect(bookExpireMinutes(60, 1)).toBe(65);
+    expect(bookExpireMinutes(60, 1000)).toBe(160);
+    expect(bookExpireMinutes(60, 1679)).toBe(230);
+    expect(bookExpireMinutes(60, 100_000)).toBe(BOOK_EXPIRE_MAX_MIN);
+    expect(bookExpireMinutes(60, null)).toBe(BOOK_EXPIRE_MAX_MIN);
+    // Never under the base a box set.
+    expect(bookExpireMinutes(600, 10)).toBe(600);
+  });
+
+  it('every other file is light, a small PDF included', () => {
     for (const name of ['a.pdf', 'a.docx', 'a.xlsx', 'a.png', 'a.txt', 'no-extension', '']) {
       expect(extractWeightOfNode({ type: 'file', title: name, filename: name })).toBe('light');
     }
