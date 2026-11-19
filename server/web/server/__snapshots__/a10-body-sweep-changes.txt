@@ -4,6 +4,7 @@
 # bad-json-400 (malformed): 181 cells
 # chunked-413: 194 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
+# worker-kind (the Translator: a worker kind more, its 400 names it): 2 cells
 # batch-op (host.db.batch: the db broker takes a third op, and its 400 says so): 2 cells
 # trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
 # turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login): 12 cells
@@ -66,6 +67,12 @@ POST /api/ai-workers owner valid [opaque-500 (fold 2: a plain error, its text wa
 POST /api/ai-workers owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/ai-workers owner empty [worker-kind (the Translator: a worker kind more, its 400 names it)]
+  main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
+  now  400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\"|\"translator\""}
+POST /api/ai-workers owner nul [worker-kind (the Translator: a worker kind more, its 400 names it)]
+  main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
+  now  400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\"|\"translator\""}
 POST /api/ai-workers owner chunked [chunked-413]
   main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}

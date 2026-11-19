@@ -54,7 +54,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
     },
     onNarrowSpots: (_t: unknown, _o: unknown, _s: unknown, write: () => Promise<unknown>) =>
       write(),
-    scopeHasArea: vi.fn(async () => scopeArea),
+    callerHasArea: vi.fn(async () => scopeArea),
     getDefaultWorker: vi.fn(async (_o: string, kind: string) => workers.get(kind) ?? null),
   };
 });
@@ -515,6 +515,6 @@ describe('translator_settings (MCP)', () => {
   it('says so when the brain has no Translator', async () => {
     workers.delete('translator');
     const r = await translator_settings.handler({}, ownerCtx);
-    expect((r as { error: string }).error).toContain('no Translator worker');
+    expect((r as { error: string }).error).toContain('No default translator worker');
   });
 });
