@@ -585,6 +585,9 @@ export async function parserImages(
       ...(o.provenance === 'sidecar_render' || o.provenance === 'embedded_thumbnail'
         ? { provenance: o.provenance }
         : {}),
+      ...(typeof o.pageCover === 'number' && o.pageCover >= 0 && o.pageCover <= 1
+        ? { pageCover: o.pageCover }
+        : {}),
     });
   }
   const rejected: Record<string, number> = {};

@@ -22,8 +22,9 @@
  *    it did not have, and nothing is left out.
  *  - the large-PDF finish (2026-11-19): a 1-page and a 7-page typed PDF and
  *    a 7-page scan are books, every page read (text layer, local OCR), the
- *    Tables tab, no vision for a typed page; a scanned book gives one page
- *    picture a vision page, on disk (G1), the brain's memory sampled; a
+ *    Tables tab, no vision for a typed page; a scanned book's reader writes
+ *    no page picture, and the Agent's step draws each marked page (G1: the
+ *    Agent owns the page pictures), its scans painted over the page; a
  *    typed PDF of over 1,000,000 characters keeps every page whole; every
  *    picture of the 520 is kept, a small job size only paces the read.
  */
@@ -33,16 +34,25 @@ import { describe, expect, it } from 'vitest';
 import { envDynamic } from '@mantle/config';
 import {
   BUILTIN_PIPELINES,
+  IMAGE_PAGE_COVER,
   MAX_EMBEDDED_IMAGES_CEILING,
   PDF_MAX_BYTES,
   effectiveOptions,
   extractionOf,
+  parserImages,
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { picturesByWindows, picturesLeftOutOf } from './pdf-picture-windows';
 import { pagesText } from './page-passages';
-import { SpooledPictures } from './picture-spool';
-import { pagesReadOf, pdfWindows, runPackaged, runWindowed, stepFileOf } from './pipeline-runner';
+import {
+  agentStep,
+  pagesReadOf,
+  pdfWindows,
+  pdfWindowsAt,
+  runPackaged,
+  runWindowed,
+  stepFileOf,
+} from './pipeline-runner';
 
 const DIR = envDynamic('LARGE_PDF_E2E_DIR');
 const LONG = 30 * 60_000;
@@ -174,34 +184,44 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
   );
 
   it.skipIf(!DIR || !has('scanbook.pdf'))(
-    'a scanned book: G1 page pictures of its vision pages, on disk, one a vision page, with their pages',
+    "a scanned book: the reader marks its vision pages and writes no picture; the Agent's step draws each marked page",
     async () => {
       const { bytes, file, kind } = await routed('scanbook.pdf');
       expect(kind).toBe('book');
-      let peak = 0;
-      const sample = setInterval(() => {
-        peak = Math.max(peak, process.memoryUsage().rss);
-      }, 100);
-      const before = process.memoryUsage().rss;
-      const run = await readBook(bytes, file).finally(() => clearInterval(sample));
+      const run = await readBook(bytes, file);
       const pages = col(run, 'Pages', 'Page') as number[];
       expect(pages).toEqual(Array.from({ length: 108 }, (_, i) => i + 1));
       const methods = col(run, 'Pages', 'Method');
       const vision = pages.filter((_, i) => methods[i] === 'vision');
       expect(vision.length).toBeGreaterThanOrEqual(12);
-      // One picture a vision page, each of its page; their bytes on disk.
-      const pics = run.write!.pictures ?? [];
-      expect(pics.map((p) => p.page)).toEqual(vision);
-      expect(run.pictures).toBeInstanceOf(SpooledPictures);
-      const spool = run.pictures as InstanceType<typeof SpooledPictures>;
-      expect(spool.size).toBe(vision.length);
-      expect(spool.diskBytes).toBeGreaterThan(0);
-      for (const p of pics) expect(spool.get(p.file)!.length).toBeGreaterThan(1024);
-      console.log(
-        `G1 memory: rss before ${Math.round(before / 2 ** 20)} MiB, peak ${Math.round(peak / 2 ** 20)} MiB; ` +
-          `${pics.length} page pictures, ${Math.round(spool.diskBytes / 2 ** 20)} MiB on disk`,
-      );
-      spool.drop();
+      // G1: no page picture from the reader.
+      expect(run.write!.pictures ?? []).toEqual([]);
+      expect(run.pictures.size).toBe(0);
+      // Render: the Agent's step on the first window that holds a marked
+      // page draws each marked page of it, one ask a page, before any call.
+      const AGENT = BUILTIN_PIPELINES.find((p) => p.id === 'pdf-page-read')!;
+      const first = await pdfWindowsAt(bytes, file.sha256, AGENT.needs.window!, vision).next();
+      const part = first.value!.part!;
+      const here = vision.filter((n) => n >= part.pageFrom && n <= part.pageTo);
+      const step = await agentStep(AGENT as never, part.bytes, file, effectiveOptions(AGENT, {}), {
+        kind: 'book',
+        state: { readerOptions: {}, visionPages: vision },
+        window: { pageFrom: part.pageFrom, pageTo: part.pageTo, pagesTotal: part.pagesTotal },
+      });
+      expect(step.status).toBe('ok');
+      const asked = step.asks.map((a) => (a.input as { page: number }).page);
+      expect(asked).toEqual(here);
+      for (const a of step.asks) {
+        const picture = step.pictures.get((a.input as { picture: string }).picture);
+        expect(picture!.length).toBeGreaterThan(1024);
+      }
+      // The core's picture read of the same window: each scan is painted
+      // over its page (pageCover), so a book leaves it out where the Agent
+      // pictures the page.
+      const read = await parserImages(part.bytes, 'pdf', { maxImages: 60, notScan: true });
+      const covers = read.images.map((i) => i.pageCover ?? 0);
+      expect(covers.length).toBeGreaterThan(0);
+      expect(covers.every((c) => c >= IMAGE_PAGE_COVER)).toBe(true);
     },
     LONG,
   );

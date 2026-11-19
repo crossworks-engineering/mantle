@@ -94,6 +94,11 @@ export type EmbeddedImage = {
    *  onto the image node so "which drawings are still on the low-res tier"
    *  is a query, and an upgrade pass has a safe predicate. */
   provenance?: 'sidecar_render' | 'embedded_thumbnail';
+  /** A PDF picture: the share of its page it is painted over (0 to 1;
+   *  imageCoversOf, ./pdf.ts). A book's picture pass leaves out a picture
+   *  of IMAGE_PAGE_COVER or more on a page the book reader left to vision:
+   *  the Agent's page picture is that page (G1). */
+  pageCover?: number;
 };
 
 /** Minimum edge length, in pixels, for an image to be worth keeping. Bullets,

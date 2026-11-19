@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { READ_FAILURE_SKIPS } from '@mantle/db';
-import { extractionOf } from './extraction-status';
+import { extractionOf, picturesStampOf } from './extraction-status';
 
 const T = '2026-11-18T10:00:00.000Z';
 const LATER = '2026-11-18T10:05:00.000Z';
@@ -101,5 +101,47 @@ describe('the read failures are one list', () => {
       images: { kept: 500, found: 610, more: true },
     });
     expect(x.hint).toMatch(/^500 of at least 610 pictures kept\./);
+  });
+});
+
+describe("a file's pictures left out, by part (G1, G4)", () => {
+  it('each owner stamps its own part; the sums are read; the other part stands', () => {
+    // An older stamp with no parts is the core's (embedded) part.
+    const pages = picturesStampOf({ kept: 2, found: 3 }, 'pages', { kept: 1, found: 4 });
+    expect(pages).toEqual({
+      embedded: { kept: 2, found: 3 },
+      pages: { kept: 1, found: 4 },
+      kept: 3,
+      found: 7,
+    });
+    // The core counts again and keeps all: its part goes, the pages stand.
+    expect(picturesStampOf(pages, 'embedded', { kept: 5, found: 5 })).toEqual({
+      pages: { kept: 1, found: 4 },
+      kept: 1,
+      found: 4,
+    });
+    // Every part whole: the key goes.
+    expect(
+      picturesStampOf({ pages: { kept: 1, found: 4 } }, 'pages', { kept: 4, found: 4 }),
+    ).toBeNull();
+    // A count cut short says `more`; a kept past the found is the found.
+    expect(picturesStampOf(undefined, 'embedded', { kept: 9, found: 9, more: true })).toBeNull();
+    expect(picturesStampOf(undefined, 'embedded', { kept: 1, found: 3, more: true })).toEqual({
+      embedded: { kept: 1, found: 3, more: true },
+      kept: 1,
+      found: 3,
+      more: true,
+    });
+  });
+
+  it("a book's marked pages not read yet say how to read them", () => {
+    const x = extractionOf({
+      extract_completed_at: LATER,
+      images: picturesStampOf(undefined, 'pages', { kept: 2, found: 5 }),
+    });
+    expect(x).toMatchObject({ state: 'partial', pictures: { kept: 2, found: 5 } });
+    expect(x.hint).toBe(
+      '2 of 5 pages left to vision are read. The others keep their OCR text only: run the Agent pdf-page-read on the book to read them.',
+    );
   });
 });

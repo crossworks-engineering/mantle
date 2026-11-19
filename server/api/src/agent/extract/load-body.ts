@@ -580,16 +580,17 @@ export async function loadExtractableBody(
   // send `image/vnd.dwg` for DWGs, and following that mime shipped the CAD
   // binary to the vision worker (empty read → false `no_vision_text` skip)
   // instead of the dwg parser route.
-  // G1: a book's page picture (images.ts, `bookPage`). Its description is
-  // the vision text of the book's Agent (pdf-page-read) for that page: it
-  // never takes a vision call of its own, which would pay twice for one page.
+  // G1: a book's page picture (images.ts bookPagePicturesFor, `bookPage`).
+  // The book's Agent (pdf-page-read) saves it with its vision text of that
+  // page as its description: it never takes a vision call of its own, which
+  // would pay twice for one page.
   const bookPage =
     node.type === 'file' &&
     typeof existingData.bookPage === 'number' &&
     typeof existingData.sourceFileId === 'string';
   if (bookPage && !(typeof existingData.text === 'string' && existingData.text.trim() !== '')) {
-    // Terminal and free: no model is asked. The Agent's run writes the
-    // page's text on the picture and queues it again (pipeline-run.ts).
+    // Terminal and free: no model is asked. The Agent saves a page picture
+    // with its text, so this is one whose text was taken off by hand.
     await recordTerminalSkip(
       {
         kind: 'extractor_run',
@@ -602,7 +603,7 @@ export async function loadExtractableBody(
           node_type: node.type,
           title: node.title,
           page: existingData.bookPage,
-          hint: 'A page picture of a book: its description is the vision text of the Agent pdf-page-read for this page, with no second vision call. It is indexed when the Agent has read the page (it runs after the upload; run it on the book with pipeline_run if it did not). The picture is findable by its name meanwhile.',
+          hint: 'A page picture of a book: its description is the vision text of the Agent pdf-page-read for this page, saved with it, with no second vision call. This one has no text: run pdf-page-read on the book with pipeline_run to read the page again. The picture is findable by its name meanwhile.',
         },
       },
       node,

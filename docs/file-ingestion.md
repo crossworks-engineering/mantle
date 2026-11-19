@@ -204,8 +204,10 @@ so the brain holds one answer at most, never every window's; the save reads
 each one back in turn. Each kept picture is one vision call when it is
 indexed, in the extract queue's own pace (its worker count): about $1 to $9
 per 1,000 pictures by the vision model (one image of about 1,500 tokens in,
-300 out). A book's page pictures (G1) take no vision call of their own (see
-docs/pipelines.md, "The book reader").
+300 out). A book's page pictures (G1) are its Agent's, saved with the text
+it read: they take no vision call of their own, and the picture pass leaves
+out a book's full-page scan of a page left to vision (see docs/pipelines.md,
+"The book reader").
 
 **The per-document cap of other documents is a setting.** The ceiling is
 applied _after_ the gate, keeping the first N in reading order and counting

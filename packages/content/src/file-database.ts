@@ -29,8 +29,6 @@ import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
   PAGE_ASK_KEY_PREFIX,
   afterEntryIn,
-  forgetReaderRun,
-  keptRunKeysOf,
   afterMatches,
   effectiveOptions,
   extOf,
@@ -87,7 +85,7 @@ import {
   type StoredPdf,
 } from './pdf-read';
 import { bookVisionPagesOf } from './book-pages';
-import { SpooledPictures } from './picture-spool';
+import { pagesToRead, windowPagePictures, type BookPagePictures } from './book-page-pictures';
 import {
   AGENT_HASH_COLUMN,
   PAGE_TEXT_ANSWER_MAX_CHARS,
@@ -798,44 +796,6 @@ export async function readerOptionsOf(
   return (await pipelineStateOf(ownerId, reader)).options;
 }
 
-/**
- * Build a file's database, or write its word. `sha256` is the row's as the
- * caller read it, and names the result. `parsed`: the sheets when the caller has
- * them, so an extract parses once for the database and the Table; without it
- * this parses, and an error with no word throws.
- *
- * The check before writing and the tidy after it are here so no caller can
- * forget them: bytes a replace swapped mid-read never land under the old name,
- * a file that turned private gets nothing, and a replace during a long write
- * keeps its own name.
- */
-export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
-  // A read here (no `parsed`) is never an extract's: no picture pass takes
-  // the pictures its Reader's run put on disk. The runs it made are dropped
-  // when it is done; a run kept before
-  // (another extract's) is left as it is.
-  const before =
-    !args.parsed && isFileSha256(args.sha256) ? new Set(keptRunKeysOf(args.sha256)) : null;
-  try {
-    return await buildFileDatabaseOnce(args);
-  } finally {
-    if (before) dropRunsMadeSince(args.sha256 as string, before);
-  }
-}
-
-/** Forget the Reader runs of these bytes made since `before` was read, and
- *  remove their pictures from disk. */
-export function dropRunsMadeSince(sha256: string, before: ReadonlySet<string>): void {
-  for (const key of keptRunKeysOf(sha256)) {
-    if (before.has(key)) continue;
-    forgetReaderRun<PipelineRunResult>(key)
-      ?.then((run) => {
-        if (run?.pictures instanceof SpooledPictures) run.pictures.drop();
-      })
-      .catch(() => {});
-  }
-}
-
 type BuildArgs = {
   fileId: string;
   ownerId: string;
@@ -854,7 +814,18 @@ type BuildArgs = {
   upload?: true;
 };
 
-async function buildFileDatabaseOnce(args: BuildArgs): Promise<FileDbBuild> {
+/**
+ * Build a file's database, or write its word. `sha256` is the row's as the
+ * caller read it, and names the result. `parsed`: the sheets when the caller has
+ * them, so an extract parses once for the database and the Table; without it
+ * this parses, and an error with no word throws.
+ *
+ * The check before writing and the tidy after it are here so no caller can
+ * forget them: bytes a replace swapped mid-read never land under the old name,
+ * a file that turned private gets nothing, and a replace during a long write
+ * keeps its own name.
+ */
+export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
   const { fileId, ownerId, sha256, bytes } = args;
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
@@ -1115,6 +1086,8 @@ export type FileAgentRun =
       /** The text of the Agent's tabs as written, for the file's text
        *  (agentTextOf). Left out: the tabs were not written. */
       text?: string;
+      /** A book's page pictures saved by this run (G1). */
+      pictures?: number;
     }
   | {
       status: 'skipped';
@@ -1158,6 +1131,10 @@ export async function runAgentOnFile(args: {
   pipeline: PipelineManifest;
   pipelines?: BoxPipelines;
   ask: AgentAskFn;
+  /** Where a book's page pictures are saved (G1): an Agent of page text
+   *  that reads the pages a book reader marked (pdf-page-read) saves each
+   *  page's picture with the text it read (./book-page-pictures.ts). */
+  pagePictures?: BookPagePictures;
 }): Promise<FileAgentRun> {
   const { fileId, ownerId, sha256, bytes } = args;
   const pipelines = args.pipelines ?? (await boxPipelines(ownerId));
@@ -1286,6 +1263,7 @@ async function runAgentWindowed(args: {
   sqlite: string;
   state: PipelineState;
   ask: AgentAskFn;
+  pagePictures?: BookPagePictures;
 }): Promise<FileAgentRun> {
   const { fileId, ownerId, bytes, pipeline, ext, sqlite, state } = args;
   const sha256 = args.sha256 as string;
@@ -1300,6 +1278,16 @@ async function runAgentWindowed(args: {
   const stored = storedOf(tab);
   const storedList = listTab ? storedOf(listTab) : [];
   const input = await agentInputOf(ownerId, ext, args.pipelines, sqlite);
+  // A book's page pictures (G1, ./book-page-pictures.ts): a marked page
+  // done already (its picture of these bytes and its text row) is neither
+  // drawn nor asked again.
+  const marked = input.state.visionPages;
+  const pagePictures = marked ? args.pagePictures : undefined;
+  const toRead =
+    marked && pagePictures ? pagesToRead(marked, await pagePictures.done(), stored) : marked;
+  const stepInput =
+    toRead === marked ? input : { ...input, state: { ...input.state, visionPages: toRead } };
+  let picturesSaved = 0;
   const file = stepFileOf(bytes, ext);
   let sheet = null as ParsedSheet | null;
   let listSheet = null as ParsedSheet | null;
@@ -1366,14 +1354,14 @@ async function runAgentWindowed(args: {
     if (out === 'no-database') return { status: 'skipped', reason: 'no-database' };
     return out;
   };
-  // Only the windows that hold a marked page are cut (a book of 1,679
-  // pages with one page left to vision is one cut, not 112): each window
-  // starts at the first marked page past the one before. An Agent with no
-  // marked pages in its state reads every window.
-  const marked = input.state.visionPages;
+  // Only the windows that hold a marked page to read are cut (a book of
+  // 1,679 pages with one page left to vision is one cut, not 112): each
+  // window starts at the first such page past the one before; none when
+  // every marked page is done. An Agent with no marked pages in its state
+  // reads every window.
   const windows =
     marked && marked.length > 0
-      ? pdfWindowsAt(bytes, sha256, pipeline.needs.window, marked)
+      ? pdfWindowsAt(bytes, sha256, pipeline.needs.window, toRead ?? [])
       : pdfWindows(bytes, sha256, pipeline.needs.window);
   for await (const w of windows) {
     if (!w.part) {
@@ -1384,11 +1372,12 @@ async function runAgentWindowed(args: {
     }
     const { part } = w;
     const window = { pageFrom: part.pageFrom, pageTo: part.pageTo, pagesTotal: part.pagesTotal };
-    // One window's asks are checked against a step's own bound (64 calls);
-    // the cap of the manifest holds over the whole file, below.
+    // Render: the step draws the window's pages (no model). One window's
+    // asks are checked against a step's own bound (64 calls); the cap of
+    // the manifest holds over the whole file, below.
     const read = await windowJob(async () => {
       const step = await agentStep(pipeline, part.bytes, file, state.options, {
-        ...input,
+        ...stepInput,
         window,
       });
       const asks = step.status === 'ok' ? checkAsks(windowView, step.asks, step.pictures) : [];
@@ -1418,6 +1407,7 @@ async function runAgentWindowed(args: {
       return true;
     });
     for (const a of asks) seen.add(a.key);
+    // Read: each ask from the tab by hash, else one paid call.
     const out = await agentRows(
       tab,
       room,
@@ -1470,15 +1460,27 @@ async function runAgentWindowed(args: {
         ? { ...listSheet, rows: [...listSheet.rows, ...rows] }
         : { ...listOut, rows };
     }
-    // Write in parts: the rows so far, before the next window's calls.
+    // Save: the rows so far, before the next window's calls; then the
+    // page pictures of the rows that answer them (a row taken from the tab
+    // is written already).
     if (out.made > 0) {
       const skipped = await write(false);
       if (skipped) return skipped;
+    }
+    if (pagePictures) {
+      const pictures = windowPagePictures(room, out.sheet);
+      if (pictures.length > 0) picturesSaved += await pagePictures.save(pictures);
     }
   }
   const skipped = await write(true);
   if (skipped) return skipped;
   if (stopped === undefined && !lost) await countRun(ownerId, pipeline.id, fileId);
+  // The file's count of page pictures, from what is saved and marked.
+  if (pagePictures) {
+    await pagePictures.count().catch((err: unknown) => {
+      warnings.push(`the page pictures were not counted: ${errorMessage(err)}`);
+    });
+  }
   const sheets = [sheet, listSheet].filter((t): t is ParsedSheet => t !== null);
   return {
     status: 'asked',
@@ -1488,6 +1490,7 @@ async function runAgentWindowed(args: {
     reused,
     ...(stopped !== undefined ? { stopped } : lost ? { stopped: 'window_failed' } : {}),
     warnings,
+    ...(pagePictures ? { pictures: picturesSaved } : {}),
     // An Agent of page text gives the file's passages by page (P3), not the
     // text of its tab: no copy of every page in the node's data.
     text: pipeline.produces.pages === true ? '' : agentTextOf(sheets),

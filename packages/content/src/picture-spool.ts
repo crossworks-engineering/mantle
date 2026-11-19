@@ -1,14 +1,14 @@
 /**
- * Pictures on disk, not in memory (G1, and every picture of a PDF; Jason,
- * 2026-11-19: "no cap"): a run that reads a file in page windows writes each
- * window's pictures here as they come, so the brain holds one window's
- * pictures at most, never every window's (a bad photocopy of 1,679 pages
- * has a picture for most of its pages). A ReadonlyMap of name to bytes, as a
- * run's `pictures` is everywhere; a read is one file from disk.
+ * Pictures on disk, not in memory (every picture of a PDF; Jason,
+ * 2026-11-19: "no cap"): the picture pass that reads a PDF in page windows
+ * (./pdf-picture-windows.ts) writes each window's pictures here as they
+ * come, so the brain holds one window's pictures at most, never every
+ * window's. A ReadonlyMap of name to bytes, as a run's `pictures` is
+ * everywhere; a read is one file from disk.
  *
  * One folder a spool, under the system temp folder, `mantle-pictures-*`.
- * The caller that takes the pictures (the extract's picture pass) drops it
- * when it is done. A spool nothing takes goes when it is collected, and a
+ * The picture pass drops it once it has saved the pictures, in the same
+ * job. A spool nothing takes goes when it is collected, and a
  * folder of an earlier process that died is removed by the next spool after
  * SPOOL_STALE_MS. Only folders of this prefix are ever removed.
  */

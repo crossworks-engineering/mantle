@@ -20,7 +20,10 @@
  *    (extract-queue.ts), so a failure never pays again by itself. When it
  *    wrote its tabs, their text goes on the file node for a plain search
  *    (./agent-text.ts), with no model, and the file's passages are built
- *    again from its stored text with that text (the embedder only).
+ *    again from its stored text with that text (the embedder only). An
+ *    Agent of a book's page text (pdf-page-read) saves the picture of each
+ *    page it read with that text, in the same run (G1, images.ts
+ *    bookPagePicturesFor).
  *
  * Nothing else of the file changes: no summary, no extract. One trace step, `file_database`, holds the result, as the
  * upload's. A failure (a throw of the build or the patch, the parser down)
@@ -56,7 +59,7 @@ import { errorMessage } from '@mantle/std';
 import { db, nodes } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { writeAgentText } from './agent-text.js';
-import { describeBookPagePictures } from './images.js';
+import { bookPagePicturesFor } from './images.js';
 import { writeRetrievalChunks } from './index-writes.js';
 import { pipelineAskOf } from './pipeline-ask.js';
 
@@ -93,15 +96,21 @@ async function runOnce(
   if (isAgent(pipeline)) {
     const loaded = await readFileNodeBytes(row);
     if (!loaded) return { status: 'skipped', reason: 'bytes-gone' };
+    const sha256 = fileSha256Of(row);
     const out = await runAgentOnFile({
       fileId: nodeId,
       ownerId,
-      sha256: fileSha256Of(row),
+      sha256,
       bytes: loaded.bytes,
       filename: loaded.filename,
       pipeline,
       pipelines,
       ask: pipelineAskOf(ownerId, nodeId, pipeline),
+      // G1: an Agent of page text (pdf-page-read) saves the picture of each
+      // book page it read, with that text, in this run.
+      ...(pipeline.produces.pages === true && typeof sha256 === 'string'
+        ? { pagePictures: bookPagePicturesFor(ownerId, nodeId, sha256) }
+        : {}),
     });
     if (out.status !== 'asked') return out;
     // The text of the tabs as written, on the file node; it is not in the
@@ -125,13 +134,6 @@ async function runOnce(
           done.warnings.push(`the passages were not written again: ${errorMessage(err)}`);
         });
       }
-    }
-    // G1: the page pictures of a book take the Agent's text of their page
-    // as their description (no second vision call), and are indexed again.
-    if (pipeline.produces.pages === true && done.rows > 0) {
-      await describeBookPagePictures(ownerId, nodeId, fileSha256Of(row)).catch((err: unknown) => {
-        done.warnings.push(`the page pictures were not described: ${errorMessage(err)}`);
-      });
     }
     return done;
   }

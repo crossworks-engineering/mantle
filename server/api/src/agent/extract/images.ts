@@ -7,34 +7,37 @@
 
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { createPartOfFile, db, markContentChanged, nodes } from '@mantle/db';
+import { createPartOfFile, db, nodes } from '@mantle/db';
 import {
   CAD_EXTS,
+  IMAGE_PAGE_COVER,
   MAX_EMBEDDED_IMAGES_CEILING,
   MAX_EMBEDDED_IMAGES_PER_DOC,
   PDF_MAX_BYTES,
   deleteFileById,
   extOf,
-  picturesLeftOut,
   ensureExtractedImagesFolder,
   isCadExt,
   isDrawingExt,
   isParserError,
   parserPdfPageCount,
   parserRasterizePdf,
+  picturesPartsOf,
+  picturesStampOf,
   upsertFile,
+  type PicturesPart,
 } from '@mantle/files';
 import { log, startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import {
+  bookVisionPageCountOf,
   bookVisionPageSetOf,
   readerPassOf,
   readerStandsOverFile,
-  standingReaderPictures,
 } from '@mantle/content/reader-passes';
-import { agentPageTextOf } from '@mantle/content/page-passages';
+import type { BookPagePicture, BookPagePictures } from '@mantle/content/book-page-pictures';
 import type { EmbeddedImage } from '@mantle/files/embedded-images';
 import {
   picturesByWindows,
@@ -172,8 +175,20 @@ export async function maybeExtractEmbeddedImages(
       ),
     )
     .returning({ id: nodes.id });
+  // A book (a PDF whose database a Reader that stands over the core's PDF
+  // read wrote, P2): its page pictures are its Agent's (G1, `bookPage`),
+  // never this pass's. Their count is stamped here from what is saved and
+  // what is marked, so a book whose Agent has not read its marked pages yet
+  // shows them; the Agent's run stamps it again.
+  const book = ext === 'pdf' && !own && (await readerStandsOverFile(ownerId, node.id, data.sha256));
+  if (book && sha) {
+    await stampBookPagePictures(ownerId, node.id, sha).catch((err: unknown) => {
+      log('extractor').warn(`page pictures not counted: ${errorMessage(err)}`);
+    });
+  }
   const prior = (await db.execute(sql`
-    select count(*) filter (where ${current})::int as cur, count(*)::int as total
+    select count(*) filter (where ${current} and not (${nodes.data} ? 'bookPage'))::int as cur,
+           count(*)::int as total
       from ${nodes}
      where ${nodes.ownerId} = ${ownerId} and ${nodes.type} = 'file'
        and ${nodes.data}->>'sourceFileId' = ${node.id}`)) as unknown as {
@@ -184,7 +199,7 @@ export async function maybeExtractEmbeddedImages(
   // (G5): the pictures of its current bytes are kept by their sha256, and
   // only the new ones are saved (one vision call each).
   const currentCount = Number(prior[0]?.cur ?? 0);
-  if (currentCount > 0 && !picturesLeftOut(data)) return;
+  if (currentCount > 0 && !picturesPartsOf(data.images).embedded) return;
   const have =
     currentCount > 0 ? await extractedPicturesOf(ownerId, node.id, current) : new Set<string>();
   // Set only by the two person routes (an upload with replace, a restore):
@@ -225,13 +240,8 @@ export async function maybeExtractEmbeddedImages(
     return;
   }
 
-  const {
-    extractEmbeddedImages,
-    buildImageTitles,
-    buildImageFilename,
-    buildSourceSlug,
-    describeImageBytes,
-  } = await import('@mantle/files/embedded-images');
+  const { extractEmbeddedImages, buildImageTitles, buildImageFilename, buildSourceSlug } =
+    await import('@mantle/files/embedded-images');
   // A PDF past the size pdfjs opens is read in page windows (G2); so are the
   // pages of a long PDF past the ones one read scans, and a PDF whose one
   // read left pictures out.
@@ -245,10 +255,8 @@ export async function maybeExtractEmbeddedImages(
     : maxImages && maxImages > 0
       ? maxImages
       : MAX_EMBEDDED_IMAGES_PER_DOC;
-  // A book whose Reader stands over the core's PDF read (P2) is read by
-  // windows like any PDF, but each window keeps the scan rule: its scanned
-  // pages are the Reader's to picture (G1), never page scans here.
-  const book = isPdf && (await readerStandsOverFile(ownerId, node.id, data.sha256));
+  // A book is read by windows like any PDF, but each window keeps the scan
+  // rule (a window of scanned pages alone gives no page scans).
   const whole =
     isPdf && loaded.bytes.length > PDF_MAX_BYTES
       ? null
@@ -260,72 +268,38 @@ export async function maybeExtractEmbeddedImages(
     isPdf && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
       ? await picturesByWindows(loaded.bytes, cap, whole, undefined, { scanBook: book })
       : { ...whole!, windowsFailed: 0 };
-  // G1: a picture of each page of a book its Reader left to vision: the
-  // PNGs of the run of this extract's database pass, on disk; a marked page
-  // with none there is drawn by the book's Agent step with no model
-  // (standingReaderPictures), so none is lost in silence. Its description is
-  // the Agent's vision text of the page (no second vision call): set now
-  // when the Agent has read it (a read again), else by the Agent's run.
-  const bookPages = new Map<EmbeddedImage, number>();
-  const pageRun = book
-    ? await standingReaderPictures(
-        ownerId,
-        { id: node.id, sha256: data.sha256 },
-        loaded.bytes,
-        currentCount > 0 ? await pagePicturesOf(ownerId, node.id, current) : new Set<number>(),
-      )
-    : null;
-  if (pageRun) {
-    // A page the Reader left to vision has its page picture above, read by
-    // the Agent (G1): a core picture of that page is not kept as well, so no
-    // page is pictured or asked by vision twice. A page it read by OCR or
-    // its text layer keeps the core's pictures (a screenshot over a short
-    // caption is a figure, and it has no page picture).
-    const scans = await bookVisionPageSetOf({ id: node.id, sha256: data.sha256 });
-    if (scans.size > 0) {
+  // G1: a page the book reader left to vision has its page picture, saved
+  // by the book's Agent with the text it read (pdf-page-read). A picture
+  // here that covers such a page (IMAGE_PAGE_COVER or more: the page's
+  // scan) is that page again: it is left out, so no page is pictured or
+  // read by vision twice. Every other picture of a book is kept, a figure
+  // on a vision page too.
+  if (book) {
+    const vision = await bookVisionPageSetOf({ id: node.id, sha256: data.sha256 });
+    if (vision.size > 0) {
       result.images = result.images.filter(
-        (img) => img.location?.page == null || !scans.has(img.location.page),
+        (img) =>
+          img.location?.page == null ||
+          !vision.has(img.location.page) ||
+          (img.pageCover ?? 0) < IMAGE_PAGE_COVER,
       );
       result.images.forEach((img, i) => (img.ordinal = i + 1));
     }
-    for (const p of pageRun.pictures) {
-      const bytes = pageRun.bytes.get(p.file);
-      if (!bytes || bytes.length === 0) continue;
-      const described = describeImageBytes(bytes, p.mime === 'image/jpeg' ? 'jpg' : 'png');
-      const img = {
-        ...described,
-        ordinal: result.images.length + 1,
-        location: { page: p.page },
-        ...(p.caption ? { caption: p.caption } : {}),
-        // The page is the picture: no gate (a page is never an icon).
-        essential: true,
-      } as EmbeddedImage;
-      Object.defineProperty(img, 'bytes', {
-        enumerable: true,
-        get: () => pageRun.bytes.get(p.file) ?? Buffer.alloc(0),
-      });
-      result.images.push(img);
-      bookPages.set(img, p.page);
-    }
   }
-  const pageText =
-    bookPages.size > 0
-      ? await agentPageTextOf({ id: node.id, ownerId, sha256: data.sha256 })
-      : null;
-  // The pictures of the file the cap keeps, those it had before too (a page
-  // picture of these bytes already is one of them).
-  const keptTotal = result.images.length + (pageRun?.had ?? 0);
-  // The pictures a file leaves out are stamped on it once the new ones are
+  // The pictures of the file the cap keeps, and those it found. The
+  // pictures a file leaves out are stamped on it once the new ones are
   // saved (a save that failed is a picture not kept), and a stamp of an
-  // earlier read that left none out goes (G4). A marked page of a book that
-  // could not be drawn is one left out. Never fatal.
-  const foundTotal = keptTotal + picturesLeftOutOf(result) + (pageRun?.lost ?? 0);
+  // earlier read that left none out goes (G4). Never fatal.
+  const keptTotal = result.images.length;
+  const foundTotal = keptTotal + picturesLeftOutOf(result);
   const stamp = (notSaved: number) =>
-    stampPicturesLeftOut(node, ownerId, result, keptTotal - notSaved, foundTotal).catch(
-      (err: unknown) => {
-        log('extractor').warn(`picture count not stamped: ${errorMessage(err)}`);
-      },
-    );
+    stampPicturePart(node.id, ownerId, sha, 'embedded', {
+      kept: keptTotal - notSaved,
+      found: foundTotal,
+      more: result.countCut === true,
+    }).catch((err: unknown) => {
+      log('extractor').warn(`picture count not stamped: ${errorMessage(err)}`);
+    });
   // The pictures this file has from an earlier read keep their nodes (G5).
   if (have.size > 0) {
     result.images = result.images.filter((img) => !have.has(img.sha256));
@@ -333,7 +307,6 @@ export async function maybeExtractEmbeddedImages(
   if (result.images.length === 0) {
     await stamp(0);
     result.spool?.drop();
-    pageRun?.drop();
   }
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
@@ -439,21 +412,6 @@ export async function maybeExtractEmbeddedImages(
               // container's small preview) — the predicate the backfill's
               // --upgrade-dwf mode selects on.
               ...(img.provenance ? { provenance: img.provenance } : {}),
-              // G1: a book's page picture. Its text is the Agent's vision
-              // text of the page (pdf-page-read), never a vision call of its
-              // own (load-body.ts); set here when the Agent has read the
-              // page, else by the Agent's run (describeBookPagePictures).
-              ...(bookPages.has(img)
-                ? {
-                    bookPage: bookPages.get(img)!,
-                    ...(pageText?.get(bookPages.get(img)!)
-                      ? {
-                          text: pageText.get(bookPages.get(img)!)!,
-                          bookPageTextSha: pageTextSha(pageText.get(bookPages.get(img)!)!),
-                        }
-                      : {}),
-                  }
-                : {}),
               extractedFrom: node.title || loaded.filename,
               // Read back by the vision path so the durable index carries the
               // document this picture came from — a bare "a screenshot of a
@@ -499,10 +457,8 @@ export async function maybeExtractEmbeddedImages(
   const notSaved = result.images.length - (Array.isArray(created) ? created.length : 0);
   await stamp(notSaved);
   // The pictures on disk go. A save that failed is counted (`data.images`),
-  // so the file is a candidate again (G5), and a page picture not saved is
-  // drawn again then (standingReaderPictures): nothing waits on the spool.
+  // so the file is a candidate again (G5): nothing waits on the spool.
   result.spool?.drop();
-  pageRun?.drop();
 }
 
 /**
@@ -970,12 +926,60 @@ export function savedBytesOf(img: Pick<EmbeddedImage, 'bytes'>): Buffer {
   return bytes;
 }
 
-/** The pages of a book with a page picture (G1, `data.bookPage`) of its
- *  current bytes (`current`: the dedupe's rule): never drawn or saved again. */
-async function pagePicturesOf(
+/**
+ * Stamp one part of the pictures a file left out (G1, G4; picturesStampOf,
+ * packages/files/src/extraction-status.ts): `embedded`, the pictures this
+ * pass read (left out over the cap, the parser's answer budget, or a page
+ * window that could not be read: each such window counts as one picture
+ * found and not kept, at least), or `pages`, a book's page pictures (its
+ * Agent's). The other part stands as it is. A file whose parts leave none
+ * out has the key taken off, so a raised cap that fetched the rest clears
+ * the badge (G5). Byte-derived (migration 0386): new bytes drop it. Only
+ * while the node holds the bytes `sha` (null: a node with no sha256).
+ */
+async function stampPicturePart(
+  nodeId: string,
+  ownerId: string,
+  sha: string | null,
+  part: 'embedded' | 'pages',
+  counts: { kept: number; found: number; more?: boolean },
+): Promise<void> {
+  const here = and(
+    eq(nodes.id, nodeId),
+    eq(nodes.ownerId, ownerId),
+    sql`coalesce(${nodes.data}->>'sha256', '') = ${sha ?? ''}`,
+  );
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+    // The row locked: the other part's owner stamps after this one.
+    const [row] = await tx
+      .select({ images: sql<unknown>`${nodes.data}->'images'` })
+      .from(nodes)
+      .where(here)
+      .for('update');
+    if (!row) return;
+    const next = picturesStampOf(row.images, part, counts);
+    if (next === null && row.images == null) return;
+    await tx
+      .update(nodes)
+      .set({
+        data:
+          next === null
+            ? sql`${nodes.data} - 'images'`
+            : sql`${nodes.data} || jsonb_build_object('images', ${JSON.stringify(next)}::jsonb)`,
+      })
+      .where(here);
+  });
+}
+
+// ─── G1: a book's page pictures, saved by its Agent ──────────────────────
+
+/** The page pictures of a book's bytes that hold their text (G1,
+ *  `data.bookPage`): the pages done. */
+async function savedPagePicturesOf(
   ownerId: string,
   fileId: string,
-  current: ReturnType<typeof sql>,
+  sha: string,
 ): Promise<Set<number>> {
   const rows = await db
     .select({ page: sql<number | null>`(${nodes.data}->>'bookPage')::int` })
@@ -985,51 +989,125 @@ async function pagePicturesOf(
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'file'),
         sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
+        sql`${nodes.data}->>'sourceSha256' = ${sha}`,
         sql`${nodes.data} ? 'bookPage'`,
-        current,
+        sql`coalesce(trim(${nodes.data}->>'text'), '') <> ''`,
       ),
     );
   return new Set(rows.map((r) => Number(r.page)).filter((n) => Number.isInteger(n) && n >= 1));
 }
 
 /**
- * Stamp the pictures a file left out (G4): `data.images = { kept, found }`
- * when the cap left some out (`over_cap`, and the parser's answer budget)
- * or a page window could not be read (each such window counts as one
- * picture found and not kept, at least: its pictures are not known). A
- * file that left none out has the key taken off, so a raised cap that
- * fetched the rest clears the badge (G5). `extractionOf` reads it
- * (packages/files/src/extraction-status.ts). Byte-derived (migration 0386):
- * new bytes drop it.
+ * Stamp a book's page pictures (`data.images.pages`, G1) from durable state:
+ * the pages its reader marked for vision (the tab Pages of its database at
+ * these bytes, every one of them) and the page pictures of these bytes
+ * saved with their text. A marked page with none (not read yet, a draw or a
+ * read that failed, past the Agent's option `pages` or its 10,000 pages)
+ * shows the book `partial`. No model, no job.
  */
-async function stampPicturesLeftOut(
-  node: typeof nodes.$inferSelect,
+export async function stampBookPagePictures(
   ownerId: string,
-  result: PdfPicturesRead,
-  saved: number,
-  found: number,
-): Promise<void> {
-  const kept = Math.max(0, Math.min(saved, found));
-  const data = (node.data ?? {}) as Record<string, unknown>;
-  if (kept === found && data.images === undefined) return;
-  // `more`: the count past the cap was cut short, so `found` is a floor.
-  const next =
-    kept < found
-      ? sql`${nodes.data} || jsonb_build_object('images', jsonb_build_object('kept', ${kept}::int, 'found', ${found}::int, 'more', ${result.countCut === true}::boolean))`
-      : sql`${nodes.data} - 'images'`;
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
-    await tx
-      .update(nodes)
-      .set({ data: next })
-      .where(
-        and(
-          eq(nodes.id, node.id),
-          eq(nodes.ownerId, ownerId),
-          sql`coalesce(${nodes.data}->>'sha256', '') = ${typeof data.sha256 === 'string' ? data.sha256 : ''}`,
-        ),
-      );
-  });
+  fileId: string,
+  sha: string,
+): Promise<PicturesPart> {
+  const marked = await bookVisionPageSetOf({ id: fileId, sha256: sha });
+  const found = Math.max(marked.size, await bookVisionPageCountOf({ id: fileId, sha256: sha }));
+  const saved = marked.size > 0 ? await savedPagePicturesOf(ownerId, fileId, sha) : new Set();
+  const counts = { kept: [...marked].filter((n) => saved.has(n)).length, found };
+  await stampPicturePart(fileId, ownerId, sha, 'pages', counts);
+  return counts;
+}
+
+/**
+ * Where the Agent `pdf-page-read` saves a book's page pictures (G1,
+ * packages/content/src/book-page-pictures.ts), for its run on the file
+ * `fileId` at the bytes `sha` (pipeline-run.ts). Each picture is a part of
+ * the book (createPartOfFile: its home and grants), private to the book's
+ * login, in the book's pictures folder, with `bookPage` and its text: the
+ * Agent's reading of the page is its description, so it never takes a
+ * vision call of its own (load-body.ts). A page saved again (a picture of
+ * the page lost its row) is written over in place. No model is asked here.
+ */
+export function bookPagePicturesFor(
+  ownerId: string,
+  fileId: string,
+  sha: string,
+): BookPagePictures {
+  const book = async () => {
+    const [node] = await db
+      .select()
+      .from(nodes)
+      .where(and(eq(nodes.id, fileId), eq(nodes.ownerId, ownerId)));
+    return node && node.type === 'file' ? node : null;
+  };
+  return {
+    done: () => savedPagePicturesOf(ownerId, fileId, sha),
+    count: async () => {
+      await stampBookPagePictures(ownerId, fileId, sha);
+    },
+    save: async (pictures: readonly BookPagePicture[]) => {
+      const node = await book();
+      const data = (node?.data ?? {}) as Record<string, unknown>;
+      // Only while the book holds the bytes the pages were read from.
+      if (!node || data.sha256 !== sha || pictures.length === 0) return 0;
+      const { buildSourceSlug, describeImageBytes } = await import('@mantle/files/embedded-images');
+      const filename = typeof data.filename === 'string' ? data.filename : node.title;
+      const sourceTitle = node.title || filename;
+      const sourceSlug = buildSourceSlug(filename);
+      // One folder a set of bytes when pictures of older bytes are there
+      // (their names would clash), as the core's picture pass names it.
+      const [older] = (await db.execute(sql`
+        select exists (select 1 from ${nodes}
+          where ${nodes.ownerId} = ${ownerId} and ${nodes.type} = 'file'
+            and ${nodes.data}->>'sourceFileId' = ${fileId}
+            and ${nodes.data}->>'sourceSha256' is distinct from ${sha}) as older`)) as unknown as {
+        older: boolean;
+      }[];
+      const fileKey = `file ${fileId.slice(0, 8)}${older?.older ? ` ${sha.slice(0, 8)}` : ''}`;
+      const folderPath = await ensureExtractedImagesFolder({
+        ownerId,
+        sourceSlug: fileKey,
+        sourceTitle: fileKey,
+      });
+      const stem = sourceTitle.replace(/\.[a-z0-9]{1,6}$/i, '');
+      let saved = 0;
+      for (const p of pictures) {
+        const ext = describeImageBytes(p.bytes, p.mime === 'image/jpeg' ? 'jpg' : 'png').ext;
+        try {
+          await createPartOfFile(
+            fileId,
+            () =>
+              upsertFile({
+                ownerId,
+                parentPath: folderPath,
+                loginId: node.loginId,
+                filename: `${sourceSlug}-page-${String(p.page).padStart(5, '0')}.${ext}`,
+                bytes: p.bytes,
+                overwrite: true,
+                title: `${stem}, page ${p.page}`,
+                tags: [EXTRACTED_IMAGE_TAG, `from:${sourceSlug}`],
+                data: {
+                  sourceFileId: fileId,
+                  sourceSha256: sha,
+                  sourceLocation: { page: p.page },
+                  bookPage: p.page,
+                  text: p.text,
+                  extractedFrom: sourceTitle,
+                  imageContext: `A picture of page ${p.page} of "${sourceTitle}", read by vision.`,
+                },
+              }),
+            (f) => deleteFileById({ ownerId, fileId: f.id }).then((r) => r.ok),
+          );
+          saved += 1;
+        } catch (err) {
+          // Not done: the page is counted as not read, and the next run of
+          // the Agent saves it (its text is in the tab, so no second call).
+          log('extractor').warn(`page ${p.page} picture not saved: ${errorMessage(err)}`);
+        }
+      }
+      return saved;
+    },
+  };
 }
 
 /**
@@ -1061,67 +1139,4 @@ export async function stampReaderPages(
         sql`${nodes.data}->>'sha256' = ${sha256}`,
       ),
     );
-}
-
-// ─── G1: a book's page pictures, described by its Agent ─────────────────
-
-/** The hash of a page text set on a page picture: an Agent's run again
- *  that read the page the same way touches nothing. */
-const pageTextSha = (text: string) => createHash('sha256').update(text).digest('hex');
-
-/**
- * The description of a book's page pictures (G1): the Agent pdf-page-read's
- * vision text of each page, set as the picture's `text`, and the picture
- * queued for its extract (summary and embedding of that text; no vision
- * call: load-body.ts). Called by the Agent's run (pipeline-run.ts), after
- * its rows are written: the run of an upload or of a person's
- * `pipeline_run`, never by a timer. Only a picture of a page the Agent read
- * whose text differs from the one set before. The pictures of an older
- * revision (another sha256 on the book) are left as they are.
- */
-export async function describeBookPagePictures(
-  ownerId: string,
-  fileId: string,
-  sha256: unknown,
-): Promise<number> {
-  if (typeof sha256 !== 'string') return 0;
-  const texts = await agentPageTextOf({ id: fileId, ownerId, sha256 });
-  if (texts.size === 0) return 0;
-  const rows = await db
-    .select({ id: nodes.id, data: nodes.data })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'file'),
-        sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
-        sql`${nodes.data} ? 'bookPage'`,
-        // Only the pictures of these bytes: a picture of an older revision
-        // keeps its own text.
-        sql`${nodes.data}->>'sourceSha256' = ${sha256}`,
-      ),
-    );
-  let described = 0;
-  for (const row of rows) {
-    const data = (row.data ?? {}) as Record<string, unknown>;
-    const page = data.bookPage;
-    const text = typeof page === 'number' ? texts.get(page) : undefined;
-    if (!text) continue;
-    const sha = pageTextSha(text);
-    if (data.bookPageTextSha === sha) continue;
-    // The one door of a re-index (markContentChanged): the text is new
-    // content, so the extractor runs its pass on it, announced at commit.
-    await db.transaction(async (tx) => {
-      await tx
-        .update(nodes)
-        .set({
-          data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'bookPageTextSha', ${sha}::text)`,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(nodes.id, row.id), eq(nodes.ownerId, ownerId)));
-      await markContentChanged(tx, { id: row.id, type: 'file' }, ['content']);
-    });
-    described += 1;
-  }
-  return described;
 }

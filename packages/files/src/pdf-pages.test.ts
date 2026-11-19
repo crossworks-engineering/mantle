@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { flatJpeg, imagePagesPdf, type FixtureImage } from './pdf-fixtures.test-helper';
-import { extractPdfImages } from './pdf';
+import { extractPdfImages, imageCoversOf } from './pdf';
 
 /** A 3000x3000 RGB photo-sized image (27 MB decoded). All zero, so the
  *  fixture is small; pdfjs decodes it at full size all the same. */
@@ -148,4 +148,44 @@ describe('the pictures pass, page by page', () => {
     expect(run.value).toHaveLength(pages * 2);
     expect(run.ms).toBeLessThan(10_000);
   }, 60_000);
+});
+
+describe('the share of its page a picture is painted over (pageCover)', () => {
+  it('is read from the transform in force, through saves and forms, cut to the page', () => {
+    const OPS = {
+      save: 1,
+      restore: 2,
+      transform: 3,
+      paintFormXObjectBegin: 4,
+      paintFormXObjectEnd: 5,
+      paintImageXObject: 6,
+    };
+    const covers = imageCoversOf(
+      [1, 3, 6, 2, 4, 6, 5, 1, 3, 6, 2],
+      [
+        null,
+        [612, 0, 0, 792, 0, 0], // the whole page
+        ['scan'],
+        null,
+        [[0.5, 0, 0, 0.5, 0, 0]], // a form at half scale
+        ['scan'], // ... in the identity: a speck, the largest stands
+        null,
+        null,
+        [306, 0, 0, 396, 500, 600], // a quarter of the page, half of it off the page
+        ['figure'],
+        null,
+      ],
+      OPS,
+      [0, 0, 612, 792],
+    );
+    expect(covers.get('scan')).toBe(1);
+    expect(covers.get('figure')).toBeCloseTo((112 * 192) / (612 * 792), 3);
+  });
+
+  it('comes with each picture of a PDF', async () => {
+    const pdf = imagePagesPdf({ images: [figure(7)], pages: [{ draw: [0] }] });
+    const [img] = await extractPdfImages(pdf, { maxImages: 5 });
+    // 200 x 150 points on a 612 x 792 page.
+    expect(img!.pageCover).toBeCloseTo((200 * 150) / (612 * 792), 3);
+  });
 });

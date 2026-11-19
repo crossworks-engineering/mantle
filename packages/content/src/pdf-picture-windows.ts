@@ -154,7 +154,8 @@ export async function picturesByWindows(
         // Once the file is known to hold pictures, a window of one picture a
         // page is no scan: its pictures are read (the scan rule of one read,
         // packages/files/src/pdf.ts, judges a whole file, not 50 pages of
-        // it). Not for a book whose Reader pictures its scanned pages (G1).
+        // it). Not for a book: a window of its scanned pages gives no page
+        // scans (a scanned page left to vision has the Agent's picture, G1).
         ...(notScanOf() ? { notScan: true } : {}),
       }),
     );
