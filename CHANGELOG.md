@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.706.0: Files screen, file history, file status and Reindex
+
+- **Added:** a better Files screen. A drop zone shows where the files go, and files drop on a folder in the tree. Select many files and use Move to; the folder picker has New folder. The file header has Move.
+- **Added:** file history. A file with the same bytes is skipped and shown as "Already here". A file with new bytes asks Override, Override all, Skip or Skip all, and the old bytes stay as a version. The newest 10 versions stay per file (`FILE_HISTORY_KEEP`) and the box keeps 2 GB of them (`FILE_HISTORY_MAX_MB`), a soft cap that never removes the newest version of a live file. A deleted file keeps its history for 30 days. An Admin, and the Moderators of the home or of a workspace that holds the file, restore a version. A History sheet in the client; routes and the MCP tools `file_history_list`, `file_history_restore` and `file_history_delete`.
+- **Added:** a status icon per file: in the brain, read in part, waiting, running, failed, database ready (with the pipe icon) and older read. The Details sheet shows how the file was read, with a Pipeline section and Where it went (`GET /api/files/files/:id/processing`, MCP `file_processing`).
+- **Added:** read stamps on a file (`read_by`, `pipeline_read`). Files read before this release show no older-read mark.
+- **Added:** Reindex (`POST /api/files/reindex`, up to 200 files per call, started by a person). MCP `file_reindex` is MCP-only.
+- **Added:** a Needs attention panel: files read by an older reader or pipeline, failed, or read in part (`GET /api/files/stale`, MCP `file_stale_list`).
+- **Changed:** MCP `file_list` rows carry the file status.
+- **Changed:** on a replace, the old extracted images are kept and marked older. A new image pass runs only after a person replaces or restores the file.
+- **Docs:** `docs/files.md`, `docs/configuration.md`.
+- Migrations: `0384_file_history` (file versions) and `0385_file_read_stamps` (the read stamps).
+
 ## v0.705.0: shared workspace rights, Microsoft 365 inside Sync
 
 - **Changed:** rights on an item shared into a workspace (not its home). A Moderator of that workspace may now read, create and upload (items and folders), write, and move the item to another folder inside the workspace, with the Write switch on or off. A Moderator of a shared workspace does not delete it or move its home. A user of the workspace reads it, and writes it only with Write on; a user no longer adds new items to a shared folder. Items whose home is the workspace keep their rules. App code stays with the app's home Moderators.
