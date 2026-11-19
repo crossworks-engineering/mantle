@@ -166,11 +166,27 @@ export function extractWeightOfExt(ext: string): ExtractWeight {
  */
 export const BOOK_HEAVY_MIN_BYTES = 10 * 1024 * 1024;
 
+/**
+ * A PDF of more than this many pages is a heavy extraction too, whatever
+ * its bytes (M6 of the large-PDF audit, round 3): a typed catalogue of
+ * 4,000 pages is a few MB, and its book read (80 windows of text layer,
+ * tables and pictures) needs the time budget that grows with its pages
+ * (extract-lanes.ts bookExpireMinutes), which only the heavy lane sets.
+ * 200 pages is four windows of 50: up to about 10 minutes of OCR on 2 CPUs,
+ * well inside the base budget of the light lane.
+ */
+export const BOOK_HEAVY_MIN_PAGES = 200;
+
 /** The weight of one file: its extension's, and a PDF of
- *  BOOK_HEAVY_MIN_BYTES or more is heavy. `sizeBytes` unknown: the
- *  extension's weight. */
-export function extractWeightOfFile(ext: string, sizeBytes: number | null): ExtractWeight {
+ *  BOOK_HEAVY_MIN_BYTES or more, or of more than BOOK_HEAVY_MIN_PAGES pages,
+ *  is heavy. `sizeBytes` or `pages` unknown: that rule does not count. */
+export function extractWeightOfFile(
+  ext: string,
+  sizeBytes: number | null,
+  pages: number | null = null,
+): ExtractWeight {
   if (ext === 'pdf' && sizeBytes !== null && sizeBytes >= BOOK_HEAVY_MIN_BYTES) return 'heavy';
+  if (ext === 'pdf' && pages !== null && pages > BOOK_HEAVY_MIN_PAGES) return 'heavy';
   return extractWeightOfExt(ext);
 }
 

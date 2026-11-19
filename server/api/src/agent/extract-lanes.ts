@@ -24,9 +24,10 @@
  * (not for the drawings queued behind it), as it waits for any other read: a
  * chat attachment, a thumbnail, a drawing tool, a maintenance run. A PDF of
  * BOOK_HEAVY_MIN_BYTES (10 MB) or more is heavy (a book read by OCR window
- * by window), with an extract time that grows with its page windows
- * (bookExpireMinutes); a smaller PDF is light, so many small PDFs never
- * queue behind a book.
+ * by window), and so is a PDF of more than BOOK_HEAVY_MIN_PAGES (200) pages
+ * (a long typed book: its page count, qpdf's, is read at the hop), with an
+ * extract time that grows with its page windows (bookExpireMinutes); a
+ * smaller PDF is light, so many small PDFs never queue behind a book.
  */
 import {
   PIPELINE_WINDOW_DEFAULT,
@@ -54,9 +55,16 @@ export function extractWeightOfNode(node: {
   filename: string | null;
   /** `data.size_bytes`: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy. */
   sizeBytes?: number | null;
+  /** The PDF's page count (qpdf): one of more than BOOK_HEAVY_MIN_PAGES
+   *  pages is heavy. */
+  pages?: number | null;
 }): ExtractWeight {
   if (node.type !== 'file') return 'light';
-  return extractWeightOfFile(extOf(node.filename ?? node.title ?? ''), node.sizeBytes ?? null);
+  return extractWeightOfFile(
+    extOf(node.filename ?? node.title ?? ''),
+    node.sizeBytes ?? null,
+    node.pages ?? null,
+  );
 }
 
 /** The minutes a book's extract gets for each page window of
