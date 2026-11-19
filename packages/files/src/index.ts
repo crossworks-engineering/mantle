@@ -22,6 +22,8 @@ export {
   isCadExt,
   isDrawingExt,
   extractWeightOfExt,
+  extractWeightOfFile,
+  BOOK_HEAVY_MIN_BYTES,
   SOME_FILES_EXTS,
   type CadExt,
   type ExtractWeight,
@@ -547,7 +549,7 @@ export {
 } from './pdf-sketch';
 export { TITLE_BLOCK_MM, titleBlockOf, type TitleBlockMm } from './pdf-rows';
 export { PDF_MAX_BYTES } from './parser-wire';
-export { MAX_EMBEDDED_IMAGES_PER_DOC } from './embedded-images';
+export { MAX_EMBEDDED_IMAGES_CEILING, MAX_EMBEDDED_IMAGES_PER_DOC } from './embedded-images';
 export {
   EXTRACTION_STATES,
   extractionOf,

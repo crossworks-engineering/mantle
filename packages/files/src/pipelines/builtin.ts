@@ -159,7 +159,9 @@ export const BUILTIN_PIPELINES = [
       'Names the kind of a PDF from its pages: a P&ID, an isometric, a scan, another drawing or a document. When its rules are unsure it asks the decider once, at most. The reader that claims the kind reads the file. It writes no tabs.',
     // 1.0.1 (2026-11-17): the kind rules of PDF_KIND_RULES_VERSION 2.
     // 1.1.0 (2026-11-18): the kind `book` (PDF_KIND_RULES_VERSION 3).
-    version: '1.1.0',
+    // 1.2.0 (2026-11-19): every office PDF is a book, whatever its size
+    // (PDF_KIND_RULES_VERSION 4); the rules name `document` no more.
+    version: '1.2.0',
     match: { ext: ['pdf'] },
     // The eleven kinds of PDF_KINDS (../pdf-kind.ts). The rules name seven
     // (`book` by its own rule, bookOf); the decider may also answer the four
@@ -192,7 +194,8 @@ export const BUILTIN_PIPELINES = [
     // and the kind rules of PDF_KIND_RULES_VERSION 2.
     // 1.1.1 (2026-11-18): the kind rules of PDF_KIND_RULES_VERSION 3 (the
     // File tab's Rules version).
-    version: '1.1.1',
+    // 1.1.2 (2026-11-19): the kind rules of PDF_KIND_RULES_VERSION 4.
+    version: '1.1.2',
     // Every kind the router names but `document` and `book`: a document gets
     // no database, and a book is the book reader's (`pdf-pages`). An unsure
     // PDF gets one, as before the router. A new claim changes the pin and
@@ -416,12 +419,15 @@ export const BUILTIN_PIPELINES = [
     entry: 'pdf_pages.py',
     name: 'PDF book',
     description:
-      'Reads a long PDF the router names a book, page by page: the text layer, else local OCR. It writes the tabs Pages and Tables, one tab for each table with the page of each row, and the text by page. It asks no model.',
-    version: '1.0.0',
+      'Reads every office PDF (the router names it a book), typed or scanned, of any length, page by page: the text layer, else local OCR. It writes the tabs Pages and Tables, one tab for each table with the page of each row, and the text by page. It asks no model.',
+    // 1.1.0 (2026-11-19): every office PDF, whatever its size (the kind
+    // rules 4); G1 on: a PNG of each page it leaves to vision.
+    version: '1.1.0',
     match: { ext: ['pdf'], kind: ['book'] },
     produces: { text: true, pictures: true, table: false, pages: true },
-    // The lane comes from the extension (extractWeightOfExt): light, as
-    // every reader of a type. One window a job: Tesseract takes about 1.8 s
+    // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy
+    // (extractWeightOfFile, ../slug.ts), with an extract time that grows
+    // with its page windows. One window a job: Tesseract takes about 1.8 s
     // a page on one CPU, two at once, so a window of 50 scanned pages takes
     // about a minute; the step stops its OCR at 180 s (OCR_BUDGET_S) and
     // leaves the pages after it to vision.
@@ -468,7 +474,9 @@ export const BUILTIN_PIPELINES = [
     name: 'PDF page read',
     description:
       'Reads by vision the pages of a PDF book that OCR read badly, or that hold a figure, one ask a page, into the tab Page text. It runs after an upload and on demand, and reads no page the book reader read well.',
-    version: '1.0.0',
+    // 1.1.0 (2026-11-19): every marked page by default (option pages
+    // 10,000, from 2,000), and only the windows that hold a marked page.
+    version: '1.1.0',
     // The kind it reads: no window is cut and no job runs on a PDF of
     // another kind (runAgentOnFile).
     match: { ext: ['pdf'], kind: ['book'] },
@@ -476,8 +484,8 @@ export const BUILTIN_PIPELINES = [
       pages: {
         type: 'number',
         label: 'Pages to read',
-        help: 'The most pages of a file to read with vision, from its first marked page. One ask a page.',
-        default: 2000,
+        help: 'The most pages of a file to read with vision, from its first marked page. One ask a page. Every marked page by default: a page left out keeps only its OCR text.',
+        default: PIPELINE_ASK_PAGE_MAX,
         min: 1,
         max: 10_000,
       },

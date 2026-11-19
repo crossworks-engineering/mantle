@@ -148,6 +148,13 @@ export async function runJob(
       });
     }
     case 'pdfInfo': {
+      // qpdf first: it reads the page tree with no page decode, so a file
+      // of any size the parser takes has a count (a book past the 256 MB
+      // pdfjs opens: its extract time grows with its pages, extract-lanes.ts
+      // in the brain). pdfjs where qpdf cannot read it.
+      const { qpdfPageCount } = await import('./pdf-split');
+      const counted = await qpdfPageCount(p.input, p.dir, 30_000).catch(() => null);
+      if (counted !== null) return writeJson(p.outJson, { ok: true, pages: counted });
       const { pdfPageCount } = await import('@mantle/files/readers/pdf');
       return writeJson(p.outJson, {
         ok: true,

@@ -156,6 +156,25 @@ export function extractWeightOfExt(ext: string): ExtractWeight {
 }
 
 /**
+ * A PDF of this many bytes or more is a heavy extraction (the large-PDF
+ * finish, decision 5): every office PDF is a book now, read by the book
+ * reader's OCR window by window, and the bytes of a PDF are what its OCR
+ * costs (a scanned page is a picture: the made-up spec book is 0.55 MB a
+ * page at 200 dpi, so 10 MB is about 18 scanned pages). Below it a PDF is
+ * light, so many small PDFs never queue behind one book; at it or above,
+ * one book at a time, and light work is never held by a book.
+ */
+export const BOOK_HEAVY_MIN_BYTES = 10 * 1024 * 1024;
+
+/** The weight of one file: its extension's, and a PDF of
+ *  BOOK_HEAVY_MIN_BYTES or more is heavy. `sizeBytes` unknown: the
+ *  extension's weight. */
+export function extractWeightOfFile(ext: string, sizeBytes: number | null): ExtractWeight {
+  if (ext === 'pdf' && sizeBytes !== null && sizeBytes >= BOOK_HEAVY_MIN_BYTES) return 'heavy';
+  return extractWeightOfExt(ext);
+}
+
+/**
  * The file types whose Reader takes only some files of the type: an XML
  * that is a plan, a TIFF that is a 1-bit drawing, an SMF, a `.000` that is
  * HP-GL/2 (`drawing-raster`). A file of these types has a database, or a

@@ -48,6 +48,7 @@ import {
 } from '@mantle/files';
 import { scanTabColumns } from '@mantle/tabledb';
 import { AgentAskError, askCapOf } from './pipeline-agent';
+import { SpooledPictures } from './picture-spool';
 
 /** How the core answers one worker call of a step. */
 export type PipelineAsk = (call: PipelineCall & { call: 'worker' }) => Promise<PipelineCallAnswer>;
@@ -316,6 +317,46 @@ export async function* pdfWindows(
   }
 }
 
+/**
+ * The page windows of a PDF that hold the pages `marked` (an Agent's pages
+ * left to vision, decision 4 of the large-PDF finish): each window starts at
+ * the first marked page past the window before, so a book of 1,679 pages
+ * with one marked page is one cut, not 112, and no window of only unmarked
+ * pages is cut. The same steps and failure rule as {@link pdfWindows}: the
+ * first cut must be made (the page count), a later one the parser cannot
+ * cut comes as `part: null`.
+ */
+export async function* pdfWindowsAt(
+  bytes: Buffer,
+  sha256: string,
+  window: { pages: number; mb: number },
+  marked: readonly number[],
+): AsyncGenerator<PdfWindowStep> {
+  const pages = [...new Set(marked)].filter((n) => Number.isInteger(n) && n >= 1);
+  pages.sort((a, b) => a - b);
+  let total: number | null = null;
+  let i = 0;
+  while (i < pages.length) {
+    const from = pages[i]!;
+    if (total !== null && from > total) return;
+    const cut = { from, pages: window.pages, mb: window.mb, sha256 };
+    const part: PdfWindowPart | WindowLost =
+      total === null
+        ? await parserPdfSplit(bytes, cut)
+        : await windowJob(() => parserPdfSplit(bytes, cut));
+    let to: number;
+    if (isWindowLost(part)) {
+      to = Math.min(total!, from + window.pages - 1);
+      yield { part: null, from, to, pagesTotal: total! };
+    } else {
+      total = part.pagesTotal;
+      to = part.pageTo;
+      yield { part };
+    }
+    while (i < pages.length && pages[i]! <= to) i += 1;
+  }
+}
+
 /** Merge one window's write into the run's (the rule of FileTabsWriteInput):
  *  rows of a tab already there go after its rows by column name, a new tab
  *  is added, texts join with a blank line, pictures add up, and the last
@@ -384,7 +425,10 @@ export async function runWindowed(
   opts: { options: Readonly<Record<string, unknown>>; kind?: string; state?: unknown },
 ): Promise<PipelineRunResult> {
   let write: FileTabsWriteInput | undefined;
-  const pictures = new Map<string, Buffer>();
+  // On disk, window by window (G1): the brain holds one window's pictures
+  // at most, never every window's. The picture pass takes them and drops the
+  // spool (server/api/src/agent/extract/images.ts).
+  const pictures = new SpooledPictures();
   const warnings: string[] = [];
   const counts: Record<string, number> = {};
   const failed: { from: number; to: number }[] = [];
@@ -428,7 +472,7 @@ export async function runWindowed(
     if (!run.write) continue;
     // Each window's pictures under names of their own.
     const prefix = `w${part.pageFrom}-`;
-    for (const [name, b] of run.pictures) pictures.set(prefix + name, b);
+    for (const [name, b] of run.pictures) pictures.put(prefix + name, b);
     const renamed: FileTabsWriteInput = {
       ...run.write,
       ...(run.write.pictures

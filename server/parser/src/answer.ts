@@ -40,11 +40,22 @@ export async function sendAnswer(
   if (!stat) throw new JobFailure('crashed', 'the job ended without an answer');
   const { size } = stat;
   // An answer the brain would refuse is not sent: it holds every answer in
-  // memory (packages/files/src/parser-client.ts).
-  if (size > PARSER_ANSWER_MAX_BYTES) {
+  // memory (packages/files/src/parser-client.ts). A page window (pdfSplit)
+  // is the one exception: it is never more than the file the brain sent
+  // and holds already, so a single page past the cap (a huge scan) is
+  // still read, never lost (Jason, 2026-11-19: every page of an upload is
+  // known). Its cap is the file's size.
+  const cap =
+    job === 'pdfSplit'
+      ? Math.max(
+          PARSER_ANSWER_MAX_BYTES,
+          (await fs.stat(path.join(dir, 'in.bin')).catch(() => null))?.size ?? 0,
+        )
+      : PARSER_ANSWER_MAX_BYTES;
+  if (size > cap) {
     throw new JobFailure(
       'too_large',
-      `the answer is ${Math.round(size / 1024 / 1024)} MB, past the ${PARSER_ANSWER_MAX_BYTES / 1024 / 1024} MB an answer may be`,
+      `the answer is ${Math.round(size / 1024 / 1024)} MB, past the ${Math.round(cap / 1024 / 1024)} MB an answer may be`,
       { final: true },
     );
   }

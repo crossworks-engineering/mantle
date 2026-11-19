@@ -22,11 +22,18 @@
  * What the lane does not do: the parser still has one job slot for the whole
  * box. A document's read waits there for the one drawing that is being read
  * (not for the drawings queued behind it), as it waits for any other read: a
- * chat attachment, a thumbnail, a drawing tool, a maintenance run. A PDF is
- * light whatever it holds, so scan and drawing PDFs still run up to N at
- * once.
+ * chat attachment, a thumbnail, a drawing tool, a maintenance run. A PDF of
+ * BOOK_HEAVY_MIN_BYTES (10 MB) or more is heavy (a book read by OCR window
+ * by window), with an extract time that grows with its page windows
+ * (bookExpireMinutes); a smaller PDF is light, so many small PDFs never
+ * queue behind a book.
  */
-import { extOf, extractWeightOfExt, type ExtractWeight } from '@mantle/files';
+import {
+  PIPELINE_WINDOW_DEFAULT,
+  extOf,
+  extractWeightOfFile,
+  type ExtractWeight,
+} from '@mantle/files';
 
 /** Heavy extractions at once. One, as the parser has one job slot: a second
  *  heavy file could only wait for that slot. */
@@ -45,9 +52,36 @@ export function extractWeightOfNode(node: {
   type: string;
   title: string | null;
   filename: string | null;
+  /** `data.size_bytes`: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy. */
+  sizeBytes?: number | null;
 }): ExtractWeight {
   if (node.type !== 'file') return 'light';
-  return extractWeightOfExt(extOf(node.filename ?? node.title ?? ''));
+  return extractWeightOfFile(extOf(node.filename ?? node.title ?? ''), node.sizeBytes ?? null);
+}
+
+/** The minutes a book's extract gets for each page window of
+ *  PIPELINE_WINDOW_DEFAULT (50 pages) over the base time budget: about 2.5
+ *  minutes of OCR on 2 CPUs a window (1.8 s a page a CPU), the picture pass
+ *  besides, doubled. */
+export const BOOK_EXPIRE_MIN_PER_WINDOW = 5;
+/** The longest a book's extract may run, in minutes: 8 hours. A book that
+ *  needs more (about 4,500 pages) keeps what it read (each window is
+ *  written as it goes, and a run again takes what is written). */
+export const BOOK_EXPIRE_MAX_MIN = 480;
+
+/**
+ * The time budget of a heavy PDF's extract (decision 3 of the large-PDF
+ * finish, Jason: "Scale the limit by pages"): the base budget
+ * (MANTLE_EXTRACT_EXPIRE_MIN, or the box's setting) for a small file, plus
+ * BOOK_EXPIRE_MIN_PER_WINDOW for each page window, at most
+ * BOOK_EXPIRE_MAX_MIN. A 1,000-page book: 60 + 20 x 5 = 160 minutes. An
+ * unknown page count: the most. Never under the base.
+ */
+export function bookExpireMinutes(baseMin: number, pages: number | null): number {
+  if (pages === null) return Math.max(baseMin, BOOK_EXPIRE_MAX_MIN);
+  const windows = Math.ceil(Math.max(0, pages) / PIPELINE_WINDOW_DEFAULT.pages);
+  const scaled = baseMin + windows * BOOK_EXPIRE_MIN_PER_WINDOW;
+  return Math.max(baseMin, Math.min(BOOK_EXPIRE_MAX_MIN, scaled));
 }
 
 /**
