@@ -294,6 +294,7 @@ const HTTP_SURFACE = [
   'code_diff',
   'code_search',
   'code_view',
+  'config_models_check',
   'contact_find',
   'contact_get',
   'contact_list',

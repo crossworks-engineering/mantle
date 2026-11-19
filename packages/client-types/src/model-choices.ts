@@ -8,6 +8,10 @@
  * / the indexing workers' model in `MANIFEST_WORKERS`) — onboarding merely
  * writes the user's pick as operator overlay on top of the manifest seed.
  *
+ * The recommended WORKER card is the manifest's per-worker defaults: its id is
+ * the summarizer's model, and provisionDefaults applies a worker pick only
+ * when it is another card (one model for every indexing worker).
+ *
  * Slugs are OpenRouter ids (verified against the live catalog). `azure: true`
  * marks OpenAI-family models that can also be served from an Azure OpenAI
  * deployment (the Azure route strips the `openai/` prefix to form the
@@ -36,12 +40,19 @@ export type ModelChoice = {
  *  exported list below extends this with the shipped `agents` pool. */
 const BASE_ASSISTANT_CHOICES: readonly ModelChoice[] = [
   {
+    id: 'openai/gpt-6.1-sol',
+    name: 'GPT-6.1 Sol',
+    blurb:
+      'The shipped default: strong reasoning and tool use with a 1M-token context, for an assistant that plans, writes and works across your whole brain.',
+    price: '$2 · $10 /M',
+    recommended: true,
+  },
+  {
     id: '~x-ai/grok-latest',
     name: 'Grok (latest)',
     blurb:
-      'The shipped default — an auto-updating alias, so a brain installed today and one installed next year both get xAI’s current flagship. Frontier-class reasoning and tool use at well under Sonnet money.',
+      'An auto-updating alias: it follows xAI’s current flagship on its own. Frontier-class reasoning and tool use at well under Sonnet money.',
     price: '$1.60 · $4.80 /M',
-    recommended: true,
   },
   {
     id: 'anthropic/claude-sonnet-5',
@@ -79,12 +90,19 @@ const BASE_ASSISTANT_CHOICES: readonly ModelChoice[] = [
  *  process EVERYTHING the brain ingests, so price and speed dominate. */
 const BASE_WORKER_CHOICES: readonly ModelChoice[] = [
   {
+    id: 'anthropic/claude-haiku-5.5',
+    name: 'Shipped defaults',
+    blurb:
+      'Each worker on the model chosen for it: Claude Haiku 5.5 summarizes and narrates, GPT-6 Luna extracts facts and suggests, Gemini 3.8 Flash reflects and reads documents. Pick another card to run all of them on that one model.',
+    price: '$0.10 · $0.50 /M and up',
+    recommended: true,
+  },
+  {
     id: 'google/gemini-3.5-flash-lite',
     name: 'Gemini 3.5 Flash Lite',
     blurb:
-      'The shipped default — very fast, very cheap, 1M-token context. Ideal for the always-on indexing that reads everything you add.',
+      'Very fast, very cheap, 1M-token context. A budget pick for the always-on indexing that reads everything you add.',
     price: '$0.30 · $2.50 /M',
-    recommended: true,
   },
   {
     id: 'openai/gpt-5.4-nano',
@@ -172,6 +190,14 @@ export const WORKER_MODEL_CHOICES: readonly ModelChoice[] = extendFromPool(
   'summarizer',
   BASE_WORKER_CHOICES,
 );
+
+/** Is this worker pick the recommended card? That card stands for the
+ *  manifest's own default of each worker (they differ per kind), so picking
+ *  it keeps them; any other card puts every WORKER_MODEL_KINDS worker on
+ *  that one model (onboarding-provision.ts). */
+export function isShippedWorkerDefaults(workerModel: string): boolean {
+  return WORKER_MODEL_CHOICES.find((c) => c.recommended)?.id === workerModel;
+}
 
 /** Worker kinds the onboarding "worker model" pick applies to — the text
  *  indexing pipeline. Modality workers (tts/stt/vision/image_gen/search)

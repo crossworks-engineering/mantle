@@ -23,7 +23,11 @@
 import { fileURLToPath } from 'node:url';
 import { envDynamic } from '@mantle/config';
 import { db, sql, countUsers } from '@mantle/db';
-import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@mantle/client-types/model-choices';
+import {
+  ASSISTANT_MODEL_CHOICES,
+  isShippedWorkerDefaults,
+  WORKER_MODEL_CHOICES,
+} from '@mantle/client-types/model-choices';
 import { PURPOSE_ARCHETYPES } from '@mantle/content-core/onboarding-questions';
 import { DEFAULT_PERSONA_NAMES, PERSONA_PRESETS } from '@mantle/content-core/persona-bank';
 import { createFirstOwner } from '../lib/auth/first-owner';
@@ -527,7 +531,10 @@ export async function run(o: Options, io: Io): Promise<number> {
       const workerModel = await io.ask('Worker model:', o.workerModel ?? defW);
       const r = await saveModels(owner.id, { assistantModel, workerModel, route: 'openrouter' });
       if (r.ok) {
-        ok(`Assistant ${r.assistantModel}, workers ${r.workerModel}`);
+        const workers = isShippedWorkerDefaults(r.workerModel)
+          ? 'the shipped default of each worker'
+          : r.workerModel;
+        ok(`Assistant ${r.assistantModel}, workers ${workers}`);
         break;
       }
       bad(r.message);

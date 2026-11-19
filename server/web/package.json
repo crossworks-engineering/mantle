@@ -30,6 +30,7 @@
     "peer-link": "bun --env-file=./.env.local scripts/peer-link.ts",
     "models:drift": "bun --env-file=./.env.local scripts/models-drift.ts",
     "models:pinned": "bun --env-file=./.env.local scripts/pinned-model-drift.ts",
+    "models:check": "bun --env-file=./.env.local scripts/model-check.ts",
     "models:pool-fit": "bun --env-file=./.env.local scripts/pool-fit.ts",
     "models:curate": "bun --env-file=./.env.local scripts/curate-pools.ts",
     "pgboss:init": "bun --env-file=./.env.local scripts/pgboss-init.ts",

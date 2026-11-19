@@ -47,6 +47,9 @@ describe('mcpOnly builtins', () => {
         'api_key_set',
         'api_key_test',
         'app_authoring_guide',
+        // The model check (docs/models.md): an Admin user's client
+        // reads whether the box runs the default models; read-only.
+        'config_models_check',
         'file_delete',
         // A file's kept version deleted for good (file history): an owner's
         // client only, as file_delete.

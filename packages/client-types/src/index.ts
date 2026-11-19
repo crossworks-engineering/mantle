@@ -35,6 +35,7 @@ export * from './dto/views';
 export * from './dto/recall';
 export * from './dto/services';
 export * from './dto/box-status';
+export * from './dto/model-check';
 export * from './dto/update-notice';
 export * from './dto/fleet-default-model';
 export * from './dto/present-checks';

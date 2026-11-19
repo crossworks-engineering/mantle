@@ -7,7 +7,11 @@ import {
   type PersonaGender,
   type PersonaPresetKey,
 } from '@mantle/content';
-import { azureDeploymentName, WORKER_MODEL_KINDS } from '@mantle/client-types/model-choices';
+import {
+  azureDeploymentName,
+  isShippedWorkerDefaults,
+  WORKER_MODEL_KINDS,
+} from '@mantle/client-types/model-choices';
 import { updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import { createAgent, updateAgent } from '@/lib/agents';
 // Workers, the persona's structure, and the specialist stack are all seeded from
@@ -123,7 +127,13 @@ export async function provisionDefaults(
   // Models-step overlay: retarget the text-indexing workers to the user's fast
   // model (and, on the Azure route, to the custom provider + endpoint). Done
   // here rather than in the seeder so seedManifestWorkers stays manifest-pure.
-  if (modelOverlay?.workerModel) {
+  // The recommended card stands for the manifest's own model per worker, so
+  // on the OpenRouter route it changes nothing (the screen pre-selects it);
+  // the Azure route always applies (its provider and endpoint are the user's).
+  if (
+    modelOverlay?.workerModel &&
+    (azureRoute || !isShippedWorkerDefaults(modelOverlay.workerModel))
+  ) {
     for (const w of allWorkers) {
       if (!(WORKER_MODEL_KINDS as readonly string[]).includes(w.kind)) continue;
       await updateAiWorker(

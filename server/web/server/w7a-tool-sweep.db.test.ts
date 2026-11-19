@@ -307,6 +307,10 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     // installs it at boot; this box has no updater, so a switch is refused.
     const { installServicesProvider } = await import('../lib/services');
     installServicesProvider();
+    // The model check (config_models_check), as the web process installs it
+    // at boot: the sweep runs its read of the workers and agents in the scope.
+    const { installModelCheckProvider } = await import('../lib/system-manifest/model-check-db');
+    installModelCheckProvider();
     await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Second Admin'),

@@ -72,6 +72,7 @@
   "code_undo": "write",
   "code_view": "read",
   "code_write": "write",
+  "config_models_check": "read",
   "contact_create": "write",
   "contact_delete": "delete",
   "contact_find": "read",
