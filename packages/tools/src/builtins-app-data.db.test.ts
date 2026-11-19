@@ -23,7 +23,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { LoginMcpChannel, ToolHandlerContext } from './types';
 import { asSuperuser } from '@mantle/db/test-support';
 
@@ -368,12 +368,17 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     const rows = await broker.appDbQuery(anchor, id, "SELECT by_id FROM items WHERE name = 'two'");
     expect(String(rows[0]?.by_id)).toMatch(/^u_/);
 
-    // The log is written best effort, after the answer: give it a moment.
-    await new Promise((r) => setTimeout(r, 300));
-    const logs = await admin`select actor_id, detail from app_access_log
+    // The log is written best effort, after the answer: wait until both rows
+    // are there (a fixed wait was too short on a busy CI runner).
+    const readLogs = () => admin`select actor_id, detail from app_access_log
       where app_node_id = ${id} and kind = 'db' and detail->>'via' = 'mcp'
         and detail->>'op' = 'exec' and detail->>'refused' is null
       order by created_at`;
+    await vi.waitFor(async () => expect((await readLogs()).length).toBeGreaterThanOrEqual(2), {
+      timeout: 5000,
+      interval: 100,
+    });
+    const logs = await readLogs();
     expect(logs.length).toBeGreaterThanOrEqual(2);
     expect(logs[0]?.actor_id).toBe(member);
     expect(logs[0]?.detail).toMatchObject({
