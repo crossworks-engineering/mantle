@@ -141,6 +141,7 @@ export {
   scanShareHooks,
   scanShareOf,
   bookScanTurn,
+  SCAN_READ_MARK,
   type BookScanTurn,
   scanKeptOf,
   scanFinalReadOf,

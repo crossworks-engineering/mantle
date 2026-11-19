@@ -843,8 +843,11 @@ paid call a reader claims the page under the node's row lock (one claim
 wins); a page another reader holds is waited for (the chat turn to its own
 time; the extract to the end of the claim, then claims it again). A claim
 ends at its time (a reader that died), and a reader's own claim of a try
-before is its own. Only final pages are kept (a page with no answer is read
-again by the next reader). A book's ask writes nothing there unless a chat
+before is its own. Each page is kept as its read ends (a waiting reader has
+it then), and only final pages are kept (a page with no answer is read again
+by the next reader). A whole read's mark (`ocr: true`, or the core's object
+with `scan_read`) is never written over; the chat turn's end drops the
+shared pages beside it, so the node holds its text once. A book's ask writes nothing there unless a chat
 turn reads the file (`chat_until`): a book's rows are its record, and a
 write per page would rewrite the whole node; while one does, its pages are
 claimed and kept too. A chat turn whose file the background read already

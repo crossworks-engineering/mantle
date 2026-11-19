@@ -63,6 +63,8 @@ type Plan = {
   cut?: (page: number) => Buffer | Error;
   /** Throw this from the window starting at `from`. */
   windowThrows?: { from: number; err: Error };
+  /** How long each Scan reader call takes. */
+  delayMs?: number;
 };
 
 function deps(plan: Plan) {
@@ -119,6 +121,7 @@ function deps(plan: Plan) {
     scan: (async (o: { pdf: Buffer }) => {
       const page = Number(o.pdf.toString().split(' ')[1]);
       calls.scan.push(page);
+      if (plan.delayMs) await new Promise((r) => setTimeout(r, plan.delayMs));
       return plan.scan?.(page) ?? answer(`${ROWS}\nPAGE ${page}`);
     }) as ScanPdfDeps['scan'],
     vision: (async () => {
@@ -445,6 +448,24 @@ describe('the reads shared by the readers of one upload (scan-share.ts)', () => 
     expect(paid).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(a.r.pages.filter((p) => p.method === 'scan_reader')).toHaveLength(8);
     expect(b.r.pages.filter((p) => p.method === 'scan_reader')).toHaveLength(8);
+  });
+
+  it('a page is kept as its read ends: a waiting chat turn has it before the window ends', async () => {
+    const store = fresh();
+    // The extract claims the window of 8 first; each call takes 100 ms, 4 at
+    // once, so its window ends after about 200 ms.
+    const extract = readWith(memoryShare(store, 'extract'), { total: 8, delayMs: 100 });
+    await new Promise((r) => setTimeout(r, 5));
+    // The chat turn has 170 ms: the first 4 pages are kept by then.
+    const chat = await readWith(
+      memoryShare(store, 'chat'),
+      { total: 8 },
+      { deadline: Date.now() + 170 },
+    );
+    expect(chat.calls.scan).toHaveLength(0);
+    expect(chat.r.pages.filter((p) => p.method === 'scan_reader').length).toBeGreaterThanOrEqual(4);
+    expect(chat.r.pages.filter((p) => p.why === 'time').length).toBeLessThanOrEqual(4);
+    expect((await extract).calls.scan).toHaveLength(8);
   });
 
   it('a page read with no answer is not kept: the next reader reads it', async () => {
