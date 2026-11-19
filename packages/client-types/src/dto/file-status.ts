@@ -69,7 +69,10 @@ export type FileProcessingExtraction = {
   pages?: { read: number; total: number };
   /** Pictures left out: the pictures kept and found (`more`: at least). */
   pictures?: { kept: number; found: number; more?: true };
-  /** A `partial` file: each kind of cut (docs/files.md, "Read in part"):
+  /** Each kind of cut (docs/files.md, "Read in part"). A `partial` file
+   *  has the cuts that made it so; an `indexed` file may carry details
+   *  only (`pictures_small`, `pictures_tiny`: icons and small pictures the
+   *  size gate skipped), which are no reason for a partial badge. Each cut:
    *  its key (`sheet_rows`, `text_store`, `pictures_small`, `ocr_pages`,
    *  ...), the unit, how many were read of how many (`atLeast`: the total
    *  is a lower bound), the limit, and its own sentence. */

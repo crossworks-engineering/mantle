@@ -30,7 +30,7 @@ import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from '../email-attachments';
 import { keyWithoutSearch } from '../file-data';
 import { READER_VERSIONS, type InstalledPipeline } from '../read-stamp';
-import { fileRowFromNode, type FileRow } from './shared';
+import { fileRowFromNode, readCutMakesPartialSql, type FileRow } from './shared';
 
 export type StaleListState = 'stale' | 'failed' | 'partial';
 export const STALE_LIST_STATES: readonly StaleListState[] = ['stale', 'failed', 'partial'];
@@ -92,8 +92,8 @@ function readCut(state: 'failed' | 'partial'): SQL {
   const ocr = (k: string) => sql`${nodes.data}->'ocr'->${k}`;
   const img = (k: string) => sql`${nodes.data}->'images'->${k}`;
   // One model (extractionOf, readCutsOfFile): a scan's pages read below its
-  // pages, pictures kept below those found, or any cut a reader said
-  // (`read_cut`, a non-empty object: hasReadCut).
+  // pages, pictures kept below those found, or a cut a reader said that
+  // is no detail only (`read_cut`: hasPartialReadCut, readCutMakesPartialSql).
   return sql`(${notNameOnly} and not coalesce(${reasonIsText}, false)
     and not (${nodes.data} ? 'extract_parked') and ${nodes.data} ? 'extract_completed_at'
     and (case when jsonb_typeof(${ocr('pages_read')}) = 'number'
@@ -104,8 +104,7 @@ function readCut(state: 'failed' | 'partial'): SQL {
                    and jsonb_typeof(${img('found')}) = 'number'
               then (${img('kept')})::text::numeric < (${img('found')})::text::numeric
               else false end
-      or (jsonb_typeof(${nodes.data}->'read_cut') = 'object'
-          and ${nodes.data}->'read_cut' <> '{}'::jsonb)))`;
+      or ${readCutMakesPartialSql()}))`;
 }
 
 /** The cursor of the row after which the next page starts: its updated_at

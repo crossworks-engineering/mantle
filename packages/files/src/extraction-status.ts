@@ -28,7 +28,14 @@
  * Pure, with no imports but the pure ./read-cut.ts: the file listing,
  * `node_read` and the tests share it.
  */
-import { hasReadCut, readCutViews, readCutsOf, type ReadCutView, type ReadCuts } from './read-cut';
+import {
+  cutMakesPartial,
+  hasPartialReadCut,
+  readCutViews,
+  readCutsOf,
+  type ReadCutView,
+  type ReadCuts,
+} from './read-cut';
 
 export type ExtractionState =
   'indexed' | 'partial' | 'failed' | 'skipped' | 'pending' | 'name_only';
@@ -53,8 +60,10 @@ export type FileExtraction = {
   pages?: { read: number; total: number };
   /** Pictures left out (`data.images`): the pictures kept and found. */
   pictures?: { kept: number; found: number; more?: true };
-  /** Read in part: each kind of cut, its counts and its sentence (the
-   *  `hint` is these sentences in order). */
+  /** Each kind of cut, its counts and its sentence. A `partial` file's
+   *  `hint` is the sentences of the cuts that make it partial, in order; an
+   *  `indexed` file may carry the details only (read-cut.ts
+   *  DETAIL_ONLY_CUT_REASONS), with no hint of them. */
   cuts?: ReadCutView[];
 };
 
@@ -210,25 +219,31 @@ export function extractionOf(
 
   if (d.extract_completed_at) {
     const views = readCutViews(readCutsOfFile(d));
+    // The cuts that make the file partial; the details only (icons and
+    // small pictures the size gate skipped: DETAIL_ONLY_CUT_REASONS) stay
+    // in `cuts` but alone leave it indexed.
+    const partial = views.filter((v) => cutMakesPartial(v.key));
     // A stored map with no entry this rule reads is still a cut said (the
-    // SQL form tests the map only): partial, with the generic sentence.
-    if (views.length > 0 || hasReadCut(d.read_cut)) {
+    // SQL form tests the map's keys only): partial, with the generic
+    // sentence.
+    if (partial.length > 0 || hasPartialReadCut(d.read_cut)) {
       const ocr = views.find((v) => v.key === 'ocr_pages');
       const pics = picturesLeftOut(d);
       return {
         state: 'partial',
         hint:
-          views.map((v) => v.hint).join(' ') ||
+          partial.map((v) => v.hint).join(' ') ||
           'The file was read in part. Read it again to see what was left out.',
         cuts: views,
         ...(ocr ? { pages: { read: ocr.read, total: ocr.total ?? ocr.read } } : {}),
         ...(pics ? { pictures: pics } : {}),
       };
     }
+    const details = views.length > 0 ? { cuts: views } : {};
     if (d.indexing_applied === 'local') {
-      return { state: 'indexed', reason: 'local_only', hint: HINTS.local_only };
+      return { state: 'indexed', reason: 'local_only', hint: HINTS.local_only, ...details };
     }
-    return { state: 'indexed' };
+    return { state: 'indexed', ...details };
   }
   return { state: 'pending' };
 }

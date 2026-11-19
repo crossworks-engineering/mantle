@@ -263,6 +263,15 @@ whole: a reindex runs in the caller's scope, where the edit check lets a write
 clear a key only the brain sets, never change it. The next read says its
 cuts again, each key replacing its entry.
 
+Two cuts are details only (the owner's call, 2026-11-19): `pictures_small`
+and `pictures_tiny`, icons, bullets and small logos the size gate skipped.
+They stay in a file's `cuts` with their sentence (file_get, node_read), but
+alone they leave the file `indexed`, never count for the partial filter of
+file_list or the stale list, and push nothing; a partial file's hint leaves
+them out. Every other cut makes the file `partial`
+(`DETAIL_ONLY_CUT_REASONS` in `read-cut.ts`, the SQL form
+`readCutMakesPartialSql`).
+
 The cuts said today, each with its key:
 
 | Key                                                                                                                      | Where                                                                                                                                                                                                   |
