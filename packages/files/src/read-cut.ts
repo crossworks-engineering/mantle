@@ -228,7 +228,17 @@ export function addReadCut(a: ReadCutValue | undefined, b: ReadCutValue): ReadCu
 
 /** The views of a stored map, in key order. */
 export function readCutViews(cuts: ReadCuts): ReadCutView[] {
+  // The folded-in entries first, in the order the file status said them
+  // before (a scan's pages, the pictures kept, a book's page pictures), then
+  // the readers' cuts by key.
+  const rank = (k: string) => {
+    const i = FOLDED_FIRST.indexOf(k);
+    return i < 0 ? FOLDED_FIRST.length : i;
+  };
   return Object.keys(cuts)
-    .sort()
+    .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0))
     .map((key) => ({ key, ...cuts[key]!, hint: readCutHint(key, cuts[key]!) }));
 }
+
+/** The entries extraction-status.ts folds in from `ocr` and `data.images`. */
+const FOLDED_FIRST: readonly string[] = ['ocr_pages', 'pictures', 'page_pictures'];

@@ -74,7 +74,7 @@ export type FileProcessingExtraction = {
    *  only (`pictures_small`, `pictures_tiny`: icons and small pictures the
    *  size gate skipped), which are no reason for a partial badge. Each cut:
    *  its key (`sheet_rows`, `text_store`, `pictures_small`, `ocr_pages`,
-   *  ...), the unit, how many were read of how many (`atLeast`: the total
+   *  `pictures`, `page_pictures`, ...), the unit, how many were read of how many (`atLeast`: the total
    *  is a lower bound), the limit, and its own sentence. */
   cuts?: FileReadCut[];
 };

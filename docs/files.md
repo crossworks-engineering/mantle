@@ -243,8 +243,10 @@ one entry per kind of cut by its key:
 and the cap (`limit`). A file with any entry is `partial`, and
 `extraction.cuts` lists each with its sentence (the `hint` is them all):
 "5,000 of 12,000 rows are in its text ...", "64 of 120 sheets ...". The
-scan's pages and the pictures kept (`data.images`) are entries of the same
-list (`ocr_pages`, `pictures`), so there is one model.
+scan's pages and the pictures left out (`data.images`, by part) are entries
+of the same list, said first (`ocr_pages`; `pictures`, the embedded part;
+`page_pictures`, a book's pages left to vision with no page picture yet,
+G1), so there is one model.
 
 How a cut reaches the node: a reader calls `noteReadCut` in the sink of the
 read (`read-cut-sink.ts`, async-local). The extractor opens one per node and
