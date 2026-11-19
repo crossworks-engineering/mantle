@@ -420,6 +420,7 @@
     "GET /api/shell": {
       "none": "Screen data: it only draws a screen, and other tools hold the facts"
     },
+    "GET /api/sidecar/events": { "none": "outside: the Sync sidecar calls this" },
     "GET /api/sidecar/files": { "none": "outside: the Sync sidecar calls this" },
     "GET /api/sidecar/state": { "none": "outside: the Sync sidecar calls this" },
     "GET /api/sidecar/state/:key": { "none": "outside: the Sync sidecar calls this" },
@@ -973,7 +974,9 @@
     "POST /api/sidecar/files/forget": { "none": "outside: the Sync sidecar calls this" },
     "POST /api/sidecar/files/relink": { "none": "outside: the Sync sidecar calls this" },
     "POST /api/sidecar/files/remove": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/files/stub": { "none": "outside: the Sync sidecar calls this" },
     "POST /api/sidecar/mail/accounts": { "none": "outside: the Sync sidecar calls this" },
+    "POST /api/sidecar/mail/attachment": { "none": "outside: the Sync sidecar calls this" },
     "POST /api/sidecar/mail/gate": { "none": "outside: the Sync sidecar calls this" },
     "POST /api/sidecar/mail/ingest": { "none": "outside: the Sync sidecar calls this" },
     "POST /api/sidecar/mail/run": { "none": "outside: the Sync sidecar calls this" },
