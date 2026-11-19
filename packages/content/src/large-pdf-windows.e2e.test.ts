@@ -199,7 +199,7 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       const run = await readBook(bytes, file);
       expect(col(run, 'Pages', 'Page')).toEqual([1, 2, 3, 4, 5, 6, 7]);
       expect(col(run, 'Pages', 'Method')).toEqual(Array(7).fill('text'));
-      expect(run.counts).toMatchObject({ vision: 0, ocr: 0 });
+      expect(run.counts).toMatchObject({ vision: 0, scan: 0 });
       expect(run.write!.pictures ?? []).toEqual([]);
       const index = tab(run, 'Tables')!;
       expect(index.rows.length).toBeGreaterThanOrEqual(3);
