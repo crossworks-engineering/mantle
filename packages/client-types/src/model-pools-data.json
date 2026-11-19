@@ -2019,6 +2019,69 @@
     "note": "busier than most of the ranked field; free tier: rate-limited, use as a fallback not a default"
   },
   {
+    "pool": "translator",
+    "position": 0,
+    "name": "Google: Gemini 3.1 Flash Lite",
+    "vendor": "Google",
+    "routes": [
+      {
+        "provider": "openrouter",
+        "model": "google/gemini-3.1-flash-lite"
+      }
+    ],
+    "pricing": {
+      "inputPerM": 0.25,
+      "outputPerM": 1.5,
+      "currency": "USD",
+      "capturedAt": "2026-11-19T00:00:00.000Z",
+      "source": "openrouter"
+    },
+    "rating": 5,
+    "note": "the shipped default for this pool (owner's pick 2026-11-19); 1M context, 65,536 output tokens"
+  },
+  {
+    "pool": "translator",
+    "position": 1,
+    "name": "Mistral: Mistral Small 2603",
+    "vendor": "Mistral",
+    "routes": [
+      {
+        "provider": "openrouter",
+        "model": "mistralai/mistral-small-2603"
+      }
+    ],
+    "pricing": {
+      "inputPerM": 0.15,
+      "outputPerM": 0.6,
+      "currency": "USD",
+      "capturedAt": "2026-11-19T00:00:00.000Z",
+      "source": "openrouter"
+    },
+    "rating": 4,
+    "note": "the shipped fallback: takes a part only when the primary fails it; 262k context"
+  },
+  {
+    "pool": "translator",
+    "position": 2,
+    "name": "Mistral: Mistral Medium 3.5",
+    "vendor": "Mistral",
+    "routes": [
+      {
+        "provider": "openrouter",
+        "model": "mistralai/mistral-medium-3-5"
+      }
+    ],
+    "pricing": {
+      "inputPerM": 1.5,
+      "outputPerM": 7.5,
+      "currency": "USD",
+      "capturedAt": "2026-11-19T00:00:00.000Z",
+      "source": "openrouter"
+    },
+    "rating": 4,
+    "note": "the shipped high model: quality 'high' only, for terminology or style work"
+  },
+  {
     "pool": "decider",
     "position": 0,
     "name": "TypeSafe: Jev Latest",

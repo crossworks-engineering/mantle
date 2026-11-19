@@ -117,6 +117,7 @@ describe('mcpOnly builtins', () => {
         'telegram_pair',
         'telegram_pending',
         'telegram_react',
+        'translator_settings',
         'tree_folder_delete',
         'worker_group_ensure',
         'worker_group_list',

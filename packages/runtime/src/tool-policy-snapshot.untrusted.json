@@ -22,6 +22,7 @@
   "present_restore",
   "present_update",
   "telegram_pending",
+  "translate",
   "web_crawl",
   "web_fetch",
   "web_map",

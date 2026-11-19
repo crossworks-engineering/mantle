@@ -151,6 +151,14 @@ export const MODEL_POOLS: readonly ModelPoolDef[] = [
     modality: TEXT_OUT,
   },
   {
+    id: 'translator',
+    label: 'Translator',
+    description:
+      'Translates text and items for the translate tool. A long text goes in parts sized by the model\u2019s output limit, so a large output limit means fewer parts. The worker also names a fallback model and a high-quality model.',
+    group: 'workers',
+    modality: TEXT_OUT,
+  },
+  {
     id: 'decider',
     label: 'Decider (typed decisions)',
     description:

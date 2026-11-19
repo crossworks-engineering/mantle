@@ -355,6 +355,8 @@
   "tool_catalog": "read",
   "tool_group_ensure": "write",
   "tool_group_list": "read",
+  "translate": "write",
+  "translator_settings": "write",
   "tree_folder_create": "write",
   "tree_folder_delete": "delete",
   "tree_folder_update": "write",

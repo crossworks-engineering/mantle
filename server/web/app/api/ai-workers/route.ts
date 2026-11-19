@@ -44,6 +44,7 @@ const KIND = z.enum([
   'narrator',
   'suggester',
   'decider',
+  'translator',
 ]);
 
 /** Connection/route fields shared by create + patch (all optional on patch). */

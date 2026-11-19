@@ -21,6 +21,9 @@ The assistant cannot change workers. Set them here. Agents that hold the Media w
 
 - "Read the text in this photo."
 - "Make an image of a red barn at sunset."
+- "Translate this spec into German and save it."
+
+The **Translator** translates text or an item (a page, a note, a file, an email) into another language. A long text is translated in parts, every part in order, so nothing is left out; if a part cannot be translated the whole request fails and says so, it never hands back a shortened text. With save, it makes a new copy beside the original, for example "Spec (German)": a note stays a note, a page stays a page, anything else becomes a page. It costs nothing until someone asks for a translation: nothing starts it by itself. It runs on its own model, sends a part to its fallback model only when the main model fails that part, and uses its high-quality model only when you ask for careful terminology or style.
 
 ## Technical
 
@@ -29,4 +32,4 @@ The assistant cannot change workers. Set them here. Agents that hold the Media w
 - The extractor has extra settings: which node types it reads and a cost cap per node.
 - Chat-type workers can fail over to their backup route. Voice, transcription, vision and embedding workers ignore it.
 - The decider's privacy is `zdr` (zero data retention: the provider keeps nothing) or `no_training`; the stricter one wins, and a call never retries with less. Its model pool keeps Jev as the default and `perplexity/pplx-decider-v1.2` as the second choice, and refuses models that cannot take its request.
-- Tools: `synthesize_speech`, `extract_from_image`, `summarize_text`, `generate_image`.
+- Tools: `synthesize_speech`, `extract_from_image`, `summarize_text`, `translate`, `generate_image`. Over MCP, an Admin user with the Settings area reads or sets the Translator's models with `translator_settings`.

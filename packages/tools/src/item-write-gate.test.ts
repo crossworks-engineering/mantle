@@ -61,6 +61,7 @@ const READS_ITS_ITEM: ReadonlySet<string> = new Set([
   'peer_file_copy',
   'email_page',
   'app_import',
+  'translate',
 ]);
 
 /**
@@ -108,6 +109,7 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
   ],
   ['note_from_file', 'reads the source; the note is a create'],
   ['note_from_page', 'reads the source; the note is a create'],
+  ['translate', 'reads the source; a saved copy is a create'],
   ['page_create', "a create: the folder's create check is the database's"],
   ['page_from_journal', 'reads the entries; the page is a create'],
   ['present_export', 'reads the canvas it exports; the file it saves is a create'],

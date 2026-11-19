@@ -11,6 +11,7 @@
 import { type BuiltinToolDef } from './types';
 import { withPolicyFlags } from './tool-policy';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
+import { TRANSLATE_TOOLS, TRANSLATOR_SETTINGS_TOOLS } from './builtins-translate';
 import { VIDEO_TOOLS } from './builtins-video';
 import { IMAGE_TOOLS } from './builtins-images';
 import { EVENT_TOOLS } from './builtins-events';
@@ -143,6 +144,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Saskia's agency to a configured ai_workers row — TTS, vision,
   // summarizer.
   ...WORKER_DELEGATION_TOOLS,
+  // translate: the Translator worker's one tool (builtins-translate.ts).
+  ...TRANSLATE_TOOLS,
   // video_ingest: an uploaded video or audio file (its file id) to a
   // timestamped transcript page; the parser service takes the audio out,
   // speech to text does the rest. Uploads only, no links. Owner-only
@@ -316,6 +319,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...GATEWAY_SERVICE_TOOLS,
   ...SERVICE_TOOLS,
   ...MODEL_CHECK_TOOLS,
+  // The Translator's models, set over MCP (mcpOnly).
+  ...TRANSLATOR_SETTINGS_TOOLS,
   // The Sync service's accounts (sync_*): an Admin user's client runs them
   // as the account screens do.
   ...SYNC_TOOLS,

@@ -7785,6 +7785,97 @@
   }
  },
  {
+  "name": "translate",
+  "description": "Translate text, or an item by id (page, note, file, email, any item with text), into another language and return the translation. Every word is translated: a long text goes in parts sized to the model; a part that fails fails the call, never a shortened text. Markdown, tables, code, numbers, units, names and links stay as they are. `save: true` also makes a new copy beside the original, e.g. \"Spec (German)\": a note stays a note, a page a page, anything else becomes a page; the original is never changed. Paid model work (the Translator worker): translate only what the user asked for.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string",
+     "description": "The text to translate. Provide this OR `node_id`, not both."
+    },
+    "node_id": {
+     "type": "string",
+     "description": "The id of the item to translate (a page, note, file, email or any item with text), from search_nodes or tree_list. Provide this OR `text`, not both."
+    },
+    "to": {
+     "type": "string",
+     "description": "The language to translate into, by name or code: \"German\", \"de\", \"pt-BR\"."
+    },
+    "from": {
+     "type": "string",
+     "description": "The language of the source, when known. Omit it and the model detects it."
+    },
+    "save": {
+     "type": "boolean",
+     "description": "Also save the translation as a new item beside the original (the original is never changed)."
+    },
+    "title": {
+     "type": "string",
+     "description": "The title of the saved copy. Default: the original’s title with the language, e.g. \"Spec (German)\"."
+    },
+    "quality": {
+     "type": "string",
+     "enum": [
+      "standard",
+      "high"
+     ],
+     "description": "'high' runs the translation on the Translator's stronger, dearer model (about six times the price): only when the user asks for careful terminology or style."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "to"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "translate",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "translator_settings",
+  "description": "Read or set the Translator worker's models (Settings, AI workers): `model` runs every translation, `fallback_model` takes a part only when `model` fails it, `high_model` runs a call that asks `quality: 'high'`. With no argument it only reads them. Each model is checked against the box policy and the provider's catalog before it is set; `''` clears the fallback or the high model. `part_tokens` asks for smaller parts (0 clears it).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "description": "The worker's own model id."
+    },
+    "fallback_model": {
+     "type": "string",
+     "description": "The model a failed part goes to; '' for none."
+    },
+    "high_model": {
+     "type": "string",
+     "description": "The model for quality 'high'; '' for none."
+    },
+    "part_tokens": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "Source tokens per part, below what the model holds; 0 for the model’s own."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "translator_settings",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "tree_folder_create",
   "description": "Create a folder for one kind (notes, tasks, ...), at the top level or inside `parent_id`, with an icon and a colour when asked for. Folders nest at most 3 deep, and a name must be unique in its folder (case and punctuation do not count). Returns the folder.",
   "inputSchema": {

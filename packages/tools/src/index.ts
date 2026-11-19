@@ -185,6 +185,7 @@ export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';
 export { SANDBOX_TOOLS, SANDBOX_TOOL_SLUGS } from './builtins-sandbox';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
 export { WORKER_DELEGATION_TOOLS, buildSummarizeTextInput } from './builtins-workers';
+export { TRANSLATE_TOOLS, TRANSLATOR_SETTINGS_TOOLS } from './builtins-translate';
 export { EXPORT_TOOLS } from './builtins-export';
 export { DOCUMENT_TOOLS, PDF_TOOL_OPS } from './builtins-documents';
 export { ACCESS_TOOLS } from './builtins-access';

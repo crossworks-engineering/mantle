@@ -303,6 +303,9 @@ const CHAT_CATALOG_KINDS = new Set([
   // `decider` pool refuses a chat model and a decision model that cannot
   // take the request (decision-models.ts).
   'decider',
+  // The translator runs a plain chat model; its pool's contract (text out)
+  // is its fit check.
+  'translator',
 ]);
 
 /**

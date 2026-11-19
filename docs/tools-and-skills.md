@@ -132,7 +132,7 @@ The seed taxonomy is pre-drawn: the `*_TOOLS` arrays in
 | `research`      | `RESEARCH_TOOLS`                  | `web_search`                                                                                                             |
 | `email`         | `EMAIL_TOOLS`                     | send/list/get                                                                                                            |
 | `persona`       | `PERSONA_TOOLS`                   | `update_persona`                                                                                                         |
-| `media-workers` | `WORKER_DELEGATION_TOOLS`         | TTS/vision/summarize/image                                                                                               |
+| `media-workers` | `WORKER_DELEGATION_TOOLS`, `TRANSLATE_TOOLS` | TTS/vision/summarize/translate/image                                                                          |
 | `delegation`    | `invoke_agent`                    |                                                                                                                          |
 | `terminal`      | `TERMINAL_TOOLS`                  | `run_terminal`, coder only                                                                                               |
 | `tool-results`  | `TOOL_RESULT_TOOLS`               | `read_result`, always offered by the loop anyway                                                                         |

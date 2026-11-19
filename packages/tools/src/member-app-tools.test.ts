@@ -29,6 +29,7 @@ const REFUSED = [
   'read_result',
   'search_chunks',
   'summarize_text',
+  'translate',
   'extract_from_image',
   'model_call',
   'circuit_verify',

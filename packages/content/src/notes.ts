@@ -201,6 +201,9 @@ export type CreateNoteInput = {
   title: string;
   content: string;
   tags?: string[];
+  /** Extra `data` keys stamped on the new note (provenance: a translation
+   *  names its original, `translationOf`). `content` always wins. */
+  data?: Record<string, unknown>;
 };
 
 export async function createNote(ownerId: string, input: CreateNoteInput): Promise<NoteRow> {
@@ -219,7 +222,7 @@ export async function createNote(ownerId: string, input: CreateNoteInput): Promi
           type: 'note',
           title: input.title.trim().slice(0, 200) || 'Untitled note',
           path: NOTES_ROOT_LABEL,
-          data: { content: input.content ?? '' },
+          data: { ...(input.data ?? {}), content: input.content ?? '' },
           tags: dedupeTags(input.tags ?? []),
         })
         .returning(),
@@ -228,7 +231,7 @@ export async function createNote(ownerId: string, input: CreateNoteInput): Promi
   return rowOf(row);
 }
 
-export type UpdateNoteInput = Partial<CreateNoteInput>;
+export type UpdateNoteInput = Partial<Omit<CreateNoteInput, 'data'>>;
 
 /** A note whose words the brain authored and embeds itself, from its topic and
  *  summary (digestEmbedText): a conversation digest or a chat archive. The

@@ -753,6 +753,8 @@ Workers have **four invocation paths**, deliberately:
        reference.
      - `summarize_text(text | node_id, focus?, max_words?)`, run the
        default summarizer worker over inline text or a note body.
+     - `translate(text | node_id, to, from?, save?, title?, quality?)`,
+       run the Translator worker (section 5d′).
      - `generate_image(prompt, size?, style?, quality?, negative_prompt?)`
 , image generation as documented above.
 3. **UI test buttons**: `/settings/ai-workers/<id>` has per-kind
@@ -776,6 +778,62 @@ event-driven invocations of those same services.** All four paths
 can run for the same worker without conflicting.
 
 ---
+
+## 5d′. The Translator (`translator`, 2026-11-19)
+
+One tool, `translate` (`packages/tools/src/builtins-translate.ts`), in the
+`media-workers` group, so the persona and every workspace assistant that
+holds that group can call it, and on the MCP surface. Owner's rules:
+
+- **Called, never started by itself.** No trigger, timer or sweep runs it.
+  A paid call happens only when a person or an agent asks.
+- **Everything is translated.** The text is cut into parts at block ends
+  (paragraphs, whole tables, whole code blocks; a part starts at a heading
+  where it can), and the parts joined are the text, byte for byte. Each
+  part is translated, three at a time, and the answers are joined in the
+  text's order. A part that fails is tried again; an answer cut at the
+  output limit is cut in two and each half done again; a part that still
+  fails fails the whole call, with which part and why. A shortened text is
+  never returned.
+- **Part size is the model's own.** From the live OpenRouter catalog: the
+  output limit (`top_provider.max_completion_tokens`, `outputLimitFor` in
+  `@mantle/tracing`) and the context window. A part's answer must fit the
+  output limit even when the target language takes 2.5 times the tokens of
+  the source; the part, the prompt and the answer must fit the window. An
+  unknown model gets a careful 8,192-token output limit. `params.part_tokens`
+  asks for smaller parts, never larger ones.
+- **Code is never sent.** Each fenced code block goes to the model as a
+  stand-in line (`@@CODE1@@`) and is put back byte for byte; an answer that
+  loses or repeats a stand-in is not taken.
+- **Layout kept.** The rules ask for Markdown, tables, inline code, links,
+  numbers, units and names unchanged. The text is fenced as data.
+- **Models.** The worker's own model runs every part (shipped:
+  `google/gemini-3.1-flash-lite`). `params.fallback_model` (shipped:
+  `mistralai/mistral-small-2603`) takes a part only when the primary fails
+  it: an error, a refusal, an empty or far too short answer, or one cut at
+  the output limit. `params.high_model` (shipped:
+  `mistralai/mistral-medium-3-5`) runs a call that asks `quality: 'high'`
+  instead of the worker's model. No part is ever sent twice once it has a
+  good answer. The models are ids on the worker's own provider.
+- **Rights.** The item is read in the caller's scope (an item it does not
+  read answers as a random id, before any spend); mail needs the Connectors
+  area of the Admin workspace. `save` writes through the content library,
+  whose writes the database checks for the caller.
+- **The copy.** A note stays a note, a page a page, anything else (a file,
+  an email, pasted text) becomes a page. On the owner's own surface it goes
+  beside the original (the same folder); elsewhere at the top level, as
+  filing in a folder is the owner's. It carries `data.translationOf`
+  (`{ id, to, from }`). The original is never changed.
+- **No translator worker.** The tool runs on the summarizer worker's route
+  with the translation rules (never the summarizer's own prompt or params).
+- **Required worker.** It is made on existing brains by the boot reconcile
+  (an OpenRouter key needed) and costs nothing until used.
+
+Settings: the AI workers screen (the worker's model and params), and over
+MCP `translator_settings` (Settings area of the Admin workspace): reads the
+three models and `part_tokens`, or sets any of them after the box policy and
+catalog checks. The Control Center's fleet `workerModel` sets the worker's
+model too, as for every shipped kind.
 
 ## 5e. Embedding: the cross-cutting kind
 
