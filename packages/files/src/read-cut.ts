@@ -34,7 +34,57 @@ export type ReadCutValue = {
   /** `total` is a lower bound: the reader stopped counting. */
   atLeast?: true;
   limit?: number;
+  /** A scan's pages (`ocr_pages`): the pages unread by why
+   *  (ScanUnreadReason), said in its sentence. */
+  why?: Readonly<Partial<Record<ScanUnreadReason, number>>>;
 };
+
+/** Why a page of a scanned PDF is unread (the Scan reader's read of a PDF
+ *  outside a book, @mantle/runtime scan-pdf.ts; docs/ai-workers.md). */
+export type ScanUnreadReason =
+  /** The Scan reader read it and the check judged the read bad. */
+  | 'bad_read'
+  /** The brain has no Scan reader it can use (no worker, no key). */
+  | 'no_scan_reader'
+  /** The provider gave no answer (the Scan reader, or vision on a figure),
+   *  or the figure's picture could not be drawn. */
+  | 'failed'
+  /** The page as a PDF is past what one call may send. */
+  | 'too_large'
+  /** The parser could not cut the page (or its window). */
+  | 'not_cut'
+  /** Not reached in the time a chat turn reads for. */
+  | 'time';
+
+export const SCAN_UNREAD_REASONS: readonly ScanUnreadReason[] = [
+  'bad_read',
+  'no_scan_reader',
+  'failed',
+  'too_large',
+  'not_cut',
+  'time',
+];
+
+const SCAN_UNREAD_SAID: Readonly<Record<ScanUnreadReason, (n: string) => string>> = {
+  bad_read: (n) => `${n} read badly by the Scan reader (kept out rather than indexed wrong)`,
+  no_scan_reader: (n) =>
+    `${n} not read: this brain has no Scan reader (an OpenRouter key and the Scan reader worker)`,
+  failed: (n) => `${n} not read: the reader gave no answer`,
+  too_large: (n) => `${n} too large to send to the Scan reader`,
+  not_cut: (n) => `${n} the parser could not cut`,
+  time: (n) => `${n} not reached in the time of this answer`,
+};
+
+/** The pages unread by why, as one clause for a person and an agent ("2
+ *  read badly by the Scan reader ...; 1 the parser could not cut"); '' for
+ *  none. A reason this build does not know is left out. */
+export function scanUnreadSentence(
+  unread: Readonly<Partial<Record<string, unknown>>> | null | undefined,
+): string {
+  return SCAN_UNREAD_REASONS.filter((r) => isCount(unread?.[r]) && (unread![r] as number) > 0)
+    .map((r) => SCAN_UNREAD_SAID[r](n(unread![r] as number)))
+    .join('; ');
+}
 
 /** The stored map: key (the reason, or `<reason>:<part>`) to its cut. */
 export type ReadCuts = Record<string, ReadCutValue>;
@@ -66,7 +116,10 @@ const pictures =
 /** The sentence of each known cut, by its reason (the key before any `:`). */
 const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   // A scan read in part (the PDF OCR's `ocr.pages_*`, folded in here).
-  ocr_pages: (c) => `Only ${ofTotal(c)} pages were read. The other pages are not in search.`,
+  ocr_pages: (c) => {
+    const why = scanUnreadSentence(c.why);
+    return `Only ${ofTotal(c)} pages were read${why ? ` (${why})` : ''}. The other pages are not in search.`;
+  },
   // Pictures the PDF reader left out (`data.images`, folded in here).
   pictures: (c) =>
     `${ofTotal(c)} pictures kept. The others are not in search: a raised picture cap and a new read fetch those the cap left out.`,

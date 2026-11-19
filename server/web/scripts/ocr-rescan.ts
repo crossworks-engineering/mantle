@@ -1,10 +1,11 @@
 /**
  * Re-OCR scanned PDFs the page-marker bug indexed wrong: the CLI face of
  * lib/maintenance/ocr-rescan.ts (read its header first). SPENDS on --apply:
- * each node runs the normal OCR path, then a summary and an embedding.
+ * each node runs the normal read of a scanned PDF (the Scan reader, every
+ * page), then a summary and an embedding. Person-started only.
  *
  * Usage:
- *   pnpm ocr:rescan                      # DRY RUN: counts, pages, models, est. USD
+ *   pnpm ocr:rescan                      # DRY RUN: counts, pages, workers, est. USD
  *   pnpm ocr:rescan --limit=3            # dry run over the first 3 only
  *   pnpm ocr:rescan --apply --limit=3    # do 3 first, then look at the result
  *   pnpm ocr:rescan --apply              # all of them, in batches
@@ -19,12 +20,9 @@ import { env } from '@mantle/config';
 import { closeDb, resolveSingleOwnerId } from '@mantle/db';
 import {
   countPages,
-  estimateOcrCost,
   findRescanCandidates,
   indexedNow,
-  ocrWorkers,
-  pageTokensFromHistory,
-  priceOf,
+  printScanEstimate,
   runBatch,
 } from '../lib/maintenance/ocr-rescan';
 
@@ -34,9 +32,6 @@ const flag = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.spl
 const limit = flag('limit') ? Math.max(1, Number(flag('limit'))) : null;
 const batchSize = Math.max(1, Number(flag('batch') ?? 5));
 const batchTimeoutMin = Math.max(1, Number(flag('batch-timeout') ?? 30));
-
-const usd = (v: number | null) =>
-  v === null ? 'unknown (no price for this model)' : `$${v.toFixed(2)}`;
 
 async function main() {
   const ownerId = env('ALLOWED_USER_ID') || (await resolveSingleOwnerId());
@@ -65,43 +60,7 @@ async function main() {
     `  pages: ${totalPages} over ${pages.size} file(s); ${unreadable.length} file(s) with missing or unreadable bytes (skipped by the extractor, no spend)`,
   );
 
-  const workers = await ocrWorkers(ownerId);
-  if (!workers.document && !workers.vision) {
-    console.log('  no document or vision worker: OCR cannot run here. Nothing to do.');
-    return;
-  }
-  const nativePrice = workers.document
-    ? await priceOf(ownerId, workers.document.provider, workers.document.model)
-    : null;
-  const visionPrice = workers.vision
-    ? await priceOf(ownerId, workers.vision.provider, workers.vision.model)
-    : null;
-  const tokens = await pageTokensFromHistory();
-  const est = estimateOcrCost({
-    pagesPerDoc,
-    tokens,
-    nativePrice,
-    nativeAvailable: Boolean(workers.document?.native),
-    visionPrice,
-  });
-  const priceLine = (p: typeof nativePrice) =>
-    p ? `$${p.inPerM}/M in, $${p.outPerM}/M out (${p.source})` : 'no known price';
-  if (workers.document) {
-    console.log(
-      `  document worker: ${workers.document.provider} ${workers.document.model}, native PDF ${workers.document.native ? 'yes' : 'no'}, ${priceLine(nativePrice)}`,
-    );
-  }
-  if (workers.vision) {
-    console.log(
-      `  vision worker (page OCR fallback): ${workers.vision.provider} ${workers.vision.model}, ${priceLine(visionPrice)}`,
-    );
-  }
-  console.log(`  tokens per page: ${tokens.in} in, ${tokens.out} out (${tokens.source})`);
-  if (est.native) console.log(`  native: ${est.native.calls} call(s), ${usd(est.native.usd)}`);
-  console.log(`  page OCR: ${est.raster.calls} call(s), ${usd(est.raster.usd)}`);
-  console.log(
-    `  ESTIMATE: expected ${usd(est.expectedUsd)}, worst case ${usd(est.worstUsd)} (OCR only; summary + embedding add one small text call per file)`,
-  );
+  if (!(await printScanEstimate(ownerId, pagesPerDoc, (l) => console.log(l)))) return;
   console.log(`  ids: ${chosen.map((c) => c.id).join(', ')}`);
 
   if (!apply) {

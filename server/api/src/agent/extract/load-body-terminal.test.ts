@@ -47,6 +47,7 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
 vi.mock('./file-bytes', () => ({ loadFileBytes: h.loadFileBytes, tryUnlockPdf: h.tryUnlockPdf }));
 vi.mock('./images', () => ({
   ocrIngestPdfNode: h.ocrIngestPdfNode,
+  nativeReadPdfNode: vi.fn(async () => ({ text: null })),
   visionIngestImageNode: h.visionIngestImageNode,
   composeImageBody: vi.fn((_d: unknown, text: string) => text),
 }));

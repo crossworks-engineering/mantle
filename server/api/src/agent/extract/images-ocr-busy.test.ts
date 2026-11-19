@@ -1,34 +1,34 @@
 /**
- * The scanned-PDF OCR pass (`ocrIngestPdfNode`) and the parser's answers.
+ * The scanned-PDF read (`ocrIngestPdfNode`: the Scan reader, page by page,
+ * @mantle/runtime readScannedPdf) and the parser's answers, and the native
+ * read of a typed PDF (`nativeReadPdfNode`).
  *
- * The render runs in the parser (POST /pdf/rasterize). What the pass does
- * with each answer:
- *  - the parser busy or unavailable, or a first refusal (timeout, crash):
- *    rethrown, so the extract job fails and pg-boss retries it (the count
- *    of a refusal is on the node, so the retry's second one is terminal);
- *  - `too_large`: a verdict on the document, recorded as `tooLarge`
- *    (pdf_too_large);
+ * What the scan pass does with each answer of the parser:
+ *  - busy or unavailable, or a first refusal (timeout, crash): rethrown, so
+ *    the extract job fails and pg-boss retries it (the count of a refusal is
+ *    on the node, so the retry's second one is terminal);
  *  - the second refusal of the same bytes (`terminal`): rethrown, so the
  *    caller records document_unreadable;
- *  - a reader's `failed`: recorded as `rasterizeError`, the non-terminal
- *    pdf_unreadable skip.
- * And the native read is not paid for again when the node says it already
- * found nothing in these bytes (`data.native_pdf.empty_sha256`); a read
- * that found nothing is written there before the render runs (the DB test
- * images-native-empty.db.test.ts follows it through a real database).
+ *  - `too_large`: a verdict on the document, `tooLarge` (pdf_too_large);
+ *  - a password: `encrypted`;
+ *  - a reader's `failed`: `rasterizeError`, the non-terminal pdf_unreadable.
+ * And the pages each window read are kept on the node (`data.ocr.resume`),
+ * so a retry goes on after them and pays for no page twice; the end puts
+ * the final `ocr` (true, or the pages read and unread by why) in its place.
  *
- * File bytes, tracing, the document worker and the parser client are
- * stubbed; the catch under test is real.
+ * File bytes, tracing, the workers and the page read are stubbed; the
+ * branching under test is real.
  */
 
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ParserError } from '@mantle/files';
+import type { ScanPage } from '@mantle/runtime/agent';
 
 const h = vi.hoisted(() => ({
   loadFileBytes: vi.fn(),
   runDocumentWorker: vi.fn(),
-  parserRasterizePdf: vi.fn(),
+  readScannedPdf: vi.fn(),
   /** What each db.update(...).set(...) was given. */
   sets: [] as unknown[],
 }));
@@ -56,15 +56,15 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
 });
 vi.mock('@mantle/runtime/agent', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runtime/agent')>();
-  return { ...actual, runDocumentWorker: h.runDocumentWorker };
-});
-vi.mock('@mantle/files', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@mantle/files')>();
-  return { ...actual, parserRasterizePdf: h.parserRasterizePdf };
+  return {
+    ...actual,
+    runDocumentWorker: h.runDocumentWorker,
+    readScannedPdf: h.readScannedPdf,
+  };
 });
 vi.mock('./file-bytes', () => ({ loadFileBytes: h.loadFileBytes }));
 
-import { ocrIngestPdfNode } from './images';
+import { nativeReadPdfNode, ocrIngestPdfNode } from './images';
 
 let seq = 0;
 /** Fresh bytes per test. */
@@ -87,7 +87,7 @@ const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 
 /** Whether a value (a drizzle SQL object: circular) holds `want` anywhere. */
 function holds(v: unknown, want: string, seen = new Set<unknown>()): boolean {
-  if (v === want) return true;
+  if (typeof v === 'string' && v.includes(want)) return true;
   if (!v || typeof v !== 'object' || seen.has(v)) return false;
   seen.add(v);
   return Object.values(v as Record<string, unknown>).some((x) => holds(x, want, seen));
@@ -97,19 +97,21 @@ function parserError(code: ParserError['code'], terminal = false): ParserError {
   return new ParserError(code, `parser ${code}`, { retryable: !terminal, terminal });
 }
 
+const page = (n: number, method: ScanPage['method'], text = '', why?: ScanPage['why']) =>
+  ({ page: n, method, text, ...(why ? { why } : {}) }) as ScanPage;
+
+let bytes: Buffer;
 beforeEach(() => {
   vi.clearAllMocks();
   h.sets.length = 0;
-  h.loadFileBytes.mockResolvedValue({ bytes: pdfBytes(), filename: 'scan.pdf' });
-  // The provider cannot read a PDF natively, so the pass falls through to
-  // the render.
-  h.runDocumentWorker.mockResolvedValue({ ran: false, text: '', note: 'no native PDF' });
+  bytes = pdfBytes();
+  h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
 });
 
-describe('ocrIngestPdfNode: the parser render', () => {
+describe('ocrIngestPdfNode: the parser', () => {
   for (const code of ['busy', 'unavailable', 'timeout', 'crashed'] as const) {
     it(`rethrows ${code} (retryable): the job fails and pg-boss retries it`, async () => {
-      h.parserRasterizePdf.mockRejectedValue(parserError(code));
+      h.readScannedPdf.mockRejectedValue(parserError(code));
       const err = await ocrIngestPdfNode(pdfNode(), 'o1').catch((e: unknown) => e);
       expect(err).toBeInstanceOf(ParserError);
       expect(err).toMatchObject({ code, retryable: true, terminal: false });
@@ -117,77 +119,184 @@ describe('ocrIngestPdfNode: the parser render', () => {
   }
 
   it('rethrows the second refusal of the same bytes (terminal)', async () => {
-    h.parserRasterizePdf.mockRejectedValue(parserError('timeout', true));
+    h.readScannedPdf.mockRejectedValue(parserError('timeout', true));
     const err = await ocrIngestPdfNode(pdfNode(), 'o1').catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ParserError);
     expect((err as ParserError).terminal).toBe(true);
   });
 
   it('records too_large as tooLarge, not a retry', async () => {
-    h.parserRasterizePdf.mockRejectedValue(parserError('too_large'));
+    h.readScannedPdf.mockRejectedValue(
+      new ParserError('too_large', 'parser too_large', { retryable: false, terminal: false }),
+    );
     const r = await ocrIngestPdfNode(pdfNode(), 'o1');
     expect(r).toMatchObject({ text: null, rasterizeError: null, tooLarge: 'parser too_large' });
   });
 
+  it('records a password as encrypted', async () => {
+    h.readScannedPdf.mockRejectedValue(
+      new ParserError('failed', 'qpdf: invalid password', { retryable: false, terminal: false }),
+    );
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
+    expect(r).toMatchObject({ text: null, encrypted: true, rasterizeError: null });
+  });
+
   it("records a reader's refusal as rasterizeError (pdf_unreadable)", async () => {
-    h.parserRasterizePdf.mockRejectedValue(
+    h.readScannedPdf.mockRejectedValue(
       new ParserError('failed', 'parser failed', { retryable: false, terminal: false }),
     );
     const r = await ocrIngestPdfNode(pdfNode(), 'o1');
     expect(r).toMatchObject({ text: null, rasterizeError: 'parser failed' });
   });
+
+  it('rethrows an error that is not the parser’s', async () => {
+    h.readScannedPdf.mockRejectedValue(new Error('db down'));
+    await expect(ocrIngestPdfNode(pdfNode(), 'o1')).rejects.toThrow('db down');
+  });
 });
 
-describe('ocrIngestPdfNode: the native read is paid for once', () => {
-  it('keeps a read that found nothing on the node, before the render runs', async () => {
-    const bytes = pdfBytes();
-    h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
+describe('ocrIngestPdfNode: the pages and their record', () => {
+  it('reads every page, with no cap, and marks a whole read `ocr: true`', async () => {
+    const pages = Array.from({ length: 25 }, (_, i) => page(i + 1, 'scan_reader', `text ${i + 1}`));
+    h.readScannedPdf.mockResolvedValue({ pages, pagesTotal: 25, ran: true, model: 'm' });
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
+    expect(r.text).toContain('[Page 25]\ntext 25');
+    expect(r).toMatchObject({ ran: true, pagesTotal: 25 });
+    expect(r.unread).toBeUndefined();
+    const last = h.sets[h.sets.length - 1];
+    expect(holds(last, 'scan_reader:mistral-ocr')).toBe(true);
+  });
+
+  it('says the pages unread by why, so the file shows partial', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'scan_reader', 'one'), page(2, 'unread', '', 'bad_read'), page(3, 'blank')],
+      pagesTotal: 3,
+      ran: true,
+      model: 'm',
+    });
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
+    expect(r.unread).toEqual({ bad_read: 1 });
+    const last = h.sets[h.sets.length - 1];
+    expect(holds(last, '"pages_read":2')).toBe(true);
+    expect(holds(last, '"bad_read":1')).toBe(true);
+  });
+
+  it('keeps each window on the node, with the sha256 of the bytes', async () => {
+    h.readScannedPdf.mockImplementation(
+      async (o: { onWindow: (p: ScanPage[], t: number) => Promise<void> }) => {
+        await o.onWindow([page(1, 'scan_reader', 'one')], 2);
+        await o.onWindow([page(2, 'scan_reader', 'two')], 2);
+        return {
+          pages: [page(1, 'scan_reader', 'one'), page(2, 'scan_reader', 'two')],
+          pagesTotal: 2,
+          ran: true,
+          model: 'm',
+        };
+      },
+    );
+    await ocrIngestPdfNode(pdfNode(), 'o1');
+    // Two windows kept, then the final text.
+    expect(h.sets).toHaveLength(3);
+    expect(holds(h.sets[0], sha256(bytes))).toBe(true);
+    expect(holds(h.sets[1], '"two"')).toBe(true);
+  });
+
+  it('goes on after the pages a try before kept, and pays for none again', async () => {
+    const resume = {
+      sha256: sha256(bytes),
+      total: 3,
+      pages: [
+        [1, 'scan_reader', '', 'kept one'],
+        [2, 'unread', 'bad_read', ''],
+      ],
+    };
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(3, 'scan_reader', 'three')],
+      pagesTotal: 3,
+      ran: true,
+      model: 'm',
+    });
+    const r = await ocrIngestPdfNode(pdfNode({ ocr: { resume } }), 'o1');
+    expect(h.readScannedPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ startPage: 3, pagesTotal: 3 }),
+    );
+    expect(r.text).toBe('[Page 1]\nkept one\n\n[Page 3]\nthree');
+    expect(r.unread).toEqual({ bad_read: 1 });
+  });
+
+  it('starts afresh when the kept pages are of other bytes', async () => {
+    h.readScannedPdf.mockResolvedValue({ pages: [], pagesTotal: 1, ran: false, model: null });
+    await ocrIngestPdfNode(
+      pdfNode({
+        ocr: { resume: { sha256: 'f'.repeat(64), total: 1, pages: [[1, 'text', '', 'x']] } },
+      }),
+      'o1',
+    );
+    expect(h.readScannedPdf.mock.calls[0]![0]).not.toHaveProperty('startPage');
+  });
+
+  it('a white file is a verdict (terminal), no Scan reader is none (read again)', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'blank'), page(2, 'blank')],
+      pagesTotal: 2,
+      ran: false,
+      model: null,
+    });
+    expect(await ocrIngestPdfNode(pdfNode(), 'o1')).toMatchObject({ text: null, ran: true });
+
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'unread', '', 'no_scan_reader')],
+      pagesTotal: 1,
+      ran: false,
+      model: null,
+    });
+    expect(await ocrIngestPdfNode(pdfNode(), 'o1')).toMatchObject({
+      text: null,
+      ran: false,
+      unread: { no_scan_reader: 1 },
+    });
+  });
+
+  it('every scanned page too large is the terminal tooLarge', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'unread', '', 'too_large'), page(2, 'blank')],
+      pagesTotal: 2,
+      ran: false,
+      model: null,
+    });
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
+    expect(r.tooLarge).toMatch(/too large|past the size/);
+  });
+});
+
+describe('nativeReadPdfNode: a typed PDF read through the model, paid for once', () => {
+  it('keeps a read that found nothing on the node', async () => {
     h.runDocumentWorker.mockResolvedValue({ ran: true, text: '', note: null, model: 'm' });
-    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
-
-    await ocrIngestPdfNode(pdfNode(), 'o1').catch(() => {});
-
-    expect(h.runDocumentWorker).toHaveBeenCalledTimes(1);
-    // One write, the marker: the render failed after it.
+    expect(await nativeReadPdfNode(pdfNode(), 'o1')).toEqual({ text: null });
     expect(h.sets).toHaveLength(1);
     expect(holds(h.sets[0], sha256(bytes))).toBe(true);
   });
 
-  it('skips the native read when the node says these bytes were read and found empty', async () => {
-    const bytes = pdfBytes();
-    h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
-    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
-
-    await ocrIngestPdfNode(pdfNode({ native_pdf: { empty_sha256: sha256(bytes) } }), 'o1').catch(
-      () => {},
-    );
-
+  it('skips the read when the node says these bytes were read and found empty', async () => {
+    await nativeReadPdfNode(pdfNode({ native_pdf: { empty_sha256: sha256(bytes) } }), 'o1');
     expect(h.runDocumentWorker).not.toHaveBeenCalled();
-    expect(h.parserRasterizePdf).toHaveBeenCalledTimes(1);
-    expect(h.sets).toHaveLength(0);
   });
 
-  it('reads again when the marker is for other bytes', async () => {
-    const bytes = pdfBytes();
-    h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
-    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
-
-    await ocrIngestPdfNode(pdfNode({ native_pdf: { empty_sha256: 'f'.repeat(64) } }), 'o1').catch(
-      () => {},
-    );
-
-    expect(h.runDocumentWorker).toHaveBeenCalledTimes(1);
-  });
-
-  it('runs it again when the first read did not run (no worker that reads PDFs)', async () => {
-    const bytes = pdfBytes();
-    h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
-    h.parserRasterizePdf.mockRejectedValue(parserError('busy'));
-
-    await ocrIngestPdfNode(pdfNode(), 'o1').catch(() => {});
-    await ocrIngestPdfNode(pdfNode(), 'o1').catch(() => {});
-
+  it('reads again when the marker is for other bytes, or the read did not run', async () => {
+    h.runDocumentWorker.mockResolvedValue({ ran: false, text: '', note: 'no native PDF' });
+    await nativeReadPdfNode(pdfNode({ native_pdf: { empty_sha256: 'f'.repeat(64) } }), 'o1');
+    await nativeReadPdfNode(pdfNode(), 'o1');
     expect(h.runDocumentWorker).toHaveBeenCalledTimes(2);
     expect(h.sets).toHaveLength(0);
+  });
+
+  it('persists and returns the text it read', async () => {
+    h.runDocumentWorker.mockResolvedValue({
+      ran: true,
+      text: 'Typed text.',
+      note: null,
+      model: 'm',
+    });
+    expect(await nativeReadPdfNode(pdfNode(), 'o1')).toEqual({ text: 'Typed text.' });
+    expect(h.sets).toHaveLength(1);
   });
 });

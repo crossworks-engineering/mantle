@@ -57,7 +57,7 @@ import {
 } from '@mantle/content/pipeline-asks';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { checkScanRead } from '@mantle/decisions';
-import { runScanReader, runVisionWorker } from '@mantle/runtime/agent';
+import { runScanReader, runVisionWorker, scanVerdictOf } from '@mantle/runtime/agent';
 import { step } from '@mantle/tracing';
 
 /** The prefix of the Model of a page row the Scan reader read: the honest
@@ -65,9 +65,9 @@ import { step } from '@mantle/tracing';
 export const SCAN_READER_MODEL_PREFIX = 'scan_reader:';
 
 /** Under this many characters (not spaces) with a figure found, a scanned
- *  page is mostly a figure: vision describes it (the book reader's old rule
- *  for a figure page, TEXT_MIN_CHARS). */
-export const FIGURE_TEXT_MAX_CHARS = 40;
+ *  page is mostly a figure (one rule for a book and the core's scans:
+ *  @mantle/runtime scan-pdf.ts). */
+export { FIGURE_TEXT_MAX_CHARS } from '@mantle/runtime/agent';
 
 /** The longest answer of one ask, in tokens: the fields alone, and the
  *  fields with the list part (PIPELINE_ASK_LIST_MAX items of a short text
@@ -181,28 +181,23 @@ export function pipelineAskOf(
           h.setError(out.note ?? 'no answer');
           return { ok: false, error: 'failed', reason: 'scan_reader_failed' };
         }
-        // Mostly a figure: the engine found a picture and next to no text.
-        // Vision describes it (a picture description, not a second read).
-        if (out.pictures > 0 && out.text.replace(/\s/g, '').length < FIGURE_TEXT_MAX_CHARS) {
+        // The verdict, the core's scanned PDFs' too (scanVerdictOf): mostly
+        // a figure (the engine found a picture and next to no text) goes on
+        // to vision (a picture description, not a second read); else the
+        // free check, with the decider asked where no free rule can vouch
+        // for the read (shadow: logged; live: it stands for `unverified`).
+        const v = await scanVerdictOf(
+          ownerId,
+          out,
+          async () => ({ bytes: ask.picture, mimeType: ask.mime }),
+          d.check,
+        );
+        if (v.check) h.setMeta({ check: { faithful: v.check.faithful, mode: v.check.mode } });
+        if (v.verdict === 'figure') {
           h.setMeta({ judged: 'figure' });
           return 'figure';
         }
-        let good = out.quality.ok;
-        // No word of a local OCR can vouch for the read: the decider is
-        // asked too (scan_read_check) where its answer can matter. Shadow:
-        // logged. Live: it stands for the line rule `unverified`, the other
-        // reasons stay. A check that throws is no answer.
-        if (out.quality.reasons.every((r) => r === 'unverified')) {
-          const c = await d
-            .check(ownerId, { picture: ask.picture, mimeType: ask.mime, text: out.text })
-            .catch(() => null);
-          if (c) {
-            h.setMeta({
-              check: { faithful: Math.round(c.faithful * 1000) / 1000, mode: c.mode },
-            });
-            if (c.used) good = c.passes;
-          }
-        }
+        const good = v.verdict === 'good';
         h.setMeta({ judged: good ? 'good' : 'bad' });
         const name = ask.fields[0]!.name;
         const model = `${SCAN_READER_MODEL_PREFIX}${out.engine}`;

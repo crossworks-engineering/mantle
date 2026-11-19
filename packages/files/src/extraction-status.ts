@@ -33,8 +33,10 @@ import {
   hasPartialReadCut,
   readCutViews,
   readCutsOf,
+  SCAN_UNREAD_REASONS,
   type ReadCutView,
   type ReadCuts,
+  type ScanUnreadReason,
 } from './read-cut';
 
 export type ExtractionState =
@@ -169,15 +171,29 @@ export function picturesLeftOut(
   return { kept, found, ...(img?.more === true ? { more: true as const } : {}) };
 }
 
+/** A scan's pages unread by why (`ocr.unread`), checked: the known reasons
+ *  with a count over 0, or undefined. */
+function unreadOf(raw: unknown): Partial<Record<ScanUnreadReason, number>> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Partial<Record<ScanUnreadReason, number>> = {};
+  for (const r of SCAN_UNREAD_REASONS) {
+    const v = (raw as Record<string, unknown>)[r];
+    if (typeof v === 'number' && Number.isInteger(v) && v > 0) out[r] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Every cut of a read file, one model: the readers' `read_cut`, then the
  *  scan's pages and the pictures left out, each part an entry of its own. */
 export function readCutsOfFile(d: Readonly<Record<string, unknown>>): ReadCuts {
   const cuts = readCutsOf(d.read_cut);
-  const ocr = d.ocr as { pages_read?: unknown; pages_total?: unknown } | undefined;
+  const ocr = d.ocr as
+    { pages_read?: unknown; pages_total?: unknown; unread?: unknown } | undefined;
   const read = typeof ocr?.pages_read === 'number' ? ocr.pages_read : null;
   const total = typeof ocr?.pages_total === 'number' ? ocr.pages_total : null;
   if (read !== null && total !== null && read < total) {
-    cuts.ocr_pages = { what: 'pages', read, total };
+    const why = unreadOf(ocr?.unread);
+    cuts.ocr_pages = { what: 'pages', read, total, ...(why ? { why } : {}) };
   }
   const parts = picturesPartsOf(d.images);
   if (parts.embedded) {
@@ -205,10 +221,14 @@ export function extractionOf(
   const d = data ?? {};
   if (d.indexing_applied === 'metadata') return { state: 'name_only' };
 
-  const skip = d.extract_skipped as { reason?: unknown } | undefined;
+  const skip = d.extract_skipped as { reason?: unknown; pages?: unknown } | undefined;
   if (skip && typeof skip.reason === 'string') {
     const reason = skip.reason;
-    const hint = hintOf(reason);
+    // A scan with no text says its pages and why each was not read (the
+    // stamp's `pages`, a sentence of ScanUnreadReason clauses).
+    const pages = typeof skip.pages === 'string' ? skip.pages.slice(0, 400) : '';
+    const base = hintOf(reason);
+    const hint = base && pages ? `${base} ${pages}` : base;
     return {
       state: READ_FAILURES.has(reason) ? 'failed' : 'skipped',
       reason,
