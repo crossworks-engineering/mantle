@@ -28,7 +28,7 @@ const PUBLIC = [
   'upsertFile',
   'readFileById',
   'BYTE_DERIVED_DATA_KEYS',
-  'agentReadCutsOnly',
+  'keptReadCuts',
   'openFileById',
   'fileDeleteBlock',
   'deleteFileById',

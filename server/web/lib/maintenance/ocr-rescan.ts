@@ -28,7 +28,7 @@ import {
   withHeads,
 } from '@mantle/db';
 import {
-  agentReadCutsOnly,
+  keptReadCuts,
   BYTE_DERIVED_DATA_KEYS,
   parserPdfPageCount,
   readFileById,
@@ -235,8 +235,9 @@ export async function clearForRescan(
   // The text of the Agents' tabs stays: the bytes and their tabs do not
   // change, and the re-extract queues no Agent run to write it again. So
   // does the Reader pipeline's stamp: this rebuilds no database. The
-  // Agents' cuts stay with their text (agentReadCutsOnly); the rest of the
-  // read's cuts go with the read.
+  // read's cuts stay whole while one the next read does not say again is
+  // among them (an Agent's, the picture gate's: keptReadCuts), else they go
+  // with the read.
   const keys = [
     ...BYTE_DERIVED_DATA_KEYS.filter((k) => k !== 'agent_text' && k !== 'pipeline_read'),
     'extract_skipped',
@@ -250,7 +251,7 @@ export async function clearForRescan(
           data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - array[${sql.join(
             keys.map((k) => sql`${k}`),
             sql`, `,
-          )}]::text[]) || ${agentReadCutsOnly()} || ${JSON.stringify(opts.stamp ?? {})}::jsonb`,
+          )}]::text[]) || ${keptReadCuts()} || ${JSON.stringify(opts.stamp ?? {})}::jsonb`,
           updatedAt: new Date(),
         })
         .where(and(eq(nodes.id, id), eq(nodes.type, 'file'), opts.onlyIf))

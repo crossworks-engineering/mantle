@@ -255,8 +255,10 @@ opens its own and sends `cuts` with its answer, which the parser client says
 again in the caller's sink; a Reader pipeline's write carries `readCuts`
 (the step check checks them, the core says them where it takes the text).
 `read_cut` is a byte key (migration 0387): new bytes drop it; a reindex or
-an OCR rescan drops it too, unless an Agent's entry is in it (kept with that
-Agent's text) or the file is sketched (kept with its text). Then the map stays
+an OCR rescan drops it too, unless it holds a cut the next read does not say
+again (an Agent's, kept with that Agent's text; the picture gate's, as the
+picture pass skips pictures it has) or the file is sketched (kept with its
+text). Then the map stays
 whole: a reindex runs in the caller's scope, where the edit check lets a write
 clear a key only the brain sets, never change it. The next read says its
 cuts again, each key replacing its entry.

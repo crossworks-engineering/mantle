@@ -30,6 +30,7 @@ describe.skipIf(!URL)('ocr-rescan', () => {
     docx: randomUUID(), // body_too_short, not a PDF
     cuts: randomUUID(), // read in part: a reader's cut and an Agent's
     readerCut: randomUUID(), // read in part: a reader's cut only
+    pictureCut: randomUUID(), // read in part: the picture gate's cut
   };
   const markers = '-- 1 of 2 --\n\n-- 2 of 2 --';
 
@@ -79,6 +80,12 @@ describe.skipIf(!URL)('ocr-rescan', () => {
       text: 'body',
       extract_completed_at: '2026-11-19T00:00:00Z',
       read_cut: { markup_bytes: { what: 'bytes', read: 1, total: 2 } },
+    });
+    await file(id.pictureCut, 'pics.docx', {
+      filename: 'pics.docx',
+      text: 'body',
+      extract_completed_at: '2026-11-19T00:00:00Z',
+      read_cut: { pictures_metafile: { what: 'pictures', read: 1, total: 4 } },
     });
     await admin`insert into traces (owner_id, kind, subject_id, subject_kind, status, data) values
       (${anchor}, 'extractor_run', ${id.stuck}, 'node', 'skipped', '{"disposition":"body_too_short"}'::jsonb),
@@ -140,5 +147,13 @@ describe.skipIf(!URL)('ocr-rescan', () => {
     expect(await rescan.clearForRescan(id.readerCut)).toBe(true);
     const [row] = await admin`select data from nodes where id = ${id.readerCut}`;
     expect((row!.data as Row).read_cut).toBeUndefined();
+  });
+
+  it("a rescan keeps the picture gate's cuts: the picture pass does not say them again", async () => {
+    expect(await rescan.clearForRescan(id.pictureCut)).toBe(true);
+    const [row] = await admin`select data from nodes where id = ${id.pictureCut}`;
+    expect((row!.data as Row).read_cut).toEqual({
+      pictures_metafile: { what: 'pictures', read: 1, total: 4 },
+    });
   });
 });

@@ -126,19 +126,21 @@ export const BYTE_DERIVED_DATA_KEYS = [
 ] as const;
 
 /** A file's read cuts once its read is dropped (a reindex, a rescan), as
- *  a `|| ...` to put after the drop of `read_cut`: the map as it was when an
- *  Agent's cut is in it (`agent_text:<id>`, kept with that Agent's text,
- *  which neither asks again), else nothing. Never a part of the map: these
+ *  a `|| ...` to put after the drop of `read_cut`: the map as it was when it
+ *  holds a cut the next read does not say again, else nothing. Those are an
+ *  Agent's (`agent_text:<id>`, kept with that Agent's text, which neither
+ *  asks again) and the picture gate's (`pictures_*`: the picture pass skips
+ *  a file whose pictures it already has). Never a part of the map: these
  *  run in the caller's scope, where the edit check lets a write clear a key
  *  only the brain sets but never change it (0281), so the map stays whole
  *  or goes. A reader's cut kept this way is said again by the next read
  *  (the same key replaces it). Built at the call: a test that stubs
  *  @mantle/db loads this module. */
-export const agentReadCutsOnly =
-  () => sql`(case when jsonb_typeof(${nodes.data}->'read_cut') = 'object'
-    and exists (select 1 from jsonb_object_keys(${nodes.data}->'read_cut') as k
-                 where k like 'agent_text:%')
-  then jsonb_build_object('read_cut', ${nodes.data}->'read_cut') else '{}'::jsonb end)`;
+export const keptReadCuts = () => sql`(case when jsonb_typeof(${nodes.data}->'read_cut') = 'object'
+  then (case when exists (select 1 from jsonb_object_keys(${nodes.data}->'read_cut') as k
+                          where starts_with(k, 'agent_text:') or starts_with(k, 'pictures_'))
+        then jsonb_build_object('read_cut', ${nodes.data}->'read_cut') else '{}'::jsonb end)
+  else '{}'::jsonb end)`;
 
 /**
  * The `data` a file node carries after a write: merged onto what it had,
