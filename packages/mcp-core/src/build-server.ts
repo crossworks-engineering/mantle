@@ -62,6 +62,7 @@ import {
   VAULT_KEY_TOOLS,
   GATEWAY_SERVICE_TOOLS,
   SERVICE_TOOLS,
+  EXTRACTION_TOOLS,
   MODEL_CHECK_TOOLS,
   SYNC_TOOLS,
   PIPELINE_TOOLS,
@@ -579,6 +580,13 @@ export function registerMantleTools(
   // reads and switches the box's optional services, as the screen does.
   // `mcpOnly`, the settings area.
   registerBuiltinTools(SERVICE_TOOLS);
+
+  // ─── The extractor's lane settings ───────────────────────────────────────────
+  // extraction_get / extraction_set (docs/embeddings.md, the lanes): an Admin
+  // user's client reads and sets extractions at once, books at once and the
+  // time budget, as GET and PATCH /api/embedding/extraction do. `mcpOnly`,
+  // the settings area.
+  registerBuiltinTools(EXTRACTION_TOOLS);
 
   // ─── The model check ─────────────────────────────────────────────────────────
   // config_models_check: does this box run the shipped default model on

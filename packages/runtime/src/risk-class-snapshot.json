@@ -103,6 +103,8 @@
   "event_update": "write",
   "export_node": "write",
   "extract_from_image": "read",
+  "extraction_get": "read",
+  "extraction_set": "write",
   "file_copy": "write",
   "file_create": "write",
   "file_delete": "delete",

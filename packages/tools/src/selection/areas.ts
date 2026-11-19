@@ -30,6 +30,7 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   email: "the owner's email: list, read, send",
   entity: 'people, companies and things in the knowledge graph',
   event: 'calendar events and reminders',
+  extraction: 'how many files the box extracts at once, books apart, and for how long',
   gateway: 'the service gateway: the box services it routes to, and its calls',
   sync: 'linked mailboxes, calendar feeds, Microsoft accounts and drives',
   file: 'uploaded files: create, copy, move, rename',

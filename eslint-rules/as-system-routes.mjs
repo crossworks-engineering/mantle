@@ -233,7 +233,9 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // removed, a turn's thinking effort, the extraction concurrency.
   'server/web/app/api/model-pools/route.ts': ['model-route'],
   'packages/tools/src/builtins-curation.ts': ['model-route'],
-  'server/web/app/api/embedding/extraction/route.ts': ['model-route'],
+  // The extractor's lane settings (0099, 0393): PATCH
+  // /api/embedding/extraction and extraction_set save through it.
+  'packages/embeddings/src/extraction-settings.ts': ['model-route'],
   'server/web/lib/maintenance/curate-pools-run.ts': ['model-route'],
   'server/web/lib/model-pools-seed.ts': ['model-route'],
   'server/web/lib/studio/prompt-versions.ts': ['skill-text'],

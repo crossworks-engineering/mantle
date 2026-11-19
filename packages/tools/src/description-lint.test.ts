@@ -58,6 +58,8 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'ask_human', // a run STEP kind (docs/runs.md), not a tool — what pending_* decides
   'page_embed', // present_get / present_create / present_update result field (a canvas's page line)
   'image_checks', // present_get result field (a traced P&ID's image check overview)
+  'book_concurrency', // extraction_get / extraction_set field (books at once)
+  'time_budget_minutes', // extraction_get / extraction_set field (the extract time budget)
 ]);
 
 /**

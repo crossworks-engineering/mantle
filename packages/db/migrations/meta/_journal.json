@@ -2745,6 +2745,13 @@
       "when": 1792310000000,
       "tag": "0392_ai_answer_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 393,
+      "version": "7",
+      "when": 1792320000000,
+      "tag": "0393_extraction_book_concurrency",
+      "breakpoints": true
     }
   ]
 }

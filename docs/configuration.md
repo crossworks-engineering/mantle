@@ -156,7 +156,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `MANTLE_SCOPE_EXACT_MAX_ITEMS` | 500 | whole, min 0 | most items a scope holds for the exact path; 0 turns it off |
 | `MANTLE_SHEET_PROFILE_ROWS` | 8 | any | data rows sampled into a sheet's profile chunk |
 | `EXTRACT_CONCURRENCY` | 2 | whole, at least 1, max 16 | extractions at once (a saved setting wins) |
-| `EXTRACT_BOOK_CONCURRENCY` | 1 | whole, at least 1, max 4 | books at once, in their own lane beside the extractions at once |
+| `EXTRACT_BOOK_CONCURRENCY` | 1 | whole, at least 1, max 4 | books at once, in their own lane beside the extractions at once (a saved setting wins, 0393) |
 | `MANTLE_EXTRACT_EXPIRE_MIN` | 60 | above 0 | extract job expiry, minutes; the base of a heavy PDF, which gets 5 more a 50-page window, at most 480 (docs/embeddings.md) |
 | `MANTLE_PIPELINE_ASKS_PER_DAY` | 20000 | whole, min 0 | most paid asks of all Agent pipelines in 24 hours; 0: no Agent may ask |
 | `MANTLE_EXTRACT_DRAIN_WINDOW_HOURS` | 168 | above 0 | how far back the boot drain and the sweep look, hours |

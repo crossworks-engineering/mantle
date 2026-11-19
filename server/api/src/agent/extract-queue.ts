@@ -47,8 +47,10 @@
  *                          or of more than 200 pages) a long one. The main
  *                          worker that takes such a job sends it on to
  *                          `mantle.extract.heavy` (one worker, a drawing at
- *                          a time) or `mantle.extract.book` (B workers,
- *                          EXTRACT_BOOK_CONCURRENCY, default 1); the main
+ *                          a time) or `mantle.extract.book` (B workers:
+ *                          the saved "books at once", else
+ *                          EXTRACT_BOOK_CONCURRENCY, default 1, re-read
+ *                          every 30s as N is); the main
  *                          workers stay free for light files, and a book
  *                          never holds a drawing back. Every sender still
  *                          sends to `mantle.extract` only. One ceiling holds
@@ -125,6 +127,7 @@ import {
   resolveExtractionConcurrency,
   type EmbeddingConfig,
 } from '@mantle/embeddings';
+import { resolveExtractionTimeBudget } from '@mantle/embeddings/extraction-concurrency';
 import {
   HEADS_DEAD_QUEUE,
   notifyParked,
@@ -308,14 +311,17 @@ const workerIds: string[] = [];
 /** The heavy lane's workers: HEAVY_LANE_WORKERS while the queue runs, none
  *  while it is paused. */
 const heavyWorkerIds: string[] = [];
-/** The book lane's workers: bookLaneWorkers() while the queue runs, none
- *  while it is paused. */
+/** The book lane's workers: bookLimit while the queue runs, none while it
+ *  is paused. */
 const bookWorkerIds: string[] = [];
+/** Books at once as last read: the saved setting, else the env value
+ *  (bookLaneWorkers), set at start and by each reconcile. */
+let bookLimit = bookLaneWorkers();
 /** Light and heavy together never pass the configured worker count. */
 const ceiling = new ExtractCeiling(envNum('EXTRACT_CONCURRENCY'));
 /** Books never pass the book lane's count, and take no place of the one
  *  above (extract-lanes.ts, rule 3). */
-const bookCeiling = new ExtractCeiling(bookLaneWorkers());
+const bookCeiling = new ExtractCeiling(bookLimit);
 let activeOwnerId: string | null = null;
 let activeExpireMin = EXTRACT_EXPIRE_MIN;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
@@ -347,6 +353,7 @@ function buildCircuit(ownerId: string): ProviderCircuit {
     },
     resumeWorkers: async () => {
       const cfg = await resolveEmbeddingConfig(ownerId).catch(() => null);
+      if (cfg) bookLimit = bookLaneWorkers(cfg.extractionBookConcurrency);
       await setWorkerCount(resolveExtractionConcurrency(cfg?.extractionConcurrency));
     },
     recover: async () => {
@@ -436,10 +443,8 @@ export async function startExtractQueue(
   // change applies without a restart. Best-effort — a DB hiccup falls back to
   // env/default.
   const cfg = await resolveEmbeddingConfig(ownerId).catch(() => null);
-  const expireMin =
-    cfg?.extractionTimeBudgetMinutes && cfg.extractionTimeBudgetMinutes >= 1
-      ? cfg.extractionTimeBudgetMinutes
-      : EXTRACT_EXPIRE_MIN;
+  const expireMin = resolveExtractionTimeBudget(cfg?.extractionTimeBudgetMinutes);
+  bookLimit = bookLaneWorkers(cfg?.extractionBookConcurrency);
   const queueOptions = { ...EXTRACT_QUEUE_OPTIONS, expireInSeconds: expireMin * 60 };
 
   // Dead-letter target first — the main queue references it by name.
@@ -501,7 +506,7 @@ export async function startExtractQueue(
     `[extract-queue] ${circuit.isPaused() ? `0 worker(s), PAUSED by a provider outage (${concurrency} when it works)` : `${concurrency} worker(s)`} on ${EXTRACT_QUEUE} ` +
       `(policy=short, ${expireMin}min budget, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE}); ` +
       `heavy files ${HEAVY_LANE_WORKERS} at a time on ${HEAVY_QUEUE}; ` +
-      `books ${bookLaneWorkers()} at a time on ${BOOK_QUEUE}`,
+      `books ${bookLimit} at a time on ${BOOK_QUEUE}`,
   );
 }
 
@@ -776,7 +781,7 @@ async function setWorkerCount(target: number): Promise<void> {
   if (!boss) return;
   // A paused queue (0) keeps the ceilings it had: the runs in flight finish
   // under them.
-  const books = bookLaneWorkers();
+  const books = bookLimit;
   if (target > 0) {
     ceiling.setLimit(target);
     bookCeiling.setLimit(books);
@@ -830,15 +835,28 @@ async function reconcileWithConfig(): Promise<void> {
     const target = circuit?.isPaused()
       ? 0
       : resolveExtractionConcurrency(cfg.extractionConcurrency);
-    if (target !== workerIds.length) {
+    // Books at once, live as the count above: a paused queue keeps the new
+    // value for its resume.
+    const books = bookLaneWorkers(cfg.extractionBookConcurrency);
+    const booksChanged = books !== bookLimit;
+    bookLimit = books;
+    if (
+      booksChanged ||
+      target !== workerIds.length ||
+      (target > 0 && bookWorkerIds.length !== books)
+    ) {
       const from = workerIds.length;
+      const booksFrom = bookWorkerIds.length;
       await setWorkerCount(target);
-      console.log(`[extract-queue] workers ${from} → ${target} (config change, no restart)`);
+      const changed = [
+        from !== target ? `workers ${from} → ${target}` : null,
+        booksChanged && target > 0 ? `books ${booksFrom} → ${books}` : null,
+      ].filter(Boolean);
+      if (changed.length > 0) {
+        console.log(`[extract-queue] ${changed.join(', ')} (config change, no restart)`);
+      }
     }
-    const expireMin =
-      cfg.extractionTimeBudgetMinutes && cfg.extractionTimeBudgetMinutes >= 1
-        ? cfg.extractionTimeBudgetMinutes
-        : EXTRACT_EXPIRE_MIN;
+    const expireMin = resolveExtractionTimeBudget(cfg.extractionTimeBudgetMinutes);
     if (expireMin !== activeExpireMin) {
       const { policy: _policy, ...mutable } = EXTRACT_QUEUE_OPTIONS;
       await boss.updateQueue(EXTRACT_QUEUE, { ...mutable, expireInSeconds: expireMin * 60 });

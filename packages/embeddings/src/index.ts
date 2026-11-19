@@ -53,10 +53,27 @@ export {
   type ReembedProgressEvent,
 } from './reembed';
 export {
+  BOOK_CONCURRENCY_DEFAULT,
+  BOOK_CONCURRENCY_MAX,
   EXTRACTION_CONCURRENCY_DEFAULT,
   EXTRACTION_CONCURRENCY_MAX,
+  EXTRACTION_TIME_BUDGET_DEFAULT,
+  EXTRACTION_TIME_BUDGET_MAX,
+  LANE_SETTING_RANGES,
+  laneSettingSource,
+  resolveBookConcurrency,
   resolveExtractionConcurrency,
+  resolveExtractionTimeBudget,
+  type LaneSettingSource,
 } from './extraction-concurrency';
+export {
+  lanePatchProblem,
+  readExtractionLaneSettings,
+  saveExtractionLanePatch,
+  type ExtractionLanePatch,
+  type ExtractionLaneSettings,
+  type LaneSetting,
+} from './extraction-settings';
 import { withRateLimitBackoff } from './rate-limit';
 import { isAccountError } from './provider-error';
 import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from './provider-outage';
@@ -216,6 +233,8 @@ export interface EmbeddingConfig {
   //    embed adapter (batch/timeout). See /settings/embedding. ──
   /** Max concurrent extraction jobs. Read by the agent's extract queue at boot. */
   extractionConcurrency?: number | null;
+  /** Books at once in the book lane. Read by the agent's extract queue. */
+  extractionBookConcurrency?: number | null;
   /** Minutes a single extraction may run before the queue expires the job. */
   extractionTimeBudgetMinutes?: number | null;
   /** Texts per local-embedder request (threaded into the adapter per call). */
@@ -302,6 +321,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
               }
             : null,
         extractionConcurrency: row.extractionConcurrency,
+        extractionBookConcurrency: row.extractionBookConcurrency,
         extractionTimeBudgetMinutes: row.extractionTimeBudgetMinutes,
         localEmbedBatchSize: row.localEmbedBatchSize,
         localEmbedRequestTimeoutMs: row.localEmbedRequestTimeoutMs,

@@ -2,8 +2,8 @@
  "stdio owner": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged.",
   "tools": {
-   "count": 373,
-   "sha256": "fb1991bec598aca58140884495f53e3eff73ee00f96d001b622c499626db1064"
+   "count": 375,
+   "sha256": "bce0f4eb302292cf5dd4f400dc0722b29548e4ac6c665ddc6a6c7a79f2d57fe3"
   },
   "calls": [
    {
@@ -659,8 +659,8 @@
  "admin oauth rw": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 374,
-   "sha256": "363bae1a0aa60042fae5cf42e8c43804e319446ac3963d9d6a8b71b72c0895fc"
+   "count": 376,
+   "sha256": "e4ed6b4d798ad5d9ccb6176f9111dbc583d735b4c98cd7ba4b5a83366f815146"
   },
   "calls": [
    {
@@ -4939,8 +4939,8 @@
  "admin peer rw (not the owner’s), nothing risky named": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 239,
-   "sha256": "986a58b7de5f1e0693551b5f68633dc7d5463e25b448b47e6bdbb144ca96b7d8"
+   "count": 240,
+   "sha256": "c3298c30ddf0bd1745cb6555eeddf6545e4b943559cc4b1ea0c1f83361a00193"
   },
   "calls": [
    {

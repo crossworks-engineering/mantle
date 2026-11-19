@@ -345,10 +345,13 @@ x-app-env: &app-env
   # Extractor worker concurrency (in-flight extraction jobs). Default 2 suits a
   # multi-core / GPU box. Drop to 1 on a CPU-only embedder: concurrent jobs
   # otherwise contend for the same cores and a big file's embed batch can blow
-  # past the local-embedder timeout mid-run. Clamped 1..8 in code.
-  EXTRACT_CONCURRENCY: ${EXTRACT_CONCURRENCY:-2}
+  # past the local-embedder timeout mid-run. Default 2, clamped 1..16 in code;
+  # blank here, so the settings screen can say the value is the default. A
+  # saved setting (Settings > Embedding, extraction_set) wins over both.
+  EXTRACT_CONCURRENCY: ${EXTRACT_CONCURRENCY:-}
   # Books at once (a PDF of 10 MB or more, or of more than 200 pages), in their
-  # own lane beside the extractions at once. Default 1, clamped 1..4 in code.
+  # own lane beside the extractions at once. Default 1, clamped 1..4 in code;
+  # a saved setting (0393) wins.
   EXTRACT_BOOK_CONCURRENCY: ${EXTRACT_BOOK_CONCURRENCY:-}
   # Texts per local-embedder HTTP request. Default 16 clears the per-request
   # timeout on a shared vCPU; lower (e.g. 8) on an especially slow box so each

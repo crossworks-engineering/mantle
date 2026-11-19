@@ -407,6 +407,15 @@ export function envNum(name: EnvNumberName, fallback?: number): number {
   return parseNumber(env(name), def, spec);
 }
 
+/** Whether the environment gives a registered number a value of its own: a
+ *  number its options keep (clamped or not), not a blank, junk or refused
+ *  one that falls back to the default. A settings screen says by it where
+ *  a value in use comes from. */
+export function envNumGiven(name: EnvNumberName): boolean {
+  const spec: NumberSpec = ENV_NUMBERS[name];
+  return !Number.isNaN(parseNumber(env(name), Number.NaN, spec));
+}
+
 /** A registered number's default, for a caller that shows it (a settings
  *  screen, an exported constant). */
 export function envNumDefault(name: Exclude<EnvNumberName, CallerDefault>): number {

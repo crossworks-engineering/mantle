@@ -1952,6 +1952,46 @@
    "peerRisky": true
   }
  },
+ "extraction_get": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": false
+  }
+ },
+ "extraction_set": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "file_copy": {
   "readOnly": false,
   "peerRisky": false,

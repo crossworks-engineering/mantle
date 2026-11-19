@@ -75,6 +75,7 @@ const REFUSED: readonly [string, string][] = [
   ["the embedder's backup provider", `update embedding_config set backup_provider = 'forged'`],
   ["the embedder's dimensions", `update embedding_config set dimensions = 1536`],
   ['the extraction concurrency', `update embedding_config set extraction_concurrency = 64`],
+  ['the book concurrency (0393)', `update embedding_config set extraction_book_concurrency = 4`],
   [
     'the extraction time budget',
     `update embedding_config set extraction_time_budget_minutes = 600`,
@@ -161,7 +162,7 @@ describe.skipIf(!URL)(
         await su`select provider, model, backup_provider, backup_model, thinking_effort from agents where id = ${AGENT}`,
       worker:
         await su`select provider, model, backup_provider, backup_model from ai_workers where id = ${WORKER}`,
-      emb: await su`select model, primary_provider, backup_provider, dimensions, extraction_concurrency from embedding_config`,
+      emb: await su`select model, primary_provider, backup_provider, dimensions, extraction_concurrency, extraction_book_concurrency from embedding_config`,
       pools: await su`select id, name from curated_models order by id`,
       versions: await su`select count(*)::int as n from prompt_versions`,
     });

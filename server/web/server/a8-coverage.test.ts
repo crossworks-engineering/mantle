@@ -241,6 +241,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'entity_mentions',
   'entity_neighbors',
   'event_create',
+  'extraction_set',
   'file_history_delete',
   'file_history_restore',
   'formula_create',

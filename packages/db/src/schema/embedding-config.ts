@@ -57,6 +57,10 @@ export const embeddingConfig = pgTable('embedding_config', {
    *  env → 2. Drop to 1 on a CPU-only embedder so jobs don't contend for cores.
    *  Live: the extractor re-reads it every 30s, no restart. */
   extractionConcurrency: integer('extraction_concurrency'),
+  /** Books at once in the book lane (`mantle.extract.book`), beside the
+   *  count above (0393). Null → EXTRACT_BOOK_CONCURRENCY env → 1; 1 to 4
+   *  (a CHECK). Live: the extractor re-reads it every 30s, no restart. */
+  extractionBookConcurrency: integer('extraction_book_concurrency'),
   /** Minutes a single extraction may run before pg-boss expires + retries the
    *  job. Null → MANTLE_EXTRACT_EXPIRE_MIN env → 60. Live, like concurrency. */
   extractionTimeBudgetMinutes: integer('extraction_time_budget_minutes'),

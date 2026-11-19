@@ -24,8 +24,8 @@
  *   heavy  `mantle.extract.heavy`: a drawing, HEAVY_LANE_WORKERS (1) at a
  *          time. A book is never here, so it never holds a drawing back.
  *   book   `mantle.extract.book`: a book, and the run of a Reader or an
- *          Agent on one, bookLaneWorkers() at a time (EXTRACT_BOOK_CONCURRENCY,
- *          default 1, read at start).
+ *          Agent on one, bookLaneWorkers() at a time (the saved "books at
+ *          once", else EXTRACT_BOOK_CONCURRENCY, default 1; read live).
  *
  * Three rules, and no more:
  *
@@ -39,7 +39,7 @@
  *      bookLaneWorkers()), outside the one above: a book takes hours, and
  *      inside the shared ceiling it would hold a place light and heavy work
  *      need for all of them (on a box set to 1, every place). So at most
- *      "extractions at once" + EXTRACT_BOOK_CONCURRENCY run in all.
+ *      "extractions at once" + "books at once" run in all.
  *
  * What the lanes do not do: the parser still has one job slot for the whole
  * box. A document's read waits there for the one job being read (a
@@ -47,7 +47,7 @@
  * waits for any other read: a chat attachment, a thumbnail, a drawing tool,
  * a maintenance run.
  */
-import { envNum } from '@mantle/config';
+import { resolveBookConcurrency } from '@mantle/embeddings/extraction-concurrency';
 import {
   PIPELINE_WINDOW_DEFAULT,
   extOf,
@@ -59,12 +59,14 @@ import {
  *  heavy file could only wait for that slot. */
 export const HEAVY_LANE_WORKERS = 1;
 
-/** Books at once, in the book lane: EXTRACT_BOOK_CONCURRENCY, 1 to 4,
- *  default 1. Each book is a long run of parser jobs, one page window at a
- *  time, so a second book only shares the parser's one job slot with the
- *  first; a box with more parser room may raise it. */
-export function bookLaneWorkers(): number {
-  return envNum('EXTRACT_BOOK_CONCURRENCY');
+/** Books at once, in the book lane: the saved setting
+ *  (embedding_config.extraction_book_concurrency, 0393), then
+ *  EXTRACT_BOOK_CONCURRENCY, then 1; 1 to 4. Each book is a long run of
+ *  parser jobs, one page window at a time, so a second book only shares the
+ *  parser's one job slot with the first; a box with more parser room may
+ *  raise it. The queue reads the saved value live (its 30 s reconcile). */
+export function bookLaneWorkers(saved?: number | null): number {
+  return resolveBookConcurrency(saved);
 }
 
 /** The lane of an extraction (see the header). */
