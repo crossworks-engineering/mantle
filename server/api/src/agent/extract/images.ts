@@ -28,13 +28,15 @@ import {
 import { log, startTrace, step } from '@mantle/tracing';
 import {
   readScannedPdf,
+  scanKeptOf,
   scanPageFinal,
+  scanShareHooks,
+  scanShareOf,
   runDocumentWorker,
   runVisionWorker,
   scanCountsOf,
   scanTextOf,
   SCAN_READER_ENGINE,
-  type ScanPage,
   type ScanUnreadReason,
 } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
@@ -726,59 +728,19 @@ export async function nativeReadPdfNode(
   );
 }
 
-/** One page kept in the read so far: page, method, why, text. */
-type KeptPage = [number, ScanPage['method'], string, string];
+/** How long the extract's claim on a window's pages holds (shared reads,
+ *  @mantle/runtime scan-share.ts): a window of 20 pages, 4 at once, with a
+ *  try more each, well inside it. A retry's own claims are its own. */
+const EXTRACT_CLAIM_MS = 10 * 60_000;
 
-/**
- * The read so far of a scanned PDF, kept on the node in `data.ocr.resume` as
- * each page window ends (readScannedPdf `onWindow`): the pages read, how,
- * and their text, with the sha256 of the bytes they are of. A retry of the
- * extract (a busy parser, a restart, the job's time) goes on after them, so
- * no page is paid for twice. Only while the node holds those bytes; the
- * read's end puts the final `ocr` in its place. Byte-derived (`ocr`): new
- * bytes drop it.
- */
-type ScanResume = { sha256: string; total: number; pages: KeptPage[] };
+/** The shared page reads on the node, as `{ scan }`, or `{}`. */
+const keptScanSql = () =>
+  sql`case when jsonb_typeof(${nodes.data}->'ocr'->'scan') = 'object' then jsonb_build_object('scan', ${nodes.data}->'ocr'->'scan') else '{}'::jsonb end`;
 
-function resumeOf(node: typeof nodes.$inferSelect, sha: string): ScanResume | null {
-  const ocr = (node.data as Record<string, unknown> | null)?.ocr as
-    { resume?: Partial<ScanResume> } | undefined;
-  const r = ocr?.resume;
-  if (!r || r.sha256 !== sha || typeof r.total !== 'number' || !Array.isArray(r.pages)) {
-    return null;
-  }
-  const pages = r.pages.filter(
-    (p): p is KeptPage =>
-      Array.isArray(p) &&
-      Number.isInteger(p[0]) &&
-      typeof p[1] === 'string' &&
-      typeof p[2] === 'string' &&
-      typeof p[3] === 'string',
-  );
-  return { sha256: sha, total: r.total, pages };
-}
-
-const pageOfKept = ([page, method, why, text]: KeptPage): ScanPage => ({
-  page,
-  method,
-  text,
-  ...(method === 'unread' && why ? { why: why as ScanUnreadReason } : {}),
-});
-
-async function keepResume(nodeId: string, ownerId: string, resume: ScanResume): Promise<void> {
-  await db
-    .update(nodes)
-    .set({
-      data: sql`coalesce(${nodes.data}, '{}'::jsonb) || jsonb_build_object('ocr', jsonb_build_object('resume', ${JSON.stringify(resume)}::jsonb))`,
-    })
-    .where(
-      and(
-        eq(nodes.id, nodeId),
-        eq(nodes.ownerId, ownerId),
-        sql`coalesce(${nodes.data}->>'sha256', ${resume.sha256}) = ${resume.sha256}`,
-      ),
-    );
-}
+/** A chat turn on the same upload reads the shared pages now
+ *  (`ocr.scan.chat_until`), as SQL on the node. */
+const chatReadingSql = () =>
+  sql`coalesce((${nodes.data}->'ocr'->'scan'->>'chat_until')::bigint > ${Date.now()}, false)`;
 
 /**
  * Read a scanned / image-only PDF file node (no text layer: `parseDocumentBytes`
@@ -853,14 +815,20 @@ export async function ocrIngestPdfNode(
         },
       );
       const sha = createHash('sha256').update(buf).digest('hex');
-      // The pages a try before kept (final ones only: read, or unread for
-      // good), read again by none; the rest (no Scan reader then, no answer,
-      // not cut) are read again.
-      const before = resumeOf(node, sha);
-      const kept: KeptPage[] = before
-        ? before.pages.filter((p) => scanPageFinal(pageOfKept(p)))
-        : [];
-      const keptPages = new Set(kept.map((p) => p[0]));
+      // The reads of these bytes kept on the node (shared with a chat turn
+      // on the same upload, and a try before of this extract: @mantle/runtime
+      // scan-share.ts): final pages only, read again by none; a page held
+      // by another reader is waited for; the rest are this read's.
+      const before = await scanShareOf(node.id, sha);
+      const keptBefore = [...(await scanKeptOf(node.id, sha)).values()];
+      const keptPages = new Set(keptBefore.map((p) => p.page));
+      const share = scanShareHooks({
+        nodeId: node.id,
+        sha256: sha,
+        by: 'extract',
+        final: scanPageFinal,
+        claimMs: () => EXTRACT_CLAIM_MS,
+      });
 
       let read: Awaited<ReturnType<typeof readScannedPdf>>;
       try {
@@ -869,18 +837,10 @@ export async function ocrIngestPdfNode(
           bytes: buf,
           sha256: sha,
           filename,
-          ...(before ? { done: keptPages, pagesTotal: before.total } : {}),
-          onWindow: async (pages, total) => {
-            // The page text as it will be stored (no NUL: jsonb refuses it).
-            for (const p of pages) {
-              if (scanPageFinal(p)) kept.push([p.page, p.method, p.why ?? '', cleanText(p.text)]);
-            }
-            // Best effort: a lost write only means a retry reads these again.
-            await keepResume(node.id, ownerId, { sha256: sha, total, pages: kept }).catch(
-              (err: unknown) =>
-                log('extractor').warn(`scan pages not kept for ${node.id}: ${errorMessage(err)}`),
-            );
-          },
+          share,
+          ...(before?.total !== undefined && keptPages.size > 0
+            ? { done: keptPages, pagesTotal: before.total }
+            : {}),
         });
       } catch (err) {
         if (!isParserError(err)) throw err;
@@ -893,10 +853,7 @@ export async function ocrIngestPdfNode(
         return { ...none, rasterizeError: msg, ran: false };
       }
 
-      const pages = [
-        ...kept.filter((p) => keptPages.has(p[0])).map(pageOfKept),
-        ...read.pages,
-      ].sort((a, b) => a.page - b.page);
+      const pages = [...keptBefore, ...read.pages].sort((a, b) => a.page - b.page);
       const total = read.pagesTotal || before?.total || pages.length;
       const { read: pagesRead, unread } = scanCountsOf(pages);
       // A verdict on the content only when every page is final (read,
@@ -909,12 +866,15 @@ export async function ocrIngestPdfNode(
       const anyUnread = Object.keys(unread).length > 0;
       if (!text) {
         // Nothing read. A verdict: the kept pages go (the caller's terminal
-        // skip says why; a person's read again starts afresh). No verdict:
-        // they stay, so the read again pays for none of them twice.
+        // skip says why; a person's read again starts afresh), unless a chat
+        // turn reads them now. No verdict: they stay, so the read again pays
+        // for none of them twice.
         if (ran) {
           await db
             .update(nodes)
-            .set({ data: sql`${nodes.data} - 'ocr'` })
+            .set({
+              data: sql`case when ${chatReadingSql()} then ${nodes.data} else ${nodes.data} - 'ocr' end`,
+            })
             .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         }
         const scanned = pages.filter((p) => p.method !== 'blank' && p.method !== 'text');
@@ -932,9 +892,14 @@ export async function ocrIngestPdfNode(
 
       // `ocr`: true when every page was read, else the pages read and the
       // pages unread by why (extractionOf shows `partial`, with the reasons).
-      const ocrMark = anyUnread
-        ? JSON.stringify({ pages_read: pagesRead, pages_total: total, unread })
-        : 'true';
+      // The kept pages go with the read's end, but while a chat turn reads
+      // them (then the mark is the object, with them beside it).
+      const markObject = JSON.stringify({
+        pages_read: pagesRead,
+        pages_total: total,
+        ...(anyUnread ? { unread } : {}),
+      });
+      const ocrMark = anyUnread ? markObject : 'true';
       const model = pages.some((p) => p.method === 'scan_reader')
         ? `scan_reader:${SCAN_READER_ENGINE}`
         : (read.model ?? '');
@@ -942,7 +907,7 @@ export async function ocrIngestPdfNode(
         await db
           .update(nodes)
           .set({
-            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${model}::text, 'ocr', ${ocrMark}::jsonb)`,
+            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${model}::text, 'ocr', case when ${chatReadingSql()} then ${markObject}::jsonb || jsonb_build_object('scan', ${nodes.data}->'ocr'->'scan') else ${ocrMark}::jsonb end)`,
             updatedAt: new Date(),
           })
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
@@ -1260,10 +1225,12 @@ export async function stampReaderPages(
   await db
     .update(nodes)
     .set({
+      // The Scan reader's shared page reads (`ocr.scan`: a chat turn's, for
+      // the book's Agent to take) stay beside the mark.
       data:
         pages.read < pages.total
-          ? sql`${nodes.data} || jsonb_build_object('ocr', jsonb_build_object('pages_read', ${pages.read}::int, 'pages_total', ${pages.total}::int))`
-          : sql`${nodes.data} - 'ocr'`,
+          ? sql`${nodes.data} || jsonb_build_object('ocr', jsonb_build_object('pages_read', ${pages.read}::int, 'pages_total', ${pages.total}::int) || ${keptScanSql()})`
+          : sql`case when ${keptScanSql()} = '{}'::jsonb then ${nodes.data} - 'ocr' else ${nodes.data} || jsonb_build_object('ocr', ${keptScanSql()}) end`,
     })
     .where(
       and(

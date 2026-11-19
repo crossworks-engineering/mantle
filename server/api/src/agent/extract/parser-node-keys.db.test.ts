@@ -193,33 +193,42 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
       sql`update nodes set data = data || jsonb_build_object('sha256', ${sha}::text) where id = ${id}`,
     );
     const { ParserError } = await import('@mantle/files');
-    // Try 1: the first window is read and kept, then the parser is busy.
-    h.readScannedPdf.mockImplementationOnce(
-      async (o: { onWindow: (p: unknown[], t: number) => Promise<void> }) => {
-        await o.onWindow(
-          [
-            { page: 1, method: 'scan_reader', text: 'Page one read.' },
-            { page: 2, method: 'unread', text: '', why: 'bad_read' },
-          ],
-          3,
-        );
-        throw new ParserError('busy', 'busy', { retryable: true, terminal: false });
-      },
-    );
+    type Share = import('@mantle/runtime/agent').ScanShareHooks;
+    // Try 1: the first window is claimed, read and kept, then the parser
+    // is busy.
+    h.readScannedPdf.mockImplementationOnce(async (o: { share: Share }) => {
+      const c = await o.share.claim([1, 2]);
+      expect(c.mine).toEqual([1, 2]);
+      await o.share.keep(
+        [
+          { page: 1, method: 'scan_reader', text: 'Page one read.' },
+          { page: 2, method: 'unread', text: '', why: 'bad_read' },
+        ],
+        3,
+      );
+      await o.share.claim([3]);
+      throw new ParserError('busy', 'busy', { retryable: true, terminal: false });
+    });
     const err = await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner)).catch(
       (e: unknown) => e,
     );
     expect(err).toBeInstanceOf(ParserError);
-    const kept = (await dataOf(id)).ocr as { resume: { sha256: string; pages: unknown[] } };
-    expect(kept.resume.sha256).toBe(sha);
-    expect(kept.resume.pages).toHaveLength(2);
+    const kept = (await dataOf(id)).ocr as {
+      scan: { sha256: string; pages: Record<string, unknown>; claims: Record<string, unknown> };
+    };
+    expect(kept.scan.sha256).toBe(sha);
+    expect(Object.keys(kept.scan.pages)).toEqual(['1', '2']);
+    expect(Object.keys(kept.scan.claims)).toEqual(['3']);
 
-    // Try 2: from page 3 on, with the page count it learnt.
-    h.readScannedPdf.mockResolvedValueOnce({
-      pages: [{ page: 3, method: 'scan_reader', text: 'Page three read.' }],
-      pagesTotal: 3,
-      ran: true,
-      model: 'm',
+    // Try 2: the pages kept are done; its own claim of page 3 is its own.
+    h.readScannedPdf.mockImplementationOnce(async (o: { share: Share }) => {
+      expect((await o.share.claim([3])).mine).toEqual([3]);
+      return {
+        pages: [{ page: 3, method: 'scan_reader', text: 'Page three read.' }],
+        pagesTotal: 3,
+        ran: true,
+        model: 'm',
+      };
     });
     const r = await extract(async () => ocrIngestPdfNode(await nodeRow(id), owner));
     expect(h.readScannedPdf.mock.calls[1]![0]).toMatchObject({
@@ -228,9 +237,62 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
     });
     expect(r.text).toBe('[Page 1]\nPage one read.\n\n[Page 3]\nPage three read.');
     const data = await dataOf(id);
+    // The read's end: the final mark, the shared pages gone (no chat turn).
     expect(data.ocr).toEqual({ pages_read: 2, pages_total: 3, unread: { bad_read: 1 } });
     expect(data.text).toBe(r.text);
     expect(data.keep).toBe('me');
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+
+  it('a chat turn and the extract share one node’s reads: one claim wins, each takes the other’s pages', async () => {
+    const id = await fileNode();
+    const bytes = Buffer.from(`%PDF-1.4 ${tag} shared`);
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    await x(
+      sql`update nodes set data = data || jsonb_build_object('sha256', ${sha}::text) where id = ${id}`,
+    );
+    const rt = await import('@mantle/runtime/agent');
+    const hooks = (by: 'chat' | 'extract') =>
+      rt.scanShareHooks({
+        nodeId: id,
+        sha256: sha,
+        by,
+        final: rt.scanPageFinal,
+        claimMs: () => 60_000,
+      });
+    const chat = hooks('chat');
+    const extract = hooks('extract');
+    // The chat turn says it reads, and claims pages 1 and 2.
+    await rt.setChatReading(id, sha, Date.now() + 120_000);
+    expect((await chat.claim([1, 2])).mine).toEqual([1, 2]);
+    // The extract, at the same pages and one more: page 3 is its own.
+    const c = await extract.claim([1, 2, 3]);
+    expect(c.mine).toEqual([3]);
+    expect([...c.theirs.keys()]).toEqual([1, 2]);
+    // Each keeps its read; each then takes the other's with no claim.
+    await chat.keep([
+      { page: 1, method: 'scan_reader', text: 'one' },
+      { page: 2, method: 'scan_reader', text: 'two' },
+    ]);
+    await extract.keep([{ page: 3, method: 'scan_reader', text: 'three' }], 3);
+    expect([...(await extract.wait([1, 2], Date.now() + 5_000)).keys()]).toEqual([1, 2]);
+    expect([...(await chat.claim([3])).kept.keys()]).toEqual([3]);
+    // Of other bytes: nothing shared.
+    const other = rt.scanShareHooks({
+      nodeId: id,
+      sha256: 'f'.repeat(64),
+      by: 'chat',
+      final: rt.scanPageFinal,
+      claimMs: () => 60_000,
+    });
+    const o = await other.claim([1]);
+    expect(o.kept.size).toBe(0);
+    expect(o.mine).toEqual([1]);
+    // A book's ask of page 2 while the chat turn reads: kept, no call.
+    expect(await rt.bookScanTurn(id, 2)).toEqual({
+      kept: { page: 2, method: 'scan_reader', text: 'two' },
+    });
+    expect((await dataOf(id)).keep).toBe('me');
     expect(m.takeActorMisses()).toEqual([]);
   });
 });

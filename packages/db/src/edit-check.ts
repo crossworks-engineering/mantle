@@ -35,7 +35,9 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
   entities: ['server/api/src/agent/extract/index-writes.ts'],
   text: ['server/api/src/agent/extract/index-writes.ts', 'server/api/src/agent/extract/images.ts'],
   vision_model: ['server/api/src/agent/extract/images.ts'],
-  ocr: ['server/api/src/agent/extract/images.ts'],
+  // The Scan reader's shared page reads (`ocr.scan`) are kept by the chat
+  // turn as system work too (scan:share).
+  ocr: ['server/api/src/agent/extract/images.ts', 'packages/runtime/src/agent/scan-share.ts'],
   native_pdf: ['server/api/src/agent/extract/images.ts'],
   schemaDigest: ['server/api/src/agent/extract/index-writes.ts'],
   parser_failures: ['server/api/src/agent/extract/parser-failures.ts'],

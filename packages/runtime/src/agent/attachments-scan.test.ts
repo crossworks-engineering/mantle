@@ -10,6 +10,9 @@ import type { ScanPage } from './scan-pdf';
 
 const h = vi.hoisted(() => ({
   readScannedPdf: vi.fn(),
+  scanFinalReadOf: vi.fn(),
+  setChatReading: vi.fn(),
+  hooks: { claim: vi.fn(), keep: vi.fn(), wait: vi.fn() },
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -29,6 +32,12 @@ vi.mock('./scan-pdf', async (orig) => ({
   readScannedPdf: h.readScannedPdf,
 }));
 
+vi.mock('./scan-share', () => ({
+  scanFinalReadOf: h.scanFinalReadOf,
+  setChatReading: h.setChatReading,
+  scanShareHooks: vi.fn(() => h.hooks),
+}));
+
 import { extractAttachmentForTurn, TURN_SCAN_MS } from './attachments';
 
 const page = (n: number, method: ScanPage['method'], text = '', why?: ScanPage['why']) =>
@@ -43,7 +52,11 @@ const send = (fileId: string | null = 'f1') =>
     fileId,
   });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  h.scanFinalReadOf.mockResolvedValue(null);
+  h.setChatReading.mockResolvedValue(undefined);
+});
 
 describe('a scanned PDF in chat', () => {
   it('is read whole by the Scan reader, in the turn’s time', async () => {
@@ -98,5 +111,50 @@ describe('a scanned PDF in chat', () => {
     const out = await send();
     expect(out.text).toBe('');
     expect(out.note).toContain('this brain has no Scan reader');
+  });
+
+  it('shares its reads with the background read of the saved file', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'scan_reader', 'one')],
+      pagesTotal: 1,
+      ran: true,
+      model: 'm',
+    });
+    await send('f1');
+    expect(h.readScannedPdf.mock.calls[0]![0]).toHaveProperty('share');
+    // It says it reads, then that it ended.
+    expect(h.setChatReading.mock.calls.map((c) => c[2] === null)).toEqual([false, true]);
+    // No saved file: nothing to share with.
+    vi.clearAllMocks();
+    h.readScannedPdf.mockResolvedValue({ pages: [], pagesTotal: 0, ran: false, model: null });
+    await send(null);
+    expect(h.readScannedPdf.mock.calls[0]![0]).not.toHaveProperty('share');
+    expect(h.setChatReading).not.toHaveBeenCalled();
+  });
+
+  it('takes a whole read the background read already made, with no call', async () => {
+    h.scanFinalReadOf.mockResolvedValue({
+      text: '[Page 1]\nRead in the background',
+      ocr: { pages_read: 1, pages_total: 2, unread: { bad_read: 1 } },
+    });
+    const out = await send('f1');
+    expect(h.readScannedPdf).not.toHaveBeenCalled();
+    expect(out.text).toBe('[Page 1]\nRead in the background');
+    expect(out.note).toContain('1 of 2 pages were read (1 read badly by the Scan reader');
+  });
+
+  it('takes the background read when it ended while the turn read', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [],
+      pagesTotal: 2,
+      ran: false,
+      model: null,
+      readBefore: true,
+    });
+    h.scanFinalReadOf
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ text: 'All of it', ocr: true });
+    const out = await send('f1');
+    expect(out.text).toBe('All of it');
   });
 });

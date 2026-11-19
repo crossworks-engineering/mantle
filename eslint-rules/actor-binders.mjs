@@ -80,6 +80,10 @@ export const ACTOR_BINDER_PINS = {
   // (createHomeFallback makes only the bound
   // login's own).
   'packages/mcp-core/src/login-surface.ts': 1,
+  // The Scan reader's shared page reads (`data.ocr.scan`, a key only the
+  // brain writes): system(scan:share), also from a chat turn, only on the
+  // turn's own saved file and its bytes.
+  'packages/runtime/src/agent/scan-share.ts': 1,
   'packages/runtime/src/heartbeats/fire.ts': 2,
   // An app timer's run, as the login that set the timer, read only
   // (loginActor mode 'ro'): its manage check, then its tool call

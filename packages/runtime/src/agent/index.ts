@@ -138,6 +138,24 @@ export {
   type ScanPdfDeps,
 } from './scan-pdf';
 export {
+  scanShareHooks,
+  scanShareOf,
+  bookScanTurn,
+  type BookScanTurn,
+  scanKeptOf,
+  scanFinalReadOf,
+  setChatReading,
+  chatReadingNow,
+  claimOn,
+  keepOn,
+  shareDataOf,
+  SCAN_WAIT_POLL_MS,
+  type ScanShareHooks,
+  type ScanShareData,
+  type ScanClaim,
+  type ScanReader,
+} from './scan-share';
+export {
   scanReadQualityOf,
   SCAN_READ_ANCHORS_MIN,
   type OcrWord,

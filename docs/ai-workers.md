@@ -824,13 +824,35 @@ the worker); nothing falls back to vision or a native read.
 **Money.** One paid call a page (two only when the provider gave no answer).
 The parser's work of a window (its cut, marks and page cuts) is done before
 the window's first paid call, so a busy parser fails the extract (pg-boss
-retries it) with nothing of that window paid. The final pages of each window
-are kept on the node as it ends (`data.ocr.resume`, with the sha256 of the
-bytes; text cleaned of NUL), and a read again (a retry after a busy parser, a
-restart, the job's time, or the drain after a Scan reader is added) reads only
-the pages not kept (`done`, windows cut only where such a page is:
-`pdfWindowsAt`): no page is paid for twice. A read with no text and every
-page final drops them (a person's read again starts afresh). A picture drawn after a paid call (a figure,
+retries it) with nothing of that window paid. The final pages are kept on
+the node as they are read (`data.ocr.scan`, the shared reads below), and a
+read again (a retry after a busy parser, a restart, the job's time, or the
+drain after a Scan reader is added) reads only the pages not kept (`done`,
+windows cut only where such a page is: `pdfWindowsAt`): no page is paid for
+twice. A read with no text and every page final drops them (a person's read
+again starts afresh), as does the read's end, but while a chat turn reads
+them.
+
+**Shared reads** (owner decision 2026-11-19, "Share the reads";
+`packages/runtime/src/agent/scan-share.ts`). The chat turn that got a file,
+the background extract of it, and a book's paid ask of it read the same
+upload: each page's read is kept on the file's node by the sha256 of its
+bytes and the page number (`data.ocr.scan`: `pages`, `claims`, `total`,
+`chat_until`), whichever reads it first, and the others take it. Before a
+paid call a reader claims the page under the node's row lock (one claim
+wins); a page another reader holds is waited for (the chat turn to its own
+time; the extract to the end of the claim, then claims it again). A claim
+ends at its time (a reader that died), and a reader's own claim of a try
+before is its own. Only final pages are kept (a page with no answer is read
+again by the next reader). A book's ask writes nothing there unless a chat
+turn reads the file (`chat_until`): a book's rows are its record, and a
+write per page would rewrite the whole node; while one does, its pages are
+claimed and kept too. A chat turn whose file the background read already
+read whole takes that read (its text and its `ocr` mark), with no call. The
+store is system work (`system(scan:share)`, `ocr` being a key only the brain
+writes) and only on the turn's own saved file, of the bytes in hand: a node
+of other bytes shares nothing. A turn with no saved file has no background
+read to share with and reads alone. A picture drawn after a paid call (a figure,
 the check) that fails is no throw: the figure page is unread, the free rule
 stands. No new trigger: the extract runs on an upload as before, and
 `ocr-rescan` / `blank-scans` stay person-started (dry run first; their
@@ -846,9 +868,8 @@ engine's price is per page either way, and only per page does each page get
 the check (a page read badly is left out of the answer, never shown as the
 page) and a figure its description. KISS over queueing: nothing replies
 later by itself (that would start model work with no person), and the
-durable read already reads the whole file. The turn's pages and the
-extractor's are two reads of the same upload, as for a photo or a native
-read before.
+durable read already reads the whole file. The turn and the background read
+share their pages (above): one paid call a page between them.
 
 **Measured** (2026-11-19, the generated 140-page scanned spec book, the
 large-PDF e2e set: marks and cuts in the parser image on a workstation, the

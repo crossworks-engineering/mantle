@@ -57,7 +57,16 @@ import {
 } from '@mantle/content/pipeline-asks';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { checkScanRead } from '@mantle/decisions';
-import { runScanReader, runVisionWorker, scanVerdictOf } from '@mantle/runtime/agent';
+import {
+  bookScanTurn,
+  runScanReader,
+  runVisionWorker,
+  scanVerdictOf,
+  SCAN_READER_ENGINE,
+  type BookScanTurn,
+  type ScanPage,
+} from '@mantle/runtime/agent';
+import { PAGE_ASK_KEY_PREFIX } from '@mantle/files';
 import { step } from '@mantle/tracing';
 
 /** The prefix of the Model of a page row the Scan reader read: the honest
@@ -90,6 +99,8 @@ export type PipelineAskDeps = {
   vision: typeof runVisionWorker;
   scan: typeof runScanReader;
   check: typeof checkScanRead;
+  /** The shared reads of one page (bookScanTurn). */
+  shared(page: number): Promise<BookScanTurn>;
 };
 
 /**
@@ -114,6 +125,7 @@ export function pipelineAskOf(
     vision: runVisionWorker,
     scan: runScanReader,
     check: checkScanRead,
+    shared: (page) => bookScanTurn(nodeId, page),
     ...deps,
   };
   // Guards 1 and 2, read one time for the run.
@@ -217,12 +229,46 @@ export function pipelineAskOf(
     if ((await d.asksToday()) >= d.dayCap()) return no('day_cap');
     // A scanned page (one field, the page's text, with its PDF and line
     // count): the Scan reader alone. Vision only for a figure.
+    // The page's read may be shared with a chat turn on the same upload
+    // (@mantle/runtime scan-share.ts, "Share the reads"): a page it kept is
+    // the answer with no call; while it reads the file, the page is claimed
+    // first, and this read is kept for it.
+    let shared: Extract<BookScanTurn, { hooks: unknown }> | null = null;
     if (pageText && ask.pdf && ask.scan && ask.fields.length === 1 && !ask.list) {
-      const read = await scanRead(ask, ask.scan, ask.pdf);
-      if (read !== 'figure') return read;
-      if ((await d.asksToday()) >= d.dayCap()) return no('day_cap');
+      const name = ask.fields[0]!.name;
+      const page = pageOfAskKey(ask.key);
+      const turn: BookScanTurn = page !== null ? await d.shared(page) : { alone: true };
+      if ('kept' in turn) {
+        const k = turn.kept;
+        // A figure the chat turn's vision could not describe: this ask's
+        // own vision call (its Scan reader read is not made again).
+        if (!(k.method === 'unread' && k.why === 'figure')) {
+          const model =
+            k.method === 'vision' ? 'vision' : `${SCAN_READER_MODEL_PREFIX}${SCAN_READER_ENGINE}`;
+          return {
+            ok: true,
+            output: {
+              values: { [name]: k.text ? k.text.slice(0, PAGE_TEXT_ANSWER_MAX_CHARS) : null },
+              model,
+            },
+          };
+        }
+      } else {
+        if ('hooks' in turn) shared = turn;
+        const read = await scanRead(ask, ask.scan, ask.pdf);
+        if (read !== 'figure') {
+          if (shared && page !== null) await keepShared(shared, pageOfAnswer(page, read, name));
+          return read;
+        }
+      }
+      if ((await d.asksToday()) >= d.dayCap()) {
+        if (shared && page !== null) {
+          await keepShared(shared, { page, method: 'unread', text: '', why: 'failed' });
+        }
+        return no('day_cap');
+      }
     }
-    return step(
+    const answer = await step(
       {
         name: 'pipeline_ask',
         kind: 'llm_call',
@@ -280,5 +326,57 @@ export function pipelineAskOf(
         return { ok: true, output: { ...got, model: out.model ?? '' } };
       },
     );
+    // A shared figure page: its description kept for the chat turn (none:
+    // a figure not described, final).
+    const page = pageOfAskKey(ask.key);
+    if (shared && page !== null) {
+      const text = answer.ok ? valueOf(answer.output, ask.fields[0]!.name) : null;
+      await keepShared(
+        shared,
+        typeof text === 'string' && text.trim()
+          ? { page, method: 'vision', text }
+          : { page, method: 'unread', text: '', why: answer.ok ? 'figure' : 'failed' },
+      );
+    }
+    return answer;
   };
+}
+
+/** The value of field `name` in an ask's output (`{ values }`), or null. */
+function valueOf(output: unknown, name: string): unknown {
+  const values = (output as { values?: Record<string, unknown> } | null)?.values;
+  return values?.[name] ?? null;
+}
+
+/** The page of an Agent's page ask (`page-<N>`), or null. */
+function pageOfAskKey(key: string): number | null {
+  if (!key.startsWith(PAGE_ASK_KEY_PREFIX)) return null;
+  const n = Number(key.slice(PAGE_ASK_KEY_PREFIX.length));
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/** A Scan reader answer of the book's ask as a shared page: its text (read),
+ *  no text (read badly), or no answer (not final: read again). */
+function pageOfAnswer(page: number, read: PipelineCallAnswer, name: string): ScanPage {
+  if (!read.ok) {
+    return {
+      page,
+      method: 'unread',
+      text: '',
+      why: read.reason === ASK_SKIPPED_NO_SCAN_READER ? 'no_scan_reader' : 'failed',
+    };
+  }
+  const text = valueOf(read.output, name);
+  return typeof text === 'string' && text
+    ? { page, method: 'scan_reader', text }
+    : { page, method: 'unread', text: '', why: 'bad_read' };
+}
+
+/** Keep a shared page, which also ends the claim. Best effort: a lost write
+ *  only leaves the chat turn to wait out the claim. */
+async function keepShared(
+  shared: { hooks: { keep(p: ScanPage[]): Promise<void> } },
+  page: ScanPage,
+): Promise<void> {
+  await shared.hooks.keep([page]).catch(() => {});
 }

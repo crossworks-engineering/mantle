@@ -69,6 +69,7 @@ import { step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { runScanReader, type ScanReaderResult } from './scan-reader';
 import { runVisionWorker } from './attachments';
+import type { ScanShareHooks } from './scan-share';
 
 /** Under this many characters (not spaces) with a figure found, a scanned
  *  page is mostly a figure: vision describes it (the book reader's old rule
@@ -287,6 +288,9 @@ export type ScanPdfResult = {
   ran: boolean;
   /** The model of the last page read by a model, for the record. */
   model: string | null;
+  /** The file's bytes were read whole by another reader meanwhile (its
+   *  final read is on the node): this read stopped, and takes that one. */
+  readBefore?: true;
 };
 
 /**
@@ -308,6 +312,9 @@ export async function readScannedPdf(opts: {
   deadline?: number;
   /** Each window's pages, as it ends. */
   onWindow?: (pages: ScanPage[], pagesTotal: number) => Promise<void>;
+  /** The reads shared with the other readers of the same upload
+   *  (./scan-share.ts); none: this read is alone. */
+  share?: ScanShareHooks;
   deps?: Partial<ScanPdfDeps>;
 }): Promise<ScanPdfResult> {
   const d: ScanPdfDeps = { ...defaultDeps, ...opts.deps };
@@ -363,53 +370,98 @@ export async function readScannedPdf(opts: {
       }),
     );
     const marked = isWindowLost(marks) ? new Map<number, PageMark>() : marks;
-    const cuts = new Map<number, Buffer | ScanUnreadReason>();
-    const window: ScanPage[] = [];
+    const free: ScanPage[] = [];
+    const scanned: number[] = [];
     for (let n = part.pageFrom; n <= part.pageTo; n += 1) {
       if (!todo(n)) continue;
       const m = marked.get(n);
-      if (m?.method === 'text') {
-        window.push({ page: n, method: 'text', text: m.text.trim() });
-        continue;
-      }
-      if (m?.method === 'blank') {
-        window.push({ page: n, method: 'blank', text: '' });
-        continue;
-      }
+      if (m?.method === 'text') free.push({ page: n, method: 'text', text: m.text.trim() });
+      else if (m?.method === 'blank') free.push({ page: n, method: 'blank', text: '' });
       // A scanned page, a page the Reader could not draw (`failed`), or no
       // mark at all: the Scan reader reads it (it needs no drawing).
-      const pdf = await windowJob(() => d.cut(part, n));
-      cuts.set(
-        n,
-        isWindowLost(pdf)
-          ? 'not_cut'
-          : pdf.length > PIPELINE_ASK_PICTURE_MAX_BYTES
-            ? 'too_large'
-            : pdf,
-      );
-      window.push({ page: n, method: 'unread', text: '' });
+      else scanned.push(n);
     }
 
-    const jobs = window.map((pg) => async (): Promise<ScanPage> => {
-      const pdf = cuts.get(pg.page);
-      if (pdf === undefined) return pg;
-      if (typeof pdf === 'string') return { ...pg, why: pdf };
-      if (late()) return { ...pg, why: 'time' };
-      // The line count of a page the Reader marked for the Scan reader; none
-      // for a page it could not draw or did not mark (the check is then
-      // made without it).
-      const m = marked.get(pg.page);
-      const lines = m?.method === VISION_METHOD && m.why === SCAN_WHY ? m.lines : null;
-      return readPage(opts.ownerId, opts.filename, pg.page, pdf, lines, d, (r, mdl) => {
+    // The shared reads (./scan-share.ts): the pages another reader of the
+    // same upload kept are taken, those it holds are waited for, the rest
+    // are this read's to pay for. Each paid page is claimed before its call.
+    const got = new Map<number, ScanPage>();
+    let todoScan = scanned;
+    for (let round = 0; todoScan.length > 0; round += 1) {
+      const claim = opts.share
+        ? await opts.share.claim(todoScan)
+        : { kept: new Map<number, ScanPage>(), mine: todoScan, theirs: new Map<number, number>() };
+      if (claim.final) {
+        return { pages: all, pagesTotal: total, ran, model, readBefore: true };
+      }
+      for (const [n, p] of claim.kept) got.set(n, p);
+      const read = await readMine(claim.mine, part, marked, d, opts, late, (r, mdl) => {
         if (r) ran = true;
         if (mdl) model = mdl;
       });
-    });
-    const read = await inTurn(jobs, SCAN_PAGES_AT_ONCE);
-    all.push(...read);
-    await opts.onWindow?.(read, total);
+      for (const p of read) got.set(p.page, p);
+      if (opts.share && read.length > 0) await opts.share.keep(read, total);
+      if (claim.theirs.size === 0 || !opts.share) break;
+      // Held by another reader: wait for its pages, to the end of its claim
+      // (or this read's time). A page whose claim ended unkept (its reader
+      // died, or left it to be read again) is claimed again, at most twice.
+      const until = Math.min(opts.deadline ?? Infinity, Math.max(...claim.theirs.values()));
+      const waited = await opts.share.wait([...claim.theirs.keys()], until);
+      for (const [n, p] of waited) got.set(n, p);
+      todoScan = [...claim.theirs.keys()].filter((n) => !got.has(n));
+      if (late() || round >= 2) {
+        // Not kept in time: a chat turn says so (`time`); the extract leaves
+        // them to its read again (`failed`, not final).
+        const why: ScanUnreadReason = late() ? 'time' : 'failed';
+        for (const n of todoScan) got.set(n, { page: n, method: 'unread', text: '', why });
+        break;
+      }
+    }
+    if (opts.share && free.length > 0) await opts.share.keep(free, total);
+    const window = [...free, ...got.values()].sort((x, y) => x.page - y.page);
+    all.push(...window);
+    await opts.onWindow?.(window, total);
   }
   return { pages: all, pagesTotal: total, ran, model };
+}
+
+/** The pages a read claimed: each cut (parser work, before any paid call:
+ *  a busy parser throws here with nothing of them paid), then read, 4 at
+ *  once. */
+async function readMine(
+  mine: readonly number[],
+  part: PdfWindowPart,
+  marked: ReadonlyMap<number, PageMark>,
+  d: ScanPdfDeps,
+  opts: { ownerId: string; filename: string },
+  late: () => boolean,
+  saw: (ran: boolean, model: string | null) => void,
+): Promise<ScanPage[]> {
+  const cuts = new Map<number, Buffer | ScanUnreadReason>();
+  for (const n of mine) {
+    const pdf = await windowJob(() => d.cut(part, n));
+    cuts.set(
+      n,
+      isWindowLost(pdf)
+        ? 'not_cut'
+        : pdf.length > PIPELINE_ASK_PICTURE_MAX_BYTES
+          ? 'too_large'
+          : pdf,
+    );
+  }
+  const jobs = mine.map((n) => async (): Promise<ScanPage> => {
+    const pg: ScanPage = { page: n, method: 'unread', text: '' };
+    const pdf = cuts.get(n)!;
+    if (typeof pdf === 'string') return { ...pg, why: pdf };
+    if (late()) return { ...pg, why: 'time' };
+    // The line count of a page the Reader marked for the Scan reader; none
+    // for a page it could not draw or did not mark (the check is then made
+    // without it).
+    const m = marked.get(n);
+    const lines = m?.method === VISION_METHOD && m.why === SCAN_WHY ? m.lines : null;
+    return readPage(opts.ownerId, opts.filename, n, pdf, lines, d, saw);
+  });
+  return inTurn(jobs, SCAN_PAGES_AT_ONCE);
 }
 
 /** One scanned page, as a one-page PDF: the Scan reader, its verdict, and
