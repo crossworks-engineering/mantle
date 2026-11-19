@@ -111,6 +111,8 @@ export {
 
 export {
   runScanReader,
+  cleanParsedText,
+  SCAN_READER_ENGINE_MAX_TOKENS,
   SCAN_READER_SYSTEM_TEXT,
   SCAN_READER_PROMPT,
   SCAN_READER_MAX_TOKENS,

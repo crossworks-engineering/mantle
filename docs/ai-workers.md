@@ -655,51 +655,72 @@ transcription, Imagen), not because anything is missing.
 
 ## The Scan reader
 
-A `kind='scan_reader'` worker (migration `0390`): a cheap model strong at OCR
-that reads the text of a scanned page picture. It sits between the free
-reads and the vision worker. The order of a scanned page in the book reader
-of large PDFs (the Reader `pdf-pages`) is to be:
+A `kind='scan_reader'` worker (migration `0390`) that reads the text of a
+scanned page for about half the price of the vision worker. The shipped
+worker is an OCR engine, not a chat model: OpenRouter's PDF parser
+`mistral-ocr` (owner decision 2026-11-19, on the scan bench below).
+
+**The order of a scanned page** in the book reader of large PDFs (the Reader
+`pdf-pages`), to be wired in its second part:
 
 1. the text layer (free);
 2. Tesseract, in the parser (free);
-3. the Scan reader, when Tesseract read the page badly (one paid call);
-4. the vision worker, only when the Scan reader read badly too.
+3. the Scan reader, for a page Tesseract read with low confidence (one paid
+   call: the page cut as a one-page PDF in the parser);
+4. the vision worker, only for a page whose Scan reader read the check below
+   judges bad.
 
-A page with a figure (ink besides the words) goes to vision as before: the
-Scan reader is for text, and scanned PDF pages only. Pictures (photos,
-screenshots) are not its work. The wiring into the book reader is the second
-part of this work and is not built yet: today the worker, its call and its
-check exist, and nothing calls them.
+A page that every step fails is marked unread in the file's status. A page
+marked for vision because it holds a figure (ink besides the words) keeps
+vision as before: the Scan reader is for text. Pictures (photos,
+screenshots) are not its work. Today the worker, its call and its check
+exist; nothing calls them until the book reader wiring lands.
 
 **The worker.** `MANIFEST_WORKERS` entry `scan_reader`, name "Scan reader",
-`required: false`: a fresh brain gets it at onboarding, an existing brain
-does not, and a brain with none keeps the old path exactly (Tesseract, then
-vision). Its model is `SCAN_READER_MODEL` in
-`server/web/lib/system-manifest/manifest.ts`, the one line to change; today a
-placeholder, the workhorse `DEFAULT_WORKER_MODEL`, until the owner picks one.
-The provider eligibility is the vision capability (an image-reading chat
-model), and its model pool is `scan_reader`.
+provider `openrouter`, `params.engine` = `SCAN_READER_ENGINE`
+(`mistral-ocr`), model `SCAN_READER_MODEL` (`meta-llama/llama-3.1-8b-instruct`),
+both in `server/web/lib/system-manifest/manifest.ts`. The model is only the
+text model the parsed page is handed to: it answers 16 tokens, which are not
+used; the page's text is the parser's own. It is text-only, so the parser
+forwards no picture. `required: true`: it reaches existing brains on upgrade
+(the reconcile's required pass), for a brain with an OpenRouter key; a brain
+without one gets none and keeps the old path (Tesseract, then vision). An
+operator may clear `engine` and set an image-reading model instead: the
+worker then reads the page picture with a fixed prompt. Its model pool is
+`scan_reader`; its provider eligibility the vision capability.
+
+**Cost on existing brains** (for the release notes). A scanned page that
+Tesseract reads badly costs the parser's $2.00 per 1,000 pages ($2.20 in the
+US region) plus about $0.03 of the text model, instead of a vision call of
+about $3.94 per 1,000: about half. A page the Scan reader reads badly costs
+both. Nothing else changes in spend: a typed page, a page Tesseract reads
+well and a figure page cost what they cost before. Where the page goes: to
+OpenRouter and on to Mistral (the parser), as a vision page goes to
+OpenRouter today.
 
 **The call.** `runScanReader` (`packages/runtime/src/agent/scan-reader.ts`):
-one page picture (PNG, JPEG or WebP) in; out, the text, the model, the
-tokens, the provider's finish reason and the quality. Its prompt is fixed
-(`SCAN_READER_SYSTEM_TEXT`): the text as printed, a table one row a line with
-cells split by `|`, and `[?]` for a word the model cannot read. The page
-is data from a file, so the model has no tool and follows nothing written on
-it. One call a page; with `tries: 2` a provider that failed with no answer
-(a timeout, a 5xx) is asked one time more, never on a refusal and never
-because the answer read badly. With no worker it calls nothing and answers
-`model: null`, so the caller takes its old path. It never falls back to the
-vision worker itself. The spend is recorded by the vision adapter on the
-caller's trace step (docs/spend-recording.md). The worker's `max_tokens`
-param sets the answer cap (default `SCAN_READER_MAX_TOKENS`, 8000: a dense
-page of 42 table rows is about 3,000 tokens).
+the page as a one-page PDF (and its picture, for a worker with no engine)
+in; out, the text, the model, the engine, the tokens, the billed cost and
+the quality. With an engine it calls the vision adapter's `parsePdf`
+(OpenRouter: the `file-parser` plugin with the engine, the text from
+`message.annotations`, the billed cost from `usage.cost`, parser fee
+included) and cleans the parser's markdown (`cleanParsedText`: its `<file>`
+wrapper, table divider lines and picture links out, a table row as cells
+split by ` | `). One call a page; with `tries: 2` a provider that failed
+with no answer (a timeout, a 5xx) is asked one time more, never on a
+refusal and never because the answer read badly. With no worker it calls
+nothing and answers `model: null`, so the caller takes its old path. It never
+falls back to the vision worker itself. The spend is recorded by the vision
+adapter on the caller's trace step, at the billed cost
+(docs/spend-recording.md). The worker test button reads a one-page PDF for a
+worker with an engine (the document test), a picture for one without.
 
 **Read badly, with no second call.** `scanReadQualityOf`
 (`packages/runtime/src/agent/scan-reader-quality.ts`) judges the answer from
 what is in hand: the answer itself, Tesseract's words of the same page (the
 book reader has them, free), and the page's count of text lines from the
-free reads. A bad read is any of: no text; `cut` (stopped at the token cap);
+free reads (Tesseract's lines and the ink bands of the picture). A bad read
+is any of: no text; `cut` (stopped at the token cap of a picture read);
 `short` (under 40 characters); `loop` (one line of 8 characters or more over
 4 times in a row); `too_few_lines` (under 80% of the 10 or more lines the
 free reads found); `illegible` (over 5% of the words are `[?]`);
@@ -707,33 +728,28 @@ free reads found); `illegible` (over 5% of the words are `[?]`);
 confidence of 90 or more, and under 80% of them are in the answer);
 `unverified` (Tesseract read under 30 such words, and the answer has over
 1.5 times the lines the free reads found, and over 10). The last one is for
-a page too bad to read: on the bench a cheap model wrote a whole plausible
-spec table onto such a page, none of it on the page. A true read of a page
-that bad is sent on too: with no free read to vouch for it, no answer is
-taken as the page's text.
+a page too bad to read: on the bench both mistral-ocr and a cheap image
+model wrote a whole plausible spec table onto such a page, none of it on the
+page. A true read of a page that bad is sent on too: with no free read to
+vouch for it, no answer is taken as the page's text.
 
-What the check can and cannot see (bench of 2026-11-19, made-up pages): on a
-page Tesseract still reads in part, a read that drops rows, stops early,
-loops or makes rows up is caught. On a page so bad that Tesseract reads no
-confident word, only the model's own signs (cut, loop, `[?]`) and the line
-count are left; there, a long answer is `unverified` and goes on to vision,
-right or wrong. Tesseract's words
-at confidence 90 or more were right 95% to 99% of the time on the bench,
-which is why they can judge a read.
+**The bench** (2026-11-19, made-up pages only; four sets of 12 copies of the
+generated spec book, the book reader's own Tesseract marking):
 
-**Bench.** `scripts/scan-reader/make_set.py` makes the page sets from the
-generated scan book (clean, fair, poor and bad copies, with the book
-reader's own Tesseract marking) in the parser image;
-`scripts/scan-reader/harness.py` scores Tesseract and any OpenRouter model or
-PDF parser engine on them: characters, words, table cells, rows read whole,
-the read-badly check, the cost per 1,000 pages as billed and the seconds a
-page, under a spend cap. Run it on a model before it goes into the manifest.
+| reader | cells found: clean / fair / poor / bad | judged bad | per 1,000 pages | s a page |
+|---|---|---|---|---|
+| Tesseract | 92.9% / 38.7% / 2.7% / 0.3% | | $0 | ~3 (CPU) |
+| mistral-ocr (shipped) | 100% / 100% / 99.9% / 0.1% | 0 / 0 / 0 / 12 | $2.03 | 3.7 to 5.0 |
+| gemini-3.1-flash-lite | 100% / 100% / 100% / 2.0% | 0 / 0 / 0 / 12 | $2.43 | 5.4 to 6.1 |
+| gemini-3.5-flash-lite (vision) | 100% / 100% / 99.9% / 0.0% | 0 / 0 / 0 / 11 | $3.94 | 3.5 to 5.7 |
 
-**Cost on existing brains.** None today: the worker is optional and nothing
-calls it. When the book reader is wired, a page goes to the Scan reader only
-where it now goes to vision for a bad OCR read, and on to vision only when
-the Scan reader read badly too; so a page costs one cheap call instead of
-one vision call, or both when the Scan reader fails.
+Tesseract marked every fair, poor and bad page for vision. On the bad set
+every reader fails, vision too: those pages end unread.
+`scripts/scan-reader/make_set.py` makes the sets in the parser image;
+`scripts/scan-reader/harness.py` scores Tesseract and any OpenRouter model
+or PDF parser engine on them (cells, words, characters, the check, billed
+cost per 1,000 pages, seconds a page) under a spend cap. Run it on a model
+or engine before it goes into the manifest.
 
 ---
 

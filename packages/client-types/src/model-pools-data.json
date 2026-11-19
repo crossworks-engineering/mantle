@@ -1115,23 +1115,23 @@
   {
     "pool": "scan_reader",
     "position": 0,
-    "name": "Google: Gemini 3.5 Flash Lite",
-    "vendor": "Google",
+    "name": "Meta: Llama 3.1 8B Instruct",
+    "vendor": "Meta",
     "routes": [
       {
         "provider": "openrouter",
-        "model": "google/gemini-3.5-flash-lite"
+        "model": "meta-llama/llama-3.1-8b-instruct"
       }
     ],
     "pricing": {
-      "inputPerM": 0.3,
-      "outputPerM": 2.5,
+      "inputPerM": 0.02,
+      "outputPerM": 0.04,
       "currency": "USD",
-      "capturedAt": "2026-09-22T14:41:05.911Z",
+      "capturedAt": "2026-11-19T09:00:00.000Z",
       "source": "openrouter"
     },
     "rating": 5,
-    "note": "the placeholder default for this pool until the owner picks the Scan reader model; the vision default"
+    "note": "the shipped default: the text model behind the mistral-ocr PDF parser (params.engine), which bills $2 per 1,000 pages; it answers 16 tokens, the text is the parser's"
   },
   {
     "pool": "image_gen",

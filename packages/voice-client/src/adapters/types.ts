@@ -638,6 +638,24 @@ export interface VisionExtractResult {
   /** Why the model stopped, when the provider says (`length`: cut at
    *  `maxTokens`). The Scan reader counts a cut answer as a bad read. */
   finishReason?: string;
+  /** The call's cost in USD as the provider billed it, when it says
+   *  (OpenRouter's `usage.cost`, which holds a PDF parser's fee too). The
+   *  spend recorder takes it over the price table. */
+  reportedCostUsd?: number;
+}
+
+/** Options of a PDF read by a provider's PDF parser engine (`parsePdf`). */
+export interface VisionParsePdfOptions extends ProviderCredential {
+  /** The parser engine, e.g. OpenRouter's `mistral-ocr`. */
+  engine: string;
+  /** The model the parsed text is handed to. Its answer is not used: the
+   *  text is the parser's own, so a cheap text-only model with a tiny
+   *  `maxTokens` is all it needs. */
+  model: string;
+  /** The answer cap of that model. Default 16. */
+  maxTokens?: number;
+  /** The PDF's file name the provider sees. Default `page.pdf`. */
+  filename?: string;
 }
 
 export interface VisionDispatcher extends AdapterMeta {
@@ -656,6 +674,13 @@ export interface VisionDispatcher extends AdapterMeta {
    *  back to rasterizing the pages through `extract`. `opts.mimeType` is the
    *  document MIME (e.g. 'application/pdf'). */
   extractDocument?(document: Buffer, opts: VisionExtractOptions): Promise<VisionExtractResult>;
+
+  /** Optional. Read a PDF's text with the provider's PDF parser ENGINE (OCR
+   *  of each page, e.g. OpenRouter's `file-parser` plugin with `mistral-ocr`),
+   *  not with a model: the result's `text` is the parser's text of the file,
+   *  and `reportedCostUsd` the billed total (the parser's fee and the small
+   *  model call). The Scan reader reads a one-page PDF with it. */
+  parsePdf?(pdf: Buffer, opts: VisionParsePdfOptions): Promise<VisionExtractResult>;
 
   /** Live-discover which vision-capable models the api key can use.
    *  Implementation parity with ChatDispatcher.discoverModels — when
