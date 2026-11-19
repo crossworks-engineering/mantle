@@ -34,6 +34,11 @@ export const SYSTEM_WORK_PINS = {
   // mantle_ws_set_moderator as workspace system work (the SQL allowlist
   // mantle_ws_system_work names its actor, 0307).
   'server/web/lib/workspace-ticks.ts': { count: 1, why: ['ws-clear-ticks'] },
+  // system:add, the operator's recovery of the System workspace: the login
+  // joins Admin (when it is not an Admin user) and System through
+  // mantle_ws_add_user as workspace system work (the SQL allowlist
+  // mantle_ws_system_work names its actor, the System migration).
+  'server/web/lib/system-workspace.ts': { count: 1, why: ['system-add'] },
   // The boot step: the assistant attach (mantle_ws_attach_assistants) as
   // workspace system work (its actor in the SQL
   // allowlist, 0307). Was runAsSystem with the same reason.

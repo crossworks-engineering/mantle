@@ -39,7 +39,7 @@ const Body = z.object({ reminderChannel: z.enum(['telegram', 'mobile']) });
 
 export async function PUT(req: Request) {
   const owner = ownerCaller();
-  const refused = await brandSettingsRefusal(owner, "The brain's reminder delivery");
+  const refused = await brandSettingsRefusal(owner, "The brain's reminder delivery", 'settings');
   if (refused) return refused;
   const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {

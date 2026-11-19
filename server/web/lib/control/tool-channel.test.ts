@@ -27,6 +27,7 @@ const {
   listToolsForCenter,
   NONCE_MAX,
   REVIEWED_USERS_TOOLS,
+  USERS_MAIL_TOOLS,
   NONCE_TTL_MS,
   runToolCall,
   takeNonce,
@@ -175,7 +176,17 @@ describe('the lists', () => {
       const loginish =
         area === 'users' ||
         /^(user|users|login|logins|owner|member|members|workspace_user)_/.test(d.slug);
-      if (loginish) expect(REVIEWED_USERS_TOOLS.has(d.slug), d.slug).toBe(true);
+      // The mail tools are the users area's too (the owner's Inbox), named
+      // and kept out of admin.
+      if (loginish && !USERS_MAIL_TOOLS.has(d.slug)) {
+        expect(REVIEWED_USERS_TOOLS.has(d.slug), d.slug).toBe(true);
+      }
+    }
+    for (const slug of USERS_MAIL_TOOLS) {
+      const d = listBuiltins().find((b) => b.slug === slug)!;
+      const s = (d.policy as { scope?: unknown }).scope;
+      expect(typeof s === 'object' && s ? (s as { area?: string }).area : null, slug).toBe('users');
+      expect(toolAllowed('admin', d), slug).toBe(false);
     }
     // The vault's own reads hand out no plaintext (their own tests pin it);
     // no tool of any scope is named to reveal one.

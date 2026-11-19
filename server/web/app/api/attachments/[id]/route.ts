@@ -9,7 +9,7 @@ import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'connectors' },
+  GET: { class: 'area', area: 'users' },
 });
 
 /**

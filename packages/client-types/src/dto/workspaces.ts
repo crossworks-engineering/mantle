@@ -11,10 +11,11 @@ import type { AppTint } from '../app-nav';
 import type { LoginRole } from '../role-names';
 
 /** The Admin areas, the one list of them (the brain's SCOPE_AREAS,
- *  adminUserSql and the route classes read it). An Admin
- *  workspace user has all of them unless a per-user switch turns one off
- *  (none can be switched off yet). In this order on the wire (the shell's
- *  `areas`). */
+ *  adminUserSql and the route classes read it). An Admin workspace user
+ *  holds `users`; the other four (settings, assistants, connectors, keys)
+ *  only while they are also a user of the System workspace. A per-user
+ *  switch on the Admin row can turn one off (no screen sets it yet). In
+ *  this order on the wire (the shell's `areas`). */
 export const WORKSPACE_AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
 export type WorkspaceArea = (typeof WORKSPACE_AREAS)[number];
 
@@ -54,9 +55,15 @@ export type Workspace = WorkspaceLook & {
   assistant: { id: string; name: string } | null;
   /** The Admin workspace: its users manage the brain (requireArea). */
   isAdmin: boolean;
-  /** The built-in workspace: Admin only since migration 0286 (Team too
-   *  before). It cannot be renamed or archived (hide Rename and Archive
-   *  there). Its connectors are attached here like any workspace's. */
+  /** The System workspace: a subset of the Admin users who hold the
+   *  technical areas (settings, assistants, connectors, keys). Only a
+   *  System user adds someone, and only an Admin user can be added; there
+   *  is no Moderator tick to set (every user is one). Absent (read it as
+   *  false) on any other workspace and from a brain before it. */
+  isSystem?: boolean;
+  /** The built-in workspaces: Admin, and System (Team too before 0286).
+   *  They cannot be renamed or archived (hide Rename and Archive there).
+   *  Their connectors are attached here like any workspace's. */
   builtIn: boolean;
   /** Always false since migration 0286 (it marked the built-in Team
    *  workspace, where every Admin workspace user was a Moderator). */
@@ -222,6 +229,8 @@ export type ShellWorkspace = WorkspaceLook & {
   id: string;
   name: string;
   isAdmin: boolean;
+  /** The System workspace (see Workspace.isSystem). Absent on any other. */
+  isSystem?: true;
   moderator: boolean;
   /** The login's own private workspace ("<name> (only you)"): match on
    *  this, never on the name. Absent on any other. */
@@ -305,6 +314,8 @@ export type WorkspaceErrorCode =
   | 'resource_exists'
   | 'landing_app_not_held'
   | 'landing_app_not_ready'
-  | 'rate_limited';
+  | 'rate_limited'
+  | 'system_users_only'
+  | 'not_admin_user';
 
 export type WorkspaceError = { error: string; code: WorkspaceErrorCode };

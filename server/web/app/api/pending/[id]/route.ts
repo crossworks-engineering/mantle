@@ -7,11 +7,11 @@ import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'settings' },
+  GET: { class: 'area', area: 'users' },
   PATCH: {
     class: 'area',
-    area: 'settings',
-    item: { none: 'manages the settings area: the Admin step checks it' },
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
   },
 });
 

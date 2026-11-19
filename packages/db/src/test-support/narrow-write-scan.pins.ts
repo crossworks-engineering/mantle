@@ -664,6 +664,8 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_ws_set_moderator:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
+  mantle_ws_system_id:
+    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces and users screens and tools), or full system work (system:add)',
   mantle_ws_update_about:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
 });
@@ -748,6 +750,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/tools/src/builtins-users.ts mantle_ws_add_user': 1,
   'packages/tools/src/builtins-users.ts mantle_ws_remove_user': 1,
   'packages/tools/src/builtins-users.ts mantle_ws_set_moderator': 1,
+  'packages/tools/src/builtins-users.ts mantle_ws_system_id': 1,
   'packages/tools/src/client-sourced.ts mantle_conversation_taint': 1,
   'packages/tools/src/client-sourced.ts mantle_conversation_taint_keep': 1,
   'packages/tools/src/client-sourced.ts mantle_mark_created_client_sourced': 1,
@@ -777,6 +780,9 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/maintenance/dwg-reindex.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/ocr-rescan.ts mantle_is_brain_space': 1,
   'server/web/lib/maintenance/refold-embeds.ts mantle_embed_host': 1,
+  'server/web/lib/system-workspace.ts mantle_ws_add_user': 1,
+  'server/web/lib/system-workspace.ts mantle_ws_admin_id': 1,
+  'server/web/lib/system-workspace.ts mantle_ws_system_id': 1,
   'server/web/lib/workspace-ticks.ts mantle_ws_set_moderator': 1,
   'server/web/lib/workspaces-migrate.ts mantle_ws_attach_assistants': 1,
   'server/web/lib/workspaces-migrate.ts mantle_ws_migrate_locked': 1,
@@ -797,5 +803,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/workspaces.ts mantle_ws_set_assistant': 1,
   'server/web/lib/workspaces.ts mantle_ws_set_contact': 1,
   'server/web/lib/workspaces.ts mantle_ws_set_landing': 1,
+  'server/web/lib/workspaces.ts mantle_ws_system_id': 2,
   'server/web/lib/workspaces.ts mantle_ws_update_about': 1,
 });

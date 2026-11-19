@@ -1303,11 +1303,16 @@ export function actingLoginAtSpot(): string | null {
  *    snapshots and `pnpm maintain snapshot-copies` (snapshot-copies.ts,
  *    under its advisory lock), on mantle_file_restamp_home (0313: the home
  *    of a copy whose create raced the files watcher).
+ *  - `system-add`: pnpm -C server/web system:add (system-workspace.ts
+ *    systemAdd), the operator's recovery of the System workspace, on
+ *    mantle_ws_add_user (Admin first when the login is not an Admin user,
+ *    then System).
  */
 export const WORKSPACE_SYSTEM_REASONS = [
   'ws-clear-ticks',
   'boot:migrate-workspaces',
   'snapshot-copies',
+  'system-add',
 ] as const;
 
 export type WorkspaceSystemReason = (typeof WORKSPACE_SYSTEM_REASONS)[number];

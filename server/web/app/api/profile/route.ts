@@ -150,7 +150,7 @@ export async function PUT(req: Request) {
   //    every heartbeat says while each keeps its own maker.
   //  - the brand (the avatar style, the site name, the peer name): avatars,
   //    the header and a notification title, never a prompt. The brain owner
-  //    or a login with the settings area changes them.
+  //    or an Admin user (the users area) changes them.
   // Neither changes any heartbeat's maker.
   const promptSet: Record<string, string | undefined> = {
     purpose: purpose !== undefined ? purposeTrimmed : undefined,

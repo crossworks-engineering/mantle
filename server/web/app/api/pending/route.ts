@@ -5,7 +5,7 @@ import { ownerCaller } from '@/lib/auth';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'settings' },
+  GET: { class: 'area', area: 'users' },
 });
 
 const ListQuery = z.object({

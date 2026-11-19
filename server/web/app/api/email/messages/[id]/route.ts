@@ -12,11 +12,11 @@ import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'connectors' },
+  GET: { class: 'area', area: 'users' },
   PATCH: {
     class: 'area',
-    area: 'connectors',
-    item: { none: 'manages the connectors area: the Admin step checks it' },
+    area: 'users',
+    item: { none: 'manages the users area: the Admin step checks it' },
   },
 });
 

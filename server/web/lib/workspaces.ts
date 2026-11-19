@@ -24,9 +24,17 @@
  *    themselves, with one exception: any login may make a workspace, and
  *    becomes its only user and a Moderator. Any login may leave one,
  *    except as its last Moderator.
- *  - The only built-in workspace is Admin: it keeps its name, cannot be
- *    archived and keeps a Moderator. Team is a workspace like any other
- *    (renamed, archived and moderated by the same rules).
+ *  - The built-in workspaces are Admin and System: each keeps its name,
+ *    cannot be archived and keeps a Moderator. Team is a workspace like any
+ *    other (renamed, archived and moderated by the same rules).
+ *  - System (bridge_key 'system', mantle_ws_system_id) is a subset of the
+ *    Admin users: they hold the technical areas (settings, assistants,
+ *    connectors, keys; Admin alone holds users). Only a System user adds
+ *    someone there (403 system_users_only), only an Admin user can be added
+ *    (409 not_admin_user), and every user there is a Moderator. Anyone may
+ *    leave; removing another needs a System user; the last one stays. The
+ *    rules are the definers' (mantle_ws_add_user, mantle_ws_remove_user,
+ *    docs/workspaces.md); this file reads which workspace is System.
  *
  * A user of the Admin workspace IS an admin login: membership decides, and
  * the role column follows it (0330: the membership definers write the row
@@ -251,6 +259,8 @@ type WsRow = LookRow & {
   description: string;
   contact_id: string | null;
   is_admin: boolean;
+  /** The System workspace (mantle_ws_system_id). */
+  is_system: boolean;
   landing_app_id: string | null;
   archived_at: string | Date | null;
   user_count: number;
@@ -275,13 +285,15 @@ type WsRow = LookRow & {
 function wsSelect(caller: WsCaller, where: ReturnType<typeof sql>) {
   return sql`
     select w.id, w.name, w.description, w.contact_id, w.is_admin,
+           coalesce(w.id = s.id, false) as is_system,
            w.landing_app_id, w.archived_at, ${WS_LOOK_COLUMNS},
            w.user_count, w.resource_count, w.me_member, w.me_moderator,
            w.agent_id, w.agent_name, w.agent_history,
            w.landing_held, w.landing_ready, w.landing_title
       from mantle_ws_seen(${caller.loginId}::uuid) w
+      cross join (select mantle_ws_system_id(${caller.anchorId}::uuid) as id) s
      where ${where}
-     order by w.is_admin desc, lower(w.name)`;
+     order by w.is_admin desc, coalesce(w.id = s.id, false) desc, lower(w.name)`;
 }
 
 function toWorkspace(r: WsRow): Workspace {
@@ -292,9 +304,10 @@ function toWorkspace(r: WsRow): Workspace {
     contactNodeId: r.contact_id,
     assistant: r.agent_id ? { id: r.agent_id, name: r.agent_name ?? '' } : null,
     isAdmin: r.is_admin,
-    // Admin is the one built-in workspace; no workspace is Admin-moderated
-    // since 0286 (both fields stay for older clients).
-    builtIn: r.is_admin,
+    isSystem: r.is_system,
+    // Admin and System are the built-in workspaces; no workspace is
+    // Admin-moderated since 0286 (both fields stay for older clients).
+    builtIn: r.is_admin || r.is_system,
     adminModerated: false,
     archived: r.archived_at !== null,
     userCount: r.user_count,
@@ -345,6 +358,7 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
         id: string;
         name: string;
         is_admin: boolean;
+        is_system: boolean;
         moderator: boolean;
         private: boolean;
       }
@@ -352,12 +366,15 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
       db,
       // Whether a workspace is the login's own private one, by its definer
       // (mantle_ws_private_for, 0293): no role reads private_workspaces.
-      sql`select w.id, w.name, w.is_admin, u.moderator, ${WS_LOOK_COLUMNS},
+      // Which one is System, by its definer too (mantle_ws_system_id).
+      sql`select w.id, w.name, w.is_admin, coalesce(w.id = s.id, false) as is_system,
+                 u.moderator, ${WS_LOOK_COLUMNS},
                  "public"."mantle_ws_private_for"(w.id, ${caller.loginId}::uuid) as private
             from workspaces w
             join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
+            cross join (select mantle_ws_system_id(${caller.anchorId}::uuid) as id) s
            where w.owner_id = ${caller.anchorId} and ${liveWorkspaceSql('w')}
-           order by w.is_admin desc, lower(w.name)`,
+           order by w.is_admin desc, coalesce(w.id = s.id, false) desc, lower(w.name)`,
     ),
   ]);
   return {
@@ -365,6 +382,7 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
       id: w.id,
       name: w.name,
       isAdmin: w.is_admin,
+      ...(w.is_system ? { isSystem: true as const } : {}),
       moderator: w.moderator,
       ...(w.private ? { private: true as const } : {}),
       ...lookOfRow(w),
@@ -565,10 +583,10 @@ export async function patchWorkspace(
   }
   if (body.name !== undefined && body.name !== w.name) {
     // Admin keeps its name: a renamed Admin would free "Admin" for anyone,
-    // and a later clash would tell them it exists. Every other workspace,
-    // Team too, may be renamed.
-    if (w.is_admin) {
-      throw new WsError(409, 'reserved_name', 'The Admin workspace keeps its name.');
+    // and a later clash would tell them it exists. System keeps its name
+    // too. Every other workspace, Team too, may be renamed.
+    if (w.is_admin || w.is_system) {
+      throw new WsError(409, 'reserved_name', `The ${w.name} workspace keeps its name.`);
     }
     refuseReservedName(body.name);
   }
@@ -683,8 +701,8 @@ function mayArchive(seen: Seen): void {
   if (!seen.mod && !seen.admin) {
     throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can archive it.');
   }
-  if (seen.row.is_admin) {
-    throw new WsError(409, 'admin_workspace', 'The Admin workspace cannot be archived.');
+  if (seen.row.is_admin || seen.row.is_system) {
+    throw new WsError(409, 'admin_workspace', `The ${seen.row.name} workspace cannot be archived.`);
   }
   if (seen.row.archived_at !== null) throw archivedError();
 }
@@ -805,12 +823,35 @@ const WS_REFUSALS: Readonly<
   owner_stays_admin: {
     state: '42501',
     error: () =>
-      new WsError(403, 'owner_stays_admin', 'The original account always stays an Admin user.'),
+      new WsError(
+        403,
+        'owner_stays_admin',
+        'The original account always stays an Admin user and a System user.',
+      ),
   },
   self_demote: {
     state: '42501',
     error: () =>
       new WsError(403, 'self_demote', 'You cannot remove yourself from the Admin workspace.'),
+  },
+  // The System workspace (mantle_ws_add_user, mantle_ws_remove_user).
+  system_users_only: {
+    state: '42501',
+    error: () =>
+      new WsError(
+        403,
+        'system_users_only',
+        'Only a System user adds someone to the System workspace or removes another user there.',
+      ),
+  },
+  not_admin_user: {
+    state: '55000',
+    error: () =>
+      new WsError(
+        409,
+        'not_admin_user',
+        'Only an Admin user can be added to the System workspace. Make them an Admin user first.',
+      ),
   },
   // The resources and the assistant.
   resources_admin_only: {
@@ -862,7 +903,7 @@ const WS_REFUSALS: Readonly<
   },
   admin_keeps_name: {
     state: '55000',
-    error: () => new WsError(409, 'reserved_name', 'The Admin workspace keeps its name.'),
+    error: () => new WsError(409, 'reserved_name', 'A built-in workspace keeps its name.'),
   },
   reserved_name: { state: '55000', error: () => RESERVED() },
   contact_admin_only: {
@@ -903,7 +944,7 @@ const WS_REFUSALS: Readonly<
   },
   archive_admin: {
     state: '55000',
-    error: () => new WsError(409, 'admin_workspace', 'The Admin workspace cannot be archived.'),
+    error: () => new WsError(409, 'admin_workspace', 'A built-in workspace cannot be archived.'),
   },
   holds_items: {
     state: '55000',
@@ -958,6 +999,15 @@ const ADMIN_TICK_KEPT = () =>
     409,
     'admin_workspace',
     'Every Admin user is a Moderator of the Admin workspace. Remove them from Admin to take it away.',
+  );
+
+/** The System workspace's tick, as Admin's: every System user is a
+ *  Moderator there. To take it away, remove them from System. */
+const SYSTEM_TICK_KEPT = () =>
+  new WsError(
+    409,
+    'admin_workspace',
+    'Every System user is a Moderator of the System workspace. Remove them from System to take it away.',
   );
 
 const LAST_MOD = () =>
@@ -1068,8 +1118,10 @@ async function roleChangeOnSystemPool(
  *  subject.self and shown as "Added by NAME on DATE". On the Admin
  *  workspace the add is the role change to admin, a Moderator there
  *  always: an add there with the tick off is refused (409 admin_workspace),
- *  and any add there is an Admin user's with the users area. The rule is mantle_ws_add_user's
- *  (0307). */
+ *  and any add there is an Admin user's with the users area. On the System
+ *  workspace only a System user adds, only an Admin user is added, always
+ *  with the tick. The rule is mantle_ws_add_user's (0307, and the System
+ *  migration). */
 export async function addUser(
   caller: WsCaller,
   id: string,
@@ -1098,7 +1150,10 @@ export async function addUser(
     );
     return reread(caller, wid);
   }
-  await db.transaction(add(body.moderator ?? false, loginParam(body.loginId)));
+  // On System every user is a Moderator; only a System user adds, and only
+  // an Admin user (the definer's 403 system_users_only, 409 not_admin_user).
+  const tick = pre.row.is_system ? true : (body.moderator ?? false);
+  await db.transaction(add(tick, loginParam(body.loginId)));
   return reread(caller, wid);
 }
 
@@ -1114,7 +1169,10 @@ export async function setModerator(
 ): Promise<WorkspaceDetailResponse> {
   // The workspace read in the caller's scope first (its 404), as addUser
   // and removeUser read it; the definer checks again under its lock.
-  const wid = (await seeWorkspace(caller, id)).row.id;
+  const seen = await seeWorkspace(caller, id);
+  const wid = seen.row.id;
+  // Every System user is a Moderator there, as on Admin: no tick to clear.
+  if (seen.row.is_system && !moderator) throw SYSTEM_TICK_KEPT();
   // The definer needs the acting login, which the identity readers answer
   // only off the narrow role (0322): the full-route spot acting-login on an
   // Admin area's narrow exit; in a login's scope it runs as it is.
@@ -1145,8 +1203,10 @@ function lastAdminError(err: unknown): WsError | null {
 /** DELETE /api/workspaces/:id/users/:loginId: a Moderator or an Admin user
  *  removes a plain user; only an Admin user removes a Moderator; anyone
  *  may leave. Never the last Moderator. On the Admin workspace it is the
- *  role change to member. The rule is
- *  mantle_ws_remove_user's (0307). */
+ *  role change to member, which takes the login out of System too. On
+ *  System only a System user removes another user (anyone may leave), and
+ *  never the last one or the owner. The rule is
+ *  mantle_ws_remove_user's (0307, and the System migration). */
 export async function removeUser(
   caller: WsCaller,
   id: string,

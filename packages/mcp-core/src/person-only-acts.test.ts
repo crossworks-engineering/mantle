@@ -110,6 +110,7 @@ describe('the list', () => {
       'recall_map_publish',
       'recall_prompt_confirm',
       'recall_revision_restore',
+      'system_user_add',
     ]);
     // Each names the one value an agent may send.
     expect(PARAM_ROWS.map((a) => `${a.tool}.${a.param}=${String(a.agentValue)}`).sort()).toEqual([

@@ -75,6 +75,14 @@ export const PERSON_ONLY_ACTS: readonly PersonOnlyAct[] = [
     where: FLEET_SCREEN,
   },
   {
+    // No tool: POST /api/workspaces/:id/users on the System workspace, a
+    // person's session. workspace_user_set refuses System (reason
+    // 'system'); the name is held so no tool may take it.
+    tool: 'system_user_add',
+    why: "a System user holds the brain's models, assistants, connectors and keys",
+    where: 'on the System workspace screen, by a System user',
+  },
+  {
     tool: 'pending_approve',
     why: 'an agent would approve its own held call',
     where: 'on the Pending screen or the Telegram card',

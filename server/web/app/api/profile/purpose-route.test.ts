@@ -83,18 +83,25 @@ describe('profile brand keys', () => {
   // answer), as the other /api/profile brand writers say them; this route
   // once said its own sentence ("The brain's own settings (...) are changed
   // by the brain owner or a user with the settings area.").
-  it('another Admin login without the settings area: the brand gate refuses, nothing saved', async () => {
+  it('another Admin login without the users area: the brand gate refuses, nothing saved', async () => {
     const res = await runRoute(ADMIN, 'PUT', '/api/profile', { timezone: 'UTC', siteName: 'New' });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({
       error:
-        "The brain's look (siteName) is changed by the brain owner or a user with the settings area. Ask one of them.",
+        "The brain's look (siteName) is changed by the brain owner or an Admin user. Ask one of them.",
     });
     expect(h.saved).toEqual([]);
   });
 
-  it('with the settings area it saves', async () => {
-    h.areas = ['settings'];
+  it('the settings area alone no longer opens the brand', async () => {
+    h.areas = ['settings', 'assistants', 'connectors', 'keys'];
+    const res = await runRoute(ADMIN, 'PUT', '/api/profile', { timezone: 'UTC', siteName: 'New' });
+    expect(res.status).toBe(403);
+    expect(h.saved).toEqual([]);
+  });
+
+  it('with the users area it saves (branding is Admin, not System)', async () => {
+    h.areas = ['users'];
     const res = await runRoute(ADMIN, 'PUT', '/api/profile', { timezone: 'UTC', siteName: 'New' });
     expect(res.status, await res.clone().text()).toBe(200);
     expect(h.saved[0]?.siteName).toBe('New');

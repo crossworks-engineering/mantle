@@ -614,7 +614,7 @@
     "PATCH /api/workspaces/:id/resources/:kind/:refId": { "planned": "workspace_resource_set" },
     "PATCH /api/workspaces/:id/users/:loginId": {
       "tool": "workspace_user_set",
-      "gap": "never the Admin workspace (a role); never a private workspace"
+      "gap": "never the Admin or System workspace (a role, and a person's act); never a private workspace"
     },
     "PATCH /scim/v2/Users/:id": { "none": "outside: the identity provider calls this" },
     "POST /api/access-keys": {
@@ -1083,7 +1083,7 @@
     "POST /api/workspaces/:id/resources": { "planned": "workspace_resource_set" },
     "POST /api/workspaces/:id/users": {
       "tool": "workspace_user_set",
-      "gap": "never the Admin workspace (a role); never a private workspace; no new place for a disabled login"
+      "gap": "never the Admin or System workspace (a role, and a person's act); never a private workspace; no new place for a disabled login"
     },
     "POST /s/:token/canvas/frame-ticket": {
       "none": "outside: a public share link reader, no login"
@@ -1190,7 +1190,7 @@
     "DELETE /api/files/files|file_delete|wider": "no real difference: the route is a bulk loop; deleting one file by hand is open with manage",
     "DELETE /api/journal/:id|journal_delete|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "DELETE /api/recall/maps/:id|recall_map_delete|narrower": "no real difference: the library refuses a non-Admin, so the open route is misleading",
-    "DELETE /api/tools/:id|api_tool_delete|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
+    "DELETE /api/tools/:id|api_tool_delete|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
     "GET /api/apps/:id/export|app_export|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "GET /api/apps/:id/snapshots|app_snapshot_list|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "GET /api/apps/deleted|app_deleted_list|wider": "OPEN, route too narrow: the tool lists only apps homed where the caller is a Moderator",
@@ -1202,22 +1202,22 @@
     "GET /api/journal/:id|journal_get|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "GET /api/journal|journal_list|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "GET /api/peers/nodes|search|wider": "no real difference: search runs in the login scope; the route is the picker for peer grants",
-    "GET /api/pending/:id|pending_get|wider": "OPEN, low: the route names the settings area and the tool names Admin; no screen sets a one-area limit today",
-    "GET /api/pending|pending_list|wider": "OPEN, low: the route names the settings area and the tool names Admin; no screen sets a one-area limit today",
+    "GET /api/pending/:id|pending_get|wider": "no real difference: Admin either way; the route names the users area, which every Admin user holds, and the tool names Admin",
+    "GET /api/pending|pending_list|wider": "no real difference: Admin either way; the route names the users area, which every Admin user holds, and the tool names Admin",
     "GET /api/recall/maps/:id/revisions|recall_revisions|narrower": "OPEN, agent narrower: a member reads this by hand",
     "GET /api/recall/maps/:id|recall_map_get|narrower": "OPEN, agent narrower: a member reads this by hand",
-    "GET /api/runs/:id|run_state|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
-    "GET /api/runs|run_state|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
-    "GET /api/settings/worker-groups|worker_group_list|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
+    "GET /api/runs/:id|run_state|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "GET /api/runs|run_state|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "GET /api/settings/worker-groups|worker_group_list|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
     "GET /api/tables/:id/history|table_history|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
-    "GET /api/tools/:id|api_tool_get|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
-    "GET /api/tools|api_tool_list|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
+    "GET /api/tools/:id|api_tool_get|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "GET /api/tools|api_tool_list|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
     "PATCH /api/contacts/:id|contact_update|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "PATCH /api/journal/:id|journal_update|wider": "no real difference: the kind is Admin only, so a member gets nothing",
-    "PATCH /api/pending/:id|pending_reject|wider": "OPEN, low: the route names the settings area and the tool names Admin; no screen sets a one-area limit today",
+    "PATCH /api/pending/:id|pending_reject|wider": "no real difference: Admin either way; the route names the users area, which every Admin user holds, and the tool names Admin",
     "PATCH /api/recall/maps/:id|recall_map_set_slug|narrower": "no real difference: the library refuses a non-Admin, so the open route is misleading",
-    "PATCH /api/settings/worker-groups/:id|worker_group_ensure|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
-    "PATCH /api/tools/:id|api_tool_update|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
+    "PATCH /api/settings/worker-groups/:id|worker_group_ensure|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "PATCH /api/tools/:id|api_tool_update|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
     "POST /api/apps/:id/duplicate|app_duplicate|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "POST /api/apps/:id/snapshots/:sid/restore|app_snapshot_restore|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "POST /api/apps/:id/snapshots|app_snapshot_create|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
@@ -1229,17 +1229,17 @@
     "POST /api/apps/import|app_publish|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "POST /api/apps/import|app_source_set|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "POST /api/apps/import|app_tools_set|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
-    "POST /api/dev-tools/execute-tool|api_tool_test|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
-    "POST /api/dev-tools/execute-tool|recipe_tool_test|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
+    "POST /api/dev-tools/execute-tool|api_tool_test|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "POST /api/dev-tools/execute-tool|recipe_tool_test|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
     "POST /api/files/files/:id|file_copy|wider": "no real difference: a member can read the bytes and upload them by hand",
     "POST /api/files/folders/:id|folder_copy|wider": "no real difference: a member can read the bytes and upload them by hand",
     "POST /api/journal/:id/resolve|journal_resolve_gap|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "POST /api/recall/maps/:id/cards/reorder|recall_cards_reorder|narrower": "no real difference: the library refuses a non-Admin, so the open route is misleading",
-    "POST /api/runs/:id|run_cancel|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
-    "POST /api/settings/worker-groups|worker_group_ensure|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
+    "POST /api/runs/:id|run_cancel|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "POST /api/settings/worker-groups|worker_group_ensure|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
     "POST /api/tables/:id/history/:sid/restore|table_snapshot_restore|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "POST /api/tables/:id/history|table_snapshot_create|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
-    "POST /api/tools|api_tool_create|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today",
-    "PUT /api/tools/:id/external-access|api_tool_update|area": "OPEN, low: the route and the tool name different Admin areas; no screen sets a one-area limit today"
+    "POST /api/tools|api_tool_create|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "PUT /api/tools/:id/external-access|api_tool_update|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today"
   }
 }

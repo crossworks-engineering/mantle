@@ -6,7 +6,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'connectors' },
+  GET: { class: 'area', area: 'users' },
 });
 
 const Query = z.object({

@@ -4,7 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'connectors' },
+  GET: { class: 'area', area: 'users' },
 });
 
 /**

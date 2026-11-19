@@ -78,6 +78,20 @@ export const REVIEWED_USERS_TOOLS: ReadonlySet<string> = new Set([
   'users_list',
   'workspace_user_set',
 ]);
+/**
+ * The users area's mail tools (the owner's Inbox: read, page, send). They
+ * moved from connectors to users with the System workspace (mail reading
+ * stays with every Admin user; the mail accounts stay in connectors). They
+ * hold the owner's mail and reach outside the box, so they stay out of
+ * `admin`, as they did under connectors. Named, so a new users-area tool
+ * still fails tool-channel.test.ts until it is reviewed.
+ */
+export const USERS_MAIL_TOOLS: ReadonlySet<string> = new Set([
+  'email_get',
+  'email_list',
+  'email_page',
+  'email_send',
+]);
 /** Code and run execution, in an Admin area all the same. */
 const NOT_ADMIN = /^(sandbox_|run_)/;
 /** The Control Center's own tools: never through the channel. */
