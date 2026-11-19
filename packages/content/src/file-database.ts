@@ -101,6 +101,7 @@ import {
   isWindowLost,
   pagesReadOf,
   pdfWindows,
+  pdfWindowsAt,
   PipelineRunError,
   windowJob,
   readerGivesText,
@@ -1329,7 +1330,16 @@ async function runAgentWindowed(args: {
     if (out === 'no-database') return { status: 'skipped', reason: 'no-database' };
     return out;
   };
-  for await (const w of pdfWindows(bytes, sha256, pipeline.needs.window)) {
+  // Only the windows that hold a marked page are cut (a book of 1,679
+  // pages with one page left to vision is one cut, not 112): each window
+  // starts at the first marked page past the one before. An Agent with no
+  // marked pages in its state reads every window.
+  const marked = input.state.visionPages;
+  const windows =
+    marked && marked.length > 0
+      ? pdfWindowsAt(bytes, sha256, pipeline.needs.window, marked)
+      : pdfWindows(bytes, sha256, pipeline.needs.window);
+  for await (const w of windows) {
     if (!w.part) {
       lost = true;
       first = false;

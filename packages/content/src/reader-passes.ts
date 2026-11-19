@@ -86,6 +86,45 @@ export async function readerStandsOverFile(
   return (await standingReaderOf(fileId, sha256, await boxPipelines(ownerId))) !== null;
 }
 
+/** One page picture of a book (G1): the PNG of a page its Reader left to
+ *  vision, by its name in the run's `pictures`. */
+export type BookPagePicture = { file: string; mime: string; caption?: string; page: number };
+
+/**
+ * The page pictures of a book (G1): the PNG of each page the Reader marked
+ * for vision, from the run the database pass of this extract made, kept for
+ * the extract (never a new parser job). Their bytes are on disk (the run's
+ * spool, runWindowed). Null: the file's database was written by no Reader
+ * that stands over the core's PDF read, or no run is kept (a read again of
+ * a file whose database is there: its pictures were saved by the read that
+ * made it).
+ */
+export async function standingReaderPictures(
+  ownerId: string,
+  file: { id: string; sha256: unknown },
+): Promise<{ pictures: BookPagePicture[]; bytes: ReadonlyMap<string, Buffer> } | null> {
+  if (typeof file.sha256 !== 'string') return null;
+  const pipelines = await boxPipelines(ownerId);
+  const reader = await standingReaderOf(file.id, file.sha256, pipelines);
+  if (!reader || reader.produces.pictures !== true) return null;
+  const options = effectiveOptions(reader, (await pipelineStateOf(ownerId, reader)).options);
+  const kept = keptReaderRun<PipelineRunResult>(routedRunKey(reader, file.sha256, 'pdf', options));
+  const run = kept ? await kept.catch(() => null) : null;
+  if (run?.status !== 'ok' || !run.write?.pictures) return null;
+  const pictures: BookPagePicture[] = [];
+  for (const p of run.write.pictures) {
+    const page = p.page;
+    if (typeof page !== 'number' || !Number.isInteger(page) || page < 1) continue;
+    pictures.push({
+      file: p.file,
+      mime: p.mime,
+      ...(p.caption ? { caption: p.caption } : {}),
+      page,
+    });
+  }
+  return { pictures, bytes: run.pictures };
+}
+
 /** The text of a file whose Reader stands over the core's PDF read, and
  *  the pages it read when it read in windows. */
 export type StandingText = { text: string; pages?: { read: number; total: number } };

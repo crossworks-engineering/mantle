@@ -50,6 +50,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import {
   readerFor,
   BUILTIN_PIPELINES,
+  PIPELINE_API,
   CLOCK_COLUMNS,
   effectiveOptions,
   optionsHash,
@@ -66,6 +67,7 @@ import {
 } from '@mantle/files';
 import { readPdfDrawingInJob } from '@mantle/files/readers/pdf-drawing';
 import { inProcessPipelineFetch, inProcessStepJob } from '@mantle/files/pipelines/test-job';
+import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
 import { goldenOf } from './pipeline-golden';
 import { pipelinesOf } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
@@ -216,7 +218,32 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
     expect(READER.needs).toEqual({ weight: 'light', timeMs: 240_000 });
   });
 
-  for (const name of FIXTURES) {
+  // The kind rules 4 (2026-11-19, Jason: every office PDF takes the book
+  // reader, whatever its size): the two typed documents of the set are a
+  // `book` now, read by `pdf-pages` (Python, in the parser image, not in
+  // this process). Their golden files stay as the record of the old path
+  // (no database, the core's own read); the router's answer is pinned here.
+  const NOW_BOOKS = new Set(['document.pdf', 'report-with-chart.pdf']);
+  for (const name of NOW_BOOKS) {
+    it(`${name}: a typed document is a book now (rules 4), named with no ask`, async () => {
+      const job = inProcessStepJob(fixture(name), dir);
+      const { step: routerStep } = await PIPELINE_PACKAGES['pdf-router']!();
+      const named = await routerStep(
+        {
+          api: PIPELINE_API,
+          step: 1,
+          file: { name, ext: 'pdf', size: fixture(name).length, sha256: '0'.repeat(64) },
+          options: {},
+          asks: true,
+        },
+        job,
+      );
+      expect(named).toEqual({ status: 'ok', kind: 'book' });
+      expect(golden(`${name}.kind.json`)).toMatchObject({ parsed: 'not-drawing', kind: null });
+    });
+  }
+
+  for (const name of FIXTURES.filter((n) => !NOW_BOOKS.has(n))) {
     it(`${name}: the same ParsedFile, the same kind, the same router count`, async () => {
       const kind = golden(`${name}.kind.json`);
       const r = await read(fixture(name));
@@ -298,7 +325,7 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
       ),
     ).toMatchObject({
       pipeline_id: 'drawing-pdf',
-      pipeline_version: '1.1.1',
+      pipeline_version: '1.1.2',
       pipeline_api: '1',
       shapes: 'pdf-file-v1',
       pipeline_options: hash,

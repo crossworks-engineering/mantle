@@ -580,8 +580,39 @@ export async function loadExtractableBody(
   // send `image/vnd.dwg` for DWGs, and following that mime shipped the CAD
   // binary to the vision worker (empty read → false `no_vision_text` skip)
   // instead of the dwg parser route.
+  // G1: a book's page picture (images.ts, `bookPage`). Its description is
+  // the vision text of the book's Agent (pdf-page-read) for that page: it
+  // never takes a vision call of its own, which would pay twice for one page.
+  const bookPage =
+    node.type === 'file' &&
+    typeof existingData.bookPage === 'number' &&
+    typeof existingData.sourceFileId === 'string';
+  if (bookPage && !(typeof existingData.text === 'string' && existingData.text.trim() !== '')) {
+    // Terminal and free: no model is asked. The Agent's run writes the
+    // page's text on the picture and queues it again (pipeline-run.ts).
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'book_page_text_pending',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          page: existingData.bookPage,
+          hint: "A page picture of a book: its description is the vision text of the Agent pdf-page-read for this page, with no second vision call. It is indexed when the Agent has read the page (it runs after the upload; run it on the book with pipeline_run if it did not). The picture is findable by its name meanwhile.",
+        },
+      },
+      node,
+    );
+    return { ok: false };
+  }
+
   const isImageNeedingVision =
     node.type === 'file' &&
+    !bookPage &&
     !existingData.text &&
     !existingData.content &&
     isVisionImage(fileExt, fileMime) &&
@@ -612,6 +643,13 @@ export async function loadExtractableBody(
       }
       h.setMeta({ chars: rawBody.length, ...(pages ? { pages } : {}) });
     });
+  } else if (bookPage) {
+    // The Agent's text of the page, under the picture's provenance header
+    // (once: the extractor stores the body it indexed as `text`).
+    const text = cleanText(String(existingData.text));
+    const context =
+      typeof existingData.imageContext === 'string' ? existingData.imageContext.trim() : '';
+    rawBody = context && text.startsWith(context) ? text : composeImageBody(existingData, text);
   } else if (isImageNeedingVision) {
     const vision = await visionIngestImageNode(node, ownerId);
     if (!vision.text) {

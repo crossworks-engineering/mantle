@@ -480,11 +480,13 @@ export type PdfKind = (typeof PDF_KINDS)[number];
 // ─── a book ───────────────────────────────────────────────────────────
 
 /**
- * A book (the large-PDF plan, page 4ff4d4e5, section 3.1): more than this
- * many pages (qpdf's count, no page decode) of office paper that are mostly
- * scans or typed text. Such a file is read in page windows by `pdf-pages`,
- * not page by page as a drawing set: the drawing reader would ask vision for
- * the title block of a spec book's pages, the wrong question, paid for.
+ * A book (the large-PDF plan, page 4ff4d4e5, section 3.1): office paper
+ * that is mostly scans or typed text, read in page windows by `pdf-pages`,
+ * not page by page as a drawing set: the drawing reader would ask vision
+ * for the title block of a spec book's pages, the wrong question, paid for.
+ * Every office PDF is one, whatever its size (Jason's word, 2026-11-19): a
+ * file of more than this many pages (qpdf's count, no page decode) is judged
+ * by a sample of its first pages; a shorter one, read whole, by all of them.
  */
 export const BOOK_MIN_PAGES = 20;
 /** The pages of a long file the rules look at to name it a book: the first
@@ -504,20 +506,35 @@ const BOOK_CLASSES: readonly PageClass[] = [
 const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
 
 /**
- * Whether a long PDF is a book, from the first pages' facts and kinds (the
- * sample), with no model. BOOK_MIN_SHARE of the pages read of the sample or
- * more are on office paper (`a4` or `a3`: an A4, Letter or A3 sheet; a
- * fold-out sheet in a spec book makes no drawing set of it), none is a P&ID
- * or an isometric, and BOOK_MIN_SHARE of them or more are scans or typed
- * text. A sample with no
- * page read is no book: the page rules decide. The page count is the
- * caller's (qpdf): over BOOK_MIN_PAGES.
+ * Whether a PDF is a book, from its pages' facts and kinds (the sample of a
+ * long file, every page of a short one), with no model. BOOK_MIN_SHARE of
+ * the pages read or more are on office paper (`a4` or `a3`: an A4, Letter
+ * or A3 sheet; a fold-out sheet in a spec book makes no drawing set of it),
+ * none is a P&ID or an isometric, and BOOK_MIN_SHARE of them or more are
+ * scans or typed text. A file of BOOK_MIN_PAGES pages or fewer must also
+ * hold typed or scanned text pages (kind `document`) but for a few
+ * ({@link DOCUMENT_MIN_SHARE}): a short scanned drawing or ruled form on A4
+ * (kind `scan`) stays the drawing reader's, while a scan of 7 pages with one
+ * ruled table page is a book. A sample with no page read is no book: the
+ * page rules decide. The page count is the caller's (qpdf).
  */
 export function bookOf(
   pageCount: number | null,
   sample: readonly { class?: PageClass; size?: PageSize; kind?: PageKind }[],
 ): boolean {
-  if (pageCount === null || pageCount <= BOOK_MIN_PAGES) return false;
+  if (pageCount === null || pageCount < 1) return false;
+  if (!officePagesOf(sample)) return false;
+  if (pageCount > BOOK_MIN_PAGES) return true;
+  const read = sample.filter((p) => p.class !== undefined);
+  const documents = read.filter((p) => p.kind === 'document').length;
+  return documents > 0 && documents >= DOCUMENT_MIN_SHARE * read.length;
+}
+
+/** The office rule of {@link bookOf}, with no page count: the pages read
+ *  are office paper, typed or scanned, with no P&ID or isometric. */
+export function officePagesOf(
+  sample: readonly { class?: PageClass; size?: PageSize; kind?: PageKind }[],
+): boolean {
   const read = sample.filter((p) => p.class !== undefined);
   if (read.length === 0) return false;
   const office = read.filter((p) => p.size === 'a4' || p.size === 'a3').length;
@@ -525,6 +542,25 @@ export function bookOf(
   if (read.some((p) => p.kind !== undefined && BOOK_NOT_KINDS.includes(p.kind))) return false;
   const typed = read.filter((p) => BOOK_CLASSES.includes(p.class!)).length;
   return typed >= BOOK_MIN_SHARE * read.length;
+}
+
+/**
+ * A short scan the rules cannot name a book or a drawing (the large-PDF
+ * finish, routing check 1): office pages by {@link officePagesOf}, some of
+ * them typed or scanned text (`document`), the others ruled scans (kind
+ * `scan`: a table, a form, a sketch). The rules cannot tell a spec table
+ * from a ruled drawing form by its lines, so the decider is asked once,
+ * where the run may ask: `table` or `document` makes it a book; a drawing
+ * kind keeps it a drawing. With no ask it stays the drawing reader's, as
+ * before.
+ */
+export function bookUnsureOf(
+  pageCount: number,
+  sample: readonly { class?: PageClass; size?: PageSize; kind?: PageKind }[],
+): boolean {
+  if (pageCount > BOOK_MIN_PAGES || bookOf(pageCount, sample)) return false;
+  if (!officePagesOf(sample)) return false;
+  return sample.some((p) => p.kind === 'document') && sample.some((p) => p.kind === 'scan');
 }
 
 /**

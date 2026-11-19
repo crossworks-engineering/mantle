@@ -7,9 +7,10 @@
 
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { createPartOfFile, db, nodes } from '@mantle/db';
+import { createPartOfFile, db, markContentChanged, nodes } from '@mantle/db';
 import {
   CAD_EXTS,
+  MAX_EMBEDDED_IMAGES_CEILING,
   MAX_EMBEDDED_IMAGES_PER_DOC,
   PDF_MAX_BYTES,
   deleteFileById,
@@ -27,7 +28,14 @@ import { log, startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
-import { readerPassOf, readerStandsOverFile } from '@mantle/content/reader-passes';
+import {
+  readerPassOf,
+  readerStandsOverFile,
+  standingReaderPictures,
+} from '@mantle/content/reader-passes';
+import { agentPageTextOf } from '@mantle/content/page-passages';
+import type { SpooledPictures } from '@mantle/content/picture-spool';
+import type { EmbeddedImage } from '@mantle/files/embedded-images';
 import {
   picturesByWindows,
   picturesLeftOutOf,
@@ -218,13 +226,26 @@ export async function maybeExtractEmbeddedImages(
     return;
   }
 
-  const { extractEmbeddedImages, buildImageTitles, buildImageFilename, buildSourceSlug } =
-    await import('@mantle/files/embedded-images');
-  // Blank/0 on the worker means "use the built-in default", not "keep none".
-  const cap = maxImages && maxImages > 0 ? maxImages : MAX_EMBEDDED_IMAGES_PER_DOC;
+  const {
+    extractEmbeddedImages,
+    buildImageTitles,
+    buildImageFilename,
+    buildSourceSlug,
+    describeImageBytes,
+  } = await import('@mantle/files/embedded-images');
   // A PDF past the size pdfjs opens is read in page windows (G2); so are the
-  // pages of a long PDF past the ones one read scans.
+  // pages of a long PDF past the ones one read scans, and a PDF whose one
+  // read left pictures out.
   const isPdf = loaded.ext === 'pdf' && !own;
+  // Every picture of a PDF is kept (Jason, 2026-11-19: "Yes, no cap"): a
+  // parser job keeps MAX_EMBEDDED_IMAGES_CEILING at most, a pace, and what
+  // one job leaves out is read by smaller windows. Other formats keep the
+  // worker's cap (blank/0: the built-in default, not "keep none").
+  const cap = isPdf
+    ? MAX_EMBEDDED_IMAGES_CEILING
+    : maxImages && maxImages > 0
+      ? maxImages
+      : MAX_EMBEDDED_IMAGES_PER_DOC;
   // A book whose Reader stands over the core's PDF read (P2) is read by
   // windows like any PDF, but each window keeps the scan rule: its scanned
   // pages are the Reader's to picture (G1), never page scans here.
@@ -240,6 +261,35 @@ export async function maybeExtractEmbeddedImages(
     isPdf && picturesNeedWindows(loaded.bytes.length, PDF_MAX_BYTES, whole)
       ? await picturesByWindows(loaded.bytes, cap, whole, undefined, { scanBook: book })
       : { ...whole!, windowsFailed: 0 };
+  // G1: the PNG of each page of a book its Reader left to vision, from the
+  // run of this extract's database pass, on disk. Its description is the
+  // Agent's vision text of the page (no second vision call): set now when
+  // the Agent has read it (a read again), else by the Agent's run.
+  const bookPages = new Map<EmbeddedImage, number>();
+  const pageRun = book ? await standingReaderPictures(ownerId, { id: node.id, sha256: data.sha256 }).catch(() => null) : null;
+  if (pageRun) {
+    for (const p of pageRun.pictures) {
+      const bytes = pageRun.bytes.get(p.file);
+      if (!bytes || bytes.length === 0) continue;
+      const described = describeImageBytes(bytes, 'png');
+      const img = {
+        ...described,
+        ordinal: result.images.length + 1,
+        location: { page: p.page },
+        ...(p.caption ? { caption: p.caption } : {}),
+        // The page is the picture: no gate (a page is never an icon).
+        essential: true,
+      } as EmbeddedImage;
+      Object.defineProperty(img, 'bytes', {
+        enumerable: true,
+        get: () => pageRun.bytes.get(p.file) ?? Buffer.alloc(0),
+      });
+      result.images.push(img);
+      bookPages.set(img, p.page);
+    }
+  }
+  const pageText =
+    bookPages.size > 0 ? await agentPageTextOf({ id: node.id, ownerId, sha256: data.sha256 }) : null;
   // The pictures of the file the cap keeps, those it had before too.
   const keptTotal = result.images.length;
   // The pictures a file leaves out are stamped on it once the new ones are
@@ -256,7 +306,11 @@ export async function maybeExtractEmbeddedImages(
   if (have.size > 0) {
     result.images = result.images.filter((img) => !have.has(img.sha256));
   }
-  if (result.images.length === 0) await stamp(0);
+  if (result.images.length === 0) {
+    await stamp(0);
+    result.spool?.drop();
+    if (pageRun && 'drop' in pageRun.bytes) (pageRun.bytes as SpooledPictures).drop();
+  }
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
     // images" should be explainable from /traces rather than mysterious.
@@ -361,6 +415,21 @@ export async function maybeExtractEmbeddedImages(
               // container's small preview) — the predicate the backfill's
               // --upgrade-dwf mode selects on.
               ...(img.provenance ? { provenance: img.provenance } : {}),
+              // G1: a book's page picture. Its text is the Agent's vision
+              // text of the page (pdf-page-read), never a vision call of its
+              // own (load-body.ts); set here when the Agent has read the
+              // page, else by the Agent's run (describeBookPagePictures).
+              ...(bookPages.has(img)
+                ? {
+                    bookPage: bookPages.get(img)!,
+                    ...(pageText?.get(bookPages.get(img)!)
+                      ? {
+                          text: pageText.get(bookPages.get(img)!)!,
+                          bookPageTextSha: pageTextSha(pageText.get(bookPages.get(img)!)!),
+                        }
+                      : {}),
+                  }
+                : {}),
               extractedFrom: node.title || loaded.filename,
               // Read back by the vision path so the durable index carries the
               // document this picture came from — a bare "a screenshot of a
@@ -403,7 +472,14 @@ export async function maybeExtractEmbeddedImages(
       return createdIds;
     },
   );
-  await stamp(result.images.length - (Array.isArray(created) ? created.length : 0));
+  const notSaved = result.images.length - (Array.isArray(created) ? created.length : 0);
+  await stamp(notSaved);
+  // Every picture is saved: the pictures on disk go. A save that failed
+  // keeps them for the extract's retry (the kept run is read again).
+  if (notSaved === 0) {
+    result.spool?.drop();
+    if (pageRun && 'drop' in pageRun.bytes) (pageRun.bytes as SpooledPictures).drop();
+  }
 }
 
 /**
@@ -931,4 +1007,64 @@ export async function stampReaderPages(
         sql`${nodes.data}->>'sha256' = ${sha256}`,
       ),
     );
+}
+
+// ─── G1: a book's page pictures, described by its Agent ─────────────────
+
+/** The hash of a page text set on a page picture: an Agent's run again
+ *  that read the page the same way touches nothing. */
+const pageTextSha = (text: string) => createHash('sha256').update(text).digest('hex');
+
+/**
+ * The description of a book's page pictures (G1): the Agent pdf-page-read's
+ * vision text of each page, set as the picture's `text`, and the picture
+ * queued for its extract (summary and embedding of that text; no vision
+ * call: load-body.ts). Called by the Agent's run (pipeline-run.ts), after
+ * its rows are written: the run of an upload or of a person's
+ * `pipeline_run`, never by a timer. Only a picture of a page the Agent read
+ * whose text differs from the one set before. The pictures of an older
+ * revision (another sha256 on the book) are left as they are.
+ */
+export async function describeBookPagePictures(
+  ownerId: string,
+  fileId: string,
+  sha256: unknown,
+): Promise<number> {
+  if (typeof sha256 !== 'string') return 0;
+  const texts = await agentPageTextOf({ id: fileId, ownerId, sha256 });
+  if (texts.size === 0) return 0;
+  const rows = await db
+    .select({ id: nodes.id, data: nodes.data })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
+        sql`${nodes.data} ? 'bookPage'`,
+      ),
+    );
+  let described = 0;
+  for (const row of rows) {
+    const data = (row.data ?? {}) as Record<string, unknown>;
+    const page = data.bookPage;
+    const text = typeof page === 'number' ? texts.get(page) : undefined;
+    if (!text) continue;
+    const sha = pageTextSha(text);
+    if (data.bookPageTextSha === sha) continue;
+    // The one door of a re-index (markContentChanged): the text is new
+    // content, so the extractor runs its pass on it, announced at commit.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(nodes)
+        .set({
+          data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'bookPageTextSha', ${sha}::text)`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(nodes.id, row.id), eq(nodes.ownerId, ownerId)));
+      await markContentChanged(tx, { id: row.id, type: 'file' }, ['content']);
+    });
+    described += 1;
+  }
+  return described;
 }

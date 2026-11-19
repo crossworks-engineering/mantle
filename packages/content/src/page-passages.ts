@@ -29,10 +29,13 @@ import { boxPipelines, type BoxPipelines } from './pipeline-registry';
 /** One page of a file's text. */
 export type PageText = { page: number; text: string };
 
-/** The most pages read back: past the page cap of an ask (10,000). */
-const PAGES_MAX = 10_000;
-/** The longest text of one page read back, in characters. */
-const PAGE_TEXT_MAX_CHARS = 200_000;
+/** No page is left out (Jason, 2026-11-19: every page of an upload is
+ *  known): every row is read back, the scan is paged (scanTabColumns). The
+ *  bound is only the page numbers qpdf counts, never reached. */
+const PAGES_MAX = Number.MAX_SAFE_INTEGER;
+/** No page's text is cut: the bound of one SQLite text cell (1 GB) is
+ *  above any page; a page of 4-point type on A0 is about 2 MB of text. */
+const PAGE_TEXT_MAX_CHARS = 1_000_000_000;
 
 /** The pages of the file's database, and the pages its windows read, or
  *  null when the file has no database of a Reader that says
@@ -93,31 +96,8 @@ export async function filePagesOf(
     return null;
   }
   // Each Agent that says `produces.pages`: its text of a page over the
-  // Reader's. Its rows are paid answers, kept by a stopped run too (the
-  // stamp entry says only whether every ask was answered).
-  for (const agent of pipelines.agents) {
-    const tab = agent.produces.tabs?.[0];
-    if (agent.produces.pages !== true || !tab) continue;
-    try {
-      scanTabColumns(
-        names.sqlite,
-        tab,
-        ['Key', PAGE_TEXT_COLUMN],
-        { maxRows: PAGES_MAX, cellMaxChars: PAGE_TEXT_MAX_CHARS },
-        (row) => {
-          const key = textOf(row.Key);
-          const text = textOf(row[PAGE_TEXT_COLUMN]).trim();
-          const page = key.startsWith(PAGE_ASK_KEY_PREFIX)
-            ? pageOf(key.slice(PAGE_ASK_KEY_PREFIX.length))
-            : null;
-          if (page !== null && text !== '') byPage.set(page, text);
-          return true;
-        },
-      );
-    } catch {
-      // A tab that is not there (the Agent has not run): the Reader's text.
-    }
-  }
+  // Reader's.
+  for (const [page, text] of agentPagesAt(names.sqlite, pipelines)) byPage.set(page, text);
   const pages = [...byPage.entries()]
     .filter(([, text]) => text.trim() !== '')
     .sort((a, b) => a[0] - b[0])
@@ -128,6 +108,52 @@ export async function filePagesOf(
     pages,
     ...(total !== null ? { read: { read: Math.min(read ?? 0, total), total } } : {}),
   };
+}
+
+/** The text of each page an Agent that says `produces.pages` read, from the
+ *  database at `sqlite`. Its rows are paid answers, kept by a stopped run
+ *  too (the stamp entry says only whether every ask was answered). A tab
+ *  that is not there (the Agent has not run) gives none. */
+function agentPagesAt(sqlite: string, pipelines: BoxPipelines): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const agent of pipelines.agents) {
+    const tab = agent.produces.tabs?.[0];
+    if (agent.produces.pages !== true || !tab) continue;
+    try {
+      scanTabColumns(
+        sqlite,
+        tab,
+        ['Key', PAGE_TEXT_COLUMN],
+        { maxRows: PAGES_MAX, cellMaxChars: PAGE_TEXT_MAX_CHARS },
+        (row) => {
+          const key = textOf(row.Key);
+          const text = textOf(row[PAGE_TEXT_COLUMN]).trim();
+          const page = key.startsWith(PAGE_ASK_KEY_PREFIX)
+            ? pageOf(key.slice(PAGE_ASK_KEY_PREFIX.length))
+            : null;
+          if (page !== null && text !== '') out.set(page, text);
+          return true;
+        },
+      );
+    } catch {
+      // No such tab: the Agent has not run.
+    }
+  }
+  return out;
+}
+
+/**
+ * The vision text of each page of a book an Agent read (G1): the
+ * description of that page's picture, with no second vision call. Empty:
+ * no database at these bytes, or no Agent has read a page yet.
+ */
+export async function agentPageTextOf(
+  file: { id: string; ownerId: string; sha256: unknown },
+  held?: BoxPipelines,
+): Promise<Map<number, string>> {
+  const names = fileDbPaths(file.id, file.sha256);
+  if (!names) return new Map();
+  return agentPagesAt(names.sqlite, held ?? (await boxPipelines(file.ownerId)));
 }
 
 /** The heading of one page in a file's text and passages. */

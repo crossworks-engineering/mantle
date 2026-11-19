@@ -100,7 +100,7 @@ JOB_BUDGET_S = 225
 # G1, the PNG of each page left to vision as one of the file's pictures: off
 # until the core takes a book Reader's pictures (images.ts reads the core's
 # own pictures of a PDF), so no window carries pictures nothing keeps.
-PAGE_PICTURES = False
+PAGE_PICTURES = True
 # The time a window spends drawing pages for OCR, at most (seconds): the
 # job's end is 240 s (PARSER_JOB_TIMEOUT_MS.pipelineRun), and a job that
 # ends loses its whole window. A page after it goes to vision.
@@ -126,7 +126,7 @@ FILE_TAB = "File"
 RESERVED_TABS = {TABLES_TAB.lower(), PAGES_TAB.lower(), FILE_TAB.lower(), "page text"}
 # The kind rules this Reader's File tab names (PDF_KIND_RULES_VERSION,
 # packages/files/src/pdf-drawing-sheets.ts; a test holds them equal).
-PDF_KIND_RULES_VERSION = 3
+PDF_KIND_RULES_VERSION = 4
 
 PAPERS = [  # name, short side mm, long side mm
     ("A5", 148, 210),

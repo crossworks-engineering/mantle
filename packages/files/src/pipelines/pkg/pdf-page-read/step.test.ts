@@ -97,12 +97,28 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
   type SamplePage = Parameters<typeof bookOf>[1][number];
   const sample = (n: number, page: SamplePage = typed) => Array.from({ length: n }, () => page);
 
-  it('more than BOOK_MIN_PAGES pages of A4 text or scans is a book; that many, or fewer, is not', () => {
+  it('more than BOOK_MIN_PAGES pages of A4 text or scans is a book; so is a short file of typed or scanned text', () => {
     expect(BOOK_MIN_PAGES).toBe(20);
     expect(bookOf(21, sample(20))).toBe(true);
     expect(bookOf(1679, sample(20, scan))).toBe(true);
-    expect(bookOf(20, sample(20))).toBe(false);
     expect(bookOf(null, sample(20))).toBe(false);
+    // Every office PDF, whatever its size (rules 4): one typed page, seven.
+    expect(bookOf(20, sample(20))).toBe(true);
+    expect(bookOf(1, sample(1))).toBe(true);
+    expect(bookOf(7, sample(7))).toBe(true);
+  });
+
+  it('a short file needs text pages but for a few: a short scanned drawing or ruled form stays a drawing', () => {
+    // A scanned A4 sketch or ruled form (kind `scan`): the drawing reader's.
+    expect(bookOf(1, sample(1, scan))).toBe(false);
+    expect(bookOf(3, sample(3, scan))).toBe(false);
+    // Seven scanned pages, one of them a ruled table (kind `scan`): a book.
+    const scannedText = { ...scan, kind: 'document' as const };
+    expect(bookOf(7, [...sample(6, scannedText), scan])).toBe(true);
+    // Two of four: not text but for a few (DOCUMENT_MIN_SHARE 0.75).
+    expect(bookOf(4, [...sample(2, scannedText), ...sample(2, scan)])).toBe(false);
+    // The same sample over BOOK_MIN_PAGES: the long rule.
+    expect(bookOf(40, sample(20, scan))).toBe(true);
   });
 
   it('large sheets past a fifth of the sample, a P&ID or an isometric make a drawing set', () => {
@@ -149,9 +165,11 @@ describe('the router names a book', () => {
     expect(await routerStep(big, job)).toEqual({ status: 'ok', kind: 'book' });
   });
 
-  it('a short file, or a long set of large sheets, takes the page rules', async () => {
-    const short = await routerStep(request(), jobOf(typedPdf(BOOK_MIN_PAGES)).job);
-    expect(short.kind).toBe('document');
+  it('a short typed file is a book too (rules 4); a long set of large sheets takes the page rules', async () => {
+    for (const n of [1, 7, BOOK_MIN_PAGES]) {
+      const short = await routerStep(request(), jobOf(typedPdf(n)).job);
+      expect(short, `${n} pages`).toEqual({ status: 'ok', kind: 'book' });
+    }
     const large = await routerStep(request(), jobOf(typedPdf(BOOK_MIN_PAGES + 2, A1)).job);
     expect(large.kind).not.toBe('book');
     expect(BOOK_SAMPLE_PAGES).toBe(20);

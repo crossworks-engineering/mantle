@@ -12,7 +12,13 @@
  * book reader reads the file itself, window by window.
  *
  * Else read the page facts with no model, as the reader does, and name the
- * kind by the rules. A file the rules leave `unsure`, in a run that may ask
+ * kind by the rules. Every office PDF is a book, whatever its size (Jason's
+ * word, 2026-11-19): a file the rules name a `document`, and a file of
+ * BOOK_MIN_PAGES pages or fewer whose pages bookOf finds office pages
+ * (typed or scanned text but for a few, so a short scan with one ruled
+ * table page too). A `document` is never named any more: no PDF is left to
+ * the core's own text read and OCR. A drawing keeps its kind and its
+ * reader. A file the rules leave `unsure`, in a run that may ask
  * (`request.asks`), asks the worker `decider` once: its input is the
  * decider's state (counts and the text sample).
  *
@@ -31,8 +37,19 @@
 import type { PipelineStep } from '../../contract';
 import { PIPELINE_FACTS_MAX_BYTES } from '../../contract';
 import { readPdfDrawingInJob, type PdfDrawing } from '../../../pdf-drawing';
-import { decidedKind, pdfKindAskFrom, pdfKindDecisionOf } from '../../../pdf-drawing-sheets';
-import { BOOK_MIN_PAGES, BOOK_SAMPLE_PAGES, bookOf } from '../../../pdf-kind';
+import {
+  decidedKind,
+  isPdfKind,
+  pdfKindAskFrom,
+  pdfKindDecisionOf,
+} from '../../../pdf-drawing-sheets';
+import {
+  BOOK_MIN_PAGES,
+  BOOK_SAMPLE_PAGES,
+  bookOf,
+  bookUnsureOf,
+  type PdfKind,
+} from '../../../pdf-kind';
 import { PDF_MAX_BYTES } from '../../../pdf-open';
 import { titleBlockOf } from '../../../pdf-rows';
 
@@ -58,16 +75,44 @@ export const step: PipelineStep = async (req, job) => {
       if (bookOf(pages, sample.pages)) return { status: 'ok', kind: 'book' };
     }
     const drawing = await readPdfDrawingInJob(await job.bytes(), job, box);
-    if (drawing.kind !== 'unsure' || req.asks !== true) {
+    // Every office PDF is a book, whatever its size (Jason's word,
+    // 2026-11-19): a document by the page rules, and a short file whose
+    // pages, read whole, are office pages, typed or scanned, but for a few.
+    const count = pages ?? drawing.numPages;
+    if (drawing.kind === 'document' || (count <= BOOK_MIN_PAGES && bookOf(count, drawing.pages))) {
+      return { status: 'ok', kind: 'book' };
+    }
+    // A short scan of typed pages and ruled pages (a table or a drawing
+    // form?): the decider says, once, where the run may ask (bookUnsureOf).
+    const mixed = bookUnsureOf(count, drawing.pages);
+    if ((drawing.kind !== 'unsure' && !mixed) || req.asks !== true) {
       return { status: 'ok', kind: drawing.kind, ...factsOf(drawing) };
     }
     return {
       status: 'ok',
       calls: [{ call: 'worker', worker: 'decider', input: pdfKindAskFrom(drawing) }],
+      ...(mixed ? { state: { [MIXED]: drawing.kind } } : {}),
       ...factsOf(drawing),
     };
   }
   const answer = req.answers?.[0];
   const decision = answer?.ok ? pdfKindDecisionOf(answer.output) : null;
+  // A table of rows (an invoice, a list, a spec table) is an office PDF:
+  // the book reader reads it, with its Tables tab. So is a short mixed scan
+  // the decider calls a document or a table.
+  const office = decision?.used === true && (decision.kind === 'table' || decision.kind === 'document');
+  const base = mixedBaseOf(req.state);
+  if (base !== null) return { status: 'ok', kind: office ? 'book' : base };
+  if (office && decision.kind === 'table') return { status: 'ok', kind: 'book' };
   return { status: 'ok', kind: decidedKind('unsure', decision) ?? 'unsure' };
 };
+
+/** The state key of a short mixed scan (bookUnsureOf): the kind the rules
+ *  gave it, kept if the decider names no office kind. */
+const MIXED = 'mixedScanKind';
+
+function mixedBaseOf(state: unknown): PdfKind | null {
+  if (!state || typeof state !== 'object') return null;
+  const v = (state as Record<string, unknown>)[MIXED];
+  return typeof v === 'string' && isPdfKind(v) ? v : null;
+}

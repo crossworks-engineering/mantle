@@ -56,6 +56,7 @@ import { errorMessage } from '@mantle/std';
 import { db, nodes } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { writeAgentText } from './agent-text.js';
+import { describeBookPagePictures } from './images.js';
 import { writeRetrievalChunks } from './index-writes.js';
 import { pipelineAskOf } from './pipeline-ask.js';
 
@@ -124,6 +125,13 @@ async function runOnce(
           done.warnings.push(`the passages were not written again: ${errorMessage(err)}`);
         });
       }
+    }
+    // G1: the page pictures of a book take the Agent's text of their page
+    // as their description (no second vision call), and are indexed again.
+    if (pipeline.produces.pages === true && done.rows > 0) {
+      await describeBookPagePictures(ownerId, nodeId, fileSha256Of(row)).catch((err: unknown) => {
+        done.warnings.push(`the page pictures were not described: ${errorMessage(err)}`);
+      });
     }
     return done;
   }

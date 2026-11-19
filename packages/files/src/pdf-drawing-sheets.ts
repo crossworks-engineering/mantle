@@ -31,8 +31,10 @@ const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
  *  a fill's slanted lines are left out of the axes, a file of typed pages
  *  but for a few is a document, a file of blank pages that holds an image
  *  too large to open is a scan. 3 (2026-11-18): a long run of office pages,
- *  mostly scans or typed text, is a `book` (bookOf, ./pdf-kind.ts). */
-export const PDF_KIND_RULES_VERSION = 3;
+ *  mostly scans or typed text, is a `book` (bookOf, ./pdf-kind.ts). 4
+ *  (2026-11-19): every office PDF is a book, whatever its size: a
+ *  `document`, and a short file of office pages but for a few. */
+export const PDF_KIND_RULES_VERSION = 4;
 
 /** The clock columns of a reader's tabs, by tab name: a time a read took,
  *  another number on every read of the same bytes. `Read ms` of `Pages` is

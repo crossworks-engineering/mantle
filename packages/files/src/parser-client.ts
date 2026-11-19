@@ -749,7 +749,9 @@ export async function parserPdfSplit(
     'pdfSplit',
     bytes,
     { from: opts.from, pages: opts.pages, mb: opts.mb },
-    PARSER_ANSWER_MAX_BYTES,
+    // A window is never more than the file sent: a single page past the
+    // answer cap (a huge scan) is still taken (server/parser/src/answer.ts).
+    Math.max(PARSER_ANSWER_MAX_BYTES, bytes.length),
     `from-${opts.from}`,
     opts.sha256,
   );

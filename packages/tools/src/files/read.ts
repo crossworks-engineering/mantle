@@ -7,6 +7,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { buildSectionOutline } from '@mantle/search';
 import { boxPipelines, fileStatusPipelines } from '@mantle/content/pipeline-registry';
+import { filePagesOf, pagesText } from '@mantle/content/page-passages';
 import {
   fileById,
   folderByPath,
@@ -292,10 +293,17 @@ export const file_read: BuiltinToolDef = {
         .from(nodes)
         .where(and(eq(nodes.id, meta.id), eq(nodes.ownerId, ctx.ownerId)))
         .limit(1);
-      text =
-        n && typeof (n.data as Record<string, unknown>)?.text === 'string'
-          ? ((n.data as Record<string, unknown>).text as string)
-          : null;
+      const data = (n?.data ?? {}) as Record<string, unknown>;
+      text = typeof data.text === 'string' ? data.text : null;
+      // A file whose Reader gave its text by page (a PDF book, P3): its text
+      // is every page from its database, never the stored copy, which is
+      // cut at 1,000,000 characters (TEXT_STORE_MAX_CHARS). No page of a
+      // long book is left out of a full read.
+      const pages = await filePagesOf({ id: meta.id, ownerId: ctx.ownerId, sha256: data.sha256 });
+      if (pages && pages.pages.length > 0) {
+        const joined = pagesText(pages.pages);
+        if (joined.length > (text?.length ?? 0)) text = joined;
+      }
     } else {
       const res = await readFileById({ ownerId: ctx.ownerId, fileId });
       if (!res)

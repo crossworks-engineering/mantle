@@ -51,7 +51,7 @@ export const PAGE_DPI = 200;
 export const MAX_SIDE = 4000;
 export const PICTURE_MAX_BYTES = 4 * 1024 * 1024;
 /** The default of the option `pages` (the manifest's). */
-export const PAGES_DEFAULT = 2000;
+export const PAGES_DEFAULT = PIPELINE_ASK_PAGE_MAX;
 
 const isPng = (b: Buffer) => b.length >= 4 && b[0] === 0x89 && b[1] === 0x50;
 

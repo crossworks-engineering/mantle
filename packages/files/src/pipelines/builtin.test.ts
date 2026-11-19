@@ -353,7 +353,7 @@ describe('the roles', () => {
     expect(Object.keys(agent.options ?? {})).toEqual(['pages']);
     const pages = agent.options!.pages!;
     expect(pages.type === 'number' && [pages.default, pages.max]).toEqual([
-      2000,
+      10_000,
       PIPELINE_ASK_PAGE_MAX,
     ]);
   });
@@ -422,8 +422,8 @@ describe('the PDF router', () => {
     expect([...(reader.match.kind ?? [])].sort()).toEqual(
       named.filter((k) => k !== 'document' && k !== 'book').sort(),
     );
-    // 1.1.1: the File tab's Rules version 3 (the kind `book`).
-    expect(reader.version).toBe('1.1.1');
+    // 1.1.1: the File tab's Rules version 3 (the kind `book`); 1.1.2: rules 4.
+    expect(reader.version).toBe('1.1.2');
   });
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {

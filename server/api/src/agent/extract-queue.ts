@@ -108,8 +108,10 @@ import {
   runAsSystem,
   setProviderAlertPaused,
 } from '@mantle/db';
+import { parserPdfPageCount, readFileById } from '@mantle/files';
 import { extractNode } from './extractor.js';
 import {
+  bookExpireMinutes,
   ExtractCeiling,
   extractWeightOfNode,
   HEAVY_HOP_OUTPUT,
@@ -364,17 +366,44 @@ export async function startExtractQueue(
 
 /** Whether a node's extraction is heavy (extract-lanes.ts). A node that is
  *  gone is light: the extractor finds that out and says so itself. */
-async function isHeavyNode(nodeId: string): Promise<boolean> {
+async function heavyNodeOf(
+  nodeId: string,
+): Promise<{ heavy: false } | { heavy: true; pdf: boolean; ownerId: string }> {
   const [row] = await db
     .select({
       type: nodes.type,
       title: nodes.title,
+      ownerId: nodes.ownerId,
       filename: sql<string | null>`${nodes.data}->>'filename'`,
+      sizeBytes: sql<number | null>`(${nodes.data}->>'size_bytes')::bigint`,
     })
     .from(nodes)
     .where(eq(nodes.id, nodeId))
     .limit(1);
-  return row ? extractWeightOfNode(row) === 'heavy' : false;
+  if (!row) return { heavy: false };
+  const sizeBytes = row.sizeBytes === null ? null : Number(row.sizeBytes);
+  if (extractWeightOfNode({ ...row, sizeBytes }) !== 'heavy') return { heavy: false };
+  const name = (row.filename ?? row.title ?? '').toLowerCase();
+  return { heavy: true, pdf: name.endsWith('.pdf'), ownerId: row.ownerId };
+}
+
+/**
+ * The time budget of a heavy PDF's job (extract-lanes.ts bookExpireMinutes,
+ * decision 3 of the large-PDF finish): the base for its first window, more
+ * for each page window, by its page count (qpdf in the parser, no page
+ * decode). Set on the job sent to the heavy lane: pg-boss bounds a handler
+ * by the expiry it was fetched with. A count that cannot be read (the
+ * parser busy, the bytes gone): the most, still bounded.
+ */
+async function bookExpireSeconds(ownerId: string, nodeId: string): Promise<number> {
+  let pages: number | null = null;
+  try {
+    const file = await readFileById({ ownerId, fileId: nodeId });
+    if (file) pages = await parserPdfPageCount(file.bytes);
+  } catch {
+    pages = null;
+  }
+  return bookExpireMinutes(activeExpireMin, pages) * 60;
 }
 
 /** A job of the main queue: a heavy file goes on to the heavy lane, and this
@@ -386,14 +415,17 @@ async function handleMainJob(
   const job = jobs[0]?.data;
   // A run of an `after` pipeline stays here: a patch reads no bytes.
   const afterRun = !!job?.run && !!activeOwnerId && (await isAfterRun(activeOwnerId, job.run));
-  if (
-    job?.nodeId &&
-    !afterRun &&
-    boss &&
-    heavyWorkerIds.length > 0 &&
-    (await isHeavyNode(job.nodeId))
-  ) {
-    await boss.send(HEAVY_QUEUE, job, sendOptionsOf(job));
+  const heavy =
+    job?.nodeId && !afterRun && boss && heavyWorkerIds.length > 0
+      ? await heavyNodeOf(job.nodeId)
+      : { heavy: false as const };
+  if (job && boss && heavy.heavy) {
+    // A book's time budget grows with its pages (bookExpireSeconds).
+    const expire = heavy.pdf ? await bookExpireSeconds(heavy.ownerId, job.nodeId) : null;
+    await boss.send(HEAVY_QUEUE, job, {
+      ...sendOptionsOf(job),
+      ...(expire !== null ? { expireInSeconds: expire } : {}),
+    });
     return HEAVY_HOP_OUTPUT;
   }
   return handleExtractJob(jobs);
