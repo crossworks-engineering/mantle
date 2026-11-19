@@ -97,7 +97,10 @@ export type FileProcessing = {
   /** When the last read ended (ISO); null when it has not been read. */
   readAt: string | null;
   /** The mode of the last read: 'full', 'metadata' (name only) or 'local'
-   *  (read on the box with no model); null before the first read. */
+   *  (read on the box with no model); null before the first read. 'full'
+   *  is the indexing mode (the content was read, not the name only), not
+   *  that every page was: a scan read in part is `extraction.state`
+   *  'partial' with `extraction.pages`. */
   readMode: 'full' | 'metadata' | 'local' | null;
   /** The pages of the file when the brain knows them (a scan's count);
    *  null otherwise. */

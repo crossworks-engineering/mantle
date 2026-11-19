@@ -16,6 +16,8 @@
  *    read now (fail closed, audit r3 L1), and a PDF told by its mimeType
  *    with no `.pdf` in its name (audit r3 L2). The File tab is read through
  *    the real pdfTextKeptOf; only the reader pool is a stand-in.
+ *  - A queue that cannot be read (a grant missing on a fresh box) is a
+ *    clear 503 domain error, and nothing is written.
  */
 import type { SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -103,7 +105,9 @@ vi.mock('@mantle/content/pipeline-registry', () => ({
   boxPipelines: async () => ({ readerFor: () => null }),
 }));
 
-const { file_reindex, reindexFiles } = await import('./reindex');
+const { file_reindex, reindexFiles, ReindexQueueUnreadError } = await import('./reindex');
+const dbMock = await import('@mantle/db');
+const { domainErrorAnswer } = await import('@mantle/std');
 const { PgDialect } = await import('drizzle-orm/pg-core');
 
 /** The bound values of the one update's drop: the sketched ids, then the
@@ -221,6 +225,20 @@ describe('reindexFiles', () => {
     const got = await reindexFiles(OWNER, [A, B]);
     expect(got).toEqual({ queued: 2, databases: 0, skipped: [] });
     expect(dropOf().ids).toBe(`{${A}}`);
+  });
+
+  it('a queue that cannot be read: a clear 503, nothing written, never the SQL', async () => {
+    vi.mocked(dbMock.extractJobsFor).mockRejectedValueOnce(
+      Object.assign(new Error('permission denied for table job'), { code: '42501' }),
+    );
+    const err = await reindexFiles(OWNER, [A, B]).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ReindexQueueUnreadError);
+    expect(h.updated).toBe(0);
+    expect(h.changed).toEqual([]);
+    const answer = domainErrorAnswer(err);
+    expect(answer?.status).toBe(503);
+    expect(String(answer?.body.error)).toMatch(/nothing was dropped/);
+    expect(String(answer?.body.error)).not.toMatch(/permission|table job/);
   });
 
   it('a PDF told by its mimeType, with no .pdf in its name, keeps its sketch read', async () => {

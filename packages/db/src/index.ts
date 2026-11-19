@@ -349,6 +349,7 @@ export {
   RUNTIME_SYSTEM_FUNCTIONS,
   RUNTIME_LOCK_SQL,
   revokePgBossRoutines,
+  grantPgBossReads,
   DB_ROLE_SQL,
   dbRoleMode,
   dbRoleNote,

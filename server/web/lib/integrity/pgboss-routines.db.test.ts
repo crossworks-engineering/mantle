@@ -7,6 +7,9 @@
  * pg-boss installs) and every migrate take EXECUTE from PUBLIC; the
  * runtime lock's integrity row names a routine still open. A database of
  * its own: the shared test database keeps pg-boss as other files left it.
+ * The read of its tables: migrate grants it on the tables there are, so on a
+ * fresh box pgboss:init grants it again once pg-boss made them
+ * (grantPgBossReads).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/integrity/pgboss-routines.db.test.ts
  */
@@ -80,5 +83,22 @@ describe.skipIf(!URL)("pg-boss's routines are not PUBLIC's", () => {
     } finally {
       await boss.stop({ graceful: false, timeout: 5_000 });
     }
+  });
+
+  it("a fresh box's queue: pg-boss's tables come after migrate; pgboss:init's grant opens them to the app's roles", async () => {
+    const reads = async () =>
+      (
+        await su<{ r: boolean; n: boolean }[]>`
+          select has_table_privilege('mantle_runtime', 'pgboss.job', 'SELECT') as r,
+                 has_table_privilege('mantle_system_narrow', 'pgboss.job', 'SELECT') as n`
+      )[0];
+    // migrate ran before pg-boss made its tables: the narrow role, which
+    // holds no default privileges, cannot read the queue (the reindex's 500).
+    expect((await reads())!.n).toBe(false);
+    await db.grantPgBossReads(su);
+    expect(await reads()).toEqual({ r: true, n: true });
+    // Run again (every pgboss:init does): a no-op.
+    await db.grantPgBossReads(su);
+    expect(await reads()).toEqual({ r: true, n: true });
   });
 });

@@ -60,7 +60,11 @@ Code: `packages/db/src/runtime-role.ts` (the roles, the rights, the URL),
 - `USAGE` on schema `pgboss` and `SELECT` on its tables, read only: the
   extract backlog, the OCR rescan and the integrity page count its jobs.
   migrate makes the schema when it is missing (pg-boss installs into it), so
-  the default privileges cover the tables pgboss:init makes right after.
+  the runtime role's default privileges cover the tables pgboss:init makes
+  right after. The narrow role holds no default privileges, so pgboss:init
+  grants the read again to both, right after pg-boss installs or upgrades
+  (`grantPgBossReads`): a box set up in the documented order reads its
+  queue after one pass of the migrate chain.
   No pg-boss routine: pg-boss makes them with PUBLIC's default `EXECUTE`
   (`job_table_run` runs its text as SQL, as its caller), so every migrate
   and pgboss:init, right after pg-boss installs or upgrades, take it from

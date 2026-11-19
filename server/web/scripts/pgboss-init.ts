@@ -13,7 +13,9 @@
  * Running ONE `start()` here, after migrations and before the workers, creates
  * the schema deterministically. Idempotent: a no-op once the schema exists.
  * Then EXECUTE on pg-boss's routines is taken from PUBLIC (@mantle/db
- * revokePgBossRoutines; migrate does the same on every run).
+ * revokePgBossRoutines; migrate does the same on every run), and the app's
+ * roles get the read of its tables (grantPgBossReads: on a fresh box they
+ * are made here, after migrate granted on the tables there were).
  * Wired into `scripts/up.sh` (dev) and the production migrate gate.
  *
  * Usage:  pnpm -C server/web pgboss:init   (reads DATABASE_URL from .env.local)
@@ -21,7 +23,7 @@
 
 import { PgBoss } from 'pg-boss';
 import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
-import { revokePgBossRoutines } from '@mantle/db';
+import { grantPgBossReads, revokePgBossRoutines } from '@mantle/db';
 
 // Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
 if (isBootSmoke()) await bootSmokeExit('pgboss-init');
@@ -54,7 +56,12 @@ try {
   // pg-boss makes its routines with PUBLIC's default EXECUTE, after this
   // box's migrate on a fresh database or an upgrade: take it back now
   // (job_table_run runs its text as SQL). As the migrator, their owner.
-  await revokePgBossRoutines({ unsafe: (text) => boss.getDb().executeSql(text) });
+  const asMigrator = { unsafe: (text: string) => boss.getDb().executeSql(text) };
+  await revokePgBossRoutines(asMigrator);
+  // The queue counts read its tables as the runtime and the narrow role:
+  // on a fresh box those tables are made just now, after migrate granted
+  // on the ones there were (the narrow role has no default privileges).
+  await grantPgBossReads(asMigrator);
   // The old mail, calendar-feed and Microsoft sync left the brain (Sync plan,
   // M4): their schedules would keep queueing a job every 2 minutes that no
   // worker takes. Gone once; a no-op after.

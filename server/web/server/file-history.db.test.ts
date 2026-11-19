@@ -429,6 +429,55 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     expect(await versionCount(id)).toBe(5);
   });
 
+  it('each version names who made it: the owner, a member, an MCP call by name; work with no login is system', async () => {
+    const { id } = await fileWithHistory();
+    const actors = async () =>
+      (
+        await raw<{ seq: number; actor: string; login: string | null }[]>`
+          select seq, actor, actor_login_id::text as login from node_snapshots
+           where node_id = ${id} and node_kind = 'file' order by seq`
+      ).map((r) => [r.seq, r.actor, r.login]);
+    // The owner's own uploads with replace (the Override): the owner, not the box.
+    expect(await actors()).toEqual([
+      [1, 'owner', owner],
+      [2, 'owner', owner],
+    ]);
+    const versions = (await history(owner, id)).body.versions;
+    const v1 = versions.find((v) => v.seq === 1)!;
+    const v2 = versions.find((v) => v.seq === 2)!;
+    // The owner's restore: the bytes it replaces are kept as the owner's.
+    const own = await runRoute(owner, 'POST', `/api/files/files/${id}/history/${v1.id}/restore`);
+    expect(own.status, await own.clone().text()).toBe(200);
+    // A holder's Moderator, by hand: a member, named.
+    const byMod = await runRoute(
+      L.holderMod,
+      'POST',
+      `/api/files/files/${id}/history/${v2.id}/restore`,
+    );
+    expect(byMod.status, await byMod.clone().text()).toBe(200);
+    // The same Moderator through an MCP connection: `mcp`, named.
+    const tools = await import('@mantle/tools');
+    const mcp = await import('@mantle/mcp-core');
+    const restoreTool = tools.FILE_HISTORY_TOOLS.find((t) => t.slug === 'file_history_restore')!;
+    const viaMcp = await m.runInRequestSlot(() =>
+      mcp.runMcpCall(L.holderMod, 'file_history_restore', () =>
+        restoreTool.handler({ file_id: id, version_id: v1.id }, { ownerId: owner }),
+      ),
+    );
+    expect(viaMcp, JSON.stringify(viaMcp)).toMatchObject({ ok: true });
+    // Work with no login (an export's, a tool's own system step): system.
+    const [{ t }] = await raw<{ t: string }[]>`select title as t from nodes where id = ${id}`;
+    await put(t, 'by the box ' + randomUUID());
+    expect(await actors()).toEqual([
+      [1, 'owner', owner],
+      [2, 'owner', owner],
+      [3, 'owner', owner],
+      [4, 'member', L.holderMod],
+      [5, 'mcp', L.holderMod],
+      [6, 'system', null],
+    ]);
+  });
+
   it('delete a version: a Moderator yes, a Write user no; its file is tombstoned', async () => {
     const { id } = await fileWithHistory();
     const v = (await history(owner, id)).body.versions[1]!;

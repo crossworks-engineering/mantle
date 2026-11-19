@@ -69,7 +69,7 @@ import { pdfTextKeptOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { log } from '@mantle/tracing';
-import { errorMessage, UUID_RE } from '@mantle/std';
+import { defineDomainError, errorMessage, UUID_RE } from '@mantle/std';
 import {
   FILE_REINDEX_MAX,
   type FileReindexAnswer,
@@ -93,6 +93,25 @@ const SKETCH_DROP_KEYS = REINDEX_DROP_KEYS.filter((k) => !SKETCH_TEXT_KEYS.inclu
 
 /** How many files' bytes (and PDF databases) are looked for at once. */
 const BYTES_BATCH = 8;
+
+/** The queue could not be read (a grant missing on a box, the database
+ *  away): nothing was queued and nothing dropped. The caller hears it in
+ *  plain words, never the SQL; the fault itself is logged. */
+export class ReindexQueueUnreadError extends Error {
+  constructor(cause: unknown) {
+    super(
+      'The extract queue could not be read now, so no file was queued and nothing was dropped. ' +
+        'Try again later; if it stays, the box needs its setup run again (migrate, then pgboss:init).',
+      { cause },
+    );
+    this.name = 'ReindexQueueUnreadError';
+  }
+}
+
+defineDomainError(ReindexQueueUnreadError, {
+  reason: 'the queue a reindex checks first could not be read: the caller is told nothing was done',
+  status: 503,
+});
 
 /** The ids of a call, checked: 1 to FILE_REINDEX_MAX uuids, each once, or
  *  the refusal. */
@@ -172,8 +191,12 @@ export async function reindexFiles(
     else skip(id, v === 'no_read' ? 'not-found' : 'not-allowed');
   }
 
-  // A read already queued or running is not queued twice.
-  const jobs = await extractJobsFor(allowed);
+  // A read already queued or running is not queued twice. A queue that
+  // cannot be read stops here, before anything is written.
+  const jobs = await extractJobsFor(allowed).catch((err: unknown) => {
+    log('files').warn(`reindex: the extract queue could not be read: ${errorMessage(err)}`);
+    throw new ReindexQueueUnreadError(err);
+  });
   const waiting: string[] = [];
   for (const id of allowed) {
     if (jobs.has(id)) skip(id, 'in-queue');

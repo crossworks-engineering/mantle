@@ -90,6 +90,31 @@ export async function revokePgBossRoutines(sql: {
 }
 
 /**
+ * The read of pg-boss's tables for the runtime and the narrow role (the
+ * queue counts: extractJobsFor, extractQueueBusy, the integrity page).
+ * migrate grants it on the tables there are; on a fresh box pg-boss makes
+ * them after migrate (pgboss:init), and the narrow role holds no default
+ * privileges (a later table is closed to it until a grant names it), so a
+ * box set up in the documented order could not read its queue until a
+ * second migrate. pgboss:init runs this right after pg-boss installs or
+ * upgrades. A role migrate has not made yet is passed over.
+ */
+export async function grantPgBossReads(sql: {
+  unsafe: (text: string) => PromiseLike<unknown>;
+}): Promise<void> {
+  await sql.unsafe(`DO $$
+    DECLARE r text;
+    BEGIN
+      FOREACH r IN ARRAY ARRAY['${RUNTIME_ROLE}', '${NARROW_ROLE}'] LOOP
+        IF to_regrole(r) IS NOT NULL THEN
+          EXECUTE format('GRANT USAGE ON SCHEMA pgboss TO %I', r);
+          EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO %I', r);
+        END IF;
+      END LOOP;
+    END $$`);
+}
+
+/**
  * The server-side large-object creators. No role the app runs as makes a
  * large object (measured: no app code calls one, pg-boss neither), and one
  * the narrow login made would be its own, outside every table's rules (the

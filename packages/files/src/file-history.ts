@@ -36,7 +36,15 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { envNum } from '@mantle/config';
-import { db, mayModerateSql, nodeSnapshots, systemStep, type NodeSnapshot } from '@mantle/db';
+import {
+  currentActor,
+  currentCaller,
+  db,
+  mayModerateSql,
+  nodeSnapshots,
+  systemStep,
+  type NodeSnapshot,
+} from '@mantle/db';
 import { currentSpaceScope, currentWorkspaceScope } from '@mantle/db/viewer';
 import { editCheckRefusalError, errorMessage, UUID_RE } from '@mantle/std';
 import { filesRoot } from './paths';
@@ -106,16 +114,28 @@ export function fileHistoryKept(parentPath: string): boolean {
   return parentPath === 'files' || parentPath.startsWith('files.');
 }
 
-/** Who the current work is, for a version's row. */
+/** The callers that come in through an MCP connection (gate.ts CallerVia):
+ *  a login's OAuth client, the stdio server, a key, a peer. */
+const MCP_VIAS: ReadonlySet<string> = new Set(['oauth', 'stdio', 'key', 'peer']);
+
+/** Who the current work is, for a version's row: the caller, as the other
+ *  history rows name it. An agent's turn is `agent`; a call through an MCP
+ *  connection is `mcp`; a login by hand is `owner` or `member`. The login
+ *  is the scope's, else the call's, else the bound actor's (the owner's
+ *  own request runs in no workspace scope). Only work with no login is
+ *  `system`. */
 function actorNow(ownerId: string): { actor: HistoryActor; actorLoginId: string | null } {
   const scope = currentWorkspaceScope();
-  if (!scope) return { actor: 'system', actorLoginId: null };
-  if (scope.kind === 'assistant') return { actor: 'agent', actorLoginId: scope.loginId };
-  if (!scope.loginId) return { actor: 'system', actorLoginId: null };
-  return {
-    actor: scope.loginId === ownerId ? 'owner' : 'member',
-    actorLoginId: scope.loginId,
-  };
+  const caller = currentCaller();
+  const bound = currentActor();
+  const loginId =
+    scope?.loginId ?? caller?.loginId ?? (bound?.kind === 'login' ? bound.loginId : null);
+  if (scope?.kind === 'assistant' || caller?.via === 'turn' || bound?.kind === 'assistant') {
+    return { actor: 'agent', actorLoginId: loginId };
+  }
+  if (!loginId) return { actor: 'system', actorLoginId: null };
+  if (caller && MCP_VIAS.has(caller.via)) return { actor: 'mcp', actorLoginId: loginId };
+  return { actor: loginId === ownerId ? 'owner' : 'member', actorLoginId: loginId };
 }
 
 /** Who writes new bytes over a file now, as a version's row names it

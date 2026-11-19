@@ -365,7 +365,9 @@ itself (cost safety: no trigger, no timer).
   50 waiting: nothing is queued). The answer `{ queued, databases, skipped }`
   names every id not queued with its reason: `not-found`, `not-allowed`,
   `in-queue`, `busy`, `bytes-missing`. More than 200 ids is a 400 and
-  queues nothing: send the rest in another call.
+  queues nothing: send the rest in another call. A queue that cannot be
+  read (`ReindexQueueUnreadError`) is a 503 in plain words, with nothing
+  queued or dropped.
 - **The list**: `GET /api/files/stale?state=stale|failed|partial&cursor=&limit=`
   and the `file_stale_list` tool (`fileStaleList` in `@mantle/tools`): one
   page of file rows with their status, newest first, in the caller's read
