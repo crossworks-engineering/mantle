@@ -127,6 +127,12 @@ export type PipelineAskDeps = {
   keepFigure(page: number): Promise<boolean>;
 };
 
+/** The ask of a run, and whether its stop left a paid read unkept: a
+ *  figure's Scan reader read whose keep did not reach the node, which a
+ *  run again pays for again (the queue then counts the run's wait as a
+ *  paid one, PAID_WAIT_RESENDS_MAX). */
+export type PipelineAsk = AgentAskFn & { paidUnkept(): boolean };
+
 /**
  * The ask of one run of `pipeline` on the file `nodeId`. `deps`: the
  * guards' readers, for a test; left out, the box's own.
@@ -136,7 +142,7 @@ export function pipelineAskOf(
   nodeId: string,
   pipeline: PipelineManifest,
   deps: Partial<PipelineAskDeps> = {},
-): AgentAskFn {
+): PipelineAsk {
   const d: PipelineAskDeps = {
     offHere: async () => {
       const state = await pipelineStateOf(ownerId, pipeline);
@@ -153,6 +159,11 @@ export function pipelineAskOf(
     keep: (page) => keepBookPage(nodeId, page),
     keepFigure: (page) => keepBookFigure(nodeId, page),
     ...deps,
+  };
+  // A figure's paid Scan reader read that was not kept (paidUnkept).
+  let unkept = false;
+  const keepFigure = async (page: number) => {
+    if (!(await d.keepFigure(page))) unkept = true;
   };
   // Guards 1 and 2, read one time for the run.
   let fixed: Promise<string | null> | undefined;
@@ -256,7 +267,7 @@ export function pipelineAskOf(
       },
     );
 
-  return async (ask: AgentAsk): Promise<PipelineCallAnswer> => {
+  const askOne = async (ask: AgentAsk): Promise<PipelineCallAnswer> => {
     const why = await fixedNo();
     if (why) return no(why);
     if ((await d.asksToday()) >= d.dayCap()) return no(DAY_CAP_STOP);
@@ -313,7 +324,7 @@ export function pipelineAskOf(
       if ((await d.asksToday()) >= d.dayCap()) {
         // The figure's Scan reader read, paid here, is kept: the run again
         // (once the cap has room) makes only the vision call.
-        if (paidFigure && page !== null) await d.keepFigure(page);
+        if (paidFigure && page !== null) await keepFigure(page);
         return no(DAY_CAP_STOP);
       }
     }
@@ -392,7 +403,7 @@ export function pipelineAskOf(
       // the page itself.
       const waited = paidFigure && !answer.ok && providerWaitOfStop(answer.reason) !== null;
       if (waited) {
-        await d.keepFigure(page);
+        await keepFigure(page);
       } else if (shared) {
         // A shared figure page: its description kept for the chat turn
         // (none: a figure not described, final).
@@ -412,6 +423,7 @@ export function pipelineAskOf(
     }
     return answer;
   };
+  return Object.assign(askOne, { paidUnkept: () => unkept });
 }
 
 /** The value of field `name` in an ask's output (`{ values }`), or null. */

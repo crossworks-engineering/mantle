@@ -667,6 +667,41 @@ describe('the Scan reader of a scanned page', () => {
     expect(store.get(7)).toEqual({ page: 7, method: 'vision', text: 'A FIGURE OF A VALVE' });
   });
 
+  it('a figure whose keep did not reach the node makes the stop a paid one: the run again pays for it again', async () => {
+    scanOut = { ...scanOut, text: 'FIG 1', pictures: 1 };
+    const vision = async () => {
+      visionCalls += 1;
+      return { ran: false, text: '', note: '429', model: 'v', wait: { reason: 'rate_limit' } };
+    };
+    const kept = mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps({ vision }));
+    await kept(PAGE);
+    expect(kept.paidUnkept()).toBe(false);
+    const lost = mod.pipelineAskOf(
+      'owner',
+      'node',
+      PAGES_AGENT,
+      deps({ vision, keepFigure: async () => false }),
+    );
+    expect(await lost(PAGE)).toMatchObject({ reason: 'provider_rate_limit' });
+    expect(lost.paidUnkept()).toBe(true);
+    // At the day cap too.
+    const capped = mod.pipelineAskOf(
+      'owner',
+      'node',
+      PAGES_AGENT,
+      deps({
+        keepFigure: async () => false,
+        asksToday: async () => {
+          const n = today;
+          today = 500;
+          return n;
+        },
+      }),
+    );
+    expect(await capped(PAGE)).toMatchObject({ reason: 'day_cap' });
+    expect(capped.paidUnkept()).toBe(true);
+  });
+
   it('a figure held at the day cap keeps its Scan reader read too', async () => {
     scanOut = { ...scanOut, text: '', pictures: 2 };
     const out = await run({

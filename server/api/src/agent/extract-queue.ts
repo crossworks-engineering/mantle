@@ -647,14 +647,23 @@ async function handleExtractJob(
           ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
               // An Agent's run held by the provider or the day cap: the same
               // run again later (point 7). Never a retry of anything else.
+              // A stop that left a paid read unkept is a paid wait; past the
+              // bound (paidWaitResends) any wait of a run that got no work
+              // done fails it to the dead letters (a run has no retry).
               if (out.wait) {
+                const progressed = out.status === 'asked' && out.made > 0;
+                if (!progressed && !paidWaitResends(data)) {
+                  throw new Error(
+                    `run ${pipelineId} of ${nodeId}: ${PAID_WAIT_RESENDS_MAX} waits after paid reads with no work done`,
+                  );
+                }
                 await sendWaiting(
                   b,
                   data,
                   out.wait.for === 'provider'
                     ? { for: 'provider', provider: { reason: out.wait.reason } }
                     : { for: 'day_cap', until: out.wait.until },
-                  { progressed: out.status === 'asked' && out.made > 0 },
+                  { progressed, paid: out.wait.paid === true },
                 );
               }
             })
