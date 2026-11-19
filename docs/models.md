@@ -80,3 +80,43 @@ columns are best-effort and the raw pane always shows everything.
   resolved server-side and never reach the client.
 - Adding a provider with a list API is one entry in `FETCHERS` + a pure parser
   (unit-tested in [`server/web/lib/model-explorer.test.ts`](../server/web/lib/model-explorer.test.ts)).
+
+## The model check: does a box run the default models?
+
+The shipped default of every AI worker and every shipped agent is in the
+system manifest (`server/web/lib/system-manifest/manifest.ts`). A fresh box
+is seeded with them. On an existing box a worker's or an agent's model is
+the operator's choice, and an upgrade never overwrites it. So a box can run
+other models than the defaults, by choice or because it was set up before a
+default changed. The model check says where. It only reports; it changes
+nothing.
+
+Per row (each worker kind, then each shipped agent by slug): the status, the
+box's provider and model, and the default's.
+
+| Status | Means |
+|---|---|
+| `ok` | The box runs the default. A worker on its declared alt route (the xAI voice route) is ok too. |
+| `drift` | Another provider or model. A worker's params that name a model (a key ending in `_model`) count too. |
+| `missing` | No agent row, or no enabled worker of the kind (`required` marks a worker every brain needs). |
+| `off` | The agent is switched off. |
+
+The worker row is the one the runtime runs (`getDefaultWorker`). An agent's
+default provider is OpenRouter. A specialist seeded with a `<SLUG>_MODEL` env
+override shows as `drift`: the report compares with the shipped default.
+
+Four ways to read it, one report (`lib/system-manifest/model-check.ts`):
+
+- **Over MCP** (an Admin user's own client): `config_models_check`;
+  `only_not_ok: true` returns only the rows not `ok`. The settings area.
+- **HTTP:** `GET /api/config/models` (the settings area).
+- **On the box:** `pnpm -C server/web models:check` (add `--json`), or in the
+  image `docker exec mantle_web bun server/web/scripts/model-check.ts`.
+- **The whole fleet** (from a dev machine):
+  `node scripts/fleet-model-check.mjs [label ...] [--json] [--all] [--fleet=<file>]`. It reads
+  the boxes from `.mantle-fleet.json` and runs each box's own check over ssh,
+  so each box is judged against the defaults of the release it runs. A box
+  on a release before the check says to roll it first.
+
+Config values only (kind, slug, provider, model id): never a prompt, a key, a
+base URL or anything a user wrote, so a client box's report may leave the box.

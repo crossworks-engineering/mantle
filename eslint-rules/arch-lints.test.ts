@@ -570,7 +570,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // /api/files/stale and POST /api/files/reindex (owner, the files' read
     // and edit).
     // Files join (P3 + P4/P5): 883 + 6 + 5.
-    expect(rows.filter((r) => r.caller).length).toBe(894);
+    // The model check (+2 with a caller): GET (+HEAD) /api/config/models
+    // (owner, the settings area).
+    expect(rows.filter((r) => r.caller).length).toBe(896);
     // 894 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -625,7 +627,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 2 processing rows (GET and HEAD /api/files/files/:id/processing)
     //   and the 3 reindex and stale rows (GET and HEAD /api/files/stale,
     //   POST /api/files/reindex).
-    expect(rows.length).toBe(1011);
+    // + the 2 model check rows (GET and HEAD /api/config/models).
+    expect(rows.length).toBe(1013);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

@@ -78,6 +78,11 @@ installBoxStatusProvider();
 const { installServicesProvider } = await import('../lib/services');
 installServicesProvider();
 
+// The model check over MCP (config_models_check): it reads the system
+// manifest, which lives in server/web (packages/tools model-check-bridge.ts).
+const { installModelCheckProvider } = await import('../lib/system-manifest/model-check-db');
+installModelCheckProvider();
+
 // The one gate: every narrower registered, or the process stops here at
 // boot, not at its first request (every routed request runs through the
 // gate). AWAITED like the imports above (env first). gate-boot.test.ts pins this call in every

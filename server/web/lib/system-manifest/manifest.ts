@@ -1515,7 +1515,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
 // Operator-owned after seeding: an agent's or a worker's model is never
 // overwritten by the boot reconcile (decision 2026-07-29). A box that differs
 // is shown by the model check (model-check.ts: GET /api/config/models, the
-// `config_models_check` MCP tool, scripts/fleet-model-check.sh).
+// `config_models_check` MCP tool, scripts/fleet-model-check.mjs).
 
 /** The persona's model: the onboarding Models step's recommended assistant
  *  card. A specialist accepts a `<SLUG>_MODEL` env override at seed time. */

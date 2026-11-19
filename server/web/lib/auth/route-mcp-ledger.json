@@ -183,6 +183,7 @@
     "GET /api/box-status": { "tool": "box_status", "gap": "no containers block" },
     "GET /api/changelog": { "planned": "help_read" },
     "GET /api/config": { "planned": "config_report" },
+    "GET /api/config/models": "config_models_check",
     "GET /api/contacts": { "tool": "contact_list", "gap": "no tag filter" },
     "GET /api/contacts/:id": "contact_get",
     "GET /api/dashboard": {

@@ -118,6 +118,7 @@ GET /api/backups class=area scope=area:settings caller=owner gone=false
 GET /api/box-status class=area scope=area:settings caller=owner gone=false
 GET /api/changelog class=self scope=self caller=owner gone=false
 GET /api/config class=area scope=area:settings caller=owner gone=false
+GET /api/config/models class=area scope=area:settings caller=owner gone=false
 GET /api/contacts class=content scope=content caller=owner gone=false
 GET /api/contacts/:id class=content scope=content caller=owner gone=false
 GET /api/dashboard class=area scope=area:settings caller=owner gone=false
@@ -415,6 +416,7 @@ HEAD /api/backups class=area scope=area:settings caller=owner gone=false
 HEAD /api/box-status class=area scope=area:settings caller=owner gone=false
 HEAD /api/changelog class=self scope=self caller=owner gone=false
 HEAD /api/config class=area scope=area:settings caller=owner gone=false
+HEAD /api/config/models class=area scope=area:settings caller=owner gone=false
 HEAD /api/contacts class=content scope=content caller=owner gone=false
 HEAD /api/contacts/:id class=content scope=content caller=owner gone=false
 HEAD /api/dashboard class=area scope=area:settings caller=owner gone=false

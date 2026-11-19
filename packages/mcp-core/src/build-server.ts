@@ -59,6 +59,7 @@ import {
   VAULT_KEY_TOOLS,
   GATEWAY_SERVICE_TOOLS,
   SERVICE_TOOLS,
+  MODEL_CHECK_TOOLS,
   SYNC_TOOLS,
   PIPELINE_TOOLS,
   NOTE_TOOLS,
@@ -567,6 +568,12 @@ export function registerMantleTools(
   // reads and switches the box's optional services, as the screen does.
   // `mcpOnly`, the settings area.
   registerBuiltinTools(SERVICE_TOOLS);
+
+  // ─── The model check ─────────────────────────────────────────────────────────
+  // config_models_check: does this box run the shipped default model on
+  // each worker and agent (read-only; GET /api/config/models). `mcpOnly`,
+  // the settings area.
+  registerBuiltinTools(MODEL_CHECK_TOOLS);
 
   // ─── The Sync service's accounts ─────────────────────────────────────────────
   // sync_status / sync_mailbox_set / sync_feed_set / sync_microsoft_app_set /

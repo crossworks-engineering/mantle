@@ -193,6 +193,7 @@ export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 export { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
 export { SERVICE_TOOLS } from './builtins-services';
+export { MODEL_CHECK_TOOLS } from './builtins-model-check';
 export { SYNC_TOOLS } from './builtins-sync';
 export {
   PIPELINE_TOOLS,
@@ -510,6 +511,12 @@ export {
   SERVICES_UNAVAILABLE,
   type ServicesProvider,
 } from './services-bridge';
+export {
+  registerModelCheckProvider,
+  getModelCheckProvider,
+  MODEL_CHECK_UNAVAILABLE,
+  type ModelCheckProvider,
+} from './model-check-bridge';
 export {
   registerBoxStatusProvider,
   getBoxStatusProvider,

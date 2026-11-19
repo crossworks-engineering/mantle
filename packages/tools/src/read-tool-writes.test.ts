@@ -178,6 +178,8 @@ const NO_WRITE_FOUND: readonly string[] = [
   // getApp and the history rows' code `source` (app-snapshots
   // appHistorySource): no write.
   'code_diff',
+  // The model check: the box's worker and agent config columns; no write.
+  'config_models_check',
   'contact_find',
   'contact_get',
   'contact_list',

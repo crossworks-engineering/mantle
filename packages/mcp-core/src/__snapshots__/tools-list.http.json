@@ -11056,6 +11056,27 @@
   }
  },
  {
+  "name": "config_models_check",
+  "description": "Report whether this box runs the shipped default model on each AI worker (by kind) and each shipped agent (by slug): per row the status (`ok`, `drift`, `missing`, `off`), the box's provider and model, and the default's. `notOk` counts the rows not `ok`. Read-only: a box's model is its operator's choice and nothing here changes one (Settings > AI workers and Agents do).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "only_not_ok": {
+     "type": "boolean",
+     "description": "true returns only the rows not `ok`."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "config_models_check",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "contact_find",
   "description": "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell for the next step. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
   "inputSchema": {
