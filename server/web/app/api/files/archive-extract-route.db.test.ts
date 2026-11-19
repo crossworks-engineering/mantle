@@ -90,7 +90,8 @@ describe.skipIf(!URL)('an archive is extracted only on an ask, into a folder bes
       select type::text as type, path::text as path, slug, title,
              data->'from_archive'->>'path' as from
         from nodes where owner_id = ${owner} and path <@ ${root}::ltree
-         and type in ('file', 'branch') and path::text <> ${root}
+         and type in ('file', 'branch')
+         and not (type = 'branch' and path::text = ${root})
        order by path::text, slug`);
     return rows;
   };
@@ -223,7 +224,8 @@ describe.skipIf(!URL)('an archive is extracted only on an ask, into a folder bes
 
   it('a file never asked is not touched by the job', async () => {
     expect(await run(ids['never.zip']!)).toBeNull();
-    expect(await below(folderPath)).toEqual([]);
+    // Only the archives themselves are there: no folder was made.
+    expect((await below(folderPath)).filter((r) => r.type === 'branch')).toEqual([]);
   });
 
   it('the writer asks: a folder beside it, queued, one notify, nothing unpacked yet', async () => {
@@ -235,8 +237,9 @@ describe.skipIf(!URL)('an archive is extracted only on an ask, into a folder bes
     // The notify is sent outside the request's transaction: wait for it.
     for (let i = 0; i < 50 && !notifies.includes(ids['normal.zip']!); i += 1) await sleep(50);
     expect(notifies).toContain(ids['normal.zip']);
-    const rows = await below(folderPath);
+    const rows = (await below(folderPath)).filter((r) => r.type === 'branch');
     expect(rows.map((r) => [r.type, r.path])).toEqual([['branch', `${folderPath}.normal`]]);
+    expect(await below(`${folderPath}.normal`)).toEqual([]);
   });
 
   it('a second ask while one is queued is a 409', async () => {
@@ -312,7 +315,10 @@ describe.skipIf(!URL)('an archive is extracted only on an ask, into a folder bes
     expect((await ask(writer, ids['site.tar.gz']!)).status).toBe(200);
     const stamp = await run(ids['site.tar.gz']!);
     expect(stamp).toMatchObject({ state: 'done', files: 1, folders: 1, refused_count: 1 });
-    const rows = await below(`${folderPath}.site`);
+    // The stored name is `site-tar.gz` (one dot a name), so the folder is
+    // `site-tar`: read it from the stamp.
+    expect(stamp!.folder_path).toBe(`${folderPath}.site_tar`);
+    const rows = await below(stamp!.folder_path!);
     expect(rows.map((r) => [r.type, r.slug])).toEqual([
       ['branch', 'site'],
       ['file', 'index.html'],
