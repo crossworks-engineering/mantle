@@ -9,10 +9,10 @@
  *
  * GET  /api/access-keys : the keys the caller may see (never the secret or
  *      its hash), the areas, the default and longest expiry, and the
- *      caller's kind. A member sees their own keys. An admin sees EVERY
- *      key, with its last-use address (audit item 4, decided): every admin
- *      already reads the audit log, addresses included, and must be able to
- *      find and revoke any key.
+ *      caller's kind. A login with the keys area (a System user) sees
+ *      EVERY key, with its last-use address (audit item 4, decided; the
+ *      keys area since the System workspace, 2026-11-19); every other
+ *      login, an Admin user outside System too, sees its own keys.
  * POST /api/access-keys { name, access, areas, expiresInDays?,
  *      riskyTools?, password? } : make a key for the caller's own login. The
  *      secret is in this answer ONCE. `areas` null = every area;
@@ -94,12 +94,12 @@ const Body = z
   .strict();
 
 async function handleGET(login: Login) {
-  // An Admin user sees every key; any other login its own (adminFacts: the
-  // scope's answer). What a key may be decides on the keys area, never on
-  // the role.
-  const facts = await adminFacts(login);
-  const keys = await listAccessKeys(facts.admin ? null : login.loginId);
-  const maxDays = maxKeyDays(facts.areas.has('keys'));
+  // The keys area (a System user) sees every key; any other login its own
+  // (adminFacts: the scope's answer). What a key may be decides on the keys
+  // area too, never on the role.
+  const keysArea = (await adminFacts(login)).areas.has('keys');
+  const keys = await listAccessKeys(keysArea ? null : login.loginId);
+  const maxDays = maxKeyDays(keysArea);
   return NextResponse.json(
     {
       keys,

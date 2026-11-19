@@ -70,7 +70,9 @@ The workspaces a brain has:
   owner (the anchor) always stays. Taking a user out of Admin takes them
   out of System too (refused for the last System user), and only a System
   user may take a System user out of Admin. System keeps its name ("System"
-  is reserved for every other workspace, as "Admin" is), cannot be
+  is reserved for every other workspace, as "Admin" is; a brain that
+  already had one so named keeps it, renamed by hand: update-prod.md,
+  "Going up to the System workspace"), cannot be
   archived, and its name, description and look are its users' to change
   (an Admin user outside it is refused). Being in it opens areas; it is
   not meant for items: the brain accepts a grant to System like any other
@@ -79,7 +81,8 @@ The workspaces a brain has:
 - **A System user's login** is changed by a System user only (owner,
   2026-11-19): resetting its password, disabling or enabling it, ending
   its sessions, changing its role or taking it out of Admin, revoking a
-  device, its company sign-in link and deleting it all answer 403
+  device, its company sign-in link, setting or releasing its personal
+  assistant and deleting it all answer 403
   `system_user_target` ("Only a System user can change a System user's
   login.") to anyone else. Your own login is never refused. One check
   (`systemUserTarget`, lib/system-workspace.ts) before each of those

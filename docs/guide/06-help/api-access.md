@@ -28,6 +28,6 @@ This screen has no assistant tools. Make a key here, then use it from your scrip
 ## Technical
 
 - A key works as `Authorization: Bearer mtlk_...` on the public API (`/api/v1`) and on `/api/mcp`. Every other route refuses it.
-- Each login makes keys for itself only. An admin also sees and may revoke every key on the brain.
+- Each login makes keys for itself only. A System user (the keys area) sees every key on the brain; any admin may revoke any key.
 - Only a hash of the key is stored. Each key may make 120 requests a minute on `/api/v1`.
 - See [API keys](../07-api/08-api-keys.md) and [The HTTP API](../07-api/03-http-api.md).

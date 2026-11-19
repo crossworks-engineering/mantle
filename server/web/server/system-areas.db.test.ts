@@ -375,6 +375,8 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
       ['PATCH', `/api/users/${sys2}`, { displayName: `${tag} renamed` }],
       ['DELETE', `/api/users/${sys2}`],
       ['DELETE', `/api/users/${sys2}/devices/${randomUUID()}`],
+      ['PUT', `/api/users/${sys2}/agent`, { name: `${tag} assistant` }],
+      ['DELETE', `/api/users/${sys2}/agent`],
     ];
     for (const [method, path, body] of acts) {
       const r = await call(adm, method, path, body);
@@ -430,6 +432,12 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     r = await call(sys, 'PATCH', `/api/users/${sys2}`, { disabled: false });
     expect(r.status, JSON.stringify(r.json)).toBe(200);
+    // The assistant route goes past the check for a System user (sys2 has
+    // no assistant to rename or release: 400 and 404, never 403).
+    r = await call(sys, 'PUT', `/api/users/${sys2}/agent`, { name: `${tag} assistant` });
+    expect(r.status, JSON.stringify(r.json)).toBe(400);
+    r = await call(sys, 'DELETE', `/api/users/${sys2}/agent`);
+    expect(r.status, JSON.stringify(r.json)).toBe(404);
     // Your own login stays yours (a System user's, an Admin user's).
     r = await call(sys2, 'PATCH', `/api/users/${sys2}`, { displayName: `${tag} me` });
     expect(r.status, JSON.stringify(r.json)).toBe(200);

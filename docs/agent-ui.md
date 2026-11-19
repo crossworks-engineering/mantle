@@ -409,6 +409,19 @@ these apart, and they are accepted as they are:
   System (the users area) lists System and its users on the workspaces
   screen, read only: who holds the technical areas is no secret among
   Admin users. Only a System user changes it.
+- **Any Admin user revokes any API key** (System workspace audit r2,
+  owner 2026-11-19). An Admin user outside System may revoke another
+  login's key, a System user's too, though it lists only its own keys
+  (the keys area lists every key). It never makes or reads another
+  login's key: revoke is the safe direction, and a leaked key must be
+  stoppable by whoever learns of it first.
+- **SCIM may disable a System user** (System workspace audit r2). On a
+  Control Center, where SCIM runs, the company's provider with the SCIM
+  token (the box `.env`, or the company sign-in setup screen, the setup
+  window included) disables any login but the original account, a System
+  user too; the System target check holds people, not the company's
+  directory. A disable is the safe direction: the original account stays
+  in System, and `system:add` brings a login back.
 - **More than 5 files from parallel uploads.** One trusted editor who sends
   several uploads to a task at the same moment can pass the 5-file cap.
 - **A folder run takes every file the caller sees under it** (pipelines,

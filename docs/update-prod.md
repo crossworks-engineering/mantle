@@ -1841,6 +1841,16 @@ System users; an Admin user removed from System keeps the users area
 - **Locked out of System:** `docker exec mantle_web pnpm -C server/web
 system:add --email <address>` adds that login to Admin (when needed) and
   to System. Numbers only; exit 2 names why it refused.
+- **A brain that already has a workspace called "System":** the migration
+  leaves it as it is and makes the built-in one beside it, so the brain
+  shows two workspaces with that name (the built-in one is marked by its
+  `bridge_key`, never by its name). It logs the NOTICE "N other
+  workspace(s) already called System, left as they are; the name index
+  stays Admin only": on that brain the database's reserved-name index
+  covers "Admin" only, while the code and its definer still refuse the
+  name "System" to every other workspace. The operator, or a Moderator of
+  the old workspace, renames the old one (say "System (old)") on its
+  workspace screen; nothing else changes.
 - **Rolling back below it:** run its revert first
   (`packages/db/rollback/*_system_workspace.revert.sql`, as the
   superuser, in one transaction, as for 0378 above). It puts the earlier

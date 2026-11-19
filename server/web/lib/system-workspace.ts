@@ -33,7 +33,8 @@ export const SYSTEM_USER_TARGET_MESSAGE = "Only a System user can change a Syste
 /**
  * The one check before any act on another login's login (a password
  * reset, a disable or enable, a session end, a role change or a removal
- * from Admin, a device revoke, the company sign-in link, a delete): when
+ * from Admin, a device revoke, the company sign-in link, its personal
+ * assistant, a delete): when
  * the target is a System user, the acting login must be one too. Your own
  * login is never refused. Null when the act may go on, else the 403 body
  * (code system_user_target). Used by every /api/users/:id act and by the

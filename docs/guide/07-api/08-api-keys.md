@@ -75,7 +75,7 @@ A plain sign-out does not end a key. When the login leaves a workspace, its keys
 
 Each time a key is made on your login, you get a notice that names the key. If it was not you, revoke the key and change your password.
 
-An admin sees every key on the brain and may revoke any of them. Every other login sees and revokes its own.
+A System user (the keys area) sees every key on the brain. Every other login, an admin outside System too, sees its own. Any admin may revoke any key (revoke is the safe direction); every other login revokes its own.
 
 ## Limits
 

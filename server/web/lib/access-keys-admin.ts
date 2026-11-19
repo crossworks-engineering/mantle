@@ -26,7 +26,7 @@ export function accessKeyStatus(
 const ENDED_LIST_LIMIT = 200;
 
 /** Keys newest first, with their login and maker: one login's (`loginId`),
- *  or every key (null, an Admin user's view). Every live key, then the
+ *  or every key (null, the keys area's view; the route decides). Every live key, then the
  *  newest ended ones. By their definer (mantle_access_keys_seen, 0293): the
  *  workspace role reads neither the keys nor a login's email; in a scope
  *  only the scope's own login's keys, or every key for an Admin user. Never

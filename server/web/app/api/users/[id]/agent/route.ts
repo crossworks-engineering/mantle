@@ -12,6 +12,7 @@ import {
 } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readJson } from '@/lib/read-body';
+import { systemUserTarget } from '@/lib/system-workspace';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -73,6 +74,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const target = await targetUser(targetId);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  // A System user's assistant is set by a System user only (or by itself).
+  const notSystem = await systemUserTarget(user.actor.id, target.id);
+  if (notSystem) return NextResponse.json(notSystem, { status: 403 });
   // A member chats only with team-level agents (member-logins.md section 3):
   // a personal assistant is an admin's, and ONLY an admin's (client logins
   // C0: any other role is refused, not only member). Demoting a login
@@ -158,6 +162,8 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
 
   const target = await targetUser(targetId);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  const notSystem = await systemUserTarget(user.actor.id, target.id);
+  if (notSystem) return NextResponse.json(notSystem, { status: 403 });
 
   const released = await releaseAssignedAgent(user.id, targetId);
   if (!released) {

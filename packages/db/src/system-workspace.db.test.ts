@@ -412,7 +412,11 @@ describe.skipIf(!URL)('the System workspace (rules and areas)', () => {
     );
   });
 
-  it('out of Admin is out of System, in the same step (the remover need not be in System); never the last', async () => {
+  // The definer layer only: the SQL lets any Admin user take a System user
+  // out of Admin. The route holds L1 above it (owner, 2026-11-19: only a
+  // System user may, 403 system_user_target; lib/workspaces.ts
+  // systemUserTarget, system-areas.db.test.ts).
+  it('the definer: out of Admin is out of System, in the same step (SQL asks no System seat of the remover; the route does); never the last', async () => {
     expect(
       await run(await asLogin(L.adm), async (tx) => {
         const before = await eventIds(tx, sysWs);
