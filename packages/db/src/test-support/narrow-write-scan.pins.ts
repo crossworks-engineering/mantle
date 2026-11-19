@@ -636,6 +636,8 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_ws_login_search:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
+  mantle_ws_ensure_system:
+    "granted to no app role: the migration, the workspaces switch, and the operator's recovery (system:add) on the migrator's connection (executeAsMigrator), never a narrow statement",
   mantle_ws_migrate_locked:
     'denied to the runtime role too (RUNTIME_DENIED_FUNCTIONS): migrate, the operator check switch or tests only',
   mantle_ws_names:
@@ -781,6 +783,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/maintenance/refold-embeds.ts mantle_embed_host': 1,
   'server/web/lib/system-workspace.ts mantle_ws_add_user': 1,
   'server/web/lib/system-workspace.ts mantle_ws_admin_id': 1,
+  'server/web/lib/system-workspace.ts mantle_ws_ensure_system': 1,
   'server/web/lib/system-workspace.ts mantle_ws_system_id': 1,
   'server/web/lib/workspace-ticks.ts mantle_ws_set_moderator': 1,
   'server/web/lib/workspaces-migrate.ts mantle_ws_attach_assistants': 1,

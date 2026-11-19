@@ -1294,20 +1294,26 @@ async function systemExit(
   remove: (q: Exec) => Promise<void>,
 ): Promise<void> {
   const login = caller.login;
-  const target = login && UUID_RE.test(loginId) ? await loadLoginTarget(loginId) : null;
-  if (!login || !target) {
+  if (!login || !UUID_RE.test(loginId)) {
     await db.transaction(remove);
     return;
   }
   const actor = { id: login.brainId, email: login.email, actor: { ...login.actor } };
-  const done = await withSystemPoolInWriteScope(() =>
-    withDeadlockRetry(() =>
+  const done = await withSystemPoolInWriteScope(async () => {
+    // The login row is read on the system pool (the write role reads no
+    // auth.users row), as the Admin role change reads it.
+    const target = await loadLoginTarget(loginId);
+    if (!target) {
+      await db.transaction(remove);
+      return null;
+    }
+    return withDeadlockRetry(() =>
       applyLoginChange(actor, target, { signOut: true }, undefined, async (tx) => {
         await remove(tx);
       }),
-    ),
-  );
-  if (!done.ok) {
+    );
+  });
+  if (done && !done.ok) {
     if (done.reason === 'last-system-user' || done.reason === 'last-admin') {
       throw LAST_SYSTEM_USER();
     }
