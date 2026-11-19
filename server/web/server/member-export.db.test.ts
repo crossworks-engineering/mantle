@@ -310,6 +310,7 @@ describe.skipIf(!DB_URL)('members export what they see; extraction needs edit', 
     }
     await raw`delete from workspace_users u using workspaces w
                where w.id = u.workspace_id and not w.is_admin
+                 and w.bridge_key is distinct from 'system'
                  and u.login_id in (${owner}, ${mem}, ${mem2}, ${adminUser}, ${lone})`;
     // An Admin user that is not its Moderator: it reads the Files root and
     // Auto-filed, and may change neither.

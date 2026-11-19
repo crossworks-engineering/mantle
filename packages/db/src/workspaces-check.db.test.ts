@@ -169,14 +169,14 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
         values (${ok!.id}, ${owner}, true)`;
     });
     expect(got).toEqual({ ...CLEAN, workspacesWithoutModerator: 2 });
-    // The owner disabled: Admin has no Moderator who can sign in; Team still
-    // has the member.
+    // The owner disabled: Admin has no Moderator who can sign in, nor has
+    // System (0391, the owner its one user); Team still has the member.
     const adminLess = await planted(async (tx) => {
       await tx`update auth.users set disabled_at = now() where id = ${owner}`;
     });
     expect(adminLess).toEqual({
       ...CLEAN,
-      workspacesWithoutModerator: 1,
+      workspacesWithoutModerator: 2,
       adminWithoutModerator: 1,
     });
     expect(workspacesCheckFindings(adminLess)).toBe(1);

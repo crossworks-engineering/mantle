@@ -567,6 +567,9 @@ describe.skipIf(!URL)('0327: the login hold, the ledger tokens, the epoch (S7b p
       'narrow_hold_wider',
       'narrow_counter_enabled',
       'narrow_observe_removed',
+      // Not a narrow migration: it makes 0321's mantle_ws_system_work again
+      // (one more pair, the System recovery), so it runs after them.
+      'system_workspace',
     ];
     const journal = (
       JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as {

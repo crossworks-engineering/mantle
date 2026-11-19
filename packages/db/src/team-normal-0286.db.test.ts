@@ -180,10 +180,16 @@ describe.skipIf(!URL)('a new brain after 0286 has no Team', () => {
       subject: 'Team workspace',
       metric: 'not kept (held nothing)',
     });
-    const ws = await sql`select name, is_admin, bridge_key from workspaces`;
-    expect(ws).toEqual([{ name: 'Admin', is_admin: true, bridge_key: 'admin' }]);
-    // The owner is Admin's Moderator; no event points at a workspace gone.
+    // And System (0391), with every Admin user.
+    const ws = await sql`select name, is_admin, bridge_key from workspaces order by name`;
+    expect(ws).toEqual([
+      { name: 'Admin', is_admin: true, bridge_key: 'admin' },
+      { name: 'System', is_admin: false, bridge_key: 'system' },
+    ]);
+    // The owner is Admin's Moderator (and System's user); no event points at
+    // a workspace gone.
     expect(await sql`select moderator from workspace_users where login_id = ${owner}`).toEqual([
+      { moderator: true },
       { moderator: true },
     ]);
     expect(

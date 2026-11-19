@@ -119,8 +119,13 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
         (${chat.pinnedToOps}, ${account.admin}, ${owner}, '7104', 'private', 'allowed', ${agent.ops}),
         (${chat.pending}, ${account.admin}, ${owner}, '7105', 'private', 'pending', null),
         (${chat.blocked}, ${account.admin}, ${owner}, '7106', 'private', 'denied', null)`;
+    // System (0391, made by a later migration) left out: its seats are
+    // Admin's.
     usersBefore = Number(
-      (await sql`select count(*)::int as n from workspace_users`)[0]!.n as number,
+      (
+        await sql`select count(*)::int as n from workspace_users u join workspaces w
+                   on w.id = u.workspace_id where w.bridge_key is distinct from 'system'`
+      )[0]!.n as number,
     );
     // One message on the anchor's chat, one on the chat that goes back to
     // pending, as the poller stored them before 0271 (no login).
@@ -172,9 +177,14 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
   });
 
   it('adds nobody to a workspace', async () => {
-    expect(Number((await sql`select count(*)::int as n from workspace_users`)[0]!.n)).toBe(
-      usersBefore,
-    );
+    expect(
+      Number(
+        (
+          await sql`select count(*)::int as n from workspace_users u join workspaces w
+                     on w.id = u.workspace_id where w.bridge_key is distinct from 'system'`
+        )[0]!.n,
+      ),
+    ).toBe(usersBefore);
     expect((await sql`select 1 from workspace_users where workspace_id = ${ws.ops}`).length).toBe(
       0,
     );

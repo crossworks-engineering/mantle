@@ -133,6 +133,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_folder_grant_rows(uuid)':
     'a folder’s grant rows not excluded, only for a folder the scope reads: the confirm',
   'mantle_ws_admin_id(uuid)': 'the brain’s Admin workspace id (an id, no name): the confirm',
+  'mantle_ws_system_id(uuid)':
+    'the brain’s System workspace id (an id, no name): the workspace screens and the shell (0391)',
   'mantle_ws_live(uuid,uuid)':
     'a workspace is live, only one the scope may see named through `via`: the confirm',
   'mantle_ws_names(uuid[],uuid)':

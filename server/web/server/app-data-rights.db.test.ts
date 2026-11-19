@@ -276,6 +276,7 @@ describe.skipIf(!DB_URL)("an agent's writes follow its person's rights", () => {
     }
     await raw`delete from workspace_users u using workspaces w
                where w.id = u.workspace_id and not w.is_admin
+                 and w.bridge_key is distinct from 'system'
                  and u.login_id in (${owner}, ${adm}, ${mem})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.H}, ${mem}, true), (${ws.W}, ${mem}, false)`;

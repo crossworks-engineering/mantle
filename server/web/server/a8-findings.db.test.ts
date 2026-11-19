@@ -188,6 +188,7 @@ describe.skipIf(!DB_URL)('A8 findings: the owner’s decisions F1 and F2', () =>
     }
     await raw`delete from workspace_users u using workspaces w
                where w.id = u.workspace_id and not w.is_admin
+                 and w.bridge_key is distinct from 'system'
                  and u.login_id in (${L.mod}, ${L.user}, ${L.user2}, ${L.admin})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator) values
       (${ws.W}, ${L.mod}, true), (${ws.H}, ${L.mod}, true), (${ws.W}, ${L.user}, false),

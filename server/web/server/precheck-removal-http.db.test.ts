@@ -1351,6 +1351,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     }
     await raw`delete from workspace_users u using workspaces w
                where w.id = u.workspace_id and not w.is_admin
+                 and w.bridge_key is distinct from 'system'
                  and u.login_id in (${owner}, ${L.admin}, ${L.member})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.H}, ${L.member}, true), (${ws.R}, ${L.member}, false),

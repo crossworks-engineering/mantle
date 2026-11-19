@@ -217,18 +217,21 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
        where owner_id = ${owner} and home_ws is null`;
     expect(h!.n).toBe(0);
     expect(await drift()).toBe(0);
-    // Membership: owner moderates both, the member moderates Team and its
-    // private workspace (made by the fold for its draft).
-    const users = await sql<{ ws: string; login: string; m: boolean }[]>`
-      select workspace_id::text as ws, login_id::text as login, moderator as m from workspace_users`;
+    // Membership: owner moderates both (and is System's user, 0391), the
+    // member moderates Team and its private workspace (made by the fold for
+    // its draft).
+    const users = await sql<{ ws: string; login: string; m: boolean; sys: boolean }[]>`
+      select u.workspace_id::text as ws, u.login_id::text as login, u.moderator as m,
+             coalesce(w.bridge_key = 'system', false) as sys
+        from workspace_users u join workspaces w on w.id = u.workspace_id`;
     expect(
       users
         .map(
           (u) =>
-            `${u.ws === admin ? 'A' : u.ws === team ? 'T' : 'P'}:${u.login === owner ? 'o' : 'm'}:${u.m}`,
+            `${u.ws === admin ? 'A' : u.ws === team ? 'T' : u.sys ? 'S' : 'P'}:${u.login === owner ? 'o' : 'm'}:${u.m}`,
         )
         .sort(),
-    ).toEqual(['A:o:true', 'P:m:true', 'T:m:true', 'T:o:true']);
+    ).toEqual(['A:o:true', 'P:m:true', 'S:o:true', 'T:m:true', 'T:o:true']);
   });
 
   it('attaches the assistants and connectors, and stamps R3 rows from the agent', async () => {

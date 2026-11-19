@@ -224,7 +224,8 @@ describe.skipIf(!DB_URL)('file history (0384)', () => {
     }
     const logins = [owner, ...Object.values(L)];
     await raw`delete from workspace_users u using workspaces w
-               where w.id = u.workspace_id and not w.is_admin and u.login_id = any(${logins}::uuid[])`;
+               where w.id = u.workspace_id and not w.is_admin
+                 and w.bridge_key is distinct from 'system' and u.login_id = any(${logins}::uuid[])`;
     // The Admin user reads the file through R (a plain user there): an
     // Admin user manages what it reads (0383).
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
