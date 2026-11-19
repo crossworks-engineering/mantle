@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { touchesClientCodeMail } from '@mantle/email/client-code-mail';
 import { errorMessage } from '@mantle/std';
 import { BrainError, type Brain } from './brain';
-import { stagerFor, tolerateFor } from './mail-stream';
+import { stagerFor, failuresFor } from './mail-stream';
 import { backfillSender, mask, recentSenders, syncMailbox } from './imap';
 import { backfillOutlook, recentOutlookSenders, syncOutlook } from './outlook';
 import type { BackfillJob, BackfillMark, MailAccount, MsAccount, State } from './state';
@@ -123,7 +123,7 @@ export async function runMailbox(brain: Brain, state: State, account: MailAccoun
       ingestFor(brain, account.id, counter),
       (c) => state.putCursor(account.id, c).then(() => undefined),
       stagerFor(brain, account.id),
-      tolerateFor(state, account.id),
+      failuresFor(state, account.id),
     );
     scanned = r.scanned;
   } catch (err) {
@@ -173,7 +173,7 @@ export async function runOutlookMail(
       gateFor(brain, account.mailboxId),
       ingestFor(brain, account.mailboxId, counter),
       stagerFor(brain, account.mailboxId),
-      tolerateFor(state, account.mailboxId),
+      failuresFor(state, account.mailboxId),
     );
     scanned = r.scanned;
   } catch (err) {
@@ -195,12 +195,38 @@ export async function runOutlookMail(
   });
 }
 
-/** A new backfill job for `targets`, kept in the brain until it reaches the
- *  end (each run of it a share: runBackfill). */
-export async function queueBackfill(state: State, targets: string[]): Promise<BackfillJob> {
-  const job: BackfillJob = { id: randomUUID(), targets, at: new Date().toISOString(), marks: {} };
-  await state.putBackfill(job);
-  return job;
+/** A new backfill job per target, each kept in the brain until it reaches
+ *  the end (each run of it a share: runBackfill). One per target keeps a
+ *  job's marks (every mailbox's folders) well under the 256 KB a state
+ *  value holds. */
+export async function queueBackfill(state: State, targets: string[]): Promise<BackfillJob[]> {
+  const jobs: BackfillJob[] = [];
+  for (const target of new Set(targets)) {
+    const job: BackfillJob = {
+      id: randomUUID(),
+      targets: [target],
+      at: new Date().toISOString(),
+      marks: {},
+    };
+    await state.putBackfill(job);
+    jobs.push(job);
+  }
+  return jobs;
+}
+
+/** A mark as small as it can be kept: a done one needs no folders, a done
+ *  folder no watermark (an IMAP one keeps its UIDVALIDITY: a new one
+ *  reads the folder again). */
+export function pruneMark(m: BackfillMark): void {
+  if (m.done) {
+    delete m.folders;
+    return;
+  }
+  for (const [id, f] of Object.entries(m.folders ?? {})) {
+    if (!f.done) continue;
+    m.folders![id] =
+      f.uidvalidity === undefined ? { done: true } : { uidvalidity: f.uidvalidity, done: true };
+  }
 }
 
 /**
@@ -215,7 +241,10 @@ export async function queueBackfill(state: State, targets: string[]): Promise<Ba
 export async function runBackfill(brain: Brain, state: State, id: string): Promise<number> {
   const job = await state.backfill(id);
   if (!job) return 0;
-  const save = () => state.putBackfill(job).then(() => undefined);
+  const save = () => {
+    for (const m of Object.values(job.marks)) pruneMark(m);
+    return state.putBackfill(job).then(() => undefined);
+  };
   let ingested = 0;
   let open = false;
   const mark = (key: string): BackfillMark => (job.marks[key] ??= {});
@@ -235,7 +264,7 @@ export async function runBackfill(brain: Brain, state: State, id: string): Promi
           ingestFor(brain, account.mailboxId, counter),
           stagerFor(brain, account.mailboxId),
           BACKFILL_RUN_PAGES,
-          tolerateFor(state, account.mailboxId),
+          failuresFor(state, account.mailboxId),
         );
         m.done = r.done;
         if (!r.done) open = true;
@@ -265,7 +294,7 @@ export async function runBackfill(brain: Brain, state: State, id: string): Promi
           ingestFor(brain, account.id, counter),
           stagerFor(brain, account.id),
           BACKFILL_RUN_ENVELOPES,
-          tolerateFor(state, account.id),
+          failuresFor(state, account.id),
         );
         m.done = r.done;
         if (!r.done) open = true;

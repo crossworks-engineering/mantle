@@ -249,3 +249,25 @@ describe('the line reader', () => {
     expect(cancelled).toBe(true);
   });
 });
+
+describe('a backfill mark', () => {
+  it('keeps only what a done folder or a done mark needs', async () => {
+    const { pruneMark } = await import('./mail');
+    const m = {
+      folders: {
+        INBOX: { uidvalidity: 7, lastUid: 900, done: true },
+        Archive: { uidvalidity: 7, lastUid: 10 },
+        'AAMkAD-graph-folder-id': { since: '2026-01-01T00:00:00Z', done: true },
+      },
+    };
+    pruneMark(m);
+    expect(m.folders).toEqual({
+      INBOX: { uidvalidity: 7, done: true },
+      Archive: { uidvalidity: 7, lastUid: 10 },
+      'AAMkAD-graph-folder-id': { done: true },
+    });
+    const done = { done: true, folders: m.folders };
+    pruneMark(done);
+    expect(done).toEqual({ done: true });
+  });
+});

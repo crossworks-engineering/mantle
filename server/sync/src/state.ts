@@ -12,10 +12,11 @@
  *   mscursor:<id>         an account's Outlook mail watermark
  *   msoauth:<state>       a sign-in under way (10 minutes, used once)
  *   backfill:<id>         a new contact's backfill, until it reaches the end
- *   msgfail:<mailbox id>  messages that failed to read, by id: how many runs
+ *   msgfail:<mailbox id>  messages that failed to read, by id: tries, first, folder
  *   feedkeys:<feed id>    a feed's changed occurrences last run (hashed keys)
  */
 import type { Brain } from './brain';
+import type { FailEntry } from './mail-stream';
 
 export type HostPort = { host: string; port: number; secure: boolean };
 
@@ -113,7 +114,12 @@ export type MsDrive = {
 
 /** An account's Outlook mail watermarks: `since` is the inbox's from before
  *  every folder synced; `folders` holds each folder's (by Graph id). */
-export type MsCursor = { since: string | null; folders?: Record<string, string> };
+export type MsCursor = {
+  since: string | null;
+  folders?: Record<string, string>;
+  /** Where the next run's backlog round robin starts (outlook.ts). */
+  rr?: number;
+};
 
 /** A new contact's backfill, kept until it reaches the end (Sync service
  *  plan M2): each run reads a share of every mailbox and goes on in the
@@ -216,8 +222,8 @@ export function createState(brain: Brain) {
     msCursor: async (id: string) => (await get<MsCursor>(`mscursor:${id}`)) ?? { since: null },
     putMsCursor: (id: string, c: MsCursor) => put(`mscursor:${id}`, c),
     /** Messages of a mailbox that failed to read, by id: how many runs. */
-    msgFails: async (id: string) => (await get<Record<string, number>>(`msgfail:${id}`)) ?? {},
-    putMsgFails: (id: string, f: Record<string, number>) => put(`msgfail:${id}`, f),
+    msgFails: async (id: string) => (await get<Record<string, FailEntry>>(`msgfail:${id}`)) ?? {},
+    putMsgFails: (id: string, f: Record<string, FailEntry>) => put(`msgfail:${id}`, f),
     backfills: () => list<BackfillJob>('backfill:'),
     backfill: (id: string) => get<BackfillJob>(`backfill:${id}`),
     putBackfill: (j: BackfillJob) => put(`backfill:${j.id}`, j),

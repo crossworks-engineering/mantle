@@ -10,6 +10,16 @@ import { NET_TIMEOUTS, timeoutSignal } from '@mantle/std';
 
 export const TOKEN_HEADER = 'x-mantle-sync-token';
 
+/** A failure of the one message being read, not of the run: its source
+ *  stream broke part way, or its upload passed its deadline. The run goes
+ *  on past the message and tries it again later (mail-stream.ts Failures). */
+export class MessageFault extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'MessageFault';
+  }
+}
+
 export class BrainError extends Error {
   constructor(
     readonly status: number,
@@ -80,18 +90,27 @@ export function createBrain(opts: { url: string; token: string }): Brain {
   }
   return {
     stream: async (path, body, signal) => {
-      const res = await reach(() =>
-        fetch(`${base}${path}`, {
-          method: 'POST',
-          headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/octet-stream' },
-          body,
-          // A streamed request body (Bun and undici both take it).
-          duplex: 'half',
-          redirect: 'error',
-          signal: AbortSignal.any([signal, timeoutSignal(NET_TIMEOUTS.syncFile)]),
-        } as RequestInit),
-      );
-      return answer(res);
+      const deadline = timeoutSignal(NET_TIMEOUTS.syncFile);
+      try {
+        const res = await reach(() =>
+          fetch(`${base}${path}`, {
+            method: 'POST',
+            headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/octet-stream' },
+            body,
+            // A streamed request body (Bun and undici both take it).
+            duplex: 'half',
+            redirect: 'error',
+            signal: AbortSignal.any([signal, deadline]),
+          } as RequestInit),
+        );
+        return await answer(res);
+      } catch (err) {
+        // This one upload ran past its deadline (a very large file on a
+        // slow source): the message's failure, not the brain's.
+        if (deadline.aborted)
+          throw new MessageFault('the upload passed its deadline', { cause: err });
+        throw err;
+      }
     },
     get: (path) => call('GET', path),
     post: (path, body) => call('POST', path, body),

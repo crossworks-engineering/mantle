@@ -56,8 +56,9 @@ const MAX_BLOCK_CHARS = 16 * 1024 * 1024;
 /** One line's text: past this (a body with no line breaks) the read stops,
  *  and the run removes nothing. */
 const MAX_LINE_CHARS = 16 * 1024 * 1024;
-/** A whole run's deadline (the stream of a large feed takes a while). */
-const FETCH_TIMEOUT_MS = 10 * 60_000;
+/** A whole run's deadline (the stream of a large feed, and the brain's
+ *  pages posted as it is read, take a while). */
+const FETCH_TIMEOUT_MS = 30 * 60_000;
 /** A UID (an occurrence's carries its start too) and a description, within
  *  the brain's bounds (POST /api/sidecar/events, sidecar-schemas.ts). */
 const UID_MAX = 1000;
@@ -212,7 +213,8 @@ export function createFeedParser(
 ): FeedParser {
   const held = new Map<string, CalEvent>();
   const horizon = now + FORWARD_HORIZON_MS;
-  const timezones: string[] = [];
+  /** The feed's VTIMEZONEs by TZID: one repeated per event is kept once. */
+  const timezones = new Map<string, string>();
   const overrides: CalEvent[] = [];
   const cancelled = new Set<string>();
   const cuts: string[] = [];
@@ -230,14 +232,17 @@ export function createFeedParser(
 
   function parsePart(kind: string, text: string): CalEvent[] {
     if (kind === 'VTIMEZONE') {
-      timezones.push(text);
+      const tzid = /^TZID[;:](.*)$/im.exec(text)?.[1]?.trim() ?? text;
+      timezones.set(tzid, text);
       return [];
     }
     let comp;
     try {
       comp = new ICAL.Component(
         ICAL.parse(
-          ['BEGIN:VCALENDAR', 'VERSION:2.0', ...timezones, text, 'END:VCALENDAR'].join('\r\n'),
+          ['BEGIN:VCALENDAR', 'VERSION:2.0', ...timezones.values(), text, 'END:VCALENDAR'].join(
+            '\r\n',
+          ),
         ),
       );
     } catch {

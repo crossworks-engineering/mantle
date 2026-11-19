@@ -17,7 +17,7 @@ import { finished } from 'node:stream/promises';
 import { MailParser, type AttachmentStream, type MessageText } from 'mailparser';
 import { errorMessage } from '@mantle/std';
 import { MAIL_BODY_INLINE_MAX, type WireAttachment, type WireMessage } from '@mantle/email/wire';
-import { BrainError, type Brain } from './brain';
+import { BrainError, MessageFault, type Brain } from './brain';
 import type { State } from './state';
 
 /** Upload one attachment's bytes: what the brain stored. */
@@ -26,7 +26,11 @@ export type Stager = (body: Readable, mime: string) => Promise<{ sha256: string;
 export function stagerFor(brain: Brain, accountId: string): Stager {
   return async (body, mime) => {
     const ctrl = new AbortController();
-    body.once('error', () => ctrl.abort());
+    let sourceErr: unknown;
+    body.once('error', (err) => {
+      sourceErr = err;
+      ctrl.abort();
+    });
     const q = new URLSearchParams({ accountId, mime: mime.slice(0, 255) });
     try {
       return await brain.stream<{ sha256: string; size: number }>(
@@ -35,6 +39,13 @@ export function stagerFor(brain: Brain, accountId: string): Stager {
         ctrl.signal,
       );
     } catch (err) {
+      // The source broke part way (a Graph body cut off, a server that
+      // failed on this message): the message's failure, never the brain's.
+      if (sourceErr) {
+        throw new MessageFault(`its source broke: ${errorMessage(sourceErr)}`, {
+          cause: sourceErr,
+        });
+      }
       // A brain from before streamed attachments (the sidecar rolled
       // first): the run stops with a plain reason, the cursor stays, and
       // the message is taken in once the brain is updated. Never a skip.
@@ -44,7 +55,7 @@ export function stagerFor(brain: Brain, accountId: string): Stager {
       if (old) {
         throw new BrainError(
           503,
-          'the brain does not take streamed attachments yet (update the brain to this release)',
+          'the brain has no streamed attachment route (it is from before this release, or Sync is off there)',
         );
       }
       throw err;
@@ -208,37 +219,70 @@ export function notesText(notes: string[]): string | undefined {
   return `(Not all of this message could be taken in: ${notes.join('; ')}. Read it in your mail client.)`;
 }
 
-/** After this many runs a message that fails to read (the mail server
- *  answers an error for it every time) is stored with its envelope and a
- *  note saying so, so one message never holds a mailbox's sync for good. */
+/** A message that fails to read is tried again in later runs, and only
+ *  after MESSAGE_TRIES tries over MESSAGE_GIVE_UP_MS (a day: an outage of
+ *  Microsoft or the mail server never turns mail into stubs) is it stored
+ *  with what could be read and a note saying what could not. */
 export const MESSAGE_TRIES = 3;
+export const MESSAGE_GIVE_UP_MS = 24 * 60 * 60 * 1000;
+/** The most messages of one mailbox kept to try again. Past it the run
+ *  stops (its cursor stays) rather than let one go. */
+export const FAILURES_MAX = 500;
 
-/** Whether a message that failed to read is now to be stored as a stub
- *  (its tries counted across runs, in the brain). */
-export type Tolerate = (providerMsgId: string) => Promise<boolean>;
+export type FailEntry = { n: number; first: number; folder: string };
 
-export function tolerateFor(
+/** The messages of a mailbox that failed to read, kept in the brain
+ *  (`msgfail:`): a run goes on past such a message, and the next runs try
+ *  it again (imap.ts retryFailed, outlook.ts retryFailed). */
+export type Failures = {
+  /** This message failed to read: kept to try again. */
+  record(id: string, folder: string): Promise<void>;
+  /** The messages to try again; `last`: this try ends in a stub. */
+  pending(): Promise<{ id: string; folder: string; last: boolean }[]>;
+  /** Read, stored as a stub, or gone: forgotten. */
+  clear(id: string): Promise<void>;
+};
+
+export function failuresFor(
   state: Pick<State, 'msgFails' | 'putMsgFails'>,
   mailboxId: string,
-): Tolerate {
-  return async (id) => {
-    const fails = await state.msgFails(mailboxId);
-    const n = (fails[id] ?? 0) + 1;
-    if (n >= MESSAGE_TRIES) delete fails[id];
-    else fails[id] = n;
-    const keys = Object.keys(fails);
-    for (const k of keys.slice(0, Math.max(0, keys.length - 200))) delete fails[k];
-    await state.putMsgFails(mailboxId, fails);
-    return n >= MESSAGE_TRIES;
+  now: () => number = Date.now,
+): Failures {
+  return {
+    async record(id, folder) {
+      const fails = await state.msgFails(mailboxId);
+      const known = fails[id];
+      if (!known && Object.keys(fails).length >= FAILURES_MAX) {
+        throw new Error(
+          `${FAILURES_MAX} messages of this mailbox fail to read; the run stops here until they read`,
+        );
+      }
+      fails[id] = { n: (known?.n ?? 0) + 1, first: known?.first ?? now(), folder };
+      await state.putMsgFails(mailboxId, fails);
+    },
+    async pending() {
+      const fails = await state.msgFails(mailboxId);
+      return Object.entries(fails).map(([id, e]) => ({
+        id,
+        folder: e.folder,
+        last: e.n >= MESSAGE_TRIES && now() - e.first >= MESSAGE_GIVE_UP_MS,
+      }));
+    },
+    async clear(id) {
+      const fails = await state.msgFails(mailboxId);
+      if (!(id in fails)) return;
+      delete fails[id];
+      await state.putMsgFails(mailboxId, fails);
+    },
   };
 }
 
-/** The stub of a message that could not be read. */
+/** The stub of a message that could not be read in a day of tries. */
 export function unreadStub(base: WireMessage, err: unknown): WireMessage {
   const why = errorMessage(err).slice(0, 300);
   return {
     ...base,
     attachments: [],
-    bodyText: `(This message could not be read from the mail server in ${MESSAGE_TRIES} runs: ${why}. Read it in your mail client.)`,
+    bodyText: `(This message could not be read from the mail server in a day of tries: ${why}. Read it in your mail client.)`,
   };
 }

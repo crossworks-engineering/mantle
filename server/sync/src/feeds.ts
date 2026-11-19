@@ -170,7 +170,12 @@ export function feedNote(run: FeedRun): string | undefined {
 export async function runFeed(brain: Brain, state: State, feed: Feed): Promise<void> {
   try {
     const hold = new Set(await state.feedKeys(feed.id));
-    const run = await syncFeed(brain, feed, await fetchFeedLines(feed.url), Date.now(), hold);
+    // The feed opens on its first line read, after the brain's stored set
+    // was asked: a run that stops before then holds no socket.
+    const lines = (async function* () {
+      yield* await fetchFeedLines(feed.url);
+    })();
+    const run = await syncFeed(brain, feed, lines, Date.now(), hold);
     // A run that read the whole feed names next run's held keys. Keeping
     // them is pacing of the writes only: a failure here fails nothing.
     if (run.cuts.length === 0) {

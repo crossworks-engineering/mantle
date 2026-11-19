@@ -143,8 +143,9 @@ export function createSyncServer(state: SyncState, deps: SyncDeps | null): Serve
         ? body.targets.filter((t): t is string => typeof t === 'string').slice(0, 100)
         : [];
       if (targets.length > 0) {
-        const job = await queueBackfill(deps.state, targets);
-        void deps.lane.run('backfill', () => runBackfill(deps.brain, deps.state, job.id));
+        for (const job of await queueBackfill(deps.state, targets)) {
+          void deps.lane.run('backfill', () => runBackfill(deps.brain, deps.state, job.id));
+        }
       }
       return json(res, 202, { queued: targets.length });
     }

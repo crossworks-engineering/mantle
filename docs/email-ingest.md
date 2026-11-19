@@ -49,10 +49,14 @@ own; a message over 40 MB whose body text alone is over 16 MB is read part
 by part (IMAP), each large text part staged the same way. What could not be
 taken in (an attachment over the cap, attachments past the 500 a message
 holds) is named in a note at the top of the body: nothing is dropped
-silently. A message the mail server fails on in three runs running is
-stored with its envelope and a note saying so (`msgfail:`), so one message
-never holds a mailbox; the brain's own failures stop the run and the cursor
-stays.
+silently. A message the mail server (or Microsoft) fails on never holds a
+mailbox: the run goes on past it and keeps it to try again (`msgfail:`,
+at most 500 a mailbox; past that the run stops rather than let one go).
+Each run tries those again first; one that reads is stored whole. Only
+after three tries over a day is it stored with what could be read and a
+note saying what could not, so an outage never turns mail into stubs. The
+brain's own failures, a token, a throttle or the network stop the run, and
+the cursor stays.
 
 ## A new contact
 
@@ -63,7 +67,8 @@ back to the mailbox's first-scan reach (`firstScanDays`, 365 days unless
 set), through the same gate and store. The backfill is a job kept in
 `service_state` (`backfill:<id>`) until it reaches the end: each run reads
 a share of each mailbox (2 500 envelopes, or 50 Outlook pages) and keeps
-its place per folder, and the scheduler goes on with it every 5 minutes,
+its place per folder (one job per new address, its marks pruned as they
+finish, so a job stays small), and the scheduler goes on with it every 5 minutes,
 after a failure or a restart too. With Sync off nothing is asked.
 
 ## Discover

@@ -33,9 +33,9 @@ import {
   stageOne,
   unreadStub,
   type Stager,
-  type Tolerate,
+  type Failures,
 } from './mail-stream';
-import { BrainError } from './brain';
+import { BrainError, MessageFault } from './brain';
 import type { BackfillMark, MailAccount, MailCursor } from './state';
 
 /** Envelopes per batch: one gate call, then the full fetches. */
@@ -590,6 +590,79 @@ export type WantedOf = (envelopes: RawMessage[]) => Promise<string[]>;
 /** Called with each wanted message, fetched in full. */
 export type OnMessage = (message: WireMessage) => Promise<void>;
 
+/** A failure of the one message (the server answered an error for it, its
+ *  source broke), with the connection still good: not the run's. */
+function messageFault(err: unknown, client: ImapFlow): boolean {
+  if (!client.usable) return false;
+  return err instanceof MessageFault || !(err instanceof BrainError);
+}
+
+/** The messages that failed to read in earlier runs, tried again: stored
+ *  when they read; after a day of tries stored as a stub with a note; let
+ *  go when they are gone (a new UIDVALIDITY, deleted). */
+async function retryFailed(
+  client: ImapFlow,
+  failures: Failures,
+  onMessage: OnMessage,
+  stage?: Stager,
+): Promise<void> {
+  const byFolder = new Map<
+    string,
+    { id: string; uid: number; uidvalidity: number; last: boolean }[]
+  >();
+  for (const p of await failures.pending()) {
+    let at;
+    try {
+      at = decodeMsgId(p.id);
+    } catch {
+      await failures.clear(p.id);
+      continue;
+    }
+    const list = byFolder.get(at.folder) ?? [];
+    list.push({ id: p.id, uid: at.uid, uidvalidity: at.uidvalidity, last: p.last });
+    byFolder.set(at.folder, list);
+  }
+  for (const [folder, list] of byFolder) {
+    let lock;
+    try {
+      lock = await client.getMailboxLock(folder);
+    } catch {
+      continue; // the folder is not there now: tried again next run
+    }
+    try {
+      const mbox = client.mailbox;
+      if (!mbox || typeof mbox === 'boolean') continue;
+      const uidvalidity = Number(mbox.uidValidity);
+      for (const one of list) {
+        if (one.uidvalidity !== uidvalidity) {
+          await failures.clear(one.id);
+          continue;
+        }
+        const [listed] = await envelopes(client, [one.uid], folder, uidvalidity);
+        if (!listed) {
+          await failures.clear(one.id);
+          continue;
+        }
+        let full: WireMessage;
+        try {
+          full = await fullMessage(client, one.uid, listed.message, stage);
+        } catch (err) {
+          if (!messageFault(err, client)) throw err;
+          if (!one.last) {
+            await failures.record(one.id, folder);
+            continue;
+          }
+          full = unreadStub(baseOf(listed.message), err);
+        }
+        await onMessage(full);
+        await failures.clear(one.id);
+      }
+    } finally {
+      lock.release();
+    }
+  }
+}
+
 /** Walk `uids` of the open folder in batches: envelopes, the wanted ones,
  *  each in full. Answers how many envelopes it read. */
 async function walk(
@@ -601,7 +674,7 @@ async function walk(
   onMessage: OnMessage,
   afterBatch?: (maxUid: number) => Promise<void>,
   stage?: Stager,
-  tolerate?: Tolerate,
+  failures?: Failures,
 ): Promise<number> {
   let scanned = 0;
   for (let i = 0; i < uids.length; i += BATCH_SIZE) {
@@ -616,11 +689,11 @@ async function walk(
         full = await fullMessage(client, l.uid, l.message, stage);
       } catch (err) {
         // The brain's side failing, or the connection gone, stops the run
-        // (the cursor stays). The server failing on this one message, run
-        // after run, ends in a stub with a note (MESSAGE_TRIES).
-        if (err instanceof BrainError || !client.usable || !tolerate) throw err;
-        if (!(await tolerate(l.message.providerMsgId))) throw err;
-        full = unreadStub(baseOf(l.message), err);
+        // (the cursor stays). The server failing on this one message: the
+        // run goes on past it, and the next runs try it again (retryFailed).
+        if (!messageFault(err, client) || !failures) throw err;
+        await failures.record(l.message.providerMsgId, folder);
+        continue;
       }
       await onMessage(full);
     }
@@ -641,11 +714,12 @@ export async function syncMailbox(
   onMessage: OnMessage,
   saveCursor: (c: MailCursor) => Promise<void>,
   stage?: Stager,
-  tolerate?: Tolerate,
+  failures?: Failures,
 ): Promise<{ scanned: number }> {
   const client = await connect(account);
   let scanned = 0;
   try {
+    if (failures) await retryFailed(client, failures, onMessage, stage);
     for (const folder of await scanFolders(client, account)) {
       let lock;
       try {
@@ -688,7 +762,7 @@ export async function syncMailbox(
             await saveCursor(cursor);
           },
           stage,
-          tolerate,
+          failures,
         );
       } finally {
         lock.release();
@@ -718,7 +792,7 @@ export async function backfillSender(
   onMessage: OnMessage,
   stage: Stager | undefined,
   budget: number,
-  tolerate?: Tolerate,
+  failures?: Failures,
 ): Promise<{ scanned: number; done: boolean }> {
   const wantedSender = sender.trim().toLowerCase().replace(/^@/, '');
   if (!wantedSender) return { scanned: 0, done: true };
@@ -767,7 +841,7 @@ export async function backfillSender(
             await save(mark);
           },
           stage,
-          tolerate,
+          failures,
         );
         if (share.length < uids.length) return { scanned, done: false };
         fm.done = true;

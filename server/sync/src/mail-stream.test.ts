@@ -6,14 +6,17 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { BrainError, type Brain } from './brain';
+import { BrainError, MessageFault, type Brain } from './brain';
 import {
   fitBody,
   notesText,
   parseStreamed,
   stageOne,
   stagerFor,
-  tolerateFor,
+  failuresFor,
+  FAILURES_MAX,
+  MESSAGE_GIVE_UP_MS,
+  type FailEntry,
   unreadStub,
   type Stager,
 } from './mail-stream';
@@ -213,7 +216,7 @@ describe('a brain from before streamed attachments', () => {
     const err = await stage(Readable.from([Buffer.alloc(1)]), 'text/plain').catch((e) => e);
     expect(err).toBeInstanceOf(BrainError);
     expect((err as BrainError).status).toBe(503);
-    expect((err as Error).message).toContain('update the brain');
+    expect((err as Error).message).toContain('before this release');
   });
 
   it('keeps a switched-off mailbox as its own 404', async () => {
@@ -230,20 +233,32 @@ describe('a brain from before streamed attachments', () => {
   });
 });
 
-describe('a message that fails to read run after run', () => {
-  it('is a stub on its third try, and its count then clears', async () => {
-    let kept: Record<string, number> = {};
-    const state = {
-      msgFails: async () => ({ ...kept }),
-      putMsgFails: async (_: string, f: Record<string, number>) => {
+describe('a message that fails to read', () => {
+  const fakeState = () => {
+    let kept: Record<string, FailEntry> = {};
+    return {
+      get kept() {
+        return kept;
+      },
+      msgFails: async () => structuredClone(kept),
+      putMsgFails: async (_: string, f: Record<string, FailEntry>) => {
         kept = f;
       },
     };
-    const tolerate = tolerateFor(state, 'box');
-    expect(await tolerate('m1')).toBe(false);
-    expect(await tolerate('m1')).toBe(false);
-    expect(await tolerate('m1')).toBe(true);
-    expect(kept).toEqual({});
+  };
+
+  it('is tried again, and is last only after three tries over a day', async () => {
+    const state = fakeState();
+    let clock = 1_000_000;
+    const failures = failuresFor(state, 'box', () => clock);
+    await failures.record('m1', 'INBOX');
+    await failures.record('m1', 'INBOX');
+    await failures.record('m1', 'INBOX');
+    expect(await failures.pending()).toEqual([{ id: 'm1', folder: 'INBOX', last: false }]);
+    clock += MESSAGE_GIVE_UP_MS;
+    expect(await failures.pending()).toEqual([{ id: 'm1', folder: 'INBOX', last: true }]);
+    await failures.clear('m1');
+    expect(state.kept).toEqual({});
     const stub = unreadStub(
       {
         providerMsgId: 'm1',
@@ -258,17 +273,33 @@ describe('a message that fails to read run after run', () => {
     expect(stub.bodyText).toContain('UNAVAILABLE');
   });
 
-  it('keeps at most 200 counts', async () => {
-    let kept: Record<string, number> = {};
-    const state = {
-      msgFails: async () => ({ ...kept }),
-      putMsgFails: async (_: string, f: Record<string, number>) => {
-        kept = f;
+  it('never lets one go: past the most kept, the run stops', async () => {
+    const state = fakeState();
+    const failures = failuresFor(state, 'box');
+    for (let i = 0; i < FAILURES_MAX; i++) await failures.record(`m${i}`, 'INBOX');
+    await expect(failures.record('one-more', 'INBOX')).rejects.toThrow(/run stops/);
+    await failures.record('m0', 'INBOX'); // a known one is counted still
+    expect(Object.keys(state.kept)).toHaveLength(FAILURES_MAX);
+  });
+});
+
+describe('a source that broke part way', () => {
+  it('is the message failing, never the brain', async () => {
+    const brain = {
+      stream: async (_p: string, body: ReadableStream<Uint8Array>) => {
+        // The upload reads the body; the source breaks under it.
+        const reader = body.getReader();
+        await reader.read().catch(() => {});
+        throw new BrainError(0, 'the brain did not answer: aborted');
       },
-    };
-    const tolerate = tolerateFor(state, 'box');
-    for (let i = 0; i < 250; i++) await tolerate(`m${i}`);
-    expect(Object.keys(kept)).toHaveLength(200);
-    expect(kept.m249).toBe(1);
+    } as unknown as Brain;
+    const src = new Readable({ read() {} });
+    setImmediate(() => src.destroy(new Error('Graph body terminated')));
+    const err = await stagerFor(brain, '00000000-0000-4000-8000-000000000001')(
+      src,
+      'application/pdf',
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(MessageFault);
+    expect((err as Error).message).toContain('Graph body terminated');
   });
 });

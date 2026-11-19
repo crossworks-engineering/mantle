@@ -84,9 +84,12 @@ Mail.Read Mail.Send Calendars.Read`.
   `lastModifiedDateTime` watermark (`server/sync/src/outlook.ts`, `mscursor:`
   `folders`; the inbox goes on from the watermark it had before), so mail
   moved into a folder (out of Junk, filed from a folder left out) is seen
-  as an IMAP move is. Every folder gets its first page each run, however
-  many there are; the backlog then shares 50 pages a run, a page a folder
-  in turn (the next run goes on). The envelopes go
+  as an IMAP move is. Pages go by key (each asks again from the last time
+  read, so a message read or moved during the run never shifts another
+  past a page; a group changed in one second is crossed by Graph's own
+  next link). Every folder gets its first page each run, however many
+  there are; the backlog then shares 50 pages a run, a page a folder in
+  turn, starting where the last run stopped. The envelopes go
   through the brain's one gate (`/api/sidecar/mail/gate`), and only the
   wanted messages are fetched in full and stored (`/api/sidecar/mail/ingest`),
   as for IMAP. The folders are an IMAP mailbox's choice: all but Deleted

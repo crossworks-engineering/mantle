@@ -20,16 +20,16 @@
 import { Readable } from 'node:stream';
 import { classifyDelivery } from '@mantle/email/classify';
 import { MAIL_MESSAGE_MAX_BYTES, type WireAttachment, type WireMessage } from '@mantle/email/wire';
-import { NET_TIMEOUTS } from '@mantle/std';
+import { NET_TIMEOUTS, errorMessage } from '@mantle/std';
 import { egressFetch } from '@mantle/std/egress';
-import { BrainError } from './brain';
+import { BrainError, MessageFault } from './brain';
 import {
   fitBody,
   notesText,
   stageOne,
   unreadStub,
   type Stager,
-  type Tolerate,
+  type Failures,
 } from './mail-stream';
 import { GRAPH_ORIGIN, GraphError, accessToken, graph, graphAll, graphJson } from './microsoft';
 
@@ -252,6 +252,9 @@ export async function fetchFull(
   m: GraphMessage,
   folder: string,
   stage: Stager,
+  /** The last try of a message that failed for a day: an attachment that
+   *  still fails is named in the note, and the rest is kept. */
+  lenient = false,
 ): Promise<WireMessage> {
   const id = encodeURIComponent(m.id);
   const full = await graphJson<{ body?: { contentType?: string; content?: string } }>(
@@ -270,19 +273,22 @@ export async function fetchFull(
           1000,
         )
       : [];
+  // An item attachment's MIME ($value) runs larger than the size Graph
+  // names (about 1.4 times): counted at 1.5, so a message posted inline
+  // stays within the ingest ceiling.
   const total =
-    Buffer.byteLength(content) + metas.reduce((n, a) => n + Math.max(0, a.size ?? 0), 0);
+    Buffer.byteLength(content) +
+    metas.reduce((n, a) => n + Math.max(0, a.size ?? 0) * (a['@odata.type'] === ITEM ? 1.5 : 1), 0);
   // Small: each attachment read whole and posted inline. Large: each
   // streams to the brain on its own.
   const inline = total <= MAIL_MESSAGE_MAX_BYTES;
   const attachments: WireAttachment[] = [];
   const notes: string[] = [];
-  for (const a of metas) {
-    if (![FILE, ITEM, REFERENCE].includes(a['@odata.type'] ?? FILE)) continue;
+  const takeOne = async (a: AttachmentMeta) => {
     const got = await attachmentBody(token, m.id, a);
     if ('note' in got) {
       notes.push(got.note);
-      continue;
+      return;
     }
     if (inline && a['@odata.type'] !== REFERENCE) {
       const bytes = Buffer.from(await got.res.arrayBuffer());
@@ -292,7 +298,7 @@ export async function fetchFull(
         sizeBytes: bytes.byteLength,
         contentB64: bytes.toString('base64'),
       });
-      continue;
+      return;
     }
     // A linked file's size is unknown before it comes: always streamed.
     const one = await stageOne(stage, Readable.fromWeb(got.res.body as never), {
@@ -301,6 +307,15 @@ export async function fetchFull(
     });
     if ('attachment' in one) attachments.push(one.attachment);
     else notes.push(one.note);
+  };
+  for (const a of metas) {
+    if (![FILE, ITEM, REFERENCE].includes(a['@odata.type'] ?? FILE)) continue;
+    try {
+      await takeOne(a);
+    } catch (err) {
+      if (!lenient || !messageFault(err)) throw err;
+      notes.push(`the attachment "${a.name || 'attachment'}" (${errorMessage(err).slice(0, 200)})`);
+    }
   }
   const body = await fitBody(stage, html ? { html: content } : { text: content });
   const note = notesText([...notes, ...body.notes]);
@@ -319,7 +334,9 @@ type Page = { value?: GraphMessage[]; '@odata.nextLink'?: string };
 export type WantedOf = (envelopes: ReturnType<typeof normalize>[]) => Promise<string[]>;
 export type OnMessage = (message: WireMessage) => Promise<void>;
 
-/** Gate one page, fetch and post the wanted ones. How many it read. */
+/** Gate one page, fetch and post the wanted ones. How many it read. A
+ *  message Microsoft fails on is kept to try again (retryFailed) and the
+ *  page goes on; one gone since the listing is let go. */
 async function walkPage(
   token: string,
   messages: GraphMessage[],
@@ -327,33 +344,82 @@ async function walkPage(
   wantedOf: WantedOf,
   onMessage: OnMessage,
   stage: Stager,
-  tolerate?: Tolerate,
+  failures?: Failures,
 ): Promise<number> {
   const normal = messages.filter((m) => m.id).map((m) => ({ m, n: normalize(m, folder) }));
   const wanted = new Set(await wantedOf(normal.map((x) => x.n).filter((n) => n.fromAddr)));
-  for (const { m, n } of normal) {
+  for (const { m } of normal) {
     if (!wanted.has(m.id)) continue;
     let full: WireMessage;
     try {
       full = await fetchFull(token, m, folder, stage);
     } catch (err) {
-      // The brain's side, a token or a throttle stops the run (the
-      // watermark stays). Microsoft failing on this one message, run after
-      // run, ends in a stub with a note (MESSAGE_TRIES).
-      if (!messageFault(err) || !tolerate || !(await tolerate(m.id))) throw err;
-      full = unreadStub({ ...n, attachments: [] }, err);
+      // The brain's side, the account's token, a throttle or the network
+      // stops the run (the watermark stays).
+      if (!messageFault(err) || !failures) throw err;
+      if (!(err instanceof GraphError && err.status === 404)) await failures.record(m.id, folder);
+      continue;
     }
     await onMessage(full);
   }
   return normal.length;
 }
 
-/** A failure of this one message (Graph refused or broke on it), not of
- *  the run: the brain, the account's token, a throttle. */
+/** A failure of this one message (Graph refused or broke on it, its
+ *  source broke, its upload ran past its deadline), not of the run: the
+ *  brain, the account's token, a throttle, the network. */
 function messageFault(err: unknown): boolean {
+  if (err instanceof MessageFault) return true;
   if (err instanceof BrainError) return false;
   if (err instanceof GraphError) return ![401, 403, 429].includes(err.status);
+  const name = (err as Error | undefined)?.name;
+  if (err instanceof TypeError || name === 'AbortError' || name === 'TimeoutError') return false;
   return true;
+}
+
+/** The messages that failed to read in earlier runs, tried again: stored
+ *  when they read; after a day of tries stored with what could be read
+ *  and a note (or as a stub); let go when they are gone. */
+async function retryFailed(
+  token: string,
+  failures: Failures,
+  onMessage: OnMessage,
+  stage: Stager,
+): Promise<void> {
+  for (const p of await failures.pending()) {
+    let m: GraphMessage;
+    try {
+      m = await graphJson<GraphMessage>(
+        token,
+        `/me/messages/${encodeURIComponent(p.id)}?$select=${MAIL_SELECT}`,
+      );
+    } catch (err) {
+      if (err instanceof GraphError && err.status === 404) {
+        await failures.clear(p.id);
+        continue;
+      }
+      if (!messageFault(err)) throw err;
+      await failures.record(p.id, p.folder);
+      continue;
+    }
+    let full: WireMessage;
+    try {
+      full = await fetchFull(token, m, p.folder, stage, p.last);
+    } catch (err) {
+      if (err instanceof GraphError && err.status === 404) {
+        await failures.clear(p.id);
+        continue;
+      }
+      if (!messageFault(err)) throw err;
+      if (!p.last) {
+        await failures.record(p.id, p.folder);
+        continue;
+      }
+      full = unreadStub({ ...normalize(m, p.folder), attachments: [] }, err);
+    }
+    await onMessage(full);
+    await failures.clear(p.id);
+  }
 }
 
 const firstSince = (account: Pick<MsAccount, 'firstScanDays'>) =>
@@ -369,11 +435,20 @@ const folderMessages = (
 
 /**
  * One run of an account's chosen folders. Each folder goes on from its own
- * watermark on lastModifiedDateTime (moved after each page), so mail moved
- * into a folder (out of Junk, filed from an excluded folder) is seen too:
- * a move changes it, as an IMAP move gives a new UID. Every folder gets its
- * first page each run (new mail anywhere comes in at once); the backlog
- * then shares RUN_PAGES pages, and the next run goes on.
+ * watermark on lastModifiedDateTime, so mail moved into a folder (out of
+ * Junk, filed from an excluded folder) is seen too: a move changes it, as
+ * an IMAP move gives a new UID.
+ *
+ * Paging is by key, not by Graph's $skip: each page asks again from the
+ * last time read, so a message changed while the run reads (read, flagged,
+ * moved) never shifts another past the page. The ids read this run are
+ * skipped when they come again. A page whose every message shares one time
+ * (a bulk change past a page) is crossed by Graph's own next link, and that
+ * folder goes on until it is past the group.
+ *
+ * Every folder gets its first page each run (each folder's oldest change
+ * after its watermark); the backlog then shares RUN_PAGES pages, a page a
+ * folder in turn, starting each run where the last one stopped.
  */
 export async function syncOutlook(
   state: State,
@@ -381,56 +456,78 @@ export async function syncOutlook(
   wantedOf: WantedOf,
   onMessage: OnMessage,
   stage: Stager,
-  tolerate?: Tolerate,
+  failures?: Failures,
 ): Promise<{ scanned: number }> {
   const token = await accessToken(state, account.id);
   const cursor: MsCursor = await state.msCursor(account.id);
-  const marks = { ...(cursor.folders ?? {}) };
   const { folders, inboxId } = await chosenFolders(token, account);
+  if (failures) await retryFailed(token, failures, onMessage, stage);
+  // Marks of folders no longer chosen (or gone) are let go.
+  const chosen = new Set(folders.map((f) => f.id));
+  const marks: Record<string, string> = Object.fromEntries(
+    Object.entries(cursor.folders ?? {}).filter(([id]) => chosen.has(id)),
+  );
   const reach = firstSince(account);
   let scanned = 0;
-  const readPage = async (f: MailFolder, url: string): Promise<string | undefined> => {
+  let rr = cursor.rr ?? 0;
+  const save = () => state.putMsCursor(account.id, { since: cursor.since, folders: marks, rr });
+
+  type Walker = { f: MailFolder; mark: string; tie?: string; seen: Set<string>; done: boolean };
+  const step = async (w: Walker) => {
+    const url =
+      w.tie ??
+      folderMessages(
+        w.f.id,
+        `lastModifiedDateTime ge ${w.mark} and receivedDateTime ge ${reach}`,
+        'lastModifiedDateTime',
+      );
     const page: Page = await graphJson<Page>(token, url);
-    const messages = page.value ?? [];
-    scanned += await walkPage(token, messages, f.path, wantedOf, onMessage, stage, tolerate);
-    const last = messages[messages.length - 1]?.lastModifiedDateTime;
-    if (last) {
-      marks[f.id] = last;
-      await state.putMsCursor(account.id, { since: cursor.since, folders: marks });
+    const all = (page.value ?? []).filter((m) => m.id);
+    const fresh = all.filter((m) => !w.seen.has(m.id));
+    for (const m of all) w.seen.add(m.id);
+    scanned += await walkPage(token, fresh, w.f.path, wantedOf, onMessage, stage, failures);
+    const first = all[0]?.lastModifiedDateTime;
+    const last = all[all.length - 1]?.lastModifiedDateTime;
+    if (last && last !== w.mark) {
+      w.mark = last;
+      marks[w.f.id] = last;
+      await save();
     }
-    return page['@odata.nextLink'];
+    const next = page['@odata.nextLink'];
+    if (!next || all.length < PAGE) {
+      w.done = true;
+      return;
+    }
+    // A full page all at one time: a group past a page, crossed by
+    // Graph's own next link.
+    w.tie = first && first === last ? next : undefined;
   };
-  const backlog: { f: MailFolder; next: string }[] = [];
-  for (const f of folders) {
+
+  const walkers: Walker[] = folders.map((f) => ({
+    f,
     // The inbox goes on from the watermark it had before every folder
     // synced (a receivedDateTime: never later than its lastModified, so
-    // nothing is skipped; the gate's dedup drops what comes again). `ge`:
-    // the boundary message comes back once more, and the dedup drops it.
-    const since = marks[f.id] ?? (f.id === inboxId && cursor.since ? cursor.since : reach);
-    const next = await readPage(
-      f,
-      folderMessages(
-        f.id,
-        `lastModifiedDateTime ge ${since} and receivedDateTime ge ${reach}`,
-        'lastModifiedDateTime',
-      ),
-    );
-    if (next) backlog.push({ f, next });
-  }
-  // The backlog a page at a time across the folders (round robin), so no
-  // folder's long backlog starves another's.
+    // nothing is skipped; the gate's dedup drops what comes again).
+    mark: marks[f.id] ?? (f.id === inboxId && cursor.since ? cursor.since : reach),
+    seen: new Set(),
+    done: false,
+  }));
+  for (const w of walkers) await step(w);
   let pages = 0;
-  while (pages < RUN_PAGES && backlog.length > 0) {
-    for (let i = 0; i < backlog.length && pages < RUN_PAGES;) {
-      const b = backlog[i]!;
+  const backlog = () => walkers.filter((w) => !w.done);
+  while (pages < RUN_PAGES && backlog().length > 0) {
+    const open = backlog();
+    const w = open[rr % open.length]!;
+    rr = (rr + 1) % Math.max(1, walkers.length);
+    pages += 1;
+    await step(w);
+    // A folder inside a group at one time goes on until it is past it.
+    while (w.tie && !w.done && pages < RUN_PAGES) {
       pages += 1;
-      const next = await readPage(b.f, b.next);
-      if (next) {
-        b.next = next;
-        i += 1;
-      } else backlog.splice(i, 1);
+      await step(w);
     }
   }
+  await save();
   return { scanned };
 }
 
@@ -453,7 +550,7 @@ export async function backfillOutlook(
   onMessage: OnMessage,
   stage: Stager,
   budget: number,
-  tolerate?: Tolerate,
+  failures?: Failures,
 ): Promise<{ scanned: number; done: boolean }> {
   const want = target.trim().toLowerCase().replace(/^@/, '');
   if (!want) return { scanned: 0, done: true };
@@ -480,7 +577,7 @@ export async function backfillOutlook(
         const from = lower(m.from ?? m.sender);
         return isDomain ? from.endsWith(`@${want}`) : from === want;
       });
-      scanned += await walkPage(token, messages, f.path, wantedOf, onMessage, stage, tolerate);
+      scanned += await walkPage(token, messages, f.path, wantedOf, onMessage, stage, failures);
       const last = all[all.length - 1]?.receivedDateTime;
       if (last) fm.since = last;
       next = page['@odata.nextLink'];
