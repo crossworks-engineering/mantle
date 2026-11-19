@@ -182,7 +182,8 @@ describe.skipIf(!URL)('the System workspace (rules and areas)', () => {
     expect(out.ok, JSON.stringify(out)).toBe(false);
     if (out.ok) return;
     expect(out.state, out.msg).toBe('23514');
-    expect(out.msg).toContain('at least one Moderator');
+    // System's own words (job 2: the routes answer last_system_user).
+    expect(out.msg).toMatch(/^mantle_ws:last_system_user\b/);
   };
 
   beforeAll(async () => {

@@ -265,6 +265,37 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     expect(Object.keys(await usersOf()).sort()).toEqual([anchor, sys].sort());
   });
 
+  it('the last System user stays, in its own words: a leave, a removal from Admin, a login delete', async () => {
+    // The owner always stays in System; a hand repair that took it out
+    // leaves sys the last System user.
+    await su(
+      (c) =>
+        c`delete from workspace_users where workspace_id = ${systemWs} and login_id = ${anchor}`,
+    );
+    try {
+      let r = await call(sys, 'DELETE', `/api/workspaces/${systemWs}/users/${sys}`);
+      expect([r.status, r.json.code]).toEqual([409, 'last_system_user']);
+      expect(r.json.error).toBe(
+        'This is the last System user. Add another Admin user to System first.',
+      );
+      r = await call(adm, 'DELETE', `/api/workspaces/${adminWs}/users/${sys}`);
+      expect([r.status, r.json.code], JSON.stringify(r.json)).toEqual([409, 'last_system_user']);
+      r = await call(adm, 'PATCH', `/api/users/${sys}`, { role: 'member' });
+      expect([r.status, r.json.reason], JSON.stringify(r.json)).toEqual([409, 'last-system-user']);
+      r = await call(adm, 'DELETE', `/api/users/${sys}`);
+      expect([r.status, r.json.reason], JSON.stringify(r.json)).toEqual([409, 'last-system-user']);
+      const [still] = await sql<{ n: number }[]>`
+        select count(*)::int as n from workspace_users
+         where workspace_id = ${systemWs} and login_id = ${sys}`;
+      expect(still!.n).toBe(1);
+    } finally {
+      await su(
+        (c) => c`insert into workspace_users (workspace_id, login_id, moderator)
+                  values (${systemWs}, ${anchor}, true) on conflict do nothing`,
+      );
+    }
+  });
+
   it("workspace_user_set refuses System for every role, the owner's call too, and changes nothing", async () => {
     const t = await import('@mantle/tools');
     const tool = t.getBuiltin('workspace_user_set')!;

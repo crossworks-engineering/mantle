@@ -65,7 +65,8 @@ The workspaces a brain has:
   a System user adds someone (403 `system_users_only`). Every user there is
   a Moderator: the tick is stored on and never cleared (409
   `admin_workspace`). Anyone may leave; removing another user needs a
-  System user. The last System user cannot leave or be removed, and the
+  System user. The last System user cannot leave or be removed (409
+  `last_system_user`, by any path, a login delete too), and the
   owner (the anchor) always stays. Taking a user out of Admin takes them
   out of System too (refused for the last System user); whoever may remove
   them from Admin may do it, System user or not. System keeps its name,

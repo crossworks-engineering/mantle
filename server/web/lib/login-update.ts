@@ -78,6 +78,7 @@ export type LoginChangeRefusal = {
     | 'contact-missing'
     | 'contact-taken'
     | 'last-admin'
+    | 'last-system-user'
     | 'former-client'
     | 'contact-was-client';
 };
@@ -339,6 +340,14 @@ export async function applyLoginChange(
         error: 'That contact is already linked to another user.',
       };
     }
+    if (isLastSystemUserRefusal(err)) {
+      return {
+        ok: false,
+        status: 409,
+        reason: 'last-system-user',
+        error: LAST_SYSTEM_USER_MESSAGE,
+      };
+    }
     if (isLastAdminRefusal(err)) {
       return { ok: false, status: 409, reason: 'last-admin', error: LAST_ADMIN_MESSAGE };
     }
@@ -447,6 +456,9 @@ export function adminMembershipRefusal(
   if (code === 'last_moderator') {
     return { status: 409, reason: 'last-admin', error: LAST_ADMIN_MESSAGE };
   }
+  if (code === 'last_system_user') {
+    return { status: 409, reason: 'last-system-user', error: LAST_SYSTEM_USER_MESSAGE };
+  }
   if (USERS_AREA_REFUSALS.has(code)) {
     return {
       status: 403,
@@ -474,6 +486,17 @@ export function adminMembershipRefusal(
  *  commit, the change that would remove the last. Said plainly here. */
 export const LAST_ADMIN_MESSAGE =
   'At least one admin must remain. Make another login an admin first, then try again.';
+
+/** The System workspace keeps at least one user (the guard trigger, the
+ *  System migration): a leave, a removal from Admin or a login delete that
+ *  would take the last one out is refused at commit, in System's own words
+ *  (`mantle_ws:last_system_user`, 23514). */
+export const LAST_SYSTEM_USER_MESSAGE =
+  'This is the last System user. Add another Admin user to System first.';
+
+export function isLastSystemUserRefusal(err: unknown): boolean {
+  return isCheckViolation(err) && definerRefusal(err) === 'last_system_user';
+}
 
 export function isLastAdminRefusal(err: unknown): boolean {
   if (!isCheckViolation(err)) return false;

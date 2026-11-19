@@ -9,7 +9,9 @@ import {
   adminMembershipRefusal,
   applyLoginChange,
   isLastAdminRefusal,
+  isLastSystemUserRefusal,
   LAST_ADMIN_MESSAGE,
+  LAST_SYSTEM_USER_MESSAGE,
   loadLoginTarget,
   LoginRoleSchema,
   type LoginChangeDone,
@@ -228,6 +230,12 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
       }),
     );
   } catch (err) {
+    if (isLastSystemUserRefusal(err)) {
+      return NextResponse.json(
+        { error: LAST_SYSTEM_USER_MESSAGE, reason: 'last-system-user' },
+        { status: 409 },
+      );
+    }
     if (isLastAdminRefusal(err)) {
       return NextResponse.json({ error: LAST_ADMIN_MESSAGE }, { status: 409 });
     }

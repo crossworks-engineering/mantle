@@ -486,8 +486,11 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_last_admin_mod_trg"()
 DECLARE
   ws uuid := OLD."workspace_id";
   is_admin_ws boolean;
+  is_system_ws boolean;
 BEGIN
-  SELECT w."is_admin" OR coalesce(w."bridge_key" = 'system', false) INTO is_admin_ws
+  SELECT w."is_admin" OR coalesce(w."bridge_key" = 'system', false),
+         coalesce(w."bridge_key" = 'system', false)
+    INTO is_admin_ws, is_system_ws
     FROM "public"."workspaces" w WHERE w."id" = ws;
   -- A real write, not only a row lock: two transactions that each remove a
   -- different Moderator then conflict under REPEATABLE READ and SERIALIZABLE
@@ -499,6 +502,13 @@ BEGIN
   IF coalesce(is_admin_ws, false)
      AND NOT EXISTS (SELECT 1 FROM "public"."workspace_users" u
                       WHERE u."workspace_id" = ws AND u."moderator") THEN
+    -- System's own words (the last System user leaving by any path: a
+    -- leave, a removal from Admin, a login delete), so the routes answer
+    -- last_system_user, not Admin's last Moderator.
+    IF is_system_ws THEN
+      RAISE EXCEPTION 'mantle_ws:last_system_user the System workspace keeps at least one user'
+        USING ERRCODE = '23514';
+    END IF;
     RAISE EXCEPTION 'the Admin and System workspaces need at least one Moderator' USING ERRCODE = '23514';
   END IF;
   RETURN NULL;

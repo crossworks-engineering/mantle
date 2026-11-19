@@ -820,6 +820,8 @@ const WS_REFUSALS: Readonly<
       new WsError(409, 'already_user', 'This person is already a user of this workspace.'),
   },
   last_moderator: { state: '55000', error: () => LAST_MOD() },
+  // The guard trigger at commit (the System migration): the last System user.
+  last_system_user: { state: '23514', error: () => LAST_SYSTEM_USER() },
   owner_stays_admin: {
     state: '42501',
     error: () =>
@@ -1010,6 +1012,15 @@ const SYSTEM_TICK_KEPT = () =>
     'Every System user is a Moderator of the System workspace. Remove them from System to take it away.',
   );
 
+/** The last System user stays (any path: a leave, a removal from Admin, a
+ *  login delete). */
+const LAST_SYSTEM_USER = () =>
+  new WsError(
+    409,
+    'last_system_user',
+    'This is the last System user. Add another Admin user to System first.',
+  );
+
 const LAST_MOD = () =>
   new WsError(
     409,
@@ -1105,6 +1116,8 @@ async function roleChangeOnSystemPool(
       throw WS_REFUSALS.self_demote!.error();
     case 'last-admin':
       throw LAST_MOD();
+    case 'last-system-user':
+      throw LAST_SYSTEM_USER();
     case 'role-fixed':
       throw new WsError(409, 'invalid', 'This login cannot change role.');
     default:
@@ -1230,7 +1243,15 @@ export async function removeUser(
       remove,
     );
   } else {
-    await db.transaction(remove);
+    try {
+      await db.transaction(remove);
+    } catch (err) {
+      // A refusal at commit (the guard trigger) maps here too; on System the
+      // last Moderator is the last System user.
+      const refusal = err instanceof WsError ? err : wsRefusal(err);
+      if (pre.row.is_system && refusal?.code === 'last_moderator') throw LAST_SYSTEM_USER();
+      throw refusal ?? err;
+    }
   }
   // A login that left can no longer see the workspace.
   if (self && !pre.admin) return { ...(await detailAfterLeave(pre)) };

@@ -316,6 +316,7 @@ export type WorkspaceErrorCode =
   | 'landing_app_not_ready'
   | 'rate_limited'
   | 'system_users_only'
-  | 'not_admin_user';
+  | 'not_admin_user'
+  | 'last_system_user';
 
 export type WorkspaceError = { error: string; code: WorkspaceErrorCode };
