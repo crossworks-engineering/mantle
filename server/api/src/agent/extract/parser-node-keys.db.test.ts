@@ -238,7 +238,12 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
     expect(r.text).toBe('[Page 1]\nPage one read.\n\n[Page 3]\nPage three read.');
     const data = await dataOf(id);
     // The read's end: the final mark, the shared pages gone (no chat turn).
-    expect(data.ocr).toEqual({ pages_read: 2, pages_total: 3, unread: { bad_read: 1 } });
+    expect(data.ocr).toEqual({
+      pages_read: 2,
+      pages_total: 3,
+      unread: { bad_read: 1 },
+      scan_read: true,
+    });
     expect(data.text).toBe(r.text);
     expect(data.keep).toBe('me');
     expect(m.takeActorMisses()).toEqual([]);
@@ -292,6 +297,41 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
     expect(await rt.bookScanTurn(id, 2)).toEqual({
       kept: { page: 2, method: 'scan_reader', text: 'two' },
     });
+    expect((await dataOf(id)).keep).toBe('me');
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+  it('a whole read is never written over; the chat turn’s end drops the shared pages beside it', async () => {
+    const rt = await import('@mantle/runtime/agent');
+    const id = await fileNode();
+    const sha = createHash('sha256').update(`${tag} whole`).digest('hex');
+    // A whole read by the core (a sketch read writes `ocr: true` too).
+    await x(sql`update nodes set data = data || jsonb_build_object('sha256', ${sha}::text,
+      'text', 'All of it'::text, 'ocr', 'true'::jsonb) where id = ${id}`);
+    const chat = rt.scanShareHooks({
+      nodeId: id,
+      sha256: sha,
+      by: 'chat',
+      final: rt.scanPageFinal,
+      claimMs: () => 60_000,
+    });
+    await rt.setChatReading(id, sha, Date.now() + 60_000);
+    expect((await chat.claim([1])).final).toBe(true);
+    await chat.keep([{ page: 1, method: 'scan_reader', text: 'late' }]);
+    expect((await dataOf(id)).ocr).toBe(true);
+    expect(await rt.scanFinalReadOf(id, sha)).toEqual({ text: 'All of it', ocr: true });
+
+    // The core's end while a chat turn read: its mark with the pages beside
+    // it; the turn's end drops them, and the mark is `true` again.
+    await x(
+      sql`update nodes set data = jsonb_set(data, '{ocr}', ${JSON.stringify({
+        pages_read: 1,
+        pages_total: 1,
+        scan_read: true,
+        scan: { sha256: sha, pages: { 1: ['scan_reader', '', 'All of it'] }, claims: {} },
+      })}::jsonb) where id = ${id}`,
+    );
+    await rt.setChatReading(id, sha, null);
+    expect((await dataOf(id)).ocr).toBe(true);
     expect((await dataOf(id)).keep).toBe('me');
     expect(m.takeActorMisses()).toEqual([]);
   });

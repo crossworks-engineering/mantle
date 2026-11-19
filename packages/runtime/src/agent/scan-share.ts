@@ -62,10 +62,15 @@ function asShare<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** The node holds a whole read of its bytes by the core (its text, and the
- *  `ocr` mark of a finished scan read: true, or the pages read). Built at
+ *  `ocr` mark of a finished scan read: true, or its object with
+ *  SCAN_READ_MARK; a book's page stamp is none). Built at
  *  the call: a test that mocks @mantle/db loads this module too. */
 const finalRead = () =>
-  sql<boolean>`(${nodes.data}->>'text' is not null and (${nodes.data}->'ocr' = 'true'::jsonb or jsonb_typeof(${nodes.data}->'ocr'->'pages_read') = 'number'))`;
+  sql<boolean>`(${nodes.data}->>'text' is not null and (${nodes.data}->'ocr' = 'true'::jsonb or coalesce(${nodes.data}->'ocr' ? ${SCAN_READ_MARK}, false)))`;
+
+/** The key of the core scan read's own final `ocr` object (a book's page
+ *  stamp has none: it is no whole read of the scans). */
+export const SCAN_READ_MARK = 'scan_read';
 
 const pageOf = (n: number, [method, why, text]: Entry): ScanPage => ({
   page: n,
@@ -174,7 +179,7 @@ export function keepOn(
 async function change<T>(
   nodeId: string,
   sha256: string | null,
-  fn: (share: ScanShareData, now: number, final: boolean) => { value: T; write: boolean },
+  fn: (share: ScanShareData, now: number, final: boolean) => { value: T; write: boolean | 'drop' },
 ): Promise<T | null> {
   return asShare(() =>
     db.transaction(async (tx) => {
@@ -183,6 +188,7 @@ async function change<T>(
           sha: sql<string | null>`${nodes.data}->>'sha256'`,
           scan: sql<unknown>`case when jsonb_typeof(${nodes.data}->'ocr') = 'object' then ${nodes.data}->'ocr'->'scan' end`,
           final: finalRead(),
+          scalar: sql<boolean>`coalesce(jsonb_typeof(${nodes.data}->'ocr') not in ('object', 'null'), false)`,
         })
         .from(nodes)
         .where(eq(nodes.id, nodeId))
@@ -192,13 +198,21 @@ async function change<T>(
       const sha = row?.sha ?? sha256;
       if (!row || !sha || (sha256 !== null && sha !== sha256)) return null;
       const share = shareDataOf(row.scan, sha) ?? { sha256: sha, pages: {}, claims: {} };
-      const { value, write } = fn(share, Date.now(), row.final === true);
-      if (write) {
+      // A scalar `ocr` (`true`: a whole read's mark) is final for every
+      // reader, and never written over.
+      const final = row.final === true || row.scalar === true;
+      const { value, write } = fn(share, Date.now(), final);
+      if (write === 'drop' || (write && !final)) {
         await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
         await tx
           .update(nodes)
           .set({
-            data: sql`jsonb_set(coalesce(${nodes.data}, '{}'::jsonb), '{ocr}', case when jsonb_typeof(${nodes.data}->'ocr') = 'object' then ${nodes.data}->'ocr' else '{}'::jsonb end || jsonb_build_object('scan', ${JSON.stringify(share)}::jsonb))`,
+            // 'drop': the shared reads go, and a whole read's mark is `true`
+            // again (an object with `unread` stays, without them).
+            data:
+              write === 'drop'
+                ? sql`case when jsonb_typeof(${nodes.data}->'ocr') = 'object' then jsonb_set(${nodes.data}, '{ocr}', case when (${nodes.data}->'ocr') ? 'unread' then (${nodes.data}->'ocr') - 'scan' else 'true'::jsonb end) else ${nodes.data} end`
+                : sql`jsonb_set(coalesce(${nodes.data}, '{}'::jsonb), '{ocr}', case when jsonb_typeof(${nodes.data}->'ocr') = 'object' then ${nodes.data}->'ocr' else '{}'::jsonb end || jsonb_build_object('scan', ${JSON.stringify(share)}::jsonb))`,
           })
           .where(
             and(eq(nodes.id, nodeId), sql`coalesce(${nodes.data}->>'sha256', ${sha}) = ${sha}`),
@@ -317,7 +331,12 @@ export async function setChatReading(
   sha256: string,
   until: number | null,
 ): Promise<void> {
-  await change(nodeId, sha256, (share) => {
+  await change(nodeId, sha256, (share, _now, final) => {
+    // The turn ended on a node the core read whole: the shared reads go
+    // (no second copy of the text on the node). A finished read is never
+    // written over.
+    if (until === null && final) return { value: null, write: 'drop' as const };
+    if (final) return { value: null, write: false };
     if (until === null) delete share.chat_until;
     else share.chat_until = until;
     return { value: null, write: true };

@@ -381,8 +381,10 @@ async function scanPdfForTurn(opts: {
       },
     });
     if (r.readBefore && fileId) {
-      await setChatReading(fileId, sha256, null).catch(() => {});
+      // The whole read first: ending the turn's reading may drop the shared
+      // pages beside it.
       const done = await scanFinalReadOf(fileId, sha256).catch(() => null);
+      await setChatReading(fileId, sha256, null).catch(() => {});
       if (done) return readBeforeForTurn(done);
     }
     kept.splice(0, kept.length, ...r.pages);

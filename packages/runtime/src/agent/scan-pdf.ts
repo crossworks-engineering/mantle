@@ -395,12 +395,15 @@ export async function readScannedPdf(opts: {
         return { pages: all, pagesTotal: total, ran, model, readBefore: true };
       }
       for (const [n, p] of claim.kept) got.set(n, p);
-      const read = await readMine(claim.mine, part, marked, d, opts, late, (r, mdl) => {
+      // Each page is kept (and its claim ended) as its read ends, so a
+      // reader waiting for it has it then, not at the window's end.
+      const share = opts.share;
+      const keep = share ? (p: ScanPage) => share.keep([p], total) : undefined;
+      const read = await readMine(claim.mine, part, marked, d, opts, late, keep, (r, mdl) => {
         if (r) ran = true;
         if (mdl) model = mdl;
       });
       for (const p of read) got.set(p.page, p);
-      if (opts.share && read.length > 0) await opts.share.keep(read, total);
       if (claim.theirs.size === 0 || !opts.share) break;
       // Held by another reader: wait for its pages, to the end of its claim
       // (or this read's time). A page whose claim ended unkept (its reader
@@ -435,6 +438,7 @@ async function readMine(
   d: ScanPdfDeps,
   opts: { ownerId: string; filename: string },
   late: () => boolean,
+  keep: ((p: ScanPage) => Promise<void>) | undefined,
   saw: (ran: boolean, model: string | null) => void,
 ): Promise<ScanPage[]> {
   const cuts = new Map<number, Buffer | ScanUnreadReason>();
@@ -449,7 +453,7 @@ async function readMine(
           : pdf,
     );
   }
-  const jobs = mine.map((n) => async (): Promise<ScanPage> => {
+  const one = async (n: number): Promise<ScanPage> => {
     const pg: ScanPage = { page: n, method: 'unread', text: '' };
     const pdf = cuts.get(n)!;
     if (typeof pdf === 'string') return { ...pg, why: pdf };
@@ -460,6 +464,11 @@ async function readMine(
     const m = marked.get(n);
     const lines = m?.method === VISION_METHOD && m.why === SCAN_WHY ? m.lines : null;
     return readPage(opts.ownerId, opts.filename, n, pdf, lines, d, saw);
+  };
+  const jobs = mine.map((n) => async (): Promise<ScanPage> => {
+    const p = await one(n);
+    await keep?.(p);
+    return p;
   });
   return inTurn(jobs, SCAN_PAGES_AT_ONCE);
 }

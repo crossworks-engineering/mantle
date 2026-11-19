@@ -28,6 +28,7 @@ import {
 import { log, startTrace, step } from '@mantle/tracing';
 import {
   readScannedPdf,
+  SCAN_READ_MARK,
   scanKeptOf,
   scanPageFinal,
   scanShareHooks,
@@ -898,6 +899,8 @@ export async function ocrIngestPdfNode(
         pages_read: pagesRead,
         pages_total: total,
         ...(anyUnread ? { unread } : {}),
+        // A whole read of the scan (a chat turn takes it: scan-share.ts).
+        [SCAN_READ_MARK]: true,
       });
       const ocrMark = anyUnread ? markObject : 'true';
       const model = pages.some((p) => p.method === 'scan_reader')
