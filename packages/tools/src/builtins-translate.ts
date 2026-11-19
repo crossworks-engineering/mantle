@@ -420,6 +420,15 @@ export const translateTool: BuiltinToolDef = {
     }
     if (!to) return { ok: false, error: 'Say which language to translate into (`to`).' };
     const save = boolOpt(input.save) === true;
+    // The Team assistant changes nothing (its prompt and its groups say so):
+    // in a team chat the translation is the answer, never a saved copy.
+    if (save && ctx.surface?.kind === 'team') {
+      return {
+        ok: false,
+        error:
+          'In a team chat a translation is the answer only: no copy is saved. Translate again without save.',
+      };
+    }
 
     // The source first, with the caller's own rights, before any spend.
     let source: Source;

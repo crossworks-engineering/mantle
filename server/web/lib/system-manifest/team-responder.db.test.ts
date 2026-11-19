@@ -156,7 +156,14 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     expect(await agent(brains.fresh, 'team-responder')).toMatchObject({
       enabled: true,
       // `delegation` (owner decision 2026-10-26): the workspace delegates.
-      tool_group_slugs: ['team-read', 'team-read-admin', 'formulas-eval', 'delegation'],
+      // `translate` (2026-11-19): a member asks for an item in their language.
+      tool_group_slugs: [
+        'team-read',
+        'team-read-admin',
+        'formulas-eval',
+        'delegation',
+        'translate',
+      ],
     });
     expect(await memberChatAgent(brains.fresh)).toBeNull();
   }, 120_000);
@@ -167,10 +174,12 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     await rec.reconcileOwner(brains.opened);
     // Its `delegation` (an older brain's responder holds none) is granted
     // once, as a workspace's assistant (reconcileWorkspaceDelegation).
+    // So is its `translate` (it spends: an owner's removal sticks).
     expect((await agent(brains.opened, 'team-responder')).tool_group_slugs).toEqual([
       'team-read',
       'formulas-eval',
       'delegation',
+      'translate',
     ]);
   }, 240_000);
 

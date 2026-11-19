@@ -2098,8 +2098,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // (reconcileWorkspaceDelegation), so an owner's removal sticks: the
     // specialist union leaves this group out for it.
     // `translate` (owner's route, 2026-11-19): a member asks for an item in
-    // their language; it reads only what the member reads, and a saved copy
-    // is the member's own create, at the top level (filing is the owner's).
+    // their language; it reads only what the member reads, and on a team
+    // surface it saves nothing (the responder stays read-only). It spends,
+    // so an existing brain's responder gets it once
+    // (reconcileWorkspaceDelegation) and an owner's removal sticks.
     toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval', 'delegation', 'translate'],
     // `visual_answers` rides on the `show_image` grant in `team-read`: the
     // documents a team shares are full of extracted diagrams and screenshots,
