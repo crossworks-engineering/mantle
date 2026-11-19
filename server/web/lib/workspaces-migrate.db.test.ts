@@ -110,7 +110,8 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect(again).toEqual([
       { section: 'skip', subject: 'workspaces', metric: 'already migrated', n: 1 },
     ]);
-    expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(1);
+    // Admin and System, and nothing more.
+    expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(2);
 
     // Fix round 2, M-new: onboarding makes the assistants after the signup
     // migrated the brain; the step after the manifest seed attaches them.
