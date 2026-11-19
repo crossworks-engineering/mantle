@@ -29,7 +29,7 @@ import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import {
-  bookScanPagesOf,
+  bookVisionPageSetOf,
   readerPassOf,
   readerStandsOverFile,
   standingReaderPictures,
@@ -276,10 +276,12 @@ export async function maybeExtractEmbeddedImages(
       )
     : null;
   if (pageRun) {
-    // The Reader reads a book's scanned pages (G1): a core picture of a page it read by OCR or left to vision (the
-    // page's scan, pictured whole above) is not kept a second time, so no
-    // page is pictured or asked by vision twice.
-    const scans = await bookScanPagesOf({ id: node.id, sha256: data.sha256 });
+    // A page the Reader left to vision has its page picture above, read by
+    // the Agent (G1): a core picture of that page is not kept as well, so no
+    // page is pictured or asked by vision twice. A page it read by OCR or
+    // its text layer keeps the core's pictures (a screenshot over a short
+    // caption is a figure, and it has no page picture).
+    const scans = await bookVisionPageSetOf({ id: node.id, sha256: data.sha256 });
     if (scans.size > 0) {
       result.images = result.images.filter(
         (img) => img.location?.page == null || !scans.has(img.location.page),
@@ -422,7 +424,7 @@ export async function maybeExtractEmbeddedImages(
             // Private to the file's login from its insert.
             loginId: node.loginId,
             filename: buildImageFilename(img, sourceSlug),
-            bytes: img.bytes,
+            bytes: savedBytesOf(img),
             title,
             tags: [EXTRACTED_IMAGE_TAG, `from:${sourceSlug}`],
             data: {
@@ -957,6 +959,15 @@ async function extractedPicturesOf(
       ),
     );
   return new Set(rows.map((r) => r.sha ?? '').filter((s) => s !== ''));
+}
+
+/** The bytes of a picture to save. A picture read from disk that is gone
+ *  (its spool was dropped) is a failed save, counted as one not kept, never
+ *  an empty picture saved as if it were the page. */
+export function savedBytesOf(img: Pick<EmbeddedImage, 'bytes'>): Buffer {
+  const bytes = img.bytes;
+  if (bytes.length === 0) throw new Error('the picture is no longer on disk');
+  return bytes;
 }
 
 /** The pages of a book with a page picture (G1, `data.bookPage`) of its

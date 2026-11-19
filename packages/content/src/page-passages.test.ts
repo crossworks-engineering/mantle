@@ -39,7 +39,7 @@ const { pipelineStampOf } = await import('@mantle/files');
 const { tabsOfSheets } = await import('./file-database');
 const { writeFileDatabaseDoc } = await import('./table-broker');
 const { filePagesOf, pagesText } = await import('./page-passages');
-const { bookScanPagesOf, bookVisionPagesOf } = await import('./book-pages');
+const { bookVisionPageSetOf, bookVisionPagesOf } = await import('./book-pages');
 
 const SHA = 'b'.repeat(64);
 
@@ -111,12 +111,10 @@ describe('filePagesOf', () => {
 });
 
 describe("a book's scanned pages and its marked pages", () => {
-  it('the scanned pages are those read by OCR or left to vision: the core pictures none of them again (M5)', async () => {
+  it('the core keeps no picture of a page left to vision: those pages, as a set; OCR pages are not among them', async () => {
     const id = database(BOOK, false);
-    expect([...(await bookScanPagesOf({ id, sha256: SHA }))].sort((a, b) => a - b)).toEqual([
-      7, 8, 412,
-    ]);
-    expect((await bookScanPagesOf({ id: randomUUID(), sha256: SHA })).size).toBe(0);
+    expect([...(await bookVisionPageSetOf({ id, sha256: SHA }))]).toEqual([7]);
+    expect((await bookVisionPageSetOf({ id: randomUUID(), sha256: SHA })).size).toBe(0);
   });
 
   it('the marked pages are those left to vision', async () => {

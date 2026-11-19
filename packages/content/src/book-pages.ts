@@ -37,35 +37,17 @@ export async function bookVisionPagesOf(sqlite: string): Promise<number[]> {
   }
 }
 
-/** The Method of a scanned page the book reader read by OCR (pdf_pages.py). */
-export const OCR_METHOD = 'ocr';
-
 /**
- * The scanned pages of a book at these bytes: the pages its reader read by
- * OCR or left to vision (tab Pages, Method `ocr` or `vision`). The core's
- * picture pass keeps no picture of these pages (G1): the reader read the page, and a page left to vision has
- * its page picture, so a scanned page is never pictured or asked by vision
- * twice. Empty when the database has no such tab or cannot be read.
+ * The pages of a book at these bytes its reader left to vision, as a set:
+ * the core's picture pass keeps no picture of its own of these pages (G1),
+ * as each has its page picture, read by the Agent, so no page is pictured or
+ * read by vision twice. Empty when the database has no such tab or cannot be
+ * read.
  */
-export async function bookScanPagesOf(file: { id: string; sha256: unknown }): Promise<Set<number>> {
+export async function bookVisionPageSetOf(file: {
+  id: string;
+  sha256: unknown;
+}): Promise<Set<number>> {
   const paths = fileDbPaths(file.id, file.sha256);
-  if (!paths) return new Set();
-  try {
-    const r = await runTableSql(
-      paths.sqlite,
-      `SELECT group_concat(p, ',') FROM (SELECT "${PAGE_COLUMN}" AS p FROM "${PAGES_TAB}" ` +
-        `WHERE "Method" IN ('${OCR_METHOD}', '${VISION_METHOD}') ORDER BY "${PAGE_COLUMN}")`,
-      { cap: 1 },
-    );
-    const joined = r.rows[0]?.[0];
-    if (typeof joined !== 'string' || joined === '') return new Set();
-    return new Set(
-      joined
-        .split(',')
-        .map(Number)
-        .filter((n) => Number.isInteger(n) && n >= 1),
-    );
-  } catch {
-    return new Set();
-  }
+  return new Set(paths ? await bookVisionPagesOf(paths.sqlite) : []);
 }
