@@ -26,4 +26,4 @@ CREATE OR REPLACE FUNCTION "public"."mantle_node_extractor_keys"()
                'read_by', 'pipeline_read']::text[]
 $$;
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792180000000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792220000000;
