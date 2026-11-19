@@ -129,9 +129,7 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
     // the read stamps since 0385, the pictures left out since 0386.
     expect(
       [...copy, 'parser_failures', 'agent_text', 'read_by', 'pipeline_read', 'images'].sort(),
-    ).toEqual(
-      [...NODE_EXTRACTOR_KEYS].sort(),
-    );
+    ).toEqual([...NODE_EXTRACTOR_KEYS].sort());
     const files = read('packages/files/src/ops/files.ts');
     const at = files.indexOf('export const BYTE_DERIVED_DATA_KEYS = [');
     const bytes = [...files.slice(at, files.indexOf('] as const', at)).matchAll(/'([^']+)'/g)].map(

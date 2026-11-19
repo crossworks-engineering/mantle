@@ -229,7 +229,9 @@ describe('the PDF router in a real read', () => {
     const ids = inProcess();
     // The book reader is Python in the parser image: its first job, the cut
     // of its first window, is no job this process runs.
-    await expect(parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines, count })).rejects.toThrow();
+    await expect(
+      parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines, count }),
+    ).rejects.toThrow();
     expect(ids[0]).toBe('pdf-router');
     expect(ids).not.toContain('drawing-pdf');
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);

@@ -109,7 +109,7 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
   });
 
   it('a short file needs text pages but for a few: a short scanned drawing or ruled form stays a drawing', () => {
-    // A scanned A4 sketch or ruled form (kind `scan`): the drawing reader's.
+    // A scanned sketch or ruled form on A4 paper (kind `scan`): the drawing reader's.
     expect(bookOf(1, sample(1, scan))).toBe(false);
     expect(bookOf(3, sample(3, scan))).toBe(false);
     // Seven scanned pages, one of them a ruled table (kind `scan`): a book.

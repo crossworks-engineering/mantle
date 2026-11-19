@@ -364,7 +364,7 @@ describe('a PDF, read by the packages pdf-router and drawing-pdf', () => {
     expect(decide).not.toHaveBeenCalled();
   });
 
-  it('a document by the rules is a book (rules 4), with no decider call: the router\'s job, then the book reader\'s', async () => {
+  it("a document by the rules is a book (rules 4), with no decider call: the router's job, then the book reader's", async () => {
     const calls = inProcess();
     const decide = vi.fn(async (_state: unknown) => decision('pid'));
     // The book reader is Python in the parser image: its first job (the cut
