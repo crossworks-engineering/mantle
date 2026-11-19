@@ -438,7 +438,7 @@ function pageOfAnswer(page: number, read: PipelineCallAnswer, name: string): Sca
 /** Keep a shared page, which also ends the claim. Best effort: a lost write
  *  only leaves the chat turn to wait out the claim. */
 async function keepShared(
-  shared: { hooks: { keep(p: ScanPage[]): Promise<void> } },
+  shared: { hooks: { keep(p: ScanPage[]): Promise<unknown> } },
   page: ScanPage,
 ): Promise<void> {
   await shared.hooks.keep([page]).catch(() => {});
