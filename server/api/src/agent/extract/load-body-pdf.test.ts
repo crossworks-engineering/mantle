@@ -11,7 +11,7 @@
  *   bytes_unavailable — we never had the file; re-fetch it
  *   pdf_unreadable  — the rasterizer threw; the PIPELINE is broken, not the file
  *   pdf_too_large     every page is past the render limit (terminal)
- *   no_text_layer   — genuinely nothing to read, or no vision worker wired up
+ *   no_text_layer   — genuinely nothing to read, or no Scan reader wired up
  *
  * `pdf_unreadable` is the one this file was added for. A throw inside the
  * rasterize step used to be swallowed into `pages: 0`, which is indistinguishable
@@ -30,6 +30,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   recordSkippedTrace: vi.fn(),
   ocrIngestPdfNode: vi.fn(),
+  nativeReadPdfNode: vi.fn(),
   loadFileBytes: vi.fn(),
   tryUnlockPdf: vi.fn(),
   documentWorkerPrefersNative: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock('./file-bytes', () => ({
 }));
 vi.mock('./images', () => ({
   ocrIngestPdfNode: h.ocrIngestPdfNode,
+  nativeReadPdfNode: h.nativeReadPdfNode,
   composeImageBody: vi.fn(),
   visionIngestImageNode: vi.fn(),
 }));
@@ -186,6 +188,44 @@ describe('loadExtractableBody — PDF dead-ends', () => {
     expect(skip()[0]).toBe('no_text_layer');
   });
 
+  it('says there is no Scan reader, and leaves the file to be read again', async () => {
+    h.ocrIngestPdfNode.mockResolvedValue({
+      text: null,
+      encrypted: false,
+      bytesMissing: false,
+      rasterizeError: null,
+      ran: false,
+      pagesTotal: 3,
+      unread: { no_scan_reader: 3 },
+    });
+
+    await run();
+    const [disposition, details] = skip();
+    expect(disposition).toBe('no_text_layer');
+    expect(details.unread).toEqual({ no_scan_reader: 3 });
+    expect(String(details.hint)).toMatch(/no Scan reader/);
+    // No verdict on the content: no terminal stamp.
+    const { db } = await import('@mantle/db');
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('says why each page of a scan that read no text is unread', async () => {
+    h.ocrIngestPdfNode.mockResolvedValue({
+      text: null,
+      encrypted: false,
+      bytesMissing: false,
+      rasterizeError: null,
+      ran: true,
+      pagesTotal: 2,
+      unread: { bad_read: 2 },
+    });
+
+    await run();
+    const [disposition, details] = skip();
+    expect(disposition).toBe('no_text_layer');
+    expect(String(details.hint)).toMatch(/2 read badly by the Scan reader/);
+  });
+
   it('keeps encrypted_pdf ahead of the new branch', async () => {
     // A password failure sets `encrypted`, not `rasterizeError` — but pin the
     // precedence anyway, since both can be truthy in principle and "locked" is
@@ -242,7 +282,7 @@ describe('loadExtractableBody: prefer_native keeps the text layer', () => {
 
   for (const code of ['busy', 'timeout', 'unavailable'] as const) {
     it(`keeps the text-layer body when the parser answers ${code}`, async () => {
-      h.ocrIngestPdfNode.mockRejectedValue(
+      h.nativeReadPdfNode.mockRejectedValue(
         new ParserError(code, `parser ${code}`, { retryable: true, terminal: false }),
       );
       const res = await run();
@@ -251,23 +291,19 @@ describe('loadExtractableBody: prefer_native keeps the text layer', () => {
     });
   }
 
-  it('keeps it on a terminal refusal of the render too', async () => {
-    h.ocrIngestPdfNode.mockRejectedValue(
-      new ParserError('timeout', 'parser timeout', { retryable: false, terminal: true }),
-    );
+  it('keeps it when the native read gives nothing (no page read of a typed PDF)', async () => {
+    h.nativeReadPdfNode.mockResolvedValue({ text: null });
     const res = await run();
     expect(res).toEqual({ ok: true, rawBody: TEXT_LAYER });
+    // A PDF with a text layer is never the Scan reader's.
+    expect(h.ocrIngestPdfNode).not.toHaveBeenCalled();
   });
 
   it('takes the native read when it yields a usable body', async () => {
     const nativeText = 'Native read of the quarterly summary, with its table intact.';
-    h.ocrIngestPdfNode.mockResolvedValue({
-      text: nativeText,
-      encrypted: false,
-      bytesMissing: false,
-      rasterizeError: null,
-    });
+    h.nativeReadPdfNode.mockResolvedValue({ text: nativeText });
     const res = await run();
     expect(res).toEqual({ ok: true, rawBody: nativeText });
+    expect(h.ocrIngestPdfNode).not.toHaveBeenCalled();
   });
 });

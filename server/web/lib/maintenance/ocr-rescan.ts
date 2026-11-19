@@ -8,12 +8,13 @@
  *  - a 1-page scan was `body_too_short` (12 chars) and never reached OCR.
  *
  * The fix stops new cases; this remedy is for the old ones. It spends: each
- * node runs the extractor's normal OCR path (the document worker's native PDF
- * read, then the vision worker page by page if that yields nothing), then a
- * summary, an embedding and facts. So the dry run (the default) prints what
- * will run and what it costs, and `--apply` re-queues through the ordinary
- * extract queue in small batches, waiting for each batch to finish before the
- * next. No cron, no trigger, no new path to a model.
+ * node runs the extractor's normal read of a scanned PDF (the Scan reader,
+ * page by page, every page: server/api extract/images.ts `ocrIngestPdfNode`;
+ * vision only for a page mostly a figure), then a summary, an embedding and
+ * facts. So the dry run (the default) prints what will run and what it
+ * costs, and `--apply` re-queues through the ordinary extract queue in small
+ * batches, waiting for each batch to finish before the next. Person-started
+ * only: no cron, no trigger, no new path to a model.
  *
  * Output is counts, ids and model names only: safe on a client box.
  */
@@ -34,13 +35,17 @@ import {
   readFileById,
 } from '@mantle/files';
 import { getVisionAdapter, isProviderId } from '@mantle/voice';
+import { SCAN_READER_ENGINE } from '@mantle/runtime/agent';
 import { fallbackCostMicroUsd } from '@mantle/tracing';
 import { sleep as stdSleep } from '@mantle/std';
 import { fetchProviderModels } from '../model-explorer';
 
-/** The extractor's raster OCR page cap (server/api extract/images.ts
- *  MAX_OCR_PAGES): a document past it is read only to this page. */
-export const MAX_OCR_PAGES = 10;
+/** The Scan reader's price of a page (mistral-ocr, $2 per 1,000 pages, plus
+ *  the small text model behind it: $0.00203 billed a page on the scan bench,
+ *  2026-11-19), and in the US region ($2.20 per 1,000). Not in any model
+ *  catalog: the engine's fee is OpenRouter's, per page. */
+export const SCAN_READER_PAGE_USD = 0.00203;
+export const SCAN_READER_PAGE_USD_MAX = 0.0022;
 
 /** The pg-boss queues the extractor consumes (server/api extract-queue.ts):
  *  the main queue and the heavy and book lanes, where a drawing's or a
@@ -162,62 +167,92 @@ export async function pageTokensFromHistory(): Promise<PageTokens> {
 }
 
 export type Estimate = {
-  /** The extractor's first try: one native-PDF call per document. Null when
-   *  the document provider has no native PDF path. */
-  native: { calls: number; usd: number | null } | null;
-  /** Page-by-page OCR with the vision model, pages capped per document. */
-  raster: { calls: number; usd: number | null };
-  /** What we expect: native when it exists, else raster. */
+  /** The Scan reader, one call a page, every page (a white page costs
+   *  nothing, so this is the most). Null when the brain has no Scan reader:
+   *  nothing is read, the pages stay unread. */
+  scan: { calls: number; usd: number } | null;
+  /** What we expect: every page by the Scan reader. */
   expectedUsd: number | null;
-  /** Native ran but read nothing, so every page also went to raster. */
+  /** Every page also a figure, described by vision (one more call a page),
+   *  at the US price of the engine. Unknown when vision has no price. */
   worstUsd: number | null;
 };
 
-/** Pure: price the OCR pass. Summary, embedding and facts after it are a
- *  small fraction on top (one cheap text call per document) and are not in
- *  the number; the CLI says so. */
+/** Pure: price the read of the pages. Summary, embedding and facts after it
+ *  are a small fraction on top (one cheap text call per document) and are
+ *  not in the number; the CLI says so. */
 export function estimateOcrCost(args: {
   pagesPerDoc: number[];
   tokens: PageTokens;
-  nativePrice: ModelPrice | null;
-  nativeAvailable: boolean;
+  scanReader: boolean;
   visionPrice: ModelPrice | null;
 }): Estimate {
-  const allPages = args.pagesPerDoc.reduce((a, b) => a + b, 0);
-  const rasterPages = args.pagesPerDoc.reduce((a, p) => a + Math.min(p, MAX_OCR_PAGES), 0);
-  const usd = (pages: number, price: ModelPrice | null) =>
-    price
-      ? (pages * (args.tokens.in * price.inPerM + args.tokens.out * price.outPerM)) / 1e6
-      : null;
-  const native = args.nativeAvailable
-    ? { calls: args.pagesPerDoc.length, usd: usd(allPages, args.nativePrice) }
+  const pages = args.pagesPerDoc.reduce((a, b) => a + b, 0);
+  if (!args.scanReader) return { scan: null, expectedUsd: null, worstUsd: null };
+  const scan = { calls: pages, usd: pages * SCAN_READER_PAGE_USD };
+  const p = args.visionPrice;
+  const vision = p
+    ? (pages * (args.tokens.in * p.inPerM + args.tokens.out * p.outPerM)) / 1e6
     : null;
-  const raster = { calls: rasterPages, usd: usd(rasterPages, args.visionPrice) };
-  const expectedUsd = native ? native.usd : raster.usd;
-  const worstUsd =
-    native && native.usd !== null && raster.usd !== null
-      ? native.usd + raster.usd
-      : native
-        ? null
-        : raster.usd;
-  return { native, raster, expectedUsd, worstUsd };
+  return {
+    scan,
+    expectedUsd: scan.usd,
+    worstUsd: vision === null ? null : pages * SCAN_READER_PAGE_USD_MAX + vision,
+  };
 }
 
-/** The workers that will run, as the extractor resolves them. */
+/** The workers that will run, as the extractor resolves them: the Scan
+ *  reader (usable: its provider has a PDF parser engine) and vision (a page
+ *  mostly a figure). */
 export async function ocrWorkers(ownerId: string) {
-  const doc =
-    (await getDefaultWorker(ownerId, 'document')) ?? (await getDefaultWorker(ownerId, 'vision'));
+  const scan = await getDefaultWorker(ownerId, 'scan_reader');
   const vision = await getDefaultWorker(ownerId, 'vision');
   return {
-    document: doc
-      ? {
-          provider: doc.provider,
-          model: doc.model,
-          native: Boolean(getVisionAdapter(doc.provider)?.extractDocument),
-        }
-      : null,
+    scanReader:
+      scan && typeof getVisionAdapter(scan.provider)?.parsePdf === 'function'
+        ? { provider: scan.provider, model: scan.model, engine: SCAN_READER_ENGINE }
+        : null,
     vision: vision ? { provider: vision.provider, model: vision.model } : null,
   };
+}
+
+/**
+ * The dry run's lines of the workers and the price, one form for every
+ * remedy that reads scanned PDFs again (ocr-rescan, blank-scans), printed
+ * with `log`. False when nothing can read them here (no Scan reader).
+ */
+export async function printScanEstimate(
+  ownerId: string,
+  pagesPerDoc: number[],
+  log: (line: string) => void,
+): Promise<boolean> {
+  const usd = (v: number | null) =>
+    v === null ? 'unknown (no price for this model)' : `$${v.toFixed(2)}`;
+  const workers = await ocrWorkers(ownerId);
+  if (!workers.scanReader) {
+    log(
+      '  no Scan reader (an OpenRouter key and the Scan reader worker): scanned pages cannot be read here. Nothing to do.',
+    );
+    return false;
+  }
+  const visionPrice = workers.vision
+    ? await priceOf(ownerId, workers.vision.provider, workers.vision.model)
+    : null;
+  const tokens = await pageTokensFromHistory();
+  const est = estimateOcrCost({ pagesPerDoc, tokens, scanReader: true, visionPrice });
+  const per1000 = (v: number) => `$${(v * 1000).toFixed(2)}`;
+  log(
+    `  Scan reader: ${workers.scanReader.provider} ${workers.scanReader.engine} (text model ${workers.scanReader.model}), ${per1000(SCAN_READER_PAGE_USD)} per 1,000 pages (${per1000(SCAN_READER_PAGE_USD_MAX)} in the US region)`,
+  );
+  const visionLine = workers.vision
+    ? `  vision worker (a page mostly a figure only): ${workers.vision.provider} ${workers.vision.model}, ${visionPrice ? `$${visionPrice.inPerM}/M in, $${visionPrice.outPerM}/M out (${visionPrice.source})` : 'no known price'}; tokens per page ${tokens.in} in, ${tokens.out} out (${tokens.source})`
+    : '  no vision worker: a page mostly a figure stays unread';
+  log(visionLine);
+  log(`  Scan reader: ${est.scan?.calls ?? 0} call(s), every page, ${usd(est.expectedUsd)}`);
+  log(
+    `  ESTIMATE: expected ${usd(est.expectedUsd)}, worst case ${usd(est.worstUsd)} (every page a figure; the read only, a white page costs nothing; summary + embedding add one small text call per file, the decider's check about $0.0003 a page where the brain has one)`,
+  );
+  return true;
 }
 
 /**

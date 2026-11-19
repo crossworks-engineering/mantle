@@ -46,10 +46,12 @@ import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import {
   composeImageBody,
+  nativeReadPdfNode,
   ocrIngestPdfNode,
   stampReaderPages,
   visionIngestImageNode,
 } from './images';
+import { scanUnreadSentence } from '@mantle/runtime/agent';
 import { sketchIngestPdfNode } from './pdf-sketch';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 
@@ -705,9 +707,10 @@ export async function loadExtractableBody(
   // Scanned / image-only PDF: readNodeBodyRaw found no text layer and fell back
   // to the title (filename). Indexing that would silently mask the failure — a
   // filename-only summary recorded as `success` (the passport-PDF case). Before
-  // giving up, try OCR via the vision worker (rasterize → describe+OCR), the
-  // same route images take. Only triggered when the body IS the filename, so a
-  // PDF with a real text layer never pays the OCR cost.
+  // giving up, the Scan reader reads it page by page, every page
+  // (ocrIngestPdfNode; docs/ai-workers.md, "Scanned PDFs outside a book").
+  // Only triggered when the body IS the filename, so a PDF with a real text
+  // layer never pays for it.
   // A PDF whose Reader's text stands (P2, above) takes none of the core's
   // PDF reads below.
   const isPdf = (fileExt === 'pdf' || fileMime === 'application/pdf') && !standing;
@@ -752,8 +755,8 @@ export async function loadExtractableBody(
 
   // prefer_native: a PDF WITH a text layer, but the document worker is set to
   // always read PDFs through the model (tabular docs whose text layer scrambles
-  // columns). Run the same native path; keep the text-layer body if native
-  // yields nothing, so we never end up worse than the cheap path.
+  // columns). One native read (nativeReadPdfNode); keep the text-layer body if
+  // it yields nothing, so we never end up worse than the cheap path.
   const isPdfWithTextLayer =
     node.type === 'file' &&
     !existingData.text &&
@@ -859,7 +862,7 @@ export async function loadExtractableBody(
             title: node.title,
             filename: existingData.filename,
             error: ocr.tooLarge,
-            hint: 'The PDF has no text layer and is too large to render for OCR: its pages, an embedded image on them, or the file itself (see `error`). Re-export it at a normal size, then re-extract.',
+            hint: 'The PDF has no text layer and its scanned pages are too large to send to the Scan reader (see `error`). Re-export it at a normal size, then re-extract.',
           },
         },
         node,
@@ -891,11 +894,16 @@ export async function loadExtractableBody(
       });
       return { ok: false };
     } else {
-      // No text layer AND OCR produced nothing (no/unwired vision worker, or a
-      // blank scan — an unrenderable PDF is `pdf_unreadable` above). Record an
-      // honest skip instead of a filename-only false success.
-      // Terminal only when a worker really read the pages (a blank scan); no
-      // worker, or one that failed, is left for the drain to retry.
+      // No text layer AND the Scan reader read nothing (no Scan reader on
+      // the brain, every page read badly or blank, the provider failing; an
+      // unopenable PDF is `pdf_unreadable` above). Record an honest skip
+      // instead of a filename-only false success, with the pages unread by
+      // why (`pages` on the stamp, read by extractionOf).
+      // Terminal only when the read reached a verdict on the content (a
+      // page read badly, or blank); no Scan reader, or one that failed, is
+      // left for the drain to retry.
+      const unreadSaid = ocr.unread ? scanUnreadSentence(ocr.unread) : '';
+      const noScanReader = (ocr.unread?.no_scan_reader ?? 0) > 0;
       const skip: SkipInit = {
         kind: 'extractor_run',
         ownerId,
@@ -907,10 +915,22 @@ export async function loadExtractableBody(
           node_type: node.type,
           title: node.title,
           filename: existingData.filename,
-          hint: 'PDF has no extractable text layer and OCR produced nothing — configure a default vision worker at /settings/ai-workers, or re-upload as an image. A blank/illegible scan can also land here. (A PDF that failed to RENDER is recorded as pdf_unreadable instead.)',
+          ...(ocr.pagesTotal !== undefined ? { pages_total: ocr.pagesTotal } : {}),
+          ...(ocr.unread ? { unread: ocr.unread } : {}),
+          hint: noScanReader
+            ? 'PDF has no text layer, and this brain has no Scan reader to read its scanned pages: add an OpenRouter key and the Scan reader worker at /settings/ai-workers, then re-extract.'
+            : `PDF has no extractable text layer and the Scan reader read no text${unreadSaid ? ` (pages: ${unreadSaid})` : ''}. A blank or illegible scan lands here. (A PDF that failed to open is recorded as pdf_unreadable instead.)`,
         },
       };
-      await (ocr.ran ? recordTerminalSkip(skip, node) : recordSkippedTrace(skip));
+      await (ocr.ran
+        ? recordTerminalSkip(
+            skip,
+            node,
+            unreadSaid && ocr.pagesTotal !== undefined
+              ? { pages: `${ocr.pagesTotal} pages: ${unreadSaid}.` }
+              : undefined,
+          )
+        : recordSkippedTrace(skip));
       return { ok: false };
     }
   } else if (preferNativePdf) {
@@ -918,9 +938,9 @@ export async function loadExtractableBody(
     // parser does here (busy, a timeout, a refusal), the body is kept and the
     // job goes on. It never fails or retries the job, so the native read is
     // never paid for twice on its account.
-    let native: Awaited<ReturnType<typeof ocrIngestPdfNode>> | null;
+    let native: Awaited<ReturnType<typeof nativeReadPdfNode>> | null;
     try {
-      native = await ocrIngestPdfNode(node, ownerId);
+      native = await nativeReadPdfNode(node, ownerId);
     } catch (err) {
       if (!isParserError(err)) throw err;
       native = null;

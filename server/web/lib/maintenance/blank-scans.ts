@@ -8,9 +8,8 @@
  *
  * The finder spends nothing: SQL picks the PDFs page OCR read (never a native
  * read: no render ran there), then each file's bytes are searched for the three
- * filter names. Reading a hit again spends: the ocr-rescan path (a native PDF
- * call, then page OCR if that reads nothing, then a summary, an embedding and
- * facts). So `--apply` needs `--before=<date>`, the day this box got the fix: a
+ * filter names. Reading a hit again spends: the ocr-rescan path (the Scan
+ * reader, every page, then a summary, an embedding and facts). So `--apply` needs `--before=<date>`, the day this box got the fix: a
  * file read after it was read right and is never sent again. Each file sent is
  * stamped `data.blank_scan_reread`, in the transaction that clears it, so a
  * second run never sends it twice.
@@ -20,7 +19,11 @@
 import { sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { parserPdfPageCount, readFileById } from '@mantle/files';
-import { clearForRescan, MAX_OCR_PAGES } from './ocr-rescan';
+import { clearForRescan } from './ocr-rescan';
+
+/** The pages page OCR read of a file before the Scan reader (v0.707): at
+ *  most 10, so a longer file read then is measured on those. */
+export const OLD_OCR_PAGES = 10;
 
 /** The image filters pdfjs needed a WebAssembly decoder for, as they appear
  *  in a PDF: an image's dictionary is plain text in the file, also in an
@@ -52,10 +55,10 @@ export type BlankCandidate = {
 export const OCR_MAX_CHARS_PER_PAGE = 200;
 
 /** A hit worth reading again: page OCR read nothing, or no more text than a
- *  sentence a page. Page OCR reads at most MAX_OCR_PAGES pages, so a longer
- *  file is measured on those. Pure. */
+ *  sentence a page. Page OCR read at most OLD_OCR_PAGES pages then, so a
+ *  longer file is measured on those. Pure. */
 export function likelyBlank(c: BlankCandidate, pages: number, maxPerPage: number): boolean {
-  return c.kind === 'no_text' || c.textChars <= Math.min(pages, MAX_OCR_PAGES) * maxPerPage;
+  return c.kind === 'no_text' || c.textChars <= Math.min(pages, OLD_OCR_PAGES) * maxPerPage;
 }
 
 /** The filters of `BLANK_CODECS` that `bytes` names. Pure. */

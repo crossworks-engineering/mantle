@@ -25,7 +25,6 @@ import {
   isVisionImage,
   parseDocumentBytes,
   isParserError,
-  parserRasterizePdf,
   withParserScope,
   transcodeImageForVision,
   INGESTABLE_EXTS,
@@ -37,6 +36,14 @@ import { readerPassOf, readerTextOf } from '@mantle/content/reader-passes';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { step } from '@mantle/tracing';
 import { errorMessage, providerErrorStatus, publicProviderErrorMessage } from '@mantle/std';
+import { createHash } from 'node:crypto';
+import {
+  readScannedPdf,
+  scanCountsOf,
+  scanTextOf,
+  scanUnreadSentence,
+  type ScanPage,
+} from './scan-pdf';
 
 /** The parser codes that are about the document, not the reader's load. */
 const PARSER_COUNTED = new Set(['too_large', 'timeout', 'crashed']);
@@ -270,79 +277,78 @@ export async function runDocumentWorker(opts: {
   }
 }
 
-/** Page cap for the live-turn PDF OCR fallback — mirrors the extractor's
- *  MAX_OCR_PAGES, bounding rasterization memory + per-page vision spend. */
-const TURN_OCR_PAGES = 10;
+/** How long a chat turn reads a scanned PDF for (readScannedPdf
+ *  `deadline`): a page not started by then is not read for this answer,
+ *  and the turn says so. About 50 pages at 4 at once (the scan bench: 3.7
+ *  to 5.0 s a page). The saved file is read whole in the background by the
+ *  extractor, as every upload is. */
+export const TURN_SCAN_MS = 60_000;
 
 /**
- * OCR a scanned / image-only PDF for the CURRENT turn: rasterize its pages to
- * PNG and run each through the default vision worker (neutral transcribe) — the
- * same path the durable extractor takes for a PDF with no text layer. Returns
- * the concatenated text (capped at DOC_TEXT_MAX) or null if it can't render /
- * the worker is unavailable / the scan is blank. Each page is its own trace
- * step for /traces visibility. This is what lets the live reply read a scanned
- * invoice — `parseDocumentBytes` (text extraction) returns nothing for those.
+ * Read a scanned / image-only PDF for the CURRENT turn with the Scan reader,
+ * page by page (readScannedPdf, ./scan-pdf.ts; docs/ai-workers.md, "Scanned
+ * PDFs outside a book"): the same read the durable extractor makes of a PDF
+ * with no text layer, every page, with no page cap. Per page, not the whole
+ * file in one call: the price is the engine's per page either way, and each
+ * page gets the check (a page read badly is left out, never shown as the
+ * page), a figure its vision description. A long PDF is read for
+ * TURN_SCAN_MS: the pages not reached, and every page not read, are said in
+ * the note, never cut in silence. The text is capped at DOC_TEXT_MAX for the
+ * prompt, said too. Null when no page could be read; the note then says why.
  */
-async function ocrPdfForTurn(opts: {
+async function scanPdfForTurn(opts: {
   ownerId: string;
   bytes: Buffer;
   filename: string;
-}): Promise<{ text: string; note: string | null } | null> {
-  const pages = await (async () => {
-    try {
-      return await step(
-        { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: TURN_OCR_PAGES } },
-        async (h) => {
-          const r = await parserRasterizePdf(opts.bytes, { maxPages: TURN_OCR_PAGES });
-          h.setMeta({ pages: r.length });
-          return r;
-        },
-      );
-    } catch {
-      return []; // unrenderable / corrupt / encrypted / oversized PDF, or the slot stayed busy
-    }
-  })();
-  if (pages.length === 0) return null;
-
-  const parts: string[] = [];
-  for (const pg of pages) {
-    const res = await step(
-      {
-        name: 'extract_vision',
-        kind: 'llm_call',
-        input: { page: pg.pageNumber, mime: pg.mime, bytes: pg.png.length },
+  /** The file is saved (the extractor reads it whole in the background). */
+  saved: boolean;
+}): Promise<{ text: string; note: string }> {
+  const sha256 = createHash('sha256').update(opts.bytes).digest('hex');
+  const kept: ScanPage[] = [];
+  let total = 0;
+  let stopped: string | null = null;
+  try {
+    const r = await readScannedPdf({
+      ownerId: opts.ownerId,
+      bytes: opts.bytes,
+      sha256,
+      filename: opts.filename,
+      deadline: Date.now() + TURN_SCAN_MS,
+      onWindow: async (pages, pagesTotal) => {
+        kept.push(...pages);
+        total = pagesTotal;
       },
-      async (h) => {
-        const r = await runVisionWorker({
-          ownerId: opts.ownerId,
-          bytes: pg.png,
-          mimeType: pg.mime,
-          filename: `${opts.filename}#page-${pg.pageNumber}.${pg.mime === 'image/jpeg' ? 'jpg' : 'png'}`,
-        });
-        h.setMeta({
-          ran: r.ran,
-          note: r.note,
-          model: r.model,
-          page: pg.pageNumber,
-          textLength: r.text.length,
-        });
-        return r;
-      },
-    );
-    if (res.text.trim()) {
-      parts.push(
-        pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim(),
-      );
-    }
+    });
+    kept.splice(0, kept.length, ...r.pages);
+    total = r.pagesTotal;
+  } catch (err) {
+    // The parser busy or the file unopenable: what was read stands, the
+    // rest is said.
+    stopped =
+      isParserError(err) && err.retryable && !PARSER_COUNTED.has(err.code)
+        ? 'the document reader is busy or restarting'
+        : `the PDF could not be read on (${errorMessage(err)})`;
   }
-
-  const text = parts.join('\n\n').trim();
-  if (!text) return null;
+  const text = scanTextOf(kept, total);
+  const { read, unread } = scanCountsOf(kept);
+  const left = Math.max(0, total - kept.length);
+  const later = opts.saved
+    ? ' The saved file is read whole in the background; its full text is searchable when that ends (file_read).'
+    : '';
+  const parts: string[] = [];
+  if (total > 0) parts.push(`Scanned PDF of ${total} pages: ${read} read by the Scan reader`);
+  const why = scanUnreadSentence(unread);
+  if (why) parts.push(why);
+  if (stopped) parts.push(`${left > 0 ? `${left} pages not read: ` : ''}${stopped}`);
+  const note =
+    parts.length > 0
+      ? `${parts.join('; ')}.${why || stopped ? later : ''}`
+      : `${opts.filename} could not be read just now: ${stopped ?? 'no page was read'}.${later}`;
   const capped =
     text.length > DOC_TEXT_MAX
       ? `${text.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${text.length - DOC_TEXT_MAX} more characters — call file_read on the node for the full document.]`
       : text;
-  return { text: capped, note: 'Scanned PDF — text recovered via vision OCR.' };
+  return { text: capped, note };
 }
 
 /** Question-aware vision prompt: answer what the user asked, grounded only in
@@ -491,14 +497,6 @@ async function extractForTurn(opts: {
       return { kind: 'file', text: capped, note: 'PDF read natively by the model.' };
     };
 
-    // prefer_native: skip the text-layer shortcut entirely (for tabular PDFs
-    // whose text layer scrambles columns — read the real layout instead).
-    const preferNative = isPdf && (await documentWorkerPrefersNative(opts.ownerId));
-    if (preferNative) {
-      const n = await tryNativePdf();
-      if (n) return n; // else fall through to text / rasterize below
-    }
-
     try {
       // Trace the parse for the live path too, mirroring the durable extractor
       // (server/api/src/extractor.ts readNodeBodyRaw): which reader ran and
@@ -524,25 +522,29 @@ async function extractForTurn(opts: {
         )
       ).trim();
       if (!raw) {
-        // No text layer — usually a scan / image-only export (e.g. an invoice).
+        // No text layer: a scan / image-only export (e.g. an invoice). The
+        // Scan reader reads it page by page (no vision, no native read).
         if (isPdf) {
-          // Native first (unless prefer_native already tried it), then rasterize.
-          if (!preferNative) {
-            const n = await tryNativePdf();
-            if (n) return n;
-          }
-          const ocr = await ocrPdfForTurn({
+          const scan = await scanPdfForTurn({
             ownerId: opts.ownerId,
             bytes: opts.bytes,
             filename: opts.filename,
+            saved: !!opts.fileId,
           });
-          if (ocr) return { kind: 'file', text: ocr.text, note: ocr.note };
+          return { kind: 'file', text: scan.text, note: scan.note };
         }
         return {
           kind: 'file',
           text: '',
           note: `No text could be extracted from ${opts.filename}.`,
         };
+      }
+      // prefer_native: a PDF with a text layer the document worker is set to
+      // read through the model (tabular PDFs whose text layer scrambles
+      // columns): its read, else the text layer.
+      if (isPdf && (await documentWorkerPrefersNative(opts.ownerId))) {
+        const n = await tryNativePdf();
+        if (n) return n;
       }
       const text =
         raw.length > DOC_TEXT_MAX

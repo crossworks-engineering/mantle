@@ -41,6 +41,38 @@ describe('extractionOf: did the brain read the content', () => {
     expect(x.hint).toMatch(/10 of 679 pages were read/);
   });
 
+  it('a scan read by the Scan reader says each page unread and why', () => {
+    const x = extractionOf({
+      extract_completed_at: LATER,
+      ocr: { pages_read: 37, pages_total: 40, unread: { bad_read: 2, not_cut: 1, nonsense: 9 } },
+    });
+    expect(x).toMatchObject({ state: 'partial', pages: { read: 37, total: 40 } });
+    expect(x.hint).toBe(
+      'Only 37 of 40 pages were read (2 read badly by the Scan reader (kept out rather than indexed wrong); 1 the parser could not cut). The other pages are not in search.',
+    );
+    expect(x.cuts?.[0]?.why).toEqual({ bad_read: 2, not_cut: 1 });
+  });
+
+  it('a scan that read no text says its pages on the skip', () => {
+    const x = extractionOf({
+      extract_skipped: {
+        reason: 'no_text_layer',
+        at: LATER,
+        pages: '3 pages: 3 read badly by the Scan reader.',
+      },
+    });
+    expect(x.state).toBe('skipped');
+    expect(x.hint).toBe(
+      'The scan gave no text. Only its name is in search. 3 pages: 3 read badly by the Scan reader.',
+    );
+  });
+
+  it('a read the Scan reader has under way is not partial yet', () => {
+    expect(extractionOf({ ocr: { resume: { sha256: 'a', total: 9, pages: [] } } }).state).toBe(
+      'pending',
+    );
+  });
+
   it('a whole read is indexed; a local read says so', () => {
     expect(extractionOf({ extract_completed_at: LATER, ocr: true })).toEqual({
       state: 'indexed',

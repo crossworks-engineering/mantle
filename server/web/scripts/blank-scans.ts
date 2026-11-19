@@ -1,8 +1,8 @@
 /**
  * Read again the PDF scans that drew blank before the decoders: the CLI face
  * of lib/maintenance/blank-scans.ts (read its header first). SPENDS on
- * --apply: each file runs the normal OCR path, then a summary, an embedding
- * and facts.
+ * --apply: each file runs the normal read of a scanned PDF (the Scan reader,
+ * every page), then a summary, an embedding and facts.
  *
  * Usage:
  *   pnpm blank:scans                               # DRY RUN: counts, codecs, pages, est. USD
@@ -33,14 +33,7 @@ import {
   scanBytes,
   type BlankCodec,
 } from '../lib/maintenance/blank-scans';
-import {
-  estimateOcrCost,
-  indexedNow,
-  ocrWorkers,
-  pageTokensFromHistory,
-  priceOf,
-  runBatch,
-} from '../lib/maintenance/ocr-rescan';
+import { indexedNow, printScanEstimate, runBatch } from '../lib/maintenance/ocr-rescan';
 
 const argv = process.argv.slice(2);
 const apply = argv.includes('--apply');
@@ -49,9 +42,6 @@ const limit = flag('limit') ? Math.max(1, Number(flag('limit'))) : null;
 const batchSize = Math.max(1, Number(flag('batch') ?? 5));
 const batchTimeoutMin = Math.max(1, Number(flag('batch-timeout') ?? 30));
 const ocrMaxChars = Math.max(0, Number(flag('ocr-max-chars') ?? OCR_MAX_CHARS_PER_PAGE));
-
-const usd = (v: number | null) =>
-  v === null ? 'unknown (no price for this model)' : `$${v.toFixed(2)}`;
 
 async function main(): Promise<number> {
   const gate = applyGate(apply, flag('before'), new Date());
@@ -118,43 +108,7 @@ async function main(): Promise<number> {
   const pagesPerDoc = [...scan.hits.values()].map((h) => h.pages);
   console.log(`  pages: ${pagesPerDoc.reduce((a, b) => a + b, 0)} over ${scan.hits.size} file(s)`);
 
-  const workers = await ocrWorkers(ownerId);
-  if (!workers.document && !workers.vision) {
-    console.log('  no document or vision worker: OCR cannot run here. Nothing to do.');
-    return 0;
-  }
-  const nativePrice = workers.document
-    ? await priceOf(ownerId, workers.document.provider, workers.document.model)
-    : null;
-  const visionPrice = workers.vision
-    ? await priceOf(ownerId, workers.vision.provider, workers.vision.model)
-    : null;
-  const tokens = await pageTokensFromHistory();
-  const est = estimateOcrCost({
-    pagesPerDoc,
-    tokens,
-    nativePrice,
-    nativeAvailable: Boolean(workers.document?.native),
-    visionPrice,
-  });
-  const priceLine = (p: typeof nativePrice) =>
-    p ? `$${p.inPerM}/M in, $${p.outPerM}/M out (${p.source})` : 'no known price';
-  if (workers.document) {
-    console.log(
-      `  document worker: ${workers.document.provider} ${workers.document.model}, native PDF ${workers.document.native ? 'yes' : 'no'}, ${priceLine(nativePrice)}`,
-    );
-  }
-  if (workers.vision) {
-    console.log(
-      `  vision worker (page OCR): ${workers.vision.provider} ${workers.vision.model}, ${priceLine(visionPrice)}`,
-    );
-  }
-  console.log(`  tokens per page: ${tokens.in} in, ${tokens.out} out (${tokens.source})`);
-  if (est.native) console.log(`  native: ${est.native.calls} call(s), ${usd(est.native.usd)}`);
-  console.log(`  page OCR: ${est.raster.calls} call(s), ${usd(est.raster.usd)}`);
-  console.log(
-    `  ESTIMATE: expected ${usd(est.expectedUsd)}, worst case ${usd(est.worstUsd)} (OCR only; summary + embedding add one small text call per file)`,
-  );
+  if (!(await printScanEstimate(ownerId, pagesPerDoc, (l) => console.log(l)))) return 0;
   console.log(`  ids: ${[...scan.hits.keys()].join(', ')}`);
 
   if (!apply) {

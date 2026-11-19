@@ -53,6 +53,7 @@ vi.mock('./file-bytes', () => ({
 }));
 vi.mock('./images', () => ({
   ocrIngestPdfNode: h.ocrIngestPdfNode,
+  nativeReadPdfNode: vi.fn(async () => ({ text: null })),
   composeImageBody: vi.fn(),
   visionIngestImageNode: vi.fn(),
 }));

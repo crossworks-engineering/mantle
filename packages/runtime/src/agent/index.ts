@@ -118,6 +118,24 @@ export {
   type ScanReaderResult,
 } from './scan-reader';
 export {
+  readScannedPdf,
+  scanVerdictOf,
+  scanTextOf,
+  scanCountsOf,
+  scanUnreadSentence,
+  pageMarksOf,
+  FIGURE_TEXT_MAX_CHARS,
+  SCAN_WINDOW,
+  SCAN_PAGES_AT_ONCE,
+  SCAN_UNREAD_REASONS,
+  type ScanPage,
+  type ScanPageMethod,
+  type ScanUnreadReason,
+  type ScanVerdict,
+  type ScanPdfResult,
+  type ScanPdfDeps,
+} from './scan-pdf';
+export {
   scanReadQualityOf,
   SCAN_READ_ANCHORS_MIN,
   type OcrWord,

@@ -20,15 +20,22 @@ import {
   isCadExt,
   isDrawingExt,
   isParserError,
-  parserPdfPageCount,
-  parserRasterizePdf,
   picturesPartsOf,
   picturesStampOf,
   upsertFile,
   type PicturesPart,
 } from '@mantle/files';
 import { log, startTrace, step } from '@mantle/tracing';
-import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
+import {
+  readScannedPdf,
+  runDocumentWorker,
+  runVisionWorker,
+  scanCountsOf,
+  scanTextOf,
+  SCAN_READER_ENGINE,
+  type ScanPage,
+  type ScanUnreadReason,
+} from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import {
@@ -620,18 +627,14 @@ export async function visionIngestImageNode(
   );
 }
 
-/** Page cap for PDF OCR — bounds rasterization memory + per-page vision spend. */
-const MAX_OCR_PAGES = 10;
-
 /**
  * The native read of a PDF that found no text, kept on the node:
  * `data.native_pdf = { empty_sha256: "<sha256 of the bytes>" }` (a read that
  * found text writes `native_pdf: true` with the text). A retry of the same
- * bytes (the render busy, a first refusal, a dead-letter redrive at api
- * boot) goes straight to the render instead of paying for the model call
- * again, whatever restarted in between. `native_pdf` is a byte-derived key
- * (BYTE_DERIVED_DATA_KEYS): new bytes drop it, and the sha256 keeps a stale
- * one from ever applying to other bytes.
+ * bytes does not pay for the model call again, whatever restarted in
+ * between. `native_pdf` is a byte-derived key (BYTE_DERIVED_DATA_KEYS): new
+ * bytes drop it, and the sha256 keeps a stale one from ever applying to
+ * other bytes.
  */
 function nativeFoundNothing(node: typeof nodes.$inferSelect, sha: string): boolean {
   const mark = (node.data as Record<string, unknown> | null)?.native_pdf;
@@ -650,93 +653,42 @@ async function rememberNativeEmpty(nodeId: string, ownerId: string, sha: string)
 }
 
 /**
- * OCR-ingest a scanned / image-only PDF file node. When a PDF has no text layer
- * (`parseDocumentBytes` yields nothing and `readNodeBodyRaw` falls back to the
- * filename), rasterize its pages to PNG and run each through the default vision
- * worker — exactly the neutral describe+OCR path images already take. The
- * concatenated text is persisted as `data.text` (+ `vision_model`, `ocr`) and
- * RETURNED so extractNode indexes it in the same pass (summary + embedding +
- * facts). Best-effort: a missing/erroring vision worker, an unrenderable PDF,
- * or a blank scan returns null and the trace records why — and the four return
- * fields keep those apart, so the caller records WHICH dead-end was hit rather
- * than collapsing them into "no text layer". Page-capped at MAX_OCR_PAGES.
- * Mirrors {@link visionIngestImageNode}.
+ * The document worker's native read of a PDF WITH a text layer, for a box
+ * whose document worker is set to read PDFs through the model (prefer
+ * native: tabular PDFs whose text layer scrambles columns). One call for the
+ * whole file; its text is persisted (`data.text`, `native_pdf: true`) and
+ * returned. Nothing on top: a read that gives nothing leaves the caller its
+ * text layer (no page read of a typed PDF). A read of these bytes that found
+ * nothing before is not paid for again (`data.native_pdf`). A scanned PDF
+ * (no text layer) is never read here: it is the Scan reader's
+ * ({@link ocrIngestPdfNode}).
  */
-export async function ocrIngestPdfNode(
+export async function nativeReadPdfNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
-): Promise<{
-  text: string | null;
-  encrypted: boolean;
-  bytesMissing: boolean;
-  /** The rasterizer THREW — a corrupt PDF, a broken native binding, a pdfjs
-   *  version collision. Distinct from "rendered fine, but the scan is blank":
-   *  the caller must not report this as `no_text_layer`, because nothing about
-   *  the document is what went wrong. Null when rasterize wasn't reached or
-   *  didn't throw. */
-  rasterizeError: string | null;
-  /** Every page asked for was too large to render (`PdfLimitError`): a
-   *  verdict on the document, so the caller records a terminal
-   *  `pdf_too_large` skip rather than the retryable `pdf_unreadable`. */
-  tooLarge?: string;
-  /** A document or vision worker really read the PDF (native or any page).
-   *  With no text, that is a blank scan: a verdict on the content. */
-  ran: boolean;
-}> {
-  // Bytes from disk (uploads) or object storage (email PDF attachments).
+): Promise<{ text: string | null }> {
   const loaded = await loadFileBytes(node);
-  // bytesMissing = we couldn't retrieve the file at all (no disk path, and the
-  // object isn't in storage — e.g. an email attachment indexed by metadata
-  // whose body was never persisted). Distinct from "we have it but it's an
-  // unreadable scan": the caller records `bytes_unavailable`, not the
-  // misleading `no_text_layer`, so the operator knows to RE-FETCH not re-OCR.
-  if (!loaded)
-    return { text: null, encrypted: false, bytesMissing: true, rasterizeError: null, ran: false };
+  if (!loaded) return { text: null };
   const filename = loaded.filename;
-
   return await startTrace(
     {
       kind: 'photo_ingest',
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      data: { source: 'extractor', mode: 'pdf_ocr', filename },
+      data: { source: 'extractor', mode: 'pdf_native', filename },
     },
     async () => {
-      const buf = await step(
-        { name: 'read_file', kind: 'compute', input: { filename } },
-        async (h) => {
-          h.setMeta({ bytes: loaded.bytes.length });
-          return loaded.bytes;
-        },
-      );
-
-      // 1) Native PDF first — one call to the vision model (Claude/Gemini),
-      //    whole-document context + real tables, no rasterization. Only runs
-      //    when the worker's provider supports it; else falls through to the
-      //    per-page raster OCR below.
-      //    A read that already ran on these bytes and found no text (kept on
-      //    the node) is not paid for again: a retry after the render (the
-      //    parser busy, a first refusal, a redrive after a restart) goes
-      //    straight to the render.
-      const bytesSha = createHash('sha256').update(buf).digest('hex');
-      const knownEmpty = nativeFoundNothing(node, bytesSha);
+      const buf = loaded.bytes;
+      const sha = createHash('sha256').update(buf).digest('hex');
+      if (nativeFoundNothing(node, sha)) return { text: null };
       const native = await step(
         {
           name: 'extract_document',
           kind: 'llm_call',
-          input: { mime: 'application/pdf', bytes: buf.length, known_empty: knownEmpty },
+          input: { mime: 'application/pdf', bytes: buf.length },
         },
         async (h) => {
-          if (knownEmpty) {
-            h.setMeta({ ran: true, skipped: 'read before, no text (data.native_pdf)' });
-            return {
-              ran: true,
-              text: '',
-              note: 'the native read of these bytes found no text earlier',
-              model: null,
-            } as Awaited<ReturnType<typeof runDocumentWorker>>;
-          }
           const r = await runDocumentWorker({
             ownerId,
             bytes: buf,
@@ -753,147 +705,236 @@ export async function ocrIngestPdfNode(
           return r;
         },
       );
-      // A password-protected PDF surfaces here as a provider 400 whose message
-      // says "password protected" (and the raster fallback fails the same way).
-      // Track it so the caller can record an honest `encrypted_pdf` skip rather
-      // than the misleading `no_text_layer`.
-      let encrypted = !native.ran && /password/i.test(native.note ?? '');
-      if (native.ran && native.text.trim()) {
-        const text = cleanText(native.text.trim());
-        await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
-          await db
-            .update(nodes)
-            // native PDF read, not page OCR — flag it accordingly (`native_pdf`)
-            // so the marker is honest; downstream nothing reads `ocr` today.
-            .set({
-              data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${native.model ?? ''}::text, 'native_pdf', true)`,
-              updatedAt: new Date(),
-            })
-            .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
-          h.setMeta({ chars: text.length, native: true });
-        });
-        return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
+      if (!native.ran || !native.text.trim()) {
+        if (native.ran) await rememberNativeEmpty(node.id, ownerId, sha);
+        return { text: null };
       }
-      let ran = native.ran;
-      // Kept before the render runs: the render may fail the job, and its
-      // retry must not pay for this read again.
-      if (native.ran && !knownEmpty) await rememberNativeEmpty(node.id, ownerId, bytesSha);
-
-      // 2) Fall back to rasterize → per-page image OCR.
-      //
-      // A throw here used to be swallowed into `pages: 0`, which the caller
-      // could not tell apart from a blank scan — so a broken rasterizer
-      // (corrupt file, missing native binding, a second pdfjs in the process)
-      // indexed the document as `no_text_layer` and told the operator to go
-      // configure a vision worker. Carry the message out so the caller can be
-      // honest about which of the two happened.
-      let rasterizeError: string | null = null;
-      let tooLarge: string | undefined;
-      const pages = await step(
-        { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
-        async (h) => {
-          try {
-            const r = await parserRasterizePdf(buf, { maxPages: MAX_OCR_PAGES });
-            h.setMeta({ pages: r.length });
-            return r;
-          } catch (err) {
-            const msg = errorMessage(err);
-            // The parser's PDF caps (declared pixels, size): a verdict on the
-            // document, recorded as the terminal pdf_too_large.
-            if (isParserError(err) && err.code === 'too_large') {
-              tooLarge = msg;
-              h.setMeta({ pages: 0, error: msg, parser_code: err.code });
-              return [];
-            }
-            // The parser busy or unavailable, or the first time these bytes
-            // timed out or crashed it: the extract fails and pg-boss retries
-            // it. The second time (counted on the node, parser-failures.ts)
-            // is terminal: the caller records document_unreadable. Either
-            // way the native read's empty answer is kept on the node
-            // (data.native_pdf), so the retry does not pay for it again.
-            if (isParserError(err) && (err.retryable || err.terminal)) {
-              h.setMeta({ pages: 0, error: msg, parser_code: err.code });
-              throw err;
-            }
-            // Unrenderable / corrupt / encrypted PDF: record and give up.
-            if (/password/i.test(msg)) encrypted = true;
-            else rasterizeError = msg;
-            h.setMeta({ pages: 0, error: msg });
-            return [];
-          }
-        },
-      );
-      if (pages.length === 0)
-        return {
-          text: null,
-          encrypted,
-          bytesMissing: false,
-          rasterizeError,
-          ran,
-          ...(tooLarge ? { tooLarge } : {}),
-        };
-
-      const parts: string[] = [];
-      let model: string | null = null;
-      for (const pg of pages) {
-        const res = await step(
-          {
-            name: 'extract_vision',
-            kind: 'llm_call',
-            input: { page: pg.pageNumber, mime: pg.mime, bytes: pg.png.length },
-          },
-          async (h) => {
-            const r = await runVisionWorker({
-              ownerId,
-              bytes: pg.png,
-              mimeType: pg.mime,
-              filename: `${filename}#page-${pg.pageNumber}.${pg.mime === 'image/jpeg' ? 'jpg' : 'png'}`,
-            });
-            h.setMeta({
-              ran: r.ran,
-              note: r.note,
-              model: r.model,
-              page: pg.pageNumber,
-              textLength: r.text.length,
-            });
-            return r;
-          },
-        );
-        if (res.ran) ran = true;
-        if (res.model) model = res.model;
-        if (res.text.trim()) {
-          parts.push(
-            pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim(),
-          );
-        }
-      }
-
-      const text = cleanText(parts.join('\n\n').trim());
-      if (!text) return { text: null, encrypted, bytesMissing: false, rasterizeError: null, ran }; // worker unavailable / blank scan / encrypted
-
-      // A scan longer than the page cap is read in part: `data.ocr` then
-      // says how far (`{ pages_read, pages_total }`), so the file's status
-      // shows "partial" (FileRow.extraction) and not a whole read. One page
-      // count of the parser, only when the cap was reached; a count that
-      // fails leaves the plain `true`.
-      const total =
-        pages.length >= MAX_OCR_PAGES ? await parserPdfPageCount(buf).catch(() => null) : null;
-      const ocrMark =
-        total && total > pages.length
-          ? JSON.stringify({ pages_read: pages.length, pages_total: total })
-          : 'true';
-
+      const text = cleanText(native.text.trim());
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
           .update(nodes)
           .set({
-            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${model ?? ''}::text, 'ocr', ${ocrMark}::jsonb)`,
+            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${native.model ?? ''}::text, 'native_pdf', true)`,
             updatedAt: new Date(),
           })
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
-        h.setMeta({ chars: text.length, pages: pages.length, pages_total: total });
+        h.setMeta({ chars: text.length, native: true });
       });
-      return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
+      return { text };
+    },
+  );
+}
+
+/** One page kept in the read so far: page, method, why, text. */
+type KeptPage = [number, ScanPage['method'], string, string];
+
+/**
+ * The read so far of a scanned PDF, kept on the node in `data.ocr.resume` as
+ * each page window ends (readScannedPdf `onWindow`): the pages read, how,
+ * and their text, with the sha256 of the bytes they are of. A retry of the
+ * extract (a busy parser, a restart, the job's time) goes on after them, so
+ * no page is paid for twice. Only while the node holds those bytes; the
+ * read's end puts the final `ocr` in its place. Byte-derived (`ocr`): new
+ * bytes drop it.
+ */
+type ScanResume = { sha256: string; total: number; pages: KeptPage[] };
+
+function resumeOf(node: typeof nodes.$inferSelect, sha: string): ScanResume | null {
+  const ocr = (node.data as Record<string, unknown> | null)?.ocr as
+    { resume?: Partial<ScanResume> } | undefined;
+  const r = ocr?.resume;
+  if (!r || r.sha256 !== sha || typeof r.total !== 'number' || !Array.isArray(r.pages)) {
+    return null;
+  }
+  const pages = r.pages.filter(
+    (p): p is KeptPage =>
+      Array.isArray(p) &&
+      Number.isInteger(p[0]) &&
+      typeof p[1] === 'string' &&
+      typeof p[2] === 'string' &&
+      typeof p[3] === 'string',
+  );
+  return { sha256: sha, total: r.total, pages };
+}
+
+const pageOfKept = ([page, method, why, text]: KeptPage): ScanPage => ({
+  page,
+  method,
+  text,
+  ...(method === 'unread' && why ? { why: why as ScanUnreadReason } : {}),
+});
+
+async function keepResume(nodeId: string, ownerId: string, resume: ScanResume): Promise<void> {
+  await db
+    .update(nodes)
+    .set({
+      data: sql`coalesce(${nodes.data}, '{}'::jsonb) || jsonb_build_object('ocr', jsonb_build_object('resume', ${JSON.stringify(resume)}::jsonb))`,
+    })
+    .where(
+      and(
+        eq(nodes.id, nodeId),
+        eq(nodes.ownerId, ownerId),
+        sql`coalesce(${nodes.data}->>'sha256', ${resume.sha256}) = ${resume.sha256}`,
+      ),
+    );
+}
+
+/**
+ * Read a scanned / image-only PDF file node (no text layer: `parseDocumentBytes`
+ * yields nothing and `readNodeBodyRaw` falls back to the filename) with the
+ * Scan reader, page by page, every page (readScannedPdf, @mantle/runtime
+ * scan-pdf.ts; docs/ai-workers.md, "Scanned PDFs outside a book"). A white
+ * page costs nothing; a scanned page is one Scan reader call (mistral-ocr on
+ * the page as a one-page PDF); a read judged bad leaves the page unread (no
+ * vision backup); a page mostly a figure is described by vision. The text is
+ * persisted as `data.text` (+ `vision_model`, `ocr`) and RETURNED so
+ * extractNode indexes it in the same pass. `data.ocr` says the pages: `true`
+ * when every page was read, else `{ pages_read, pages_total, unread }` (the
+ * pages unread by why), so the file shows `partial` with the reasons.
+ *
+ * The return keeps the dead-ends apart, so the caller records WHICH one was
+ * hit rather than "no text layer": the bytes missing, a password, the file
+ * too large for any page to be sent, the parser's machinery failing, no
+ * Scan reader on the brain (`ran: false`, `unread.no_scan_reader`), every
+ * page read badly. A busy parser or its terminal verdict throws (the extract
+ * is retried, or records `document_unreadable`), with the pages read so far
+ * kept on the node (ScanResume).
+ */
+export async function ocrIngestPdfNode(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<{
+  text: string | null;
+  encrypted: boolean;
+  bytesMissing: boolean;
+  /** The parser's machinery failed (a file qpdf cannot open, a broken
+   *  binary): no verdict on the document, so not `no_text_layer`. */
+  rasterizeError: string | null;
+  /** Every scanned page was too large to send: a verdict on the document,
+   *  recorded as the terminal `pdf_too_large`. */
+  tooLarge?: string;
+  /** The read reached a verdict on the content (a page read, blank, read
+   *  badly, or too large). With no text, that is a scan with nothing
+   *  readable on it; false: nothing could read it (no Scan reader, the
+   *  provider failed), so it is read again later. */
+  ran: boolean;
+  /** The pages not read, by why (none: every page read). */
+  unread?: Partial<Record<ScanUnreadReason, number>>;
+  pagesTotal?: number;
+}> {
+  // Bytes from disk (uploads) or object storage (email PDF attachments).
+  const loaded = await loadFileBytes(node);
+  // bytesMissing = we couldn't retrieve the file at all (no disk path, and the
+  // object isn't in storage — e.g. an email attachment indexed by metadata
+  // whose body was never persisted). Distinct from "we have it but it's an
+  // unreadable scan": the caller records `bytes_unavailable`, not the
+  // misleading `no_text_layer`, so the operator knows to RE-FETCH not re-OCR.
+  if (!loaded)
+    return { text: null, encrypted: false, bytesMissing: true, rasterizeError: null, ran: false };
+  const filename = loaded.filename;
+  const none = { text: null, encrypted: false, bytesMissing: false, rasterizeError: null };
+
+  return await startTrace(
+    {
+      kind: 'photo_ingest',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      data: { source: 'extractor', mode: 'pdf_scan', filename },
+    },
+    async () => {
+      const buf = await step(
+        { name: 'read_file', kind: 'compute', input: { filename } },
+        async (h) => {
+          h.setMeta({ bytes: loaded.bytes.length });
+          return loaded.bytes;
+        },
+      );
+      const sha = createHash('sha256').update(buf).digest('hex');
+      const before = resumeOf(node, sha);
+      const kept: KeptPage[] = before ? [...before.pages] : [];
+      const startPage = kept.reduce((n, p) => Math.max(n, p[0]), 0) + 1;
+
+      let read: Awaited<ReturnType<typeof readScannedPdf>>;
+      try {
+        read = await readScannedPdf({
+          ownerId,
+          bytes: buf,
+          sha256: sha,
+          filename,
+          ...(before ? { startPage, pagesTotal: before.total } : {}),
+          onWindow: async (pages, total) => {
+            for (const p of pages) kept.push([p.page, p.method, p.why ?? '', p.text]);
+            await keepResume(node.id, ownerId, { sha256: sha, total, pages: kept });
+          },
+        });
+      } catch (err) {
+        if (!isParserError(err)) throw err;
+        // Busy, or the parser's terminal verdict on these bytes: the caller
+        // retries or records it. The pages read so far are on the node.
+        if (err.retryable || err.terminal) throw err;
+        const msg = errorMessage(err);
+        if (/password/i.test(msg)) return { ...none, encrypted: true, ran: false };
+        if (err.code === 'too_large') return { ...none, tooLarge: msg, ran: false };
+        return { ...none, rasterizeError: msg, ran: false };
+      }
+
+      const pages = [...kept.filter((p) => p[0] < startPage).map(pageOfKept), ...read.pages];
+      const total = read.pagesTotal || before?.total || pages.length;
+      const { read: pagesRead, unread } = scanCountsOf(pages);
+      // A verdict on the content: a page read (blank too), or read badly, or
+      // too large to send. No Scan reader, a provider that failed or a page
+      // not cut is no verdict (the caller leaves the file to be read again).
+      const ran = pages.some(
+        (p) => p.method !== 'unread' || p.why === 'bad_read' || p.why === 'too_large',
+      );
+      const text = cleanText(scanTextOf(pages, total));
+      const anyUnread = Object.keys(unread).length > 0;
+      if (!text) {
+        // Nothing read: the read so far goes (the caller's skip says why),
+        // so a later read starts afresh.
+        await db
+          .update(nodes)
+          .set({ data: sql`${nodes.data} - 'ocr'` })
+          .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+        const scanned = pages.filter((p) => p.method !== 'blank' && p.method !== 'text');
+        const allTooLarge = scanned.length > 0 && scanned.every((p) => p.why === 'too_large');
+        return {
+          ...none,
+          ran,
+          pagesTotal: total,
+          ...(anyUnread ? { unread } : {}),
+          ...(allTooLarge
+            ? { tooLarge: 'every scanned page is past the size one Scan reader call may send' }
+            : {}),
+        };
+      }
+
+      // `ocr`: true when every page was read, else the pages read and the
+      // pages unread by why (extractionOf shows `partial`, with the reasons).
+      const ocrMark = anyUnread
+        ? JSON.stringify({ pages_read: pagesRead, pages_total: total, unread })
+        : 'true';
+      const model = pages.some((p) => p.method === 'scan_reader')
+        ? `scan_reader:${SCAN_READER_ENGINE}`
+        : (read.model ?? '');
+      await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
+        await db
+          .update(nodes)
+          .set({
+            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${model}::text, 'ocr', ${ocrMark}::jsonb)`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+        h.setMeta({ chars: text.length, pages: pagesRead, pages_total: total, unread });
+      });
+      return {
+        ...none,
+        text,
+        ran: true,
+        pagesTotal: total,
+        ...(anyUnread ? { unread } : {}),
+      };
     },
   );
 }
