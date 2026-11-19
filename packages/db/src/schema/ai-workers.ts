@@ -82,11 +82,6 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // only when someone calls the tool: no trigger starts it. When absent the
   // tool falls back to the summarizer's route. See migration 0389.
   'translator',
-  // Scan reader: reads the text of a scanned page picture, as written, for a
-  // fraction of the vision worker's price (an OCR-strong cheap model). The
-  // book reader asks it for a page Tesseract read badly, before vision.
-  // Optional; with none, a scanned page keeps its old path (Tesseract, then
-  // vision). See migration 0390 and docs/ai-workers.md, "The Scan reader".
   // Scan reader: reads the text of a scanned page, as written, for about half
   // the vision worker's price (an OCR engine: OpenRouter's mistral-ocr on a
   // one-page PDF). It reads every scanned page of a PDF book; a brain with

@@ -380,14 +380,14 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'batch-op (host.db.batch: the db broker takes a third op, and its 400 says so)';
   }
-  // The Translator (2026-11-19): a worker kind more, and the 400 of a body
-  // with no valid kind names it.
+  // The Translator and the Scan reader (2026-11-19): a worker kind more
+  // each, and the 400 of a body with no valid kind names them.
   if (
     cell.startsWith('POST /api/ai-workers ') &&
     main.includes('\\"decider\\""}') &&
-    now === main.replace('\\"decider\\""}', '\\"decider\\"|\\"translator\\""}')
+    now === main.replace('\\"decider\\""}', '\\"decider\\"|\\"translator\\"|\\"scan_reader\\""}')
   ) {
-    return 'worker-kind (the Translator: a worker kind more, its 400 names it)';
+    return 'worker-kind (the Translator and the Scan reader: a worker kind more each, its 400 names them)';
   }
   // The Desk's write check (fix round 2): a desk the read would change is
   // refused whole, so the body with a NUL at the end of its strings (the
