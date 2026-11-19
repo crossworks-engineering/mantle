@@ -347,6 +347,8 @@ describe('the Scan reader of a scanned page', () => {
       checkCalls += 1;
       return checkOut;
     }) as CheckDep,
+    // No chat turn reads the file: nothing shared (a test below shares).
+    shared: async () => ({ alone: true as const }),
     ...over,
   });
   const paid = () => h.steps.filter((s) => s.meta.use === PIPELINE_ASK_USE);
@@ -498,5 +500,68 @@ describe('the Scan reader of a scanned page', () => {
       },
     });
     expect(thrown).toMatchObject({ output: { values: { Text: 'PAGE 7\nFLANGE | ASTM' } } });
+  });
+
+  describe('the reads shared with a chat turn on the same upload', () => {
+    const kept: unknown[] = [];
+    const hooks = {
+      claim: async () => ({ kept: new Map(), mine: [7], theirs: new Map() }),
+      keep: async (pages: unknown[]) => {
+        kept.push(...pages);
+      },
+      wait: async () => new Map(),
+    };
+    beforeEach(() => {
+      kept.length = 0;
+    });
+
+    it('a page the chat turn read first is the answer, with no call', async () => {
+      const shared = async () => ({
+        kept: { page: 7, method: 'scan_reader', text: 'READ BY THE CHAT TURN' },
+      });
+      expect(await run({ shared })).toEqual({
+        ok: true,
+        output: { values: { Text: 'READ BY THE CHAT TURN' }, model: 'scan_reader:mistral-ocr' },
+      });
+      expect(scanCalls).toHaveLength(0);
+      expect(visionCalls).toBe(0);
+      expect(paid()).toHaveLength(0);
+      // Read badly by it: unread here too, no call.
+      const bad = async () => ({ kept: { page: 7, method: 'unread', text: '', why: 'bad_read' } });
+      expect(await run({ shared: bad })).toMatchObject({ output: { values: { Text: null } } });
+      expect(scanCalls).toHaveLength(0);
+    });
+
+    it('while the chat turn reads the file, the page is claimed and its read kept for it', async () => {
+      const seen: number[] = [];
+      const shared = async (page: number) => {
+        seen.push(page);
+        return { hooks };
+      };
+      await run({ shared });
+      expect(seen).toEqual([7]);
+      expect(scanCalls).toHaveLength(1);
+      expect(kept).toEqual([{ page: 7, method: 'scan_reader', text: 'PAGE 7\nFLANGE | ASTM' }]);
+      // A figure: its vision description is kept, after the one vision call.
+      kept.length = 0;
+      scanOut = { ...scanOut, text: 'FIG 1', pictures: 1 };
+      await run({ shared });
+      expect(visionCalls).toBe(1);
+      expect(kept).toEqual([{ page: 7, method: 'vision', text: 'A FIGURE OF A VALVE' }]);
+      // No answer: kept as not final (the claim ends; the page is read again).
+      kept.length = 0;
+      scanOut = { ...scanOut, ran: false, text: '', pictures: 0, note: 'timeout' };
+      await run({ shared });
+      expect(kept).toEqual([{ page: 7, method: 'unread', text: '', why: 'failed' }]);
+    });
+
+    it('a figure the chat turn could not describe gets this ask’s vision call, not a second Scan reader read', async () => {
+      const shared = async () => ({ kept: { page: 7, method: 'unread', text: '', why: 'figure' } });
+      expect(await run({ shared })).toMatchObject({
+        output: { values: { Text: 'A FIGURE OF A VALVE' } },
+      });
+      expect(scanCalls).toHaveLength(0);
+      expect(visionCalls).toBe(1);
+    });
   });
 });

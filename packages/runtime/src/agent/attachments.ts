@@ -40,10 +40,12 @@ import { createHash } from 'node:crypto';
 import {
   readScannedPdf,
   scanCountsOf,
+  scanPageFinal,
   scanTextOf,
   scanUnreadSentence,
   type ScanPage,
 } from './scan-pdf';
+import { scanFinalReadOf, scanShareHooks, setChatReading, type ScanShareHooks } from './scan-share';
 
 /** The parser codes that are about the document, not the reader's load. */
 const PARSER_COUNTED = new Set(['too_large', 'timeout', 'crashed']);
@@ -284,6 +286,41 @@ export async function runDocumentWorker(opts: {
  *  extractor, as every upload is. */
 export const TURN_SCAN_MS = 60_000;
 
+/** Beyond its own time, how long a reader's claim on a page holds (one
+ *  page call with its one try more). */
+const SCAN_CLAIM_SLACK_MS = 3 * 60_000;
+
+/** The shared reads for a chat turn: a store that fails is no share (the
+ *  turn reads alone), never a failed answer. */
+function lenient(h: ScanShareHooks): ScanShareHooks {
+  return {
+    claim: (pages) =>
+      h.claim(pages).catch(() => ({ kept: new Map(), mine: [...pages], theirs: new Map() })),
+    keep: (pages, total) => h.keep(pages, total).catch(() => {}),
+    wait: (pages, until) => h.wait(pages, until).catch(() => new Map()),
+  };
+}
+
+/** The answer of a turn whose file the background read already read whole:
+ *  its text, and what its `ocr` mark says of the pages. */
+function readBeforeForTurn(whole: { text: string; ocr: unknown }): { text: string; note: string } {
+  const o = whole.ocr as { pages_read?: unknown; pages_total?: unknown; unread?: unknown } | null;
+  const part =
+    typeof o?.pages_read === 'number' &&
+    typeof o.pages_total === 'number' &&
+    o.pages_read < o.pages_total
+      ? ` ${o.pages_read} of ${o.pages_total} pages were read${scanUnreadSentence(o.unread as never) ? ` (${scanUnreadSentence(o.unread as never)})` : ''}.`
+      : '';
+  const text =
+    whole.text.length > DOC_TEXT_MAX
+      ? `${whole.text.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${whole.text.length - DOC_TEXT_MAX} more characters: call file_read on the node for the full document.]`
+      : whole.text;
+  return {
+    text,
+    note: `Scanned PDF, read by the Scan reader in the background read of this file.${part}`,
+  };
+}
+
 /**
  * Read a scanned / image-only PDF for the CURRENT turn with the Scan reader,
  * page by page (readScannedPdf, ./scan-pdf.ts; docs/ai-workers.md, "Scanned
@@ -300,25 +337,54 @@ async function scanPdfForTurn(opts: {
   ownerId: string;
   bytes: Buffer;
   filename: string;
-  /** The file is saved (the extractor reads it whole in the background). */
-  saved: boolean;
+  /** The saved file (the extractor reads it whole in the background), or
+   *  null: then there is nothing to share the reads with. */
+  fileId: string | null;
 }): Promise<{ text: string; note: string }> {
   const sha256 = createHash('sha256').update(opts.bytes).digest('hex');
+  const deadline = Date.now() + TURN_SCAN_MS;
   const kept: ScanPage[] = [];
   let total = 0;
   let stopped: string | null = null;
+  // The reads are shared with the background read of the same upload
+  // (./scan-share.ts, owner decision "Share the reads"): a page it kept is
+  // taken, one it holds is waited for, and a page read here is kept for it.
+  // A whole read of these bytes already on the node is the answer.
+  const fileId = opts.fileId;
+  const whole = fileId ? await scanFinalReadOf(fileId, sha256).catch(() => null) : null;
+  if (whole) return readBeforeForTurn(whole);
+  const share = fileId
+    ? lenient(
+        scanShareHooks({
+          nodeId: fileId,
+          sha256,
+          by: 'chat',
+          final: scanPageFinal,
+          claimMs: () => Math.max(0, deadline - Date.now()) + SCAN_CLAIM_SLACK_MS,
+        }),
+      )
+    : undefined;
+  if (fileId) {
+    await setChatReading(fileId, sha256, deadline + SCAN_CLAIM_SLACK_MS).catch(() => {});
+  }
   try {
     const r = await readScannedPdf({
       ownerId: opts.ownerId,
       bytes: opts.bytes,
       sha256,
       filename: opts.filename,
-      deadline: Date.now() + TURN_SCAN_MS,
+      deadline,
+      ...(share ? { share } : {}),
       onWindow: async (pages, pagesTotal) => {
         kept.push(...pages);
         total = pagesTotal;
       },
     });
+    if (r.readBefore && fileId) {
+      await setChatReading(fileId, sha256, null).catch(() => {});
+      const done = await scanFinalReadOf(fileId, sha256).catch(() => null);
+      if (done) return readBeforeForTurn(done);
+    }
     kept.splice(0, kept.length, ...r.pages);
     total = r.pagesTotal;
   } catch (err) {
@@ -335,7 +401,8 @@ async function scanPdfForTurn(opts: {
   const text = scanTextOf(kept, total);
   const { read, unread } = scanCountsOf(kept);
   const left = Math.max(0, total - kept.length);
-  const later = opts.saved
+  if (fileId) await setChatReading(fileId, sha256, null).catch(() => {});
+  const later = fileId
     ? ' The saved file is read whole in the background; its full text is searchable when that ends (file_read).'
     : '';
   const parts: string[] = [];
@@ -532,7 +599,7 @@ async function extractForTurn(opts: {
             ownerId: opts.ownerId,
             bytes: opts.bytes,
             filename: opts.filename,
-            saved: !!opts.fileId,
+            fileId: opts.fileId ?? null,
           });
           return { kind: 'file', text: scan.text, note: scan.note };
         }

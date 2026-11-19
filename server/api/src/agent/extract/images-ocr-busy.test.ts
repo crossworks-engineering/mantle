@@ -29,6 +29,9 @@ const h = vi.hoisted(() => ({
   loadFileBytes: vi.fn(),
   runDocumentWorker: vi.fn(),
   readScannedPdf: vi.fn(),
+  /** The node's shared reads (scan-share.ts), as the store would give them. */
+  share: null as null | { total?: number; pages: Record<string, [string, string, string]> },
+  hooks: { claim: vi.fn(), keep: vi.fn(), wait: vi.fn() },
   /** What each db.update(...).set(...) was given. */
   sets: [] as unknown[],
 }));
@@ -60,6 +63,20 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
     ...actual,
     runDocumentWorker: h.runDocumentWorker,
     readScannedPdf: h.readScannedPdf,
+    scanShareOf: vi.fn(async () => (h.share ? { sha256: 's', claims: {}, ...h.share } : null)),
+    scanKeptOf: vi.fn(async () => {
+      const m = new Map<number, ScanPage>();
+      for (const [k, [method, why, text]] of Object.entries(h.share?.pages ?? {})) {
+        m.set(Number(k), {
+          page: Number(k),
+          method: method as ScanPage['method'],
+          text,
+          ...(why ? { why: why as ScanPage['why'] } : {}),
+        });
+      }
+      return m;
+    }),
+    scanShareHooks: vi.fn(() => h.hooks),
   };
 });
 vi.mock('./file-bytes', () => ({ loadFileBytes: h.loadFileBytes }));
@@ -104,6 +121,7 @@ let bytes: Buffer;
 beforeEach(() => {
   vi.clearAllMocks();
   h.sets.length = 0;
+  h.share = null;
   bytes = pdfBytes();
   h.loadFileBytes.mockResolvedValue({ bytes, filename: 'scan.pdf' });
 });
@@ -180,34 +198,16 @@ describe('ocrIngestPdfNode: the pages and their record', () => {
     expect(holds(last, '"bad_read":1')).toBe(true);
   });
 
-  it('keeps each window on the node, with the sha256 of the bytes', async () => {
-    h.readScannedPdf.mockImplementation(
-      async (o: { onWindow: (p: ScanPage[], t: number) => Promise<void> }) => {
-        await o.onWindow([page(1, 'scan_reader', 'one')], 2);
-        await o.onWindow([page(2, 'scan_reader', 'two')], 2);
-        return {
-          pages: [page(1, 'scan_reader', 'one'), page(2, 'scan_reader', 'two')],
-          pagesTotal: 2,
-          ran: true,
-          model: 'm',
-        };
-      },
-    );
+  it('reads with the shared reads of the node: claimed, kept, waited for', async () => {
+    h.readScannedPdf.mockResolvedValue({ pages: [], pagesTotal: 1, ran: false, model: null });
     await ocrIngestPdfNode(pdfNode(), 'o1');
-    // Two windows kept, then the final text.
-    expect(h.sets).toHaveLength(3);
-    expect(holds(h.sets[0], sha256(bytes))).toBe(true);
-    expect(holds(h.sets[1], '"two"')).toBe(true);
+    expect(h.readScannedPdf.mock.calls[0]![0]).toMatchObject({ share: h.hooks });
   });
 
-  it('goes on after the pages a try before kept, and pays for none again', async () => {
-    const resume = {
-      sha256: sha256(bytes),
+  it('goes on after the pages kept before (a try before, or a chat turn), and pays for none again', async () => {
+    h.share = {
       total: 3,
-      pages: [
-        [1, 'scan_reader', '', 'kept one'],
-        [2, 'unread', 'bad_read', ''],
-      ],
+      pages: { '1': ['scan_reader', '', 'kept one'], '2': ['unread', 'bad_read', ''] },
     };
     h.readScannedPdf.mockResolvedValue({
       pages: [page(3, 'scan_reader', 'three')],
@@ -215,7 +215,7 @@ describe('ocrIngestPdfNode: the pages and their record', () => {
       ran: true,
       model: 'm',
     });
-    const r = await ocrIngestPdfNode(pdfNode({ ocr: { resume } }), 'o1');
+    const r = await ocrIngestPdfNode(pdfNode(), 'o1');
     expect(h.readScannedPdf).toHaveBeenCalledWith(
       expect.objectContaining({ done: new Set([1, 2]), pagesTotal: 3 }),
     );
@@ -223,39 +223,23 @@ describe('ocrIngestPdfNode: the pages and their record', () => {
     expect(r.unread).toEqual({ bad_read: 1 });
   });
 
-  it('starts afresh when the kept pages are of other bytes', async () => {
+  it('starts from page 1 when nothing is kept', async () => {
     h.readScannedPdf.mockResolvedValue({ pages: [], pagesTotal: 1, ran: false, model: null });
-    await ocrIngestPdfNode(
-      pdfNode({
-        ocr: { resume: { sha256: 'f'.repeat(64), total: 1, pages: [[1, 'text', '', 'x']] } },
-      }),
-      'o1',
-    );
+    await ocrIngestPdfNode(pdfNode(), 'o1');
     expect(h.readScannedPdf.mock.calls[0]![0]).not.toHaveProperty('done');
   });
 
-  it('reads again a page a try before left with no answer, and keeps only final pages', async () => {
-    const resume = {
-      sha256: sha256(bytes),
-      total: 2,
-      pages: [
-        [1, 'unread', 'failed', ''],
-        [2, 'scan_reader', '', 'two'],
-      ],
-    };
-    h.readScannedPdf.mockImplementation(
-      async (o: { onWindow: (p: ScanPage[], t: number) => Promise<void> }) => {
-        await o.onWindow([page(1, 'scan_reader', 'one\u0000')], 2);
-        return { pages: [page(1, 'scan_reader', 'one')], pagesTotal: 2, ran: true, model: 'm' };
-      },
-    );
-    await ocrIngestPdfNode(pdfNode({ ocr: { resume } }), 'o1');
-    expect(h.readScannedPdf).toHaveBeenCalledWith(
-      expect.objectContaining({ done: new Set([2]), pagesTotal: 2 }),
-    );
-    // The kept text has no NUL (jsonb refuses it).
-    expect(holds(h.sets[0], '\u0000')).toBe(false);
-    expect(holds(h.sets[0], '"one"')).toBe(true);
+  it('keeps the shared pages beside the final mark while a chat turn reads them', async () => {
+    h.readScannedPdf.mockResolvedValue({
+      pages: [page(1, 'scan_reader', 'one')],
+      pagesTotal: 1,
+      ran: true,
+      model: 'm',
+    });
+    await ocrIngestPdfNode(pdfNode(), 'o1');
+    const last = h.sets[h.sets.length - 1];
+    expect(holds(last, 'chat_until')).toBe(true);
+    expect(holds(last, '"pages_read":1')).toBe(true);
   });
 
   it('a white page beside pages with no Scan reader is no verdict: read again, pages kept', async () => {
