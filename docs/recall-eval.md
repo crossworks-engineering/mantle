@@ -953,6 +953,75 @@ enrichment on real T1 labels.
   none of the real follow-ups: they are longer.
 - Full numbers: the routing plan page, section 11 (dev brain).
 
+## Stable-key gold set: baseline (2026-11-19)
+
+The old set had gone stale: on 2026-11-19 none of its 13 cases resolved on the
+dev brain (their nodes had been made again with new ids), so only the keyword
+paths could be read. It was rebuilt as `recall-gold.json`: 51 cases on public
+product topics, gold named by stable keys (see _Stable keys_), five query
+styles (`group`):
+
+| Group        | Cases | The query uses                                 |
+| ------------ | ----: | ---------------------------------------------- |
+| `title`      |     9 | words of the title                             |
+| `summary`    |    14 | words of the summary that are not in the title |
+| `body`       |    10 | words found only in the body                   |
+| `two-word`   |     9 | two words                                      |
+| `paraphrase` |     9 | no content word of the item                    |
+
+Kinds: 16 pages, 12 tasks, 9 journal entries, 7 notes and 7 files (one page
+case also accepts the file the page was made from). One more case, on a
+personal event, stays in the local file and is not in these numbers.
+
+**Method.** A copy of the dev brain database on a workstation, read only on the
+dev box (`pg_dump`, then restore). The copy holds the brain's own stored
+vectors (`openai/text-embedding-3-large`, 768 dims). The 51 query vectors came
+from ONE call to the same model and dimensions (524 tokens, under USD 0.0001)
+and were put into the copy's `embedding_cache` under the key `embed()` reads
+(`sha256("<model>:t:<query>")`), so every later run of these queries is free
+and the copy needs no provider key. Two runs gave identical numbers.
+
+```
+  document              R@1   R@3   R@5  R@10   MRR    n
+  vector                55%   76%   78%   80%   0.67   51
+  fts                   47%   53%   57%   59%   0.51   51
+  search                61%   78%   80%   84%   0.70   51
+  chunks                37%   49%   59%   67%   0.46   51
+  rrf                   59%   75%   84%   92%   0.70   51
+  passage               41%   51%   57%   73%   0.50   51
+  passage-vector        31%   43%   53%   61%   0.40   51
+  passage-keyword       25%   35%   37%   37%   0.30   51
+
+  document MRR           vector    fts  search  chunks    rrf  passage  pass-v  pass-k   n
+  body                     0.25   0.30    0.41    0.20   0.40     0.47    0.20    0.68  10
+  paraphrase               0.58   0.00    0.48    0.48   0.66     0.41    0.36    0.00   9
+  summary                  0.72   0.55    0.81    0.40   0.67     0.39    0.33    0.29  14
+  title                    0.94   0.92    0.92    0.83   0.92     0.74    0.72    0.22   9
+  two-word                 0.84   0.79    0.87    0.45   0.89     0.54    0.44    0.25   9
+```
+
+What it says:
+
+1. **The shipped `search` tool is the best single path** (MRR 0.70, R@10 84%).
+   Naive `rrf` ties it on MRR and finds more by rank 10 (92%).
+2. **Body-only words are the weak spot of every node-level ranker** (MRR 0.20
+   to 0.41): a node vector is built from the whole item, and a few words deep
+   in the body barely move it. The passage keyword arm is best there (0.68):
+   the rare-term rule (step (j)) earns its place.
+3. **Paraphrases need vectors.** `fts` and the keyword arm score 0.00 there,
+   as they must; `rrf` scores 0.66 and `vector` 0.58.
+4. **`passage` (the `search_chunks` path) finds the document by rank 10 in 73%
+   of cases**, with 7.2 distinct documents per 10 passages.
+
+Not measured on the copy: `prod` (its context load opens the narrow database
+role, which needs the box's `MANTLE_MASTER_KEY`; a copy is kept without it so
+no stored key can be decrypted) and `passage-scored` (one paid decider call
+per case). Measure those on a live box when a change touches them.
+
+Regression gate from here: keep the run's snapshot beside the copy and pass it
+as `--baseline=` after a retrieval change; the number must not drop. A new
+query needs one more embed into the copy's cache, or it reaches the embedder.
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
