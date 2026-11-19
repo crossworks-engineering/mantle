@@ -298,6 +298,86 @@ describe('readScannedPdf', () => {
   });
 });
 
+describe('readScannedPdf: the provider says "not now"', () => {
+  /** The provider's answer of no credit: a wait, nothing billed. */
+  const noCredit = (): ScanReaderResult => ({
+    ...answer(''),
+    ran: false,
+    note: 'Scan reader failed: 402',
+    wait: { reason: 'quota', status: 402 },
+  });
+
+  it('stops there: the pages read before stand, the rest are not final, and a try again reads only them', async () => {
+    const { r, calls } = await read(
+      { total: 45, scan: (n) => (n === 25 ? noCredit() : answer(`${ROWS}\nPAGE ${n}`)) },
+      { waitPauses: [] },
+    );
+    expect(r.wait).toEqual({ reason: 'quota', status: 402 });
+    expect(r.waitPaid).toBeUndefined();
+    expect(r.pages).toHaveLength(45);
+    // The first window is read whole; no page past the wait's window is sent.
+    expect(r.pages.slice(0, 20).every((p) => p.method === 'scan_reader')).toBe(true);
+    expect(r.pages.find((p) => p.page === 25)).toMatchObject({ method: 'unread', why: 'failed' });
+    expect(r.pages.slice(40).every((p) => p.why === 'failed')).toBe(true);
+    expect(calls.scan.some((n) => n > 40)).toBe(false);
+    // The try again (credit added): the final pages are kept, only the rest
+    // are paid for.
+    const done = new Set(r.pages.filter(scanPageFinal).map((p) => p.page));
+    const left = r.pages.filter((p) => !scanPageFinal(p)).map((p) => p.page);
+    expect(left).toContain(25);
+    const again = await read({ total: 45 }, { done, pagesTotal: 45 });
+    expect(again.r.wait).toBeUndefined();
+    expect(again.calls.scan.sort((a, b) => a - b)).toEqual(left);
+    expect(again.r.pages.every((p) => p.method === 'scan_reader')).toBe(true);
+  });
+
+  it('a short "not now" is waited through on the page: the same page again, nothing else', async () => {
+    let tries = 0;
+    const { r, calls } = await read(
+      {
+        total: 3,
+        scan: (n) => {
+          if (n === 2 && tries++ === 0) {
+            return { ...noCredit(), wait: { reason: 'rate_limit', status: 429 } };
+          }
+          return answer(`${ROWS}\nPAGE ${n}`);
+        },
+      },
+      { waitPauses: [0] },
+    );
+    expect(r.wait).toBeUndefined();
+    expect(r.pages.every((p) => p.method === 'scan_reader')).toBe(true);
+    expect(calls.scan.sort((a, b) => a - b)).toEqual([1, 2, 2, 3]);
+  });
+
+  it('a figure whose vision call waits is not final, and the wait says its read was paid', async () => {
+    const { d, calls } = deps({
+      total: 2,
+      scan: (n) => (n === 1 ? answer('FIG', { pictures: 1 }) : answer(ROWS)),
+    });
+    d.vision = (async () => ({
+      ran: false,
+      text: '',
+      note: 'Vision worker failed: 503',
+      model: 'v',
+      wait: { reason: 'overloaded', status: 503 },
+    })) as ScanPdfDeps['vision'];
+    const r = await readScannedPdf({
+      ownerId: 'o1',
+      bytes: Buffer.from('%PDF'),
+      sha256: 'a'.repeat(64),
+      filename: 'scan.pdf',
+      waitPauses: [],
+      deps: d,
+    });
+    expect(r.wait).toEqual({ reason: 'overloaded', status: 503 });
+    expect(r.waitPaid).toBe(true);
+    expect(r.pages[0]).toMatchObject({ page: 1, method: 'unread', why: 'failed' });
+    expect(scanPageFinal(r.pages[0]!)).toBe(false);
+    expect(calls.scan.sort()).toEqual([1, 2]);
+  });
+});
+
 describe('scanVerdictOf', () => {
   const live = (passes: boolean) =>
     vi.fn(async () => ({

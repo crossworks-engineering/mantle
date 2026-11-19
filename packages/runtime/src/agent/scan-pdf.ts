@@ -40,6 +40,14 @@
  * (`startPage`, `known`). A picture drawn after a paid call (a figure, the
  * check) that the parser cannot draw just now is no throw: the page is
  * unread (figure) or the free rule stands (check).
+ *
+ * The provider's "not now" (a rate limit, no credit, busy: @mantle/std
+ * provider-wait.ts): a short one is waited through on the page
+ * (callThroughWaits), so the read goes on with nothing paid twice. Still
+ * "not now": the read stops there, its page and every page after it are
+ * `unread`, `failed` (not final), and the result carries the `wait`. The
+ * pages read before it are already kept (`share`, `onWindow`), so the
+ * caller's try again (the extract queue's wait) reads only the rest.
  */
 import {
   BUILTIN_PIPELINES,
@@ -66,9 +74,14 @@ import {
 } from '@mantle/files/read-cut';
 import { checkScanRead } from '@mantle/decisions';
 import { step } from '@mantle/tracing';
-import { errorMessage } from '@mantle/std';
+import {
+  callThroughWaits,
+  errorMessage,
+  PROVIDER_WAIT_IN_JOB_MS,
+  type ProviderWait,
+} from '@mantle/std';
 import { runScanReader, type ScanReaderResult } from './scan-reader';
-import { runVisionWorker } from './attachments';
+import { runVisionWorker, type VisionResult } from './attachments';
 import type { ScanShareHooks } from './scan-share';
 
 /** Under this many characters (not spaces) with a figure found, a scanned
@@ -291,6 +304,13 @@ export type ScanPdfResult = {
   /** The file's bytes were read whole by another reader meanwhile (its
    *  final read is on the node): this read stopped, and takes that one. */
   readBefore?: true;
+  /** The provider said "not now" and the read stopped there: the pages
+   *  from it on are unread (`failed`, not final). */
+  wait?: ProviderWait;
+  /** A figure's Scan reader read was paid before its vision call waited:
+   *  a try again pays for that page's read again (the extract queue then
+   *  bounds the waits, ProviderWaitError `paid`). */
+  waitPaid?: true;
 };
 
 /**
@@ -315,6 +335,10 @@ export async function readScannedPdf(opts: {
   /** The reads shared with the other readers of the same upload
    *  (./scan-share.ts); none: this read is alone. */
   share?: ScanShareHooks;
+  /** The pauses a page waits through a short "not now" (callThroughWaits).
+   *  Default: the queue's in-job pauses, none with a `deadline` (a person
+   *  waits for the turn). */
+  waitPauses?: readonly number[];
   deps?: Partial<ScanPdfDeps>;
 }): Promise<ScanPdfResult> {
   const d: ScanPdfDeps = { ...defaultDeps, ...opts.deps };
@@ -322,6 +346,18 @@ export async function readScannedPdf(opts: {
   let total = opts.pagesTotal ?? 0;
   let ran = false;
   let model: string | null = null;
+  let wait: ProviderWait | undefined;
+  let waitPaid = false;
+  const pauses = opts.waitPauses ?? (opts.deadline !== undefined ? [] : PROVIDER_WAIT_IN_JOB_MS);
+  const waits = {
+    pauses,
+    held: () => wait !== undefined,
+    onWait: (w: ProviderWait, paid: boolean) => {
+      wait ??= w;
+      if (paid) waitPaid = true;
+    },
+  };
+  const waitOut = () => (wait ? { wait, ...(waitPaid ? { waitPaid: true as const } : {}) } : {});
   const late = () => opts.deadline !== undefined && Date.now() >= opts.deadline;
   const unread = (from: number, to: number, why: ScanUnreadReason): ScanPage[] =>
     Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => ({
@@ -399,12 +435,30 @@ export async function readScannedPdf(opts: {
       // reader waiting for it has it then, not at the window's end.
       const share = opts.share;
       const keep = share ? (p: ScanPage) => share.keep([p], total) : undefined;
-      const read = await readMine(claim.mine, part, marked, d, opts, late, keep, (r, mdl) => {
-        if (r) ran = true;
-        if (mdl) model = mdl;
-      });
+      const read = await readMine(
+        claim.mine,
+        part,
+        marked,
+        d,
+        opts,
+        late,
+        keep,
+        (r, mdl) => {
+          if (r) ran = true;
+          if (mdl) model = mdl;
+        },
+        waits,
+      );
       for (const p of read) got.set(p.page, p);
       if (claim.theirs.size === 0 || !opts.share) break;
+      // The provider said "not now": the held pages are not waited for;
+      // they stay the other reader's.
+      if (wait) {
+        for (const n of claim.theirs.keys()) {
+          got.set(n, { page: n, method: 'unread', text: '', why: 'failed' });
+        }
+        break;
+      }
       // Held by another reader: wait for its pages, to the end of its claim
       // (or this read's time). A page whose claim ended unkept (its reader
       // died, or left it to be read again) is claimed again, at most twice.
@@ -424,9 +478,24 @@ export async function readScannedPdf(opts: {
     const window = [...free, ...got.values()].sort((x, y) => x.page - y.page);
     all.push(...window);
     await opts.onWindow?.(window, total);
+    if (wait) {
+      // The provider said "not now": no page after it is sent. Said, never
+      // cut in silence; a try again reads them.
+      all.push(...unread(part.pageTo + 1, total, 'failed').filter((p) => todo(p.page)));
+      break;
+    }
   }
-  return { pages: all, pagesTotal: total, ran, model };
+  return { pages: all, pagesTotal: total, ran, model, ...waitOut() };
 }
+
+/** The provider's "not now" across one read: the pauses a page waits
+ *  through, whether the read already holds (no page is sent after it), and
+ *  where a page's wait is told. */
+type ScanWaits = {
+  pauses: readonly number[];
+  held: () => boolean;
+  onWait: (wait: ProviderWait, paid: boolean) => void;
+};
 
 /** The pages a read claimed: each cut (parser work, before any paid call:
  *  a busy parser throws here with nothing of them paid), then read, 4 at
@@ -440,6 +509,7 @@ async function readMine(
   late: () => boolean,
   keep: ((p: ScanPage) => Promise<void>) | undefined,
   saw: (ran: boolean, model: string | null) => void,
+  waits: ScanWaits,
 ): Promise<ScanPage[]> {
   const cuts = new Map<number, Buffer | ScanUnreadReason>();
   for (const n of mine) {
@@ -458,12 +528,15 @@ async function readMine(
     const pdf = cuts.get(n)!;
     if (typeof pdf === 'string') return { ...pg, why: pdf };
     if (late()) return { ...pg, why: 'time' };
+    // The provider said "not now" to a page before: not sent (a try again
+    // reads it).
+    if (waits.held()) return { ...pg, why: 'failed' };
     // The line count of a page the Reader marked for the Scan reader; none
     // for a page it could not draw or did not mark (the check is then made
     // without it).
     const m = marked.get(n);
     const lines = m?.method === VISION_METHOD && m.why === SCAN_WHY ? m.lines : null;
-    return readPage(opts.ownerId, opts.filename, n, pdf, lines, d, saw);
+    return readPage(opts.ownerId, opts.filename, n, pdf, lines, d, saw, waits);
   };
   const jobs = mine.map((n) => async (): Promise<ScanPage> => {
     const p = await one(n);
@@ -483,6 +556,7 @@ async function readPage(
   lines: number | null,
   d: ScanPdfDeps,
   saw: (ran: boolean, model: string | null) => void,
+  waits: ScanWaits,
 ): Promise<ScanPage> {
   const unreadAs = (why: ScanUnreadReason): ScanPage => ({ page, method: 'unread', text: '', why });
   // The page's picture, drawn once when the check or a figure needs it.
@@ -497,33 +571,43 @@ async function readPage(
     },
     async (h) => {
       // A throw (not the provider's: runScanReader answers those) is no
-      // answer: the window's other pages stand and are kept.
-      const out = await d
-        .scan({
-          ownerId,
-          pdf,
-          ...(lines !== null ? { expectedLines: lines } : {}),
-          tries: 2,
-        })
-        .catch((err: unknown): ScanReaderResult => ({
-          ran: false,
-          attempted: true,
-          text: '',
-          pictures: 0,
-          note: errorMessage(err),
-          model: null,
-          engine: 'mistral-ocr',
-          quality: {
-            ok: false,
-            reasons: ['no_text'],
-            illegibleShare: 0,
-            anchors: 0,
-            agreement: null,
-          },
-        }));
+      // answer: the window's other pages stand and are kept. A short "not
+      // now" is waited through on this page.
+      const scanOnce = () =>
+        d
+          .scan({
+            ownerId,
+            pdf,
+            ...(lines !== null ? { expectedLines: lines } : {}),
+            tries: 2,
+          })
+          .catch((err: unknown): ScanReaderResult => ({
+            ran: false,
+            attempted: true,
+            text: '',
+            pictures: 0,
+            note: errorMessage(err),
+            model: null,
+            engine: 'mistral-ocr',
+            quality: {
+              ok: false,
+              reasons: ['no_text'],
+              illegibleShare: 0,
+              anchors: 0,
+              agreement: null,
+            },
+          }));
+      const out = await callThroughWaits(scanOnce, (a) => a.wait, { pauses: waits.pauses });
       if (!out.attempted) {
         h.setSkipped('no_scan_reader');
         h.setMeta({ page, note: out.note });
+        return { out, verdict: null };
+      }
+      // Still "not now": nothing billed, the page is not judged; the read
+      // stops here and waits (the caller's queue).
+      if (!out.ran && out.wait) {
+        h.setSkipped(`provider_${out.wait.reason}`);
+        h.setMeta({ page, wait: out.wait.reason, note: out.note });
         return { out, verdict: null };
       }
       saw(out.ran, out.model);
@@ -547,6 +631,10 @@ async function readPage(
     },
   );
   if (!read.out.attempted) return unreadAs('no_scan_reader');
+  if (!read.out.ran && read.out.wait) {
+    waits.onWait(read.out.wait, false);
+    return unreadAs('failed');
+  }
   if (!read.verdict) return unreadAs('failed');
   if (read.verdict === 'bad') return unreadAs('bad_read');
   if (read.verdict === 'good') return { page, method: 'scan_reader', text: read.out.text };
@@ -564,23 +652,41 @@ async function readPage(
       input: { page, mime: pic.mimeType, bytes: pic.bytes.length, figure: true },
     },
     async (h) => {
-      const r = await d
-        .vision({
-          ownerId,
-          bytes: pic.bytes,
-          mimeType: pic.mimeType,
-          filename: `${filename}#page-${page}.${pic.mimeType === 'image/jpeg' ? 'jpg' : 'png'}`,
-        })
-        .catch((err: unknown) => ({
-          ran: false,
-          text: '',
-          note: errorMessage(err),
-          model: null,
-        }));
-      h.setMeta({ ran: r.ran, note: r.note, model: r.model, page, textLength: r.text.length });
+      const r = await callThroughWaits(
+        () =>
+          d
+            .vision({
+              ownerId,
+              bytes: pic.bytes,
+              mimeType: pic.mimeType,
+              filename: `${filename}#page-${page}.${pic.mimeType === 'image/jpeg' ? 'jpg' : 'png'}`,
+            })
+            .catch((err: unknown): VisionResult => ({
+              ran: false,
+              text: '',
+              note: errorMessage(err),
+              model: null,
+            })),
+        (a) => a.wait,
+        { pauses: waits.pauses },
+      );
+      h.setMeta({
+        ran: r.ran,
+        note: r.note,
+        model: r.model,
+        page,
+        textLength: r.text.length,
+        ...(r.wait ? { wait: r.wait.reason } : {}),
+      });
       return r;
     },
   );
+  // Still "not now" for the figure: not final (a try again describes it,
+  // and pays for its Scan reader read again: `paid`).
+  if (!seen.ran && seen.wait) {
+    waits.onWait(seen.wait, true);
+    return unreadAs('failed');
+  }
   saw(seen.ran, seen.model);
   return seen.text.trim() ? { page, method: 'vision', text: seen.text.trim() } : unreadAs('figure');
 }

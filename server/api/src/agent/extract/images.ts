@@ -40,7 +40,7 @@ import {
   SCAN_READER_ENGINE,
   type ScanUnreadReason,
 } from '@mantle/runtime/agent';
-import { callThroughWaits, errorMessage, ProviderWaitError, type ProviderWait } from '@mantle/std';
+import { errorMessage, ProviderWaitError, type ProviderWait } from '@mantle/std';
 import { cleanText } from './text';
 import {
   bookVisionPageCountOf,
@@ -859,6 +859,13 @@ export async function ocrIngestPdfNode(
         if (/password/i.test(msg)) return { ...none, encrypted: true, ran: false };
         if (err.code === 'too_large') return { ...none, tooLarge: msg, ran: false };
         return { ...none, rasterizeError: msg, ran: false };
+      }
+      // The provider said "not now": the read waits in the queue
+      // (extract-queue.ts). Each page read before it is kept on the node
+      // (data.ocr.scan, by the bytes' sha256), so the try again reads only
+      // the rest and pays for no page twice.
+      if (read.wait) {
+        throw new ProviderWaitError(read.wait, 'scan_reader', { paid: read.waitPaid === true });
       }
 
       const pages = [...keptBefore, ...read.pages].sort((a, b) => a.page - b.page);

@@ -300,6 +300,13 @@ export async function runDocumentWorker(opts: {
  *  extractor, as every upload is. */
 export const TURN_SCAN_MS = 60_000;
 
+/** A chat turn's words for the provider's "not now" on its scan read. */
+const PROVIDER_WAIT_TURN_TEXT: Readonly<Record<ProviderWait['reason'], string>> = {
+  rate_limit: 'the model provider is limiting how fast it answers just now',
+  quota: 'the model provider account has no credit left',
+  overloaded: 'the model provider is busy just now',
+};
+
 /** Beyond its own time, how long a reader's claim on a page holds (one
  *  page call with its one try more). */
 const SCAN_CLAIM_SLACK_MS = 3 * 60_000;
@@ -403,6 +410,9 @@ async function scanPdfForTurn(opts: {
     }
     kept.splice(0, kept.length, ...r.pages);
     total = r.pagesTotal;
+    // The provider said "not now": the pages from there on are unread, said
+    // with why (the background read waits for the provider and reads them).
+    if (r.wait) stopped = PROVIDER_WAIT_TURN_TEXT[r.wait.reason];
   } catch (err) {
     // The parser busy or the file unopenable: what was read stands, the
     // rest is said.

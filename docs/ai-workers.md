@@ -840,6 +840,17 @@ twice. A read with no text and every page final drops them (a person's read
 again starts afresh), as does the read's end, but while a chat turn reads
 them.
 
+**The provider's "not now"** (docs/provider-http.md, "When the provider
+refuses for now"). A rate limit or a busy provider on a page is waited
+through on that page (`callThroughWaits`, none in a chat turn) and the same
+call made again. Still "not now", or no credit: no page after it is sent;
+the page and the rest are `unread`, `failed` (not final), and the extract
+throws `ProviderWaitError`, so the queue sends the job again later. The pages
+read before the wait are kept on the node, so that try reads only the rest.
+A figure whose vision call waits is the one page whose Scan reader read is
+paid again (the wait is `paid`: the queue bounds such waits). A chat turn
+says the pages it did not read and that the provider is waiting.
+
 **Shared reads** (owner decision 2026-11-19, "Share the reads";
 `packages/runtime/src/agent/scan-share.ts`). The chat turn that got a file,
 the background extract of it, and a book's paid ask of it read the same
