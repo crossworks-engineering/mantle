@@ -12,8 +12,9 @@ import { runTableSql } from '@mantle/tabledb';
 /** The Method of a page the book reader left to vision (pdf_pages.py). */
 export const VISION_METHOD = 'vision';
 
-/** The pages marked for vision, in order, at most PIPELINE_ASK_PAGE_MAX;
- *  [] when the database has no `Pages` tab of the book reader or it cannot
+/** The pages marked for vision, in order, at most PIPELINE_ASK_PAGE_MAX of
+ *  them (a count: a page past 10,000 of a longer book is one like any; L2
+ *  of the large-PDF audit, round 3); [] when the database has no `Pages` tab of the book reader or it cannot
  *  be read. */
 export async function bookVisionPagesOf(sqlite: string): Promise<number[]> {
   try {
@@ -30,7 +31,7 @@ export async function bookVisionPagesOf(sqlite: string): Promise<number[]> {
     return joined
       .split(',')
       .map(Number)
-      .filter((n) => Number.isInteger(n) && n >= 1 && n <= PIPELINE_ASK_PAGE_MAX);
+      .filter((n) => Number.isInteger(n) && n >= 1);
   } catch {
     return [];
   }
