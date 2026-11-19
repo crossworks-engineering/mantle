@@ -782,16 +782,14 @@ can run for the same worker without conflicting.
 ## 5d′. The Translator (`translator`, 2026-11-19)
 
 One tool, `translate` (`packages/tools/src/builtins-translate.ts`), on the
-MCP surface and in two groups: its own `translate` group (the persona, the
-Team responder and Pages hold it; the boot reconcile adds it to the Admin
-workspace's assistants and to Pages on existing brains, and to the Team
-responder once, so an owner's removal sticks; in a team chat it saves no
-copy, the Team responder stays read-only) and
-`media-workers` (so every assistant that holds that group, a workspace
-assistant copied from the persona included, has it too). A workspace
-assistant other than Admin's that holds neither gets it only when the owner
-adds the group: it spends, so no reconcile grants it there by itself (the
-Team responder aside, granted once as above).
+MCP surface and in two groups: its own `translate` group and
+`media-workers`. Owner's decision (2026-11-19, "every workspace"): the
+persona, Pages and the Team responder hold `translate`; the Admin
+workspace's assistants get it with the persona's default groups; every
+other workspace's assistant, the Team responder and hand-made ones alike,
+gets it ONCE per agent (reconcileWorkspaceDelegation, recorded as
+`group:translate` beside the delegation grant), so an owner's removal
+sticks. It spends, so it is no content-kind group.
 Owner's rules:
 
 - **Called, never started by itself.** No trigger, timer or sweep runs it.
@@ -843,16 +841,19 @@ Owner's rules:
   whose writes the database checks for the caller.
 - **The copy.** A note stays a note, a page a page, anything else (a file,
   an email, pasted text) becomes a page. On the owner's own surface it goes
-  beside the original (the same folder); elsewhere at the top level, as
-  filing in a folder is the owner's (and where the original's folder
-  refuses the write). It carries `data.translationOf` (`{ id, to, from }`),
+  beside the original (the same folder); elsewhere at the top level of the
+  caller's own workspace, as filing in a folder is the owner's (and where
+  the original's folder refuses the write). It carries `data.translationOf` (`{ id, to, from }`),
   not `sourceFileId`: a copy is not reaped with its file. The original is
   never changed. A save that fails returns the translation anyway, with
   `save_error`.
 - **A write tool.** It may make a copy, so a read-only login or key cannot
-  call it, even without `save`. Off the owner's own surfaces (a team chat,
-  a workspace assistant's turn) it returns the translation and saves no
-  copy.
+  call it, even without `save`. `save` works wherever the caller may
+  write: off the owner's own surfaces the copy is the turn's login's own
+  create (the write gateway refuses what that login may not write, and the
+  translation is still returned, with `save_error`); a turn that acts for
+  no signed-in person (the Team responder with no member, a heartbeat)
+  saves no copy.
 - **A file's whole text.** A file's stored text is cut at the extractor's
   1,000,000 characters; a text that long is read again in full by the
   parser service, or nothing is translated (never the first part as if it

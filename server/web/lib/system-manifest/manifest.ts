@@ -1242,11 +1242,11 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     ],
   },
   {
-    // The Translator's one tool, in a group of its own so the agents that
-    // hold no `media-workers` (the Team responder, Pages) translate too. Not
-    // adminOnly. It spends (a model call per part), so it is no content-kind
-    // group: a workspace assistant other than Admin's holds it only where the
-    // owner adds it, or through `media-workers`.
+    // The Translator's one tool, in a group of its own (owner's decision
+    // 2026-11-19: "every workspace"): the persona, Pages and the Team
+    // responder hold it, and every workspace assistant gets it once
+    // (reconcileWorkspaceDelegation, so an owner's removal sticks). Not
+    // adminOnly. It spends, so it is no content-kind group.
     slug: 'translate',
     name: 'Translate',
     description:
@@ -2097,11 +2097,12 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // its workspace. Granted ONCE to an existing brain's responder
     // (reconcileWorkspaceDelegation), so an owner's removal sticks: the
     // specialist union leaves this group out for it.
-    // `translate` (owner's route, 2026-11-19): a member asks for an item in
-    // their language; it reads only what the member reads, and on a team
-    // surface it saves nothing (the responder stays read-only). It spends,
-    // so an existing brain's responder gets it once
-    // (reconcileWorkspaceDelegation) and an owner's removal sticks.
+    // `translate` (owner's decision, 2026-11-19): a member asks for an item
+    // in their language; it reads only what the member reads, and a saved
+    // copy is the member's own create with the member's rights (a turn with
+    // no member signed in saves nothing). It spends, so an existing brain's
+    // responder gets it once (reconcileWorkspaceDelegation) and an owner's
+    // removal sticks.
     toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval', 'delegation', 'translate'],
     // `visual_answers` rides on the `show_image` grant in `team-read`: the
     // documents a team shares are full of extracted diagrams and screenshots,

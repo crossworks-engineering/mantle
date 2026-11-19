@@ -332,8 +332,11 @@ export async function reconcileAssistantContentKinds(ownerId: string): Promise<s
 
 /** The record's token for the delegation group, and for one delegate. */
 const GROUP_TOKEN = `group:${WORKSPACE_DELEGATION_GROUP}`;
-/** The Team responder's `translate` group (2026-11-19): it spends, so it is
- *  granted once like `delegation`, and an owner's removal sticks. */
+/** The `translate` group of every workspace assistant other than Admin's
+ *  (owner's decision 2026-11-19: "every workspace"), the shipped Team
+ *  responder and hand-made assistants alike: it spends, so it is granted
+ *  once like `delegation` and an owner's removal sticks. Admin's assistants
+ *  get it with the persona's default groups. */
 const TEAM_TRANSLATE_GROUP = 'translate';
 const TRANSLATE_TOKEN = `group:${TEAM_TRANSLATE_GROUP}`;
 const delegateToken = (slug: string) => `delegate:${slug}`;
@@ -387,10 +390,9 @@ export async function reconcileWorkspaceDelegation(ownerId: string): Promise<str
     const groupDue =
       !listed.includes(GROUP_TOKEN) &&
       groupsForAgent([WORKSPACE_DELEGATION_GROUP], a, adminOnly).length > 0;
-    // The Team responder's `translate`, once (it spends: the owner's
-    // removal sticks).
+    // Every workspace assistant's `translate`, once (it spends: the
+    // owner's removal sticks).
     const translateDue =
-      a.slug === TEAM_RESPONDER_SLUG &&
       !listed.includes(TRANSLATE_TOKEN) &&
       groupsForAgent([TEAM_TRANSLATE_GROUP], a, adminOnly).length > 0;
     const delegatesDue = WORKSPACE_DELEGATE_SLUGS.filter(

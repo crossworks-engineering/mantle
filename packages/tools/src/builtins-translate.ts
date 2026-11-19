@@ -61,7 +61,7 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { boolOpt, strOpt } from './coerce';
 import { defaultWorkerOrError } from './builtins-workers';
 import { CS } from './client-sourced-rule';
-import { isOwnerSurface } from './surface';
+import { isOwnerSurface, loginTurnSurfaceId } from './surface';
 import { surfaceHiddenNodeTypes } from './team-visibility';
 import { visibilityRefusal } from './visibility-refusal';
 import { workspaceTokensLeft } from './builtins-delegation';
@@ -452,14 +452,17 @@ export const translateTool: BuiltinToolDef = {
     }
     if (!to) return { ok: false, error: 'Say which language to translate into (`to`).' };
     const save = boolOpt(input.save) === true;
-    // Off the owner's surfaces (a team chat): the Team assistant changes
-    // nothing (its prompt and its groups say so), so the translation is the
-    // answer, never a saved copy.
-    if (save && !isOwnerSurface(ctx.surface)) {
+    // Save wherever the caller may write (owner's decision 2026-11-19): off
+    // the owner's surfaces the copy is the turn's login's own create, with
+    // that login's rights (the write gateway refuses what it may not
+    // write). A workspace turn that names no login (a heartbeat, the Team
+    // responder with no member on the other end) has nobody to write as:
+    // no copy.
+    if (save && !isOwnerSurface(ctx.surface) && !loginTurnSurfaceId(ctx.surface)) {
       return {
         ok: false,
         error:
-          'In a team chat a translation is the answer only: no copy is saved. Translate again without save.',
+          'This turn acts for no signed-in person, so no copy can be saved: translate again without save.',
       };
     }
 
