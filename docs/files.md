@@ -350,7 +350,11 @@ itself (cost safety: no trigger, no timer).
   holds its sketch read (`Vision read`) keeps that read's text (`text`,
   `ocr`, `vision_model`): the read is paid for and runs one time for its
   bytes, so the pass chunks, embeds and reads facts from the kept text, and
-  no whole-page OCR is paid on top. The old chunks and facts stay
+  no whole-page OCR is paid on top. A PDF (the extension or the mimeType)
+  whose database is there but whose File tab cannot be read now keeps it
+  too (fail closed). So a sketch-read file keeps its text through a reader
+  version bump: a reindex re-chunks and re-embeds it but does not re-read
+  its text layer. The old chunks and facts stay
   until the new pass replaces them. A file with a database (or a word) for
   its bytes also gets one run of the box's Reader of its type, unless the
   Reader is off in its home workspace. The Reader asks no model; the

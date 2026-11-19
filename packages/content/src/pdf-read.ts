@@ -52,6 +52,21 @@ export async function storedPdfOf(abs: string): Promise<StoredPdf | null> {
   }
 }
 
+/** Whether a reindex keeps the text of a PDF whose database is at `abs`
+ *  (the file is there): its File tab holds the sketch read, or the tab
+ *  cannot be read now (a busy reader pool, no row, another shape). Fail
+ *  closed, as pdfReadAgainOf: a tab that cannot be read keeps the paid
+ *  text, so a reindex never pays a whole-page OCR again by a read error. */
+export async function pdfTextKeptOf(abs: string): Promise<boolean> {
+  try {
+    const r = await runTableSql(abs, 'SELECT * FROM "File"', { cap: 1 });
+    const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
+    return !stored || stored.visionRead;
+  } catch {
+    return true;
+  }
+}
+
 /** A file as a conditional write compares it: inode, size and mtime. */
 export type FileStamp = { ino: number; size: number; mtimeMs: number };
 

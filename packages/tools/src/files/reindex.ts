@@ -19,8 +19,10 @@
  *    is paid for and runs one time for its bytes, so its text (`text`,
  *    `ocr`, `vision_model`) stays and the pass chunks, embeds and reads
  *    facts from it again (dropped, the extract would pay a whole-page OCR
- *    whose weaker text replaces it). The old chunks and
- *    facts stay until the new pass replaces them. The text of the Agents'
+ *    whose weaker text replaces it). A PDF whose database is there but
+ *    whose File tab cannot be read now keeps it too (fail closed,
+ *    pdfTextKeptOf). A PDF as the extractor tells one: the extension or
+ *    the mimeType. The old chunks and facts stay until the new pass replaces them. The text of the Agents'
  *    tabs and the pipeline's stamp stay (no database is rebuilt by the
  *    extract);
  *  - when the file has a database (or a word) for its bytes, one run of the
@@ -63,7 +65,7 @@ import {
   keyWithoutSearch,
   loadFileHead,
 } from '@mantle/files';
-import { storedPdfOf } from '@mantle/content/pdf-read';
+import { pdfTextKeptOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { log } from '@mantle/tracing';
@@ -89,7 +91,7 @@ const REINDEX_DROP_KEYS: readonly string[] = [
 const SKETCH_TEXT_KEYS: readonly string[] = ['text', 'ocr', 'vision_model'];
 const SKETCH_DROP_KEYS = REINDEX_DROP_KEYS.filter((k) => !SKETCH_TEXT_KEYS.includes(k));
 
-/** How many files' bytes are looked for at once. */
+/** How many files' bytes (and PDF databases) are looked for at once. */
 const BYTES_BATCH = 8;
 
 /** The ids of a call, checked: 1 to FILE_REINDEX_MAX uuids, each once, or
@@ -133,6 +135,7 @@ export async function reindexFiles(
       home: itemHomeSql(),
       filename: sql<string | null>`${nodes.data}->>'filename'`,
       sha256: sql<string | null>`${nodes.data}->>'sha256'`,
+      mimeType: sql<string | null>`${nodes.data}->>'mimeType'`,
       data: sql<Record<string, unknown>>`jsonb_build_object(
         'filename', ${nodes.data}->'filename',
         'sha256', ${nodes.data}->'sha256',
@@ -199,13 +202,25 @@ export async function reindexFiles(
   }
   if (take.length === 0) return { queued: 0, databases: 0, skipped };
 
-  // A PDF whose database holds its sketch read keeps that read's text.
-  const sketched: string[] = [];
-  for (const id of take) {
+  // A PDF whose database holds its sketch read (or whose File tab cannot be
+  // read now) keeps that read's text. A PDF as the extractor tells one
+  // (load-body.ts): the extension or the mimeType. Read in batches.
+  const pdfs = take.filter((id) => {
     const row = byId.get(id)!;
-    if (extOf(row.filename ?? row.title) !== 'pdf') continue;
-    const abs = await fileDbSqlitePath(id, row.sha256);
-    if (abs && (await storedPdfOf(abs))?.visionRead) sketched.push(id);
+    return extOf(row.filename ?? row.title) === 'pdf' || row.mimeType === 'application/pdf';
+  });
+  const sketched: string[] = [];
+  for (let i = 0; i < pdfs.length; i += BYTES_BATCH) {
+    const batch = pdfs.slice(i, i + BYTES_BATCH);
+    const kept = await Promise.all(
+      batch.map(async (id) => {
+        const abs = await fileDbSqlitePath(id, byId.get(id)!.sha256);
+        return abs !== null && (await pdfTextKeptOf(abs));
+      }),
+    );
+    batch.forEach((id, j) => {
+      if (kept[j]) sketched.push(id);
+    });
   }
 
   // Drop what the extractor derived from the bytes (they are there) and ask

@@ -12,6 +12,10 @@
  *    on MCP: it is `not-found`, and nothing is written (audit r1 LOW 4).
  *  - A PDF whose database holds its sketch read keeps that read's text
  *    (text, ocr, vision_model); every other file drops it (audit r2 M).
+ *  - So does a PDF whose database is there but whose File tab cannot be
+ *    read now (fail closed, audit r3 L1), and a PDF told by its mimeType
+ *    with no `.pdf` in its name (audit r3 L2). The File tab is read through
+ *    the real pdfTextKeptOf; only the reader pool is a stand-in.
  */
 import type { SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +33,7 @@ const h = vi.hoisted(() => ({
     home: null;
     filename: string;
     sha256: null;
+    mimeType: string | null;
     data: Record<string, unknown>;
   }[],
   gone: new Set<string>(),
@@ -36,7 +41,9 @@ const h = vi.hoisted(() => ({
   keyNoSearch: false,
   updated: 0,
   changed: [] as string[],
-  sketched: new Set<string>(),
+  /** The database of a file, by id: its File tab says a sketch read, says
+   *  none, or cannot be read (the reader pool throws). */
+  dbs: new Map<string, 'sketch' | 'plain' | 'unreadable'>(),
   sets: [] as unknown[],
 }));
 
@@ -77,11 +84,19 @@ vi.mock('@mantle/files', async (orig) => ({
     h.gone.has(node.id) ? null : Buffer.from('x'),
   ),
   fileDbNameExists: vi.fn(async () => false),
-  fileDbSqlitePath: vi.fn(async (id: string) => (h.sketched.has(id) ? `/made-up/${id}` : null)),
+  fileDbSqlitePath: vi.fn(async (id: string) => (h.dbs.has(id) ? `/made-up/${id}` : null)),
 }));
 
-vi.mock('@mantle/content/pdf-read', () => ({
-  storedPdfOf: vi.fn(async () => ({ visionRead: true })),
+vi.mock('@mantle/tabledb', async (orig) => ({
+  ...(await orig<typeof import('@mantle/tabledb')>()),
+  runTableSql: vi.fn(async (abs: string) => {
+    const state = h.dbs.get(abs.split('/').pop()!);
+    if (state === 'unreadable') throw new Error('the reader pool is busy');
+    return {
+      columns: ['Kind', 'Rules kind', 'Vision read'],
+      rows: [['scan', 'scan', state === 'sketch' ? 1 : 0]],
+    };
+  }),
 }));
 
 vi.mock('@mantle/content/pipeline-registry', () => ({
@@ -99,13 +114,14 @@ const dropOf = () => {
   return { ids, keys };
 };
 
-const row = (id: string, filename: string) => ({
+const row = (id: string, filename: string, mimeType: string | null = null) => ({
   id,
   title: filename,
   path: 'files.made-up',
   home: null,
   filename,
   sha256: null,
+  mimeType,
   data: { filename },
 });
 
@@ -116,7 +132,7 @@ beforeEach(() => {
   h.keyNoSearch = false;
   h.updated = 0;
   h.changed = [];
-  h.sketched = new Set();
+  h.dbs = new Map();
   h.sets = [];
 });
 
@@ -166,7 +182,7 @@ describe('reindexFiles', () => {
 
   it('a PDF whose database holds its sketch read keeps its text; the others drop it', async () => {
     h.rows = [row(A, 'sketch.pdf'), row(B, 'b.pdf')];
-    h.sketched = new Set([A]);
+    h.dbs = new Map([[A, 'sketch']]);
     const got = await reindexFiles(OWNER, [A, B]);
     expect(got).toEqual({ queued: 2, databases: 0, skipped: [] });
     expect(h.updated).toBe(1);
@@ -191,8 +207,29 @@ describe('reindexFiles', () => {
 
   it('a file that is no PDF never keeps its text, even with a database', async () => {
     h.rows = [row(A, 'a.txt')];
-    h.sketched = new Set([A]);
+    h.dbs = new Map([[A, 'sketch']]);
     await reindexFiles(OWNER, [A]);
     expect(dropOf().ids).toBe('{}');
+  });
+
+  it('a PDF whose File tab cannot be read now keeps its text; one that says no sketch drops it', async () => {
+    h.rows = [row(A, 'busy.pdf'), row(B, 'plain.pdf')];
+    h.dbs = new Map([
+      [A, 'unreadable'],
+      [B, 'plain'],
+    ]);
+    const got = await reindexFiles(OWNER, [A, B]);
+    expect(got).toEqual({ queued: 2, databases: 0, skipped: [] });
+    expect(dropOf().ids).toBe(`{${A}}`);
+  });
+
+  it('a PDF told by its mimeType, with no .pdf in its name, keeps its sketch read', async () => {
+    h.rows = [row(A, 'scan-attachment', 'application/pdf'), row(B, 'scan-other', 'text/plain')];
+    h.dbs = new Map([
+      [A, 'sketch'],
+      [B, 'sketch'],
+    ]);
+    await reindexFiles(OWNER, [A, B]);
+    expect(dropOf().ids).toBe(`{${A}}`);
   });
 });
