@@ -53,7 +53,12 @@ export type PartBudget = {
  * operator may ask for smaller parts (the worker's `params.part_tokens`),
  * never for larger ones than the model holds.
  */
-export function partBudgetFor(limits: ModelLimits, partTokensParam?: number | null): PartBudget {
+export function partBudgetFor(
+  limits: ModelLimits,
+  partTokensParam?: number | null,
+  /** Tokens of the worker's own instructions, sent with every part. */
+  extraPromptTokens = 0,
+): PartBudget {
   const context =
     limits.context && limits.context > 0 ? limits.context : TRANSLATE_UNKNOWN_CONTEXT_TOKENS;
   let output = limits.output && limits.output > 0 ? limits.output : TRANSLATE_UNKNOWN_OUTPUT_TOKENS;
@@ -61,7 +66,7 @@ export function partBudgetFor(limits: ModelLimits, partTokensParam?: number | nu
   // take the whole window, the part needs room too.
   output = Math.min(output, Math.floor(context / 2));
   const byOutput = Math.floor((output * 0.9) / TRANSLATE_EXPANSION);
-  const byContext = context - output - TRANSLATE_PROMPT_TOKENS;
+  const byContext = context - output - TRANSLATE_PROMPT_TOKENS - Math.max(0, extraPromptTokens);
   let partTokens = Math.min(byOutput, byContext);
   if (partTokensParam && partTokensParam > 0) partTokens = Math.min(partTokens, partTokensParam);
   partTokens = Math.max(TRANSLATE_MIN_PART_TOKENS, Math.floor(partTokens));
@@ -314,7 +319,9 @@ export function maskCode(
   const masked = blocksOf(body)
     .map((block) => {
       if (!isFenceBlock(block)) return block;
-      const lead = block.match(/^\s*/)![0];
+      // Only the blank lines before it: a fence line's own indent stays in
+      // the code, so it comes back as it was.
+      const lead = block.match(/^(?:[ \t]*\r?\n)*/)![0];
       const rest = block.slice(lead.length);
       const tail = rest.match(/\s*$/)![0];
       blocks.push(rest.slice(0, rest.length - tail.length));
@@ -469,6 +476,8 @@ async function translateOnePart(opts: {
   onFallback: () => void;
   /** True once another part has failed: no further call is made. */
   cancelled: () => boolean;
+  /** Why the call must stop now (a budget run out), or null. */
+  stopReason: () => string | null;
 }): Promise<string> {
   let lastReason = 'no answer';
   let cutShort = 0;
@@ -479,6 +488,8 @@ async function translateOnePart(opts: {
   if (!probe.masked.replace(/@@CODE-[a-z0-9]+-\d+@@/g, '').trim()) return opts.body;
   for (let attempt = 1; attempt <= TRANSLATE_TRIES; attempt++) {
     if (opts.cancelled()) throw stopped();
+    const stop = opts.stopReason();
+    if (stop) throw new TranslatePartError(opts.index, opts.total, stop, opts.done());
     const onFallback = opts.fallback !== null && attempt % 2 === 0;
     const route = onFallback ? opts.fallback! : opts.primary;
     const { masked, blocks, nonce } = maskCode(opts.body);
@@ -570,6 +581,8 @@ export async function translateInParts(opts: {
   fallback?: ModelRoute | null;
   call: PartCall;
   onPart?: (done: number, total: number) => void;
+  /** Why to stop before the next call (a budget run out), or null. */
+  stopReason?: () => string | null;
 }): Promise<{ text: string; parts: number; fallbackParts: number }> {
   const parts = splitForTranslation(opts.text, opts.partTokens);
   const total = parts.length;
@@ -614,6 +627,7 @@ export async function translateInParts(opts: {
               fallbackParts++;
             },
             cancelled: () => failed !== null,
+            stopReason: opts.stopReason ?? (() => null),
           });
           results[i] = lead + translated + tail;
         } catch (err) {

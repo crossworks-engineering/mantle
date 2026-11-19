@@ -20,6 +20,7 @@ import {
   TRANSLATE_EXPANSION,
   TRANSLATE_MIN_PART_TOKENS,
   TRANSLATE_PROMPT_TOKENS,
+  TRANSLATE_CONCURRENCY,
   TRANSLATE_TRIES,
   TRANSLATE_UNKNOWN_CONTEXT_TOKENS,
   TRANSLATE_UNKNOWN_OUTPUT_TOKENS,
@@ -513,5 +514,39 @@ describe('translateInParts', () => {
     expect(calls).toBe(settle);
     // Far fewer calls than every part tried three times.
     expect(calls).toBeLessThan(splitForTranslation(doc(40), 60).length);
+  });
+
+  it('stops between parts when told to (a budget run out), keeping nothing half done', async () => {
+    let calls = 0;
+    await expect(
+      translateInParts({
+        text: doc(20),
+        to: 'de',
+        partTokens: 60,
+        primary: { model: 'primary', maxOutputTokens: 1_000 },
+        stopReason: () => (calls >= 2 ? 'your daily tokens ran out' : null),
+        call: async (r, s, u) => {
+          calls++;
+          return upper(r, s, u);
+        },
+      }),
+    ).rejects.toThrow('your daily tokens ran out');
+    expect(calls).toBeLessThanOrEqual(2 + TRANSLATE_CONCURRENCY);
+  });
+
+  it('the worker\u2019s own instructions take room from the part, never from the window', () => {
+    const plain = partBudgetFor({ context: 8_192, output: 4_096 });
+    const withExtra = partBudgetFor({ context: 8_192, output: 4_096 }, null, 1_000);
+    expect(
+      withExtra.partTokens + TRANSLATE_PROMPT_TOKENS + 1_000 + withExtra.maxOutputTokens,
+    ).toBeLessThanOrEqual(8_192);
+    expect(withExtra.partTokens).toBeLessThanOrEqual(plain.partTokens);
+  });
+
+  it('an indented fence keeps its indent', () => {
+    const text = '- Step:\n\n   ```sh\n   run it\n   ```\n\nDone.';
+    const { masked, blocks, nonce } = maskCode(text, '5');
+    expect(blocks[0]!.startsWith('   ```sh')).toBe(true);
+    expect(unmaskCode(masked, blocks, nonce)).toBe(text);
   });
 });

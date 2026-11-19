@@ -46,7 +46,7 @@ import {
   ParentPageNotFoundError,
 } from '@mantle/content';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
-import { fileById, parserText, readFileById } from '@mantle/files';
+import { fileById, isDefaultFileText, parserText, readFileById } from '@mantle/files';
 import {
   log,
   catalogHasModel,
@@ -64,7 +64,10 @@ import { CS } from './client-sourced-rule';
 import { isOwnerSurface } from './surface';
 import { surfaceHiddenNodeTypes } from './team-visibility';
 import { visibilityRefusal } from './visibility-refusal';
+import { workspaceTokensLeft } from './builtins-delegation';
 import {
+  estimateTokens,
+  lowTokens,
   partBudgetFor,
   translateInParts,
   TranslatePartError,
@@ -82,6 +85,15 @@ export const TRANSLATE_NOT_FOUND = (id: string) =>
 /** The providers that run a model on a server of the owner's own, which may
  *  trim a prompt longer than its window by itself. */
 const SELF_HOSTED_PROVIDERS: ReadonlySet<string> = new Set(['local', 'custom']);
+
+/** The extractor's ceiling on a file's stored text (server/api
+ *  extract/text.ts TEXT_STORE_MAX_CHARS): a text this long may be cut. */
+export const STORED_TEXT_MAX_CHARS = 1_000_000;
+
+/** A language as a caller names it: letters (any script), spaces, hyphens
+ *  and brackets only ("German", "pt-BR", "Chinese (Simplified)"), so no
+ *  instruction rides in the prompt beside it. */
+const LANGUAGE_RE = /^[\p{L}\p{M} ()-]+$/u;
 
 /** The longest `to` / `from` (a language's name or code). */
 const LANGUAGE_MAX = 64;
@@ -164,9 +176,26 @@ async function readSource(
       if (meta.isText) {
         const res = await readFileById({ ownerId: ctx.ownerId, fileId: id });
         text = res ? res.bytes.toString('utf8') : '';
-      } else if (typeof data.text === 'string') {
-        // The text the reader took out of a PDF, Word or Excel file.
+      } else if (typeof data.text === 'string' && !isDefaultFileText(data.text)) {
+        // The text the reader took out of a PDF, Word or Excel file. The
+        // stand-in of a file no reader reads names the file only: no text.
         text = data.text;
+        // The stored text is cut at the extractor's ceiling: the whole text
+        // is read again from the bytes, or nothing is translated (never the
+        // first part as if it were all).
+        if (text.length >= STORED_TEXT_MAX_CHARS) {
+          const res = await readFileById({ ownerId: ctx.ownerId, fileId: id });
+          const ext = (meta.filename.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
+          // The parser service reads the bytes again (an untrusted file is
+          // read only there).
+          const whole = res ? await parserText(res.bytes, ext).catch(() => '') : '';
+          if (whole.length <= text.length) {
+            return {
+              error: `File ${id} is longer than its stored text (${STORED_TEXT_MAX_CHARS.toLocaleString('en-US')} characters) and cannot be read again in full here, so nothing was translated: a part would be left out. Split the file, or translate its sections one by one.`,
+            };
+          }
+          text = whole;
+        }
       }
       if (!text.trim()) {
         return {
@@ -414,8 +443,11 @@ export const translateTool: BuiltinToolDef = {
       ['to', to],
       ['from', from ?? ''],
     ] as const) {
-      if (v.length > LANGUAGE_MAX || /[\r\n]/.test(v)) {
-        return { ok: false, error: `\`${name}\` is a language name or code, on one line.` };
+      if (v && (v.length > LANGUAGE_MAX || !LANGUAGE_RE.test(v))) {
+        return {
+          ok: false,
+          error: `\`${name}\` is a language name or code: letters, spaces and hyphens, e.g. "German" or "pt-BR".`,
+        };
       }
     }
     if (!to) return { ok: false, error: 'Say which language to translate into (`to`).' };
@@ -495,7 +527,24 @@ export const translateTool: BuiltinToolDef = {
             : catalogOutput,
       };
     };
-    const budget = partBudgetFor(limitsOf(primaryModel), params.part_tokens);
+    const extra = onSummarizer ? null : worker.systemPrompt;
+    const budget = partBudgetFor(
+      limitsOf(primaryModel),
+      params.part_tokens,
+      extra ? estimateTokens(extra) : 0,
+    );
+
+    // A workspace user's daily tokens (the member budget): a translation
+    // that cannot fit what is left is refused before any spend, and one
+    // that runs past it stops between parts (no part is half kept).
+    const left = workspaceTokensLeft(ctx.surface);
+    if (left !== null && left < lowTokens(source.text) * 2) {
+      return {
+        ok: false,
+        error:
+          'This translation needs more of your daily tokens than are left today. Try a shorter text, or ask an Admin user.',
+      };
+    }
     const primary: ModelRoute = { model: primaryModel, maxOutputTokens: budget.maxOutputTokens };
     const fallbackRoute: ModelRoute | null =
       fallbackModel && fallbackModel !== primaryModel
@@ -541,11 +590,19 @@ export const translateTool: BuiltinToolDef = {
         text: source.text,
         to,
         from,
-        extra: onSummarizer ? null : worker.systemPrompt,
+        extra,
         partTokens: budget.partTokens,
         primary,
         fallback: fallbackRoute,
         call,
+        ...(left !== null
+          ? {
+              stopReason: () => {
+                const now = workspaceTokensLeft(ctx.surface);
+                return now !== null && now <= 0 ? 'your daily tokens ran out' : null;
+              },
+            }
+          : {}),
       });
     } catch (err) {
       if (err instanceof TranslatePartError) {
@@ -639,6 +696,22 @@ export async function translatorModelIssue(
   return null;
 }
 
+/** What translator_settings changes in the worker's params: the keys it
+ *  sets (`patch`) and the keys it clears, of its own keys only. Pure. */
+export function translatorParamsChange(
+  was: Readonly<Record<string, unknown>>,
+  next: Readonly<Record<string, unknown>>,
+): { patch: Record<string, unknown>; cleared: string[] } {
+  const patch: Record<string, unknown> = {};
+  const cleared: string[] = [];
+  for (const k of ['fallback_model', 'high_model', 'part_tokens']) {
+    const v = next[k];
+    if (v === undefined && k in was) cleared.push(k);
+    else if (v !== undefined && v !== was[k]) patch[k] = v;
+  }
+  return { patch, cleared };
+}
+
 /** The Translator's model fields an Admin user sets over MCP. */
 const MODEL_FIELDS = ['model', 'fallback_model', 'high_model'] as const;
 
@@ -727,8 +800,18 @@ export const translator_settings: BuiltinToolDef = {
       changed = true;
     }
     if (changed) {
-      const set = { model, params, updatedAt: new Date() };
-      await onNarrowSpots(aiWorkers, 'update', set, () =>
+      // Only the keys this call names: a screen edit of another param that
+      // lands meanwhile is kept (one jsonb merge, its clears removed).
+      const { patch, cleared } = translatorParamsChange(
+        (row.params ?? {}) as Record<string, unknown>,
+        params as Record<string, unknown>,
+      );
+      const merged = cleared.reduce(
+        (acc, k) => sql`(${acc}) - ${k}::text`,
+        sql`coalesce(${aiWorkers.params}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+      );
+      const set = { model, params: merged, updatedAt: new Date() };
+      await onNarrowSpots(aiWorkers, 'update', { model, params, updatedAt: set.updatedAt }, () =>
         db
           .update(aiWorkers)
           .set(set)

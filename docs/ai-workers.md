@@ -850,7 +850,18 @@ Owner's rules:
   never changed. A save that fails returns the translation anyway, with
   `save_error`.
 - **A write tool.** It may make a copy, so a read-only login or key cannot
-  call it, even without `save`.
+  call it, even without `save`. Off the owner's own surfaces (a team chat,
+  a workspace assistant's turn) it returns the translation and saves no
+  copy.
+- **A file's whole text.** A file's stored text is cut at the extractor's
+  1,000,000 characters; a text that long is read again in full by the
+  parser service, or nothing is translated (never the first part as if it
+  were all). A file no reader reads (its stand-in text names the file only)
+  has no text to translate.
+- **Budgets.** In a workspace user's turn, a translation that cannot fit the
+  user's daily tokens left is refused before any spend, and one that runs
+  past them stops between parts. `to` and `from` are a language's name or
+  code only (letters, spaces, hyphens, brackets).
 - **No translator worker.** The tool runs on the summarizer worker's route
   with the translation rules (never the summarizer's own prompt or params).
 - **Required worker.** It is made on existing brains by the boot reconcile
