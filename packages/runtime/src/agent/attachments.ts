@@ -317,7 +317,7 @@ function lenient(h: ScanShareHooks): ScanShareHooks {
   return {
     claim: (pages) =>
       h.claim(pages).catch(() => ({ kept: new Map(), mine: [...pages], theirs: new Map() })),
-    keep: (pages, total) => h.keep(pages, total).catch(() => {}),
+    keep: (pages, total) => h.keep(pages, total).catch(() => false),
     wait: (pages, until) => h.wait(pages, until).catch(() => new Map()),
   };
 }

@@ -279,7 +279,7 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
       { page: 1, method: 'scan_reader', text: 'one' },
       { page: 2, method: 'scan_reader', text: 'two' },
     ]);
-    await extract.keep([{ page: 3, method: 'scan_reader', text: 'three' }], 3);
+    expect(await extract.keep([{ page: 3, method: 'scan_reader', text: 'three' }], 3)).toBe(true);
     expect([...(await extract.wait([1, 2], Date.now() + 5_000)).keys()]).toEqual([1, 2]);
     expect([...(await chat.claim([3])).kept.keys()]).toEqual([3]);
     // Of other bytes: nothing shared.
@@ -293,6 +293,9 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
     const o = await other.claim([1]);
     expect(o.kept.size).toBe(0);
     expect(o.mine).toEqual([1]);
+    // Its keep writes nothing, and says so (its reader's wait is then a
+    // paid one: the pages are paid for again).
+    expect(await other.keep([{ page: 1, method: 'scan_reader', text: 'x' }])).toBe(false);
     // A book's ask of page 2 while the chat turn reads: kept, no call.
     expect(await rt.bookScanTurn(id, 2)).toEqual({
       kept: { page: 2, method: 'scan_reader', text: 'two' },
@@ -316,7 +319,7 @@ describe.skipIf(!URL)('the parser keys on a file node, both checks on', () => {
     });
     await rt.setChatReading(id, sha, Date.now() + 60_000);
     expect((await chat.claim([1])).final).toBe(true);
-    await chat.keep([{ page: 1, method: 'scan_reader', text: 'late' }]);
+    expect(await chat.keep([{ page: 1, method: 'scan_reader', text: 'late' }])).toBe(false);
     expect((await dataOf(id)).ocr).toBe(true);
     expect(await rt.scanFinalReadOf(id, sha)).toEqual({ text: 'All of it', ocr: true });
 

@@ -307,9 +307,10 @@ export type ScanPdfResult = {
   /** The provider said "not now" and the read stopped there: the pages
    *  from it on are unread (`failed`, not final). */
   wait?: ProviderWait;
-  /** A figure's Scan reader read was paid before its vision call waited:
-   *  a try again pays for that page's read again (the extract queue then
-   *  bounds the waits, ProviderWaitError `paid`). */
+  /** A try again pays again for a page this read paid for: a figure's
+   *  Scan reader read paid before its vision call waited, or a page read
+   *  whose keep did not reach the node (the extract queue then bounds the
+   *  waits, ProviderWaitError `paid`). */
   waitPaid?: true;
 };
 
@@ -348,6 +349,9 @@ export async function readScannedPdf(opts: {
   let model: string | null = null;
   let wait: ProviderWait | undefined;
   let waitPaid = false;
+  // A paid page whose keep did not reach the node: a try again pays for
+  // it again.
+  let unkept = false;
   const pauses = opts.waitPauses ?? (opts.deadline !== undefined ? [] : PROVIDER_WAIT_IN_JOB_MS);
   const waits = {
     pauses,
@@ -356,8 +360,12 @@ export async function readScannedPdf(opts: {
       wait ??= w;
       if (paid) waitPaid = true;
     },
+    onUnkept: () => {
+      unkept = true;
+    },
   };
-  const waitOut = () => (wait ? { wait, ...(waitPaid ? { waitPaid: true as const } : {}) } : {});
+  const waitOut = () =>
+    wait ? { wait, ...(waitPaid || unkept ? { waitPaid: true as const } : {}) } : {};
   const late = () => opts.deadline !== undefined && Date.now() >= opts.deadline;
   const unread = (from: number, to: number, why: ScanUnreadReason): ScanPage[] =>
     Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => ({
@@ -507,6 +515,8 @@ type ScanWaits = {
   pauses: readonly number[];
   held: () => boolean;
   onWait: (wait: ProviderWait, paid: boolean) => void;
+  /** A page this read paid for was not kept on the node. */
+  onUnkept: () => void;
 };
 
 /** The pages a read claimed: each cut (parser work, before any paid call:
@@ -521,7 +531,7 @@ async function readMine(
   d: ScanPdfDeps,
   opts: { ownerId: string; filename: string },
   late: () => boolean,
-  keep: ((p: ScanPage) => Promise<void>) | undefined,
+  keep: ((p: ScanPage) => Promise<boolean>) | undefined,
   saw: (ran: boolean, model: string | null) => void,
   waits: ScanWaits,
   renew?: (n: number) => Promise<ScanPage | number | null>,
@@ -567,12 +577,18 @@ async function readMine(
   const taken = new Set<number>();
   const jobs = mine.map((n) => async (): Promise<ScanPage | null> => {
     const p = await one(n);
-    if (p && !taken.has(n)) await keep?.(p);
+    if (p && !taken.has(n) && keep && !(await keep(p)) && paidFor(p)) waits.onUnkept();
     return p;
   });
   const pages = (await inTurn(jobs, SCAN_PAGES_AT_ONCE)).filter((p): p is ScanPage => p !== null);
   return { pages, theirs };
 }
+
+/** Whether this read paid for page `p` (a Scan reader read, read badly or
+ *  a figure, or a vision description): a try again pays for it again unless
+ *  it is kept. */
+const paidFor = (p: ScanPage): boolean =>
+  p.method === 'scan_reader' || p.method === 'vision' || p.why === 'bad_read' || p.why === 'figure';
 
 /** One scanned page, as a one-page PDF: the Scan reader, its verdict, and
  *  vision for a figure. Never throws for a provider or a picture. */

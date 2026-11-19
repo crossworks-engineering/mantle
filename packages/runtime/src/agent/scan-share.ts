@@ -258,7 +258,10 @@ export async function scanKeptOf(
  *  readScannedPdf takes (`share`), and the book's ask. */
 export type ScanShareHooks = {
   claim(pages: readonly number[]): Promise<ScanClaim>;
-  keep(pages: readonly ScanPage[], total?: number): Promise<void>;
+  /** True when the pages are on the node (written now, or nothing to
+   *  write); false when the node is gone, holds other bytes or a whole
+   *  read, so a reader after this one pays for them again. */
+  keep(pages: readonly ScanPage[], total?: number): Promise<boolean>;
   /** The pages of `pages` kept by `until` (ms), checked every `pollMs`; it
    *  returns early when a page's claim has ended unkept (its reader died):
    *  the caller claims it again. */
@@ -295,11 +298,13 @@ export function scanShareHooks(opts: {
         return { value: c, write: c.mine.length > 0 };
       })) ?? { kept: new Map(), mine: [...pages], theirs: new Map() },
     keep: async (pages, total) => {
-      if (pages.length === 0 && total === undefined) return;
-      await change(opts.nodeId, opts.sha256, (share) => {
+      if (pages.length === 0 && total === undefined) return true;
+      const wrote = await change(opts.nodeId, opts.sha256, (share, _now, final) => {
         keepOn(share, pages, opts.by, opts.final, total);
-        return { value: null, write: true };
+        // A whole read on the node is never written over.
+        return { value: !final, write: true };
       });
+      return wrote === true;
     },
     wait: async (pages, until) => {
       const got = new Map<number, ScanPage>();
@@ -437,5 +442,5 @@ export async function keepBookPage(nodeId: string, page: ScanPage): Promise<void
     claimMs: () => BOOK_CLAIM_MS,
   })
     .keep([page])
-    .catch(() => {});
+    .catch(() => false);
 }

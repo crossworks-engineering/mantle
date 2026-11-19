@@ -455,7 +455,10 @@ describe('the reads shared by the readers of one upload (scan-share.ts)', () => 
   function memoryShare(store: ScanShareData, by: ScanReader, claimMs = 60_000): ScanShareHooks {
     return {
       claim: async (pages) => claimOn(store, pages, by, Date.now(), Date.now() + claimMs),
-      keep: async (pages, total) => keepOn(store, pages, by, scanPageFinal, total),
+      keep: async (pages, total) => {
+        keepOn(store, pages, by, scanPageFinal, total);
+        return true;
+      },
       wait: async (pages, until) => {
         for (;;) {
           const got = new Map(
@@ -569,6 +572,27 @@ describe('the reads shared by the readers of one upload (scan-share.ts)', () => 
     expect(chat.r.pages.filter((p) => p.method === 'scan_reader')).toHaveLength(12);
   });
 
+  it('a paid page whose keep did not reach the node makes the wait a paid one', async () => {
+    const noCredit = { ...answer(''), ran: false, wait: { reason: 'quota' as const } };
+    const plan: Plan = {
+      total: 6,
+      scan: (n) => (n === 6 ? noCredit : answer(`${ROWS}\nPAGE ${n}`)),
+    };
+    // Kept on the node: a try again pays for none of pages 1 to 5.
+    const kept = await readWith(memoryShare(fresh(), 'extract'), plan, { waitPauses: [] });
+    expect(kept.r.wait).toEqual({ reason: 'quota' });
+    expect(kept.r.waitPaid).toBeUndefined();
+    // The node gone or of other bytes (keep wrote nothing): the try again
+    // pays for them again, so the wait is a paid one (the queue bounds it).
+    const lost: ScanShareHooks = {
+      ...memoryShare(fresh(), 'extract'),
+      keep: async () => false,
+    };
+    const unkept = await readWith(lost, plan, { waitPauses: [] });
+    expect(unkept.r.wait).toEqual({ reason: 'quota' });
+    expect(unkept.r.waitPaid).toBe(true);
+  });
+
   it('a page read with no answer is not kept: the next reader reads it', async () => {
     const store = fresh();
     await readWith(memoryShare(store, 'chat'), {
@@ -591,7 +615,7 @@ describe('the reads shared by the readers of one upload (scan-share.ts)', () => 
       deps: d,
       share: {
         claim: async () => ({ final: true, kept: new Map(), mine: [], theirs: new Map() }),
-        keep: async () => {},
+        keep: async () => true,
         wait: async () => new Map(),
       },
     });
