@@ -1286,6 +1286,14 @@ warnings: a repaired xref) is a window taken.
 A step's job handle has `pdfPageCount()`: qpdf's `--show-npages` on the body,
 for a router that must name a file past the size pdfjs opens.
 
+A single page past the 96 MB answer cap (a huge scan) is still a window: the
+answer of `pdfSplit` may be as large as the file the brain sent, which it
+holds already, so no page is lost for its size (Jason, 2026-11-19: every
+page of an upload is known). The job `pdfInfo` (`/pdf/info`) counts the pages
+with qpdf first, so a file of any size the parser takes has a count (a
+heavy PDF's extract time grows with it), and with pdfjs where qpdf cannot
+read the file.
+
 The local OCR is Tesseract 5 with its English data (Apache-2.0, Debian's
 `tesseract-ocr` and `tesseract-ocr-eng`), read with `--psm 3` (the default:
 `--psm 6` read 30% of a ruled spec table, so never on tables), and the CAD

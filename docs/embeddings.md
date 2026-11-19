@@ -268,9 +268,18 @@ could only wait for it). The workers of `mantle.extract` stay free, so a
 document uploaded during a batch of drawings does not wait behind the queue
 of them. It still shares the parser's one job slot: its read waits for the
 one drawing that is being read at that moment, as for any other read (a chat
-attachment, a thumbnail, a drawing tool, a maintenance run). A PDF is light
-whatever it holds, so scan and drawing PDFs still run up to the extractor
-count at once.
+attachment, a thumbnail, a drawing tool, a maintenance run). A PDF of 10 MB
+or more (`BOOK_HEAVY_MIN_BYTES`, packages/files/src/slug.ts) is heavy too:
+every office PDF is a book read by the local OCR window by window, and a
+PDF's bytes are what its OCR costs, so many small PDFs never queue behind a
+book, and a book never holds light work. A heavy PDF's job gets a time budget
+that grows with its pages (`bookExpireMinutes`,
+server/api/src/agent/extract-lanes.ts): the base budget
+(`MANTLE_EXTRACT_EXPIRE_MIN`, 60) plus 5 minutes for each page window of 50,
+at most 8 hours, so a 1,000-page OCR book (about 50 minutes on 2 CPUs) gets
+160 minutes and does not expire and start again. The page count is qpdf's,
+read when the job goes on to the heavy lane; one that cannot be read gives
+the 8 hours. A PDF under 10 MB is light and keeps the base budget.
 Light and heavy together never pass the extractor count: a box set to 1 runs
 one extraction at a time, whatever it is. Every sender still sends to
 `mantle.extract` only, and the panel's counts add the two queues
