@@ -801,6 +801,6 @@ const NOT_RUN: Readonly<Record<string, number>> = {
   // and folder edit, over both modes.
   "an allowed call needs a file's bytes on disk (the matrix seeds the rows only; file-reindex-route.db.test.ts reads one again)": 4,
   // file_extract_archive's allowed cells (archives, 2026-11-19): the edit
-  // of a file, through a turn and MCP, over both modes.
-  "an allowed call needs an archive's bytes and the add of a folder beside it (archive-extract-route.db.test.ts extracts real ones)": 0,
+  // of a file, through a turn and MCP, over both modes: 8 on WS2.
+  "an allowed call needs an archive's bytes and the add of a folder beside it (archive-extract-route.db.test.ts extracts real ones)": 8,
 };
