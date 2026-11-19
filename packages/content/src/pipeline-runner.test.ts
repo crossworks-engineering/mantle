@@ -635,7 +635,13 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
   it('the fixed set gives the golden files of the old path: the router job, then the reader job', async () => {
     // Nine of before the move and four of P3 (2026-11-17).
     expect(names).toHaveLength(13);
-    for (const name of names) {
+    // The two typed documents are books since the kind rules 4 (every office
+    // PDF takes the book reader, Python in the parser image): their read is
+    // pinned in large-pdf-windows.e2e.test.ts and their kind in
+    // pipeline-golden-drawing-pdf.test.ts. Their golden files stay as the
+    // record of the old path.
+    const books = new Set(['document.pdf', 'report-with-chart.pdf']);
+    for (const name of names.filter((n) => !books.has(n))) {
       const bytes = fixture(name);
       const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'pdf', { pipelines }));
       expect(gold(out), name).toEqual(golden(`${name}.json`));

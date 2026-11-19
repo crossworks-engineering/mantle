@@ -149,7 +149,7 @@ describe('the PDF router in a real read', () => {
       string[],
     ][] = [
       ['pid', undefined, ['pdf-router', 'drawing-pdf'], ['pdf', 'facts']],
-      ['document', undefined, ['pdf-router'], ['pdf']],
+      // A document is a book (rules 4): the document case is pinned below.
       // The router's second step takes the decider's answer: a job of no read.
       [
         'unsure',
@@ -225,11 +225,13 @@ describe('the PDF router in a real read', () => {
     expect(counted).toEqual([{ ownerId: count.ownerId, pipelineId: 'pdf-router' }]);
   });
 
-  it('a document by the rules: no name, and the answer counts', async () => {
-    inProcess();
-    expect(await parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines, count })).toEqual({
-      kind: 'not-drawing',
-    });
+  it('a document by the rules is a book (rules 4): the book reader reads it, the router counts', async () => {
+    const ids = inProcess();
+    // The book reader is Python in the parser image: its first job, the cut
+    // of its first window, is no job this process runs.
+    await expect(parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines, count })).rejects.toThrow();
+    expect(ids[0]).toBe('pdf-router');
+    expect(ids).not.toContain('drawing-pdf');
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
   });
 
@@ -260,9 +262,9 @@ describe('the PDF router in a real read', () => {
   it('no count given (a test of a pipeline): the same answer, no count', async () => {
     inProcess();
     expect((await parseFileSheets(pdf('pid.pdf'), 'pdf', { pipelines })).kind).toBe('sheets');
-    expect(await parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines })).toEqual({
-      kind: 'not-drawing',
-    });
+    // A document is a book now (rules 4): the Python book reader's job is
+    // no job this process runs; no count all the same.
+    await expect(parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines })).rejects.toThrow();
     expect(counted).toEqual([]);
   });
 
