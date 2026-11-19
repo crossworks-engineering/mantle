@@ -26,7 +26,7 @@ const dbState = vi.hoisted(() => ({
   deletes: [] as unknown[],
 }));
 
-vi.mock('@mantle/db', () => {
+vi.mock('@mantle/db', async (importOriginal) => {
   const selectChain = () => {
     const chain: Record<string, unknown> = {};
     for (const m of ['from', 'where', 'limit', 'innerJoin']) chain[m] = () => chain;
@@ -74,6 +74,9 @@ vi.mock('@mantle/db', () => {
   };
   const cols = (names: string[]) => Object.fromEntries(names.map((n) => [n, `col:${n}`]));
   return {
+    // The real module under the stubs, as drizzle-orm above (a module the
+    // auth chain loads reads a table at import, e.g. @mantle/files stale.ts).
+    ...(await importOriginal<typeof import('@mantle/db')>()),
     // The spot (viewer.ts): no system exit here, so it runs `fn` as it is.
     onFullSystemRoute: (_spot: string, fn: () => Promise<unknown>) => fn(),
     db: {

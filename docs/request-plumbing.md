@@ -634,7 +634,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (142):
+owner rows open to members (145):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/apps/:id/snapshots/:sid
