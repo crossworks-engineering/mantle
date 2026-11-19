@@ -118,6 +118,7 @@ export async function runJob(
           heading: img.heading ?? null,
           essential: img.essential === true,
           provenance: img.provenance ?? null,
+          pageCover: img.pageCover ?? null,
         })),
       });
     }

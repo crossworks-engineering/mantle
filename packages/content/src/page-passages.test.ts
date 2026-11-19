@@ -39,7 +39,8 @@ const { pipelineStampOf } = await import('@mantle/files');
 const { tabsOfSheets } = await import('./file-database');
 const { writeFileDatabaseDoc } = await import('./table-broker');
 const { filePagesOf, pagesText } = await import('./page-passages');
-const { bookVisionPageSetOf, bookVisionPagesOf } = await import('./book-pages');
+const { bookVisionPageCountOf, bookVisionPageSetOf, bookVisionPagesOf } =
+  await import('./book-pages');
 
 const SHA = 'b'.repeat(64);
 
@@ -119,6 +120,8 @@ describe("a book's scanned pages and its marked pages", () => {
 
   it('the marked pages are those left to vision', async () => {
     const id = database(BOOK, false);
+    expect(await bookVisionPageCountOf({ id, sha256: SHA })).toBe(1);
+    expect(await bookVisionPageCountOf({ id: randomUUID(), sha256: SHA })).toBe(0);
     expect(await bookVisionPagesOf(path.join(dir, `${id}.sqlite`))).toEqual([7]);
   });
 });

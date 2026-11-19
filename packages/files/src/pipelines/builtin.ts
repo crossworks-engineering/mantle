@@ -412,8 +412,10 @@ export const BUILTIN_PIPELINES = [
   // or 50 MB (Jason's word, 2026-11-18). Model-free, in Python
   // (server/parser/cad/pdf_pages.py): the text layer (pdfplumber), else
   // local OCR (pypdfium2 and Tesseract), the tables into tabs of their own,
-  // and a PNG of each page it leaves to vision (G1). Its text stands over
-  // the core's PDF read (P2: it claims a kind and gives text).
+  // and the pages it leaves to vision marked in its tab Pages. It writes no
+  // page picture: the Agent pdf-page-read draws each marked page and saves
+  // its picture with the text it read (G1). Its text stands over the core's
+  // PDF read (P2: it claims a kind and gives text).
   pkgPython({
     id: 'pdf-pages',
     entry: 'pdf_pages.py',
@@ -421,10 +423,11 @@ export const BUILTIN_PIPELINES = [
     description:
       'Reads every office PDF (the router names it a book), typed or scanned, of any length, page by page: the text layer, else local OCR. It writes the tabs Pages and Tables, one tab for each table with the page of each row, and the text by page. It asks no model.',
     // 1.1.0 (2026-11-19): every office PDF, whatever its size (the kind
-    // rules 4); G1 on: a PNG of each page it leaves to vision.
-    version: '1.1.0',
+    // rules 4). 1.2.0 (2026-11-19): no page pictures (the Agent pdf-page-read
+    // owns them).
+    version: '1.2.0',
     match: { ext: ['pdf'], kind: ['book'] },
-    produces: { text: true, pictures: true, table: false, pages: true },
+    produces: { text: true, table: false, pages: true },
     // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy
     // (extractWeightOfFile, ../slug.ts), with an extract time that grows
     // with its page windows. One window a job: Tesseract takes about 1.8 s
@@ -473,7 +476,7 @@ export const BUILTIN_PIPELINES = [
     id: 'pdf-page-read',
     name: 'PDF page read',
     description:
-      'Reads by vision the pages of a PDF book that OCR read badly, or that hold a figure, one ask a page, into the tab Page text. It runs after an upload and on demand, and reads no page the book reader read well.',
+      'Reads by vision the pages of a PDF book that OCR read badly, or that hold a figure, one ask a page, into the tab Page text, and saves the picture of each page it read with that text. It runs after an upload and on demand, and reads no page the book reader read well, nor a page it read before.',
     // 1.1.0 (2026-11-19): every marked page by default (option pages
     // 10,000, from 2,000), and only the windows that hold a marked page.
     version: '1.1.0',

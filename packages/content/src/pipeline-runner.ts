@@ -48,7 +48,6 @@ import {
 } from '@mantle/files';
 import { scanTabColumns } from '@mantle/tabledb';
 import { AgentAskError, askCapOf } from './pipeline-agent';
-import { SpooledPictures } from './picture-spool';
 
 /** How the core answers one worker call of a step. */
 export type PipelineAsk = (call: PipelineCall & { call: 'worker' }) => Promise<PipelineCallAnswer>;
@@ -425,10 +424,9 @@ export async function runWindowed(
   opts: { options: Readonly<Record<string, unknown>>; kind?: string; state?: unknown },
 ): Promise<PipelineRunResult> {
   let write: FileTabsWriteInput | undefined;
-  // On disk, window by window (G1): the brain holds one window's pictures
-  // at most, never every window's. The picture pass takes them and drops the
-  // spool (server/api/src/agent/extract/images.ts).
-  const pictures = new SpooledPictures();
+  // The built-in book reader gives none: a book's page pictures are its
+  // Agent's (G1), and a PDF's own pictures the core's picture pass's.
+  const pictures = new Map<string, Buffer>();
   const warnings: string[] = [];
   const counts: Record<string, number> = {};
   const failed: { from: number; to: number }[] = [];
@@ -472,7 +470,7 @@ export async function runWindowed(
     if (!run.write) continue;
     // Each window's pictures under names of their own.
     const prefix = `w${part.pageFrom}-`;
-    for (const [name, b] of run.pictures) pictures.put(prefix + name, b);
+    for (const [name, b] of run.pictures) pictures.set(prefix + name, b);
     const renamed: FileTabsWriteInput = {
       ...run.write,
       ...(run.write.pictures

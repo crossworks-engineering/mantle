@@ -18,7 +18,8 @@
  *  - `extract_completed_at`: a read that ended; `ocr.pages_read` and
  *    `ocr.pages_total` say when a scan (or a book read in page windows)
  *    was read in part, and `images.kept` and `images.found` when pictures
- *    were left out (over the cap, or a window that failed: G4);
+ *    were left out (over the cap, or a window that failed: G4), or pages of
+ *    a book left to vision have no page picture yet (`images.pages`, G1);
  *  - none of these: not read yet (queued, retrying, or never queued).
  *
  * Pure, with no imports: the file listing, `node_read` and the tests share it.
@@ -89,8 +90,66 @@ const HINTS: Readonly<Record<string, string>> = {
 const PARTIAL_HINT = (read: number, total: number) =>
   `Only ${read} of ${total} pages were read. The other pages are not in search.`;
 
-const PICTURES_HINT = (kept: number, found: number, more: boolean) =>
+const EMBEDDED_HINT = (kept: number, found: number, more: boolean) =>
   `${kept} of ${more ? 'at least ' : ''}${found} pictures kept. The others are not in search: a raised picture cap and a new read fetch those the cap left out.`;
+
+const PAGES_HINT = (kept: number, found: number) =>
+  `${kept} of ${found} pages left to vision are read. The others keep their OCR text only: run the Agent pdf-page-read on the book to read them.`;
+
+/** One part of a file's pictures left out: the kept and the found. */
+export type PicturesPart = { kept: number; found: number; more?: true };
+
+/** The parts of `data.images` (G1, G4): `embedded`, the pictures the core
+ *  read from the file; `pages`, a book's page pictures, one a page its
+ *  reader left to vision, saved by its Agent. A part is there only while it
+ *  leaves something out. */
+export type PicturesParts = { embedded?: PicturesPart; pages?: PicturesPart };
+
+const partOf = (v: unknown): PicturesPart | undefined => {
+  const o = v as { kept?: unknown; found?: unknown; more?: unknown } | null | undefined;
+  if (typeof o?.kept !== 'number' || typeof o.found !== 'number' || o.kept >= o.found) {
+    return undefined;
+  }
+  return { kept: o.kept, found: o.found, ...(o.more === true ? { more: true as const } : {}) };
+};
+
+/** The parts of a stamp. A stamp with no parts (an older one) is of the
+ *  embedded pictures. */
+export function picturesPartsOf(images: unknown): PicturesParts {
+  const o = (images ?? {}) as Record<string, unknown>;
+  const hasParts = o.embedded !== undefined || o.pages !== undefined;
+  const embedded = partOf(hasParts ? o.embedded : o);
+  const pages = partOf(o.pages);
+  return { ...(embedded ? { embedded } : {}), ...(pages ? { pages } : {}) };
+}
+
+/**
+ * The next `data.images` after one part is counted again (`counts`, from
+ * what is saved and what was found or marked): the parts, and `kept` and
+ * `found` their sums, read by picturesLeftOut and the backfill. Null: no
+ * part leaves anything out, and the key goes. Each part is written by its
+ * one owner (the core's picture pass, a book's Agent), so neither writes
+ * over the other's.
+ */
+export function picturesStampOf(
+  images: unknown,
+  part: keyof PicturesParts,
+  counts: { kept: number; found: number; more?: boolean },
+): (PicturesParts & PicturesPart) | null {
+  const parts = picturesPartsOf(images);
+  const found = Math.max(0, counts.found);
+  const kept = Math.max(0, Math.min(counts.kept, found));
+  if (kept < found) parts[part] = { kept, found, ...(counts.more ? { more: true as const } : {}) };
+  else delete parts[part];
+  const all = [parts.embedded, parts.pages].filter((p): p is PicturesPart => p !== undefined);
+  if (all.length === 0) return null;
+  return {
+    ...parts,
+    kept: all.reduce((n, p) => n + p.kept, 0),
+    found: all.reduce((n, p) => n + p.found, 0),
+    ...(all.some((p) => p.more) ? { more: true as const } : {}),
+  };
+}
 
 /** The pictures a file left out (`data.images`), or null. */
 export function picturesLeftOut(
@@ -101,6 +160,19 @@ export function picturesLeftOut(
   const found = typeof img?.found === 'number' ? img.found : null;
   if (kept === null || found === null || kept >= found) return null;
   return { kept, found, ...(img?.more === true ? { more: true as const } : {}) };
+}
+
+/** The sentence for the pictures a file left out, by part. */
+function picturesHintOf(data: Readonly<Record<string, unknown>>, all: PicturesPart): string {
+  const parts = picturesPartsOf(data.images);
+  const out: string[] = [];
+  if (parts.embedded) {
+    out.push(
+      EMBEDDED_HINT(parts.embedded.kept, parts.embedded.found, parts.embedded.more === true),
+    );
+  }
+  if (parts.pages) out.push(PAGES_HINT(parts.pages.kept, parts.pages.found));
+  return out.length > 0 ? out.join(' ') : EMBEDDED_HINT(all.kept, all.found, all.more === true);
 }
 
 function hintOf(reason: string): string | undefined {
@@ -135,11 +207,7 @@ export function extractionOf(
       return {
         state: 'partial',
         pages: { read, total },
-        hint:
-          PARTIAL_HINT(read, total) +
-          (pictures
-            ? ` ${PICTURES_HINT(pictures.kept, pictures.found, pictures.more === true)}`
-            : ''),
+        hint: PARTIAL_HINT(read, total) + (pictures ? ` ${picturesHintOf(d, pictures)}` : ''),
         ...(pictures ? { pictures } : {}),
       };
     }
@@ -147,7 +215,7 @@ export function extractionOf(
       return {
         state: 'partial',
         pictures,
-        hint: PICTURES_HINT(pictures.kept, pictures.found, pictures.more === true),
+        hint: picturesHintOf(d, pictures),
       };
     }
     if (d.indexing_applied === 'local') {

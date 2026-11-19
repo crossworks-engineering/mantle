@@ -142,20 +142,6 @@ function agentPagesAt(sqlite: string, pipelines: BoxPipelines): Map<number, stri
   return out;
 }
 
-/**
- * The vision text of each page of a book an Agent read (G1): the
- * description of that page's picture, with no second vision call. Empty:
- * no database at these bytes, or no Agent has read a page yet.
- */
-export async function agentPageTextOf(
-  file: { id: string; ownerId: string; sha256: unknown },
-  held?: BoxPipelines,
-): Promise<Map<number, string>> {
-  const names = fileDbPaths(file.id, file.sha256);
-  if (!names) return new Map();
-  return agentPagesAt(names.sqlite, held ?? (await boxPipelines(file.ownerId)));
-}
-
 /** The heading of one page in a file's text and passages. */
 export function pageHeading(page: number): string {
   return `## Page ${page}`;

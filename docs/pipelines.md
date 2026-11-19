@@ -2409,38 +2409,46 @@ window of 50 pages or 50 MB a job). For each page:
   40 characters (a speck, a stamp): no paid ask for a white page. What OCR
   read is kept in its row.
 
-G1, the PNG of each `vision` page (150 dpi, gray; a JPEG when the window's
-PNGs pass the 60 MB of one answer, so no page picture is left out for its
-size) as one of the file's pictures, `page-<NNNNN>.png` in its window, with
-its page and its first heading line as caption: on (`PAGE_PICTURES`, the
-step's option `page_pictures`). A typed page never has one. A windowed run
-writes each window's pictures to disk as they come (`SpooledPictures`,
-`packages/content/src/picture-spool.ts`), so the brain holds one window's
-answer at most, never every window's: a bad photocopy of 1,679 pages is
-about a gigabyte of pictures on disk, not in memory. The extract's picture
-pass takes them from the run of its database pass (`standingReaderPictures`,
-never a second job), saves them one at a time with the file's other
-pictures (`data.bookPage` the page), and drops the spool. A page marked
-`vision` in the tab `Pages` with no picture there (the run is no longer
-kept: the memo holds two runs, or the extract is a retry whose database was
-written before; or the Reader left it out of its answer) is drawn by the
-Agent's step with no model, only the windows that hold such pages
-(`drawBookPages`): the step draws a window's pages before any ask, and its
-asks are never sent. A page with a picture of these bytes already is not
-drawn again, and a page that cannot be drawn is counted in the file's
-pictures left out (`data.images`), so the book shows `partial`, never
-`indexed`. The core keeps no picture of its own of a page the Reader
-left to vision (it has its page picture), so no page is pictured or read
-by vision twice; a page read by OCR or its text layer keeps the core's
-pictures (a screenshot over a short caption is a figure). A page picture
-gone from disk before it is saved (its spool dropped) is a failed save,
-counted, and drawn again on the next read; a page that cannot be drawn
-counts as left out, and the book's other pictures are still saved. Their description
-is the Agent `pdf-page-read`'s vision text of the page: a page picture never
-takes a vision call of its own (`load-body.ts`). The Agent runs after the
-extract; its run sets each picture's text and indexes it again through the
-one door (`markContentChanged`); until then the picture is a terminal skip
-`book_page_text_pending`, findable by its name.
+G1, a book's page pictures: ONE owner, the Agent `pdf-page-read`, in its
+own run. The book reader writes no picture (1.2.0): it marks the pages in
+its tab `Pages`, the record every later step reads. For each marked page,
+window by window (only the windows that hold a page to read are cut), the
+Agent's run does three things in one job, with no hand-over to another:
+
+- **render**: the Agent's step draws the page in the parser's pdfjs child
+  (200 dpi, a PNG, or a JPEG past 4 MB), with no model;
+- **read**: the core answers the page's ask, from the tab `Page text` by the
+  hash of the picture when it is there, else with one paid vision call;
+- **save**: the core writes the page's text row, then saves the page's
+  picture as one of the book's pictures (a part of the book, in its pictures
+  folder, `data.bookPage` the page, `data.sourceSha256` the bytes) with that
+  text as its description (`bookPagePicturesFor`,
+  server/api/src/agent/extract/images.ts;
+  packages/content/src/book-page-pictures.ts). A page picture never takes a
+  vision call of its own (`load-body.ts`).
+
+A page with a saved picture of these bytes that holds its text, and its
+text row, is done: a run again neither draws nor asks it. A page whose
+picture was not saved is drawn again, and its ask is answered from the tab
+by hash: no second paid call. A page that could not be drawn, read (a
+failed ask, the day cap) or saved stays not done, and is never saved as an
+empty picture. The count is from what is saved and what is marked, never
+from a run's memory: `data.images.pages = { kept, found }`, found the
+pages marked `vision`, kept those with a page picture of these bytes. The
+extract stamps it (so a book whose Agent has not run yet shows its marked
+pages as not read), and every run of the Agent stamps it again; the book
+shows `partial` until every marked page is read. The next run of the Agent
+(a person's `pipeline_run`, or an upload of new bytes) reads what is left;
+no timer or sweep starts one.
+
+The core's picture pass reads a book's own pictures (figures, photos) like
+any PDF's. It leaves out only a picture painted over half its page or more
+(`pageCover` at `IMAGE_PAGE_COVER` or more: the page's scan) on a page
+marked `vision`: that page's picture is the Agent's, so no page is pictured
+or read by vision twice. Every other picture is kept, a figure on a vision
+page too, and its count is `data.images.embedded`. `data.images.kept` and
+`found` are the sums of the two parts (extraction-status.ts,
+picturesStampOf).
 
 A window stops its OCR after 180 s, and stops a Tesseract run at 225 s (the
 job ends at 240 s and would lose the whole window): the pages after it are

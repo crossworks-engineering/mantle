@@ -117,7 +117,7 @@ describe('the built-in pipelines', () => {
     expect(python.map((p) => p.id)).toEqual(['drawing-raster', 'pdf-pages']);
     const book = python[1] as PipelineManifest;
     expect(book.needs.workers).toBeUndefined();
-    expect(book.produces).toEqual({ text: true, pictures: true, table: false, pages: true });
+    expect(book.produces).toEqual({ text: true, table: false, pages: true });
     expect(book.match).toEqual({ ext: ['pdf'], kind: ['book'] });
     expect(book.needs.window).toEqual(PIPELINE_WINDOW_DEFAULT);
     expect(Object.keys(book.options ?? {})).toEqual([

@@ -15,9 +15,9 @@ scans or typed text), one window of pages a job, page by page:
   vision  the OCR's mean confidence is under OCR_MIN_CONFIDENCE, or it gave
           under TEXT_MIN_CHARS characters on a page with ink besides its words
           (a figure; FIGURE_INK_SHARE): the Agent `pdf-page-read` reads
-          the page with vision. A PNG of the page (150 dpi, gray) is kept as
-          one of the file's pictures (G1), so a drawing or a figure is never
-          lost; its description is the Agent's text.
+          the page with vision. The Agent draws the page itself and saves
+          its picture with the text it read (G1): this Reader writes no
+          page picture.
   blank   a page with no text layer and almost no ink: nothing to read, and
           no paid ask for a white page.
 
@@ -69,7 +69,9 @@ from PIL import Image
 TEXT_MIN_CHARS = 40
 OCR_MIN_CONFIDENCE = 70
 OCR_DPI = 300
-PICTURE_DPI = 150
+# A page past the OCR time budget is drawn at this, only to see it is not
+# white: it goes to vision.
+LATE_DPI = 150
 # A scan is drawn for OCR at its own dots from here up to the option ocr_dpi.
 NATIVE_DPI_MIN = 200
 
@@ -101,9 +103,6 @@ OCR_TIMEOUT_S = 180
 OCR_WORKERS = 2
 # Pages drawn and waiting for their OCR, at most: each is up to 16 MP.
 OCR_IN_FLIGHT = 3
-# The raw bytes of the pictures of one answer: under the parser's budget
-# (PIPELINE_PICTURES_MAX_BYTES, 64 MB), with room for the rest.
-PICTURES_MAX_BYTES = 60 * 1024 * 1024
 
 OCR_FAILED = "Tesseract could not read some pages; they are marked for vision."
 TEXT_LAYER_FAILED = "pdfminer could not read the text layer of this window; its pages are drawn and read by OCR."
@@ -112,10 +111,6 @@ TABLES_FAILED = "The tables of some text pages could not be found; their text is
 # The time a window's job may take in all (seconds): a Tesseract run still
 # going then is stopped, and its page goes to vision. Under the job's end.
 JOB_BUDGET_S = 225
-# G1, the PNG of each page left to vision as one of the file's pictures: on
-# since the core keeps a book Reader's page pictures (images.ts, streamed to
-# disk window by window, described by the Agent's text of the page).
-PAGE_PICTURES = True
 # The time a window spends drawing pages for OCR, at most (seconds): the
 # job's end is 240 s (PARSER_JOB_TIMEOUT_MS.pipelineRun), and a job that
 # ends loses its whole window. A page after it goes to vision.
@@ -673,27 +668,6 @@ def render(pdf, index, dpi):
     return arr, scale * 72.0
 
 
-def picture_of(arr, drawn_dpi, dpi, path):
-    """The page's PNG for G1: gray kept gray, at `dpi` (never more than drawn)."""
-    im = Image.fromarray(arr, "L")
-    k = min(1.0, dpi / drawn_dpi)
-    if k < 1.0:
-        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
-    im.save(path, optimize=True)
-    return os.path.getsize(path)
-
-
-def jpeg_of(arr, drawn_dpi, dpi, path):
-    """The page as a JPEG (quality 75), for a window whose PNGs pass the
-    answer's picture budget: a noisy scan is a fraction of its PNG."""
-    im = Image.fromarray(arr, "L")
-    k = min(1.0, dpi / drawn_dpi)
-    if k < 1.0:
-        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
-    im.save(path, "JPEG", quality=75, optimize=True)
-    return os.path.getsize(path)
-
-
 # ── the joining of tables over pages ────────────────────────────────────────
 
 
@@ -937,17 +911,12 @@ def read_pages(path, job, opts, request):
     text_min = int(option(opts, "text_min_chars", TEXT_MIN_CHARS, 1, 10_000))
     min_conf = option(opts, "ocr_min_confidence", OCR_MIN_CONFIDENCE, 0, 100)
     dpi = option(opts, "ocr_dpi", OCR_DPI, 100, 600)
-    pic_dpi = option(opts, "picture_dpi", PICTURE_DPI, 72, 300)
     want_tables = opts.get("tables", True) is not False
-    want_pictures = opts.get("page_pictures", PAGE_PICTURES) is True
 
     pages = {}
     warnings = []
     tables_by_page = {}
     grids_by_page = {}
-    pics = []
-    pics_bytes = 0
-    pics_left_out = 0
 
     pdf = pdfium.PdfDocument(path)
     try:
@@ -998,37 +967,6 @@ def read_pages(path, job, opts, request):
                         tables_by_page[n] = scan_page_tables(arr.shape, grids, words, lines, n, "ocr")
                     except Exception:  # noqa: BLE001 - its text stands; its tables are not found
                         note(TABLES_FAILED)
-            if pages[n]["method"] == "vision":
-                keep_picture(n, arr, drawn)
-
-        def keep_picture(n, arr, drawn):
-            """G1: the PNG of a page marked for vision, one of the file's
-            pictures, while the answer's picture budget lasts. Only with the
-            option `page_pictures` (PAGE_PICTURES)."""
-            nonlocal pics_bytes, pics_left_out
-            if not want_pictures:
-                return
-            name = "page-%05d.png" % n
-            at = os.path.join(job, name)
-            size = picture_of(arr, drawn, pic_dpi, at)
-            mime = "image/png"
-            if pics_bytes + size > PICTURES_MAX_BYTES:
-                # Past the answer's budget as a PNG (a noisy photocopy): the
-                # same page as a JPEG, a fraction of the bytes. No page
-                # picture is left out for its size but past even that.
-                os.remove(at)
-                name = "page-%05d.jpg" % n
-                at = os.path.join(job, name)
-                size = jpeg_of(arr, drawn, pic_dpi, at)
-                mime = "image/jpeg"
-                if pics_bytes + size > PICTURES_MAX_BYTES:
-                    os.remove(at)
-                    pics_left_out += 1
-                    return
-            pics_bytes += size
-            head = heading_of_text(pages[n]["text"])
-            caption = "Page %d%s" % (n, ": " + head if head else "")
-            pics.append({"file": name, "mime": mime, "caption": caption[:200], "page": n})
 
         try:
             doc = pdfplumber.open(path)
@@ -1069,7 +1007,7 @@ def read_pages(path, job, opts, request):
                     pl.close()
                 late = time.monotonic() > deadline
                 try:
-                    arr, drawn = render(pdf, i, pic_dpi if late else ocr_dpi_of(native, dpi))
+                    arr, drawn = render(pdf, i, LATE_DPI if late else ocr_dpi_of(native, dpi))
                 except Exception:  # noqa: BLE001 - pdfium cannot draw the page: vision tries
                     pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
                     note(RENDER_FAILED)
@@ -1082,7 +1020,6 @@ def read_pages(path, job, opts, request):
                     # Past the OCR budget of a window: the page goes to vision
                     # (the job's end would lose the whole window).
                     pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
-                    keep_picture(n, arr, drawn)
                     note(OCR_LATE)
                     continue
                 # The ruled lines first: their grid places the words, and the
@@ -1110,8 +1047,6 @@ def read_pages(path, job, opts, request):
         pool.shutdown()
     finally:
         pdf.close()
-    if pics_left_out:
-        warnings.append("%d page pictures are past the picture budget of one answer" % pics_left_out)
     return {
         "first": first,
         "count": count,
@@ -1120,7 +1055,6 @@ def read_pages(path, job, opts, request):
         "pages": pages,
         "tables": tables_by_page,
         "grids": grids_by_page,
-        "pictures": pics,
         "warnings": warnings,
         "min_conf": min_conf,
     }
@@ -1209,8 +1143,7 @@ def build(read, state):
         )
 
     methods = {m: sum(1 for p in pages.values() if p["method"] == m) for m in ("text", "ocr", "vision", "blank")}
-    counts = dict(methods, pages=count, tables=len(joined.done), partial=partial, text_only=len(text_only),
-                  pictures=len(read["pictures"]))
+    counts = dict(methods, pages=count, tables=len(joined.done), partial=partial, text_only=len(text_only))
     # The run's totals so far: the windows before this one (the state), and
     # this one. The last window's description stands for the file
     # (mergeWindowWrite), so it says the whole book.
@@ -1248,9 +1181,6 @@ def step(request, path, job):
     except Exception as e:  # noqa: BLE001 - pdfium's own errors: the file is not a PDF it opens
         return {"status": "failed", "warnings": ["the PDF could not be opened: %s" % type(e).__name__]}
     tabs, desc, text, counts, next_state = build(read, state)
-    # `page`: the page of the original file (G1: the core keeps it on the
-    # picture, and its Agent text is the picture's description).
-    pictures = [{k: p[k] for k in ("file", "mime", "caption", "page")} for p in read["pictures"]]
     result = {
         "status": "ok",
         "warnings": read["warnings"],
@@ -1259,7 +1189,7 @@ def step(request, path, job):
             {
                 "call": "tool",
                 "tool": "file_tabs_write",
-                "input": {"tabs": tabs, "description": desc, "text": text, "pictures": pictures},
+                "input": {"tabs": tabs, "description": desc, "text": text},
             }
         ],
     }

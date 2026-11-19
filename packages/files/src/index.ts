@@ -77,14 +77,7 @@ export {
   type PdfPasswordResult,
 } from './parser-client';
 export { PARSER_COUNTED_CODES } from './parser-wire';
-export {
-  forgetReaderRun,
-  keptReaderRun,
-  keptRunKeysOf,
-  memoReaderRun,
-  readerRunKey,
-  READER_MEMO_MAX,
-} from './reader-memo';
+export { keptReaderRun, memoReaderRun, readerRunKey, READER_MEMO_MAX } from './reader-memo';
 export {
   parserDwgCrop,
   type DwgCrop,
@@ -523,6 +516,7 @@ export {
 export type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
 export {
   BOOK_MIN_PAGES,
+  IMAGE_PAGE_COVER,
   PDF_KINDS,
   PAGE_KINDS,
   bookOf,
@@ -563,6 +557,10 @@ export {
   EXTRACTION_STATES,
   extractionOf,
   picturesLeftOut,
+  picturesPartsOf,
+  picturesStampOf,
   type ExtractionState,
   type FileExtraction,
+  type PicturesPart,
+  type PicturesParts,
 } from './extraction-status';

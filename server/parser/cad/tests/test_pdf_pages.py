@@ -1,8 +1,8 @@
 """Tests for the built-in Reader pdf-pages (pdf_pages.py): the text layer,
 Tesseract on scanned pages, the tables (ruled, on several pages, with no ruled
-lines), the Tables index, the page pictures of vision pages (G1) and the
-windows. Every PDF here is made up by this test (book_pdfs.py; the repo is
-public).
+lines), the Tables index, no page picture (G1: the Agent pdf-page-read
+draws and saves the picture of a vision page itself) and the windows. Every
+PDF here is made up by this test (book_pdfs.py; the repo is public).
 
 Run (stdlib unittest; skipped when pdfplumber, pypdfium2 or OpenCV is
 missing, unless PARSER_TESTS_REQUIRE_CAD is set; the OCR cases skip when
@@ -194,7 +194,7 @@ class TextLayer(unittest.TestCase):
     def test_every_page_is_text_and_nothing_is_asked(self):
         self.assertEqual(self.result["status"], "ok")
         self.assertEqual([r[2] for r in self.tabs["Pages"]["rows"]], ["text"] * 7)
-        self.assertEqual(self.input["pictures"], [])
+        self.assertNotIn("pictures", self.input)
         self.assertEqual(self.result["counts"]["vision"], 0)
         self.assertEqual(self.result["counts"]["ocr"], 0)
 
@@ -321,8 +321,8 @@ class TextLayer(unittest.TestCase):
 
 @unittest.skipUnless(HAVE and HAVE_OCR, "pdfplumber, pypdfium2, OpenCV or tesseract is missing")
 class Scans(unittest.TestCase):
-    """The scanned book: Tesseract reads it, the figure goes to vision with
-    its picture, the blank page is blank."""
+    """The scanned book: Tesseract reads it, the figure goes to vision (the
+    Agent draws its picture), the blank page is blank."""
 
     @classmethod
     def setUpClass(cls):
@@ -330,8 +330,7 @@ class Scans(unittest.TestCase):
         cls.pages, cls.truth, cls.methods = book_pdfs.book()
         cls.pdf = os.path.join(cls.dir, "scan.pdf")
         book_pdfs.write_pdf(cls.pdf, cls.pages, scan=set(range(1, 10)))
-        # G1's pictures (PAGE_PICTURES, on since the core keeps them).
-        cls.result, cls.job = run(cls.pdf, {"options": {"page_pictures": True}})
+        cls.result, cls.job = run(cls.pdf)
         cls.tabs, cls.input = tabs_of(cls.result)
 
     def test_methods(self):
@@ -363,17 +362,18 @@ class Scans(unittest.TestCase):
         self.assertEqual(idx[names[0]][5], "ocr")
         self.assertIn(idx[names[0]][6], ("ok", "partial"))
 
-    def test_g1_is_on_by_default_and_the_option_turns_it_off(self):
-        # The core keeps a book Reader's page pictures (G1, PAGE_PICTURES).
+    def test_g1_no_page_picture_a_vision_page_is_only_marked(self):
+        # G1: the Agent pdf-page-read draws a vision page and saves its
+        # picture with the text it read; this Reader writes no picture, and
+        # an old option to ask for one changes nothing.
         pages, _, _ = book_pdfs.book()
         pdf = os.path.join(self.dir, "fig.pdf")
         book_pdfs.write_pdf(pdf, [pages[7]], scan={1})
-        r, job = run(pdf)
-        self.assertEqual(tabs_of(r)[0]["Pages"]["rows"][0][2], "vision")
-        self.assertEqual([p["page"] for p in tabs_of(r)[1]["pictures"]], [1])
-        r, job = run(pdf, {"options": {"page_pictures": False}})
-        self.assertEqual(tabs_of(r)[1]["pictures"], [])
-        self.assertFalse(any(f.endswith(".png") for f in os.listdir(job)))
+        for opts in ({}, {"options": {"page_pictures": True}}):
+            r, job = run(pdf, opts)
+            self.assertEqual(tabs_of(r)[0]["Pages"]["rows"][0][2], "vision")
+            self.assertNotIn("pictures", tabs_of(r)[1])
+            self.assertFalse(any(f.endswith((".png", ".jpg")) for f in os.listdir(job)))
 
     def test_a_faint_page_is_read_and_blank_when_ocr_finds_nothing(self):
         pdf = os.path.join(self.dir, "faint.pdf")
@@ -384,14 +384,9 @@ class Scans(unittest.TestCase):
         self.assertEqual(rows[1][2], "ocr")
         self.assertIn("INSPECTOR", rows[1][5])
 
-    def test_g1_a_gray_picture_of_the_vision_page(self):
-        pics = self.input["pictures"]
-        self.assertEqual([p["file"] for p in pics], ["page-00008.png"])
-        self.assertTrue(pics[0]["caption"].startswith("Page 8"))
-        im = Image.open(os.path.join(self.job, "page-00008.png"))
-        self.assertEqual(im.mode, "L")
-        self.assertAlmostEqual(im.width, 1240, delta=3)  # A4 at 150 dpi
-        self.assertFalse(any(f.startswith("ocr-") for f in os.listdir(self.job)))
+    def test_no_picture_is_left_in_the_job(self):
+        self.assertNotIn("pictures", self.input)
+        self.assertFalse(any(f.startswith(("ocr-", "page-")) for f in os.listdir(self.job)))
 
     def test_a_scanned_divider_read_well_is_ocr_a_figure_is_vision(self):
         # M4 of the large-PDF audit, round 3: few words read well, and nothing
@@ -403,11 +398,11 @@ class Scans(unittest.TestCase):
         rows = tabs_of(r)[0]["Pages"]["rows"]
         self.assertEqual([row[2] for row in rows], ["ocr", "vision"])
         self.assertIn("SECTION", rows[0][5])
-        self.assertEqual([p["page"] for p in tabs_of(r)[1]["pictures"]], [2])
 
     def test_counts_and_description(self):
         c = self.result["counts"]
-        self.assertEqual((c["ocr"], c["vision"], c["blank"], c["tables"], c["pictures"]), (7, 1, 1, 3, 1))
+        self.assertEqual((c["ocr"], c["vision"], c["blank"], c["tables"]), (7, 1, 1, 3))
+        self.assertNotIn("pictures", c)
         self.assertIn("1 for vision", self.input["description"])
 
 
@@ -417,7 +412,7 @@ if __name__ == "__main__":
 
 @unittest.skipUnless(HAVE, "pdfplumber, pypdfium2 or OpenCV is missing")
 class OcrBudget(unittest.TestCase):
-    def test_pages_past_the_ocr_budget_go_to_vision_with_their_picture(self):
+    def test_pages_past_the_ocr_budget_go_to_vision(self):
         d = tempfile.mkdtemp(prefix="pdf-pages-late-")
         pages, _, _ = book_pdfs.book()
         pdf = os.path.join(d, "late.pdf")
@@ -425,10 +420,10 @@ class OcrBudget(unittest.TestCase):
         old = pdf_pages.OCR_BUDGET_S
         pdf_pages.OCR_BUDGET_S = -1
         try:
-            r, job = run(pdf, {"options": {"page_pictures": True}})
+            r, job = run(pdf)
         finally:
             pdf_pages.OCR_BUDGET_S = old
         tabs, inp = tabs_of(r)
         self.assertEqual([row[2] for row in tabs["Pages"]["rows"]], ["vision", "vision"])
-        self.assertEqual([p["file"] for p in inp["pictures"]], ["page-00001.png", "page-00002.png"])
+        self.assertNotIn("pictures", inp)
         self.assertIn(pdf_pages.OCR_LATE, r["warnings"])

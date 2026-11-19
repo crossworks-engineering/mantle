@@ -37,11 +37,35 @@ export async function bookVisionPagesOf(sqlite: string): Promise<number[]> {
   }
 }
 
+/** How many pages the book reader left to vision, all of them (a book past
+ *  PIPELINE_ASK_PAGE_MAX marked pages counts those past it too: they are not
+ *  read, and its count says so). 0 when the database has no such tab or it
+ *  cannot be read. */
+export async function bookVisionPageCountOf(file: {
+  id: string;
+  sha256: unknown;
+}): Promise<number> {
+  const paths = fileDbPaths(file.id, file.sha256);
+  if (!paths) return 0;
+  try {
+    const r = await runTableSql(
+      paths.sqlite,
+      `SELECT count(*) FROM "${PAGES_TAB}" WHERE "Method" = '${VISION_METHOD}'`,
+      { cap: 1 },
+    );
+    const n = Number(r.rows[0]?.[0]);
+    return Number.isInteger(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * The pages of a book at these bytes its reader left to vision, as a set:
- * the core's picture pass keeps no picture of its own of these pages (G1),
- * as each has its page picture, read by the Agent, so no page is pictured or
- * read by vision twice. Empty when the database has no such tab or cannot be
+ * the core's picture pass leaves out a full-page picture of these pages, as
+ * each has its page picture, saved by the Agent (G1), so no page is pictured
+ * or read by vision twice; and they are the pages a book's page pictures are
+ * counted against. Empty when the database has no such tab or cannot be
  * read.
  */
 export async function bookVisionPageSetOf(file: {

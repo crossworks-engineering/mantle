@@ -185,6 +185,62 @@ function resolveImage(page: PdfPage, name: string): Promise<PdfImageData | null>
 
 const bunGc = (globalThis as { Bun?: { gc: (sync: boolean) => void } }).Bun?.gc;
 
+type Ctm = [number, number, number, number, number, number];
+
+/**
+ * The share of its page each image of a page's operator list is painted
+ * over (0 to 1), by the image's name: the largest of its placements. An
+ * image fills the unit square of the transform in force (save, restore,
+ * transform, and the matrix of a form), cut to the page's box (`view`). A
+ * book's picture pass reads it: a full-page image of a page the book reader
+ * left to vision is that page's picture, which the Agent saves (G1).
+ */
+export function imageCoversOf(
+  fnArray: ArrayLike<number>,
+  argsArray: ArrayLike<unknown>,
+  OPS: Record<string, number>,
+  view: ArrayLike<number>,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  const [vx0, vy0, vx1, vy1] = [view[0] ?? 0, view[1] ?? 0, view[2] ?? 0, view[3] ?? 0];
+  const pageArea = Math.abs((vx1 - vx0) * (vy1 - vy0));
+  if (!(pageArea > 0)) return out;
+  const mul = (m: Ctm, n: ArrayLike<number>): Ctm => [
+    m[0] * n[0]! + m[2] * n[1]!,
+    m[1] * n[0]! + m[3] * n[1]!,
+    m[0] * n[2]! + m[2] * n[3]!,
+    m[1] * n[2]! + m[3] * n[3]!,
+    m[0] * n[4]! + m[2] * n[5]! + m[4],
+    m[1] * n[4]! + m[3] * n[5]! + m[5],
+  ];
+  const isMatrix = (a: unknown): a is ArrayLike<number> =>
+    !!a &&
+    typeof (a as ArrayLike<number>).length === 'number' &&
+    (a as ArrayLike<number>).length >= 6;
+  let ctm: Ctm = [1, 0, 0, 1, 0, 0];
+  const stack: Ctm[] = [];
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i];
+    const a = argsArray[i] as unknown[] | null | undefined;
+    if (fn === OPS.save) stack.push(ctm);
+    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.transform && a && a.length >= 6) ctm = mul(ctm, a as number[]);
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push(ctm);
+      if (a && isMatrix(a[0])) ctm = mul(ctm, a[0]);
+    } else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.paintImageXObject && typeof a?.[0] === 'string') {
+      const xs = [ctm[4], ctm[0] + ctm[4], ctm[2] + ctm[4], ctm[0] + ctm[2] + ctm[4]];
+      const ys = [ctm[5], ctm[1] + ctm[5], ctm[3] + ctm[5], ctm[1] + ctm[3] + ctm[5]];
+      const w = Math.max(0, Math.min(Math.max(...xs), vx1) - Math.max(Math.min(...xs), vx0));
+      const h = Math.max(0, Math.min(Math.max(...ys), vy1) - Math.max(Math.min(...ys), vy0));
+      const cover = Math.min(1, (w * h) / pageArea);
+      out.set(a[0], Math.max(out.get(a[0]) ?? 0, Math.round(cover * 1000) / 1000));
+    }
+  }
+  return out;
+}
+
 /**
  * Every figure embedded in the PDF's pages, in page order.
  *
@@ -284,6 +340,13 @@ export async function extractPdfImages(
             return candidates;
           }
 
+          // The share of the page each picture is painted over.
+          const covers = imageCoversOf(
+            ops.fnArray,
+            ops.argsArray,
+            pdfjs.OPS as unknown as Record<string, number>,
+            (page as { view?: number[] }).view ?? [],
+          );
           // A caption is only ever attached to a page's sole picture.
           let caption: string | undefined;
           if (candidates === 1 && wanted.length === 1) {
@@ -322,6 +385,7 @@ export async function extractPdfImages(
               ordinal: out.length + 1,
               location: { page: p },
               caption,
+              ...(covers.has(name) ? { pageCover: covers.get(name)! } : {}),
               ...describeImageBytes(png, 'png'),
             };
             out.push(img);
