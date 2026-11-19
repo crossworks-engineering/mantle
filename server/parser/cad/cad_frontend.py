@@ -75,7 +75,8 @@ def dashes(polygon, loops, min_distance: float) -> float:
             break
         items = line.dash_length_items
         length = math.fsum(abs(v) for v in items)
-        n = len(items) if length >= SOLID_PATTERN else 0
+        # A dash is > 0, a dot 0, a gap < 0; ezdxf draws the dashes and dots.
+        n = sum(v >= 0 for v in items) if length >= SOLID_PATTERN else 0
         across = diag / spacing + 1.0
         along = diag / length * n + n if n else 1.0
         pieces = perimeter / spacing + edges
@@ -117,6 +118,8 @@ class Frontend(_ezdxf_frontend.Frontend):
         try:
             self.draw_hatch_pattern(entity, pattern_loops, properties)
         except hatching.DenseHatchingLinesError:
+            # ezdxf drew none of its dashes: it fills the boundary instead.
+            self.spent -= n
             self._boundary(entity, properties, loops, outline=False)
 
     def _boundary(self, entity, properties, loops, *, outline: bool) -> None:

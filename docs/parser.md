@@ -430,15 +430,17 @@ so a fine pattern over a large boundary (a billion dashes) takes all the
 memory before the timeout can stop it. The frontend first estimates the
 dashes (the lines across the boundary's box at the pattern's spacing, times
 the dashes along one line, plus the pieces a jagged boundary cuts the lines
-into); past `MAX_DASHES` (1,000,000) the hatch is drawn as its outline and
+into; a gap is not a dash, a dot is); past `MAX_DASHES` (1,000,000) the hatch is drawn as its outline and
 counted. One picture holds every dash until it is saved, so a hatch that
 would take the picture past `DASH_BUDGET` (3,000,000) is drawn as its
-outline and counted too. The count is `hatches_outlined` in the index of
+outline and counted too (a pattern ezdxf fills solid instead gives its
+dashes back). The count is `hatches_outlined` in the index of
 `model.png` and of the crops, and in `symbol_facts`; it counts drawn copies
 (a hatch in a block drawn ten times counts ten). For every converter the
 digest says it in one line ("Partly drawn: 5 pattern hatches drawn as
 outlines only (too many dashes to draw): 3 in the picture, 2 in the symbol
-SVGs."), and `dwg_render` says it as `partly_drawn`. And a pattern denser
+SVGs."), and `dwg_render` says as `partly_drawn` that its picture may be
+partly drawn (its count is of the whole drawing, not of the crop). And a pattern denser
 than ezdxf draws is filled solid, as in ezdxf, but where the hatch is: ezdxf
 1.4.5 fills that boundary in the hatch's own plane, so a hatch with extrusion (0, 0, -1) landed mirrored in
 x, far from its sheet. A DWG hatch's boundary points reach ezdxf as x and y

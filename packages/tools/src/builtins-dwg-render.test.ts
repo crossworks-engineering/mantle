@@ -121,7 +121,8 @@ describe('dwg_render', () => {
     expect(r).toMatchObject({
       ok: true,
       output: {
-        partly_drawn: '2 pattern hatches are drawn as outlines only (too many dashes to draw).',
+        partly_drawn:
+          'This picture may be partly drawn: 2 pattern hatches in the drawing are drawn as outlines only (too many dashes to draw).',
       },
     });
     const whole = await call({});

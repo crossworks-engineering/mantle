@@ -64,12 +64,13 @@ const frameOutput = (f: DwgFrame | undefined) =>
       }
     : {};
 
-/** Pattern hatches the parser drew as their outline only: the picture is
- *  partial, and says so. */
+/** Pattern hatches the parser drew as their outline only. The count is of
+ *  the whole drawing (the crops draw it once), so the picture may be partial,
+ *  and says so. */
 const partlyDrawn = (n: number | undefined) =>
   n
     ? {
-        partly_drawn: `${n} pattern ${n === 1 ? 'hatch is' : 'hatches are'} drawn as outlines only (too many dashes to draw).`,
+        partly_drawn: `This picture may be partly drawn: ${n} pattern ${n === 1 ? 'hatch' : 'hatches'} in the drawing ${n === 1 ? 'is' : 'are'} drawn as outlines only (too many dashes to draw).`,
       }
     : {};
 

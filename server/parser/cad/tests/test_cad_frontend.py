@@ -1,7 +1,8 @@
 """Tests for cad_frontend.py: the one ezdxf frontend of model.png, the crops
 and the symbol SVGs. A pattern too fine for its area, or past the picture's
-dash budget, is drawn as its outline and counted; a pattern too dense for ezdxf is filled where the hatch is, also
-when the hatch is upside down (extrusion 0, 0, -1).
+dash budget, is drawn as its outline and counted; a pattern too dense for
+ezdxf is filled where the hatch is, also when the hatch is upside down
+(extrusion 0, 0, -1).
 
 Run (stdlib unittest; the cases skip when ezdxf or matplotlib is missing,
 unless PARSER_TESTS_REQUIRE_CAD is set):
@@ -124,8 +125,27 @@ class EstimateTests(unittest.TestCase):
         edges = sum(len(p) for p in loops)
         got = cad_frontend.dashes(plain, loops, 1e-4)
         self.assertAlmostEqual(got, (diag + 1.0) + (40 + edges))
+        # (0.5, -0.5): one dash and one gap a unit; the gap is not a dash.
         got = cad_frontend.dashes(dashed, hatching.hatch_boundary_paths(dashed), 1e-4)
+        self.assertAlmostEqual(got, (diag + 1.0) * (diag + 1) + (40 + edges))
+        # A dot (0) is drawn, so it counts as a dash: (0.5, 0, -0.5) is two a unit.
+        dotted = hatch(doc.modelspace(), 0, 10, spacing=1.0, dashes=(0.5, 0.0, -0.5))
+        got = cad_frontend.dashes(dotted, hatching.hatch_boundary_paths(dotted), 1e-4)
         self.assertAlmostEqual(got, (diag + 1.0) * (diag * 2 + 2) + (40 + edges) * 2)
+
+    def test_the_estimate_is_never_under_what_ezdxf_makes(self):
+        from ezdxf.render import hatching  # noqa: PLC0415
+
+        for dashes in ((), (0.5, -0.5), (0.5, 0.0, -0.5), (0.3,), (0.2, -0.1, 0.0, -0.1)):
+            doc = ezdxf.new("R2010")
+            h = hatch(doc.modelspace(), 0, 10, spacing=0.25, dashes=dashes)
+            loops = hatching.hatch_boundary_paths(h)
+            got, real = cad_frontend.dashes(h, loops, 1e-4), made(h, loops)
+            self.assertGreaterEqual(got, real, dashes)
+            # And, with dashes, not far over it: a gap is not a dash. (A solid
+            # line is one dash; there the boundary's cuts make up the count.)
+            if dashes:
+                self.assertLess(got, real * 3, dashes)
 
     def test_a_line_too_dense_for_ezdxf_is_not_counted(self):
         doc = ezdxf.new("R2010")
@@ -154,7 +174,7 @@ class EstimateTests(unittest.TestCase):
         loops = hatching.hatch_boundary_paths(h)
         real = made(h, loops)
         diag = hatching_box_diag(loops)
-        box_only = (diag / 1.0 + 1.0) * (diag / 2000.0 * 2 + 2)
+        box_only = (diag / 1.0 + 1.0) * (diag / 2000.0 + 1)
         self.assertGreater(real, box_only * 5)
         self.assertGreaterEqual(cad_frontend.dashes(h, loops, 1e-4), real)
 
@@ -227,6 +247,25 @@ class DrawTests(unittest.TestCase):
                     self.assertAlmostEqual(got, want, delta=0.3, msg=f"{kw} {boxes}")
             self.assertEqual(boxes[0][0], boxes[1][0], kw)
 
+    def test_a_dense_fallback_gives_back_the_dashes_it_was_charged(self):
+        # The first pattern line is counted; ezdxf stops at the second (too
+        # dense) and fills the hatch solid, so none of those dashes are drawn.
+        doc = ezdxf.new("R2010")
+        h = doc.modelspace().add_hatch(color=1)
+        lines = [[0.0, (0.0, 0.0), (0.0, 1.0), []], [0.0, (0.0, 0.0), (0.0, 5e-5), []]]
+        h.set_pattern_fill("_USER", style=0, pattern_type=0, definition=lines)
+        h.set_pattern_definition(lines, factor=1.0, angle=0.0)
+        h.paths.add_polyline_path([(90, 0), (100, 0), (100, 10), (90, 10)], is_closed=True)
+        from ezdxf.render import hatching  # noqa: PLC0415
+
+        self.assertGreater(cad_frontend.dashes(h, hatching.hatch_boundary_paths(h), 1e-4), 0)
+        rec = Recorder()
+        front = cad_frontend.Frontend(RenderContext(doc), rec)
+        front.draw_layout(doc.modelspace(), finalize=True)
+        self.assertEqual((front.outlined, front.spent), (0, 0))
+        box = rec.player().bbox()
+        self.assertEqual((round(box.extmin.x, 6), round(box.extmax.x, 6)), (90.0, 100.0))
+
     def test_an_outlined_mpolygon_draws_its_boundary_once(self):
         from ezdxf.addons.drawing.recorder import PathRecord  # noqa: PLC0415
 
@@ -292,8 +331,8 @@ class ChildTests(unittest.TestCase):
                 self.assertLess(peak, 1_500_000, f"peak {peak} KB")
 
     def test_many_medium_hatches_stop_at_the_budget(self):
-        # Eight hatches of about 0.9 million estimated dashes each, every
-        # one under MAX_DASHES: three are drawn, five are outlines, and the
+        # Eight hatches of about 0.45 million estimated dashes each, every
+        # one under MAX_DASHES: six are drawn, two are outlines, and the
         # picture and its index are written.
         with tempfile.TemporaryDirectory() as tmp:
             doc = ezdxf.new("R2010")
@@ -308,8 +347,44 @@ class ChildTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
             with open(os.path.join(out, "index.json")) as f:
                 index = json.load(f)
-            self.assertEqual(index["hatches_outlined"], 5)
+            self.assertEqual(index["hatches_outlined"], 2)
             self.assertIsNone(index["render_error"])
+            peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+            if sys.platform.startswith("linux"):
+                self.assertLess(peak, 1_500_000, f"peak {peak} KB")
+
+    def test_a_picture_drawn_up_to_the_budget_stays_small(self):
+        # A dash-only pattern (no gaps): every estimated dash along a line is
+        # drawn. Four hatches fill the budget to within 5% and are drawn; a
+        # fifth is an outline. A square box holds half of what its diagonal
+        # estimates, so this draws about as many dashes as the budget lets in.
+        from ezdxf.render import hatching  # noqa: PLC0415
+
+        s = 0.0165
+        one = hatch(ezdxf.new("R2010").modelspace(), 0, 10, spacing=s, dashes=(s,))
+        loops = hatching.hatch_boundary_paths(one)
+        each, real = cad_frontend.dashes(one, loops, 1e-4), made(one, loops)
+        budget = cad_frontend.DASH_BUDGET
+        self.assertTrue(budget * 0.95 < 4 * each <= budget < 5 * each, each)
+        self.assertGreater(4 * real, budget * 0.45, real)
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = ezdxf.new("R2010")
+            for i in range(5):
+                hatch(doc.modelspace(), 20 * i, 20 * i + 10, spacing=s, dashes=(s,))
+            src = os.path.join(tmp, "full.dxf")
+            doc.saveas(src)
+            out = os.path.join(tmp, "out")
+            os.makedirs(out)
+            started = time.time()
+            proc = subprocess.run([sys.executable, APP, "--dwg-render", src, out, "50"],
+                                  capture_output=True, text=True, timeout=120)
+            took = time.time() - started
+            self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+            with open(os.path.join(out, "index.json")) as f:
+                index = json.load(f)
+            self.assertEqual(index["hatches_outlined"], 1)
+            self.assertIsNone(index["render_error"])
+            self.assertLess(took, 60)
             peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
             if sys.platform.startswith("linux"):
                 self.assertLess(peak, 1_500_000, f"peak {peak} KB")
