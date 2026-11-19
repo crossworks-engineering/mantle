@@ -159,8 +159,7 @@ const DECISIONS: Record<string, PdfKindDecision> = {
     used: false,
   },
 };
-/** A live `document`: the old path gave no database for it (its golden
- *  file); the answer is never used now (decidedKind). */
+/** A live `document`: on office paper it makes the file a book. */
 const DOCUMENT: PdfKindDecision = {
   kind: 'document',
   confidence: 0.95,
@@ -168,20 +167,6 @@ const DOCUMENT: PdfKindDecision = {
   mode: 'live',
   used: true,
 };
-const DECIDER_COLUMNS = ['Decider answer', 'Decider confidence', 'Decider mode', 'Decider model'];
-/** The File tab's decider columns as null: the read with the decider off. */
-function deciderLeftOut(parsed: ParsedFile): ParsedFile {
-  if (parsed.kind !== 'sheets') return parsed;
-  return {
-    ...parsed,
-    sheets: parsed.sheets.map((s) => {
-      if (s.name !== 'File') return s;
-      const hit = s.columns.map((c) => DECIDER_COLUMNS.includes(c.name));
-      return { ...s, rows: s.rows.map((r) => r.map((v, j) => (hit[j] ? null : v))) };
-    }),
-  };
-}
-
 beforeEach(() => {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
   vi.stubEnv('PARSER_TOKEN', 't');
