@@ -2346,16 +2346,36 @@ The built-ins on the page windows (M3 of the large-PDF plan, dev-brain page
 only for the pages OCR could not read well.
 
 **The kind `book`** (`bookOf`, `packages/files/src/pdf-kind.ts`;
-`PDF_KIND_RULES_VERSION` 3). The router names a PDF a book, before its page
-rules and with no ask, when the file is past the 256 MB pdfjs opens, or when
-it has more than 20 pages (`job.pdfPageCount`, qpdf) and of its first 20
-pages, read as every page is, 80% or more are on office paper (A4, Letter,
-A3; a fold-out sheet makes no drawing set), none is a P&ID or an isometric,
-and 80% or more are scans or typed text. A book hands
-the Reader no facts: the Reader reads the file, window by window. A stored
-kind from older rules is named again with no ask on a read again, as for
-every rules version. `drawing-pdf` does not claim `book`, so `pdf-sheet-read`
-never asks for the title block of a book's pages.
+`PDF_KIND_RULES_VERSION` 4). Every office PDF is a book, whatever its size
+(Jason, 2026-11-19): typed or scanned, of 1 page or 1,679. The router names a
+PDF a book, with no ask, when the file is past the 256 MB pdfjs opens; when it
+has more than 20 pages (`job.pdfPageCount`, qpdf) and of its first 20 pages,
+read as every page is, 80% or more are on office paper (A4, Letter, A3; a
+fold-out sheet makes no drawing set), none is a P&ID or an isometric, and 80%
+or more are scans or typed text; when the page rules name it a `document`;
+and when it has 20 pages or fewer, read whole, with the same office rule and
+typed or scanned text pages (page kind `document`) but for a few (75%,
+`DOCUMENT_MIN_SHARE`). The router names `document` no more: no PDF is left
+to the core's own text read and OCR (its 10-page OCR, `MAX_OCR_PAGES`, runs
+only for a PDF whose Reader gave no text). A book hands the Reader no facts:
+the Reader reads the file, window by window.
+
+What stays a drawing: a P&ID, an isometric (by its lines, or by the eye of a
+scanned page), another drawing, a file of large sheets, a short scan whose
+pages are all ruled (kind `scan`: a scanned sketch, a ruled form), and a file
+the rules leave `unsure`. They keep `drawing-pdf` and `pdf-sheet-read`
+exactly as before. An ambiguous short scan, some text pages and some ruled
+ones (`bookUnsureOf`: a spec table or a drawing form? the lines cannot tell),
+is put to the decider once where the run may ask: its `table` or `document`
+makes it a book, a drawing kind keeps it a drawing, and with no ask it stays
+the drawing reader's. An `unsure` file the decider calls a `table` (rows of
+data: an invoice, a list) is a book too, read with its Tables tab; its
+`document` is still never used for an unsure file (it keeps its database).
+Who claims what: `pdf-pages` claims `book`; `drawing-pdf` every other kind
+the router names (`pid`, `pfd`, `isometric`, `equipment_drawing`,
+`datasheet`, `scan`, `other_drawing`, `table` by an older read, `unsure`);
+`document` is claimed by none. A stored kind from older rules is named again
+with no ask on a read again, as for every rules version.
 
 **The Reader `pdf-pages`** (Python, `server/parser/cad/pdf_pages.py`; a
 window of 50 pages or 50 MB a job). For each page:
@@ -2374,16 +2394,23 @@ window of 50 pages or 50 MB a job). For each page:
   40 characters (a speck, a stamp): no paid ask for a white page. What OCR
   read is kept in its row.
 
-G1, the PNG of each `vision` page (150 dpi, gray) as one of the file's
-pictures, `page-<NNNNN>.png` in its window, captioned with its page and its
-first heading line: built in the Reader and OFF (`PAGE_PICTURES`, the
-step's option `page_pictures`, not in the manifest). The core's picture pass
-reads a PDF's pictures itself and takes no Reader's (`images.ts`), and a
-windowed run holds every window's pictures in memory until the write, so a
-bad photocopy of 1,679 pages would hold about a gigabyte for pictures
-nothing keeps. It goes on when the core keeps a book Reader's pictures,
-streamed to disk, with the Agent's text as their description (no second
-vision call).
+G1, the PNG of each `vision` page (150 dpi, gray; a JPEG when the window's
+PNGs pass the 60 MB of one answer, so no page picture is left out for its
+size) as one of the file's pictures, `page-<NNNNN>.png` in its window, with
+its page and its first heading line as caption: on (`PAGE_PICTURES`, the
+step's option `page_pictures`). A typed page never has one. A windowed run
+writes each window's pictures to disk as they come (`SpooledPictures`,
+`packages/content/src/picture-spool.ts`), so the brain holds one window's
+answer at most, never every window's: a bad photocopy of 1,679 pages is
+about a gigabyte of pictures on disk, not in memory. The extract's picture
+pass takes them from the run of its database pass (`standingReaderPictures`,
+never a second job), saves them one at a time with the file's other
+pictures (`data.bookPage` the page), and drops the spool. Their description
+is the Agent `pdf-page-read`'s vision text of the page: a page picture never
+takes a vision call of its own (`load-body.ts`). The Agent runs after the
+extract; its run sets each picture's text and indexes it again through the
+one door (`markContentChanged`); until then the picture is a terminal skip
+`book_page_text_pending`, findable by its name.
 
 A window stops its OCR after 180 s, and stops a Tesseract run at 225 s (the
 job ends at 240 s and would lose the whole window): the pages after it are
@@ -2447,8 +2474,11 @@ page's passage (P3). An Agent that says `produces.pages` asks with the token
 cap of a list ask (12,000) and keeps up to 60,000 characters of a page
 (`PAGE_TEXT_ANSWER_MAX_CHARS`), not a cell's 4,096: a dense page's JSON cut
 at 1,500 tokens would be a failed ask that stops the run. The option `pages`
-(2,000) is the most marked pages of a file it reads, from the first; a
-marked page past it is said in a warning. The box's day cap bounds a run. A
+(10,000, every marked page) is the most marked pages of a file it reads, from
+the first; a marked page past it is said in a warning. Only the windows that
+hold a marked page are cut (`pdfWindowsAt`): each starts at the first marked
+page past the window before, so one vision page in a 1,679-page book is one
+cut, not 112. The box's day cap bounds a run. A
 marked page that cannot be drawn ends the window `failed` (no ask); a blank
 picture is not read.
 

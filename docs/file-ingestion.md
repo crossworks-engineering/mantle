@@ -189,29 +189,44 @@ always happens; only survivors of the deterministic filters earn a vision call:
 - ≥ 1 KB. Deliberately LOW: flat line art compresses to ~2 KB, and an initial
   8 KB floor rejected exactly the diagrams this feature exists for
 - sha256 dedupe collapses the logo repeated on every slide
-- 500 per document (`MAX_EMBEDDED_IMAGES_PER_DOC`, 30 before 2026-11-18), **configurable**: see below
+- no cap for a PDF (Jason, 2026-11-19: "Yes, no cap"): every picture of
+  every PDF is kept. Other documents: 500 per document
+  (`MAX_EMBEDDED_IMAGES_PER_DOC`), **configurable**: see below
 
-**The per-document cap is a setting.** The ceiling is applied _after_ the
-gate, keeping the first N in reading order and counting the rest as
-`over_cap`. The default is 500 (Jason, 2026-11-18: "if it is there, why not
-extract it"; it was 30, which kept images 1-30 of a 259-screenshot user guide
-and dropped the rest). Set it per brain in **Settings → AI workers →
+**Every picture of a PDF is kept; the work is paced, never capped.** A
+parser job keeps `MAX_EMBEDDED_IMAGES_CEILING` (2,000) pictures at most and
+one answer carries 64 MB of them: a PDF whose one read left pictures out is
+read again by page windows, and a window whose answer left pictures out is
+cut in halves and each half read, down to one page
+(`packages/content/src/pdf-picture-windows.ts`). Each picture goes to disk
+as it is found (`SpooledPictures`, `packages/content/src/picture-spool.ts`),
+so the brain holds one answer at most, never every window's; the save reads
+each one back in turn. Each kept picture is one vision call when it is
+indexed, in the extract queue's own pace (its worker count): about $1 to $9
+per 1,000 pictures by the vision model (one image of about 1,500 tokens in,
+300 out). A book's page pictures (G1) take no vision call of their own (see
+docs/pipelines.md, "The book reader").
+
+**The per-document cap of other documents is a setting.** The ceiling is
+applied _after_ the gate, keeping the first N in reading order and counting
+the rest as `over_cap`. The default is 500 (Jason, 2026-11-18: "if it is
+there, why not extract it"). Set it per brain in **Settings → AI workers →
 Extractor → "Embedded images per document"**
-(`ExtractorParams.max_embedded_images_per_doc`; blank or 0 means the default
-500). Each image kept is one vision call, so the number is a real spend
-decision. A PDF read counts the pictures past the cap for up to 60 s of the job
-(and the page windows past the cap 60 s in all for a file), so the count is exact on all but a very long file (then it is a floor).
+(`ExtractorParams.max_embedded_images_per_doc`; blank or 0 means the
+default 500). A PDF does not read it.
 
 **A file that leaves pictures out says so** (task 8d40932a, G4). The picture
-pass stamps `data.images = { kept, found }` when the cap left pictures out or
-a page window of the file could not be read (each such window counts as one
-picture found at least), stamped after the save, so a picture whose save
-failed is one not kept. `extractionOf` then gives the file `partial` with
-the hint "N of M pictures kept" ("N of at least M" when the count past the
-cap was cut short), and `file_list` with `extraction: partial` lists it. A file that left none out stamps nothing, and a later read that
-kept every picture takes the stamp off.
+pass stamps `data.images = { kept, found }` when pictures were truly left
+out: a page window of the file that could not be cut or read (each counts as
+one picture found at least), a single page whose pictures pass one answer
+even alone, or the cap of a document that is not a PDF. It is stamped after
+the save, so a picture whose save failed is one not kept. `extractionOf`
+then gives the file `partial` with the hint "N of M pictures kept" ("N of at
+least M" when a count was cut short), and `file_list` with `extraction:
+partial` lists it. A file that left none out stamps nothing, and a later
+read that kept every picture takes the stamp off.
 
-**A raised cap fetches the rest** (G5). A file whose `data.images` says
+**A read again fetches the rest** (G5). A file whose `data.images` says
 `kept < found` is a candidate of the picture pass again, for a re-notify
 (`process_extraction` on it) and for the backfill (`extract:images-backfill`).
 The pictures it has stay by their sha256; only the new ones are saved, so only
@@ -221,7 +236,7 @@ agent starts it (the cost-safety rule).
 **Large and long PDFs are read by page windows** (G2). A PDF past the 256 MB
 pdfjs opens (`PDF_MAX_BYTES`) has its pictures read window by window: the
 parser cuts each window with qpdf (`/pdf/split`, docs/parser.md) and reads its
-pictures, with the cap left over; the reading order, each picture's page on
+pictures; the reading order, each picture's page on
 the original file and the sha256 dedupe hold across windows. A PDF of more
 than 100 pages (`MAX_PDF_PAGES_SCANNED`) has its first 100 read whole and the
 rest by windows, so no page of a long manual is left unread. A window job
