@@ -9,19 +9,23 @@ and scores `recall@k` + `MRR`. Run it before and after any retrieval change; the
 Companion to [`memory.md`](./memory.md) (the layers) and the audit findings that
 motivated it. Lives at [`server/web/scripts/eval-recall.ts`](../server/web/scripts/eval-recall.ts).
 
-> **The gold set is yours, and it is local-only.** A case pins node ids from ONE
-> brain, so a shared set names its author's real pages and resolves to nothing on
-> anyone else's. the eval case file next to `server/web/scripts/eval-recall.ts` is **gitignored and
-> not shipped** — write your own before the first run (see _Adding a case_). The
-> repo carried one until 2026-08-21; it leaked the owner's bank, a company
-> expense figure and their full name into a public repo, which is exactly the
-> failure this note exists to prevent.
+> **Two case files, and only one is committed (since 2026-11-19).**
+> `server/web/scripts/eval/recall-gold.json` is in the repo: each case holds a
+> query and **hashed match keys**, never a title, a node id or any brain text.
+> `server/web/scripts/eval/recall-cases.json` is **gitignored**: it holds the
+> cases whose query would itself reveal private content (a personal event, a
+> client's name). The harness reads both. The repo carried a plain set until
+> 2026-08-21; it leaked the owner's bank, a company expense figure and their
+> full name into a public repo, which is exactly the failure this note exists
+> to prevent. Committed queries name only public product topics.
 
 ## Run it
 
 ```bash
 ALLOWED_USER_ID=<uuid> pnpm -C server/web eval:recall
 pnpm -C server/web eval:recall --case=<your-case-id>      # one case
+pnpm -C server/web eval:recall --retrievers=fts           # keyword only: no embed call at all
+pnpm -C server/web eval:recall --keys=<nodeId>,<nodeId>   # print the match keys for new cases
 pnpm -C server/web eval:recall --rank-k=30                    # deeper candidate set
 pnpm -C server/web eval:recall --baseline=scripts/eval/last-run.json   # Δ vs a prior run
 pnpm -C server/web eval:recall --json                        # machine-readable
@@ -44,29 +48,62 @@ the headroom in one run:
 | `rrf`     | Reciprocal-Rank Fusion of vector+fts+chunks                                                                                  | A naive-hybrid baseline for the recommended Tier-0 upgrade    |
 
 **Metrics:** `recall@{1,3,5,10}` (fraction of cases whose gold node appears in
-top-k) and `MRR` (mean reciprocal rank of the first gold hit). A node counts as
-gold if its id is in `expectNodeIds` **or** its title contains an
-`expectNodeTitleIncludes` substring (id = precise, title = authorable/resilient).
+top-k) and `MRR` (mean reciprocal rank of the first gold hit). Before the run,
+each case's gold is resolved to the node ids that exist on THIS brain (see
+_Stable keys_ below); a node counts as gold if it is in that set. A case with
+no live gold is **skipped and named**, never scored as a miss: a stale gold set
+reads as "unmeasured", not as a recall drop. When cases carry a `group`, the
+run also prints document MRR per group.
 
 ## Adding cases
 
-Append to `recall-cases.json`. Write the query the way _you'd actually ask it_,
-vague, paraphrased, avoiding the node's title words, that's the recall the
-product promises. Anchor with a stable node id and a title substring:
+Write the query the way _you'd actually ask it_. Then print the gold item's
+match keys and paste them into the case:
+
+```bash
+pnpm -C server/web eval:recall --keys=<nodeId>
+# {"id":"…","type":"page","titleKey":"9735a5cb98f39adf","bodyKey":"8bfb25c108684d16"}
+```
 
 ```json
 {
   "id": "short-slug",
+  "group": "paraphrase",
   "query": "the natural, vague way you'd refer to it",
-  "expectNodeIds": ["<uuid>"],
-  "expectNodeTitleIncludes": ["distinctive title fragment"],
-  "expectFactIncludes": ["optional fact substring the prompt should carry"],
-  "note": "what this node is + what the query is testing"
+  "expect": [{ "type": "page", "titleKey": "9735a5cb98f39adf", "bodyKey": "8bfb25c108684d16" }]
 }
 ```
 
+Drop the `id` the tool prints: it is brain-specific and adds nothing the keys
+do not. Put the case in `recall-gold.json` when the query names only public
+product topics, and in the gitignored `recall-cases.json` when the query
+itself would reveal private content. `expectNodeIds`,
+`expectNodeTitleIncludes`, `expectFactIncludes`, `avoidTitleIncludes` and
+`expectChunks` still work, for local cases only (they carry ids or text).
+
 Grow this set whenever you hit a real "she should have found that" miss; those
 are the highest-signal cases.
+
+### Stable keys
+
+A case names its gold by `{ type, titleKey, bodyKey }`. A node matches when its
+type is the same **and** its title key **or** its body key is the same. Both
+keys are the first 16 hex characters of a sha256 over text that is
+lower-cased, with every run of characters outside `[a-z0-9]` turned into one
+space:
+
+- **titleKey**: the title (null under 3 characters).
+- **bodyKey**: the first 400 such characters of the item's main text: a page's
+  `doc_text`, else `data` `body`, `content`, `text` or `agent_text` (null under
+  40 characters, so near-empty items do not all share one key).
+
+So a case survives the item being deleted and made again, a re-sync that
+gives it a new id, a rename (the body key still holds) or an edit to its
+start (the title key still holds). It breaks only when both change at once;
+the run then names the case as skipped. Writing a case (`--keys`) and
+resolving it at run time use the same SQL expressions in `eval-recall.ts`, so
+the two sides cannot drift. A hash of a short, guessable title can be
+recovered by guessing, which is why committed cases stay on public topics.
 
 ## First baseline (2026-06-03, 12 cases, pages + events)
 
@@ -875,7 +912,7 @@ questions, without any client text leaving the box.
 ### Method (on the box only)
 
 - Every step runs in a throwaway sibling container (`docker run --rm
-  --network container:mantle_web --memory 1.5g`, the web container's env
+--network container:mantle_web --memory 1.5g`, the web container's env
   file written mode 600 and deleted right after start, a 700 folder mounted
   at `/eval`). One container per box at a time. The folder is deleted at
   the end; only counts, rates, timings and costs leave the box.
