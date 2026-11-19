@@ -28,6 +28,7 @@ import {
 import { log, startTrace, step } from '@mantle/tracing';
 import {
   readScannedPdf,
+  scanPageFinal,
   runDocumentWorker,
   runVisionWorker,
   scanCountsOf,
@@ -813,10 +814,11 @@ export async function ocrIngestPdfNode(
   /** Every scanned page was too large to send: a verdict on the document,
    *  recorded as the terminal `pdf_too_large`. */
   tooLarge?: string;
-  /** The read reached a verdict on the content (a page read, blank, read
-   *  badly, or too large). With no text, that is a scan with nothing
-   *  readable on it; false: nothing could read it (no Scan reader, the
-   *  provider failed), so it is read again later. */
+  /** The read reached a verdict on every page (read, blank, read badly,
+   *  too large, a figure not described). With no text, that is a scan with
+   *  nothing readable on it; false: a page is left that a later read may
+   *  read (no Scan reader, the provider failed, not cut), so it is read
+   *  again later, paying only for those pages. */
   ran: boolean;
   /** The pages not read, by why (none: every page read). */
   unread?: Partial<Record<ScanUnreadReason, number>>;
@@ -851,9 +853,14 @@ export async function ocrIngestPdfNode(
         },
       );
       const sha = createHash('sha256').update(buf).digest('hex');
+      // The pages a try before kept (final ones only: read, or unread for
+      // good), read again by none; the rest (no Scan reader then, no answer,
+      // not cut) are read again.
       const before = resumeOf(node, sha);
-      const kept: KeptPage[] = before ? [...before.pages] : [];
-      const startPage = kept.reduce((n, p) => Math.max(n, p[0]), 0) + 1;
+      const kept: KeptPage[] = before
+        ? before.pages.filter((p) => scanPageFinal(pageOfKept(p)))
+        : [];
+      const keptPages = new Set(kept.map((p) => p[0]));
 
       let read: Awaited<ReturnType<typeof readScannedPdf>>;
       try {
@@ -862,10 +869,17 @@ export async function ocrIngestPdfNode(
           bytes: buf,
           sha256: sha,
           filename,
-          ...(before ? { startPage, pagesTotal: before.total } : {}),
+          ...(before ? { done: keptPages, pagesTotal: before.total } : {}),
           onWindow: async (pages, total) => {
-            for (const p of pages) kept.push([p.page, p.method, p.why ?? '', p.text]);
-            await keepResume(node.id, ownerId, { sha256: sha, total, pages: kept });
+            // The page text as it will be stored (no NUL: jsonb refuses it).
+            for (const p of pages) {
+              if (scanPageFinal(p)) kept.push([p.page, p.method, p.why ?? '', cleanText(p.text)]);
+            }
+            // Best effort: a lost write only means a retry reads these again.
+            await keepResume(node.id, ownerId, { sha256: sha, total, pages: kept }).catch(
+              (err: unknown) =>
+                log('extractor').warn(`scan pages not kept for ${node.id}: ${errorMessage(err)}`),
+            );
           },
         });
       } catch (err) {
@@ -879,24 +893,30 @@ export async function ocrIngestPdfNode(
         return { ...none, rasterizeError: msg, ran: false };
       }
 
-      const pages = [...kept.filter((p) => p[0] < startPage).map(pageOfKept), ...read.pages];
+      const pages = [
+        ...kept.filter((p) => keptPages.has(p[0])).map(pageOfKept),
+        ...read.pages,
+      ].sort((a, b) => a.page - b.page);
       const total = read.pagesTotal || before?.total || pages.length;
       const { read: pagesRead, unread } = scanCountsOf(pages);
-      // A verdict on the content: a page read (blank too), or read badly, or
-      // too large to send. No Scan reader, a provider that failed or a page
-      // not cut is no verdict (the caller leaves the file to be read again).
-      const ran = pages.some(
-        (p) => p.method !== 'unread' || p.why === 'bad_read' || p.why === 'too_large',
-      );
+      // A verdict on the content only when every page is final (read,
+      // blank, read badly, too large, a figure not described). A page with
+      // no Scan reader yet, no answer, or not cut is no verdict: the caller
+      // leaves the file to be read again, and that read pays only for those
+      // pages (the final ones stay kept).
+      const ran = pages.length > 0 && pages.every(scanPageFinal);
       const text = cleanText(scanTextOf(pages, total));
       const anyUnread = Object.keys(unread).length > 0;
       if (!text) {
-        // Nothing read: the read so far goes (the caller's skip says why),
-        // so a later read starts afresh.
-        await db
-          .update(nodes)
-          .set({ data: sql`${nodes.data} - 'ocr'` })
-          .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+        // Nothing read. A verdict: the kept pages go (the caller's terminal
+        // skip says why; a person's read again starts afresh). No verdict:
+        // they stay, so the read again pays for none of them twice.
+        if (ran) {
+          await db
+            .update(nodes)
+            .set({ data: sql`${nodes.data} - 'ocr'` })
+            .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+        }
         const scanned = pages.filter((p) => p.method !== 'blank' && p.method !== 'text');
         const allTooLarge = scanned.length > 0 && scanned.every((p) => p.why === 'too_large');
         return {

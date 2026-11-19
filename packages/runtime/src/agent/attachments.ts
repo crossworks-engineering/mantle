@@ -324,10 +324,13 @@ async function scanPdfForTurn(opts: {
   } catch (err) {
     // The parser busy or the file unopenable: what was read stands, the
     // rest is said.
+    // The parser's own words only: any other error is not shown.
     stopped =
       isParserError(err) && err.retryable && !PARSER_COUNTED.has(err.code)
         ? 'the document reader is busy or restarting'
-        : `the PDF could not be read on (${errorMessage(err)})`;
+        : isParserError(err)
+          ? `the PDF could not be read on (${errorMessage(err)})`
+          : 'the read stopped on an error';
   }
   const text = scanTextOf(kept, total);
   const { read, unread } = scanCountsOf(kept);

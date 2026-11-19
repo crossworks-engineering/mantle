@@ -51,6 +51,9 @@ export type ScanUnreadReason =
   | 'failed'
   /** The page as a PDF is past what one call may send. */
   | 'too_large'
+  /** Mostly a figure, and vision gave no description of it (no vision
+   *  worker, no picture, no text). */
+  | 'figure'
   /** The parser could not cut the page (or its window). */
   | 'not_cut'
   /** Not reached in the time a chat turn reads for. */
@@ -61,6 +64,7 @@ export const SCAN_UNREAD_REASONS: readonly ScanUnreadReason[] = [
   'no_scan_reader',
   'failed',
   'too_large',
+  'figure',
   'not_cut',
   'time',
 ];
@@ -71,6 +75,7 @@ const SCAN_UNREAD_SAID: Readonly<Record<ScanUnreadReason, (n: string) => string>
     `${n} not read: this brain has no Scan reader (an OpenRouter key and the Scan reader worker)`,
   failed: (n) => `${n} not read: the reader gave no answer`,
   too_large: (n) => `${n} too large to send to the Scan reader`,
+  figure: (n) => `${n} mostly a figure that vision gave no description of`,
   not_cut: (n) => `${n} the parser could not cut`,
   time: (n) => `${n} not reached in the time of this answer`,
 };

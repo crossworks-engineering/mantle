@@ -21,6 +21,7 @@ import {
   scanTextOf,
   scanVerdictOf,
   SCAN_WINDOW,
+  scanPageFinal,
   type PageMark,
   type ScanPdfDeps,
 } from './scan-pdf';
@@ -59,8 +60,21 @@ function deps(plan: Plan) {
   const calls = { scan: [] as number[], vision: 0, draw: 0, check: 0, cut: [] as number[] };
   const pdfOf = (n: number) => Buffer.from(`page ${n}`);
   const d: Partial<ScanPdfDeps> = {
-    windows: async function* (_b, _s, w, start = 1) {
-      for (let from = start; from <= plan.total; from += w.pages) {
+    // As pdfWindows / pdfWindowsAt: every window, or each from the first
+    // needed page past the window before.
+    windows: async function* (_b, _s, w, needed) {
+      const starts: number[] = [];
+      if (needed === null) {
+        for (let f = 1; f <= plan.total; f += w.pages) starts.push(f);
+      } else {
+        let edge = 0;
+        for (const n of needed) {
+          if (n <= edge) continue;
+          starts.push(n);
+          edge = n + w.pages - 1;
+        }
+      }
+      for (const from of starts) {
         if (plan.windowThrows?.from === from) throw plan.windowThrows.err;
         const to = Math.min(plan.total, from + w.pages - 1);
         yield {
@@ -219,10 +233,49 @@ describe('readScannedPdf', () => {
     expect(calls).toBeNull();
   });
 
-  it('goes on from a page a read before kept', async () => {
-    const { r, calls } = await read({ total: 25 }, { startPage: 21, pagesTotal: 25 });
-    expect(r.pages.map((p) => p.page)).toEqual([21, 22, 23, 24, 25]);
-    expect(calls.scan).toHaveLength(5);
+  it('reads only the pages a read before did not keep, and cuts no window of kept pages', async () => {
+    const done = new Set(
+      Array.from({ length: 45 }, (_, i) => i + 1).filter((n) => n !== 7 && n < 41),
+    );
+    const { r, calls } = await read({ total: 45 }, { done, pagesTotal: 45 });
+    expect(r.pages.map((p) => p.page)).toEqual([7, 41, 42, 43, 44, 45]);
+    expect(calls.scan.sort((a, b) => a - b)).toEqual([7, 41, 42, 43, 44, 45]);
+    expect(calls.cut.sort((a, b) => a - b)).toEqual([7, 41, 42, 43, 44, 45]);
+  });
+
+  it('pays for nothing when a read before kept every page', async () => {
+    const done = new Set([1, 2, 3]);
+    const { r, calls } = await read({ total: 3 }, { done, pagesTotal: 3 });
+    expect(r.pages).toEqual([]);
+    expect(calls.scan).toHaveLength(0);
+  });
+
+  it('a figure vision cannot describe is unread for good; a throw is no answer', async () => {
+    const { d, calls } = deps({
+      total: 2,
+      scan: (n) => (n === 1 ? answer('FIG', { pictures: 1 }) : answer(ROWS)),
+    });
+    d.vision = (async () => ({
+      ran: false,
+      text: '',
+      note: 'no vision worker',
+      model: null,
+    })) as ScanPdfDeps['vision'];
+    const scan = d.scan!;
+    d.scan = (async (o: Parameters<ScanPdfDeps['scan']>[0]) => {
+      if (o.pdf.toString() === 'page 2') throw new Error('db down');
+      return scan(o);
+    }) as ScanPdfDeps['scan'];
+    const r = await readScannedPdf({
+      ownerId: 'o1',
+      bytes: Buffer.from('%PDF'),
+      sha256: 'a'.repeat(64),
+      filename: 'scan.pdf',
+      deps: d,
+    });
+    expect(r.pages.map((p) => p.why)).toEqual(['figure', 'failed']);
+    expect(r.pages.map(scanPageFinal)).toEqual([true, false]);
+    expect(calls.vision).toBe(0);
   });
 
   it('says the pages not reached in a chat turn’s time, and pays for none of them', async () => {
