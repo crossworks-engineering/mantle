@@ -13,16 +13,19 @@ import type * as Files from '@mantle/files';
 
 const split = vi.fn();
 const images = vi.fn();
+const stepRun = vi.fn();
 vi.mock('@mantle/files', async (orig) => ({
   ...(await orig<typeof Files>()),
   parserPdfSplit: (...a: unknown[]) => split(...a),
   parserImages: (...a: unknown[]) => images(...a),
+  parserPipelineRun: (...a: unknown[]) => stepRun(...a),
 }));
 
 const { pdfWindowsAt } = await import('./pipeline-runner');
 const { picturesByWindows, picturesLeftOutOf, picturesNeedWindows } =
   await import('./pdf-picture-windows');
 const { SpooledPictures } = await import('./picture-spool');
+const { drawBookPages } = await import('./reader-passes');
 
 const TOTAL = 1679;
 
@@ -42,6 +45,7 @@ function cut() {
 beforeEach(() => {
   split.mockReset();
   images.mockReset();
+  stepRun.mockReset();
 });
 
 describe('the Agent cuts only the windows that hold a marked page', () => {
@@ -159,5 +163,68 @@ describe('pictures on disk', () => {
     s.drop();
     expect(existsSync(dir)).toBe(false);
     expect(s.get('w1-page-00001.png')).toBeUndefined();
+  });
+});
+
+describe("a book's marked pages with no picture are drawn, with no model (H1, audit round 3)", () => {
+  const agent = {
+    id: 'pdf-page-read',
+    version: '1.1.0',
+    source: 'builtin',
+    match: { ext: ['pdf'], kind: ['book'] },
+    produces: { tabs: ['Page text'], pages: true },
+    needs: { window: { pages: 15, mb: 50 }, workers: { vision: 10_000 } },
+  } as unknown as Parameters<typeof drawBookPages>[0];
+
+  /** The made-up Agent step: one ask a marked page of its window, with the
+   *  page's picture; page 7 is white (no ask). Never a paid call: the asks
+   *  are only read here. */
+  function step(fail?: (from: number) => boolean) {
+    stepRun.mockImplementation(
+      async (_b: Buffer, _p: unknown, req: { state: { visionPages: number[] }; pageFrom: number }) => {
+        if (fail?.(req.pageFrom)) return { result: { status: 'failed' }, pictures: new Map() };
+        const calls = [];
+        const pictures = new Map<string, Buffer>();
+        for (const n of req.state.visionPages) {
+          if (n === 7) continue;
+          pictures.set(`page-${n}.png`, Buffer.from([0x89, 0x50, 0x4e, 0x47, n % 256]));
+          calls.push({
+            call: 'worker',
+            worker: 'vision',
+            key: `page-${n}`,
+            input: { picture: `page-${n}.png`, page: n },
+          });
+        }
+        return { result: { status: 'ok', calls }, pictures };
+      },
+    );
+  }
+
+  it('each page drawn once, on disk, by the page of the original file; only windows holding one are cut', async () => {
+    cut();
+    step();
+    const spool = new SpooledPictures();
+    const out = await drawBookPages(agent, Buffer.from('pdf'), 'a'.repeat(64), [900, 3, 7, 5], spool);
+    expect(out.pictures.map((p) => p.page)).toEqual([3, 5, 900]);
+    expect(out.lost).toBe(0);
+    expect(split).toHaveBeenCalledTimes(2);
+    // The step was given only its window's pages, and every one of them.
+    expect(stepRun.mock.calls.map((c) => (c[2] as { state: unknown }).state)).toEqual([
+      { readerOptions: {}, visionPages: [3, 5, 7] },
+      { readerOptions: {}, visionPages: [900] },
+    ]);
+    expect(spool.get(out.pictures[2]!.file)?.[4]).toBe(900 % 256);
+    expect(out.pictures[0]!.mime).toBe('image/png');
+    spool.drop();
+  });
+
+  it('a window that cannot be drawn counts its pages as lost, never silent', async () => {
+    cut();
+    step((from) => from === 900);
+    const spool = new SpooledPictures();
+    const out = await drawBookPages(agent, Buffer.from('pdf'), 'a'.repeat(64), [3, 900, 905], spool);
+    expect(out.pictures.map((p) => p.page)).toEqual([3]);
+    expect(out.lost).toBe(2);
+    spool.drop();
   });
 });

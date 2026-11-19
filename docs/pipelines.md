@@ -2409,7 +2409,18 @@ answer at most, never every window's: a bad photocopy of 1,679 pages is
 about a gigabyte of pictures on disk, not in memory. The extract's picture
 pass takes them from the run of its database pass (`standingReaderPictures`,
 never a second job), saves them one at a time with the file's other
-pictures (`data.bookPage` the page), and drops the spool. Their description
+pictures (`data.bookPage` the page), and drops the spool. A page marked
+`vision` in the tab `Pages` with no picture there (the run is no longer
+kept: the memo holds two runs, or the extract is a retry whose database was
+written before; or the Reader left it out of its answer) is drawn by the
+Agent's step with no model, only the windows that hold such pages
+(`drawBookPages`): the step draws a window's pages before any ask, and its
+asks are never sent. A page with a picture of these bytes already is not
+drawn again, and a page that cannot be drawn is counted in the file's
+pictures left out (`data.images`), so the book shows `partial`, never
+`indexed`. The core keeps no picture of its own of a page the Reader read
+by OCR or left to vision (a scanned page of a mixed book), so no page is
+pictured or read by vision twice. Their description
 is the Agent `pdf-page-read`'s vision text of the page: a page picture never
 takes a vision call of its own (`load-body.ts`). The Agent runs after the
 extract; its run sets each picture's text and indexes it again through the
