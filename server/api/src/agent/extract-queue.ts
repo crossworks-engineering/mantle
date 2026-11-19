@@ -870,12 +870,14 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
 
 /** Facts deferred from a read (extract/facts.ts) in a job of their own,
  *  sent by the extractor in the same job that read them: the work was
- *  asked for by that read. No-op if the queue isn't started. */
+ *  asked for by that read. With no queue to send to (stopped) it throws,
+ *  so the read's job fails and is tried again rather than ending with its
+ *  facts lost (sendDeferredFacts). */
 export async function enqueueDeferredFacts(
   nodeId: string,
   deferred: DeferredFactsOut,
 ): Promise<void> {
-  if (!waitBoss || !nodeId) return;
+  if (!nodeId) return;
   await sendDeferredFacts(waitBoss, { nodeId }, deferred);
 }
 

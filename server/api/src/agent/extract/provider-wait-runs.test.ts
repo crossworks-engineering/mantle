@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { runWaitOf, DAY_CAP_MIN_GAP_MS, type PipelineRunResult } from './pipeline-run';
-import { paidWaitResends, waitAgain } from '../extract-queue';
+import { enqueueDeferredFacts, paidWaitResends, waitAgain } from '../extract-queue';
 import { PAID_WAIT_RESENDS_MAX } from '@mantle/std';
 
 const asked = (stopped?: string): PipelineRunResult => ({
@@ -199,5 +199,15 @@ describe('waitAgain', () => {
     job = sent.at(-1)!.data as typeof job;
     expect((job.wait as { paid?: number }).paid).toBeUndefined();
     expect(paidWaitResends(job)).toBe(true);
+  });
+});
+
+describe('enqueueDeferredFacts', () => {
+  it('with no queue to send to (stopped), it throws: the read is tried again, its facts never lost', async () => {
+    const deferred = { facts: { at: NOW.toISOString(), candidates: [] } };
+    await expect(enqueueDeferredFacts('n6', deferred)).rejects.toThrow(/not running/);
+    await expect(
+      enqueueDeferredFacts('n6', { ...deferred, wait: { reason: 'rate_limit' } }),
+    ).rejects.toThrow(/not running/);
   });
 });
