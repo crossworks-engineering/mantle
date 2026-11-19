@@ -420,3 +420,22 @@ export async function bookScanTurn(
     return { alone: true };
   }
 }
+
+/**
+ * Keep one page of a book's own bytes (node `nodeId`) in the shared reads,
+ * whether a chat turn reads the file or not: a figure page whose Scan
+ * reader read was paid before its vision call waited (the run again takes
+ * it and makes only the vision call), and that figure's description once
+ * made. Never throws for the store.
+ */
+export async function keepBookPage(nodeId: string, page: ScanPage): Promise<void> {
+  await scanShareHooks({
+    nodeId,
+    sha256: null,
+    by: 'book',
+    final: scanPageFinal,
+    claimMs: () => BOOK_CLAIM_MS,
+  })
+    .keep([page])
+    .catch(() => {});
+}

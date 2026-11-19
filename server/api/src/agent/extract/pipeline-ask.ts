@@ -41,7 +41,10 @@
  * text (the row's Model `scan_reader:mistral-ocr`); a read judged bad is a
  * row with no text, so the page stays unread and a run again pays nothing
  * for it. A page the engine finds mostly a figure goes on to the vision
- * call above (a description of the figure), behind the same guards. With no
+ * call above (a description of the figure), behind the same guards; when
+ * that call waits (the provider's "not now", the day cap), the paid Scan
+ * reader read is kept on the file as a figure (keepBookPage), so the run
+ * again makes only the vision call. With no
  * Scan reader on the brain the page is skipped with no stop (unread, said
  * so) and the run's other pages go on. The decider's `scan_read_check` is
  * asked where its answer can matter: in shadow it is only logged; live, it
@@ -58,6 +61,7 @@ import {
   ASK_SKIPPED_NO_SCAN_READER,
   DAY_CAP_STOP,
   PAGE_TEXT_ANSWER_MAX_CHARS,
+  providerWaitOfStop,
   providerWaitStop,
   type AgentAsk,
   type AgentAskFn,
@@ -71,6 +75,7 @@ import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state
 import { checkScanRead } from '@mantle/decisions';
 import {
   bookScanTurn,
+  keepBookPage,
   runScanReader,
   runVisionWorker,
   scanVerdictOf,
@@ -113,6 +118,8 @@ export type PipelineAskDeps = {
   check: typeof checkScanRead;
   /** The shared reads of one page (bookScanTurn). */
   shared(page: number): Promise<BookScanTurn>;
+  /** Keep one page of the file in the shared reads (keepBookPage). */
+  keep(page: ScanPage): Promise<void>;
 };
 
 /**
@@ -138,6 +145,7 @@ export function pipelineAskOf(
     scan: runScanReader,
     check: checkScanRead,
     shared: (page) => bookScanTurn(nodeId, page),
+    keep: (page) => keepBookPage(nodeId, page),
     ...deps,
   };
   // Guards 1 and 2, read one time for the run.
@@ -253,9 +261,19 @@ export function pipelineAskOf(
     // the answer with no call; while it reads the file, the page is claimed
     // first, and this read is kept for it.
     let shared: Extract<BookScanTurn, { hooks: unknown }> | null = null;
+    // A figure page: its Scan reader read kept by a reader before (this
+    // ask makes only the vision call), or paid by this ask.
+    let keptFigure = false;
+    let paidFigure = false;
+    const page = pageOfAskKey(ask.key);
+    const figure = (n: number): ScanPage => ({
+      page: n,
+      method: 'unread',
+      text: '',
+      why: 'figure',
+    });
     if (pageText && ask.pdf && ask.scan && ask.fields.length === 1 && !ask.list) {
       const name = ask.fields[0]!.name;
-      const page = pageOfAskKey(ask.key);
       const turn: BookScanTurn = page !== null ? await d.shared(page) : { alone: true };
       if ('kept' in turn) {
         const k = turn.kept;
@@ -272,6 +290,7 @@ export function pipelineAskOf(
             },
           };
         }
+        keptFigure = true;
       } else {
         if ('hooks' in turn) shared = turn;
         const read = await scanRead(ask, ask.scan, ask.pdf);
@@ -279,10 +298,14 @@ export function pipelineAskOf(
           if (shared && page !== null) await keepShared(shared, pageOfAnswer(page, read, name));
           return read;
         }
+        paidFigure = true;
       }
       if ((await d.asksToday()) >= d.dayCap()) {
-        if (shared && page !== null) {
-          await keepShared(shared, { page, method: 'unread', text: '', why: 'failed' });
+        // The figure's Scan reader read, paid here, is kept: the run again
+        // (once the cap has room) makes only the vision call.
+        if (paidFigure && page !== null) {
+          if (shared) await keepShared(shared, figure(page));
+          else await d.keep(figure(page));
         }
         return no(DAY_CAP_STOP);
       }
@@ -352,17 +375,31 @@ export function pipelineAskOf(
         return { ok: true, output: { ...got, model: out.model ?? '' } };
       },
     );
-    // A shared figure page: its description kept for the chat turn (none:
-    // a figure not described, final).
-    const page = pageOfAskKey(ask.key);
-    if (shared && page !== null) {
+    if (page !== null && (shared || keptFigure || paidFigure)) {
       const text = answer.ok ? valueOf(answer.output, ask.fields[0]!.name) : null;
-      await keepShared(
-        shared,
-        typeof text === 'string' && text.trim()
-          ? { page, method: 'vision', text }
-          : { page, method: 'unread', text: '', why: answer.ok ? 'figure' : 'failed' },
-      );
+      const described = typeof text === 'string' && text.trim() ? text : null;
+      // The provider's "not now" to the vision call after this ask paid the
+      // figure's Scan reader read: that read is kept (a figure), so the run
+      // again makes only the vision call, never the Scan reader's again.
+      const waited = paidFigure && !answer.ok && providerWaitOfStop(answer.reason) !== null;
+      if (shared) {
+        // A shared figure page: its description kept for the chat turn
+        // (none: a figure not described, final).
+        await keepShared(
+          shared,
+          described
+            ? { page, method: 'vision', text: described }
+            : answer.ok || waited
+              ? figure(page)
+              : { page, method: 'unread', text: '', why: 'failed' },
+        );
+      } else if (waited) {
+        await d.keep(figure(page));
+      } else if (keptFigure && described) {
+        // A kept figure now described: the description in its place, for a
+        // chat turn on the same upload.
+        await d.keep({ page, method: 'vision', text: described });
+      }
     }
     return answer;
   };

@@ -323,6 +323,7 @@ describe('the Scan reader of a scanned page', () => {
   let scanOut: Awaited<ReturnType<NonNullable<ScanDep>>>;
   let checkOut: Awaited<ReturnType<NonNullable<CheckDep>>>;
   let today: number;
+  let keptAlone: unknown[];
 
   const PAGES_AGENT = {
     id: 'pdf-page-read',
@@ -373,6 +374,9 @@ describe('the Scan reader of a scanned page', () => {
     }) as CheckDep,
     // No chat turn reads the file: nothing shared (a test below shares).
     shared: async () => ({ alone: true as const }),
+    keep: async (p: unknown) => {
+      keptAlone.push(p);
+    },
     ...over,
   });
   const paid = () => h.steps.filter((s) => s.meta.use === PIPELINE_ASK_USE);
@@ -383,6 +387,7 @@ describe('the Scan reader of a scanned page', () => {
     mod = await import('./pipeline-ask');
     h.steps.length = 0;
     visionCalls = 0;
+    keptAlone = [];
     scanCalls = [];
     checkCalls = 0;
     today = 0;
@@ -587,6 +592,67 @@ describe('the Scan reader of a scanned page', () => {
       expect(scanCalls).toHaveLength(0);
       expect(visionCalls).toBe(1);
     });
+  });
+
+  it('a figure whose vision call waits keeps its Scan reader read: the run again makes only the vision call', async () => {
+    // The file's shared reads, in memory: what keep wrote, shared takes.
+    const store = new Map<number, unknown>();
+    const shared = async (page: number) => {
+      const k = store.get(page);
+      return k ? { kept: k } : { alone: true as const };
+    };
+    const keep = async (p: { page: number }) => {
+      store.set(p.page, p);
+    };
+    let busy = true;
+    const vision = async () => {
+      visionCalls += 1;
+      return busy
+        ? {
+            ran: false,
+            text: '',
+            note: '429',
+            model: 'made-up-vision',
+            wait: { reason: 'rate_limit' },
+          }
+        : {
+            ran: true,
+            text: '{"Text":"A FIGURE OF A VALVE"}',
+            note: null,
+            model: 'made-up-vision',
+          };
+    };
+    scanOut = { ...scanOut, text: 'FIG 1', pictures: 1 };
+    expect(await run({ shared, keep, vision })).toEqual({
+      ok: false,
+      error: 'not_available',
+      reason: 'provider_rate_limit',
+    });
+    expect(scanCalls).toHaveLength(1);
+    // The run again, still "not now": no second Scan reader read.
+    await run({ shared, keep, vision });
+    expect(scanCalls).toHaveLength(1);
+    // Then the vision call answers: the description, and it is kept.
+    busy = false;
+    expect(await run({ shared, keep, vision })).toMatchObject({
+      output: { values: { Text: 'A FIGURE OF A VALVE' } },
+    });
+    expect(scanCalls).toHaveLength(1);
+    expect(visionCalls).toBe(3);
+    expect(store.get(7)).toEqual({ page: 7, method: 'vision', text: 'A FIGURE OF A VALVE' });
+  });
+
+  it('a figure held at the day cap keeps its Scan reader read too', async () => {
+    scanOut = { ...scanOut, text: '', pictures: 2 };
+    const out = await run({
+      asksToday: async () => {
+        const n = today;
+        today = 500;
+        return n;
+      },
+    });
+    expect(out).toEqual({ ok: false, error: 'not_available', reason: 'day_cap' });
+    expect(keptAlone).toEqual([{ page: 7, method: 'unread', text: '', why: 'figure' }]);
   });
 
   it('the provider says "not now" to the Scan reader: the run waits; the page is not judged', async () => {
