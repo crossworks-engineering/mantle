@@ -48,6 +48,16 @@ import {
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { fileById, isDefaultFileText, parserText, readFileById } from '@mantle/files';
 import {
+  cutMakesPartial,
+  hasPartialReadCut,
+  hasReadCut,
+  readCutReason,
+  readCutViews,
+  type ReadCuts,
+} from '@mantle/files/read-cut';
+import { withReadCutSink } from '@mantle/files/read-cut-sink';
+import { filePagesOf, pagesText } from '@mantle/content/page-passages';
+import {
   log,
   catalogHasModel,
   catalogModalities,
@@ -67,8 +77,9 @@ import { visibilityRefusal } from './visibility-refusal';
 import { workspaceTokensLeft } from './builtins-delegation';
 import {
   estimateTokens,
-  lowTokens,
   partBudgetFor,
+  TRANSLATE_EXPANSION,
+  TRANSLATE_PROMPT_TOKENS,
   translateInParts,
   TranslatePartError,
   type ModelRoute,
@@ -93,7 +104,10 @@ export const STORED_TEXT_MAX_CHARS = 1_000_000;
 /** A language as a caller names it: letters (any script), spaces, hyphens
  *  and brackets only ("German", "pt-BR", "Chinese (Simplified)"), so no
  *  instruction rides in the prompt beside it. */
-const LANGUAGE_RE = /^[\p{L}\p{M} ()-]+$/u;
+const LANGUAGE_RE = /^[\p{L}\p{M}0-9 ()-]+$/u;
+/** At most four words ("Chinese (Simplified)", "Brazilian Portuguese",
+ *  "es-419"): a language, never a sentence. */
+const LANGUAGE_WORDS_MAX = 4;
 
 /** The longest `to` / `from` (a language's name or code). */
 const LANGUAGE_MAX = 64;
@@ -129,6 +143,76 @@ type Source = {
   path: string | null;
   tags: string[];
 };
+
+/** Why a file's stored text is not all of it, from the reader's own
+ *  record (`data.read_cut`, `data.ocr`), or null. The cut of the stored
+ *  copy itself (`text_store`) is no reason: the whole text is read again
+ *  (wholeFileText). A detail-only cut (a small picture left out) is none. */
+function textCutOf(data: Readonly<Record<string, unknown>>): string | null {
+  const cuts = data.read_cut;
+  if (hasPartialReadCut(cuts)) {
+    const views = readCutViews(cuts as ReadCuts).filter(
+      (v) => cutMakesPartial(v.key) && readCutReason(v.key) !== 'text_store',
+    );
+    if (views.length) return views.map((v) => v.hint).join(' ');
+  }
+  const ocr = data.ocr as { pages_read?: unknown; pages_total?: unknown } | undefined;
+  if (
+    ocr &&
+    typeof ocr.pages_read === 'number' &&
+    typeof ocr.pages_total === 'number' &&
+    ocr.pages_read < ocr.pages_total
+  ) {
+    return `Only ${ocr.pages_read} of ${ocr.pages_total} pages were read.`;
+  }
+  return null;
+}
+
+/**
+ * A file's whole text, or the refusal: never a part translated as if it
+ * were all (the standing rule, 2026-11-19). A file the reader took only in
+ * part (its own record says so) is refused. A stored copy cut at the
+ * extractor's ceiling is read whole: the file's pages from its database
+ * (a PDF book, as file_read does), else the parser service once more, with
+ * the cuts it reports collected; any cut, or no longer text, refuses.
+ */
+async function wholeFileText(
+  id: string,
+  filename: string,
+  data: Readonly<Record<string, unknown>>,
+  stored: string,
+  ownerId: string,
+): Promise<{ text: string } | { error: string }> {
+  const partly = (why: string) => ({
+    error: `File ${id} was read only in part, so a translation would leave text out: nothing was translated. ${why} Re-read the file once its reader takes all of it, or translate the parts you have.`,
+  });
+  const cut = textCutOf(data);
+  if (cut) return partly(cut);
+  const cuts = data.read_cut as Record<string, unknown> | undefined;
+  const storeCut = !!cuts && Object.keys(cuts).some((k) => readCutReason(k) === 'text_store');
+  // An older file carries no record: its length says the stored copy may
+  // be cut.
+  const mayBeCut = storeCut || (!hasReadCut(cuts) && stored.length >= STORED_TEXT_MAX_CHARS);
+  if (!mayBeCut) return { text: stored };
+  const pages = await filePagesOf({ id, ownerId, sha256: data.sha256 });
+  if (pages && pages.pages.length > 0) {
+    const joined = pagesText(pages.pages);
+    if (joined.length > stored.length) return { text: joined };
+  }
+  const res = await readFileById({ ownerId, fileId: id });
+  const ext = (filename.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
+  if (res) {
+    // The parser service reads the bytes again (an untrusted file is read
+    // only there); what it says it left out is collected.
+    const again = await withReadCutSink(() => parserText(res.bytes, ext)).catch(() => null);
+    if (again && !hasPartialReadCut(again.cuts) && again.value.length > stored.length) {
+      return { text: again.value };
+    }
+  }
+  return partly(
+    `Its stored text stops at ${STORED_TEXT_MAX_CHARS.toLocaleString('en-US')} characters and it could not be read again in full here.`,
+  );
+}
 
 /** The text of the item `id` as the caller reads it, or the refusal. */
 async function readSource(
@@ -180,22 +264,19 @@ async function readSource(
         // The text the reader took out of a PDF, Word or Excel file. The
         // stand-in of a file no reader reads names the file only: no text.
         text = data.text;
-        // The stored text is cut at the extractor's ceiling: the whole text
-        // is read again from the bytes, or nothing is translated (never the
-        // first part as if it were all).
-        if (text.length >= STORED_TEXT_MAX_CHARS) {
-          const res = await readFileById({ ownerId: ctx.ownerId, fileId: id });
-          const ext = (meta.filename.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase();
-          // The parser service reads the bytes again (an untrusted file is
-          // read only there).
-          const whole = res ? await parserText(res.bytes, ext).catch(() => '') : '';
-          if (whole.length <= text.length) {
-            return {
-              error: `File ${id} is longer than its stored text (${STORED_TEXT_MAX_CHARS.toLocaleString('en-US')} characters) and cannot be read again in full here, so nothing was translated: a part would be left out. Split the file, or translate its sections one by one.`,
-            };
-          }
-          text = whole;
+        const full = await wholeFileText(id, meta.filename, data, text, ctx.ownerId);
+        if ('error' in full) return full;
+        text = full.text;
+      } else {
+        // A file whose reader gave its text by page only (a PDF book).
+        const cut = textCutOf(data);
+        if (cut) {
+          return {
+            error: `File ${id} was read only in part, so a translation would leave text out: nothing was translated. ${cut}`,
+          };
         }
+        const pages = await filePagesOf({ id, ownerId: ctx.ownerId, sha256: data.sha256 });
+        if (pages && pages.pages.length > 0) text = pagesText(pages.pages);
       }
       if (!text.trim()) {
         return {
@@ -443,7 +524,13 @@ export const translateTool: BuiltinToolDef = {
       ['to', to],
       ['from', from ?? ''],
     ] as const) {
-      if (v && (v.length > LANGUAGE_MAX || !LANGUAGE_RE.test(v))) {
+      if (
+        v &&
+        (v.length > LANGUAGE_MAX ||
+          !LANGUAGE_RE.test(v) ||
+          v.split(/[\s()-]+/).filter(Boolean).length > LANGUAGE_WORDS_MAX ||
+          !/\p{L}/u.test(v))
+      ) {
         return {
           ok: false,
           error: `\`${name}\` is a language name or code: letters, spaces and hyphens, e.g. "German" or "pt-BR".`,
@@ -537,11 +624,22 @@ export const translateTool: BuiltinToolDef = {
       extra ? estimateTokens(extra) : 0,
     );
 
-    // A workspace user's daily tokens (the member budget): a translation
-    // that cannot fit what is left is refused before any spend, and one
-    // that runs past it stops between parts (no part is half kept).
+    // A workspace user's daily tokens (the member budget). The whole cost is
+    // estimated on the high side (every part's text, its answer at the
+    // expansion, and the prompt each part is sent with); a translation that
+    // cannot fit what is left is refused before any spend. While a budget
+    // applies, parts go one at a time, and a run that would pass it stops
+    // before the next part (the stop fails the call: no part is kept).
     const left = workspaceTokensLeft(ctx.surface);
-    if (left !== null && left < lowTokens(source.text) * 2) {
+    const promptTokens = TRANSLATE_PROMPT_TOKENS + (extra ? estimateTokens(extra) : 0);
+    const sourceTokens = estimateTokens(source.text);
+    const partsEstimate = Math.max(1, Math.ceil(sourceTokens / budget.partTokens));
+    const costEstimate = sourceTokens * (1 + TRANSLATE_EXPANSION) + partsEstimate * promptTokens;
+    const perPart = Math.min(
+      costEstimate,
+      budget.partTokens * (1 + TRANSLATE_EXPANSION) + promptTokens,
+    );
+    if (left !== null && left < costEstimate) {
       return {
         ok: false,
         error:
@@ -600,9 +698,12 @@ export const translateTool: BuiltinToolDef = {
         call,
         ...(left !== null
           ? {
+              concurrency: 1,
               stopReason: () => {
                 const now = workspaceTokensLeft(ctx.surface);
-                return now !== null && now <= 0 ? 'your daily tokens ran out' : null;
+                return now !== null && now < perPart
+                  ? 'your daily tokens would run out before the next part'
+                  : null;
               },
             }
           : {}),
@@ -813,12 +914,19 @@ export const translator_settings: BuiltinToolDef = {
         (acc, k) => sql`(${acc}) - ${k}::text`,
         sql`coalesce(${aiWorkers.params}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
       );
-      const set = { model, params: merged, updatedAt: new Date() };
-      await onNarrowSpots(aiWorkers, 'update', { model, params, updatedAt: set.updatedAt }, () =>
-        db
-          .update(aiWorkers)
-          .set(set)
-          .where(and(eq(aiWorkers.id, row.id), eq(aiWorkers.ownerId, ctx.ownerId))),
+      // The model only when this call names it: a screen change of it that
+      // lands meanwhile is kept.
+      const modelSet = input.model !== undefined ? { model } : {};
+      const set = { ...modelSet, params: merged, updatedAt: new Date() };
+      await onNarrowSpots(
+        aiWorkers,
+        'update',
+        { ...modelSet, params, updatedAt: set.updatedAt },
+        () =>
+          db
+            .update(aiWorkers)
+            .set(set)
+            .where(and(eq(aiWorkers.id, row.id), eq(aiWorkers.ownerId, ctx.ownerId))),
       );
     }
     return {
