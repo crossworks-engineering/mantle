@@ -1561,6 +1561,12 @@ export const FACT_WORKER_MODEL = 'openai/gpt-6-luna';
  *  worker, and the Reader specialist. */
 export const READ_WORKER_MODEL = 'google/gemini-3.8-flash';
 
+/** The Scan reader's model (the `scan_reader` worker). A placeholder, the
+ *  workhorse, until the owner picks the OCR model: change this one line.
+ *  Check the id in the live OpenRouter catalog, and score it on the scan
+ *  bench first (docs/ai-workers.md, "The Scan reader"). */
+export const SCAN_READER_MODEL = DEFAULT_WORKER_MODEL;
+
 // ── Agents ───────────────────────────────────────────────────────────────────
 
 export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
@@ -2247,6 +2253,18 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     required: false,
     provider: 'openrouter',
     model: READ_WORKER_MODEL,
+  },
+  // Scan reader: reads the text of a scanned page picture that Tesseract read
+  // badly, before the vision worker (docs/ai-workers.md, "The Scan reader").
+  // OPTIONAL: fresh brains get it at onboarding; an existing brain keeps the
+  // old path of a scanned page (Tesseract, then vision) until an operator
+  // adds one. Its model is SCAN_READER_MODEL, the one line to change.
+  {
+    kind: 'scan_reader',
+    name: 'Scan reader',
+    required: false,
+    provider: 'openrouter',
+    model: SCAN_READER_MODEL,
   },
   {
     kind: 'image_gen',

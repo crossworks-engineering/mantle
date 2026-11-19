@@ -109,6 +109,20 @@ export {
   type AttachmentExtract,
 } from './attachments';
 
+export {
+  runScanReader,
+  SCAN_READER_SYSTEM_TEXT,
+  SCAN_READER_PROMPT,
+  SCAN_READER_MAX_TOKENS,
+  type ScanReaderResult,
+} from './scan-reader';
+export {
+  scanReadQualityOf,
+  type OcrWord,
+  type ScanReadBadReason,
+  type ScanReadQuality,
+} from './scan-reader-quality';
+
 /** Re-exported from @mantle/tools so turn-assembly code can ask "is this tool
  *  safe for a read-only turn?" without importing the whole builtin barrel
  *  (which drags every domain package into the module graph). */

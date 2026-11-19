@@ -65,7 +65,7 @@ POST /api/ai-workers owner valid [opaque-500 (fold 2: a plain error, its text wa
   main 400 application/json {"error":"DATABASE_URL must be set"}
   now  500 application/json {"error":"internal error"}
 POST /api/ai-workers owner malformed [bad-json-400 (malformed)]
-  main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
+  main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\"|\"scan_reader\""}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/ai-workers owner empty [worker-kind (the Translator: a worker kind more, its 400 names it)]
   main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
@@ -74,7 +74,7 @@ POST /api/ai-workers owner nul [worker-kind (the Translator: a worker kind more,
   main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
   now  400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\"|\"translator\""}
 POST /api/ai-workers owner chunked [chunked-413]
-  main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
+  main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\"|\"scan_reader\""}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 PATCH /api/ai-workers/:id owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"nothing to update"}
