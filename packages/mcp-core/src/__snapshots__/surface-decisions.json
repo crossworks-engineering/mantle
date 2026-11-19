@@ -1675,7 +1675,7 @@
   "gate": {
    "effect": "read",
    "scope": {
-    "area": "connectors"
+    "area": "users"
    },
    "spends": "none",
    "creates": false,
@@ -1695,7 +1695,7 @@
   "gate": {
    "effect": "read",
    "scope": {
-    "area": "connectors"
+    "area": "users"
    },
    "spends": "none",
    "creates": false,
@@ -1715,7 +1715,7 @@
   "gate": {
    "effect": "write",
    "scope": {
-    "area": "connectors"
+    "area": "users"
    },
    "spends": "none",
    "creates": false,
@@ -1735,7 +1735,7 @@
   "gate": {
    "effect": "write",
    "scope": {
-    "area": "connectors"
+    "area": "users"
    },
    "spends": "none",
    "creates": false,
