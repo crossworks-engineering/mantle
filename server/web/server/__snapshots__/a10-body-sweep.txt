@@ -193,6 +193,18 @@ POST /api/ai-workers/voices owner empty => 400 application/json {"error":"apiKey
 POST /api/ai-workers/voices owner nul => 200 application/json {"voices":[],"error":"no voice discovery for provider 'sweep\u0000'"}
 POST /api/ai-workers/voices owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
 POST /api/ai-workers/voices owner chunked => 400 application/json {"error":"apiKeyId: Invalid input: expected string, received undefined"}
+POST /api/sidecar/files/stub none array => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/stub none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/stub none empty => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/stub none malformed => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/stub none nul => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/files/stub none valid => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/mail/attachment none array => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/mail/attachment none chunked => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/mail/attachment none empty => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/mail/attachment none malformed => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/mail/attachment none nul => 401 application/json {"error":"unauthorized"}
+POST /api/sidecar/mail/attachment none valid => 401 application/json {"error":"unauthorized"}
 PUT /api/app-nav/pins owner valid => 500 application/json {"error":"internal error"}
 PUT /api/app-nav/pins owner malformed => 400 application/json {"error":"pins (array of app ids) required"}
 PUT /api/app-nav/pins owner empty => 400 application/json {"error":"pins (array of app ids) required"}
@@ -2911,6 +2923,7 @@ POST /api/files/reindex owner chunked => 413 application/json {"error":"This req
 # 2026-11-14 (Pipelines phase 2 M4, docs/pipelines.md): POST /api/pipelines/:id/test had no route on main; its cells are the branch's own answers (no valid body is kept for it: the sweep's body names no fileId, so valid, empty and nul are the 400 of its body).
 # 2026-11-14 (Pipelines phase 2 M8, docs/pipelines.md): POST /api/pipelines/:id/reread had no route on main; its cells are the branch's own answers (the sample id names no pipeline: 404 after the body read).
 # 2026-11-18 (Files program P3, file history): POST /api/files/files/:id/history/:sid/restore and DELETE /api/files/files/:id/history/:sid had no route on main; their cells are the branch's own answers.
+# 2026-11-19 (sync-complete, cap sweep group 2): POST /api/sidecar/files/stub and POST /api/sidecar/mail/attachment had no route on main; their cells are the branch's own answers (the sidecar's token: 401 before any body read).
 POST /api/pipelines/:id/test owner valid => 400 application/json {"error":"fileId: Invalid input: expected string, received undefined"}
 POST /api/pipelines/:id/test owner malformed => 400 application/json {"error":"invalid JSON"}
 POST /api/pipelines/:id/test owner empty => 400 application/json {"error":"fileId: Invalid input: expected string, received undefined"}

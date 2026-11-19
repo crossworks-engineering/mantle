@@ -280,6 +280,7 @@ GET /api/settings/worker-groups class=area scope=area:settings caller=owner gone
 GET /api/shares class=content scope=content caller=owner gone=false
 GET /api/shares/all class=content scope=content caller=owner gone=false
 GET /api/shell class=self scope=- caller=login gone=false
+GET /api/sidecar/events class=public scope=- caller=- gone=false
 GET /api/sidecar/files class=public scope=- caller=- gone=false
 GET /api/sidecar/state class=public scope=- caller=- gone=false
 GET /api/sidecar/state/:key class=public scope=- caller=- gone=false
@@ -577,6 +578,7 @@ HEAD /api/settings/worker-groups class=area scope=area:settings caller=owner gon
 HEAD /api/shares class=content scope=content caller=owner gone=false
 HEAD /api/shares/all class=content scope=content caller=owner gone=false
 HEAD /api/shell class=self scope=- caller=login gone=false
+HEAD /api/sidecar/events class=public scope=- caller=- gone=false
 HEAD /api/sidecar/files class=public scope=- caller=- gone=false
 HEAD /api/sidecar/state class=public scope=- caller=- gone=false
 HEAD /api/sidecar/state/:key class=public scope=- caller=- gone=false
@@ -913,7 +915,9 @@ POST /api/sidecar/files class=public scope=- caller=- gone=false
 POST /api/sidecar/files/forget class=public scope=- caller=- gone=false
 POST /api/sidecar/files/relink class=public scope=- caller=- gone=false
 POST /api/sidecar/files/remove class=public scope=- caller=- gone=false
+POST /api/sidecar/files/stub class=public scope=- caller=- gone=false
 POST /api/sidecar/mail/accounts class=public scope=- caller=- gone=false
+POST /api/sidecar/mail/attachment class=public scope=- caller=- gone=false
 POST /api/sidecar/mail/gate class=public scope=- caller=- gone=false
 POST /api/sidecar/mail/ingest class=public scope=- caller=- gone=false
 POST /api/sidecar/mail/run class=public scope=- caller=- gone=false

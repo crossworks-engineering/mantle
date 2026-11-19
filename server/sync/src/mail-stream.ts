@@ -15,6 +15,7 @@
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { MailParser, type AttachmentStream, type MessageText } from 'mailparser';
+import { errorMessage } from '@mantle/std';
 import { MAIL_BODY_INLINE_MAX, type WireAttachment, type WireMessage } from '@mantle/email/wire';
 import { BrainError, type Brain } from './brain';
 import type { State } from './state';
@@ -234,7 +235,7 @@ export function tolerateFor(
 
 /** The stub of a message that could not be read. */
 export function unreadStub(base: WireMessage, err: unknown): WireMessage {
-  const why = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+  const why = errorMessage(err).slice(0, 300);
   return {
     ...base,
     attachments: [],
