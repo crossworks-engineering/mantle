@@ -439,7 +439,7 @@ export {
   readFileById,
   openFileById,
   BYTE_DERIVED_DATA_KEYS,
-  agentReadCutsOnly,
+  keptReadCuts,
   deleteFileById,
   fileDeleteBlock,
   type FileDeleteBlock,

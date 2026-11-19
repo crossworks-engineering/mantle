@@ -727,7 +727,7 @@ export async function admitForExtraction(
           await tx
             .update(nodes)
             .set({
-              data: sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'text' - 'agent_text' - 'content' - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(
+              data: sql`(${dropIndexWork(nodes.data, readIndexWork(node.data))} - 'text' - 'agent_text' - 'read_cut' - 'content' - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(
                 {
                   summary: spine,
                   summary_model: 'metadata-only',

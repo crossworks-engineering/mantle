@@ -57,7 +57,7 @@ import {
   withHeads,
 } from '@mantle/db';
 import {
-  agentReadCutsOnly,
+  keptReadCuts,
   BYTE_DERIVED_DATA_KEYS,
   emailAttachmentIds,
   extOf,
@@ -82,8 +82,10 @@ import type { BuiltinToolDef } from '../types';
 /** The keys a reindex drops: what the extractor derived from the bytes,
  *  but the Agents' text and the pipeline's stamp (no database is rebuilt by
  *  the extract), and a parked verdict, so the read runs again. The cuts of
- *  the read (`read_cut`) go apart from these: an Agent's cut stays with its
- *  text, and a sketched file keeps them all with its text (readCutAfter). */
+ *  the read (`read_cut`) go apart from these: kept whole while a cut the
+ *  next read does not say again is in them (an Agent's, the picture
+ *  gate's: keptReadCuts), and a sketched file keeps them all with its
+ *  text. */
 const REINDEX_DROP_KEYS: readonly string[] = [
   ...BYTE_DERIVED_DATA_KEYS.filter(
     (k) => k !== 'agent_text' && k !== 'pipeline_read' && k !== 'read_cut',
@@ -266,11 +268,12 @@ export async function reindexFiles(
         .update(nodes)
         .set({
           // A sketched file keeps its cuts with its text; another keeps
-          // them whole while an Agent's is among them (agentReadCutsOnly).
+          // them whole while one the next read does not say again is among
+          // them (keptReadCuts).
           data: sql`case when ${isSketched}
             then coalesce(${nodes.data}, '{}'::jsonb) - ${keys(SKETCH_DROP_KEYS)}
             else (coalesce(${nodes.data}, '{}'::jsonb) - ${keys(REINDEX_DROP_KEYS)} - 'read_cut')
-                 || ${agentReadCutsOnly()} end`,
+                 || ${keptReadCuts()} end`,
         })
         .where(
           and(
