@@ -85,7 +85,7 @@ import {
   type PdfDecide,
   type StoredPdf,
 } from './pdf-read';
-import { bookVisionPagesOf } from './book-pages';
+import { bookScanEvidenceOf, bookScanPagesOf, bookVisionPagesOf } from './book-pages';
 import { pagesToRead, windowPagePictures, type BookPagePictures } from './book-page-pictures';
 import {
   AGENT_HASH_COLUMN,
@@ -1088,15 +1088,26 @@ export async function agentInputOf(
   sqlite: string,
 ): Promise<{
   kind?: string;
-  state: { readerOptions: Readonly<Record<string, unknown>>; visionPages?: number[] };
+  state: {
+    readerOptions: Readonly<Record<string, unknown>>;
+    visionPages?: number[];
+    scanPages?: number[];
+  };
 }> {
   const kind = pipelines.routerFor(ext) ? (await storedPdfOf(sqlite))?.kind : undefined;
   const readerOptions = (await readerOptionsOf(ownerId, ext, pipelines)) ?? {};
-  // A book: the pages its reader left to vision (pdf-page-read, M3).
+  // A book: the pages its reader left to vision (pdf-page-read, M3), and of
+  // them the pages OCR read badly, which the Scan reader reads first (the
+  // step cuts each as a one-page PDF; docs/ai-workers.md, "The Scan reader").
   const visionPages = kind === 'book' ? await bookVisionPagesOf(sqlite) : undefined;
+  const scanPages = visionPages?.length ? await bookScanPagesOf(sqlite) : [];
   return {
     ...(kind !== undefined ? { kind } : {}),
-    state: { readerOptions, ...(visionPages ? { visionPages } : {}) },
+    state: {
+      readerOptions,
+      ...(visionPages ? { visionPages } : {}),
+      ...(scanPages.length > 0 ? { scanPages } : {}),
+    },
   };
 }
 
@@ -1414,7 +1425,17 @@ async function runAgentWindowed(args: {
         ...stepInput,
         window,
       });
-      const asks = step.status === 'ok' ? checkAsks(windowView, step.asks, step.pictures) : [];
+      const checked = step.status === 'ok' ? checkAsks(windowView, step.asks, step.pictures) : [];
+      // A page the step sent as a one-page PDF gets the free evidence of
+      // the Scan reader's check, from the book reader's tab Pages.
+      const scanned = checked.filter((a) => a.pdf && a.page !== null).map((a) => a.page!);
+      const evidence = scanned.length > 0 ? await bookScanEvidenceOf(sqlite, scanned) : null;
+      const asks = evidence
+        ? checked.map((a) => {
+            const e = a.pdf && a.page !== null ? evidence.get(a.page) : undefined;
+            return e ? { ...a, scan: e } : a;
+          })
+        : checked;
       return { step, asks };
     });
     if (isWindowLost(read)) {

@@ -102,6 +102,12 @@ export type PictureAskInput = {
   fields: readonly PipelineAskField[];
   list?: true;
   page?: number;
+  /** A page of a book that OCR read badly (pdf-page-read): the page as a
+   *  one-page PDF the step wrote in its job folder (`job.pdfPage`). The core
+   *  then reads it with the Scan reader first, and with vision on the
+   *  picture only when that read is judged bad (docs/ai-workers.md, "The
+   *  Scan reader"). Left out, or not there: vision, as before. */
+  pdf?: string;
 };
 /** One item of an ask's list: the text as the picture shows it, and its
  *  class. */
@@ -352,6 +358,10 @@ export type StepJob = {
    *  page decode (any size the parser takes), or null when qpdf cannot
    *  read it. For a router that must name a file past the size pdfjs opens. */
   pdfPageCount(): Promise<number | null>;
+  /** Page `page` of the body (1-based) as a one-page PDF named `file` in the
+   *  job's folder, cut by qpdf with no page decode: its size, or null when
+   *  it could not be cut. For the Scan reader's read of a scanned page. */
+  pdfPage(page: number, file: string): Promise<number | null>;
   /** The CAD tier on the body (`--dwg-render`): its JSON reply. */
   cadRender(opts: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>>;
   dwfRender: DwfRenderFn;

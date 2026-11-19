@@ -30,7 +30,16 @@ import {
 import { checkStepResult } from '../../step-check';
 import { inProcessStepJob } from '../../test-job';
 import { step as routerStep } from '../pdf-router/step';
-import { FIELDS, KIND, PAGES_DEFAULT, donePagesOf, pagesOf, step, visionPagesOf } from './step';
+import {
+  FIELDS,
+  KIND,
+  PAGES_DEFAULT,
+  donePagesOf,
+  pagesOf,
+  scanPagesOf,
+  step,
+  visionPagesOf,
+} from './step';
 
 /** Points of a sheet. */
 const A4 = { w: 595.28, h: 841.89 };
@@ -394,5 +403,59 @@ describe('the step of pdf-page-read', () => {
     expect(pagesOf({})).toBe(PAGES_DEFAULT);
     expect(pagesOf({ pages: 0 })).toBe(1);
     expect(pagesOf({ pages: 1e9 })).toBe(PIPELINE_ASK_PAGE_MAX);
+  });
+
+  it('a page OCR read badly goes as a one-page PDF too, in what the pictures leave', async () => {
+    const pdf = typedPdf(4);
+    const cut: number[] = [];
+    const { job, dir } = jobOf(pdf, {
+      // The window's page 2 (page 12 of the file) as a one-page PDF; page 3
+      // (13) cannot be cut.
+      pdfPage: async (page, file) => {
+        cut.push(page);
+        if (page === 3) return null;
+        const bytes = Buffer.from('%PDF-1.4 page ' + page);
+        await import('node:fs').then((fs) => fs.writeFileSync(path.join(dir, file), bytes));
+        return bytes.length;
+      },
+    });
+    const r = await step(
+      request({
+        kind: KIND,
+        pageFrom: 11,
+        pageTo: 14,
+        pagesTotal: 40,
+        state: { visionPages: [11, 12, 13], scanPages: [12, 13, 30] },
+      }),
+      job,
+    );
+    expect(cut).toEqual([2, 3]);
+    const pdfs = (r.calls ?? []).map((c) => (c as { input: PictureAskInput }).input.pdf);
+    // Page 11 is a figure (no Scan reader); 12 has its PDF; 13 could not be
+    // cut: vision.
+    expect(pdfs).toEqual([undefined, 'page-12.pdf', undefined]);
+    expect(readFileSync(path.join(dir, 'page-12.pdf')).toString()).toBe('%PDF-1.4 page 2');
+    expect(checkStepResult(r)).toMatchObject({ ok: true });
+  });
+
+  it('a PDF past what the pictures leave of the budget is not sent; the page is read by vision', async () => {
+    const { job, dir } = jobOf(typedPdf(2), {
+      pdfPage: async (_page, file) => {
+        await import('node:fs').then((fs) =>
+          fs.writeFileSync(path.join(dir, file), Buffer.from('%PDF-1.4')),
+        );
+        return 11 * 1024 * 1024;
+      },
+    });
+    const r = await step(
+      request({ kind: KIND, pageFrom: 1, pageTo: 2, state: { visionPages: [1], scanPages: [1] } }),
+      job,
+    );
+    expect((r.calls?.[0] as { input: PictureAskInput }).input.pdf).toBeUndefined();
+  });
+
+  it('reads the Scan reader pages with care', () => {
+    expect([...scanPagesOf({ scanPages: [3, 1, 0, -2, 1.5, 'x', 3] })]).toEqual([3, 1]);
+    expect(scanPagesOf(null).size).toBe(0);
   });
 });

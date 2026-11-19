@@ -120,6 +120,7 @@ export {
 } from './scan-reader';
 export {
   scanReadQualityOf,
+  SCAN_READ_ANCHORS_MIN,
   type OcrWord,
   type ScanReadBadReason,
   type ScanReadQuality,

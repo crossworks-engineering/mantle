@@ -15,9 +15,14 @@ scans or typed text), one window of pages a job, page by page:
   vision  the OCR's mean confidence is under OCR_MIN_CONFIDENCE, or it gave
           under TEXT_MIN_CHARS characters on a page with ink besides its words
           (a figure; FIGURE_INK_SHARE): the Agent `pdf-page-read` reads
-          the page with vision. The Agent draws the page itself and saves
-          its picture with the text it read (G1): this Reader writes no
-          page picture.
+          the page. The Agent draws the page itself and saves its picture
+          with the text it read (G1): this Reader writes no page picture.
+          The column Why says which: `ocr` (low confidence: the Scan reader
+          reads the page first, vision only when its read is judged bad) or
+          `figure`, `failed`, `late` (vision). A page of Why `ocr` keeps the
+          free evidence the Scan reader's check needs: Lines (its text lines,
+          the more of Tesseract's and the ink bands of the picture) and Sure
+          words (the words Tesseract read at SURE_CONF or more).
   blank   a page with no text layer and almost no ink: nothing to read, and
           no paid ask for a white page.
 
@@ -104,6 +109,16 @@ OCR_WORKERS = 2
 # Pages drawn and waiting for their OCR, at most: each is up to 16 MP.
 OCR_IN_FLIGHT = 3
 
+# The free evidence of a page OCR read badly (the Scan reader's check,
+# docs/ai-workers.md "The Scan reader"): the words Tesseract read at this
+# confidence or more, of this many characters or more, at most SURE_WORDS_MAX
+# of them (evidence, not the page's text: the page is read whole either way).
+SURE_CONF = 90
+SURE_MIN_CHARS = 3
+SURE_WORDS_MAX = 400
+# The ink bands of a page are counted on a picture of these dots (the scan
+# bench measured them at 150 dpi: 44 of 44 lines on fair and poor copies).
+BANDS_DPI = 150
 OCR_FAILED = "Tesseract could not read some pages; they are marked for vision."
 TEXT_LAYER_FAILED = "pdfminer could not read the text layer of this window; its pages are drawn and read by OCR."
 RENDER_FAILED = "Some pages could not be drawn; they are marked for vision."
@@ -645,6 +660,55 @@ def ink_outside(arr, words):
     return float(ink.mean())
 
 
+def band_lines(arr, drawn_dpi):
+    """The text lines of a page picture with no OCR: the bands of ink in ten
+    vertical strips (a skew of a degree or two keeps its rows), the most of
+    any strip, counted on a picture of BANDS_DPI after a 3 px median (specks
+    out). On a page too faint or noisy it finds too few, never too many (the
+    scan bench, 2026-11-19): a low count only weakens the check it feeds."""
+    from PIL import ImageFilter
+
+    im = Image.fromarray(arr, "L")
+    k = min(1.0, BANDS_DPI / max(1.0, drawn_dpi))
+    if k < 1.0:
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.BILINEAR)
+    g = np.asarray(im.filter(ImageFilter.MedianFilter(3)))
+    ink = g < 150
+    h, w = ink.shape
+    best = 0
+    for s in range(10):
+        x0 = int(w * s / 10)
+        prof = ink[:, x0 : x0 + max(8, w // 10)].mean(axis=1)
+        top = float(prof.max()) if prof.size else 0.0
+        on = prof > max(0.02, 0.15 * top)
+        n, run = 0, 0
+        for v in on:
+            if v:
+                run += 1
+            else:
+                if run >= 4:
+                    n += 1
+                run = 0
+        if run >= 4:
+            n += 1
+        best = max(best, n)
+    return best
+
+
+def sure_words(words):
+    """The words Tesseract read at SURE_CONF or more, of SURE_MIN_CHARS or
+    more with a letter or a digit, joined by spaces (at most SURE_WORDS_MAX)."""
+    out = [
+        w["text"]
+        for w in words
+        if w["conf"] is not None
+        and w["conf"] >= SURE_CONF
+        and len(w["text"]) >= SURE_MIN_CHARS
+        and any(ch.isalnum() for ch in w["text"])
+    ]
+    return " ".join(out[:SURE_WORDS_MAX])
+
+
 def ocr_dpi_of(native, dpi):
     """The dots a scan is drawn at for Tesseract: its own, from NATIVE_DPI_MIN
     up to the option `ocr_dpi` (bench, 2026-11-18: a 200 dpi scan drawn at
@@ -940,27 +1004,43 @@ def read_pages(path, job, opts, request):
             except OSError:
                 pass
             if got is None:
-                pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
+                pages[n] = {"paper": paper, "method": "vision", "why": "failed", "conf": None, "text": ""}
                 note(OCR_FAILED)
             else:
                 words, text, mean = got
+                why = None
                 if faint and nonspace(text) < text_min:
                     # Almost no ink, and OCR found next to nothing: a blank
                     # page with a speck or a stamp. What OCR read is kept.
                     method = "blank"
+                elif nonspace(text) < text_min and ink_outside(arr, words) >= FIGURE_INK_SHARE:
+                    # Few words and ink besides them: a figure, for vision
+                    # (the Scan reader reads text, not figures).
+                    method, why = "vision", "figure"
                 elif mean < min_conf:
-                    method = "vision"
-                elif nonspace(text) < text_min:
-                    # Few words, read well: a divider or a cover is `ocr`; a
-                    # figure (ink outside the words) is for vision.
-                    method = "ocr" if ink_outside(arr, words) < FIGURE_INK_SHARE else "vision"
+                    # Read badly: the Scan reader first, vision when its read
+                    # is judged bad. Few words read badly are this too.
+                    method, why = "vision", "ocr"
                 else:
+                    # Read well; few words with nothing else on the page (a
+                    # divider, a cover) are `ocr` too.
                     method = "ocr"
                 pages[n] = {"paper": paper, "method": method, "conf": round(mean, 1), "text": text}
+                if why is not None:
+                    pages[n]["why"] = why
                 # The layout reads words with a letter or a digit: a speck read
                 # as `~` or `|` would break a row of a table.
+                words_all = words
                 words = [w for w in words if any(ch.isalnum() for ch in w["text"])]
                 lines = lines_of(words)
+                if why == "ocr":
+                    # The free evidence of the Scan reader's check.
+                    try:
+                        bands = band_lines(arr, drawn)
+                    except Exception:  # noqa: BLE001 - no band count: Tesseract's lines stand
+                        bands = 0
+                    pages[n]["lines"] = max(len(lines), bands)
+                    pages[n]["sure"] = sure_words(words_all)
                 grids_by_page[n] = len(grids)
                 if want_tables and method == "ocr":
                     try:
@@ -1009,7 +1089,7 @@ def read_pages(path, job, opts, request):
                 try:
                     arr, drawn = render(pdf, i, LATE_DPI if late else ocr_dpi_of(native, dpi))
                 except Exception:  # noqa: BLE001 - pdfium cannot draw the page: vision tries
-                    pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
+                    pages[n] = {"paper": paper, "method": "vision", "why": "failed", "conf": None, "text": ""}
                     note(RENDER_FAILED)
                     continue
                 ink = float((arr < INK_LEVEL).mean())
@@ -1019,7 +1099,7 @@ def read_pages(path, job, opts, request):
                 if late:
                     # Past the OCR budget of a window: the page goes to vision
                     # (the job's end would lose the whole window).
-                    pages[n] = {"paper": paper, "method": "vision", "conf": None, "text": ""}
+                    pages[n] = {"paper": paper, "method": "vision", "why": "late", "conf": None, "text": ""}
                     note(OCR_LATE)
                     continue
                 # The ruled lines first: their grid places the words, and the
@@ -1090,13 +1170,33 @@ def build(read, state):
 
     tabs = []
     page_rows = [
-        [n, p["paper"], p["method"], p["conf"], nonspace(p["text"]), p["text"]]
+        [
+            n,
+            p["paper"],
+            p["method"],
+            p.get("why"),
+            p["conf"],
+            nonspace(p["text"]),
+            p.get("lines"),
+            p.get("sure"),
+            p["text"],
+        ]
         for n, p in sorted(pages.items())
     ]
     tabs.append(
         {
             "name": PAGES_TAB,
-            "columns": [num_col("Page"), text_col("Paper"), text_col("Method"), num_col("Confidence"), num_col("Chars"), text_col("Text")],
+            "columns": [
+                num_col("Page"),
+                text_col("Paper"),
+                text_col("Method"),
+                text_col("Why"),
+                num_col("Confidence"),
+                num_col("Chars"),
+                num_col("Lines"),
+                text_col("Sure words"),
+                text_col("Text"),
+            ],
             "rows": page_rows,
         }
     )

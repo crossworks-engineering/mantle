@@ -212,7 +212,7 @@ class TextLayer(unittest.TestCase):
         r, _ = run(pdf)
         rows = tabs_of(r)[0]["Pages"]["rows"]
         self.assertEqual([row[2] for row in rows][:2], ["text", "text"])
-        self.assertEqual(rows[0][5], "SECTION 16")
+        self.assertEqual(rows[0][8], "SECTION 16")
         self.assertNotEqual(rows[2][2], "text")
 
     def test_text_has_a_page_line_before_each_page(self):
@@ -319,6 +319,41 @@ class TextLayer(unittest.TestCase):
         self.assertEqual(res["counts"]["text"], 7)
 
 
+@unittest.skipUnless(HAVE, "pdfplumber, pypdfium2 or OpenCV is missing")
+class ScanReaderEvidence(unittest.TestCase):
+    """The free evidence of a page OCR read badly (the Scan reader's check)."""
+
+    def page(self, lines, dpi=150, skew=0):
+        import numpy as np
+
+        h, w = int(11.69 * dpi), int(8.27 * dpi)
+        arr = np.full((h, w), 255, np.uint8)
+        step = int(0.22 * dpi)
+        for i in range(lines):
+            y = int(1.2 * dpi) + i * step
+            for x in range(int(0.6 * dpi), w - int(0.6 * dpi), 7):
+                dy = int(skew * x / w)
+                arr[y + dy : y + dy + int(0.07 * dpi), x : x + 5] = 0
+        return arr
+
+    def test_band_lines_counts_the_lines_of_a_picture(self):
+        self.assertEqual(pdf_pages.band_lines(self.page(44), 150), 44)
+        # Drawn at 300 dots: counted at 150, the same lines.
+        self.assertEqual(pdf_pages.band_lines(self.page(30, dpi=300), 300), 30)
+        # A skew of a few pixels across the page keeps its rows.
+        self.assertEqual(pdf_pages.band_lines(self.page(40, skew=12), 150), 40)
+
+    def test_band_lines_of_a_white_page_is_none(self):
+        self.assertEqual(pdf_pages.band_lines(self.page(0), 150), 0)
+
+    def test_sure_words(self):
+        w = lambda t, c: {"text": t, "conf": c}  # noqa: E731
+        got = pdf_pages.sure_words([w("FLANGE", 96), w("WN", 99), w("A105", 91), w("~~~", 99), w("PIPE", 60), w("CAP", None)])
+        self.assertEqual(got, "FLANGE A105")
+        many = [w("WORD%d" % i, 95) for i in range(pdf_pages.SURE_WORDS_MAX + 5)]
+        self.assertEqual(len(pdf_pages.sure_words(many).split()), pdf_pages.SURE_WORDS_MAX)
+
+
 @unittest.skipUnless(HAVE and HAVE_OCR, "pdfplumber, pypdfium2, OpenCV or tesseract is missing")
 class Scans(unittest.TestCase):
     """The scanned book: Tesseract reads it, the figure goes to vision (the
@@ -336,7 +371,7 @@ class Scans(unittest.TestCase):
     def test_methods(self):
         got = {r[0]: r[2] for r in self.tabs["Pages"]["rows"]}
         self.assertEqual(got, self.methods)
-        conf = {r[0]: r[3] for r in self.tabs["Pages"]["rows"]}
+        conf = {r[0]: r[4] for r in self.tabs["Pages"]["rows"]}
         for n, m in self.methods.items():
             if m == "ocr":
                 self.assertGreaterEqual(conf[n], 70, n)
@@ -382,7 +417,7 @@ class Scans(unittest.TestCase):
         rows = tabs_of(r)[0]["Pages"]["rows"]
         self.assertEqual(rows[0][2], "blank")
         self.assertEqual(rows[1][2], "ocr")
-        self.assertIn("INSPECTOR", rows[1][5])
+        self.assertIn("INSPECTOR", rows[1][8])
 
     def test_no_picture_is_left_in_the_job(self):
         self.assertNotIn("pictures", self.input)
@@ -397,7 +432,34 @@ class Scans(unittest.TestCase):
         r, _ = run(pdf)
         rows = tabs_of(r)[0]["Pages"]["rows"]
         self.assertEqual([row[2] for row in rows], ["ocr", "vision"])
-        self.assertIn("SECTION", rows[0][5])
+        self.assertIn("SECTION", rows[0][8])
+        # A figure keeps vision: Why `figure`, no Scan reader evidence.
+        self.assertEqual(rows[1][3], "figure")
+        self.assertEqual((rows[1][6], rows[1][7]), (None, None))
+
+    def test_the_pages_columns(self):
+        cols = [c["name"] for c in self.tabs["Pages"]["columns"]]
+        self.assertEqual(
+            cols, ["Page", "Paper", "Method", "Why", "Confidence", "Chars", "Lines", "Sure words", "Text"]
+        )
+        for r in self.tabs["Pages"]["rows"]:
+            if r[2] != "vision":
+                self.assertEqual((r[3], r[6], r[7]), (None, None, None), r[0])
+
+    def test_a_page_read_badly_is_for_the_scan_reader_with_its_evidence(self):
+        # Every scanned text page under the floor (100): Why `ocr`, with the
+        # page's lines and the words Tesseract read surely.
+        pages, _, _ = book_pdfs.book()
+        pdf = os.path.join(self.dir, "floor.pdf")
+        book_pdfs.write_pdf(pdf, [pages[1]], scan={1})
+        r, _ = run(pdf, {"options": {"ocr_min_confidence": 100}})
+        row = tabs_of(r)[0]["Pages"]["rows"][0]
+        self.assertEqual((row[2], row[3]), ("vision", "ocr"))
+        self.assertGreaterEqual(row[6], 10)
+        sure = row[7].split()
+        self.assertGreater(len(sure), 20)
+        self.assertTrue(all(len(w) >= pdf_pages.SURE_MIN_CHARS for w in sure))
+        self.assertTrue(set(sure) <= set(row[8].split()))
 
     def test_counts_and_description(self):
         c = self.result["counts"]
@@ -425,5 +487,6 @@ class OcrBudget(unittest.TestCase):
             pdf_pages.OCR_BUDGET_S = old
         tabs, inp = tabs_of(r)
         self.assertEqual([row[2] for row in tabs["Pages"]["rows"]], ["vision", "vision"])
+        self.assertEqual([row[3] for row in tabs["Pages"]["rows"]], ["late", "late"])
         self.assertNotIn("pictures", inp)
         self.assertIn(pdf_pages.OCR_LATE, r["warnings"])

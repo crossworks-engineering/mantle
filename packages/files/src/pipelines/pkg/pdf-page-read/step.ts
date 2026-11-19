@@ -21,6 +21,13 @@
  * cannot be drawn ends the run `failed`: nothing is asked or written, so
  * the paid rows of a run before stay (the rule "fewer asks replace rows",
  * docs/pipelines.md, "Agents"). No state, no second step.
+ *
+ * A page OCR read badly (`state.scanPages`, the Reader's Why `ocr`) is also
+ * cut as a one-page PDF (`job.pdfPage`, qpdf) and named in its ask (`pdf`):
+ * the core reads it with the Scan reader first and with vision on the
+ * picture only when that read is judged bad (docs/ai-workers.md, "The Scan
+ * reader"). The PDFs take what the pictures leave of the answer's budget; a
+ * page whose PDF does not fit, or cannot be cut, is read by vision.
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -30,6 +37,7 @@ import {
   PAGE_ASK_KEY_PREFIX,
   PAGE_TEXT_COLUMN,
   PIPELINE_ASK_PAGE_MAX,
+  PIPELINE_ASK_PICTURE_MAX_BYTES,
   PIPELINE_PAGE_NUMBER_MAX,
   PIPELINE_PICTURES_MAX_BYTES,
   VISION_WORKER,
@@ -73,6 +81,14 @@ export function visionPagesOf(state: unknown): number[] {
 }
 
 /** The pages done already (`state.donePages`): a set, any number. */
+/** The marked pages the Scan reader reads first (`state.scanPages`). */
+export function scanPagesOf(state: unknown): Set<number> {
+  const raw = isObject(state) && Array.isArray(state.scanPages) ? state.scanPages : [];
+  return new Set(
+    raw.filter((n): n is number => Number.isInteger(n) && n >= 1 && n <= PIPELINE_PAGE_NUMBER_MAX),
+  );
+}
+
 export function donePagesOf(state: unknown): Set<number> {
   const raw = isObject(state) && Array.isArray(state.donePages) ? state.donePages : [];
   return new Set(raw.filter((n): n is number => Number.isInteger(n) && n >= 1));
@@ -160,6 +176,24 @@ export const step: PipelineStep = async (req, job) => {
       key,
       input: { picture: file, fields: FIELDS, page: n },
     });
+  }
+  // The Scan reader's pages, each as a one-page PDF, in what the pictures
+  // left of the budget (the parser sends each picture before its PDF, so a
+  // PDF never takes a picture's place).
+  const scan = scanPagesOf(req.state);
+  for (const c of calls) {
+    if (c.call !== 'worker') continue;
+    const input = c.input as { page: number };
+    if (!scan.has(input.page)) continue;
+    const file = `${c.key}.pdf`;
+    const size = await job.pdfPage(input.page - from + 1, file);
+    if (size === null) continue;
+    if (size > left || size > PIPELINE_ASK_PICTURE_MAX_BYTES) {
+      await fs.rm(path.join(job.dir, file), { force: true });
+      continue;
+    }
+    left -= size;
+    (c as { input: Record<string, unknown> }).input = { ...input, pdf: file };
   }
   return { status: 'ok', calls, ...(warnings.length > 0 ? { warnings } : {}) };
 };

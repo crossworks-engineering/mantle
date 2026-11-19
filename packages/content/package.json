@@ -38,6 +38,7 @@
     "./pdf-read": "./src/pdf-read.ts",
     "./pipeline-state": "./src/pipeline-state.ts",
     "./book-page-pictures": "./src/book-page-pictures.ts",
+    "./book-pages": "./src/book-pages.ts",
     "./page-passages": "./src/page-passages.ts",
     "./pdf-picture-windows": "./src/pdf-picture-windows.ts",
     "./picture-spool": "./src/picture-spool.ts",

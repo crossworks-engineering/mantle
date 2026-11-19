@@ -61,7 +61,7 @@ import {
 } from './cad';
 import { JobFailure } from './job-failure';
 import type { JobPaths } from './jobs';
-import { qpdfPageCount, qpdfThere } from './pdf-split';
+import { qpdfPage, qpdfPageCount, qpdfThere } from './pdf-split';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
 import { ownPipelineOf, pipelineIndex } from './pipeline-index';
 import { childEnv, runChild } from './proc';
@@ -81,6 +81,8 @@ export function jobHandle(p: JobPaths, jobEnd: number): StepJob {
     pdfPictures: pdfPictures(p.input, p.dir, jobEnd),
     pdfPagePieces: (png, widthMm, name) => pdfPagePieces(png, widthMm, p.dir, name, end),
     pdfPageCount: () => qpdfPageCount(p.input, p.dir, end - Date.now()),
+    pdfPage: (page, file) =>
+      qpdfPage(p.input, page, path.join(p.dir, path.basename(file)), p.dir, end - Date.now()),
     cadRender: async (opts) => {
       const out = path.join(p.dir, 'cad-render.json');
       await dwgRender(p.input, { ...opts }, p.dir, out, end - Date.now());
@@ -108,12 +110,16 @@ export async function picturesOf(
     const input = (c.input ?? {}) as {
       pictures?: readonly { file?: unknown }[];
       picture?: unknown;
+      pdf?: unknown;
     };
+    // A page ask may name the page as a one-page PDF too (the Scan reader's
+    // read), after its picture: past the budget, the PDF is the one left out
+    // and the page is read by vision.
     const named =
       c.call === 'tool' && c.tool === FILE_TABS_WRITE
         ? (input.pictures ?? [])
         : c.call === 'worker' && c.worker === VISION_WORKER
-          ? [{ file: input.picture }]
+          ? [{ file: input.picture }, ...(input.pdf !== undefined ? [{ file: input.pdf }] : [])]
           : [];
     for (const pic of named) {
       if (typeof pic.file !== 'string' || sent.has(pic.file)) continue;

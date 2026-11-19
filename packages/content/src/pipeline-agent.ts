@@ -74,6 +74,14 @@ export type AgentAsk = {
   picture: Buffer;
   mime: string;
   hash: string;
+  /** A page of a book OCR read badly: the page as a one-page PDF (the step
+   *  wrote it), for the Scan reader's read before vision. The hash is the
+   *  picture's: the same page is the same ask, whoever read it. */
+  pdf?: Buffer;
+  /** The free evidence of the Scan reader's check, from the book reader's
+   *  tab Pages (the caller adds it, ./file-database.ts): the words Tesseract
+   *  read surely and the page's text lines. */
+  scan?: { words: readonly string[]; lines: number | null };
 };
 
 /** How the caller answers one ask: the one paid call, behind its guards
@@ -226,6 +234,15 @@ export function checkAsks(
     ) {
       refuse(`a page is a whole number from 1 to ${PIPELINE_PAGE_NUMBER_MAX}`);
     }
+    // The page as a one-page PDF, for the Scan reader: taken when it is a
+    // PDF in the step's answer within the size of a picture; else the page
+    // is read by vision as before (never a refusal: the parser leaves a
+    // file out past its answer's budget).
+    const pdf = typeof input.pdf === 'string' ? pictures.get(input.pdf) : undefined;
+    const pdfOk =
+      pdf !== undefined &&
+      pdf.length <= PIPELINE_ASK_PICTURE_MAX_BYTES &&
+      pdf.subarray(0, 5).toString('latin1') === '%PDF-';
     out.push({
       key: call.key!,
       worker: call.worker,
@@ -235,6 +252,7 @@ export function checkAsks(
       picture: picture!,
       mime: mime!,
       hash: askHashOf(pipeline, call.worker, named, picture!, list),
+      ...(pdfOk ? { pdf } : {}),
     });
   }
   return out;

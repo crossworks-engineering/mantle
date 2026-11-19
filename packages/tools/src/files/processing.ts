@@ -20,11 +20,14 @@ import { db } from '@mantle/db';
 import {
   currentReaderVersion,
   fileById,
+  fileDbPaths,
   fileDbStateOf,
+  PAGES_TAB,
   pipelineVersionsOf,
   withFileStatus,
 } from '@mantle/files';
 import { readFileDbStamp } from '@mantle/content/file-database';
+import { bookPageMethodsOf } from '@mantle/content/book-pages';
 import { fileStatusPipelines } from '@mantle/content/pipeline-registry';
 import {
   FILE_DERIVED_MAX,
@@ -157,6 +160,13 @@ export async function fileProcessing(
   const [stamp, tables] = ready
     ? await Promise.all([readFileDbStamp(row.id, row.sha256), tablesOf(ownerId, row.id)])
     : [null, undefined];
+  // A book: how each page was read (text, OCR, Scan reader, vision, unread),
+  // live from its database.
+  const dbFiles = ready ? fileDbPaths(row.id, row.sha256) : null;
+  const bookPages =
+    dbFiles && tables?.some((t) => t.name === PAGES_TAB)
+      ? await bookPageMethodsOf(dbFiles.sqlite)
+      : null;
   const ex = row.extraction;
   const failed = ex.state === 'failed' || ex.state === 'skipped';
   return {
@@ -182,6 +192,7 @@ export async function fileProcessing(
     chunks: Number(stats?.chunks ?? 0),
     facts: Number(stats?.facts ?? 0),
     mentions: admin ? Number(stats?.mentions ?? 0) : null,
+    ...(bookPages ? { bookPages } : {}),
     database: dbState
       ? {
           state: dbState.state,
