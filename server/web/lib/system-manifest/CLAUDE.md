@@ -23,7 +23,10 @@ CLI `pnpm seed:*` scripts, and the `/settings/config` checker **all** derive fro
   `seedToolCapabilities`, `seedManifestWorkers`.
 - **Upgrade path:** [`reconcile.ts`](reconcile.ts), what reaches existing brains.
 - **Drift visibility:** [`config-diff.ts`](config-diff.ts) (the `/settings/config`
-  checker) + [`integrity.ts`](integrity.ts) (referential checks).
+  checker) + [`integrity.ts`](integrity.ts) (referential checks) +
+  [`model-check.ts`](model-check.ts) (does the box run the default model on each
+  worker and agent: `GET /api/config/models`, the `config_models_check` MCP
+  tool, `scripts/fleet-model-check.mjs` for the fleet; docs/models.md).
 - **CI guard:** [`manifest.test.ts`](manifest.test.ts) fails the build on a
   dangling/typo'd slug. Pure helpers (`worker-route.ts`, `reconcile-util.ts`,
   `group-checks.ts`, `config-diff.ts`) have co-located `*.test.ts`.
@@ -69,6 +72,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   reconcile-util.ts).
   (Pre-v0.212.0 `syncSpecialistDefs` force-synced prompt+model.)
 - An existing **worker's model/provider**: operator cost choice; never overwritten.
+  The model check (`model-check.ts`) reports where a box differs; it changes nothing.
 - Any agent's **thinking effort** (`agents.thinking_effort`, migration 0228):
   the manifest has no field for it, every shipped agent starts on Inherit
   (NULL = the person's profile), and nothing here writes the column. Setting
