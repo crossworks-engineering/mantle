@@ -100,7 +100,7 @@ export const MODEL_POOLS: readonly ModelPoolDef[] = [
     id: 'scan_reader',
     label: 'Scan reader',
     description:
-      'Reads the text of a scanned page that local OCR read badly, before the dearer vision read. With a PDF parser engine (the shipped mistral-ocr) this is the cheap text model the parsed page is handed to; with none, an image-reading model.',
+      'Reads the text of every scanned page of a PDF book through the mistral-ocr PDF parser, at about half the vision price. This is the cheap text model the parsed page is handed to (its short answer is not used); text-only, so no picture is forwarded.',
     group: 'workers',
     modality: TEXT_OUT,
   },

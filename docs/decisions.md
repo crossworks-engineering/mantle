@@ -631,35 +631,35 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
 
 Is a Scan reader's text a faithful reading of the scanned page in the
 picture? (`packages/decisions/src/scan-read-check.ts`; the Scan reader is in
-docs/ai-workers.md, "The Scan reader".) One `noul` question, `faithful`, with
-the text (`transcription:`) and the page picture in the state, for a page
-whose Scan reader text no free read can vouch for: Tesseract read under 30
-confident words on it.
+docs/ai-workers.md, "The Scan reader".) One `noul` question, `faithful`,
+with the text (`transcription:`) and the page picture in the state. A book's
+scanned page has no local OCR to vouch for its read (owner decision
+2026-11-19), so this is the one check of its content; the free rules check
+its shape (line count, loops).
 
 - **Why.** On the scan bench (2026-11-19, made-up pages) the OCR engines
   wrote a whole plausible spec table onto pages too bad to read. Jev 1.14 told
   true reads (0.57 to 0.94) from made-up ones (0.11 to 0.62) at 0.5 on 59 of
   60 cases, and a read of another page with the right line count at 0.02 to
-  0.13: a case the free `unverified` rule (it counts lines) cannot see.
+  0.13: a case the free rules (they count lines) cannot see.
+- **Where.** The paid ask of a book page (server/api/src/agent/extract/pipeline-ask.ts)
+  asks it after a Scan reader read the free rules judge good or only
+  `unverified`; the answer is in the step's meta (`check`). Live, it decides
+  those reads (a read it calls made up is unread; an `unverified` read it
+  calls faithful stands); another bad reason (a loop) is never overruled.
 - **Cost.** About 6,300 input tokens a page (the picture about 5,000) at
   $0.042 per million, output free: about $0.00027 a page, $0.27 per 1,000
-  pages checked; about 1.2 s.
+  pages; about 1.2 s. With no local OCR it is asked on nearly every scanned
+  page.
 - **Shadow** (the manifest's fresh brains: `enabled: true, mode: 'shadow',
-  threshold: 0.5`): the answer is in the `decide_scan_read_check` step and in
-  the result (`used: false`); the free `unverified` rule decides. **Live:** at
-  or over the threshold (0.5, or the use's own) the read is taken; under it,
-  the page goes on to vision.
+  threshold: 0.5`): the answer is logged; the free rules decide. Going live
+  is the owner's call (the bench numbers above).
 - **No answer** (the use off, no decider, a model with no pictures, a text
-  past 30,000 characters, a picture the parser cannot read, a failure): null,
-  and the caller keeps its own rule.
-- **What it can do.** Send a page on to vision, or keep a read. It never
-  writes, retires or deletes. Text on the page can steer it (rule 6), as it
-  can steer the Scan reader itself.
-- **Where.** The paid ask of a book page (server/api/src/agent/extract/pipeline-ask.ts)
-  asks it after a Scan reader read with under 30 sure words of Tesseract;
-  the answer is in the step's meta (`check`). Live, it stands for the
-  `unverified` rule only: another bad reason (a loop, a cut) is never
-  overruled.
+  past 30,000 characters, a picture the parser cannot shrink, a failure):
+  null, and the caller keeps its own rules.
+- **What it can do.** Leave a page unread, or keep a read. It never writes,
+  retires or deletes. Text on the page can steer it (rule 6), as it can
+  steer the Scan reader itself.
 
 ### Declared, not built
 

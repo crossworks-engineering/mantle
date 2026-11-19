@@ -23,17 +23,19 @@
  * the adapter writes the spend on it (docs/spend-recording.md), and the day
  * count reads it. An answer that is no JSON object is `failed`.
  *
- * A page of a book OCR read badly (an ask of an Agent of page text with the
- * page as a one-page PDF and the free evidence: `ask.pdf`, `ask.scan`) is
- * read by the Scan reader first (docs/ai-workers.md, "The Scan reader"):
- * one call, its own step of the day count. A read the check judges good is
- * the page's text (the row's Model `scan_reader:<engine>`); a read judged
- * bad, a failed call, or a brain with no Scan reader goes on to the vision
- * call above, behind the same guards. On a page whose read no word of
- * Tesseract can vouch for, the decider's `scan_read_check` is asked too: in
- * shadow it is only logged; live, its answer stands for the `unverified`
- * rule. Never more than two paid reads of a page (the Scan reader, then
- * vision), and the second only when the first is judged bad.
+ * A scanned page of a book (an ask of an Agent of page text with the page
+ * as a one-page PDF and its line count: `ask.pdf`, `ask.scan`) is read by
+ * the Scan reader alone (docs/ai-workers.md, "The Scan reader"; owner
+ * decisions 2026-11-19: no local OCR first, no vision backup): one call,
+ * its own step of the day count. A read the check judges good is the page's
+ * text (the row's Model `scan_reader:mistral-ocr`); a read judged bad is a
+ * row with no text, so the page stays unread and a run again pays nothing
+ * for it. A page the engine finds mostly a figure goes on to the vision
+ * call above (a description of the figure), behind the same guards. With no
+ * Scan reader on the brain the page is skipped with no stop (unread, said
+ * so) and the run's other pages go on. The decider's `scan_read_check` is
+ * asked where its answer can matter: in shadow it is only logged; live, it
+ * stands for the `unverified` rule.
  */
 import { llmWorkAllowed } from '@mantle/db';
 import type { PipelineCallAnswer, PipelineManifest } from '@mantle/files';
@@ -43,6 +45,7 @@ import {
   ASK_SYSTEM_TEXT,
   askAnswerOf,
   askQuestionOf,
+  ASK_SKIPPED_NO_SCAN_READER,
   PAGE_TEXT_ANSWER_MAX_CHARS,
   type AgentAsk,
   type AgentAskFn,
@@ -54,21 +57,17 @@ import {
 } from '@mantle/content/pipeline-asks';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { checkScanRead } from '@mantle/decisions';
-import {
-  runScanReader,
-  runVisionWorker,
-  SCAN_READ_ANCHORS_MIN,
-  type OcrWord,
-} from '@mantle/runtime/agent';
+import { runScanReader, runVisionWorker } from '@mantle/runtime/agent';
 import { step } from '@mantle/tracing';
 
 /** The prefix of the Model of a page row the Scan reader read: the honest
  *  record of which reader read a page (`scan_reader:mistral-ocr`). */
 export const SCAN_READER_MODEL_PREFIX = 'scan_reader:';
 
-/** The confidence a word of the evidence stands at: it was read at
- *  SURE_CONF (90) or more (pdf_pages.py). */
-const SURE_CONF = 90;
+/** Under this many characters (not spaces) with a figure found, a scanned
+ *  page is mostly a figure: vision describes it (the book reader's old rule
+ *  for a figure page, TEXT_MIN_CHARS). */
+export const FIGURE_TEXT_MAX_CHARS = 40;
 
 /** The longest answer of one ask, in tokens: the fields alone, and the
  *  fields with the list part (PIPELINE_ASK_LIST_MAX items of a short text
@@ -131,9 +130,12 @@ export function pipelineAskOf(
   // 1,500 tokens a dense page's JSON is cut, a failed ask that stops the run.
   const pageText = pipeline.produces?.pages === true;
   /**
-   * The Scan reader's read of a page: the answer when the check judges it
-   * good, else null (judged bad, failed, or no Scan reader worker: the page
-   * goes on to vision).
+   * The Scan reader's read of a scanned page: its text when the check
+   * judges it good; an answer with no text when judged bad (the page stays
+   * unread, and a run again takes this row by hash: no second paid read);
+   * `figure` when the engine found a figure and next to no text (vision
+   * describes it); a skip with no stop when the brain has no Scan reader; a
+   * failure when the provider failed.
    */
   const scanRead = (ask: AgentAsk, scan: NonNullable<AgentAsk['scan']>, pdf: Buffer) =>
     step(
@@ -148,50 +150,49 @@ export function pipelineAskOf(
           bytes: pdf.length,
         },
       },
-      async (h): Promise<PipelineCallAnswer | null> => {
-        const ocrWords: OcrWord[] = scan.words.map((text) => ({ text, conf: SURE_CONF }));
+      async (h): Promise<PipelineCallAnswer | 'figure'> => {
         const out = await d.scan({
           ownerId,
           pdf,
-          picture: { bytes: ask.picture, mimeType: ask.mime },
-          ocrWords,
           ...(scan.lines !== null ? { expectedLines: scan.lines } : {}),
           tries: 2,
         });
-        // No Scan reader on the brain: no call, not one of the day count.
-        if (!out.ran && out.model === null) {
-          h.setSkipped('no_scan_reader');
-          return null;
+        // No Scan reader the box can use (none, no key, no engine): no call,
+        // not one of the day count; the page stays unread, the run goes on.
+        if (!out.attempted) {
+          h.setSkipped(ASK_SKIPPED_NO_SCAN_READER);
+          h.setMeta({ reader: 'scan_reader', note: out.note });
+          return { ok: false, error: 'not_available', reason: ASK_SKIPPED_NO_SCAN_READER };
         }
         h.setMeta({
-          // One of the day count only when a call went out (a provider that
-          // failed may bill it); a worker that could not call is not.
-          ...(out.attempted ? { use: PIPELINE_ASK_USE } : {}),
+          // A call went out: one of the day count (a provider that failed
+          // may bill it).
+          use: PIPELINE_ASK_USE,
           pipeline: pipeline.id,
           reader: 'scan_reader',
+          engine: out.engine,
           ran: out.ran,
           note: out.note,
-          ...(out.engine ? { engine: out.engine } : {}),
           textLength: out.text.length,
+          pictures: out.pictures,
           quality: out.quality.reasons,
-          anchors: out.quality.anchors,
-          agreement: out.quality.agreement,
         });
-        if (!out.ran || !out.text) {
-          h.setError(out.note ?? 'no text');
-          return null;
+        if (!out.ran) {
+          h.setError(out.note ?? 'no answer');
+          return { ok: false, error: 'failed', reason: 'scan_reader_failed' };
+        }
+        // Mostly a figure: the engine found a picture and next to no text.
+        // Vision describes it (a picture description, not a second read).
+        if (out.pictures > 0 && out.text.replace(/\s/g, '').length < FIGURE_TEXT_MAX_CHARS) {
+          h.setMeta({ judged: 'figure' });
+          return 'figure';
         }
         let good = out.quality.ok;
-        // No word of Tesseract can vouch for the read: the decider is asked
-        // too (scan_read_check). Shadow: logged. Live: it stands for the
-        // line rule `unverified`, the other reasons stay; so it is asked
-        // only when its answer can matter. A check that throws (the parser
-        // busy shrinking the picture) is no answer: the read stands as
-        // the rules judge it.
-        if (
-          out.quality.anchors < SCAN_READ_ANCHORS_MIN &&
-          out.quality.reasons.every((r) => r === 'unverified')
-        ) {
+        // No word of a local OCR can vouch for the read: the decider is
+        // asked too (scan_read_check) where its answer can matter. Shadow:
+        // logged. Live: it stands for the line rule `unverified`, the other
+        // reasons stay. A check that throws is no answer.
+        if (out.quality.reasons.every((r) => r === 'unverified')) {
           const c = await d
             .check(ownerId, { picture: ask.picture, mimeType: ask.mime, text: out.text })
             .catch(() => null);
@@ -199,20 +200,18 @@ export function pipelineAskOf(
             h.setMeta({
               check: { faithful: Math.round(c.faithful * 1000) / 1000, mode: c.mode },
             });
-            if (c.used) {
-              good = c.passes && out.quality.reasons.every((r) => r === 'unverified');
-            }
+            if (c.used) good = c.passes;
           }
         }
         h.setMeta({ judged: good ? 'good' : 'bad' });
-        if (!good) return null;
         const name = ask.fields[0]!.name;
+        const model = `${SCAN_READER_MODEL_PREFIX}${out.engine}`;
+        // Judged bad: the page stays unread (no text), recorded so a run
+        // again pays nothing for it.
+        if (!good) return { ok: true, output: { values: { [name]: null }, model } };
         return {
           ok: true,
-          output: {
-            values: { [name]: out.text.slice(0, PAGE_TEXT_ANSWER_MAX_CHARS) },
-            model: `${SCAN_READER_MODEL_PREFIX}${out.engine ?? out.model ?? ''}`,
-          },
+          output: { values: { [name]: out.text.slice(0, PAGE_TEXT_ANSWER_MAX_CHARS) }, model },
         };
       },
     );
@@ -221,11 +220,11 @@ export function pipelineAskOf(
     const why = await fixedNo();
     if (why) return no(why);
     if ((await d.asksToday()) >= d.dayCap()) return no('day_cap');
-    // A page OCR read badly: the Scan reader first (one field, the page's
-    // text, with its PDF and evidence). Vision only when it read badly.
+    // A scanned page (one field, the page's text, with its PDF and line
+    // count): the Scan reader alone. Vision only for a figure.
     if (pageText && ask.pdf && ask.scan && ask.fields.length === 1 && !ask.list) {
       const read = await scanRead(ask, ask.scan, ask.pdf);
-      if (read) return read;
+      if (read !== 'figure') return read;
       if ((await d.asksToday()) >= d.dayCap()) return no('day_cap');
     }
     return step(

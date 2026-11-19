@@ -1,25 +1,26 @@
 /**
  * Did the Scan reader read a page badly? (docs/ai-workers.md, "The Scan
  * reader".) Answered from what is already in hand, never from a second paid
- * call: the model's own answer, and the free reads of the same page before
- * it (the book reader runs Tesseract first, and can count the page's text
- * lines from its picture). A bad read sends the page on to the vision
- * worker; a good one is the page's text.
+ * call: the answer itself, and the page's text lines the book reader counted
+ * from its picture with no OCR (`expectedLines`). A bad read leaves the page
+ * unread; a good one is the page's text. A caller with Tesseract's words of
+ * the page may give them too (`ocrWords`, the agreement check); the book
+ * path has none (owner decision 2026-11-19: no local OCR in a book).
  *
  * The reasons, each enough on its own:
  *  - `no_text`: the answer is empty.
  *  - `cut`: the model stopped at its token cap, so the end of the page is
  *    missing.
- *  - `short`: fewer than SCAN_READ_MIN_CHARS characters that are not spaces.
- *    A page goes to the Scan reader for its words, so next to none is a
- *    failed read.
+ *  - `short`: fewer than SCAN_READ_MIN_CHARS characters that are not spaces,
+ *    when no line count of the page is given (with one, a divider or a
+ *    cover of a few words is read whole, and `too_few_lines` judges).
  *  - `loop`: one line of SCAN_READ_REPEAT_MIN_LEN characters or more written
  *    more than SCAN_READ_REPEAT_MAX times in a row, the way a small model
  *    stuck in a loop writes. A table read by rows repeats short cells,
  *    never a whole line.
  *  - `too_few_lines`: the free reads found SCAN_READ_LINES_MIN_EXPECTED text
- *    lines or more on the page (`expectedLines`: the more of Tesseract's
- *    lines and the picture's ink bands), and the answer holds fewer than
+ *    lines or more on the page (`expectedLines`: the book reader's count of
+ *    the ink bands of its picture), and the answer holds fewer than
  *    SCAN_READ_LINES_MIN_SHARE of them: rows were left out. The answer's
  *    lines are the more of its own lines and its characters (not spaces)
  *    over SCAN_READ_CHARS_PER_LINE: an OCR engine writes a paragraph of
@@ -124,7 +125,14 @@ export function scanReadQualityOf(
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length === 0) reasons.push('no_text');
   if (opts.finishReason === 'length') reasons.push('cut');
-  if (words.length > 0 && text.replace(/\s/g, '').length < SCAN_READ_MIN_CHARS) {
+  // Short is a failed read only where nothing says how many lines the page
+  // has: with the line count, a page of a few words (a divider, a cover) is
+  // read whole, and a page of many lines read short is `too_few_lines`.
+  if (
+    opts.expectedLines == null &&
+    words.length > 0 &&
+    text.replace(/\s/g, '').length < SCAN_READ_MIN_CHARS
+  ) {
     reasons.push('short');
   }
 

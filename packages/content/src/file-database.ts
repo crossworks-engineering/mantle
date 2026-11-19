@@ -1096,9 +1096,9 @@ export async function agentInputOf(
 }> {
   const kind = pipelines.routerFor(ext) ? (await storedPdfOf(sqlite))?.kind : undefined;
   const readerOptions = (await readerOptionsOf(ownerId, ext, pipelines)) ?? {};
-  // A book: the pages its reader left to vision (pdf-page-read, M3), and of
-  // them the pages OCR read badly, which the Scan reader reads first (the
-  // step cuts each as a one-page PDF; docs/ai-workers.md, "The Scan reader").
+  // A book: the pages its reader marked (pdf-page-read, M3), and of them the
+  // scanned pages, which the Scan reader reads (the step cuts each as a
+  // one-page PDF; docs/ai-workers.md, "The Scan reader").
   const visionPages = kind === 'book' ? await bookVisionPagesOf(sqlite) : undefined;
   const scanPages = visionPages?.length ? await bookScanPagesOf(sqlite) : [];
   return {
@@ -1340,6 +1340,7 @@ async function runAgentWindowed(args: {
   const warnings: string[] = [];
   let made = 0;
   let reused = 0;
+  let noScanReader = 0;
   let stopped: string | undefined;
   let lost = false;
   let first = true;
@@ -1382,7 +1383,9 @@ async function runAgentWindowed(args: {
           ? { ...listSheet, rows: [...listSheet.rows, ...unseen(storedList, listSheet, keepOld)] }
           : null,
       ].filter((t): t is ParsedSheet => t !== null);
-      const done = final && stopped === undefined && !lost;
+      // A page the box could not read now (no Scan reader) leaves the run
+      // not done: the next run reads it.
+      const done = final && stopped === undefined && !lost && noScanReader === 0;
       patchFileDatabaseDoc(sqlite, {
         replaceTabs: sheets.map((t) => t.name),
         tabs: tabsOfSheets(sheets),
@@ -1472,6 +1475,7 @@ async function runAgentWindowed(args: {
     );
     made += out.made;
     reused += out.reused;
+    noScanReader += out.skipped ?? 0;
     if (out.stopped !== undefined && out.stopped !== 'no_ask') stopped ??= out.stopped;
     if (room.length < asks.length) stopped ??= 'cap';
     // The asks past the cap keep their stored rows.
@@ -1529,6 +1533,11 @@ async function runAgentWindowed(args: {
   }
   const skipped = await write(true);
   if (skipped) return skipped;
+  if (noScanReader > 0) {
+    warnings.push(
+      `${noScanReader} scanned pages are not read: this brain has no Scan reader (an OpenRouter key and the Scan reader worker read them).`,
+    );
+  }
   if (stopped === undefined && !lost) await countRun(ownerId, pipeline.id, fileId);
   // The file's count of page pictures, from what is saved and marked.
   if (pagePictures) {

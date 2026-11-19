@@ -1,10 +1,11 @@
 /**
- * The pages of a PDF book the book reader `pdf-pages` left to vision: the
- * rows of its tab `Pages` whose `Method` is `vision` (OCR read them badly,
- * or a figure). The Agent `pdf-page-read` gets them as `state.visionPages`
- * (agentInputOf, ./file-database.ts), so it asks for no page the Reader read
- * well. Read only, with no model and no parser job: the database is the
- * record. A database with no such tab gives none.
+ * The pages of a PDF book the book reader `pdf-pages` marked for its Agent:
+ * the rows of its tab `Pages` whose `Method` is `vision` (a scanned page,
+ * Why `scan`, for the Scan reader; a figure, for vision; a book read by an
+ * older reader: pages OCR read badly). The Agent `pdf-page-read` gets them
+ * as `state.visionPages` (agentInputOf, ./file-database.ts), so it asks for
+ * no typed page. Read only, with no model and no parser job: the database is
+ * the record. A database with no such tab gives none.
  */
 import { PAGE_COLUMN, PAGES_TAB, PIPELINE_ASK_PAGE_MAX, fileDbPaths } from '@mantle/files';
 import { runTableSql } from '@mantle/tabledb';
@@ -76,21 +77,21 @@ export async function bookVisionPageSetOf(file: {
   return new Set(paths ? await bookVisionPagesOf(paths.sqlite) : []);
 }
 
-/** The Why of a page the book reader left to vision because OCR read it
- *  badly (pdf_pages.py): the Scan reader reads it first. A page of another
- *  Why (`figure`, `failed`, `late`) keeps vision. */
-export const SCAN_WHY = 'ocr';
+/** The Why of a scanned page of a book (pdf_pages.py): the Scan reader
+ *  reads it. A page of another Why (`failed`: pdfium could not draw it)
+ *  keeps vision. */
+export const SCAN_WHY = 'scan';
 
-/** The free evidence of a page OCR read badly, from the tab `Pages`: the
- *  words Tesseract read surely and the page's text lines (the Scan reader's
- *  check, docs/ai-workers.md "The Scan reader"). */
-export type BookScanEvidence = { words: readonly string[]; lines: number | null };
+/** The free evidence of a scanned page, from the tab `Pages`: its text lines
+ *  counted from its picture with no OCR (the Scan reader's check,
+ *  docs/ai-workers.md "The Scan reader"). */
+export type BookScanEvidence = { lines: number | null };
 
 /**
- * The pages of a book the Scan reader reads first (marked `vision`, Why
- * `ocr`), in order, at most PIPELINE_ASK_PAGE_MAX of them. [] when the tab
- * has no Why (a book read by an older reader: its pages keep vision) or
- * cannot be read.
+ * The pages of a book the Scan reader reads (marked `vision`, Why `scan`),
+ * in order, at most PIPELINE_ASK_PAGE_MAX of them. [] when the tab has no
+ * Why (a book read by an older reader: read it again to read its scans)
+ * or cannot be read.
  */
 export async function bookScanPagesOf(sqlite: string): Promise<number[]> {
   try {
@@ -133,17 +134,16 @@ export async function bookScanEvidenceOf(
   try {
     const r = await runTableSql(
       sqlite,
-      `SELECT "${PAGE_COLUMN}", "Lines", "Sure words" FROM "${PAGES_TAB}" ` +
+      `SELECT "${PAGE_COLUMN}", "Lines" FROM "${PAGES_TAB}" ` +
         `WHERE "Method" = '${VISION_METHOD}' AND "Why" = '${SCAN_WHY}' ` +
         `AND "${PAGE_COLUMN}" IN (${want.join(',')})`,
       { cap: SCAN_EVIDENCE_PAGES_MAX },
     );
-    for (const [page, lines, words] of r.rows) {
+    for (const [page, lines] of r.rows) {
       const n = Number(page);
       if (!Number.isInteger(n) || n < 1) continue;
       const l = Number(lines);
       out.set(n, {
-        words: typeof words === 'string' ? words.split(/\s+/).filter(Boolean) : [],
         lines: lines !== null && lines !== undefined && Number.isInteger(l) && l >= 0 ? l : null,
       });
     }
@@ -154,9 +154,10 @@ export async function bookScanEvidenceOf(
 }
 
 /** How the pages of a book were read, counted (docs/ai-workers.md, "The Scan
- *  reader"): by its text layer, by local OCR, blank, by the Scan reader, by
- *  vision, and `unread`: marked for the Agent with no text yet (its run has
- *  not read them, or every reader failed). */
+ *  reader"): by its text layer, by local OCR (a book read by an older
+ *  reader), blank, by the Scan reader, by vision (a figure), and `unread`:
+ *  marked for the Agent with no text (its run has not read it, there is no
+ *  Scan reader, or the Scan reader's read was judged bad). */
 export type BookPageMethods = {
   text: number;
   ocr: number;

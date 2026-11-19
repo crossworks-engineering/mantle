@@ -188,6 +188,24 @@ describe('agentRows: the tab is the store of paid answers', () => {
   const storedOf = (sheet: NonNullable<Awaited<ReturnType<typeof agentRows>>['sheet']>) =>
     sheet.rows.map((r) => Object.fromEntries(sheet.columns.map((c, i) => [c.name, r[i] ?? null])));
 
+  it('an ask skipped for no Scan reader: no row, no stop, the next ask is made', async () => {
+    const p = paid((a) =>
+      a.key === 'sheet' ? { ok: false, error: 'not_available', reason: 'no_scan_reader' } : null,
+    );
+    const out = await agentRows('Title block', asks(), [], p.fn);
+    expect(p.seen).toEqual(['sheet', 'side']);
+    expect(out).toMatchObject({ made: 1, skipped: 1 });
+    expect(out.stopped).toBeUndefined();
+    expect(out.sheet!.rows.map((r) => r[0])).toEqual(['side']);
+    // Any other refusal still stops the run.
+    const q = paid((a) =>
+      a.key === 'sheet' ? { ok: false, error: 'not_available', reason: 'day_cap' } : null,
+    );
+    const stopped = await agentRows('Title block', asks(), [], q.fn);
+    expect(q.seen).toEqual(['sheet']);
+    expect(stopped.stopped).toBe('day_cap');
+  });
+
   it('a first run makes one call for each ask and writes one row for each', async () => {
     const p = paid();
     const out = await agentRows('Title block', asks(), [], p.fn);

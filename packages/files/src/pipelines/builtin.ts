@@ -410,33 +410,32 @@ export const BUILTIN_PIPELINES = [
   // The book reader (the large-PDF plan, page 4ff4d4e5, sections 3.2 and
   // 4): a PDF the router named a `book`, read in page windows of 50 pages
   // or 50 MB (Jason's word, 2026-11-18). Model-free, in Python
-  // (server/parser/cad/pdf_pages.py): the text layer (pdfplumber), else
-  // local OCR (pypdfium2 and Tesseract), the tables into tabs of their own,
-  // and the pages it leaves to vision marked in its tab Pages. It writes no
-  // page picture: the Agent pdf-page-read draws each marked page and saves
-  // its picture with the text it read (G1). Its text stands over the core's
-  // PDF read (P2: it claims a kind and gives text).
+  // (server/parser/cad/pdf_pages.py): the text layer (pdfplumber) and the
+  // tables of typed pages into tabs of their own; a scanned page is marked
+  // in its tab Pages for the Agent pdf-page-read (the Scan reader reads it;
+  // no local OCR in a book, owner decision 2026-11-19). It writes no page
+  // picture: the Agent draws each marked page and saves its picture with the
+  // text it read (G1). Its text stands over the core's PDF read (P2: it
+  // claims a kind and gives text).
   pkgPython({
     id: 'pdf-pages',
     entry: 'pdf_pages.py',
     name: 'PDF book',
     description:
-      'Reads every office PDF (the router names it a book), typed or scanned, of any length, page by page: the text layer, else local OCR. It writes the tabs Pages and Tables, one tab for each table with the page of each row, and the text by page. It asks no model.',
+      'Reads every office PDF (the router names it a book), of any length, page by page: the text layer and its tables; a scanned page is marked for the Scan reader. It writes the tabs Pages and Tables, one tab a table with the page of each row, and the text by page. It asks no model.',
     // 1.1.0 (2026-11-19): every office PDF, whatever its size (the kind
     // rules 4). 1.2.0 (2026-11-19): no page pictures (the Agent pdf-page-read
-    // owns them). 1.3.0 (2026-11-19): the tab Pages says Why a page goes to
-    // the Agent (`ocr`: read badly, for the Scan reader first; `figure`,
-    // `failed`, `late`: vision), and keeps a badly read page's Lines and
-    // Sure words (the Scan reader's check, docs/ai-workers.md).
+    // owns them). 1.3.0 (2026-11-19): no local OCR (owner decision): every
+    // scanned page is marked for the Agent with Why `scan` (the Scan reader
+    // reads it) and its Lines (the check's evidence, counted from its
+    // picture); the options of OCR are gone.
     version: '1.3.0',
     match: { ext: ['pdf'], kind: ['book'] },
     produces: { text: true, table: false, pages: true },
     // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy
     // (extractWeightOfFile, ../slug.ts), with an extract time that grows
-    // with its page windows. One window a job: Tesseract takes about 1.8 s
-    // a page on one CPU, two at once, so a window of 50 scanned pages takes
-    // about a minute; the step stops its OCR at 180 s (OCR_BUDGET_S) and
-    // leaves the pages after it to vision.
+    // with its page windows. One window a job: a scanned page is only drawn
+    // at 150 dpi to see its lines (no OCR), a fraction of a second.
     needs: { weight: 'light', timeMs: 240_000, window: { ...PIPELINE_WINDOW_DEFAULT } },
     options: {
       text_min_chars: {
@@ -447,22 +446,6 @@ export const BUILTIN_PIPELINES = [
         min: 1,
         max: 10_000,
       },
-      ocr_min_confidence: {
-        type: 'number',
-        label: 'OCR confidence floor',
-        help: 'A scanned page whose mean OCR confidence is under this is read by the Agent pdf-page-read with vision.',
-        default: 70,
-        min: 0,
-        max: 100,
-      },
-      ocr_dpi: {
-        type: 'number',
-        label: 'OCR dots per inch, at most',
-        help: 'A scan is read at its own dots, up to this; a scan of fewer than 200 dots is drawn at this.',
-        default: 300,
-        min: 100,
-        max: 600,
-      },
       tables: {
         type: 'bool',
         label: 'Tables',
@@ -471,19 +454,19 @@ export const BUILTIN_PIPELINES = [
       },
     },
   }),
-  // The book's Agent: vision for the pages the book reader marked
-  // `vision` (OCR read them badly, or a figure), one ask a page, keyed
+  // The book's Agent: the pages the book reader marked (a scanned page, read
+  // by the Scan reader; a figure, by vision), one ask a page, keyed
   // `page-<N>` (./pkg/pdf-page-read). Its text of a page stands over the
   // Reader's (P3, `produces.pages`). It reads in the same page windows.
   pkgAgent({
     id: 'pdf-page-read',
     name: 'PDF page read',
     description:
-      'Reads the pages of a PDF book that OCR read badly (the Scan reader first, vision when its read is bad) or that hold a figure (vision) into the tab Page text, and saves each page picture with its text. Runs after an upload and on demand; never a page read well or read before.',
+      'Reads the scanned pages of a PDF book with the Scan reader (mistral-ocr) and its figures with vision into the tab Page text, and saves each page picture with its text. Runs after an upload and on demand; never a page read before.',
     // 1.1.0 (2026-11-19): every marked page by default (option pages
     // 10,000, from 2,000), and only the windows that hold a marked page.
-    // 1.2.0 (2026-11-19): a page OCR read badly goes as a one-page PDF too,
-    // for the Scan reader's read before vision (docs/ai-workers.md).
+    // 1.2.0 (2026-11-19): a scanned page goes as a one-page PDF too, for the
+    // Scan reader (docs/ai-workers.md).
     version: '1.2.0',
     // The kind it reads: no window is cut and no job runs on a PDF of
     // another kind (runAgentOnFile).
@@ -492,7 +475,7 @@ export const BUILTIN_PIPELINES = [
       pages: {
         type: 'number',
         label: 'Pages to read',
-        help: 'The most pages of a file to read with vision, from its first marked page. One ask a page. Every marked page by default: a page left out keeps only its OCR text.',
+        help: 'The most marked pages of a file to read, from its first marked page. One ask a page. Every marked page by default: a page left out stays unread.',
         default: PIPELINE_ASK_PAGE_MAX,
         min: 1,
         max: 10_000,

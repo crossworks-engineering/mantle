@@ -102,11 +102,10 @@ export type PictureAskInput = {
   fields: readonly PipelineAskField[];
   list?: true;
   page?: number;
-  /** A page of a book that OCR read badly (pdf-page-read): the page as a
-   *  one-page PDF the step wrote in its job folder (`job.pdfPage`). The core
-   *  then reads it with the Scan reader first, and with vision on the
-   *  picture only when that read is judged bad (docs/ai-workers.md, "The
-   *  Scan reader"). Left out, or not there: vision, as before. */
+  /** A scanned page of a book (pdf-page-read): the page as a one-page PDF
+   *  the step wrote in its job folder (`job.pdfPage`). The core reads it
+   *  with the Scan reader alone (docs/ai-workers.md, "The Scan reader"),
+   *  vision only for a page mostly a figure. Left out: vision. */
   pdf?: string;
 };
 /** One item of an ask's list: the text as the picture shows it, and its

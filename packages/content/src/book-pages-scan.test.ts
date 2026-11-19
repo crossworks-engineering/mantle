@@ -24,22 +24,21 @@ const READER = {
   match: { ext: ['pdf'], kind: ['book'] },
 };
 
-/** A book of six pages: typed, OCR, blank, a figure, and two read badly. */
+/** A book of six pages: typed, OCR (an older read), blank, a figure, and
+ *  two scanned pages. */
 const PAGES_ROWS: (string | number | null)[][] = [
-  [1, 'text', null, null, null, 'Introduction'],
-  [2, 'ocr', null, null, null, 'SPEC A2'],
-  [3, 'blank', null, null, null, ''],
-  [4, 'vision', 'figure', null, null, ''],
-  [5, 'vision', 'ocr', 44, 'FLANGE ASTM A105', 'FLANGF A5TM'],
-  [6, 'vision', 'ocr', 41, '', ''],
+  [1, 'text', null, null, 'Introduction'],
+  [2, 'ocr', null, null, 'SPEC A2'],
+  [3, 'blank', null, null, ''],
+  [4, 'vision', 'figure', null, ''],
+  [5, 'vision', 'scan', 44, ''],
+  [6, 'vision', 'scan', 41, ''],
 ];
 
 function database(opts: { why: boolean; agent?: (string | null)[][] }): string {
   const file = path.join(dir, `${randomUUID()}.sqlite`);
-  const names = opts.why
-    ? ['Page', 'Method', 'Why', 'Lines', 'Sure words', 'Text']
-    : ['Page', 'Method', 'Text'];
-  const rows = opts.why ? PAGES_ROWS : PAGES_ROWS.map((r) => [r[0]!, r[1]!, r[5]!]);
+  const names = opts.why ? ['Page', 'Method', 'Why', 'Lines', 'Text'] : ['Page', 'Method', 'Text'];
+  const rows = opts.why ? PAGES_ROWS : PAGES_ROWS.map((r) => [r[0]!, r[1]!, r[4]!]);
   const sheets = [
     {
       name: 'Pages',
@@ -71,7 +70,7 @@ function database(opts: { why: boolean; agent?: (string | null)[][] }): string {
 }
 
 describe('the pages the Scan reader reads first', () => {
-  it('are the pages left to vision because OCR read them badly; a figure is not one', async () => {
+  it('are the scanned pages; a figure is not one', async () => {
     expect(await bookScanPagesOf(database({ why: true }))).toEqual([5, 6]);
   });
 
@@ -80,11 +79,11 @@ describe('the pages the Scan reader reads first', () => {
     expect(await bookScanPagesOf(path.join(dir, 'none.sqlite'))).toEqual([]);
   });
 
-  it('each has its free evidence: the sure words and the lines', async () => {
+  it('each has its free evidence: its lines', async () => {
     const got = await bookScanEvidenceOf(database({ why: true }), [5, 6, 4, 2, 99]);
     expect([...got.entries()]).toEqual([
-      [5, { words: ['FLANGE', 'ASTM', 'A105'], lines: 44 }],
-      [6, { words: [], lines: 41 }],
+      [5, { lines: 44 }],
+      [6, { lines: 41 }],
     ]);
     expect((await bookScanEvidenceOf(database({ why: true }), [])).size).toBe(0);
   });
@@ -97,7 +96,8 @@ describe('how each page of a book was read', () => {
       agent: [
         ['page-5', 'FLANGE ASTM A105', 'scan_reader:mistral-ocr', 'h5'],
         ['page-4', 'A figure of a valve', 'google/gemini-3.5-flash-lite', 'h4'],
-        ['page-6', '', 'google/gemini-3.5-flash-lite', 'h6'],
+        // A read judged bad: a row with no text, unread.
+        ['page-6', '', 'scan_reader:mistral-ocr', 'h6'],
       ],
     });
     expect(await bookPageMethodsOf(file)).toEqual({

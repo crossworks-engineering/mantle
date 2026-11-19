@@ -137,7 +137,7 @@ def quality(text, finish, words, expected_lines=None):
         reasons.append("no_text")
     if finish == "length":
         reasons.append("cut")
-    if toks and len(re.sub(r"\s", "", text)) < CHARS_MIN:
+    if expected_lines is None and toks and len(re.sub(r"\s", "", text)) < CHARS_MIN:
         reasons.append("short")
     run, last = 0, None
     for l in (l.strip() for l in text.split("\n") if l.strip()):

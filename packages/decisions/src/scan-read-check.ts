@@ -1,9 +1,9 @@
 /**
  * Scan read check: use `scan_read_check` (docs/decisions.md, section 4).
- * On a scanned page whose Scan reader text no free read can vouch for
- * (Tesseract read too few confident words), is that text a faithful reading
- * of the page in the picture? One `noul` question, with the page picture and
- * the text in the state.
+ * Is a Scan reader's text of a scanned page a faithful reading of the page in
+ * the picture? One `noul` question, with the page picture and the text in
+ * the state. No local OCR vouches for a book page's read (owner decision
+ * 2026-11-19), so this is the one check of its content.
  *
  * Why: on the scan bench (2026-11-19, made-up pages) the OCR engines wrote a
  * whole plausible spec table onto pages too bad to read. Jev told those apart
@@ -11,16 +11,16 @@
  * the right line count at 0.02 to 0.13, for about $0.00027 a page.
  *
  * Ships in shadow: the answer lands in the trace and in `used: false`; the
- * caller's free `unverified` rule (scanReadQualityOf in @mantle/runtime)
- * decides. Live, at or over the use's threshold (0.5 by default) the read is
- * judged faithful, under it not. It never writes, retires or deletes: the
- * worst a wrong answer does is send a page on to vision, or keep a read that
- * the free rule would also have kept or dropped. Text on the page can steer
+ * caller's free rules (scanReadQualityOf in @mantle/runtime) decide. Live,
+ * at or over the use's threshold (0.5 by default) the read is judged
+ * faithful, under it not. It never writes, retires or deletes: the worst a
+ * wrong answer does is leave a page unread, or keep a read that the free
+ * rules would also have kept. Text on the page can steer
  * the answer (rule 6); the picture is the owner's document and leaves the box
  * under the worker's privacy setting, as every state does.
  *
  * Asked by the paid ask of a book page (server/api pipeline-ask.ts) after a
- * Scan reader read with too few sure words of Tesseract to vouch for it.
+ * Scan reader read the free rules judge good or only `unverified`.
  */
 import type { DecisionQuestion } from '@mantle/voice';
 import { decide } from './decide';
