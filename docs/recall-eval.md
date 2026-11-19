@@ -12,7 +12,7 @@ motivated it. Lives at [`server/web/scripts/eval-recall.ts`](../server/web/scrip
 > **Two case files, and only one is committed (since 2026-11-19).**
 > `server/web/scripts/eval/recall-gold.json` is in the repo: each case holds a
 > query and **hashed match keys**, never a title, a node id or any brain text.
-> `server/web/scripts/eval/recall-cases.json` is **gitignored**: it holds the
+> `recall-cases.json`, next to it, is **gitignored**: it holds the
 > cases whose query would itself reveal private content (a personal event, a
 > client's name). The harness reads both. The repo carried a plain set until
 > 2026-08-21; it leaked the owner's bank, a company expense figure and their
