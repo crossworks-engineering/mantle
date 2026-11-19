@@ -409,6 +409,8 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         index["dgn"] = notes
         # Attribute values the DGN reader cut to its length (said on the file).
         if isinstance(notes, dict):
+            import dgn_read  # noqa: PLC0415 - child-only; sits next to this file
+
             notes["values_cut"] = dgn_read.values_cut()
     elif converter == "ezdwg":
         # The same for a DWG. Its document is made as R2010 in memory, so
