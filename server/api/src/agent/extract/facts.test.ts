@@ -10,10 +10,12 @@
  *    an edited document living on with `valid_to = NULL` forever. Lose the
  *    owner or node scoping on either statement and one node's re-extract
  *    retires the whole brain's facts.
- *  - A cost-cap break must NOT retire. The later candidates were never looked
- *    at, so "not re-asserted" says nothing about them; the run instead clears
- *    the suspect flag and leaves a durable `data.extract_incomplete` marker, so
- *    a paid-for fact that was dropped is recoverable rather than invisible.
+ *  - A cost-cap break must NOT retire. The later candidates were not looked
+ *    at yet, so "not re-asserted" says nothing about them; the run instead
+ *    clears the suspect flag, marks `data.extract_incomplete` (facts_deferred)
+ *    and DEFERS the rest to a job of their own (owner decision 2026-11-19:
+ *    cost controls pace, they never drop). A provider's "not now" on a
+ *    classify call defers the same way, with its wait.
  *  - A cap of 0 means UNLIMITED, not "zero budget". `?? null` alone let a
  *    configured 0 through, and since the llm_extract step has already spent
  *    money by this point, `spent >= 0` is always true — every fact would be
@@ -37,6 +39,11 @@ const h = vi.hoisted(() => ({
   setSkipped: vi.fn(),
   setMeta: vi.fn(),
   setOutput: vi.fn(),
+  /** Rows the next `select ... limit` reads give, in order (else none). */
+  selectRows: [] as unknown[][],
+  /** What the extract queue was handed for later. */
+  deferred: [] as Array<{ nodeId: string; out: Record<string, unknown> }>,
+  resolveExtractor: vi.fn(),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -60,7 +67,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),
-      limit: vi.fn(async () => []),
+      limit: vi.fn(async () => h.selectRows.shift() ?? []),
     })),
     insert: vi.fn(() => ({
       values: vi.fn(async (row: unknown) => {
@@ -88,13 +95,25 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
   return {
     ...actual,
     currentTrace: () => ({ costMicroUsd: h.cost }),
+    startTrace: async (_init: unknown, fn: () => Promise<unknown>) => fn(),
     step: async (_spec: unknown, fn: (handle: unknown) => Promise<unknown>) =>
       fn({ setSkipped: h.setSkipped, setMeta: h.setMeta, setOutput: h.setOutput }),
   };
 });
-vi.mock('./model', () => ({ chatComplete: h.chatComplete, resolveExtractor: vi.fn() }));
+vi.mock('./model', () => ({
+  chatComplete: h.chatComplete,
+  resolveExtractor: h.resolveExtractor,
+}));
 
-import { processFacts, retireUnassertedFacts } from './facts';
+import { processDeferredFacts, processFacts, retireUnassertedFacts } from './facts';
+import { ProviderHttpError } from '@mantle/std';
+
+/** The queue's door, as a list. */
+const DEFER = {
+  defer: async (nodeId: string, out: unknown) => {
+    h.deferred.push({ nodeId, out: out as Record<string, unknown> });
+  },
+};
 import { sqlValues } from './test-support';
 
 const NODE = { id: 'n1', ownerId: 'o1', type: 'note', title: 'T', data: {} } as never;
@@ -115,6 +134,9 @@ beforeEach(() => {
   h.inserts.length = 0;
   h.cost = 0;
   h.insertFails = 0;
+  h.selectRows.length = 0;
+  h.deferred.length = 0;
+  h.resolveExtractor.mockResolvedValue(WORKER);
   h.embedBatch.mockResolvedValue([[0.1], [0.2], [0.3]]);
   // The near-neighbour select returns nothing, so every candidate takes the
   // ADD fast path and the classifier is never consulted. That is deliberate:
@@ -156,8 +178,8 @@ describe('processFacts — the dirty-flag protocol', () => {
   });
 });
 
-describe('processFacts — the cost cap', () => {
-  it('stops at the cap, retires NOTHING, and records a recoverable marker', async () => {
+describe('processFacts — the cost cap paces, it never drops', () => {
+  it('stops at the cap, retires NOTHING, and DEFERS the rest to a job of their own', async () => {
     h.cost = 5_000; // already over before the first candidate
     const tally = await processFacts(
       NODE,
@@ -166,19 +188,31 @@ describe('processFacts — the cost cap', () => {
       { extract_cost_cap_micro_usd: 1_000 },
       factsOf('a', 'b', 'c') as never,
       new Map(),
+      DEFER,
     );
-    expect(h.inserts).toEqual([]); // not one candidate was processed
+    expect(h.inserts).toEqual([]); // not one candidate was processed in this pass
     expect(tally.retired).toBe(0);
     // The suspect flag is cleared but no validTo is written: the later
-    // candidates were never looked at, so "not re-asserted" proves nothing.
+    // candidates were not looked at yet, so "not re-asserted" proves nothing.
     expect(patches().some((p) => 'validTo' in p)).toBe(false);
     expect(patches().some((p) => p.dirty === false)).toBe(true);
-    // And the loss is durable + queryable, not just a log line.
+    // The marker says deferred, not dropped.
     const marker = h.updates.find((u) =>
-      sqlValues(u.patch.data).some((v) => String(v).includes('fact_cost_cap')),
+      sqlValues(u.patch.data).some((v) => String(v).includes('facts_deferred')),
     );
-    expect(String(sqlValues(marker!.patch.data))).toContain('"dropped":3');
-    expect(h.setSkipped).toHaveBeenCalledWith('fact_cost_cap');
+    expect(String(sqlValues(marker!.patch.data))).toContain('"deferred":3');
+    expect(String(sqlValues(marker!.patch.data))).toContain('"why":"cost_cap"');
+    // Every candidate goes to the queue, with no wait (the cap's pace).
+    expect(h.deferred).toHaveLength(1);
+    const out = h.deferred[0]!.out as {
+      facts: { candidates: { content: string }[] };
+      wait?: unknown;
+    };
+    expect(out.facts.candidates.map((c) => c.content)).toEqual(['a', 'b', 'c']);
+    expect(out.wait).toBeUndefined();
+    expect(tally.deferred?.facts.candidates).toHaveLength(3);
+    expect(h.setSkipped).toHaveBeenCalledWith('facts_deferred');
+    expect(h.setMeta).toHaveBeenCalledWith(expect.objectContaining({ dropped: 0, deferred: 3 }));
   });
 
   it('treats a cap of 0 as UNLIMITED, not as zero budget', async () => {
@@ -236,5 +270,98 @@ describe('retireUnassertedFacts — an edit that leaves no facts', () => {
       sqlValues(u.patch.data).some((v) => String(v).includes('extract_incomplete')),
     );
     expect(cleared).toBeDefined();
+  });
+});
+
+describe('the provider says "not now" to a classify call', () => {
+  it('defers the rest WITH the wait; the facts before it stay applied', async () => {
+    // A near neighbour, so the classifier is asked (no ADD fast path).
+    let calls = 0;
+    const { db } = await import('@mantle/db');
+    vi.mocked(db.select).mockImplementation(
+      () =>
+        ({
+          from: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          orderBy: vi.fn().mockReturnThis(),
+          limit: vi.fn(async () => [{ id: 'f9', content: 'near', dist: 0.1 }]),
+        }) as never,
+    );
+    h.chatComplete.mockImplementation(async () => {
+      calls++;
+      if (calls === 2) {
+        throw new Error('The model provider answered with an error.', {
+          cause: new ProviderHttpError({ provider: 'openrouter', status: 429, body: 'slow' }),
+        });
+      }
+      return { text: '{"decision":"ADD"}', model: 'm' };
+    });
+    const tally = await processFacts(
+      NODE,
+      'o1',
+      WORKER,
+      {},
+      factsOf('a', 'b', 'c') as never,
+      new Map(),
+      DEFER,
+    );
+    expect(tally.ADD).toBe(1);
+    const out = h.deferred[0]!.out as {
+      facts: { candidates: { content: string }[] };
+      wait?: { reason: string };
+    };
+    expect(out.facts.candidates.map((c) => c.content)).toEqual(['b', 'c']);
+    expect(out.wait?.reason).toBe('rate_limit');
+    expect(patches().some((p) => 'validTo' in p)).toBe(false);
+    vi.mocked(db.select).mockReset();
+  });
+});
+
+describe('processDeferredFacts — the job of the facts left for later', () => {
+  const JOB = {
+    at: '2026-11-19T10:00:00.000Z',
+    candidates: [
+      { content: 'a', kind: 'factual' as const, confidence: 0.9, entityId: null },
+      { content: 'b', kind: 'factual' as const, confidence: 0.9, entityId: 'e1' },
+    ],
+  };
+  const nodeWith = (at: string) => ({
+    ...(NODE as object),
+    data: { extract_incomplete: { reason: 'facts_deferred', at } },
+  });
+
+  it('applies every candidate and clears the marker', async () => {
+    h.selectRows.push([nodeWith(JOB.at)]);
+    const out = await processDeferredFacts('n1', 'o1', JOB);
+    expect(out).toEqual({ applied: 2 });
+    expect(h.inserts).toHaveLength(2);
+    const cleared = h.updates.find((u) =>
+      sqlValues(u.patch.data).some((v) => String(v).includes('extract_incomplete')),
+    );
+    expect(cleared).toBeDefined();
+    // Retires nothing: the old facts of a deferred pass were kept.
+    expect(patches().some((p) => 'validTo' in p)).toBe(false);
+  });
+
+  it('a node read again since (another marker) or gone: nothing to do', async () => {
+    h.selectRows.push([nodeWith('2026-11-19T11:00:00.000Z')]);
+    expect(await processDeferredFacts('n1', 'o1', JOB)).toEqual({ applied: 0 });
+    expect(await processDeferredFacts('n1', 'o1', JOB)).toEqual({ applied: 0 });
+    expect(h.inserts).toEqual([]);
+    expect(h.embedBatch).not.toHaveBeenCalled();
+  });
+
+  it('the cap again: one candidate always goes through, the rest is deferred again', async () => {
+    h.selectRows.push([nodeWith(JOB.at)]);
+    h.resolveExtractor.mockResolvedValue({
+      ...(WORKER as object),
+      params: { extract_cost_cap_micro_usd: 1 },
+    });
+    h.cost = 5_000;
+    const out = await processDeferredFacts('n1', 'o1', JOB);
+    expect(out.applied).toBe(1);
+    expect(out.deferred?.facts.candidates.map((c) => c.content)).toEqual(['b']);
+    expect(out.deferred?.facts.at).toBe(JOB.at);
+    expect(h.inserts).toHaveLength(1);
   });
 });

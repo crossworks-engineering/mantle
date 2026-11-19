@@ -57,6 +57,7 @@ import { storedPdfOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { runVisionWorker } from '@mantle/runtime/agent';
+import { callThroughWaits, ProviderWaitError } from '@mantle/std';
 import { startTrace, step } from '@mantle/tracing';
 import { loadFileBytes } from './file-bytes';
 
@@ -163,24 +164,32 @@ export async function sketchIngestPdfNode(
               input: { page: page.page, picture: k + 1, bytes: png.length },
             },
             async (h) => {
-              const r = await runVisionWorker({
-                ownerId,
-                bytes: png,
-                mimeType: 'image/png',
-                filename: `${filename}#page-${page.page}-part-${k + 1}.png`,
-                prompt: SKETCH_PROMPT,
-                // The answer cap follows the pieces: a thinking model's hidden
-                // thinking would fill it and cut the answer off (bench
-                // 2026-11-11: 16 of 508 pieces read without this, 431 with it).
-                leastThinking: true,
-                // A provider that failed (a timeout) is asked one time more
-                // before the read stops: the pictures after a stop are lost.
-                tries: 2,
-                maxTokens: Math.min(
-                  SKETCH_MAX_TOKENS,
-                  200 + SKETCH_TOKENS_A_PIECE * page.pieces.filter((x) => x.picture === k).length,
-                ),
-              });
+              // A short "not now" of the provider is waited through here, so
+              // the pictures read before it are not paid again
+              // (@mantle/std callThroughWaits).
+              const r = await callThroughWaits(
+                () =>
+                  runVisionWorker({
+                    ownerId,
+                    bytes: png,
+                    mimeType: 'image/png',
+                    filename: `${filename}#page-${page.page}-part-${k + 1}.png`,
+                    prompt: SKETCH_PROMPT,
+                    // The answer cap follows the pieces: a thinking model's hidden
+                    // thinking would fill it and cut the answer off (bench
+                    // 2026-11-11: 16 of 508 pieces read without this, 431 with it).
+                    leastThinking: true,
+                    // A provider that failed (a timeout) is asked one time more
+                    // before the read stops: the pictures after a stop are lost.
+                    tries: 2,
+                    maxTokens: Math.min(
+                      SKETCH_MAX_TOKENS,
+                      200 +
+                        SKETCH_TOKENS_A_PIECE * page.pieces.filter((x) => x.picture === k).length,
+                    ),
+                  }),
+                (a) => a.wait,
+              );
               h.setMeta({
                 ran: r.ran,
                 note: r.note,
@@ -191,6 +200,9 @@ export async function sketchIngestPdfNode(
               return r;
             },
           );
+          // Still "not now": the whole read waits in the queue
+          // (extract-queue.ts), never written with pictures left unread.
+          if (res.wait) throw new ProviderWaitError(res.wait, 'vision');
           if (res.ran) model = res.model ?? 'unknown';
           else stopped = true;
           answers.push(res.ran ? res.text : null);

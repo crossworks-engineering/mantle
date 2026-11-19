@@ -710,7 +710,12 @@ export const translateTool: BuiltinToolDef = {
       });
     } catch (err) {
       if (err instanceof TranslatePartError) {
-        ctx.step?.setMeta({ worker_slug: worker.slug, parts: err.parts, parts_done: err.done });
+        ctx.step?.setMeta({
+          worker_slug: worker.slug,
+          parts: err.parts,
+          parts_done: err.done,
+          ...(err.wait ? { provider_wait: err.wait.reason } : {}),
+        });
         return { ok: false, error: err.message };
       }
       return { ok: false, error: publicProviderErrorMessage(err, 'translate', ctx.step) };

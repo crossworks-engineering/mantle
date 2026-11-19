@@ -41,11 +41,35 @@ import {
   type PipelineManifest,
 } from '@mantle/files';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
+import { PROVIDER_WAIT_REASONS, type ProviderWaitReason } from '@mantle/std';
 
 /** The reason of an ask the box cannot answer now with no stop of the run:
  *  a scanned page of a book on a brain with no Scan reader (its pages stay
  *  unread, said so; a figure after it is still read). */
 export const ASK_SKIPPED_NO_SCAN_READER = 'no_scan_reader';
+
+/** The stop of a run whose provider said "not now" (@mantle/std
+ *  provider-wait.ts), one word a reason: `provider_rate_limit`,
+ *  `provider_quota`, `provider_overloaded`. The run job sends the run again
+ *  later (server/api/src/agent/extract-queue.ts): the asks it made are in
+ *  the tab, the rest are asked then. */
+export const PROVIDER_WAIT_STOP_PREFIX = 'provider_';
+
+/** The stop of a run at the box's day cap of paid asks (pipeline-asks.ts):
+ *  the run job sends the run again once the cap has room. */
+export const DAY_CAP_STOP = 'day_cap';
+
+/** The stop word of a provider's "not now". */
+export function providerWaitStop(reason: ProviderWaitReason): string {
+  return `${PROVIDER_WAIT_STOP_PREFIX}${reason}`;
+}
+
+/** The provider's reason of a stop word, or null for any other stop. */
+export function providerWaitOfStop(stopped: string | undefined): ProviderWaitReason | null {
+  if (!stopped?.startsWith(PROVIDER_WAIT_STOP_PREFIX)) return null;
+  const reason = stopped.slice(PROVIDER_WAIT_STOP_PREFIX.length) as ProviderWaitReason;
+  return PROVIDER_WAIT_REASONS.includes(reason) ? reason : null;
+}
 
 /** The form of the core's question. Raise it when {@link askQuestionOf} or
  *  the system text changes: every stored hash then differs, and a run asks
@@ -457,7 +481,8 @@ export type AgentRows = {
    *  Scan reader, ASK_SKIPPED_NO_SCAN_READER): not read, no row. */
   skipped?: number;
   /** Why the calls stopped, when they did: the reason word of the answer
-   *  (`day_cap`, `off`, `no_llm_work`, `no_worker`), else its error. */
+   *  (`day_cap`, `off`, `no_llm_work`, `no_worker`, a provider's "not now"
+   *  `provider_<reason>`), else its error. */
   stopped?: string;
 };
 

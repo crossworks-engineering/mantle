@@ -27,9 +27,9 @@ calls an LLM." Two things became obvious:
 
 So the split is:
 
-| Concept | What | UI |
-|---|---|---|
-| **Agent** | Conversational reasoner with persona, memory, tools, turns | `/settings/agents` |
+| Concept       | What                                                                                                    | UI                     |
+| ------------- | ------------------------------------------------------------------------------------------------------- | ---------------------- |
+| **Agent**     | Conversational reasoner with persona, memory, tools, turns                                              | `/settings/agents`     |
 | **AI worker** | One-shot job: LLM-driven (reflector/extractor/summarizer) OR media transform (TTS/STT/vision/image-gen) | `/settings/ai-workers` |
 
 `agents` keeps the responder + assistant + custom rows. `ai_workers`
@@ -72,8 +72,8 @@ index on `is_default = true`. The runtime calls
 `getDefaultWorker(ownerId, kind)` and gets the default (or falls back
 to highest-priority enabled row, or null).
 
-**Per-agent TTS voice (migration 0066).** You may run *many* `tts`
-workers (only the *default* is constrained to one per owner). An agent
+**Per-agent TTS voice (migration 0066).** You may run _many_ `tts`
+workers (only the _default_ is constrained to one per owner). An agent
 can pin which voice it speaks with via `agents.tts_worker_id`, chosen in
 `/settings/agents` → **Voice (TTS)**. The worker owns provider + voice +
 model + key; the agent only references it. The reply path resolves it
@@ -93,7 +93,14 @@ type TtsParams = {
   format?: 'opus' | 'mp3' | 'wav' | ...
   instructions?: string                           // gpt-4o-mini-tts only
 }
-type SttParams = { language?: string; max_duration_seconds?: number }
+type SttParams = {
+  language?: string
+  // A Telegram voice note longer than this (default 180 s) is still
+  // transcribed, kept and used whole (owner rule 2026-11-19: everything is
+  // consumed in full); the turn says the note is long. No transcript that was
+  // paid for is thrown away.
+  max_duration_seconds?: number
+}
 type ReflectorParams = ChatLlmParams & {
   window_size?: number; max_notes_per_run?: number
 }
@@ -171,18 +178,18 @@ module load:
 
 ```ts
 // packages/voice/src/adapters/index.ts
-registerTtsAdapter(openAiTtsAdapter)
-registerTtsAdapter(elevenLabsTtsAdapter)
-registerSttAdapter(openAiSttAdapter)
-registerChatAdapter(xaiChatAdapter)
-registerChatAdapter(huggingfaceChatAdapter)
-registerChatAdapter(anthropicChatAdapter)
-registerChatAdapter(googleChatAdapter)
-registerEmbeddingAdapter(openrouterEmbedding)
-registerEmbeddingAdapter(openaiEmbedding)
-registerEmbeddingAdapter(googleEmbedding)
-registerEmbeddingAdapter(mistralEmbedding)
-registerEmbeddingAdapter(cohereEmbedding)
+registerTtsAdapter(openAiTtsAdapter);
+registerTtsAdapter(elevenLabsTtsAdapter);
+registerSttAdapter(openAiSttAdapter);
+registerChatAdapter(xaiChatAdapter);
+registerChatAdapter(huggingfaceChatAdapter);
+registerChatAdapter(anthropicChatAdapter);
+registerChatAdapter(googleChatAdapter);
+registerEmbeddingAdapter(openrouterEmbedding);
+registerEmbeddingAdapter(openaiEmbedding);
+registerEmbeddingAdapter(googleEmbedding);
+registerEmbeddingAdapter(mistralEmbedding);
+registerEmbeddingAdapter(cohereEmbedding);
 ```
 
 The runtime looks up `getChatAdapter(worker.provider)` /
@@ -194,22 +201,22 @@ in the UI dropdown.
 
 ### 3.3 Currently shipped adapters
 
-| Provider | Chat | Embedding | TTS | STT | Vision | Image-gen |
-|---|---|---|---|---|---|---|
-| OpenRouter | ✅ (direct SDK¹) | ✅ openrouter-embedding (only multimodal-capable adapter) |, |, | ✅ openrouter-vision (+ native PDF) |, |
-| OpenAI | via OpenRouter¹ | ✅ openai-embedding | ✅ openai-tts | ✅ openai-stt | ✅ openai-vision | ✅ openai-image (gpt-image-1 / DALL-E 3 / DALL-E 2) |
-| xAI (Grok) | ✅ xai-chat |, | ✅ xai-tts | ✅ xai-stt | ✅ xai-vision | ✅ xai-image (grok-imagine-image) |
-| Hugging Face | ✅ huggingface-chat |, |, |, |, | ✅ huggingface-image (FLUX-1, SDXL, SD 3.5) |
-| Anthropic (direct) | ✅ anthropic-chat¹ |, *(provider defers to Voyage AI)* |, |, | ✅ anthropic-vision |, |
-| Google (Gemini) | ✅ google-chat | ✅ google-embedding | ✅ google-tts | ✅ google-stt | ✅ google-vision | ✅ google-image (Imagen 3 / 4) |
-| DeepSeek | ✅ deepseek-chat |, |, |, |, |, |
-| Mammouth (aggregator) | ✅ mammouth-chat (cost from catalog rates) |, |, |, |, |, |
-| Microsoft Foundry | ✅ foundry-chat (deployment names; [foundry.md](foundry.md)) |, |, |, |, |, |
-| Mistral |, | ✅ mistral-embedding |, |, |, |, |
-| Cohere |, | ✅ cohere-embedding |, |, |, |, |
-| ElevenLabs |, |, | ✅ elevenlabs-tts | ✅ elevenlabs-stt (Scribe v1) |, |, |
-| Deepgram |, |, |, | ✅ deepgram-stt |, |, |
-| AssemblyAI |, |, |, | ✅ assemblyai-stt |, |, |
+| Provider              | Chat                                                         | Embedding                                                 | TTS               | STT                           | Vision                              | Image-gen                                           |
+| --------------------- | ------------------------------------------------------------ | --------------------------------------------------------- | ----------------- | ----------------------------- | ----------------------------------- | --------------------------------------------------- |
+| OpenRouter            | ✅ (direct SDK¹)                                             | ✅ openrouter-embedding (only multimodal-capable adapter) | ,                 | ,                             | ✅ openrouter-vision (+ native PDF) | ,                                                   |
+| OpenAI                | via OpenRouter¹                                              | ✅ openai-embedding                                       | ✅ openai-tts     | ✅ openai-stt                 | ✅ openai-vision                    | ✅ openai-image (gpt-image-1 / DALL-E 3 / DALL-E 2) |
+| xAI (Grok)            | ✅ xai-chat                                                  | ,                                                         | ✅ xai-tts        | ✅ xai-stt                    | ✅ xai-vision                       | ✅ xai-image (grok-imagine-image)                   |
+| Hugging Face          | ✅ huggingface-chat                                          | ,                                                         | ,                 | ,                             | ,                                   | ✅ huggingface-image (FLUX-1, SDXL, SD 3.5)         |
+| Anthropic (direct)    | ✅ anthropic-chat¹                                           | , _(provider defers to Voyage AI)_                        | ,                 | ,                             | ✅ anthropic-vision                 | ,                                                   |
+| Google (Gemini)       | ✅ google-chat                                               | ✅ google-embedding                                       | ✅ google-tts     | ✅ google-stt                 | ✅ google-vision                    | ✅ google-image (Imagen 3 / 4)                      |
+| DeepSeek              | ✅ deepseek-chat                                             | ,                                                         | ,                 | ,                             | ,                                   | ,                                                   |
+| Mammouth (aggregator) | ✅ mammouth-chat (cost from catalog rates)                   | ,                                                         | ,                 | ,                             | ,                                   | ,                                                   |
+| Microsoft Foundry     | ✅ foundry-chat (deployment names; [foundry.md](foundry.md)) | ,                                                         | ,                 | ,                             | ,                                   | ,                                                   |
+| Mistral               | ,                                                            | ✅ mistral-embedding                                      | ,                 | ,                             | ,                                   | ,                                                   |
+| Cohere                | ,                                                            | ✅ cohere-embedding                                       | ,                 | ,                             | ,                                   | ,                                                   |
+| ElevenLabs            | ,                                                            | ,                                                         | ✅ elevenlabs-tts | ✅ elevenlabs-stt (Scribe v1) | ,                                   | ,                                                   |
+| Deepgram              | ,                                                            | ,                                                         | ,                 | ✅ deepgram-stt               | ,                                   | ,                                                   |
+| AssemblyAI            | ,                                                            | ,                                                         | ,                 | ✅ assemblyai-stt             | ,                                   | ,                                                   |
 
 ¹ **Every chat provider has a registered adapter, including OpenRouter
 itself (`openrouter-chat`, since Pre-work B of Phase 3).** The runtime
@@ -290,14 +297,14 @@ Implemented per-adapter via the optional `discoverModels(credential)`
 method. Soft-fails to the static catalog if the call errors (with a
 "couldn't verify" hint in the UI). Each provider's discovery shape:
 
-| Provider | Endpoint | Notes |
-|---|---|---|
-| OpenAI | `GET /v1/models` | Flat list of `{id, owned_by}`; filter by name prefix |
-| xAI | `GET /v1/models` (assumed) | OpenAI-compat; falls back if not present |
-| Hugging Face | `GET /v1/models` | Returns hundreds; we curate via catalog filter |
-| Anthropic | `GET /v1/models` | Returns dated + alias ids; we match against both |
-| Google | `GET /v1beta/models` | Filter to `supportedGenerationMethods: ['generateContent']` |
-| ElevenLabs | `GET /v1/models` | Plus `GET /v1/voices` for the cloned-voice picker |
+| Provider     | Endpoint                   | Notes                                                       |
+| ------------ | -------------------------- | ----------------------------------------------------------- |
+| OpenAI       | `GET /v1/models`           | Flat list of `{id, owned_by}`; filter by name prefix        |
+| xAI          | `GET /v1/models` (assumed) | OpenAI-compat; falls back if not present                    |
+| Hugging Face | `GET /v1/models`           | Returns hundreds; we curate via catalog filter              |
+| Anthropic    | `GET /v1/models`           | Returns dated + alias ids; we match against both            |
+| Google       | `GET /v1beta/models`       | Filter to `supportedGenerationMethods: ['generateContent']` |
+| ElevenLabs   | `GET /v1/models`           | Plus `GET /v1/voices` for the cloned-voice picker           |
 
 The UI re-runs discovery when the API key OR the provider changes.
 Manual refresh button on the model dropdown for "I added a new model
@@ -371,15 +378,15 @@ Thinner than TTS by nature: the normalized surface is a language hint and
 nothing else, so every wired adapter declares `supports: ['language']`. What
 diverges is what each provider hands BACK.
 
-| adapter | language hint | returns detected language | returns duration |
-|---|---|---|---|
-| `openai-stt` | ✅ | ✅ (`verbose_json`) | ✅ |
-| `elevenlabs-stt` | ✅ `language_code` | ✅ | ✗ (needs word timestamps) |
-| `deepgram-stt` | ✅, else `detect_language=true` | ✅ | ✅ |
-| `assemblyai-stt` | ✅ `language_code`, else `language_detection` | ✅ | ✅ |
-| `xai-stt` | ✅ | ✅ | ✅ |
-| `openrouter-stt` | ✅ | ✗ (response is text + usage) | ✗ |
-| `google-stt` | prompt text, not a parameter | ✗ | ✗ |
+| adapter          | language hint                                 | returns detected language    | returns duration          |
+| ---------------- | --------------------------------------------- | ---------------------------- | ------------------------- |
+| `openai-stt`     | ✅                                            | ✅ (`verbose_json`)          | ✅                        |
+| `elevenlabs-stt` | ✅ `language_code`                            | ✅                           | ✗ (needs word timestamps) |
+| `deepgram-stt`   | ✅, else `detect_language=true`               | ✅                           | ✅                        |
+| `assemblyai-stt` | ✅ `language_code`, else `language_detection` | ✅                           | ✅                        |
+| `xai-stt`        | ✅                                            | ✅                           | ✅                        |
+| `openrouter-stt` | ✅                                            | ✗ (response is text + usage) | ✗                         |
+| `google-stt`     | prompt text, not a parameter                  | ✗                            | ✗                         |
 
 The 2026-08 docs sweep found two faults, both in `xai-stt`, both of the same
 kind as the TTS ones, a comment asserting something about someone else's API
@@ -407,13 +414,13 @@ honours what is not**, so each adapter declares `TtsDispatcher.supports` and
 the caller reports the rest. Checked against each provider's own docs,
 2026-08:
 
-| adapter | forwards | notes |
-|---|---|---|
-| `openai-tts` | speed, format, instructions | no language field at all; `instructions` is ignored by `tts-1` / `tts-1-hd`, which warns per-model |
-| `openrouter-tts` | speed, format, instructions | OpenAI-compatible `/audio/speech` |
-| `elevenlabs-tts` | speed, format, language | speed rides inside `voice_settings`; `language_code` is refused by the `multilingual_v2` family, which warns per-model |
-| `xai-tts` | speed, format, language | speed band is 0.7–1.5, narrower than OpenAI's; out-of-band values clamp and warn |
-| `google-tts` | format | Gemini TTS has **no** speed, instructions or language parameter: delivery is steered by prompt text and inline audio tags |
+| adapter          | forwards                    | notes                                                                                                                     |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `openai-tts`     | speed, format, instructions | no language field at all; `instructions` is ignored by `tts-1` / `tts-1-hd`, which warns per-model                        |
+| `openrouter-tts` | speed, format, instructions | OpenAI-compatible `/audio/speech`                                                                                         |
+| `elevenlabs-tts` | speed, format, language     | speed rides inside `voice_settings`; `language_code` is refused by the `multilingual_v2` family, which warns per-model    |
+| `xai-tts`        | speed, format, language     | speed band is 0.7–1.5, narrower than OpenAI's; out-of-band values clamp and warn                                          |
+| `google-tts`     | format                      | Gemini TTS has **no** speed, instructions or language parameter: delivery is steered by prompt text and inline audio tags |
 
 Two corrections that came out of that check, both of which had made an
 operator's saved setting silently inert:
@@ -449,7 +456,7 @@ Both flow the same way each turn:
 
 1. The runtime asks the active TTS adapter for both sets and folds them
    into Saskia's system prompt via `composeAudioTagInstructions(inline,
-   wrapping)`, one combined paragraph, grouped by category, so she only
+wrapping)`, one combined paragraph, grouped by category, so she only
    emits tags this model will render.
 2. On voice-out, the tags ride through to the synthesizer untouched.
 3. On text-out (or TTS fallback), `stripAudioTags` removes inline tags
@@ -475,7 +482,7 @@ Every file that enters Mantle, uploaded via the Files UI, attached to a
 through MCP, is handled by **two cleanly-separated responsibilities**:
 
 1. **Durable indexing (universal, async).** Save bytes → `node_ingested` →
-   the **extractor** is the *single* producer of durable metadata
+   the **extractor** is the _single_ producer of durable metadata
    (`data.text` + summary + embedding + facts), type-dispatched: images →
    neutral vision (describe+OCR), pdf/docx/xlsx → `parseDocumentBytes`, text →
    `data.content`. This runs for every file regardless of how it arrived.
@@ -493,7 +500,7 @@ through MCP, is handled by **two cleanly-separated responsibilities**:
   rather than throwing. Used by the extractor (neutral) and the live-answer
   helper (question-aware).
 - `extractAttachmentForTurn({ ownerId, bytes, mimeType, filename, question? })`
-, `@mantle/runtime`. The conversational helper: image → vision, doc →
+  , `@mantle/runtime`. The conversational helper: image → vision, doc →
   `parseDocumentBytes` (capped at `DOC_TEXT_MAX` 24K), returns
   `{ kind, text, note }`. Used by both `/assistant` and Telegram.
 - `buildAttachmentContextText(text, { kind, transcript, note, nodeId })`,
@@ -518,7 +525,7 @@ through MCP, is handled by **two cleanly-separated responsibilities**:
   docs via `parseDocumentBytes`).
 
 **Transcript-default + reliability.** The responder prefers the extracted
-text; for an *image* with no transcript it falls back to inlining the raw
+text; for an _image_ with no transcript it falls back to inlining the raw
 pixels only when the model is vision-capable and the image is within the
 provider's per-image limit (`maxImageBytesFor`, guards Bedrock's opaque
 "Could not process image" on oversized photos). On any responder error with an
@@ -544,7 +551,7 @@ scanned invoice" into "Mantle reads every line."
 
 ### Why a separate kind (not just the vision worker)
 
-You pick the *image* model and the *document* model differently. A cheap model
+You pick the _image_ model and the _document_ model differently. A cheap model
 (`gpt-4o-mini`) is fine for "describe this photo"; an invoice or statement wants
 a strong document model (Claude / Gemini) that reads the **whole PDF natively**,
 real layout, real tables. Forcing one worker to serve both means either
@@ -563,7 +570,7 @@ Two ways to turn a PDF into text for a vision model:
    [parser.md](parser.md)) and run
    the vision worker per page. Works anywhere, but loses cross-page table
    coherence, repeats page headers/footers, and costs N calls.
-2. **Native PDF** (the upgrade): hand the *whole* PDF to a document-capable
+2. **Native PDF** (the upgrade): hand the _whole_ PDF to a document-capable
    model in **one** call; it reads the text layer AND the rendered pages with
    whole-document context. Better fidelity on dense tables, fewer calls, no
    PNG-conversion loss.
@@ -594,7 +601,7 @@ so PDFs keep working out of the box; the dedicated worker is purely additive.
   `native_pdf: { empty_sha256 }`, so a retry of the same bytes does not pay
   for it again; the text layer is kept.
 
-**The bug this fixed.** Before this, the live turn ran *text-only* PDF parsing
+**The bug this fixed.** Before this, the live turn ran _text-only_ PDF parsing
 with no OCR fallback, a scanned invoice (no text layer) came back "No text
 could be extracted," even though the indexer already rasterized+OCR'd it. The
 asymmetry was real and trace-confirmed (`parse_document chars_out:0` → dead end
@@ -603,8 +610,8 @@ on the live path). Native PDF + the OCR fallback closes it on both layers.
 ### `prefer_native`: for digital PDFs with messy tables
 
 By default native/OCR only fires when there's **no text layer** (digital PDFs
-use the cheap text path). But a digital invoice can have a *complete but
-scrambled* text layer that mangles columns. The document worker's
+use the cheap text path). But a digital invoice can have a _complete but
+scrambled_ text layer that mangles columns. The document worker's
 `prefer_native` toggle says "always send PDFs to the model, even with a text
 layer." Honoured on **both** the live turn and the indexer (the latter via
 `documentWorkerPrefersNative` → `nativeReadPdfNode` on text-layer PDFs, keeping
@@ -636,15 +643,15 @@ keep in sync. Today: `['anthropic', 'openrouter']`.
 OpenRouter is the lowest-friction setup: with **only** an OpenRouter key, the
 entire text + vision brain is functional.
 
-| Capability | OpenRouter? | Notes |
-|---|---|---|
-| Chat (responder, extractor, summarizer, reflector) | ✅ | `openrouter-chat` adapter |
-| Embeddings | ✅ | `openrouter-embedding` adapter |
-| Vision (image OCR) | ✅ | `openrouter-vision.extract`, `image_url` content |
-| Document (native PDF) | ✅ | `openrouter-vision.extractDocument`, OR `file-parser` plugin |
-| TTS (voice out) | ✅ | `openrouter-tts`, `POST /api/v1/audio/speech` |
-| STT (voice in) | ✅ | `openrouter-stt`, OpenAI-compatible transcription |
-| Image generation | ✅ | `openrouter-image`, `POST /api/v1/images` |
+| Capability                                         | OpenRouter? | Notes                                                        |
+| -------------------------------------------------- | ----------- | ------------------------------------------------------------ |
+| Chat (responder, extractor, summarizer, reflector) | ✅          | `openrouter-chat` adapter                                    |
+| Embeddings                                         | ✅          | `openrouter-embedding` adapter                               |
+| Vision (image OCR)                                 | ✅          | `openrouter-vision.extract`, `image_url` content             |
+| Document (native PDF)                              | ✅          | `openrouter-vision.extractDocument`, OR `file-parser` plugin |
+| TTS (voice out)                                    | ✅          | `openrouter-tts`, `POST /api/v1/audio/speech`                |
+| STT (voice in)                                     | ✅          | `openrouter-stt`, OpenAI-compatible transcription            |
+| Image generation                                   | ✅          | `openrouter-image`, `POST /api/v1/images`                    |
 
 **This table used to read ❌ on the last three rows**, and the prose called the
 gap "real, not an oversight". It is no longer either: OpenRouter has since
@@ -728,7 +735,7 @@ billed cost and the quality. It calls the vision adapter's `parsePdf`
 `message.annotations`, the billed cost from `usage.cost`, parser fee
 included) and cleans the parser's markdown (`cleanParsedText`: its `<file>`
 wrapper, table divider lines and picture links out, a table row as cells
-split by ` | `, paired bold marks off). One call a page; with `tries: 2` a
+split by `|`, paired bold marks off). One call a page; with `tries: 2` a
 provider that failed with no answer (a timeout, a 5xx) is asked one time
 more, never on a refusal and never because the answer read badly. With no
 worker it calls nothing (`attempted: false`, `model: null`). The spend is
@@ -759,12 +766,12 @@ the decider is optional, an upgrade never adds it, and an operator adds it
 **The bench** (2026-11-19, made-up pages only; four sets of 12 copies of the
 generated spec book):
 
-| reader | cells found: clean / fair / poor / bad | judged bad (no local OCR) | per 1,000 pages | s a page |
-|---|---|---|---|---|
-| Tesseract (no longer in the book path) | 92.9% / 38.7% / 2.7% / 0.3% | | $0 | ~3 (CPU) |
-| mistral-ocr (shipped) | 100% / 100% / 99.9% / 0.1% | 0 / 0 / 0 / 12 | $2.03 | 3.7 to 5.0 |
-| gemini-3.1-flash-lite | 100% / 100% / 100% / 2.0% | 0 / 0 / 0 / 12 | $2.43 | 5.4 to 6.1 |
-| gemini-3.5-flash-lite (vision) | 100% / 100% / 99.9% / 0.0% | 0 / 0 / 0 / 10 | $3.94 | 3.5 to 5.7 |
+| reader                                 | cells found: clean / fair / poor / bad | judged bad (no local OCR) | per 1,000 pages | s a page   |
+| -------------------------------------- | -------------------------------------- | ------------------------- | --------------- | ---------- |
+| Tesseract (no longer in the book path) | 92.9% / 38.7% / 2.7% / 0.3%            |                           | $0              | ~3 (CPU)   |
+| mistral-ocr (shipped)                  | 100% / 100% / 99.9% / 0.1%             | 0 / 0 / 0 / 12            | $2.03           | 3.7 to 5.0 |
+| gemini-3.1-flash-lite                  | 100% / 100% / 100% / 2.0%              | 0 / 0 / 0 / 12            | $2.43           | 5.4 to 6.1 |
+| gemini-3.5-flash-lite (vision)         | 100% / 100% / 99.9% / 0.0%             | 0 / 0 / 0 / 10            | $3.94           | 3.5 to 5.7 |
 
 On the bad set every reader fails; mistral-ocr and the cheap model wrote a
 whole made-up spec table onto those pages, and the line rules catch all 12
@@ -895,7 +902,7 @@ tool resolves the default image_gen worker, calls the adapter, and:
 - On /assistant surface: emits an image artifact the chat page renders
   inline in the reply bubble.
 - Returns to the LLM: `{nodeId, storagePath, model, adapter, mimeType,
-  bytes, revisedPrompt?, inlineRef, appliedParams, ignoredParams?}`, enough
+bytes, revisedPrompt?, inlineRef, appliedParams, ignoredParams?}`, enough
   metadata for Saskia to mention what she sent, and `inlineRef` is the
   paste-ready `![alt](media:<id>)` for placing it in a reply or a page.
 
@@ -919,13 +926,13 @@ go stale against the worker actually installed.
 
 **Every adapter declares what it forwards** via `ImageGenDispatcher.supports`:
 
-| adapter | forwards |
-|---|---|
-| `openai-image` | size, style (dall-e-3), quality (dall-e-3 + gpt-image-1), input images |
-| `openrouter-image` | size (pixels or a `1K`/`2K`/`4K` tier), aspect ratio, quality, seed, input images |
-| `google-image` | size (snapped to a ratio), aspect ratio, negative prompt, seed |
-| `huggingface-image` | size (as width/height), negative prompt, seed |
-| `xai-image` | aspect ratio only (no size / style / quality / seed) |
+| adapter             | forwards                                                                          |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `openai-image`      | size, style (dall-e-3), quality (dall-e-3 + gpt-image-1), input images            |
+| `openrouter-image`  | size (pixels or a `1K`/`2K`/`4K` tier), aspect ratio, quality, seed, input images |
+| `google-image`      | size (snapped to a ratio), aspect ratio, negative prompt, seed                    |
+| `huggingface-image` | size (as width/height), negative prompt, seed                                     |
+| `xai-image`         | aspect ratio only (no size / style / quality / seed)                              |
 
 Per-PROVIDER is the wrong grain for some of these, so an adapter may also
 return `warnings` from a call, the per-MODEL truth only it knows (OpenAI takes
@@ -976,18 +983,18 @@ Workers have **four invocation paths**, deliberately:
    photo → vision ingest, node-save → extractor).
 2. **Tool-mediated**: Saskia chooses to invoke a worker mid-turn via
    one of these builtins:
-     - `synthesize_speech(text)`, TTS for explicit "send me a voice
-       note" requests. Telegram → `sendVoice`; web → audio artifact
-       rendered as `<audio controls>` in the reply.
-     - `extract_from_image(node_id | telegram_file_id, prompt?)`,
-       run vision on a previously-uploaded image or a Telegram file
-       reference.
-     - `summarize_text(text | node_id, focus?, max_words?)`, run the
-       default summarizer worker over inline text or a note body.
-     - `translate(text | node_id, to, from?, save?, title?, quality?)`,
-       run the Translator worker (section 5d′).
-     - `generate_image(prompt, size?, style?, quality?, negative_prompt?)`
-, image generation as documented above.
+   - `synthesize_speech(text)`, TTS for explicit "send me a voice
+     note" requests. Telegram → `sendVoice`; web → audio artifact
+     rendered as `<audio controls>` in the reply.
+   - `extract_from_image(node_id | telegram_file_id, prompt?)`,
+     run vision on a previously-uploaded image or a Telegram file
+     reference.
+   - `summarize_text(text | node_id, focus?, max_words?)`, run the
+     default summarizer worker over inline text or a note body.
+   - `translate(text | node_id, to, from?, save?, title?, quality?)`,
+     run the Translator worker (section 5d′).
+   - `generate_image(prompt, size?, style?, quality?, negative_prompt?)`
+     , image generation as documented above.
 3. **UI test buttons**: `/settings/ai-workers/<id>` has per-kind
    test surfaces (record mic, pick image, type prompt) so operators
    can verify config without invoking Saskia.
@@ -1195,15 +1202,16 @@ use, and the form unlocks the provider dropdown to match.
 
 Five embedding adapters in [`packages/voice/src/adapters/`](../packages/voice/src/adapters/):
 
-| Adapter | Endpoint | Multimodal | Discovery |
-|---|---|---|---|
-| `openrouter-embedding` | `/api/v1/embeddings` | ✅ (gemini-embedding-2-preview, nemotron-embed-vl) | keyless via `/api/v1/embeddings/models` |
-| `openai-embedding` | `/v1/embeddings` | text-only | filtered `/v1/models` |
-| `google-embedding` | `:batchEmbedContents` (model in URL path, key as query string) | text-only | filtered `/v1beta/models` by `embedContent` capability |
-| `mistral-embedding` | `/v1/embeddings` (OpenAI-compatible) | text-only | filtered `/v1/models` |
-| `cohere-embedding` | `/v2/embed` (own shape: `texts`, `input_type`, `embedding_types`) | text-only | filtered `/v1/models` |
+| Adapter                | Endpoint                                                          | Multimodal                                         | Discovery                                              |
+| ---------------------- | ----------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
+| `openrouter-embedding` | `/api/v1/embeddings`                                              | ✅ (gemini-embedding-2-preview, nemotron-embed-vl) | keyless via `/api/v1/embeddings/models`                |
+| `openai-embedding`     | `/v1/embeddings`                                                  | text-only                                          | filtered `/v1/models`                                  |
+| `google-embedding`     | `:batchEmbedContents` (model in URL path, key as query string)    | text-only                                          | filtered `/v1beta/models` by `embedContent` capability |
+| `mistral-embedding`    | `/v1/embeddings` (OpenAI-compatible)                              | text-only                                          | filtered `/v1/models`                                  |
+| `cohere-embedding`     | `/v2/embed` (own shape: `texts`, `input_type`, `embedding_types`) | text-only                                          | filtered `/v1/models`                                  |
 
 Each adapter implements:
+
 - `embed(req)`, translates the unified `EmbedRequest` to the provider's
   native shape, parses the response back to `EmbedResult`.
 - `acceptsInput(item)`, text-only adapters return `false` on
@@ -1240,6 +1248,7 @@ intentionally excludes embedding routes). Both endpoints are keyless.
 
 Direct providers each have their own discovery quirks the adapter
 encapsulates:
+
 - **OpenAI**: `/v1/models` returns everything (chat + embeddings +
   audio + image); the adapter filters by id pattern `/embedding/i`.
 - **Google**: `/v1beta/models` returns everything; filter by
@@ -1281,7 +1290,7 @@ destructive-banner explanation, switching to a non-768 model needs a
 schema migration on every vector column, which isn't a button.
 
 > **⚠ Known gap (2026-05-31):** the form's guard (`COLUMN_DIMS` /
-> `KNOWN_DIMS` in [`worker-form.tsx`](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx))
+> `KNOWN_DIMS` in [`worker-form.tsx`](<../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx>))
 > and the per-agent embedding dropdown still hardcode **1536**, not 768,
 > they were not flipped during the 0060 migration. Until fixed, the guard
 > is inverted: it blocks the live 768 model and permits the old 1536 ones.
@@ -1290,7 +1299,7 @@ schema migration on every vector column, which isn't a button.
 
 **(b) Vector-space drift, column accepts, retrieval silently breaks.**
 Two embedding models with the same dim produce vectors in
-*completely different coordinate systems*. Cosine similarity across
+_completely different coordinate systems_. Cosine similarity across
 spaces is meaningless: existing vectors embedded with model A return
 random matches for queries embedded with model B. The column accepts
 the inserts; the brain just stops working semantically.
@@ -1328,22 +1337,22 @@ blank. The resolver picks it up everywhere.
 
 Background note for when we revisit the worker form. The `Max tokens`
 input on chat-shaped workers (reflector / extractor / summarizer)
-defaults to **1500** ([worker-form.tsx:1699](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx));
-the vision worker defaults to **2000** ([worker-form.tsx:1328](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx)).
+defaults to **1500** ([worker-form.tsx:1699](<../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx>));
+the vision worker defaults to **2000** ([worker-form.tsx:1328](<../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx>)).
 The agents form is different: empty placeholder `(provider default)`,
-no number ([agents-client.tsx:1435](../jackdaw/app/(app)/settings/agents/agents-client.tsx)).
+no number ([agents-client.tsx:1435](<../jackdaw/app/(app)/settings/agents/agents-client.tsx>)).
 
 **Key insight: 1500 is not load-bearing.** It's a UI placeholder, not
 a runtime constant. Nothing in the codebase branches on it:
 
 - **Summarizer chunking** uses `summarize_batch` (turn count, default
-  20), not tokens. Growing `max_tokens` makes one digest *richer* but
+  20), not tokens. Growing `max_tokens` makes one digest _richer_ but
   doesn't change how often summarization fires.
 - **Tool-result spill** uses `TOOL_RESULT_MAX_CHUNKS` (env, 200),
   independent of any worker's `max_tokens`. See §9m of architecture.md.
 - **Tool-loop** ([tool-loop.ts:235](../packages/runtime/src/agent/tool-loop.ts#L235))
   forwards the param verbatim if set, omits it if not. Adapters that
-  *require* it default high (Anthropic chat = 4096, vision adapters =
+  _require_ it default high (Anthropic chat = 4096, vision adapters =
   2000); adapters that don't (OpenRouter, Google, xAI, DeepSeek, HF)
   omit the field and let the provider pick.
 
@@ -1366,13 +1375,13 @@ but **not** `max_completion_tokens`; the field isn't in the response
 shape cached by [`model-context.ts`](../packages/tracing/src/model-context.ts).
 The per-provider story:
 
-| Provider | Max output knowable from a public endpoint? |
-|---|---|
-| Anthropic | Yes, in Anthropic's `/v1/models` (e.g. Sonnet/Opus 4.x = 64K) |
-| OpenAI | Per-model, documented but not in `/v1/models` |
-| Google (Gemini) | Yes, `models.get` returns `outputTokenLimit` |
-| xAI / DeepSeek / Mistral | Documented, not in `/v1/models` |
-| HuggingFace | Model-card dependent |
+| Provider                 | Max output knowable from a public endpoint?                   |
+| ------------------------ | ------------------------------------------------------------- |
+| Anthropic                | Yes, in Anthropic's `/v1/models` (e.g. Sonnet/Opus 4.x = 64K) |
+| OpenAI                   | Per-model, documented but not in `/v1/models`                 |
+| Google (Gemini)          | Yes, `models.get` returns `outputTokenLimit`                  |
+| xAI / DeepSeek / Mistral | Documented, not in `/v1/models`                               |
+| HuggingFace              | Model-card dependent                                          |
 
 A live cap would need a per-provider lookup table plus opportunistic
 reads where `discoverModels()` returns the field (Google does).
@@ -1407,7 +1416,7 @@ bites; the curated table is the part that goes stale; the slider
 against `context_length` doesn't.
 
 **Chunking is not affected by this knob.** Worth repeating because the
-question came up: the chunking that *does* happen, summarizer
+question came up: the chunking that _does_ happen, summarizer
 batching, tool-result spill, content_chunks at ingest, all use their
 own size knobs (turn count, byte size, character count), none of which
 read `max_tokens`. So this work is purely about "let the model say
@@ -1473,6 +1482,7 @@ A short list of intentional escapes worth knowing:
   change.
 
 Phase 3 stage history (kept for archaeology):
+
 - **Stage 1** (`5dc3984`): embedding migration. `@mantle/embeddings`
   routes via `getEmbeddingAdapter(provider)`.
 - **Stage 2** (`b7d57e9`): form clamps. Make the UI HONEST about
@@ -1485,7 +1495,7 @@ Phase 3 stage history (kept for archaeology):
   the typed ChatResult shape.
 - **Phase 3a** (`652ba19`): chat-shaped workers migrated.
 - **Phase 3b** (`148d423`): tool loop refactored, adapter dispatch
-  + normalised tool calls across Anthropic / Google / OpenAI shapes.
+  - normalised tool calls across Anthropic / Google / OpenAI shapes.
 - **Phase 3c** (`3581f61`): `agents.provider` column (migration 0048).
 - **Phase 3d** (`38e2cbc`): forms unclamped. Operators can now
   configure responder + workers for direct Anthropic / Google /
@@ -1517,6 +1527,7 @@ Ollama) as the primary for the summarizer / extractor / reflector with a cloud
 model as the safety net (or the reverse).
 
 **Failover policy** (in [`packages/runtime/src/agent/chat-failover.ts`](../packages/runtime/src/agent/chat-failover.ts)):
+
 - **Triggers:** a route-DOWN error (connection refused / DNS / timeout), **429**
   rate-limit, or **5xx**: classified by reusing `@mantle/voice`'s
   `classifyChatError` (the same transient/permanent split the per-adapter retry
@@ -1535,7 +1546,7 @@ model as the safety net (or the reverse).
   (`resolveBackupAdapter` returns `undefined` and logs).
 
 There is **no circuit breaker** (decision: start simple). A primary that
-*refuses fast* (box off) costs ~nothing per turn; a primary that *hangs* costs
+_refuses fast_ (box off) costs ~nothing per turn; a primary that _hangs_ costs
 one timeout per turn until it recovers, add a breaker later only if that bites.
 
 **Operator UI + local models (shipped 2026-06-01).** The backup route is
@@ -1586,8 +1597,8 @@ What an operator needs to do to make every capability work:
      hardcoded `openai/text-embedding-3-small` (1536), which would crash
      ingest against the `vector(768)` columns. The worker row makes the
      model an explicit DB choice and unlocks the form's Test / Rebuild
-     affordances. See §5e. *(Note: that cloud fallback default is itself
-     a latent footgun post-768, see the §5e.4 known-gap note.)*
+     affordances. See §5e. _(Note: that cloud fallback default is itself
+     a latent footgun post-768, see the §5e.4 known-gap note.)_
    - Vision / image-gen, config saved but dispatch not yet wired.
 
 Each worker has its own model, API key, params. Multiple workers per
@@ -1599,14 +1610,15 @@ Every kind dispatches the same way: through the adapter registry, with
 the worker's (or agent's) `provider` field driving which adapter
 resolves. Phase 3 (commits 97298a5 through 38e2cbc) unified the model.
 
-| Kind | Runtime path | `provider` field | `apiKeyId` field | API key dropdown filter |
-|---|---|---|---|---|
-| **TTS / STT / Vision / Image-gen** | Adapter registry, `getXxxAdapter(worker.provider)` | ✅ honoured, picks the adapter | ✅ honoured | filtered to keys whose service ∈ providers declaring this capability |
-| **Embedding** | Adapter registry, `getEmbeddingAdapter(worker.provider)` (Stage 1, §5e.2) | ✅ honoured, picks the adapter | ✅ honoured | filtered to keys whose service ∈ {openrouter, openai, google, mistral, cohere} |
-| **Reflector / Extractor / Summarizer** | Adapter registry, `getChatAdapter(worker.provider).chat({...})` (Phase 3a) | ✅ honoured, picks the adapter | ✅ honoured | filtered to keys whose service matches the selected provider |
-| **Agents** (responder / assistant / custom / heartbeat / invoke_agent) | Adapter registry, `getChatAdapter(agent.provider).chat({...})` via `runToolLoop` (Phase 3b) | ✅ honoured, `agents.provider` column added in migration 0048 | ✅ honoured | filtered to keys whose service matches the selected provider |
+| Kind                                                                   | Runtime path                                                                                | `provider` field                                              | `apiKeyId` field | API key dropdown filter                                                        |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------ |
+| **TTS / STT / Vision / Image-gen**                                     | Adapter registry, `getXxxAdapter(worker.provider)`                                          | ✅ honoured, picks the adapter                                | ✅ honoured      | filtered to keys whose service ∈ providers declaring this capability           |
+| **Embedding**                                                          | Adapter registry, `getEmbeddingAdapter(worker.provider)` (Stage 1, §5e.2)                   | ✅ honoured, picks the adapter                                | ✅ honoured      | filtered to keys whose service ∈ {openrouter, openai, google, mistral, cohere} |
+| **Reflector / Extractor / Summarizer**                                 | Adapter registry, `getChatAdapter(worker.provider).chat({...})` (Phase 3a)                  | ✅ honoured, picks the adapter                                | ✅ honoured      | filtered to keys whose service matches the selected provider                   |
+| **Agents** (responder / assistant / custom / heartbeat / invoke_agent) | Adapter registry, `getChatAdapter(agent.provider).chat({...})` via `runToolLoop` (Phase 3b) | ✅ honoured, `agents.provider` column added in migration 0048 | ✅ honoured      | filtered to keys whose service matches the selected provider                   |
 
 **What this enables, concretely:**
+
 - An extractor pointed at `provider='anthropic'` + `model='claude-haiku-4-5'`
   routes through Anthropic's /v1/messages endpoint; cache_read tokens
   surface in `/traces`.
@@ -1667,7 +1679,7 @@ summarizer) and all agents (responder / assistant / custom) still
 construct `new OpenRouter({apiKey})` directly instead of going through
 the chat adapter registry. The forms reflect this honestly today,
 clamped to `service='openrouter'` keys with explanatory copy, but
-that's the *less ambitious* end-state. The bigger move is to migrate
+that's the _less ambitious_ end-state. The bigger move is to migrate
 the runtime so the `provider` field actually controls dispatch, the
 same way TTS / STT / Vision / Image-gen / Embedding already do.
 
@@ -1702,6 +1714,7 @@ shape, same fix.
 [`packages/runtime/src/agent/tool-loop.ts`](../packages/runtime/src/agent/tool-loop.ts)
 currently calls `client.chat.send()` on the OpenRouter SDK, tightly
 coupled to OR's response shape. Migrating means:
+
 - The chat adapters need to expose tool-call info on `ChatResult`
   (today their `chat()` returns just `{text, model, tokensIn, tokensOut}`).
 - Each provider serialises tool calls differently:
@@ -1722,9 +1735,9 @@ runtime supports direct providers, the form unlocks the dropdown.
 
 **3d. Unclamp the workers + agents forms** (~50 LOC). Remove the
 `RUNTIME_OR_ONLY_KINDS` set in
-[`jackdaw/app/(app)/settings/ai-workers/worker-form.tsx`](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx).
+[`jackdaw/app/(app)/settings/ai-workers/worker-form.tsx`](<../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx>).
 Remove the `service === 'openrouter'` filter in
-[`jackdaw/app/(app)/settings/agents/agents-client.tsx`](../jackdaw/app/(app)/settings/agents/agents-client.tsx).
+[`jackdaw/app/(app)/settings/agents/agents-client.tsx`](<../jackdaw/app/(app)/settings/agents/agents-client.tsx>).
 The KeyValidityHint and capability filters take over from there,
 they already work for the other kinds.
 

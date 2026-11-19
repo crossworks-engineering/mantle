@@ -280,6 +280,30 @@ describe('the paid ask of an Agent', () => {
     expect(list).toHaveLength(PIPELINE_ASK_LIST_MAX);
     expect(list[0]!.text.length).toBe(120);
   });
+
+  it('the provider says "not now" (429, 402, 529): the run waits, no step of the day count', async () => {
+    for (const reason of ['rate_limit', 'quota', 'overloaded'] as const) {
+      h.steps.length = 0;
+      answer = {
+        ran: false,
+        text: '',
+        note: 'Vision worker failed: busy',
+        model: 'made-up-vision',
+        wait: { reason },
+      };
+      const out = await mod.pipelineAskOf('owner', 'node', AGENT, deps())(ASK);
+      expect(out).toEqual({ ok: false, error: 'not_available', reason: `provider_${reason}` });
+      expect(paidSteps()).toHaveLength(0);
+      expect(h.steps[0]!.skipped).toBe(`provider_${reason}`);
+    }
+  });
+
+  it('a refusal of the content (no wait) is a failure as before, and counted', async () => {
+    answer = { ran: false, text: '', note: 'Vision worker failed: 400', model: 'made-up-vision' };
+    const out = await mod.pipelineAskOf('owner', 'node', AGENT, deps())(ASK);
+    expect(out).toEqual({ ok: false, error: 'failed', reason: 'no_text' });
+    expect(paidSteps()).toHaveLength(1);
+  });
 });
 
 /**
@@ -563,5 +587,23 @@ describe('the Scan reader of a scanned page', () => {
       expect(scanCalls).toHaveLength(0);
       expect(visionCalls).toBe(1);
     });
+  });
+
+  it('the provider says "not now" to the Scan reader: the run waits; the page is not judged', async () => {
+    scanOut = {
+      ...scanOut,
+      ran: false,
+      text: '',
+      note: 'Scan reader failed: 402',
+      wait: { reason: 'quota', status: 402 },
+    };
+    expect(await run()).toEqual({
+      ok: false,
+      error: 'not_available',
+      reason: 'provider_quota',
+    });
+    expect(paid()).toHaveLength(0);
+    expect(visionCalls).toBe(0);
+    expect(checkCalls).toBe(0);
   });
 });

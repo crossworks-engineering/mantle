@@ -472,6 +472,19 @@ export {
   type ProviderErrorClass,
   type ProviderErrorCode,
 } from './provider-error';
+export {
+  PROVIDER_WAIT_IN_JOB_MS,
+  PROVIDER_WAIT_MAX_GAP_MS,
+  PROVIDER_WAIT_REASONS,
+  PROVIDER_WAIT_TEXT,
+  ProviderWaitError,
+  callThroughWaits,
+  inJobPause,
+  providerWaitDelayMs,
+  providerWaitOf,
+  type ProviderWait,
+  type ProviderWaitReason,
+} from './provider-wait';
 export { CircuitBreaker } from './breaker';
 export { TtlCache, type TtlCacheOptions } from './ttl-cache';
 export { scrubSecrets } from './scrub-secrets';

@@ -179,6 +179,7 @@ export type {
   FileDerivedItem,
   FileIngest,
   FileJob,
+  FileJobWait,
   FileProcessing,
   FileProcessingExtraction,
   FileStatus,

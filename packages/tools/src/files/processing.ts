@@ -16,7 +16,8 @@
  * one (mayBePointedAtTable). The route and the tool pass the same reach.
  */
 import { sql } from 'drizzle-orm';
-import { db, getDefaultWorker } from '@mantle/db';
+import { db, extractJobWaitOf, getDefaultWorker } from '@mantle/db';
+import { PROVIDER_WAIT_TEXT } from '@mantle/std';
 import {
   currentReaderVersion,
   fileById,
@@ -174,6 +175,19 @@ export async function fileProcessing(
       : methods;
   const ex = row.extraction;
   const failed = ex.state === 'failed' || ex.state === 'skipped';
+  // A job held by the provider or the day cap: why, and until when. A
+  // queue that cannot be read leaves it out (the rest stands).
+  const held =
+    file!.status.job === 'waiting' ? await extractJobWaitOf(row.id).catch(() => null) : null;
+  const wait = held
+    ? {
+        ...held,
+        hint:
+          held.for === 'provider'
+            ? PROVIDER_WAIT_TEXT[held.reason ?? 'overloaded']
+            : 'Waiting for the day cap of paid Agent asks to have room. The run stays queued and goes on by itself.',
+      }
+    : null;
   return {
     file: {
       id: row.id,
@@ -207,6 +221,7 @@ export async function fileProcessing(
         }
       : null,
     job: file!.status.job ?? null,
+    ...(wait ? { wait } : {}),
     // What read it (@mantle/files read-stamp.ts): null with no stamp, else
     // the row status's own answer (which knows the file's home, for a
     // pipeline that is off there).

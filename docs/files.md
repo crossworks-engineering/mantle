@@ -216,7 +216,7 @@ extractor already writes, so there is no new state:
 | `partial`   | read in part (see "Read in part" below): a reader's cut (`data.read_cut`), a scan's `data.ocr = { pages_read, pages_total }`, or pictures kept below those found | `cuts`, `hint`; `pages`, `pictures`                                                |
 | `failed`    | a terminal skip that is a read failure (`READ_FAILURE_SKIPS`: `document_unreadable`, `pdf_too_large`, `encrypted_pdf`, `bytes_unavailable`), or a parked write   | `reason`, `hint`                                                                   |
 | `skipped`   | any other terminal skip (nothing to read: `body_too_short`, `no_parser`, ...)                                                                                    | `reason`, `hint`                                                                   |
-| `pending`   | not read yet: queued, or retrying                                                                                                                                |                                                                                    |
+| `pending`   | not read yet: queued, retrying, or waiting for the model provider (`FileStatus.job` `waiting`)                                                                   |                                                                                    |
 | `name_only` | the indexing mode is name only                                                                                                                                   |                                                                                    |
 
 `file_list` with `extraction: 'failed'` (or another state) lists the files in
@@ -360,8 +360,13 @@ What the brain did with a file, derived live (nothing new is stored):
   Recent, by read state), on `GET /api/files/files/:id`, and on a file's
   `TreeItem`. `ingest` (`done`, `partial`, `waiting`, `failed`, `none`)
   comes from the one read rule (`extractionOf`); `job` (`queued`,
-  `running`) is an extract job in the queue now, ONE read of pg-boss for
-  the whole list (`extractJobsFor`); `db` is the state of the file's own
+  `running`, `waiting`) is an extract job in the queue now, ONE read of
+  pg-boss for the whole list (`extractJobsFor`). `waiting`: the job is held
+  by the model provider's "not now" (a rate limit, no credit, busy) or, for
+  an Agent's run, by the day cap of paid asks, and is sent again by itself
+  (docs/provider-http.md, "When the provider refuses for now"); the
+  processing answer's `wait` (`for`, `reason`, `run`, `until`, `hint`) says
+  why and until when (`extractJobWaitOf`); `db` is the state of the file's own
   database, for a file with a Data view, from ONE read of the folder of
   databases (a `.none` is opened for its word; no size on a row).
   `packages/files/src/file-status.ts` maps it; `withFileStatus`

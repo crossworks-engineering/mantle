@@ -35,7 +35,13 @@ import { noteReadCut } from '@mantle/files/read-cut-sink';
 import { readerPassOf, readerTextOf } from '@mantle/content/reader-passes';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { step } from '@mantle/tracing';
-import { errorMessage, providerErrorStatus, publicProviderErrorMessage } from '@mantle/std';
+import {
+  errorMessage,
+  providerErrorStatus,
+  providerWaitOf,
+  publicProviderErrorMessage,
+  type ProviderWait,
+} from '@mantle/std';
 import { createHash } from 'node:crypto';
 import {
   readScannedPdf,
@@ -72,6 +78,10 @@ export type VisionResult = {
   adapterName?: string;
   tokensIn?: number;
   tokensOut?: number;
+  /** The provider said "not now" (a rate limit, no credit, busy:
+   *  @mantle/std provider-wait.ts): the work waits and is tried again
+   *  later, never read as "nothing in it". Only with `ran: false`. */
+  wait?: ProviderWait;
 };
 
 /**
@@ -166,11 +176,13 @@ export async function runVisionWorker(opts: {
       tokensOut: r.tokensOut,
     };
   } catch (err) {
+    const wait = providerWaitOf(err);
     return {
       ran: false,
       text: '',
       note: `Vision worker failed: ${publicProviderErrorMessage(err, 'vision-worker')}`,
       model: worker.model,
+      ...(wait ? { wait } : {}),
     };
   }
 }
@@ -270,11 +282,13 @@ export async function runDocumentWorker(opts: {
       tokensOut: r.tokensOut,
     };
   } catch (err) {
+    const wait = providerWaitOf(err);
     return {
       ran: false,
       text: '',
       note: `Document worker failed: ${publicProviderErrorMessage(err, 'document-worker')}`,
       model: worker.model,
+      ...(wait ? { wait } : {}),
     };
   }
 }

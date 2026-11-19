@@ -35,7 +35,7 @@ import {
   type ParserError,
 } from '@mantle/files';
 import { log, recordSkippedTrace, step } from '@mantle/tracing';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, ProviderWaitError } from '@mantle/std';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
@@ -659,6 +659,9 @@ export async function loadExtractableBody(
     rawBody = context && text.startsWith(context) ? text : composeImageBody(existingData, text);
   } else if (isImageNeedingVision) {
     const vision = await visionIngestImageNode(node, ownerId);
+    // The provider said "not now": the read waits in the queue
+    // (extract-queue.ts sends it again), no skip of any kind is recorded.
+    if (!vision.text && vision.wait) throw new ProviderWaitError(vision.wait, 'vision');
     if (!vision.text) {
       // Vision produced no text — an SVG/vector the model can't read, a blank
       // image, or an unwired/erroring vision worker. Record a TERMINAL skip so
@@ -729,6 +732,9 @@ export async function loadExtractableBody(
     isPdf && node.type === 'file' && !existingData.content
       ? await sketchIngestPdfNode(node, ownerId).catch((err: unknown) => {
           if (isParserError(err) && err.retryable) throw err;
+          // The provider's "not now": the read waits in the queue, never
+          // on to a whole-page read paid on top of it.
+          if (err instanceof ProviderWaitError) throw err;
           log('extractor').error(`pdf sketch read failed for ${node.id}: ${errorMessage(err)}`);
           return null;
         })
@@ -935,14 +941,15 @@ export async function loadExtractableBody(
     }
   } else if (preferNativePdf) {
     // The text layer is already in hand: whatever the native read or the
-    // parser does here (busy, a timeout, a refusal), the body is kept and the
-    // job goes on. It never fails or retries the job, so the native read is
-    // never paid for twice on its account.
+    // parser does here (busy, a timeout, a refusal, the provider's "not
+    // now"), the body is kept and the job goes on. It never fails or retries
+    // the job, so the native read is never paid for twice on its account;
+    // the whole text is read either way.
     let native: Awaited<ReturnType<typeof nativeReadPdfNode>> | null;
     try {
       native = await nativeReadPdfNode(node, ownerId);
     } catch (err) {
-      if (!isParserError(err)) throw err;
+      if (!isParserError(err) && !(err instanceof ProviderWaitError)) throw err;
       native = null;
     }
     // Only replace the text-layer body if native produced something usable;

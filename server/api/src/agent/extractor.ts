@@ -314,9 +314,10 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
 /** Final step of a fully-successful extraction pass. The already_extracted
  *  skip guard requires this marker IN ADDITION to summary+embedding, so a
  *  pg-boss retry after a partial failure (chunks/entities/relations/facts)
- *  re-runs instead of skipping. A cost-cap-truncated fact pass still stamps
- *  (matching the pre-marker skip semantics) — `data.extract_incomplete` is
- *  the recovery signal for that case. Deliberately a plain jsonb merge with
+ *  re-runs instead of skipping. A fact pass that deferred the rest of its
+ *  candidates (the cost cap's pace, or the provider's "not now") still
+ *  stamps: the read is done, and `data.extract_incomplete`
+ *  (`facts_deferred`) says facts are still to come from their own job. Deliberately a plain jsonb merge with
  *  no version condition: a user edit clears summary/embedding, and the guard
  *  is a conjunction, so a stale stamp can never suppress the edit's
  *  re-extract. Drops a terminal-skip stamp left by an earlier pass that found

@@ -989,7 +989,38 @@ read at the time of the spend:
   before any call.
 
 Each "no" stops the run with a word: `off`, `no_llm_work`, `day_cap`,
-`no_worker`. Nothing asks again later: no timer and no retry.
+`no_worker`. Two of the stops are waits, not ends (owner decision
+2026-11-19: the provider is the cap, no limit of the brain's own drops
+work):
+
+- **The provider's "not now"**: a rate limit (429), no credit (402, or a 429
+  or 403 that says so) or a busy provider (503, 529) on an ask answers
+  `provider_rate_limit`, `provider_quota` or `provider_overloaded`. The run
+  stops there (no more calls into a refusal) and keeps the rows it paid for.
+  Such a refused call is no step of the day count.
+- **The day cap** (`day_cap`, below).
+
+The run job then sends the same run again later
+(`server/api/src/agent/extract-queue.ts`, point 7): after the provider's
+gap (1, 2, 4 ... minutes, then hourly; a longer Retry-After of the
+provider is honoured), or when the day cap has room (`pipelineAsksFreeAt`:
+the moment the oldest ask that fills the 24-hour window leaves it, never
+sooner than five minutes). The run again asks only what its tab does not
+hold (by the hash), so nothing is paid twice. While it waits, the file's
+status says `job: waiting` and the processing answer's `wait` says why
+and until when (docs/files.md). Every other stop (`off`, `no_llm_work`,
+`no_worker`, a failed ask) ends the run as before: nothing asks again by
+itself.
+
+**The day cap.** It paces; it never drops. A cap of 0 is still "no Agent
+may ask" and is no wait: the run stops. It is easy to take away: delete the
+two `day_cap` checks in `server/api/src/agent/extract/pipeline-ask.ts`, the
+cap reader in `packages/content/src/pipeline-asks.ts` and the env number;
+the defer code then never runs. Recommendation (2026-11-19): keep it as a
+pace for now, at a high number: the provider's limits stop a runaway only
+at the account's credit, and the cap is the one place a box's own number
+bounds a day of Agent spend (20,000 asks are about $40 to $80 of vision
+calls at today's prices) without dropping a page.
 
 **The spend.** Each paid ask is one trace step named `pipeline_ask`, with
 `use: pipeline_ask` in its meta, in the trace of the run. The adapter
@@ -1016,20 +1047,21 @@ it takes gets its database, and the run is queued. A file it does not take
 (see "An Agent needs a Reader's database" above).
 
 There is no loop and no retry. An Agent's run starts no build, so it never
-queues itself. The run job is tried once. No timer and no sweep starts a
-run. Only the build of an upload queues a run: the extract's database
+queues itself. The run job is tried once, but for a wait (the provider's
+"not now", the day cap), which sends the same run again later: work that
+was already asked for. No timer and no sweep starts a run. Only the build of an upload queues a run: the extract's database
 pass, when the bytes have no database yet. So the first extract of an older
 file that has no database queues one too, one time. A Reader's run on demand, a
 read again and the maintenance tasks queue none: they keep the Agents' tabs
 over their write and start no model work. A new version of a file is new
 bytes: one run, and it pays.
 
-A bulk upload is bounded by the day cap. With the default cap of 20,000 and
+A bulk upload is paced by the day cap. With the default cap of 20,000 and
 two asks a file (`iso-title-block`), the first 10,000 files of a day get their fields
 (the sheet read asks four times for a one-page drawing: 5,000). Each file after them
 is ingested as every file is, its run stops at `day_cap` (one parser job,
-no call), and it has no tab. Nothing tries again by itself: `pipeline_run`
-on the folder fills the tab later. A failed ask is the same: the file stays
+no call), and its run waits in the queue until the cap has room; then it
+asks. A failed ask (not a wait) is the same as before: the file stays
 ingested, what was paid is kept, and a run on demand fills the rest.
 
 An Agent may ask the box's AI workers only (now: `vision`). It never calls
@@ -2512,7 +2544,7 @@ by the first window read (a lost window 1 does not lose the kind).
 
 **Tables** (the brief, section 4), of the typed pages: pdfplumber's
 `find_tables`. A scanned page's tables are in its Scan reader text (one
-row a line, cells split by ` | `), not in tabs (1.3.0: no local OCR).
+row a line, cells split by `|`), not in tabs (1.3.0: no local OCR).
 A page with no ruled lines: a run of three or more rows of
 three or more word groups whose left edges fall in the same columns (a
 whitespace table). A table runs on over the next page (one tab) when the

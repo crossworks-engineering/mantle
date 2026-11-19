@@ -97,6 +97,60 @@ No cron or trigger was added. If a provider keeps answering 429, lower the
 caller's concurrency (the extractor count in Settings, or `--parallel` on a
 backfill); do not raise `PROVIDER_CONNECTIONS`.
 
+## When the provider refuses for now
+
+Owner decision 2026-11-19: "your provider can be the cap there, lets not add
+limits". The brain adds no limit of its own on paid work; the provider's
+rate limits and the account's credit are the only cap. Where the provider
+says "not now", the work WAITS and is tried again later; it is never
+dropped, and never read as "nothing in it".
+
+"Not now" is three answers (`providerWaitOf`, `packages/std/src/provider-wait.ts`),
+read from the error or its cause:
+
+| reason       | answers                                      |
+| ------------ | -------------------------------------------- |
+| `rate_limit` | 429                                          |
+| `quota`      | 402; a 429 or 403 whose body says no credits |
+| `overloaded` | 503, 529                                     |
+
+A refusal of the content (400, 413, a moderation flag, a model that cannot
+read the input) is not a wait: it is reported as before and never tried
+again forever. A 500, 502, a timeout or a dropped line keep the handling
+they had (a worker's one more try, the extract queue's five retries).
+
+Each paid path:
+
+| path                                         | on "not now"                                                                                                                                                                                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| vision of an image (extract)                 | the read throws `ProviderWaitError`; the extract queue sends the job again with a growing gap; no skip is recorded                                                                                                              |
+| document worker (native PDF read)            | the read waits as above, never on to a paid page by page read; with a text layer in hand (`prefer_native`) the text layer is kept and the job goes on                                                                           |
+| page OCR of a scan, sketch read of a drawing | a short "not now" is waited through inside the job and the SAME call made again (`callThroughWaits`: 15, 45, 90 s), so the pages read before it are not paid again; still "not now" (or no credit): the read waits in the queue |
+| canvas picture pass (extract)                | the read waits in the queue                                                                                                                                                                                                     |
+| extractor summary, embeddings                | the thrown provider error waits in the queue (no dead letters); the circuit still pauses the queue on a confirmed account error                                                                                                 |
+| facts (classify calls)                       | the rest of the candidates is deferred to a facts job of its own, with the provider's gap (`processDeferredFacts`)                                                                                                              |
+| Agent asks (vision, the Scan reader)         | the run stops at `provider_<reason>`, keeps what it paid, and the run job is sent again later; the run again asks only what its tab lacks                                                                                       |
+| translate (a live tool)                      | a short "not now" is waited through (5, 15, 30 s) and is no try; still "not now" or no credit: the call answers that it waits for the provider, with no shortened text                                                          |
+| Telegram voice transcription (a live turn)   | a short "not now" is waited through; still "not now" or no credit: the reply says why (busy, no credit)                                                                                                                         |
+
+**The queue's wait** (`server/api/src/agent/extract-queue.ts`, point 7):
+the job is completed and the same work sent again with `startAfter` and
+`wait: { for, reason, waits, until }` in its data: 1, 2, 4, 8, 16, 32
+minutes, then every hour (`providerWaitDelayMs`), or the provider's own
+Retry-After when it asks for longer (up to six hours). A job of the same
+key already waiting takes its place. It never goes to the dead letters. A
+quota answer also reaches the provider circuit, which pauses the whole queue
+once a probe confirms the account (docs/embeddings.md, "Provider outages").
+
+**Nothing starts by itself.** Every job sent again is work already asked for
+(an upload, a run, a read's facts). No trigger, timer or sweep starts paid
+work on stored files. A refused call is not billed, so a wait costs no money;
+its tries are spaced, at most one an hour per job after the first hour.
+
+**Honest status.** A file whose job waits shows `job: waiting` and, in its
+processing answer, `wait` with the reason and when it is tried again
+(docs/files.md, "Status and processing").
+
 ## Spend recording (A10 #5)
 
 Every provider call's usage (tokens, units, cost) is recorded in one place:

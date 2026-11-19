@@ -18,6 +18,7 @@ import { resolveDefaultWorker } from '@mantle/api-keys';
 import { getVisionAdapter } from '@mantle/voice';
 import { getPresent } from '@mantle/content/presents';
 import { runVisionWorker } from '@mantle/runtime/agent';
+import { ProviderWaitError } from '@mantle/std';
 
 /** A picture past this is not sent (a provider's per-image limit). */
 export const PRESENT_PICTURE_MAX_BYTES = 3_500_000;
@@ -79,6 +80,9 @@ export async function extractWithPicture(
     // generous default.
     maxTokens: params.max_tokens ?? EXTRACT_WITH_PICTURE_MAX_TOKENS,
   });
+  // The provider's "not now" waits in the queue (extract-queue.ts); any
+  // other failure retries as the extractor's text call does.
+  if (!r.ran && r.wait) throw new ProviderWaitError(r.wait, 'vision');
   if (!r.ran) throw new Error(r.note ?? 'the vision worker did not run');
   return { text: r.text, model: r.model };
 }

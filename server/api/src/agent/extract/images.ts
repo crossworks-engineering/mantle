@@ -40,7 +40,7 @@ import {
   SCAN_READER_ENGINE,
   type ScanUnreadReason,
 } from '@mantle/runtime/agent';
-import { errorMessage } from '@mantle/std';
+import { callThroughWaits, errorMessage, ProviderWaitError, type ProviderWait } from '@mantle/std';
 import { cleanText } from './text';
 import {
   bookVisionPageCountOf,
@@ -553,6 +553,9 @@ export async function visionIngestImageNode(
    *  missing or the worker did not run (none wired, a provider error): the
    *  caller then must not stamp the node terminal. */
   ran: boolean;
+  /** The provider said "not now" (@mantle/std provider-wait.ts): the read
+   *  waits in the queue (the caller raises ProviderWaitError). */
+  wait?: ProviderWait;
 }> {
   // Bytes from disk (uploads) or object storage (email image attachments).
   const loaded = await loadFileBytes(node);
@@ -610,6 +613,7 @@ export async function visionIngestImageNode(
           text: null,
           failure: result.note ?? 'vision worker returned no text',
           ran: result.ran,
+          ...(result.wait ? { wait: result.wait } : {}),
         };
       }
       const text = cleanText(result.text); // strip NULs the model/OCR may emit
@@ -709,6 +713,9 @@ export async function nativeReadPdfNode(
           return r;
         },
       );
+      // The provider said "not now" to the native read: the read waits in
+      // the queue (extract-queue.ts); the caller keeps its text layer.
+      if (native.wait) throw new ProviderWaitError(native.wait, 'document');
       if (!native.ran || !native.text.trim()) {
         if (native.ran) await rememberNativeEmpty(node.id, ownerId, sha);
         return { text: null };

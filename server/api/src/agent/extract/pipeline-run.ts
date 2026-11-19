@@ -31,6 +31,13 @@
  * retry of its own and none by the queue: a person runs it again, and the
  * stamp shows what ran. So this function never throws.
  *
+ * Two stops of an Agent's run are waits, not failures (owner decision
+ * 2026-11-19: the provider is the cap, nothing is dropped): the provider's
+ * "not now" (`provider_<reason>`) and the box's day cap of paid asks
+ * (`day_cap`). The result then carries `wait` (runWaitOf), the step's meta
+ * says it, and the queue sends the same run again later
+ * (extract-queue.ts). The run again asks only what the tab does not hold.
+ *
  * The reader of a PDF drawing is refused (`pdf`), as `pipeline-reread`
  * refuses it: a PDF's database can hold the decider's answer and the
  * sketch read, both paid for with a model call, and a read with no model
@@ -62,6 +69,56 @@ import { writeAgentText } from './agent-text.js';
 import { bookPagePicturesFor } from './images.js';
 import { writeRetrievalChunks } from './index-writes.js';
 import { pipelineAskOf } from './pipeline-ask.js';
+import { DAY_CAP_STOP, providerWaitOfStop } from '@mantle/content/pipeline-agent';
+import { pipelineAsksDayCap, pipelineAsksFreeAt } from '@mantle/content/pipeline-asks';
+import type { ProviderWaitReason } from '@mantle/std';
+
+/** Why a run job is sent again later (extract-queue.ts): the provider's
+ *  "not now" (its reason), or the day cap of paid asks (when it has room). */
+export type RunWait =
+  { for: 'provider'; reason: ProviderWaitReason } | { for: 'day_cap'; until: Date };
+
+/** The shortest gap before a run held at the day cap is tried again: a
+ *  slot another run takes first sends it back, and each try is a parser
+ *  job (no paid call). */
+export const DAY_CAP_MIN_GAP_MS = 5 * 60_000;
+
+/** What the guards read for {@link runWaitOf}: stand-ins in a test. */
+export type RunWaitDeps = {
+  dayCap(): number;
+  freeAt(ownerId: string, cap: number, now: Date): Promise<Date | null>;
+  now(): Date;
+};
+
+/**
+ * Whether a run's result is a wait: the stop of an Agent's run by the
+ * provider's "not now" or by the day cap. Null for every other result. A
+ * day cap of 0 (the operator's "no Agent may ask") is no wait: nothing is
+ * deferred to.
+ */
+export async function runWaitOf(
+  ownerId: string,
+  out: PipelineRunResult,
+  deps: Partial<RunWaitDeps> = {},
+): Promise<RunWait | null> {
+  if (out.status !== 'asked' || !('stopped' in out) || out.stopped === undefined) return null;
+  const reason = providerWaitOfStop(out.stopped);
+  if (reason) return { for: 'provider', reason };
+  if (out.stopped !== DAY_CAP_STOP) return null;
+  const d: RunWaitDeps = {
+    dayCap: pipelineAsksDayCap,
+    freeAt: pipelineAsksFreeAt,
+    now: () => new Date(),
+    ...deps,
+  };
+  const now = d.now();
+  const free = await d.freeAt(ownerId, d.dayCap(), now);
+  if (!free) return null;
+  return {
+    for: 'day_cap',
+    until: new Date(Math.max(free.getTime(), now.getTime() + DAY_CAP_MIN_GAP_MS)),
+  };
+}
 
 export type PipelineRunResult =
   | FileDbBuild
@@ -172,12 +229,13 @@ async function runOnce(
 }
 
 /** Run one pipeline on one file, in a trace of its own with one step.
- *  Never throws: a failure is the step's error, and the job is done. */
+ *  Never throws: a failure is the step's error, and the job is done. A
+ *  result with `wait` is a run the queue sends again later. */
 export async function runPipelineJob(
   ownerId: string,
   nodeId: string,
   pipelineId: string,
-): Promise<PipelineRunResult> {
+): Promise<PipelineRunResult & { wait?: RunWait }> {
   return startTrace(
     {
       kind: 'pipeline_run',
@@ -193,11 +251,24 @@ export async function runPipelineJob(
           kind: 'compute',
           input: { sourceFileId: nodeId, pipeline: pipelineId },
         },
-        async (h): Promise<PipelineRunResult> => {
+        async (h): Promise<PipelineRunResult & { wait?: RunWait }> => {
           try {
             const out = await runOnce(ownerId, nodeId, pipelineId);
-            h.setMeta({ ...out });
-            return out;
+            // A read of the wait that fails is no wait: the run stops as a
+            // stop always did, and a person runs it again.
+            const wait = await runWaitOf(ownerId, out).catch(() => null);
+            h.setMeta({
+              ...out,
+              ...(wait
+                ? {
+                    waiting:
+                      wait.for === 'provider'
+                        ? { for: 'provider', reason: wait.reason }
+                        : { for: 'day_cap', until: wait.until.toISOString() },
+                  }
+                : {}),
+            });
+            return wait ? { ...out, wait } : out;
           } catch (err) {
             h.setError(errorMessage(err));
             return { status: 'failed' };
