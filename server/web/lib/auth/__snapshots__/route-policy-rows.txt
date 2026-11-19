@@ -162,6 +162,7 @@ GET /api/export/:id class=content scope=content caller=ownerAsset gone=false
 GET /api/federation/node/:id class=area scope=area:connectors caller=- gone=false
 GET /api/files/files class=content scope=content caller=owner gone=false
 GET /api/files/files/:id class=content scope=content caller=readerAsset gone=false
+GET /api/files/files/:id/extract class=content scope=content caller=owner gone=false
 GET /api/files/files/:id/history class=content scope=content caller=owner gone=false
 GET /api/files/files/:id/history/:sid/download class=content scope=content caller=readerAsset gone=false
 GET /api/files/files/:id/processing class=content scope=content caller=owner gone=false
@@ -461,6 +462,7 @@ HEAD /api/export/:id class=content scope=content caller=ownerAsset gone=false
 HEAD /api/federation/node/:id class=area scope=area:connectors caller=- gone=false
 HEAD /api/files/files class=content scope=content caller=owner gone=false
 HEAD /api/files/files/:id class=content scope=content caller=readerAsset gone=false
+HEAD /api/files/files/:id/extract class=content scope=content caller=owner gone=false
 HEAD /api/files/files/:id/history class=content scope=content caller=owner gone=false
 HEAD /api/files/files/:id/history/:sid/download class=content scope=content caller=readerAsset gone=false
 HEAD /api/files/files/:id/processing class=content scope=content caller=owner gone=false
@@ -809,6 +811,7 @@ POST /api/federation/query class=area scope=area:connectors caller=- gone=false
 POST /api/files/files class=content scope=content caller=owner gone=false
 POST /api/files/files/:id class=content scope=content caller=owner gone=false
 POST /api/files/files/:id/database class=content scope=content caller=owner gone=false
+POST /api/files/files/:id/extract class=content scope=content caller=owner gone=false
 POST /api/files/files/:id/history/:sid/restore class=content scope=content caller=owner gone=false
 POST /api/files/files/:id/run class=content scope=content caller=owner gone=false
 POST /api/files/folders class=content scope=content caller=owner gone=false

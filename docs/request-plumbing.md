@@ -634,7 +634,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (145):
+owner rows open to members (147):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/apps/:id/snapshots/:sid
@@ -663,6 +663,7 @@ owner rows open to members (145):
   GET /api/events
   GET /api/events/:id
   GET /api/files/files
+  GET /api/files/files/:id/extract
   GET /api/files/files/:id/history
   GET /api/files/files/:id/processing
   GET /api/files/folders
@@ -738,6 +739,7 @@ owner rows open to members (145):
   POST /api/events
   POST /api/files/files
   POST /api/files/files/:id/database
+  POST /api/files/files/:id/extract
   POST /api/files/files/:id/history/:sid/restore
   POST /api/files/files/:id/run
   POST /api/files/folders

@@ -153,6 +153,11 @@ const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   // (skipped 'bytes-missing'); the matrix seeds file rows only.
   file_reindex:
     "a file's bytes on disk (the matrix seeds the rows only; file-reindex-route.db.test.ts reads one again)",
+  // An archive's "Extract contents" (2026-11-19): an archive's bytes, and
+  // the add of a folder beside it besides the edit of the file (a deny
+  // the oracle cannot see); the route's db test extracts real archives.
+  file_extract_archive:
+    "an archive's bytes and the add of a folder beside it (archive-extract-route.db.test.ts extracts real ones)",
 };
 
 /** The app data tools act for a login's own MCP connection only (tools
@@ -795,4 +800,7 @@ const NOT_RUN: Readonly<Record<string, number>> = {
   // file_reindex's allowed cells (Files join, 2026-11-19): readGrant's root
   // and folder edit, over both modes.
   "an allowed call needs a file's bytes on disk (the matrix seeds the rows only; file-reindex-route.db.test.ts reads one again)": 4,
+  // file_extract_archive's allowed cells (archives, 2026-11-19): the edit
+  // of a file, through a turn and MCP, over both modes.
+  "an allowed call needs an archive's bytes and the add of a folder beside it (archive-extract-route.db.test.ts extracts real ones)": 0,
 };

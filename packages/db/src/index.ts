@@ -419,6 +419,9 @@ export {
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
+  ARCHIVE_EXTRACT_CHANNEL,
+  archiveExtractOfPayload,
+  notifyArchiveExtract,
   PIPELINE_RUN_CHANNEL,
   SUMMARY_KEYS,
   changedFields,

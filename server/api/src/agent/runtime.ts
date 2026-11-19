@@ -43,6 +43,8 @@ import {
   runAsSystem,
   systemActor,
   systemDatabaseUrl,
+  ARCHIVE_EXTRACT_CHANNEL,
+  archiveExtractOfPayload,
   PIPELINE_RUN_CHANNEL,
   pipelineRunOfPayload,
   type Actor,
@@ -102,6 +104,7 @@ registerAgentUiTools();
 import { summarizeAgentConversation } from './summarizer.js';
 import {
   enqueueExtract,
+  enqueueArchiveExtract,
   enqueuePipelineRun,
   requestProviderRecovery,
   startExtractQueue,
@@ -927,6 +930,22 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
     }),
   );
   logger.info(`LISTENing on ${PIPELINE_RUN_CHANNEL}`);
+
+  // An archive's "Extract contents" (docs/files.md, "Archives"): one job for
+  // each notify, sent only by a person's ask after its rights check. No
+  // sweep at boot takes one; a notify lost while the agent was down is not
+  // sent again (the stamp stays queued, and the person may ask again).
+  await pg.listen(
+    ARCHIVE_EXTRACT_CHANNEL,
+    listenAs('listen:archive-extract', (payload) => {
+      const id = archiveExtractOfPayload(payload);
+      if (!id) return;
+      return enqueueArchiveExtract(id).catch((err) =>
+        logger.error('enqueue archive extract error:', errorMessage(err)),
+      );
+    }),
+  );
+  logger.info(`LISTENing on ${ARCHIVE_EXTRACT_CHANNEL}`);
 
   // NEW-7: low-latency heartbeat wake. createHeartbeat + force-fire
   // paths fire pg_notify('heartbeat_due', ownerId). When we get one,

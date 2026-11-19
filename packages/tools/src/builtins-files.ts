@@ -23,6 +23,7 @@ export { FILE_HISTORY_TOOLS } from './files/history';
 import { file_processing } from './files/processing';
 import { file_reindex } from './files/reindex';
 import { file_stale_list } from './files/stale';
+import { file_extract_archive } from './files/extract-archive';
 export { folder_list, file_list, file_read, file_get, folder_get_by_path } from './files/read';
 export {
   file_create,
@@ -37,6 +38,12 @@ export { folder_create, folder_delete, file_upload, file_delete } from './files/
 export { file_processing, fileProcessing } from './files/processing';
 export { file_reindex, reindexFiles, reindexIdsOf } from './files/reindex';
 export { file_stale_list, fileStaleList } from './files/stale';
+export {
+  archiveExtractAnswer,
+  archiveExtractViewOf,
+  extractArchive,
+  file_extract_archive,
+} from './files/extract-archive';
 
 /** File-tree reads + renames (the writes/moves are FILE_MANAGE_TOOLS, creation FILE_CREATE_TOOLS). */
 export const FILE_TOOLS: readonly BuiltinToolDef[] = [
@@ -56,6 +63,10 @@ export const FILE_PROCESSING_TOOLS: readonly BuiltinToolDef[] = [file_processing
 /** Read files again through the whole pipeline, and the list of the files
  *  that need it (docs/files.md, "Reindex and stale indexes"). */
 export const FILE_REINDEX_TOOLS: readonly BuiltinToolDef[] = [file_reindex, file_stale_list];
+
+/** An archive's "Extract contents", only on a person's ask (docs/files.md,
+ *  "Archives"). */
+export const FILE_EXTRACT_TOOLS: readonly BuiltinToolDef[] = [file_extract_archive];
 
 /** Create a file from text, and resolve a folder by its path. */
 export const FILE_CREATE_TOOLS: readonly BuiltinToolDef[] = [file_create, folder_get_by_path];

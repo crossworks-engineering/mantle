@@ -91,6 +91,15 @@
  *                          extractJobWaitOf in @mantle/db). Nothing here
  *                          starts work: each job sent again is work that
  *                          was already asked for (an upload, a run).
+ *   8. An archive's      : a job with `archive` (enqueueArchiveExtract,
+ *      extraction          sent only for an `archive_extract` notify: a
+ *                          person's "Extract contents", docs/files.md
+ *                          "Archives") unpacks the archive into the folder
+ *                          its queued stamp names and does nothing else
+ *                          (@mantle/files archive-extract.ts). It always
+ *                          takes the heavy lane (one at a time), is tried
+ *                          once and is never re-driven: nothing extracts an
+ *                          archive by itself.
  *
  * Same-node concurrency is excluded by two layers:
  *
@@ -155,6 +164,7 @@ import {
   type DeferredFacts,
   type DeferredFactsOut,
 } from './extract/facts.js';
+import { runArchiveExtract } from '@mantle/files/archive-extract';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
@@ -221,32 +231,39 @@ const EXTRACT_QUEUE_OPTIONS = {
  *  With `wait`, a job sent again after a provider's "not now" or the day
  *  cap (point 7): `waits` is how many times in a row it waited. With
  *  `facts`, the facts of a read deferred by the extractor's cost cap or a
- *  provider's "not now" (extract/facts.ts, processDeferredFacts). */
+ *  provider's "not now" (extract/facts.ts, processDeferredFacts). With
+ *  `archive`, an archive's extraction (enqueueArchiveExtract, point 8). */
 type ExtractJob = {
   nodeId: string;
   run?: string;
   wait?: ExtractJobWait;
   facts?: DeferredFacts;
+  archive?: true;
 };
 
-/** A job's singleton key: the node, `<pipeline>:<node>` for a run, or
- *  `facts:<node>:<read token>` for deferred facts, so none of them
- *  collapse into another. */
+/** A job's singleton key: the node, `<pipeline>:<node>` for a run,
+ *  `facts:<node>:<read token>` for deferred facts, or `archive:<node>` for
+ *  an extraction, so none of them collapse into another. */
 const keyOf = (job: ExtractJob): string =>
-  job.run
-    ? `${job.run}:${job.nodeId}`
-    : job.facts
-      ? // The read's token in the key: a newer read's deferred facts never
-        // collapse into an older read's job still waiting (the 'short'
-        // policy keeps one created job a key).
-        `facts:${job.nodeId}:${job.facts.at}`
-      : job.nodeId;
+  job.archive
+    ? `archive:${job.nodeId}`
+    : job.run
+      ? `${job.run}:${job.nodeId}`
+      : job.facts
+        ? // The read's token in the key: a newer read's deferred facts never
+          // collapse into an older read's job still waiting (the 'short'
+          // policy keeps one created job a key).
+          `facts:${job.nodeId}:${job.facts.at}`
+        : job.nodeId;
 
-/** The send options of a job. A run is tried once (`retryLimit: 0` over the
- *  queue's 5): an expired run fails and is not run again by itself (only a
- *  wait sends it again, point 7). An extract keeps the queue's policy. */
+/** The send options of a job. A run and an extraction are tried once
+ *  (`retryLimit: 0` over the queue's 5): one that expired fails and is not
+ *  run again by itself (only a wait sends a run again, point 7). An extract
+ *  keeps the queue's policy. */
 const sendOptionsOf = (job: ExtractJob) =>
-  job.run ? { singletonKey: keyOf(job), retryLimit: 0 } : { singletonKey: keyOf(job) };
+  job.run || job.archive
+    ? { singletonKey: keyOf(job), retryLimit: 0 }
+    : { singletonKey: keyOf(job) };
 
 /**
  * Send a job again after a wait (point 7): the provider's "not now" with a
@@ -400,9 +417,9 @@ async function redriveDeadLetters(): Promise<number> {
     const jobs = await boss.fetch<ExtractJob>(DEAD_LETTER_QUEUE, { batchSize: 20 });
     if (!jobs || jobs.length === 0) break;
     for (const job of jobs) {
-      // A run on demand is never sent again: nothing starts by itself.
-      // Deferred facts keep their own key (keyOf).
-      if (job.data?.nodeId && !job.data.run) {
+      // A run on demand or an extraction is never sent again: nothing
+      // starts by itself. Deferred facts keep their own key (keyOf).
+      if (job.data?.nodeId && !job.data.run && !job.data.archive) {
         await boss.send(EXTRACT_QUEUE, job.data, sendOptionsOf(job.data));
       }
       await boss.complete(DEAD_LETTER_QUEUE, job.id);
@@ -559,6 +576,11 @@ async function handleMainJob(
   jobs: { data: ExtractJob }[],
 ): Promise<typeof HEAVY_HOP_OUTPUT | typeof BOOK_HOP_OUTPUT | void> {
   const job = jobs[0]?.data;
+  // An archive's extraction: always the heavy lane, one at a time.
+  if (job?.archive && boss && heavyWorkerIds.length > 0) {
+    await boss.send(HEAVY_QUEUE, job, sendOptionsOf(job));
+    return HEAVY_HOP_OUTPUT;
+  }
   // A run of an `after` pipeline stays here: a patch reads no bytes.
   const afterRun = !!job?.run && !!activeOwnerId && (await isAfterRun(activeOwnerId, job.run));
   const lanes = heavyWorkerIds.length > 0 && bookWorkerIds.length > 0;
@@ -592,7 +614,7 @@ async function handleExtractJob(
 ): Promise<void> {
   if (!job?.data?.nodeId || !activeOwnerId) return;
   const ownerId = activeOwnerId;
-  const { nodeId, run: pipelineId } = job.data;
+  const { nodeId, run: pipelineId, archive } = job.data;
   // Serialise per node (parallel across nodes) — see module header.
   const prev = inflightByNode.get(nodeId);
   // Under its ceiling: light and heavy together never pass the worker count;
@@ -602,36 +624,40 @@ async function handleExtractJob(
   // A run on demand calls its job and nothing else (pipeline-run.ts): it
   // never throws, and it is sent with no retry, so past its time budget it
   // fails once.
+  // An extraction calls its job and nothing else (archive-extract.ts): it
+  // says its own failures on the archive's stamp, and is sent with no retry.
   const data = job.data;
   // The queue as this job found it: a wait at a graceful stop is still
   // sent (stopExtractQueue drops `boss` before the jobs end).
   const b = waitBoss;
   const extract = () =>
     under.run(() =>
-      pipelineId
-        ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
-            // An Agent's run held by the provider or the day cap: the same
-            // run again later (point 7). Never a retry of anything else.
-            if (out.wait) {
-              await sendWaiting(
-                b,
-                data,
-                out.wait.for === 'provider'
-                  ? { for: 'provider', provider: { reason: out.wait.reason } }
-                  : { for: 'day_cap', until: out.wait.until },
-                { progressed: out.status === 'asked' && out.made > 0 },
-              );
-            }
-          })
-        : data.facts
-          ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
-              // Facts left for later (the cost cap again, or the provider's
-              // "not now"): the rest in a job of their own.
-              if (out.deferred) {
-                await sendDeferredFacts(b, data, out.deferred, { progressed: out.applied > 0 });
+      archive
+        ? runArchiveExtract(ownerId, nodeId).then(() => {})
+        : pipelineId
+          ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
+              // An Agent's run held by the provider or the day cap: the same
+              // run again later (point 7). Never a retry of anything else.
+              if (out.wait) {
+                await sendWaiting(
+                  b,
+                  data,
+                  out.wait.for === 'provider'
+                    ? { for: 'provider', provider: { reason: out.wait.reason } }
+                    : { for: 'day_cap', until: out.wait.until },
+                  { progressed: out.status === 'asked' && out.made > 0 },
+                );
               }
             })
-          : extractNode(nodeId, ownerId),
+          : data.facts
+            ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
+                // Facts left for later (the cost cap again, or the provider's
+                // "not now"): the rest in a job of their own.
+                if (out.deferred) {
+                  await sendDeferredFacts(b, data, out.deferred, { progressed: out.applied > 0 });
+                }
+              })
+            : extractNode(nodeId, ownerId),
     );
   const run = prev ? prev.catch(() => {}).then(extract) : extract();
   const tracked: Promise<unknown> = run
@@ -864,6 +890,22 @@ export async function enqueuePipelineRun(nodeId: string, pipelineId: string): Pr
   assertNoViewer('enqueuePipelineRun');
   if (!boss || !nodeId || !pipelineId) return;
   const job = { nodeId, run: pipelineId } satisfies ExtractJob;
+  await boss.send(EXTRACT_QUEUE, job, sendOptionsOf(job));
+}
+
+/**
+ * Enqueue an archive's extraction: the `archive_extract` notify's job
+ * (runtime.ts), sent only after a person's ask (@mantle/files
+ * archive-extract.ts startArchiveExtract), and nothing else sends one. Its
+ * singleton key is `archive:<node>`, so a second notify while the first
+ * waits sends no second job; the job itself runs only for a queued stamp.
+ * It goes on to the heavy lane (handleMainJob). No-op if the queue isn't
+ * started.
+ */
+export async function enqueueArchiveExtract(nodeId: string): Promise<void> {
+  assertNoViewer('enqueueArchiveExtract');
+  if (!boss || !nodeId) return;
+  const job = { nodeId, archive: true } satisfies ExtractJob;
   await boss.send(EXTRACT_QUEUE, job, sendOptionsOf(job));
 }
 

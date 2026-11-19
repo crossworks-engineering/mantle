@@ -2006,6 +2006,24 @@
    "peerRisky": false
   }
  },
+ "file_extract_archive": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": true
+  }
+ },
  "file_get": {
   "readOnly": true,
   "peerRisky": false,

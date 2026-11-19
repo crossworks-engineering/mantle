@@ -181,6 +181,14 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   pictures_large: pictures(
     () => 'each past 32 MB, or past the 256 MB of pictures one drawing may hold',
   ),
+  // An archive's contents (default-text.ts): never read but on a person's
+  // ask (archive-extract.ts). A detail, never a read in part.
+  archive: (c) =>
+    c.total !== undefined
+      ? `An archive is kept as it is: its ${n(c.total)} entries are not read, only their names are in search. Extract its contents to read them as files.`
+      : 'An archive is kept as it is: what is in it is not read. Extract its contents to read it as files.',
+  archive_sealed: () =>
+    'An archive is kept as it is: what is in it is not read, and this box cannot extract a 7z or RAR archive. Unpack it elsewhere and upload its files.',
   description: (c) =>
     c.read === 0
       ? `Its description (${n(c.total ?? 0)} characters) was left out: the feed was too large to send with it.`
@@ -237,11 +245,18 @@ export function readCutsOf(raw: unknown): ReadCuts {
 
 /** The cuts that are details only (the owner, 2026-11-19: "No, details
  *  only"): pictures the size gate skipped as icons, bullets or small logos
- *  (`pictures_small`, `pictures_tiny`). They stay in a file's `cuts` with
- *  their sentence, but alone they never make it `partial` nor push the
- *  admins. Every other cut does. The SQL form (ops/queries.ts
+ *  (`pictures_small`, `pictures_tiny`), and an archive's contents, which
+ *  are never read on upload ("archives are archives", the same day:
+ *  `archive`, `archive_sealed`). They stay in a file's `cuts` with their
+ *  sentence, but alone they never make it `partial` nor push the admins.
+ *  Every other cut does. The SQL form (ops/queries.ts
  *  readCutMakesPartialSql) names the same reasons. */
-export const DETAIL_ONLY_CUT_REASONS: readonly string[] = ['pictures_small', 'pictures_tiny'];
+export const DETAIL_ONLY_CUT_REASONS: readonly string[] = [
+  'pictures_small',
+  'pictures_tiny',
+  'archive',
+  'archive_sealed',
+];
 
 /** Whether a cut of this key makes the file `partial` (not a detail only). */
 export function cutMakesPartial(key: string): boolean {

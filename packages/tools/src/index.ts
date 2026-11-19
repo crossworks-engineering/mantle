@@ -127,6 +127,7 @@ export {
   FILE_TOOLS,
   FILE_PROCESSING_TOOLS,
   FILE_REINDEX_TOOLS,
+  FILE_EXTRACT_TOOLS,
   TELEGRAM_TOOLS,
   TELEGRAM_OPERATOR_TOOLS,
   PENDING_TOOLS,
@@ -219,6 +220,7 @@ export { DRAWING_REDRAW_TOOLS } from './builtins-drawing-redraw';
 export { FILE_SQL_TOOLS, fileSqlAnswer } from './builtins-file-sql';
 export { fileProcessing } from './builtins-files';
 export { fileStaleList, reindexFiles, reindexIdsOf } from './builtins-files';
+export { archiveExtractAnswer, extractArchive } from './builtins-files';
 export { FILE_SQL_FILES_MAX, fileSqlManyAnswer } from './file-sql-many';
 export type { FileSqlManyAnswer, FileSqlManyOutput } from './file-sql-many';
 export type { FileSqlAnswer, FileSqlTab } from './builtins-file-sql';

@@ -31,6 +31,7 @@
 # 2026-11-18 (Sync M2): POST /api/services/:name/frame-ticket, POST /api/services/sync/ui and the /api/sidecar write rows had no route on main; their cells are the branch's own answers (Sync off in the sweep: the frame ticket 404; no ticket: the screen 401; no SYNC_TOKEN: the sidecar rows 401 before any body read).
 # 2026-11-18 (Sync M3): POST /api/sidecar/files and its relink, remove and forget rows had no route on main; their cells are the branch's own answers (no SYNC_TOKEN in the sweep: 401 before any body read).
 # 2026-11-19 (Files P5, docs/files.md 8d): POST /api/files/reindex had no route on main; its cells are the branch's own answers (the sample body names no ids: 400 after the body read).
+# 2026-11-19 (archives, docs/files.md "Archives"): POST /api/files/files/:id/extract had no route on main; its cells are the branch's own answers (an empty object is its body; the sample id names no file: 404).
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -787,6 +788,12 @@ POST /api/files/files/:id/database owner empty => 404 application/json {"error":
 POST /api/files/files/:id/database owner nul => 404 application/json {"error":"not found"}
 POST /api/files/files/:id/database owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
 POST /api/files/files/:id/database owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/files/files/:id/extract owner valid => 404 application/json {"error":"No such file.","reason":"not-found"}
+POST /api/files/files/:id/extract owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/files/files/:id/extract owner empty => 404 application/json {"error":"No such file.","reason":"not-found"}
+POST /api/files/files/:id/extract owner nul => 400 application/json {"error":"Unrecognized key: \"text\""}
+POST /api/files/files/:id/extract owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+POST /api/files/files/:id/extract owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
 PATCH /api/files/files/:id owner valid => 404 application/json {"error":"not found"}
 PATCH /api/files/files/:id owner malformed => 400 application/json {"error":"Invalid input"}
 PATCH /api/files/files/:id owner empty => 400 application/json {"error":"Invalid input"}

@@ -709,6 +709,9 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_copy',
       'folder_move',
       'folder_copy',
+      // An archive's contents into a new folder beside it, only when the
+      // person asks (never by itself). Non-destructive: it makes files.
+      'file_extract_archive',
       // A file's kept versions (file history): list, and restore, which keeps
       // the bytes it replaces as a new version (undoable). Restore asks a
       // Moderator of the file, as by hand. Deleting a version is the owner's

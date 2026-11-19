@@ -2137,6 +2137,34 @@
   }
  },
  {
+  "name": "file_extract_archive",
+  "description": "Extract an archive (ZIP, TAR, .tar.gz, .tgz, .gz) into a NEW folder beside it, named after it, only when the person asks: archives are never unpacked by themselves. Each file inside becomes a file, read like an upload; folders are kept (past three levels below Files, deeper folder names join the file's name). Refused and listed with a reason: paths climbing out (`../`) or absolute, links, devices, encrypted entries, files past 128 MB; the whole archive past 512 MB or 10,000 files. Nested archives stay archives; 7z and RAR are not extracted. Runs in the background: the answer is `queued`; call with `check: true` for progress and result. Needs the right to change the file.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The archive file's id (UUID), from `file_list` or `search`."
+    },
+    "check": {
+     "type": "boolean",
+     "description": "true: only read the state of the last extraction (and whether the file can be extracted); start nothing."
+    }
+   },
+   "required": [
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_extract_archive",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "file_history_restore",
   "description": "Put a version from `file_history_list` back: its bytes become the file's again (same file id, so links hold), and the file is read again. The bytes it replaces are kept as a new version, so a restore is undone by restoring that one. For a Moderator of the file's workspace, of a workspace that holds it, or an Admin. Confirm with the user first.",
   "inputSchema": {

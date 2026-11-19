@@ -43,6 +43,31 @@ export {
   type ArchiveListing,
 } from './default-text';
 
+// "Extract contents" of an archive: only a person's ask, never on upload
+// (docs/files.md, "Archives").
+export {
+  ARCHIVE_EXTRACT_KEY,
+  ARCHIVE_EXTRACT_STALE_MS,
+  archiveExtractBusy,
+  archiveExtractOf,
+  archiveExtractStatus,
+  isExtractableArchiveName,
+  runArchiveExtract,
+  startArchiveExtract,
+  type ArchiveExtractRefusal,
+  type ArchiveExtractStamp,
+  type ArchiveExtractStarted,
+  type ArchiveExtractState,
+} from './archive-extract';
+export {
+  ARCHIVE_EXTRACT_MAX_FILES,
+  ARCHIVE_LIMITS,
+  archiveKindOfHead,
+  type ArchiveKind,
+  type ArchiveLimits,
+  type EntryRefusal,
+} from './archive-read';
+
 // The one client for the parser service (server/parser): every untrusted
 // file the brain reads goes through it.
 export {

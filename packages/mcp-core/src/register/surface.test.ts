@@ -78,6 +78,7 @@ const HTTP_SURFACE = [
   'export_node',
   'file_copy',
   'file_create',
+  'file_extract_archive',
   'file_history_restore',
   'file_move',
   'file_reindex',
