@@ -413,6 +413,38 @@ describe('translateInParts', () => {
     expect(parts.filter((p) => p.includes('line of code'))).toHaveLength(1);
   });
 
+  it('a fence that never closes, a tilde separator or inline code is text, never skipped', async () => {
+    for (const text of [
+      'Intro.\n\n```\nnever closed\n\nMore prose.',
+      'Title\n~~~~~~~~\nBody text here.',
+      '```x``` is a word.\n\nNext paragraph.',
+    ]) {
+      expect(maskCode(text, '1').blocks, text).toEqual([]);
+      const sent: string[] = [];
+      const r = await translateInParts({
+        text,
+        to: 'de',
+        partTokens: 1_000,
+        primary: { model: 'primary', maxOutputTokens: 1_000 },
+        call: async (route, s, u) => {
+          sent.push(fenced(u));
+          return upper(route, s, u);
+        },
+      });
+      // All of it went to the model, as text.
+      expect(sent).toEqual([text.trim()]);
+      expect(r.text).toBe(text.toUpperCase());
+    }
+  });
+
+  it('a longer fence holds a shorter one, whole', () => {
+    const text = 'Docs:\n\n````md\n```js\nx()\n```\n````\n\nAfter text.';
+    const { masked, blocks, nonce } = maskCode(text, '7');
+    expect(blocks).toEqual(['````md\n```js\nx()\n```\n````']);
+    expect(masked).toContain('After text.');
+    expect(unmaskCode(masked, blocks, nonce)).toBe(text);
+  });
+
   it('an answer with no finish (a stream that closed early) is not taken', async () => {
     let calls = 0;
     await expect(
