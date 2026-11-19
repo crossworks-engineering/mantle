@@ -1086,6 +1086,9 @@ export async function describeBookPagePictures(
         eq(nodes.type, 'file'),
         sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
         sql`${nodes.data} ? 'bookPage'`,
+        // Only the pictures of these bytes: a picture of an older revision
+        // keeps its own text (M1 of the audit, round 3).
+        sql`${nodes.data}->>'sourceSha256' = ${sha256}`,
       ),
     );
   let described = 0;

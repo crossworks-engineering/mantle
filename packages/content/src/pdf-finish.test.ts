@@ -181,7 +181,11 @@ describe("a book's marked pages with no picture are drawn, with no model (H1, au
    *  are only read here. */
   function step(fail?: (from: number) => boolean) {
     stepRun.mockImplementation(
-      async (_b: Buffer, _p: unknown, req: { state: { visionPages: number[] }; pageFrom: number }) => {
+      async (
+        _b: Buffer,
+        _p: unknown,
+        req: { state: { visionPages: number[] }; pageFrom: number },
+      ) => {
         if (fail?.(req.pageFrom)) return { result: { status: 'failed' }, pictures: new Map() };
         const calls = [];
         const pictures = new Map<string, Buffer>();
@@ -204,7 +208,13 @@ describe("a book's marked pages with no picture are drawn, with no model (H1, au
     cut();
     step();
     const spool = new SpooledPictures();
-    const out = await drawBookPages(agent, Buffer.from('pdf'), 'a'.repeat(64), [900, 3, 7, 5], spool);
+    const out = await drawBookPages(
+      agent,
+      Buffer.from('pdf'),
+      'a'.repeat(64),
+      [900, 3, 7, 5],
+      spool,
+    );
     expect(out.pictures.map((p) => p.page)).toEqual([3, 5, 900]);
     expect(out.lost).toBe(0);
     expect(split).toHaveBeenCalledTimes(2);
@@ -222,7 +232,13 @@ describe("a book's marked pages with no picture are drawn, with no model (H1, au
     cut();
     step((from) => from === 900);
     const spool = new SpooledPictures();
-    const out = await drawBookPages(agent, Buffer.from('pdf'), 'a'.repeat(64), [3, 900, 905], spool);
+    const out = await drawBookPages(
+      agent,
+      Buffer.from('pdf'),
+      'a'.repeat(64),
+      [3, 900, 905],
+      spool,
+    );
     expect(out.pictures.map((p) => p.page)).toEqual([3]);
     expect(out.lost).toBe(2);
     spool.drop();

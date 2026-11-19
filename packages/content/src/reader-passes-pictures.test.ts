@@ -59,19 +59,28 @@ beforeEach(() => {
   split.mockReset();
   stepRun.mockReset();
   marked.mockReset();
-  agents = [{ ...files.BUILTIN_PIPELINES.find((b) => b.id === 'pdf-page-read')!, source: 'builtin' }];
+  agents = [
+    { ...files.BUILTIN_PIPELINES.find((b) => b.id === 'pdf-page-read')!, source: 'builtin' },
+  ];
   split.mockImplementation(async (_b: Buffer, o: { from: number; pages: number }) => {
     const pageTo = Math.min(TOTAL, o.from + o.pages - 1);
     return { bytes: Buffer.from('w'), pageFrom: o.from, pageTo, pagesTotal: TOTAL };
   });
-  stepRun.mockImplementation(async (_b: Buffer, _p: unknown, req: { state: { visionPages: number[] } }) => {
-    const pictures = new Map<string, Buffer>();
-    const calls = req.state.visionPages.map((n) => {
-      pictures.set(`page-${n}.png`, png(n));
-      return { call: 'worker', worker: 'vision', key: `page-${n}`, input: { picture: `page-${n}.png`, page: n } };
-    });
-    return { result: { status: 'ok', calls }, pictures };
-  });
+  stepRun.mockImplementation(
+    async (_b: Buffer, _p: unknown, req: { state: { visionPages: number[] } }) => {
+      const pictures = new Map<string, Buffer>();
+      const calls = req.state.visionPages.map((n) => {
+        pictures.set(`page-${n}.png`, png(n));
+        return {
+          call: 'worker',
+          worker: 'vision',
+          key: `page-${n}`,
+          input: { picture: `page-${n}.png`, page: n },
+        };
+      });
+      return { result: { status: 'ok', calls }, pictures };
+    },
+  );
 });
 
 /** A kept run of the Reader whose pictures are those of `pages`. */
@@ -83,7 +92,13 @@ function keptRun(pages: number[]) {
     return { file, mime: 'image/png', page: n };
   });
   kept.mockReturnValue(
-    Promise.resolve({ status: 'ok', pictures: spool, write: { tabs: [], pictures }, warnings: [], counts: {} }),
+    Promise.resolve({
+      status: 'ok',
+      pictures: spool,
+      write: { tabs: [], pictures },
+      warnings: [],
+      counts: {},
+    }),
   );
   return spool;
 }

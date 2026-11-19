@@ -14,12 +14,7 @@
  * made, kept for the extract (readerRun), so the three passes cost one job.
  * No model is asked: the run is model-free.
  */
-import {
-  PIPELINE_ASK_PAGE_MAX,
-  effectiveOptions,
-  fileDbPaths,
-  keptReaderRun,
-} from '@mantle/files';
+import { PIPELINE_ASK_PAGE_MAX, effectiveOptions, fileDbPaths, keptReaderRun } from '@mantle/files';
 import { bookScanPagesOf, bookVisionPagesOf } from './book-pages';
 import { readFileDbStamp, readFileRowNow } from './file-database';
 import { filePagesOf, pagesText } from './page-passages';
