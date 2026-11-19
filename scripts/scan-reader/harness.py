@@ -122,6 +122,7 @@ LINES_MIN_EXPECTED = 10
 LINES_MIN_SHARE = 0.8
 LINES_MAX_SHARE = 1.5
 CHARS_PER_LINE = 45
+CHARS_PER_LINE_MAX = 80
 
 
 def quality(text, finish, words, expected_lines=None):
@@ -170,6 +171,7 @@ def quality(text, finish, words, expected_lines=None):
     # No free read vouches for a long answer: a made-up page (bench: a cheap
     # model wrote a whole spec table onto a page it could not read).
     have_lines = sum(1 for l in text.split("\n") if l.strip())
+    have_lines = max(have_lines, -(-len(re.sub(r"\s", "", text)) // CHARS_PER_LINE_MAX))
     if (expected_lines is not None and len(anchors) < ANCHORS_MIN
             and have_lines > max(LINES_MIN_EXPECTED, LINES_MAX_SHARE * expected_lines)):
         reasons.append("unverified")

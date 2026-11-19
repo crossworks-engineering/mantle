@@ -65,6 +65,11 @@ export const SCAN_READ_LINES_MAX_SHARE = 1.5;
  *  line count by its length: lower than a line of prose (about 65) or of a
  *  spec table row (about 45), so a whole read is never short by it. */
 export const SCAN_READ_CHARS_PER_LINE = 45;
+/** Characters (not spaces) a printed line holds at most, for `unverified`:
+ *  more than a line of prose (about 65), so a whole true read written as
+ *  paragraphs is never too long by it, and a made-up page written as
+ *  paragraphs still is. */
+export const SCAN_READ_CHARS_PER_LINE_MAX = 80;
 
 /** The mark the prompt asks for in place of a word the model cannot read. */
 export const ILLEGIBLE_MARK = '[?]';
@@ -139,9 +144,10 @@ export function scanReadQualityOf(
   }
 
   const expected = opts.expectedLines ?? 0;
+  const nonspace = text.replace(/\s/g, '').length;
   if (
     expected >= SCAN_READ_LINES_MIN_EXPECTED &&
-    Math.max(lines.length, Math.ceil(text.replace(/\s/g, '').length / SCAN_READ_CHARS_PER_LINE)) <
+    Math.max(lines.length, Math.ceil(nonspace / SCAN_READ_CHARS_PER_LINE)) <
       SCAN_READ_LINES_MIN_SHARE * expected
   ) {
     reasons.push('too_few_lines');
@@ -178,7 +184,8 @@ export function scanReadQualityOf(
   if (
     opts.expectedLines != null &&
     anchorList.length < SCAN_READ_ANCHORS_MIN &&
-    lines.length > Math.max(SCAN_READ_LINES_MIN_EXPECTED, SCAN_READ_LINES_MAX_SHARE * expected)
+    Math.max(lines.length, Math.ceil(nonspace / SCAN_READ_CHARS_PER_LINE_MAX)) >
+      Math.max(SCAN_READ_LINES_MIN_EXPECTED, SCAN_READ_LINES_MAX_SHARE * expected)
   ) {
     reasons.push('unverified');
   }

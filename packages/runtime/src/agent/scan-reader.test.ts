@@ -290,6 +290,12 @@ describe('cleanParsedText', () => {
     );
   });
 
+  it('takes off paired bold marks only: a footnote mark or a form blank is printed text', () => {
+    expect(cleanParsedText('**NOTE** see 150** and __A__ and ______ and TAG__01')).toBe(
+      'NOTE see 150** and A and ______ and TAG__01',
+    );
+  });
+
   it('keeps every word of a plain page', () => {
     expect(cleanParsedText('PAGE 7\nSome words here.\n')).toBe('PAGE 7\nSome words here.');
     expect(cleanParsedText('')).toBe('');

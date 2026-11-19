@@ -125,7 +125,12 @@ export function cleanParsedText(text: string): string {
     }
     // Heading marks and bold or italic marks off (`**`, `__`): markup, not
     // the page's words.
-    line = line.replace(/^#{1,6}\s+/, '').replace(/\*\*|__/g, '');
+    line = line
+      .replace(/^#{1,6}\s+/, '')
+      // Only paired marks around words: a footnote's `150**` or a form's
+      // `______` is printed text and stays.
+      .replace(/\*\*([^\s*](?:[^*]*?[^\s*])?)\*\*/g, '$1')
+      .replace(/(^|\s)__([^\s_](?:[^_]*?[^\s_])?)__(?=\s|$)/g, '$1$2');
     if (line === '' && (out.length === 0 || out[out.length - 1] === '')) continue;
     out.push(line);
   }
