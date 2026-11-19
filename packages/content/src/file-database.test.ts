@@ -424,34 +424,24 @@ describe('a PDF, read by the packages pdf-router and drawing-pdf', () => {
     });
   });
 
-  it("the decider's document, live, is never used: the file keeps its database, the answer in it", async () => {
+  it("the decider's document, live, on office paper makes a book (M2); in shadow it is never used", async () => {
     inProcess();
     const decide = vi.fn(async (_state: unknown) => decision('document'));
-    const off = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { pipelines });
-    const live = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
-      pipelines,
-      pdfKind: decide,
-    });
+    // The book reader is Python in the parser image: no job this process runs.
+    await expect(
+      parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { pipelines, pdfKind: decide }),
+    ).rejects.toThrow();
     expect(decide).toHaveBeenCalledTimes(1);
-    expect(fileRow(live)).toMatchObject({
-      Kind: 'unsure',
-      'Kind source': 'rules',
-      'Rules kind': 'unsure',
-      'Decider answer': 'document',
-      'Decider mode': 'live',
-    });
-    // The database the box keeps with the decider off, but for the answer.
-    if (live.kind !== 'sheets' || off.kind !== 'sheets') throw new Error('no sheets');
-    expect(live.sheets.map((t) => [t.name, t.rows.length])).toEqual(
-      off.sheets.map((t) => [t.name, t.rows.length]),
-    );
-    expect(live.description).toBe(off.description);
-    // Not used (shadow): the same.
+    // Not used (shadow): the file keeps its database, the answer in it.
     const shadow = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
       pipelines,
       pdfKind: async () => decision('document', false),
     });
-    expect(fileRow(shadow)).toMatchObject({ Kind: 'unsure', 'Decider answer': 'document' });
+    expect(fileRow(shadow)).toMatchObject({
+      Kind: 'unsure',
+      'Kind source': 'rules',
+      'Decider answer': 'document',
+    });
   });
 
   it('an ask that fails or times out (no answer) keeps the database: the file stays unsure', async () => {

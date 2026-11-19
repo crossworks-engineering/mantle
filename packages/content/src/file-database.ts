@@ -29,6 +29,8 @@ import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
   PAGE_ASK_KEY_PREFIX,
   afterEntryIn,
+  forgetReaderRun,
+  keptRunKeysOf,
   afterMatches,
   effectiveOptions,
   extOf,
@@ -85,6 +87,7 @@ import {
   type StoredPdf,
 } from './pdf-read';
 import { bookVisionPagesOf } from './book-pages';
+import { SpooledPictures } from './picture-spool';
 import {
   AGENT_HASH_COLUMN,
   PAGE_TEXT_ANSWER_MAX_CHARS,
@@ -806,7 +809,34 @@ export async function readerOptionsOf(
  * a file that turned private gets nothing, and a replace during a long write
  * keeps its own name.
  */
-export async function buildFileDatabase(args: {
+export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
+  // A read here (no `parsed`) is never an extract's: no picture pass takes
+  // the pictures its Reader's run put on disk. The runs it made are dropped
+  // when it is done (L5 of the large-PDF audit, round 3); a run kept before
+  // (another extract's) is left as it is.
+  const before =
+    !args.parsed && isFileSha256(args.sha256) ? new Set(keptRunKeysOf(args.sha256)) : null;
+  try {
+    return await buildFileDatabaseOnce(args);
+  } finally {
+    if (before) dropRunsMadeSince(args.sha256 as string, before);
+  }
+}
+
+/** Forget the Reader runs of these bytes made since `before` was read, and
+ *  remove their pictures from disk. */
+export function dropRunsMadeSince(sha256: string, before: ReadonlySet<string>): void {
+  for (const key of keptRunKeysOf(sha256)) {
+    if (before.has(key)) continue;
+    forgetReaderRun<PipelineRunResult>(key)
+      ?.then((run) => {
+        if (run?.pictures instanceof SpooledPictures) run.pictures.drop();
+      })
+      .catch(() => {});
+  }
+}
+
+type BuildArgs = {
   fileId: string;
   ownerId: string;
   sha256: unknown;
@@ -822,7 +852,9 @@ export async function buildFileDatabase(args: {
    *  none: the Agents' tabs are kept over its write, and it starts no
    *  model work. */
   upload?: true;
-}): Promise<FileDbBuild> {
+};
+
+async function buildFileDatabaseOnce(args: BuildArgs): Promise<FileDbBuild> {
   const { fileId, ownerId, sha256, bytes } = args;
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };

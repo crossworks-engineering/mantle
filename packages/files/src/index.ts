@@ -77,7 +77,14 @@ export {
   type PdfPasswordResult,
 } from './parser-client';
 export { PARSER_COUNTED_CODES } from './parser-wire';
-export { keptReaderRun, memoReaderRun, readerRunKey, READER_MEMO_MAX } from './reader-memo';
+export {
+  forgetReaderRun,
+  keptReaderRun,
+  keptRunKeysOf,
+  memoReaderRun,
+  readerRunKey,
+  READER_MEMO_MAX,
+} from './reader-memo';
 export {
   parserDwgCrop,
   type DwgCrop,

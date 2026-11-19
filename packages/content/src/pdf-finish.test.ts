@@ -26,7 +26,8 @@ const { picturesByWindows, picturesLeftOutOf, picturesNeedWindows } =
   await import('./pdf-picture-windows');
 const { SpooledPictures } = await import('./picture-spool');
 const { drawBookPages } = await import('./reader-passes');
-const { keptUnseenRows } = await import('./file-database');
+const { dropRunsMadeSince, keptUnseenRows } = await import('./file-database');
+const memo = await import('@mantle/files');
 
 const TOTAL = 1679;
 
@@ -260,5 +261,26 @@ describe("an Agent's paid page text is kept for a page still marked (L3, audit r
       'page-12',
       'page-40',
     ]);
+  });
+});
+
+describe('a read that no extract takes drops the pictures its runs put on disk (L5, audit round 3)', () => {
+  it('the runs made since the build began are forgotten and their spools removed; an older run stays', async () => {
+    const sha = 'c'.repeat(64);
+    const older = new SpooledPictures();
+    older.put('page-1.png', Buffer.from('x'));
+    const key = (id: string) => memo.readerRunKey({ id, version: '1.0.0' }, sha, 'pdf');
+    await memo.memoReaderRun(key('kept-before'), async () => ({ status: 'ok', pictures: older }));
+    const before = new Set(memo.keptRunKeysOf(sha));
+    const fresh = new SpooledPictures();
+    fresh.put('page-2.png', Buffer.from('y'));
+    await memo.memoReaderRun(key('made-here'), async () => ({ status: 'ok', pictures: fresh }));
+    dropRunsMadeSince(sha, before);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fresh.size).toBe(0);
+    expect(memo.keptReaderRun(key('made-here'))).toBeUndefined();
+    expect(older.get('page-1.png')?.toString()).toBe('x');
+    expect(memo.keptReaderRun(key('kept-before'))).toBeDefined();
+    older.drop();
   });
 });
