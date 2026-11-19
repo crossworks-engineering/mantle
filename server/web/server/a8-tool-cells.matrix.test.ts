@@ -149,6 +149,10 @@ const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   file_sql: "a file's database, built from a real table-type file (file-sql.db.test.ts)",
   drawing_redraw:
     "a drawing's database with its Symbols tab, built from a real CAD file (the parser, outside the box)",
+  // Files P5 audit r1 (M2): a reindex drops nothing for a file with no bytes
+  // (skipped 'bytes-missing'); the matrix seeds file rows only.
+  file_reindex:
+    "a file's bytes on disk (the matrix seeds the rows only; file-reindex-route.db.test.ts reads one again)",
 };
 
 /** The app data tools act for a login's own MCP connection only (tools
@@ -784,4 +788,7 @@ const NOT_RUN: Readonly<Record<string, number>> = {
   // file the parser read.
   "an allowed call needs a drawing's database with its Symbols tab, built from a real CAD file (the parser, outside the box)": 4,
   'an allowed call needs the browser sidecar that draws the canvas (outside the box)': 16,
+  // file_reindex's allowed cells (Files join, 2026-11-19): readGrant's root
+  // and folder edit, over both modes.
+  "an allowed call needs a file's bytes on disk (the matrix seeds the rows only; file-reindex-route.db.test.ts reads one again)": 4,
 };
