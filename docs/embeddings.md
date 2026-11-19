@@ -259,14 +259,37 @@ last 10 minutes, dead-lettered (`GET/PATCH /api/embedding/extraction`). A host
 that sends extraction to a hosted model (no local CPU embedder) can run 8 or
 more; a CPU-only box should stay at 1 or 2.
 
+**The lane settings over HTTP and MCP.** Three settings, each a nullable
+column of the one `embedding_config` row; null falls back to its env value,
+then the default:
+
+| Setting              | Column                           | Env                         | Default | Range    |
+| -------------------- | -------------------------------- | --------------------------- | ------- | -------- |
+| extractions at once  | `extraction_concurrency`         | `EXTRACT_CONCURRENCY`       | 2       | 1 to 16  |
+| books at once        | `extraction_book_concurrency`    | `EXTRACT_BOOK_CONCURRENCY`  | 1       | 1 to 4   |
+| time budget, minutes | `extraction_time_budget_minutes` | `MANTLE_EXTRACT_EXPIRE_MIN` | 60      | 1 to 720 |
+
+`GET /api/embedding/extraction` gives each as `saved` (null: not saved),
+`effective` (what the extractor runs with), `source` (`saved`, `env` or
+`default`), `default`, `min` and `max`, beside the queue. `PATCH` takes
+`concurrency` and `book_concurrency` (a whole number, or null to clear; give
+at least one; a 409 before the embedder is set up); the time budget is saved
+with the rest of the form (`POST /api/embedding`). An admin's own agent reads
+and sets all three over MCP with `extraction_get` and `extraction_set`
+(mcpOnly, the settings area): the same reader and writer
+(`packages/embeddings/src/extraction-settings.ts`). Books at once has a CHECK
+on its column (0391) as well, so no writer can save it out of 1 to 4. A
+save over MCP lands within the 30 s tick; a `PATCH` tells the agent at once
+(`provider_recover`).
+
 **Drawings and books have their own lanes.** There are three lanes, each a
 queue of its own:
 
-| Lane  | Queue                  | What runs there                                           | At once                                       |
-| ----- | ---------------------- | --------------------------------------------------------- | --------------------------------------------- |
-| light | `mantle.extract`       | every other file, a small PDF included, notes, emails     | the extractor count (Settings, 1 to 16)       |
-| heavy | `mantle.extract.heavy` | a drawing: DWG, DXF, DGN, DWF                             | 1 (the parser has one job slot)               |
-| book  | `mantle.extract.book`  | a book: a PDF of 10 MB or more, or of more than 200 pages | `EXTRACT_BOOK_CONCURRENCY`, default 1, 1 to 4 |
+| Lane  | Queue                  | What runs there                                           | At once                                                                      |
+| ----- | ---------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| light | `mantle.extract`       | every other file, a small PDF included, notes, emails     | the extractor count (Settings, 1 to 16)                                      |
+| heavy | `mantle.extract.heavy` | a drawing: DWG, DXF, DGN, DWF                             | 1 (the parser has one job slot)                                              |
+| book  | `mantle.extract.book`  | a book: a PDF of 10 MB or more, or of more than 200 pages | books at once (Settings, 1 to 4; else `EXTRACT_BOOK_CONCURRENCY`, default 1) |
 
 A DWG, DXF, DGN or DWF is a heavy extraction: the parser reads it on a whole
 core for seconds to minutes, and the api then builds its tabs and its
@@ -301,9 +324,12 @@ Light and heavy together never pass the extractor count: a box set to 1 runs
 one of those at a time, whatever it is. A book's place is its own lane's,
 outside that count: a book takes hours, and inside it would hold a place
 light and heavy work need for all of them (on a box set to 1, every place).
-So at most the extractor count plus `EXTRACT_BOOK_CONCURRENCY` run in all.
-`EXTRACT_BOOK_CONCURRENCY` is read at start (set it in the host `.env` and
-restart the api); it has no screen or tool yet. Every sender still sends to
+So at most the extractor count plus books at once run in all. Books at once
+is live as the extractor count is: the saved setting (`extraction_set`,
+`PATCH /api/embedding/extraction`), else `EXTRACT_BOOK_CONCURRENCY`, re-read
+every 30 s with no restart; a lower count lets the books in flight finish.
+Each book is a long run of page windows through the parser's one job slot,
+so more than 1 helps only a box with parser room. Every sender still sends to
 `mantle.extract` only, and the panel's counts add the three queues
 (`server/api/src/agent/extract-lanes.ts`, `extract-queue.ts`).
 

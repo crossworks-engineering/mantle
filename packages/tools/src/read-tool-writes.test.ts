@@ -180,6 +180,9 @@ const NO_WRITE_FOUND: readonly string[] = [
   'code_diff',
   // The model check: the box's worker and agent config columns; no write.
   'config_models_check',
+  // The lane settings: the embedding_config row's lane columns and the
+  // extract queue's counts (pgboss); no write.
+  'extraction_get',
   'contact_find',
   'contact_get',
   'contact_list',

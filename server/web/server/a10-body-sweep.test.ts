@@ -389,6 +389,16 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'worker-kind (the Translator and the Scan reader: a worker kind more each, its 400 names them)';
   }
+  // The book lane setting (0391): PATCH /api/embedding/extraction takes
+  // book_concurrency beside concurrency, and its 400 names both.
+  if (
+    cell.startsWith('PATCH /api/embedding/extraction ') &&
+    main === '400 application/json {"ok":false,"error":"concurrency must be 1 to 16, or null"}' &&
+    now ===
+      '400 application/json {"ok":false,"error":"concurrency must be 1 to 16 and book_concurrency 1 to 4, or null; give at least one"}'
+  ) {
+    return 'book-lane (the book lane setting, 0391: the extraction 400 names book_concurrency too)';
+  }
   // The Desk's write check (fix round 2): a desk the read would change is
   // refused whole, so the body with a NUL at the end of its strings (the
   // clock face) is the route's 400, where main stored the default face and

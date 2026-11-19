@@ -50,6 +50,10 @@ describe('mcpOnly builtins', () => {
         // The model check (docs/models.md): an Admin user's client
         // reads whether the box runs the default models; read-only.
         'config_models_check',
+        // The extractor's lane settings (docs/embeddings.md, the lanes): an
+        // Admin user's client reads and sets them, as the settings screen.
+        'extraction_get',
+        'extraction_set',
         'file_delete',
         // A file's kept version deleted for good (file history): an owner's
         // client only, as file_delete.

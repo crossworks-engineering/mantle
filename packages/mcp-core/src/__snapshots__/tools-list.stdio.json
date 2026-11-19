@@ -2050,6 +2050,62 @@
   }
  },
  {
+  "name": "extraction_set",
+  "description": "Set this box's extraction lane settings (Settings > Embedding, Performance). Give only what changes: a whole number sets it, null clears it (back to the env value, then the default). `concurrency`: extractions at once, 1 to 16. `book_concurrency`: books at once in their own lane, 1 to 4; books share the parser's one job slot, so above 1 helps only a box with parser room. `time_budget_minutes`: minutes one extraction may run before it is tried again, 1 to 720 (a book's grows with its pages). Live within 30 seconds, no restart; runs in flight finish. Returns what `extraction_get` does. Refused before the embedder is set up.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "concurrency": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 16
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Extractions at once (1 to 16), or null for the env value or default."
+    },
+    "book_concurrency": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 4
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Books at once (1 to 4), or null for the env value or default."
+    },
+    "time_budget_minutes": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 720
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Minutes one extraction may run (1 to 720), or null for the env value or default."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "extraction_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "file_copy",
   "description": "Copy ONE file into another folder — a genuinely NEW file with its own id and its own indexing under the destination folder's mode; nothing links it to the original. Pass `new_filename` to copy under a different name (the way past a name clash). To relocate rather than duplicate, use `file_move`.",
   "inputSchema": {
@@ -11837,6 +11893,22 @@
   },
   "annotations": {
    "title": "extract_from_image",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "extraction_get",
+  "description": "Read this box's extraction lane settings (Settings > Embedding, Performance): `concurrency` (extractions at once, light and heavy files together), `book_concurrency` (books at once: PDFs of 10 MB or more or of more than 200 pages, in their own lane beside the first) and `time_budget_minutes` (how long one extraction may run; a book's grows with its pages). Each gives `saved` (null: not saved), `effective` (what the extractor runs with now), `source` (`saved`, `env` or `default`), `default`, `min` and `max`. Also `configured` (false: no embedder yet, nothing can be saved) and `queue`, the extract queue's counts now. Read-only. To change one use `extraction_set`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "extraction_get",
    "readOnlyHint": true,
    "destructiveHint": false,
    "idempotentHint": true,

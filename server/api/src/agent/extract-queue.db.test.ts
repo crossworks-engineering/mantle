@@ -12,7 +12,9 @@
  *    document waits for the drawing that runs, and runs when it ends;
  *  - a book (a PDF of 10 MB or more) hops to `mantle.extract.book` and holds
  *    no place of the light and heavy ceiling: while it runs, a drawing and a
- *    document both run and end, on a box set to one extraction at a time.
+ *    document both run and end, on a box set to one extraction at a time;
+ *  - books at once is the saved setting (embedding_config, 0391), read live
+ *    by the reconcile: at 2, two books run together.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -228,5 +230,32 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     // The hop of a book is not a finished extraction.
     const counts = await m.extractionQueueCounts();
     expect(counts.running + counts.waiting).toBe(0);
+  }, 120_000);
+
+  it('books at once is a saved setting, read live: two books run together once it is 2', async () => {
+    // The env value is unset (1 at a time); the saved setting wins (0391).
+    await su`insert into embedding_config (owner_id, model, primary_provider)
+      values (${owner}, 'embeddinggemma', 'local') on conflict (owner_id) do nothing`;
+    await su`update embedding_config set extraction_book_concurrency = 2 where owner_id = ${owner}`;
+    // Held to 1 to 4 by the column itself, as by the route and the tool.
+    await expect(
+      su`update embedding_config set extraction_book_concurrency = 5 where owner_id = ${owner}`,
+    ).rejects.toMatchObject({ code: '23514' });
+    // A save tells the agent at once (the provider_recover NOTIFY); the
+    // reconcile it runs is the one of the 30 s tick.
+    q.requestProviderRecovery('config');
+
+    const a = await pdfOf('live-a.pdf', 20 * 1024 * 1024);
+    const b = await pdfOf('live-b.pdf', 20 * 1024 * 1024);
+    runs.held.add(a);
+    runs.held.add(b);
+    await q.enqueueExtract(a);
+    await q.enqueueExtract(b);
+    await until('both books run at once', () => runs.release.has(a) && runs.release.has(b), 60_000);
+    for (const id of [a, b]) {
+      runs.release.get(id)!();
+      runs.release.delete(id);
+    }
+    await until('both books end', () => [a, b].every((id) => runs.ended.includes(id)));
   }, 120_000);
 });

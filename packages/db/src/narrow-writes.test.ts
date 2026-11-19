@@ -32,6 +32,7 @@ describe('narrowNeedsSpot', () => {
       expect(narrowNeedsSpot(agents, 'update', set), JSON.stringify(set)).toBe(true);
     expect(narrowNeedsSpot(agents, 'update', { name: 'x', updatedAt: new Date() })).toBe(false);
     expect(narrowNeedsSpot(embeddingConfig, 'update', { extractionConcurrency: 4 })).toBe(true);
+    expect(narrowNeedsSpot(embeddingConfig, 'update', { extractionBookConcurrency: 2 })).toBe(true);
     expect(narrowNeedsSpot(embeddingConfig, 'update', { backupEnabled: false })).toBe(false);
     expect(narrowNeedsSpot(curatedModels, 'insert')).toBe(true);
     expect(narrowNeedsSpot(curatedModels, 'delete')).toBe(true);

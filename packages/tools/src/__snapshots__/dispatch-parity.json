@@ -101,6 +101,8 @@
  "event_update": "68d88842d679eb513297cbd98ac1ab3dceccda0720fb86f012d9cf2827e813cc",
  "export_node": "4dc21af04a32538479e73e37b5df39dd0d7e9910cec8733c0e7d5c84e8f62c78",
  "extract_from_image": "69f53d7958c551582f0744a24c6d805fd3ccaec12aceddcf02c1e2e9d939f99d",
+ "extraction_get": "3a8447f6d173a9678a7731e9bce9cf8da71b2da0dacf674554d80ece8b26c70c",
+ "extraction_set": "2e8bff46b7fc859aca8d66368f066bdf8175330dd5ea41ba9f1b776da56f8450",
  "file_copy": "4d7286da95c82e398543dc2537eac5a173b1e1846794fec815c1b1e348147da7",
  "file_create": "1db296d6289e9885a5eaeb0b552729e331c0a6fb37390e1ddea6dcb4dc2bd3ee",
  "file_delete": "8126feb413a203ef245844cd5067d5e34849c5ba6a5e8c8e0796de8c801b5749",

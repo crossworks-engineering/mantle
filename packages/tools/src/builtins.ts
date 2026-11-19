@@ -62,6 +62,7 @@ import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 import { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
 import { SERVICE_TOOLS } from './builtins-services';
+import { EXTRACTION_TOOLS } from './builtins-extraction';
 import { MODEL_CHECK_TOOLS } from './builtins-model-check';
 import { SYNC_TOOLS } from './builtins-sync';
 import { PIPELINE_TOOLS } from './pipelines';
@@ -318,6 +319,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...VAULT_KEY_TOOLS,
   ...GATEWAY_SERVICE_TOOLS,
   ...SERVICE_TOOLS,
+  // The extractor's lane settings (extraction_get / extraction_set): an
+  // Admin user's client reads and sets them as the settings screen does.
+  ...EXTRACTION_TOOLS,
   ...MODEL_CHECK_TOOLS,
   // The Translator's models, set over MCP (mcpOnly).
   ...TRANSLATOR_SETTINGS_TOOLS,

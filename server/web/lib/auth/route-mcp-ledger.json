@@ -228,7 +228,7 @@
     "GET /api/email/messages": { "tool": "email_list", "gap": "no folder or unread filter" },
     "GET /api/email/messages/:id": { "tool": "email_get", "gap": "no attachment list" },
     "GET /api/embedding": { "planned": "embedding_status" },
-    "GET /api/embedding/extraction": { "planned": "embedding_status" },
+    "GET /api/embedding/extraction": "extraction_get",
     "GET /api/embedding/recover": { "planned": "embedding_status" },
     "GET /api/entities/candidates": { "planned": "entity_candidates" },
     "GET /api/events": "event_list",
@@ -537,7 +537,7 @@
     },
     "PATCH /api/draws/:id": { "planned": "draw_update" },
     "PATCH /api/email/messages/:id": { "planned": "email_mark" },
-    "PATCH /api/embedding/extraction": { "planned": "embedding_set" },
+    "PATCH /api/embedding/extraction": "extraction_set",
     "PATCH /api/events/:id": "event_update",
     "PATCH /api/files/files/:id": ["file_rename", "file_move", "file_set_indexing"],
     "PATCH /api/files/folders/:id": {

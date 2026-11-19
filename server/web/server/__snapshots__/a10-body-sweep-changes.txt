@@ -12,6 +12,7 @@
 # password-rule (the new-password rule, 2026-11: 8 characters, three kinds): 10 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
 # bad-json-400 (malformed, accepted as {} on main): 7 cells
+# book-lane (the book lane setting, 0391: the extraction 400 names book_concurrency too): 2 cells
 # item-check-first (F4 fix round 2: asked of the database, the stand-in has none): 1 cells
 # item-read-first (pre-check removal part 2: the write reads the item in the scope before its body): 44 cells
 # item-fault (fix round 1: a failed item says a fixed text for a fault): 6 cells
@@ -508,6 +509,12 @@ POST /api/embedding owner chunked [chunked-413]
 PATCH /api/embedding/extraction owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"ok":false,"error":"concurrency must be 1 to 16, or null"}
   now  400 application/json {"error":"invalid JSON"}
+PATCH /api/embedding/extraction owner empty [book-lane (the book lane setting, 0391: the extraction 400 names book_concurrency too)]
+  main 400 application/json {"ok":false,"error":"concurrency must be 1 to 16, or null"}
+  now  400 application/json {"ok":false,"error":"concurrency must be 1 to 16 and book_concurrency 1 to 4, or null; give at least one"}
+PATCH /api/embedding/extraction owner array [book-lane (the book lane setting, 0391: the extraction 400 names book_concurrency too)]
+  main 400 application/json {"ok":false,"error":"concurrency must be 1 to 16, or null"}
+  now  400 application/json {"ok":false,"error":"concurrency must be 1 to 16 and book_concurrency 1 to 4, or null; give at least one"}
 PATCH /api/embedding/extraction owner chunked [chunked-413]
   main 400 application/json {"ok":false,"error":"concurrency must be 1 to 16, or null"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}

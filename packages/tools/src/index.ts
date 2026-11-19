@@ -194,6 +194,7 @@ export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 export { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
 export { SERVICE_TOOLS } from './builtins-services';
+export { EXTRACTION_TOOLS } from './builtins-extraction';
 export { MODEL_CHECK_TOOLS } from './builtins-model-check';
 export { SYNC_TOOLS } from './builtins-sync';
 export {

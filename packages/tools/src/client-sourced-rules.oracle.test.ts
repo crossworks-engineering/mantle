@@ -346,6 +346,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   pipeline_set: always('changes how files are read on this box'),
   pipeline_install: always('installs code that reads files on this box'),
   pipeline_remove: always('removes a pipeline from this box'),
+  // The extractor's lane settings: new since main's table, MCP only; a
+  // client-sourced call always waits for the owner.
+  extraction_set: always('changes how many files this box extracts at once, and for how long'),
   api_key_delete: always('changes the secrets tools and agents sign in with'),
   api_key_import: always('changes the secrets tools and agents sign in with'),
   api_key_test: always('sends a vault key to its provider'),
