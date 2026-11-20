@@ -187,6 +187,8 @@ local stdio MCP server and a second replica keep their own.
 | `POST /c/:id/read`, `POST /c/:id/clear`, `POST /c/:id/history/delete`                  | cursor, clear for me, delete history for everyone                                                                                                          |
 | `POST /c/:id/typing`                                                                   | a NOTIFY, stored nowhere                                                                                                                                   |
 | `PUT /favourites/:kind/:id`, `DELETE /favourites/:kind/:id`                            | pin and unpin                                                                                                                                              |
+| `POST /c/:id/attachments`, `GET /attachments/:id`, `POST /attachments/:id/save`        | a chat file: upload, read, Save to Files (Files on lines, below)                                                                                           |
+| `POST /to`                                                                             | the chat a post to `{handle}` goes in (Handles, below)                                                                                                     |
 | `POST /send`                                                                           | post to `{to: {handle}, body, answers?, clientMsgId?}` with no open chat (Handles, below)                                                                  |
 | `GET /directory?q=`                                                                    | who I may chat with, with "online"; `q` matches the shown name, never the address                                                                          |
 | `GET /photo/:loginId?v=`                                                               | the older path of `GET /api/people/:id/photo` (People, below): the same handler and callers                                                                |
@@ -453,16 +455,17 @@ edge of a box; `infra/livekit/README.md` has the ops notes.
 On the one login surface, MCP only (`mcpOnly`), none spends, none is risky,
 each runs as the caller in its scope:
 
-| Tool                  | What                                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------------------------------ |
-| `messenger_list`      | my chats with unread and the last line                                                                 |
-| `messenger_open`      | messages of a chat, oldest first, with its people and a group's `info`                                 |
-| `messenger_send`      | send as me; `client_msg_id` makes a retry safe; `to` posts to a handle, `answers` fill its form        |
-| `messenger_create`    | a direct chat or a group (with its `title`, `info`, `handle` and `intake`)                             |
-| `messenger_update`    | a group admin's title, icon, colour, info, handle and intake form; my own mute                         |
-| `messenger_wait`      | wait up to 60 s for messages after a seq; at most 100 at a time (`hasMore`: call again with `lastSeq`) |
-| `messenger_mark_read` | move my cursor                                                                                         |
-| `messenger_directory` | who I may chat with, each person with their description (`q` matches it); the box's handles            |
+| Tool                        | What                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `messenger_list`            | my chats with unread and the last line                                                                 |
+| `messenger_open`            | messages of a chat, oldest first, with its people and a group's `info`                                 |
+| `messenger_send`            | send as me; `client_msg_id` makes a retry safe; `to` posts to a handle, `answers` fill its form        |
+| `messenger_create`          | a direct chat or a group (with its `title`, `info`, `handle` and `intake`)                             |
+| `messenger_update`          | a group admin's title, icon, colour, info, handle and intake form; my own mute                         |
+| `messenger_attachment_save` | copy a chat file I read into a folder of Files                                                         |
+| `messenger_wait`            | wait up to 60 s for messages after a seq; at most 100 at a time (`hasMore`: call again with `lastSeq`) |
+| `messenger_mark_read`       | move my cursor                                                                                         |
+| `messenger_directory`       | who I may chat with, each person with their description (`q` matches it); the box's handles            |
 
 A connection that names no login (a peer bound to an Admin user the owner
 did not register) is refused: the tools never fall back to the brain owner.
@@ -599,6 +602,42 @@ by}` and a reply to the first line. Other talk in the group stays in the
   never wait on each other in a circle.
 - **Cost.** A copy line and a line back are system lines. They start no
   agent turn, and a mention in them is stored only.
+
+## Files on lines
+
+Fleet chat phase 1 (plan page f2f19c7b, section 8) fills
+`messenger_attachments` (0335), in `packages/content/src/messenger-attachments.ts`:
+
+- **Upload.** `POST /api/messenger/c/:id/attachments` (multipart, one
+  `file`) for a live participant: the bytes go to the object store by their
+  sha256, through the files store's broker (`stageFileObject`), and a row
+  ties them to the chat with no line yet. Caps: the Send to IT numbers, 10
+  MB a file (413 past it), 5 a line (`MESSENGER_ATTACHMENTS_MAX`), the task
+  file types (no svg or html). No parser or model reads them.
+- **Send.** `attachments` on a send names my own unsent uploads of this
+  chat (anything else is a 400); the send ties them to the line. A line
+  may be files and no text. A file over the cap is not uploaded: the send's
+  `leftOut` (`[{name, bytes}]`) names each one on the line ("Not sent (over
+  10 MB): dump.log (12.0 MB)."), so both sides see what was left out.
+- **Read.** A line's `files` list each file (id, name, mime, bytes, kind;
+  an image shows inline). `GET /api/messenger/attachments/:id` serves the
+  bytes (an `<img src>`: the login's `?at=` token, `isAssetPath`) to who
+  reads the line, by the table's row security (an unsent file: its
+  uploader only). There is no Admin exception.
+- **Copies.** A handle's copy line and a line back carry the files as new
+  rows on the same bytes, so the readers of each chat open them by that
+  chat's own rule.
+- **Save to Files.** `POST /api/messenger/attachments/:id/save {parentPath}`
+  (`messenger_attachment_save`) copies a file I read into a folder, as an
+  upload by hand in my own scope; the folder decides how it is read.
+- **MCP.** `messenger_send` takes `files`: up to 5 file ids from Files the
+  caller may read (each read in its own scope). One over 10 MB is not sent
+  and comes back in `leftOut`. `messenger_open` lists each line's `files`.
+- **Kept.** Nothing deletes a row or the bytes. An upload never sent stays
+  as it is.
+- `POST /api/messenger/to {handle}` answers the chat a post to the handle
+  goes in (the group for a member, else my own "To @handle" thread), so the
+  app can add files before the first send.
 
 ## Cost safety
 

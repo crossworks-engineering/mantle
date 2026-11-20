@@ -71,6 +71,7 @@ describe('mcpOnly builtins', () => {
         'gateway_service_set',
         // The messenger (Messenger V1): every login's chats, MCP only until
         // the agent tool group of Phase 6.
+        'messenger_attachment_save',
         'messenger_create',
         'messenger_directory',
         'messenger_list',

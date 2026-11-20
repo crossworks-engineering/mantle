@@ -24,6 +24,7 @@ export {
   messengerLoginUsable,
   messengerTyping,
   messengerUnread,
+  openHandleChat,
   patchMessengerConversation,
   removeMessengerFavourite,
   removeMessengerParticipant,
@@ -46,6 +47,11 @@ export {
   startOrJoinCall,
 } from '@mantle/content/messenger-calls';
 export { callCapabilities, verifyLivekitWebhook } from '@mantle/content/livekit';
+export {
+  openMessengerAttachment,
+  saveMessengerAttachment,
+  uploadMessengerAttachment,
+} from '@mantle/content/messenger-attachments';
 
 /** The actor of a signed-in session: no credential label (a session's
  *  messages carry no via). */

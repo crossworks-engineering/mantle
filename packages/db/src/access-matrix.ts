@@ -412,6 +412,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: true,
     why: "a send, an edit or a delete by its author, a group admin's delete; a group admin's history delete removes rows",
   },
+  'public.messenger_attachments': {
+    insert: true,
+    update: ['message_id'],
+    delete: false,
+    why: "a chat file's row (fleet chat): its upload by a live participant, its send tying it to the line, a copy on a handle's copy line or a line back; never deleted",
+  },
   'public.messenger_reactions': {
     insert: true,
     update: [],

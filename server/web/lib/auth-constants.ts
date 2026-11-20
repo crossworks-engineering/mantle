@@ -53,6 +53,9 @@ export function isAssetPath(path: string): boolean {
     // The route reads anyLoginAssetCaller (getLoginForAsset).
     /^\/api\/people\/[^/]+\/photo$/.test(path) ||
     /^\/api\/messenger\/photo\/[^/]+$/.test(path) ||
+    // A chat file (fleet chat): an <img src> of a line. The route reads
+    // anyLoginAssetCaller and answers only who reads the line.
+    /^\/api\/messenger\/attachments\/[^/]+$/.test(path) ||
     // Drawing SVGs: the route calls getOwnerForAsset and promises `?at=`
     // auth for detached clients. Registering an asset route means BOTH ends:
     // getOwnerForAsset in the route AND here. A path missing here has its

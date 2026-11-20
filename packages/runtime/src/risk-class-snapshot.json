@@ -158,6 +158,7 @@
   "location_distance": "read",
   "location_nearby": "read",
   "location_save": "write",
+  "messenger_attachment_save": "write",
   "messenger_create": "write",
   "messenger_directory": "read",
   "messenger_list": "read",

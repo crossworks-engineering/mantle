@@ -18,19 +18,28 @@ import {
   markMessengerRead,
   messengerDirectory,
   messengerViaFor,
+  openHandleChat,
   patchMessengerConversation,
   sendMessengerMessage,
-  sendMessengerTo,
   waitForMessengerMessages,
   MESSENGER_WAIT_MAX_MS,
   MessengerNotFoundError,
   MessengerRefusedError,
+  MESSENGER_ATTACHMENT_MAX_BYTES,
+  MESSENGER_ATTACHMENTS_MAX,
   type MessengerActor,
+  type MessengerLeftOut,
   type MessengerMention,
 } from '@mantle/content/messenger';
 import type { MessengerEventJson as MessengerEvent } from '@mantle/db';
 import { itemErrorText } from '@mantle/std';
 import { MESSENGER_INTAKE_FORMS } from '@mantle/client-types/messenger-intake';
+import {
+  messengerFileRefusal,
+  saveMessengerAttachment,
+  uploadMessengerAttachment,
+} from '@mantle/content/messenger-attachments';
+import { readFileById } from '@mantle/files';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { ownerSurfaceLoginId } from './surface';
 import { CS } from './client-sourced-rule';
@@ -227,6 +236,9 @@ function slim(m: Awaited<ReturnType<typeof listMessengerMessages>>['messages'][n
     text: m.deletedAt ? '(deleted)' : m.body,
     ...(m.replyToSeq ? { replyToSeq: m.replyToSeq } : {}),
     ...(handlesOf(m).length ? { sentTo: handlesOf(m) } : {}),
+    ...(m.files.length
+      ? { files: m.files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, bytes: f.bytes })) }
+      : {}),
     ...(fleetEvent(m.event) ?? {}),
     ...(m.editedAt ? { edited: true } : {}),
     at: m.createdAt,
@@ -267,6 +279,13 @@ export const messenger_send: BuiltinToolDef = {
         required: ['handle'],
         description: 'Post to a group handle of this box (messenger_directory lists them).',
       },
+      files: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 5,
+        description:
+          'Up to 5 file ids from Files that you may read, sent with the line (images show inline). A file over 10 MB is not sent: the line names it, and the answer lists it in leftOut.',
+      },
       answers: {
         type: 'object',
         additionalProperties: { type: 'string', maxLength: 2000 },
@@ -304,29 +323,73 @@ export const messenger_send: BuiltinToolDef = {
         clientMsgId: typeof input.client_msg_id === 'string' ? input.client_msg_id : null,
         answers,
       };
-      const conversation = typeof input.conversation === 'string' ? input.conversation : '';
-      if (handle && !conversation) {
-        const out = await sendMessengerTo(actor, { handle }, base);
-        return {
-          ok: true,
-          output: {
-            sent: out.created,
-            conversation: out.conversationId,
-            message: slim(out.message),
-          },
-        };
+      const named = Array.isArray(input.files) ? input.files.map(String) : [];
+      if (input.files !== undefined && !Array.isArray(input.files)) {
+        return { ok: false, error: 'files is a list of file ids.' };
       }
-      if (!conversation) return { ok: false, error: 'Give a conversation, or `to` with a handle.' };
-      const mentions = handle
-        ? [{ kind: 'handle' as const, id: (await findHandleGroup(actor, handle)).id }]
-        : [];
-      const out = await sendMessengerMessage(actor, conversation, { ...base, mentions });
-      return { ok: true, output: { sent: out.created, message: slim(out.message) } };
+      if (named.length > MESSENGER_ATTACHMENTS_MAX) {
+        return { ok: false, error: `A line carries at most ${MESSENGER_ATTACHMENTS_MAX} files.` };
+      }
+      let conversation = typeof input.conversation === 'string' ? input.conversation : '';
+      if (!conversation && !handle) {
+        return { ok: false, error: 'Give a conversation, or `to` with a handle.' };
+      }
+      let groupId: string | null = null;
+      if (handle) {
+        if (conversation) groupId = (await findHandleGroup(actor, handle)).id;
+        else ({ conversationId: conversation, groupId } = await openHandleChat(actor, handle));
+      }
+      const { attachments, leftOut } = await filesFor(actor, conversation, named);
+      const mentions = groupId ? [{ kind: 'handle' as const, id: groupId }] : [];
+      const out = await sendMessengerMessage(actor, conversation, {
+        ...base,
+        mentions,
+        attachments,
+        leftOut,
+      });
+      return {
+        ok: true,
+        output: {
+          sent: out.created,
+          conversation,
+          message: slim(out.message),
+          ...(leftOut.length ? { leftOut } : {}),
+        },
+      };
     } catch (err) {
       return fail(err);
     }
   },
 };
+
+/** Files from Files for a line: each read in the caller's own scope (a
+ *  file it may not read is "not found"), checked, and uploaded to the chat.
+ *  One over the cap is not sent and is named in leftOut: never dropped
+ *  without a word. */
+async function filesFor(
+  actor: MessengerActor,
+  conversation: string,
+  ids: readonly string[],
+): Promise<{ attachments: string[]; leftOut: MessengerLeftOut[] }> {
+  const attachments: string[] = [];
+  const leftOut: MessengerLeftOut[] = [];
+  for (const id of ids) {
+    const res = await readFileById({ ownerId: actor.ownerId, fileId: id });
+    if (!res) throw new MessengerNotFoundError(`File ${id} not found (or you may not read it).`);
+    if (res.bytes.byteLength > MESSENGER_ATTACHMENT_MAX_BYTES) {
+      leftOut.push({ name: res.row.filename, bytes: res.bytes.byteLength });
+      continue;
+    }
+    const refusal = messengerFileRefusal(res.row.filename, res.bytes.byteLength);
+    if (refusal) throw new MessengerRefusedError(`${res.row.filename}: ${refusal}`);
+    const up = await uploadMessengerAttachment(actor, conversation, {
+      filename: res.row.filename,
+      bytes: res.bytes,
+    });
+    attachments.push(up.id);
+  }
+  return { attachments, leftOut };
+}
 
 /** The answers object of messenger_send: text values by key, or 'bad'. */
 function answersOf(v: unknown): Record<string, string> | null | 'bad' {
@@ -621,12 +684,59 @@ export const messenger_update: BuiltinToolDef = {
   },
 };
 
+export const messenger_attachment_save: BuiltinToolDef = {
+  slug: 'messenger_attachment_save',
+  policy: {
+    matrix: { action: 'create', param: 'parent_path', kinds: ['file'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'file',
+    keyArea: 'files',
+    createsIn: 'parent_path',
+    clientSourced: CS.creates(),
+  },
+  mcpOnly: true,
+  name: 'Save a chat file to Files',
+  description:
+    'Copy one file of a chat line into a folder of Files (Save to Files), so you can read it with `file_read`. `attachment` is a file id from the `files` of a line in `messenger_open`; you must read that chat. The folder is yours to create in, as an upload by hand; a taken name is refused. Answers the new file.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      attachment: { type: 'string', description: 'The file id, from a line in messenger_open.' },
+      parent_path: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 500,
+        description: "ltree path of the destination folder, e.g. 'files.work'",
+      },
+    },
+    required: ['attachment', 'parent_path'],
+  },
+  handler: async (input, ctx) => {
+    try {
+      const row = await saveMessengerAttachment(
+        await actorOf(ctx),
+        String(input.attachment ?? ''),
+        String(input.parent_path ?? ''),
+      );
+      return {
+        ok: true,
+        output: { file: { id: row.id, filename: row.filename, sizeBytes: row.sizeBytes } },
+      };
+    } catch (err) {
+      return fail(err);
+    }
+  },
+};
+
 export const MESSENGER_TOOLS: readonly BuiltinToolDef[] = [
   messenger_list,
   messenger_open,
   messenger_send,
   messenger_create,
   messenger_update,
+  messenger_attachment_save,
   messenger_wait,
   messenger_mark_read,
   messenger_directory,

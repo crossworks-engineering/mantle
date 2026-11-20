@@ -160,6 +160,22 @@ export type MessengerEvent =
    *  @bugs"): the send finds the thread again by it. */
   | { type: 'to_thread'; to: { conversationId: string } };
 
+/** A file on a line (fleet chat, plan section 8). */
+export type MessengerAttachment = {
+  id: string;
+  name: string;
+  mime: string;
+  bytes: number;
+  kind: 'image' | 'file';
+};
+
+/** POST /api/messenger/c/:id/attachments: the file, for the send's
+ *  `attachments`. At most 10 MB (413), 5 on a line, the task file types. */
+export type MessengerAttachmentResponse = { attachment: MessengerAttachment };
+
+/** POST /api/messenger/to {handle}: the chat a post to the handle goes in. */
+export type MessengerOpenToResponse = { conversationId: string; groupId: string; member: boolean };
+
 export type MessengerReaction = { emoji: string; count: number; mine: boolean };
 
 export type MessengerMessage = {
@@ -177,6 +193,10 @@ export type MessengerMessage = {
   body: string;
   /** Attachment ids. */
   attachments: string[];
+  /** The line's files, in the order sent (fleet chat): open one at GET
+   *  /api/messenger/attachments/:id; an image shows inline. Absent from an
+   *  older brain. */
+  files?: MessengerAttachment[];
   mentions: MessengerMention[];
   replyToSeq: number | null;
   clientMsgId: string | null;
@@ -251,6 +271,9 @@ export type MessengerSendRequest = {
   mentions?: MessengerMention[];
   /** The answers to the intake form of the one handle named (fleet chat). */
   answers?: Record<string, string>;
+  /** Files over the cap the sender could not send: the line names each
+   *  one by name and size (at most 20). */
+  leftOut?: { name: string; bytes: number }[];
   replyToSeq?: number | null;
   clientMsgId?: string | null;
   attachments?: string[];

@@ -101,6 +101,7 @@ const HTTP_SURFACE = [
   'journal_resolve_gap',
   'journal_update',
   'location_save',
+  'messenger_attachment_save',
   'messenger_create',
   'messenger_mark_read',
   'messenger_send',

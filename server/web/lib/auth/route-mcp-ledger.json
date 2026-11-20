@@ -296,6 +296,10 @@
     "GET /api/member/push/subscriptions": { "none": "a person's own phones" },
     "GET /api/member/realtime": { "none": "machinery: a live stream for an open window" },
     "GET /api/mentions/search": ["search", "entity_search"],
+    "GET /api/messenger/attachments/:id": {
+      "tool": "messenger_attachment_save",
+      "gap": "the bytes come by Save to Files, then file_read"
+    },
     "GET /api/messenger/c/:id": {
       "tool": "messenger_open",
       "gap": "drops attachments, mentions, reactions and the call event"
@@ -862,6 +866,11 @@
     "POST /api/mcp-status": { "planned": "mcp_check" },
     "POST /api/member/push/connect": { "none": "machinery: a device registers for push" },
     "POST /api/member/push/subscriptions": { "none": "machinery: a device registers for push" },
+    "POST /api/messenger/attachments/:id/save": "messenger_attachment_save",
+    "POST /api/messenger/c/:id/attachments": {
+      "tool": "messenger_send",
+      "gap": "messenger_send takes file ids from Files and uploads them itself"
+    },
     "POST /api/messenger/c/:id/call": {
       "none": "Live calls: an MCP agent has no voice, so a call would ring a person with nobody there"
     },
@@ -893,6 +902,10 @@
       "gap": "no group icon or colour; messenger_update sets them"
     },
     "POST /api/messenger/send": "messenger_send",
+    "POST /api/messenger/to": {
+      "tool": "messenger_send",
+      "gap": "opens the chat only; messenger_send with to opens it and sends"
+    },
     "POST /api/model-combos/apply": { "planned": "model_combo_apply" },
     "POST /api/model-pools": "model_pool_set",
     "POST /api/network/activate": { "planned": "network_activate" },

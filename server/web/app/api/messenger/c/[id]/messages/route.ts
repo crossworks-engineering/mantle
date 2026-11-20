@@ -63,6 +63,11 @@ const SendBody = z.object({
     .optional(),
   // The answers to the intake form of the one handle named.
   answers: z.record(z.string().max(64), z.string().max(2000)).optional(),
+  // Files over the cap the sender could not send: named on the line.
+  leftOut: z
+    .array(z.object({ name: z.string().max(255), bytes: z.number().int().min(0) }))
+    .max(20)
+    .optional(),
   replyToSeq: z.number().int().positive().nullable().optional(),
   clientMsgId: z.string().min(1).max(100).nullable().optional(),
   attachments: z.array(z.string().uuid()).max(5).optional(),

@@ -24,6 +24,7 @@
  *    routes and the MCP tools meet: one bucket per login, whichever path
  *    the call came by.
  */
+import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { envNum } from '@mantle/config';
 import {
@@ -32,6 +33,7 @@ import {
   currentWorkspaceScope,
   db,
   loginPresence,
+  messengerAttachments,
   messengerCallParticipants,
   messengerConversations,
   messengerFavourites,
@@ -66,6 +68,7 @@ import {
   type MessengerIntakeKind,
 } from '@mantle/client-types/messenger-intake';
 import { APP_VERSION } from '@mantle/client-types/version';
+import { TASK_FILE_MAX_BYTES, TASK_FILES_MAX } from '@mantle/client-types/task-files';
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import { workspaceAssistants } from './team-assistant';
 
@@ -261,6 +264,9 @@ export type MessengerMessageView = {
   via: string | null;
   body: string;
   attachments: string[];
+  /** The line's files (fleet chat, section 8), in the order sent: what the
+   *  reader may open (GET /api/messenger/attachments/:id). */
+  files: MessengerAttachmentView[];
   mentions: MessengerMention[];
   replyToSeq: number | null;
   clientMsgId: string | null;
@@ -272,6 +278,23 @@ export type MessengerMessageView = {
   createdAt: string;
   reactions: { emoji: string; count: number; mine: boolean }[];
 };
+
+/** A file on a line (messenger_attachments): an image shows inline. */
+export type MessengerAttachmentView = {
+  id: string;
+  name: string;
+  mime: string;
+  bytes: number;
+  kind: 'image' | 'file';
+};
+
+/** A file the sender could not send (over the cap), named on the line. */
+export type MessengerLeftOut = { name: string; bytes: number };
+
+/** The most files on one line, and the most bytes of one: the Send to IT
+ *  numbers, so a report carries what a line carries (plan section 8). */
+export const MESSENGER_ATTACHMENTS_MAX = TASK_FILES_MAX;
+export const MESSENGER_ATTACHMENT_MAX_BYTES = TASK_FILE_MAX_BYTES;
 
 export type MessengerListRowView = {
   kind: 'direct' | 'group' | 'agent';
@@ -659,35 +682,53 @@ async function dropFromRoom(room: string | null, loginId: string): Promise<void>
 export async function appendMessage(
   tx: Tx,
   conv: ConversationRow,
-  m: {
-    authorKind: 'login' | 'agent' | 'system';
-    authorLoginId: string | null;
-    authorName: string | null;
-    via: MessengerVia | null;
-    body: string;
-    mentions: MessengerMention[];
-    replyToSeq: number | null;
-    clientMsgId: string | null;
-    /** What a system line marks (a call event, 0342); null on every
-     *  ordinary row. */
-    event?: MessengerEventJson | null;
-  },
+  m: AppendInput,
 ): Promise<number> {
+  return (await appendMessageRow(tx, conv, m)).seq;
+}
+
+type AppendInput = {
+  authorKind: 'login' | 'agent' | 'system';
+  authorLoginId: string | null;
+  authorName: string | null;
+  via: MessengerVia | null;
+  body: string;
+  mentions: MessengerMention[];
+  replyToSeq: number | null;
+  clientMsgId: string | null;
+  /** What a system line marks (a call event, 0342); null on every
+   *  ordinary row. */
+  event?: MessengerEventJson | null;
+  /** The attachment ids of the line (fleet chat); their rows point at
+   *  the line once the caller ties them (tieAttachments). */
+  attachments?: string[];
+};
+
+/** appendMessage, answering the row's id too (a line with files). */
+async function appendMessageRow(
+  tx: Tx,
+  conv: ConversationRow,
+  m: AppendInput,
+): Promise<{ seq: number; id: string }> {
   const seq = num(conv.last_seq) + 1;
-  await tx.insert(messengerMessages).values({
-    conversationId: conv.id,
-    seq,
-    authorKind: m.authorKind,
-    authorLoginId: m.authorLoginId,
-    authorName: m.authorName,
-    via: m.via?.label ?? null,
-    viaRef: m.via?.ref ?? null,
-    body: m.body,
-    mentions: m.mentions,
-    replyToSeq: m.replyToSeq,
-    clientMsgId: m.clientMsgId,
-    event: m.event ?? null,
-  });
+  const [row] = await tx
+    .insert(messengerMessages)
+    .values({
+      conversationId: conv.id,
+      seq,
+      authorKind: m.authorKind,
+      authorLoginId: m.authorLoginId,
+      authorName: m.authorName,
+      via: m.via?.label ?? null,
+      viaRef: m.via?.ref ?? null,
+      body: m.body,
+      mentions: m.mentions,
+      replyToSeq: m.replyToSeq,
+      clientMsgId: m.clientMsgId,
+      event: m.event ?? null,
+      attachments: m.attachments ?? [],
+    })
+    .returning({ id: messengerMessages.id });
   await tx
     .update(messengerConversations)
     .set({
@@ -697,7 +738,7 @@ export async function appendMessage(
     })
     .where(eq(messengerConversations.id, conv.id));
   conv.last_seq = seq;
-  return seq;
+  return { seq, id: row!.id };
 }
 
 async function systemLine(tx: Tx, conv: ConversationRow, body: string): Promise<number> {
@@ -974,7 +1015,152 @@ export type MessengerSendInput = {
    *  (MESSENGER_INTAKE_FORMS, by question key): the line is the filled form,
    *  then `body` when it has text. */
   answers?: Readonly<Record<string, string>> | null;
+  /** Files over the cap the sender could not send: the line names each
+   *  one by name and size, so both sides see what was left out. */
+  leftOut?: readonly MessengerLeftOut[] | null;
 };
+
+/** The most left-out files one line names. */
+const LEFT_OUT_MAX = 20;
+
+/** The line's note of the files left out, or '' when none. */
+function leftOutNote(list: readonly MessengerLeftOut[] | null | undefined): string {
+  if (!list || list.length === 0) return '';
+  if (list.length > LEFT_OUT_MAX) {
+    throw new InputError(`A line names at most ${LEFT_OUT_MAX} files left out.`);
+  }
+  const names = list.map((f) => {
+    if (!f || typeof f.name !== 'string' || !Number.isFinite(f.bytes) || f.bytes < 0) {
+      throw new InputError('Each file left out is {name, bytes}.');
+    }
+    const name =
+      f.name
+        .replace(/[\r\n]+/g, ' ')
+        .trim()
+        .slice(0, 200) || 'a file';
+    return `${name} (${(f.bytes / 1024 / 1024).toFixed(1)} MB)`;
+  });
+  return `Not sent (over ${MESSENGER_ATTACHMENT_MAX_BYTES / 1024 / 1024} MB): ${names.join(', ')}.`;
+}
+
+/** The ids a send names as its files: each an id, once, at most 5. */
+function attachmentIds(list: readonly string[] | undefined): string[] {
+  const ids = [...new Set((list ?? []).map((id) => uuidOr(String(id), 'An attachment')))];
+  if (ids.length > MESSENGER_ATTACHMENTS_MAX) {
+    throw new InputError(`A line carries at most ${MESSENGER_ATTACHMENTS_MAX} files.`);
+  }
+  return ids;
+}
+
+type AttachmentRow = {
+  id: string;
+  kind: 'image' | 'file' | 'voice' | 'audio' | 'video';
+  name: string;
+  mime: string;
+  bytes: string | number;
+  sha256: string;
+  path: string;
+  width: number | null;
+  height: number | null;
+};
+
+/** The files a send claims, in the send's transaction: each one the
+ *  sender uploaded to this chat and not sent yet (an InputError else). In
+ *  the order given. */
+async function claimAttachments(
+  tx: Tx,
+  conversationId: string,
+  self: string,
+  ids: readonly string[],
+): Promise<AttachmentRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await q<AttachmentRow>(
+    tx,
+    sql`select id::text as id, kind, name, mime, bytes, sha256, path, width, height
+          from messenger_attachments
+         where id = any(${uuidArray(ids)}) and conversation_id = ${conversationId}::uuid
+           and message_id is null and uploader_login_id = ${self}::uuid
+         for update`,
+  );
+  if (rows.length !== ids.length) {
+    throw new InputError(
+      'Each attachment must be one you uploaded to this chat and did not send yet.',
+    );
+  }
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.map((id) => byId.get(id)!);
+}
+
+/** The files of another line, read in the send's transaction (the answer
+ *  a line back copies): rows the send already holds. */
+async function lineAttachments(tx: Tx, messageId: string): Promise<AttachmentRow[]> {
+  return q<AttachmentRow>(
+    tx,
+    sql`select id::text as id, kind, name, mime, bytes, sha256, path, width, height
+          from messenger_attachments where message_id = ${messageId}::uuid
+         order by created_at, id`,
+  );
+}
+
+/** Copy `rows` onto line `messageId` of chat `conversationId` (a copy line,
+ *  a line back): new rows on the same stored bytes, so the readers of that
+ *  chat open them by its own rule. `ids` are the new rows' ids, as the line
+ *  lists them. */
+async function copyAttachments(
+  tx: Tx,
+  rows: readonly AttachmentRow[],
+  ids: readonly string[],
+  conversationId: string,
+  messageId: string,
+  uploader: string | null,
+): Promise<void> {
+  if (rows.length === 0) return;
+  await tx.insert(messengerAttachments).values(
+    rows.map((r, i) => ({
+      id: ids[i]!,
+      conversationId,
+      messageId,
+      uploaderLoginId: uploader,
+      kind: r.kind,
+      name: r.name,
+      mime: r.mime,
+      bytes: num(r.bytes),
+      sha256: r.sha256,
+      path: r.path,
+      width: r.width,
+      height: r.height,
+    })),
+  );
+}
+
+/**
+ * The row of an uploaded file (messenger-attachments.ts holds the bytes
+ * and the caps): written for a live participant of the chat only, with no
+ * line yet, in one transaction with the participant check. The send
+ * claims it (claimAttachments).
+ */
+export async function addMessengerAttachmentRow(
+  actor: MessengerActor,
+  conversationId: string,
+  file: {
+    kind: 'image' | 'file';
+    name: string;
+    mime: string;
+    bytes: number;
+    sha256: string;
+    path: string;
+  },
+): Promise<string> {
+  return systemDb.transaction(async (tx) => {
+    const { conv } = await lockForActor(tx, actor, conversationId);
+    if (conv.archived_at) throw new MessengerRefusedError('This chat is archived.');
+    const [row] = await tx
+      .insert(messengerAttachments)
+      .values({ conversationId: conv.id, uploaderLoginId: actor.loginId, ...file })
+      .returning({ id: messengerAttachments.id });
+    return row!.id;
+  });
+}
 
 /** A handle's group as a send reads it (the system's read: every login on
  *  the box may post to a handle). */
@@ -1093,13 +1279,13 @@ export async function sendMessengerMessage(
   input: MessengerSendInput,
 ): Promise<{ message: MessengerMessageView; created: boolean }> {
   takeBudget(actor, 'send');
-  const rawBody = typeof input.body === 'string' ? input.body : '';
+  const note = leftOutNote(input.leftOut);
+  const typed = typeof input.body === 'string' ? input.body : '';
+  const rawBody = note ? (typed.trim() ? `${typed}\n\n${note}` : note) : typed;
   if (rawBody.length > MESSENGER_BODY_MAX) {
     throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
   }
-  if (input.attachments && input.attachments.length > 0) {
-    throw new InputError('Attachments are not available yet.');
-  }
+  const fileIds = attachmentIds(input.attachments);
   const clientMsgId = input.clientMsgId ? String(input.clientMsgId) : null;
   if (clientMsgId && clientMsgId.length > MESSENGER_CLIENT_MSG_MAX) {
     throw new InputError(`A client message id is at most ${MESSENGER_CLIENT_MSG_MAX} characters.`);
@@ -1112,8 +1298,9 @@ export async function sendMessengerMessage(
   if (input.answers && handleIds.length !== 1) {
     throw new InputError('answers go with exactly one handle whose group has an intake form.');
   }
-  if (!input.answers && rawBody.trim() === '')
-    throw new InputError('A message must have some text.');
+  if (!input.answers && rawBody.trim() === '' && fileIds.length === 0) {
+    throw new InputError('A message must have some text or a file.');
+  }
 
   const out = await systemDb.transaction(async (tx) => {
     const named = await handleGroups(tx, actor, handleIds);
@@ -1155,6 +1342,7 @@ export async function sendMessengerMessage(
         }
       }
     }
+    const files = await claimAttachments(tx, conv.id, self, fileIds);
     const names = await loginNames([self], tx);
     const myName = names.get(self) ?? null;
     // The seq this line takes (the row is locked): the copies point at it.
@@ -1165,7 +1353,8 @@ export async function sendMessengerMessage(
       if (!target || target.archived_at || target.handle === null) {
         throw new InputError('A handle must name a group with a handle on this box.');
       }
-      const copySeq = await appendMessage(tx, target, {
+      const copyFiles = files.map(() => randomUUID());
+      const copy = await appendMessageRow(tx, target, {
         authorKind: 'system',
         authorLoginId: null,
         authorName: myName,
@@ -1175,7 +1364,10 @@ export async function sendMessengerMessage(
         replyToSeq: null,
         clientMsgId: null,
         event: { type: 'intake', from: { conversationId: conv.id, seq: lineSeq }, by: self },
+        attachments: copyFiles,
       });
+      await copyAttachments(tx, files, copyFiles, target.id, copy.id, self);
+      const copySeq = copy.seq;
       handleMentions.push({ kind: 'handle', id: g.id, handle: target.handle, seq: copySeq });
     }
     // Handles the line names that are this chat itself keep their mention.
@@ -1183,7 +1375,7 @@ export async function sendMessengerMessage(
       if (id === conv.id && conv.handle)
         handleMentions.push({ kind: 'handle', id, handle: conv.handle });
     }
-    const seq = await appendMessage(tx, conv, {
+    const line = await appendMessageRow(tx, conv, {
       authorKind: 'login',
       authorLoginId: self,
       authorName: myName,
@@ -1192,7 +1384,15 @@ export async function sendMessengerMessage(
       mentions: [...mentions, ...handleMentions],
       replyToSeq: replyTo,
       clientMsgId,
+      attachments: fileIds,
     });
+    const seq = line.seq;
+    if (fileIds.length > 0) {
+      await tx
+        .update(messengerAttachments)
+        .set({ messageId: line.id })
+        .where(inArray(messengerAttachments.id, fileIds));
+    }
     const mentioned = mentions.filter((m) => m.kind === 'login' && m.id !== self).map((m) => m.id);
     if (mentioned.length > 0) {
       await tx
@@ -1206,14 +1406,16 @@ export async function sendMessengerMessage(
           ),
         );
     }
-    if (origin)
+    if (origin) {
       await lineBack(tx, conv, origin, {
         seq,
+        id: line.id,
         body,
         by: self,
         name: myName,
         via: actor.via ?? null,
       });
+    }
     if (num(me.last_read_seq) < seq)
       await tx
         .update(messengerParticipants)
@@ -1234,7 +1436,14 @@ async function lineBack(
   tx: Tx,
   group: ConversationRow,
   origin: { conversationId: string; seq: number; by: string | null },
-  answer: { seq: number; body: string; by: string; name: string | null; via: MessengerVia | null },
+  answer: {
+    seq: number;
+    id: string;
+    body: string;
+    by: string;
+    name: string | null;
+    via: MessengerVia | null;
+  },
 ): Promise<void> {
   const first = await lockConversation(tx, origin.conversationId);
   const [sender] =
@@ -1261,7 +1470,10 @@ async function lineBack(
     return;
   }
   const handle = group.handle ?? group.title ?? 'group';
-  await appendMessage(tx, first, {
+  // The answer's files go back with it, as new rows of the first chat.
+  const files = await lineAttachments(tx, answer.id);
+  const backFiles = files.map(() => randomUUID());
+  const back = await appendMessageRow(tx, first, {
     authorKind: 'system',
     authorLoginId: null,
     authorName: answer.name,
@@ -1278,7 +1490,9 @@ async function lineBack(
       group: { conversationId: group.id, handle, seq: answer.seq },
       by: answer.by,
     },
+    attachments: backFiles,
   });
+  await copyAttachments(tx, files, backFiles, first.id, back.id, answer.by);
 }
 
 /**
@@ -1296,11 +1510,24 @@ export async function sendMessengerTo(
 ): Promise<{ conversationId: string; message: MessengerMessageView; created: boolean }> {
   const h = handleText(to.handle);
   if (!h) throw new InputError('to.handle names a handle, e.g. "bugs".');
-  const group = await findHandleGroup(actor, h);
-  const mentions = [...(input.mentions ?? []), { kind: 'handle' as const, id: group.id }];
-  const conversationId = group.member ? group.id : await toThread(actor, group.id, h);
+  const { conversationId, groupId } = await openHandleChat(actor, h);
+  const mentions = [...(input.mentions ?? []), { kind: 'handle' as const, id: groupId }];
   const out = await sendMessengerMessage(actor, conversationId, { ...input, mentions });
   return { conversationId, ...out };
+}
+
+/** The chat a post to `handle` goes in (POST /api/messenger/to): the
+ *  handle's group for a member, else my own "To @handle" thread, made once.
+ *  The app opens it to add files before the first send. */
+export async function openHandleChat(
+  actor: MessengerActor,
+  handle: string,
+): Promise<{ conversationId: string; groupId: string; member: boolean }> {
+  const h = handleText(handle);
+  if (!h) throw new InputError('A handle names a group, e.g. "bugs".');
+  const group = await findHandleGroup(actor, h);
+  const conversationId = group.member ? group.id : await toThread(actor, group.id, h);
+  return { conversationId, groupId: group.id, member: group.member };
 }
 
 /** The live group with handle `handle` on this box, and whether I am in
@@ -2076,6 +2303,27 @@ async function decorate(
           from messenger_reactions where message_id = any(${uuidArray(ids)})
          group by message_id, emoji order by min(created_at)`,
   );
+  const fileIds = [...new Set(rows.flatMap((r) => (r.deleted_at ? [] : (r.attachments ?? []))))];
+  const fileRows = fileIds.length
+    ? await q<{ id: string; name: string; mime: string; bytes: string | number; kind: string }>(
+        db,
+        sql`select id::text as id, name, mime, bytes, kind from messenger_attachments
+             where id = any(${uuidArray(fileIds)})
+               and conversation_id = any(${uuidArray([...new Set(rows.map((r) => r.conversation_id))])})`,
+      )
+    : [];
+  const files = new Map(
+    fileRows.map((f) => [
+      f.id,
+      {
+        id: f.id,
+        name: f.name,
+        mime: f.mime,
+        bytes: num(f.bytes),
+        kind: (f.kind === 'image' ? 'image' : 'file') as 'image' | 'file',
+      },
+    ]),
+  );
   const byMessage = new Map<string, MessengerMessageView['reactions']>();
   for (const r of reactions) {
     const list = byMessage.get(r.message_id) ?? [];
@@ -2092,6 +2340,12 @@ async function decorate(
     via: r.via,
     body: r.deleted_at ? '' : r.body,
     attachments: r.attachments ?? [],
+    files: r.deleted_at
+      ? []
+      : (r.attachments ?? []).flatMap((id) => {
+          const f = files.get(id);
+          return f ? [f] : [];
+        }),
     mentions: r.mentions ?? [],
     replyToSeq: numOrNull(r.reply_to_seq),
     clientMsgId: r.client_msg_id,
