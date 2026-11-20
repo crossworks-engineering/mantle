@@ -11,6 +11,7 @@
  * scope; the files land in that new folder.
  */
 import {
+  archiveExtractBusy,
   archiveExtractStatus,
   startArchiveExtract,
   type ArchiveExtractRefusal,
@@ -25,10 +26,17 @@ import { CS } from '../client-sourced-rule';
 import { FILE_ID_PRE } from '../builtins-common';
 import type { BuiltinToolDef } from '../types';
 
-/** The stamp as the client reads it. */
+/** The stamp as the client reads it. A queued or running stamp that is no
+ *  longer busy (the agent stopped in the middle) reads as failed, so a
+ *  person sees why and may ask again, as the claim allows. */
 export function archiveExtractViewOf(stamp: ArchiveExtractStamp): ArchiveExtractView {
+  const stopped =
+    (stamp.state === 'queued' || stamp.state === 'running') && !archiveExtractBusy(stamp);
+  const error = stopped
+    ? 'The extraction stopped before it finished. Ask again to extract it.'
+    : stamp.error;
   return {
-    state: stamp.state,
+    state: stopped ? 'failed' : stamp.state,
     folder: stamp.folder_id ? { id: stamp.folder_id, path: stamp.folder_path } : null,
     queuedAt: stamp.at,
     ...(stamp.started_at ? { startedAt: stamp.started_at } : {}),
@@ -40,7 +48,7 @@ export function archiveExtractViewOf(stamp: ArchiveExtractStamp): ArchiveExtract
     flattened: stamp.flattened,
     refused: stamp.refused,
     refusedCount: stamp.refused_count,
-    ...(stamp.error ? { error: stamp.error } : {}),
+    ...(error ? { error } : {}),
   };
 }
 

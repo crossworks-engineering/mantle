@@ -520,7 +520,10 @@ MCP client acting for them; no trigger, timer or sweep starts one:
   ask made (the precedent of a run on demand). Progress is written on the
   stamp every 50 files or 3 seconds. A stamp `queued` or `running` older
   than 3 hours is taken as dead (the agent was down when it was sent), so
-  the person may ask again.
+  the person may ask again. The GET and the tool's `check` then read it as
+  `failed`, with the sentence "The extraction stopped before it finished.
+  Ask again to extract it." (`archiveExtractViewOf`); the stored stamp is
+  not changed.
 - **Folders inside** are kept while the tree has room (three folder levels
   below Files): past that, the deeper folder names go into the file's name
   (`a/b/c/d.txt` with room for one level lands in `a` as `b-c-d.txt`, its
