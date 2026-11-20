@@ -112,6 +112,9 @@ const MULTIPART_CEILINGS: readonly (readonly [RegExp, number])[] = [
   // own cap; the ceiling is that cap plus the framing (the JSON
   // ceiling, 8 MB, refused a 9 MB screenshot).
   [/^\/api\/tasks\/[^/]+\/files$/, TASK_FILE_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
+  // A file for a chat line (fleet chat): the same 10 MB cap as a task file
+  // (the Send to IT number), streamed to its spool.
+  [/^\/api\/messenger\/c\/[^/]+\/attachments$/, TASK_FILE_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
 ];
 
 /** Owner document and tool surfaces (prefixes). */

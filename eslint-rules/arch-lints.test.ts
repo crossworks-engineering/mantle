@@ -639,7 +639,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 2 model check rows (GET and HEAD /api/config/models).
     // + the 3 archive extract rows (GET, HEAD and POST
     //   /api/files/files/:id/extract).
-    expect(rows.length).toBe(1020);
+    // + the 6 fleet chat rows (POST /api/messenger/send, POST
+    //   /api/messenger/to, POST /api/messenger/c/:id/attachments, GET and
+    //   HEAD /api/messenger/attachments/:id, POST .../attachments/:id/save).
+    expect(rows.length).toBe(1026);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

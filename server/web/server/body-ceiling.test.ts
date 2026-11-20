@@ -158,6 +158,10 @@ describe('the body ceiling: the multipart routes (A10 part 2 fix round 1, M3)', 
     expect(bodyCeilingFor('/api/tasks/11111111-2222-4333-8444-555555555555/files')).toBe(
       TASK_FILE_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
     );
+    // A file for a chat line (fleet chat): the same cap as a task file.
+    expect(
+      bodyCeilingFor('/api/messenger/c/11111111-2222-4333-8444-555555555555/attachments'),
+    ).toBe(TASK_FILE_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES);
   });
 
   it('the numbers are the caps they stand for', () => {
