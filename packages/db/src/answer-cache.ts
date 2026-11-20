@@ -29,8 +29,9 @@
  * A failed read is no answer (the call is made); a failed write is logged,
  * each one, and the answer in hand is used. Never throws. A keep that
  * failed is marked on the scope (answerKeepFailed): the extract queue then
- * sends no wait, the job takes pg-boss's bounded retries, so a cache that
- * cannot keep never turns waits into an endless paid loop.
+ * sends no wait, a read takes pg-boss's bounded retries (an Agent's run,
+ * with none, fails once), so a cache that cannot keep never turns waits
+ * into an endless paid loop.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';

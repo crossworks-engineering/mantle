@@ -718,8 +718,9 @@ async function sendWaiting(
   if (!b) throw new Error('the extract queue is not running: the wait was not sent');
   // A paid answer of this try was not kept (@mantle/db answer-cache.ts): a
   // try again would pay for it again, so the job takes pg-boss's bounded
-  // retries instead of a wait, and a cache that cannot keep never makes an
-  // endless paid loop.
+  // retries instead of a wait (a run, with no retry, fails once; its trace
+  // says no wait, pipeline-run.ts), and a cache that cannot keep never
+  // makes an endless paid loop.
   if (answerKeepFailed()) {
     throw new Error('a paid answer was not kept: the wait takes the retries');
   }

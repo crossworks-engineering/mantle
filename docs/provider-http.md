@@ -168,8 +168,10 @@ object. One not accepted is taken only by a wait's try again (the job's
 `wait`), which then does what its first try did without paying again; a
 fresh job (a person's run or read again) asks again, and its answer takes
 the row. A keep that fails is logged, each one, and the
-job then sends no wait: it takes pg-boss's bounded retries, so a cache that
-cannot keep never turns waits into an endless paid loop.
+job then sends no wait: a read takes pg-boss's bounded retries, so a cache
+that cannot keep never turns waits into an endless paid loop. An Agent's
+run has no retry: a failed keep fails the run once, its trace says no wait,
+and a person runs it again.
 
 **Nothing starts by itself.** Every job sent again is work already asked for
 (an upload, a run, a read's facts). No trigger, timer or sweep starts paid

@@ -11,7 +11,9 @@
  *    heavy hop; an extract keeps the queue's 5;
  *  - a run's wait is only a wait: a run held many times in a row with no
  *    work done is sent again each time (nothing counted), never failed to
- *    the dead letters, and ends once the provider answers.
+ *    the dead letters, and ends once the provider answers;
+ *  - a run whose paid answer was not kept fails once on its wait (it has no
+ *    retry): no new job, and a person runs it again.
  * The notify is the real one (notifyPipelineRun), read on a LISTEN of the
  * test with the runtime's own parse (pipelineRunOfPayload).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue-run.db.test.ts
@@ -28,6 +30,8 @@ const runs = vi.hoisted(() => ({
   held: new Set<string>(),
   /** How many tries of a run meet the provider's "not now", in turn. */
   waits: new Map<string, number>(),
+  /** Runs whose paid answer the cache cannot keep, then held. */
+  keepFails: new Set<string>(),
 }));
 vi.mock('./extractor.js', () => ({
   extractNode: vi.fn(async (nodeId: string) => {
@@ -43,7 +47,12 @@ vi.mock('./extract/pipeline-run.js', () => ({
     runs.jobs.push(`${pipelineId}:${nodeId}`);
     const key = `${pipelineId}:${nodeId}`;
     const left = runs.waits.get(key) ?? 0;
-    if (left > 0) {
+    if (runs.keepFails.has(key)) {
+      // A paid answer the table refuses (its key check), in the job's scope.
+      const { keepAnswer } = await import('@mantle/db/answer-cache');
+      await keepAnswer('vision', 'not-a-key', { text: 'paid' }, true);
+    }
+    if (left > 0 || runs.keepFails.has(key)) {
       runs.waits.set(key, left - 1);
       return {
         status: 'asked',
@@ -202,4 +211,26 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
     // Every try completed: none failed to the dead letters.
     expect(all.every((j) => j.state === 'completed')).toBe(true);
   }, 120_000);
+
+  it('a run whose paid answer was not kept fails once on its wait: no new job', async () => {
+    const pdf = await file('book-unkept.pdf');
+    const key = `pdf-page-read:${pdf}`;
+    runs.keepFails.add(key);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await m.runAsSystem('test', () => q.enqueuePipelineRun(pdf, 'pdf-page-read'));
+      await until('the run failed', async () =>
+        (await jobs(pdf)).some((j) => j.state === 'failed'),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // One try on the main queue, failed: no new job sent as a wait.
+      const main = (await jobs(pdf)).filter((j) => j.name === 'mantle.extract');
+      expect(main.map((j) => [j.state, j.retries])).toEqual([['failed', 0]]);
+      expect(runs.jobs.filter((j) => j === key)).toHaveLength(1);
+      expect(error.mock.calls.some((c) => String(c[0]).includes('[answer-cache]'))).toBe(true);
+    } finally {
+      runs.keepFails.delete(key);
+      error.mockRestore();
+    }
+  }, 90_000);
 });

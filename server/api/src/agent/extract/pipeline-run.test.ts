@@ -9,7 +9,10 @@
  *  - a throw of the patch ("the database changed during the patch") is a
  *    failed run: the job does not throw, so the queue sends nothing again;
  *  - the job starts no extract and changes no summary: it never calls the
- *    re-index doors.
+ *    re-index doors;
+ *  - an Agent's run held by the provider says its wait in its trace, but
+ *    not when a paid answer of the run was not kept: the queue then fails
+ *    the run once (sendWaiting), and a person runs it again.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +22,11 @@ const h = vi.hoisted(() => ({
   agents: [] as Record<string, unknown>[],
   reads: 0,
   patchThrows: false,
+  /** The Agent run's stop (the provider's "not now"), or none. */
+  agentStop: undefined as string | undefined,
+  /** Whether a paid answer of the run was not kept (answerKeepFailed). */
+  keepFailed: false,
+  metas: [] as Record<string, unknown>[],
 }));
 
 /** The made-up file name of an id, by its first letter. */
@@ -62,7 +70,14 @@ vi.mock('@mantle/content/file-database', () => ({
   }),
   runAgentOnFile: vi.fn(async (args: Record<string, unknown>) => {
     h.agents.push(args);
-    return { status: 'asked', rows: 2, made: 2, reused: 0, warnings: [] };
+    return {
+      status: 'asked',
+      rows: 2,
+      made: 2,
+      reused: 0,
+      warnings: [],
+      ...(h.agentStop ? { stopped: h.agentStop } : {}),
+    };
   }),
 }));
 
@@ -71,7 +86,12 @@ vi.mock('@mantle/tracing', async (orig) => ({
   ...(await orig<typeof import('@mantle/tracing')>()),
   startTrace: vi.fn((_init: unknown, fn: () => Promise<unknown>) => fn()),
   step: vi.fn((_init: unknown, fn: (h: unknown) => Promise<unknown>) =>
-    fn({ setMeta: () => {}, setError: () => {}, setOutput: () => {}, setSkipped: () => {} }),
+    fn({
+      setMeta: (meta: Record<string, unknown>) => h.metas.push(meta),
+      setError: () => {},
+      setOutput: () => {},
+      setSkipped: () => {},
+    }),
   ),
 }));
 
@@ -87,6 +107,11 @@ vi.mock('@mantle/db', async (orig) => ({
   notifyNodeIngested: vi.fn(spend),
   resignalNode: vi.fn(spend),
   markContentChanged: vi.fn(spend),
+}));
+
+vi.mock('@mantle/db/answer-cache', async (orig) => ({
+  ...(await orig<typeof import('@mantle/db/answer-cache')>()),
+  answerKeepFailed: () => h.keepFailed,
 }));
 
 // No own pipeline on this box: the registry's one read of the own rows
@@ -109,6 +134,9 @@ beforeEach(() => {
   h.agents = [];
   h.reads = 0;
   h.patchThrows = false;
+  h.agentStop = undefined;
+  h.keepFailed = false;
+  h.metas = [];
 });
 
 describe('the job of a run on demand', () => {
@@ -160,6 +188,21 @@ describe('the job of a run on demand', () => {
     expect(h.patches).toEqual([]);
     // An Agent reads the file: its job takes the lane of its file.
     expect(await isAfterRun(OWNER, 'iso-title-block')).toBe(false);
+  });
+
+  it("an Agent's run held by the provider says its wait, unless a paid answer was not kept", async () => {
+    const TIF = '10000000-0000-4000-8000-000000000000';
+    h.agentStop = 'provider_rate_limit';
+    const held = await runPipelineJob(OWNER, TIF, 'iso-title-block');
+    expect(held).toMatchObject({ wait: { for: 'provider', reason: 'rate_limit' } });
+    expect(h.metas.at(-1)).toMatchObject({ waiting: { for: 'provider', reason: 'rate_limit' } });
+    // A keep that failed: the queue fails the run once on its wait, so the
+    // trace says no wait.
+    h.keepFailed = true;
+    const unkept = await runPipelineJob(OWNER, TIF, 'iso-title-block');
+    expect(unkept).toMatchObject({ wait: { for: 'provider', reason: 'rate_limit' } });
+    expect(h.metas.at(-1)).toMatchObject({ stopped: 'provider_rate_limit' });
+    expect(h.metas.at(-1)).not.toHaveProperty('waiting');
   });
 
   it('a reader runs only on a file it reads', async () => {

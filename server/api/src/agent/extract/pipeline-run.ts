@@ -64,6 +64,7 @@ import { filePagesOf } from '@mantle/content/page-passages';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { db, nodes } from '@mantle/db';
+import { answerKeepFailed } from '@mantle/db/answer-cache';
 import { and, eq } from 'drizzle-orm';
 import { writeAgentText } from './agent-text.js';
 import { bookPagePicturesFor } from './images.js';
@@ -258,9 +259,12 @@ export async function runPipelineJob(
             // A read of the wait that fails is no wait: the run stops as a
             // stop always did, and a person runs it again.
             const wait = await runWaitOf(ownerId, out).catch(() => null);
+            // A paid answer of the run that was not kept (answer-cache.ts):
+            // the queue fails the run once instead of its wait (sendWaiting),
+            // so its trace says no wait.
             h.setMeta({
               ...out,
-              ...(wait
+              ...(wait && !answerKeepFailed()
                 ? {
                     waiting:
                       wait.for === 'provider'
