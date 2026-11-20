@@ -88,11 +88,6 @@ export const nodes = pgTable(
     // database, frozen (0261); Drizzle does not name them, so no code reads or writes them and an insert takes the
     // database's defaults. schema-drift.test.ts allowlists them.
 
-    /** Why: 'version' (a newer version a person named with content_supersede;
-     *  never guessed from file names since v0.709, and the old name pass's
-     *  marks are cleared by `pnpm maintain name-versions-clear`), 'migrated'
-     *  (page built from this source), 'corrected' (explicit mark — demotes
-     *  harder). */
     /** Derived (migration 0241) from item_grants by
      *  triggers, never written by the app. The home workspace, the
      *  workspaces the item is granted to, and those whose grant has Write
@@ -115,6 +110,11 @@ export const nodes = pgTable(
      *  facts are hidden outside Admin. Cleared when the extractor next
      *  writes a summary from folded text. */
     derivedMixed: boolean('derived_mixed').notNull().default(false),
+    /** Why: 'version' (a newer version a person named with content_supersede;
+     *  never guessed from file names since v0.709, and the old name pass's
+     *  marks are cleared by `pnpm maintain name-versions-clear`), 'migrated'
+     *  (page built from this source), 'corrected' (explicit mark — demotes
+     *  harder). */
     supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
