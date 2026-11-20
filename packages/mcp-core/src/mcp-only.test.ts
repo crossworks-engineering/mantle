@@ -77,6 +77,7 @@ describe('mcpOnly builtins', () => {
         'messenger_mark_read',
         'messenger_open',
         'messenger_send',
+        'messenger_update',
         'messenger_wait',
         'note_delete',
         'pending_get',

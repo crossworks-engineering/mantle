@@ -415,6 +415,7 @@ const WORKSPACE_TURN_NO_ITEMS: ReadonlyMap<string, string> = new Map([
   ['messenger_create', "a chat, not an item: with people in the caller's directory (MCP only)"],
   ['messenger_send', 'a message as the caller in a chat it is in, not an item (MCP only)'],
   ['messenger_mark_read', "the caller's own read cursor, not an item (MCP only)"],
+  ['messenger_update', "a chat's settings, set as its group admin by hand, not an item (MCP only)"],
   ['show_image', 'reads the image it shows'],
   ['synthesize_speech', 'makes audio for the reply; it changes no item'],
   ['telegram_pair', "pairs the caller's own Telegram chat with its login; no item"],

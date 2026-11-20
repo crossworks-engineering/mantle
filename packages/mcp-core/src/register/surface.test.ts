@@ -104,6 +104,7 @@ const HTTP_SURFACE = [
   'messenger_create',
   'messenger_mark_read',
   'messenger_send',
+  'messenger_update',
   'model_pool_list',
   'model_pool_set',
   'node_unshare',

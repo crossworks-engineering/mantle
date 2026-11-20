@@ -177,16 +177,17 @@ local stdio MCP server and a second replica keep their own.
 | Route                                                                                  | What                                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /conversations?unread_only=1`                                                     | the one list: people chats, groups and agent threads, favourites first                                                                                     |
-| `POST /conversations`                                                                  | create: `{kind, participants, title?, icon?, color?, info?}`; a direct pair answers its chat                                                               |
-| `GET /c/:id`, `PATCH /c/:id`                                                           | one conversation; a group's title, icon, colour and info (admins), my mute                                                                                 |
+| `POST /conversations`                                                                  | create: `{kind, participants, title?, icon?, color?, info?, handle?, intake?}`; a direct pair answers its chat                                             |
+| `GET /c/:id`, `PATCH /c/:id`                                                           | one conversation; a group's title, icon, colour, info, handle and intake (admins), my mute                                                                 |
 | `POST /c/:id/participants`, `DELETE /c/:id/participants/:loginId`, `POST /c/:id/leave` | membership                                                                                                                                                 |
 | `GET /c/:id/messages?before_seq=&after_seq=&limit=`                                    | the last `limit` (20; at most 100), older, or newer than a seq; with `after_seq` and `hasMore`, `lastSeq` is the page's highest seq (the next `after_seq`) |
-| `POST /c/:id/messages`                                                                 | send: `{body, mentions?, replyToSeq?, clientMsgId?}`                                                                                                       |
+| `POST /c/:id/messages`                                                                 | send: `{body, mentions?, replyToSeq?, clientMsgId?, answers?}`; a handle mention writes a copy (Handles, below)                                            |
 | `PATCH /c/:id/messages/:seq`, `DELETE /c/:id/messages/:seq`                            | edit my message; delete mine (a group admin: any)                                                                                                          |
 | `POST /c/:id/messages/:seq/reactions`                                                  | toggle an emoji                                                                                                                                            |
 | `POST /c/:id/read`, `POST /c/:id/clear`, `POST /c/:id/history/delete`                  | cursor, clear for me, delete history for everyone                                                                                                          |
 | `POST /c/:id/typing`                                                                   | a NOTIFY, stored nowhere                                                                                                                                   |
 | `PUT /favourites/:kind/:id`, `DELETE /favourites/:kind/:id`                            | pin and unpin                                                                                                                                              |
+| `POST /send`                                                                           | post to `{to: {handle}, body, answers?, clientMsgId?}` with no open chat (Handles, below)                                                                  |
 | `GET /directory?q=`                                                                    | who I may chat with, with "online"; `q` matches the shown name, never the address                                                                          |
 | `GET /photo/:loginId?v=`                                                               | the older path of `GET /api/people/:id/photo` (People, below): the same handler and callers                                                                |
 | `GET /stream`                                                                          | the SSE stream (below)                                                                                                                                     |
@@ -456,11 +457,12 @@ each runs as the caller in its scope:
 | --------------------- | ------------------------------------------------------------------------------------------------------ |
 | `messenger_list`      | my chats with unread and the last line                                                                 |
 | `messenger_open`      | messages of a chat, oldest first, with its people and a group's `info`                                 |
-| `messenger_send`      | send as me; `client_msg_id` makes a retry safe                                                         |
-| `messenger_create`    | a direct chat or a group (with its `title` and `info`)                                                 |
+| `messenger_send`      | send as me; `client_msg_id` makes a retry safe; `to` posts to a handle, `answers` fill its form        |
+| `messenger_create`    | a direct chat or a group (with its `title`, `info`, `handle` and `intake`)                             |
+| `messenger_update`    | a group admin's title, icon, colour, info, handle and intake form; my own mute                         |
 | `messenger_wait`      | wait up to 60 s for messages after a seq; at most 100 at a time (`hasMore`: call again with `lastSeq`) |
 | `messenger_mark_read` | move my cursor                                                                                         |
-| `messenger_directory` | who I may chat with, each person with their description (`q` matches it)                               |
+| `messenger_directory` | who I may chat with, each person with their description (`q` matches it); the box's handles            |
 
 A connection that names no login (a peer bound to an Admin user the owner
 did not register) is refused: the tools never fall back to the brain owner.
@@ -485,8 +487,9 @@ polls every 5 seconds.
   group with just that login; each side calls `messenger_wait` and sees only
   the other side's messages.
 
-There is no `messenger_update` tool: an agent reads a group's info (its
-rules), it does not write it. Admins write it in the chat window.
+`messenger_update` (fleet chat) does what a group admin does by hand on
+the PATCH route: the same rights (a group admin; `muted` is anyone's own)
+and the same system lines.
 
 ## The via chip
 
@@ -549,6 +552,53 @@ and never claims a fix is coming before the owner says so. The MCP send
 rate limit applies to the agent's lines; a request that needs more than
 one investigation gets a task, not a second pass. Later, not now: a
 session that stays awake on `messenger_wait`.
+
+## Handles
+
+Fleet chat phase 1 (plan page f2f19c7b, migration 0394): a group may have
+a **handle**, an address on the box such as `bugs`, shown as `@bugs`, and
+an **intake form**.
+
+- **The handle** is 2 to 30 lowercase letters, digits and dashes, with no
+  dash first or last (`MESSENGER_HANDLE_RE` in
+  `@mantle/client-types/messenger-intake`), unique among the live groups of
+  the box. The words `all`, `here`, `everyone`, `admin`, `system` and `it`
+  and the slugs of the box's agents are refused. A group admin sets or
+  clears it, as the title (a system line records it); a taken handle is 409. A direct chat has none.
+- **Who posts:** every login on the box. A handle is an inbox. Who reads the
+  group is unchanged: its members only. The directory lists every live
+  handle to every login (`kind: "handle"`, with `member`), so a login
+  outside the group sees its handle and title, never its lines.
+- **A handle in a message.** A mention `{kind: "handle", id: <group id>}`
+  (at most 3 in one message, `MESSENGER_HANDLES_PER_MESSAGE`) writes the
+  line where it was typed and a **copy line** in the handle's group, in the
+  same transaction: a system line with the sender's name, the same text
+  and via, and the event `{type: "intake", from: {conversationId, seq},
+by}`. The stored mention gains `handle` and `seq` (the copy line), so the
+  first line shows "sent to @bugs".
+- **The line back.** A member's Reply (`replyToSeq`) on a copy line also
+  writes a system line in the first chat: `@bugs, Ann: the answer`, with
+  the event `{type: "intake_answer", group: {conversationId, handle, seq},
+by}` and a reply to the first line. Other talk in the group stays in the
+  group. When the sender left the first chat (or it is archived), the
+  answer stays in the group, and the group gets a line that says so
+  (`intake_sender_left`).
+- **No open chat.** `POST /api/messenger/send` (`messenger_send` with `to`
+  and no conversation) posts to `{handle}`. A member of the group posts in
+  the group. Anyone else posts in their own thread, a group of one titled
+  "To @bugs", made once (a lock per login and address) and found again by
+  its first line, a `to_thread` system line. The answers come back there.
+- **The intake form** is `bug`, `feature` or `request` (the Send to IT
+  kinds), with three fixed forms (`MESSENGER_INTAKE_FORMS`). There is no
+  form editor. A send to one handle may give `answers` by question key: the
+  line is the filled form (each question in bold, its answer under it),
+  then "Box version: …", then the text, if any. An unknown key is refused.
+  The directory and `messenger_directory` list each handle's questions.
+- **Locks.** A send that writes two chats (a copy one way, a line back the
+  other) locks the conversation rows in id order first, so two such sends
+  never wait on each other in a circle.
+- **Cost.** A copy line and a line back are system lines. They start no
+  agent turn, and a mention in them is stored only.
 
 ## Cost safety
 

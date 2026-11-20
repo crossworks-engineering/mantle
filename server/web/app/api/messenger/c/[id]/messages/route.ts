@@ -53,11 +53,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 }
 
 const SendBody = z.object({
+  // Empty only with answers (the filled form is the text).
   body: z.string().max(8000),
+  // A handle mention (fleet chat, 0394) names a group with a handle: the
+  // send writes a copy line there (at most 3, the store's rule).
   mentions: z
-    .array(z.object({ kind: z.enum(['login', 'agent']), id: z.string().uuid() }))
-    .max(200)
+    .array(z.object({ kind: z.enum(['login', 'agent', 'handle']), id: z.string().uuid() }))
+    .max(203)
     .optional(),
+  // The answers to the intake form of the one handle named.
+  answers: z.record(z.string().max(64), z.string().max(2000)).optional(),
   replyToSeq: z.number().int().positive().nullable().optional(),
   clientMsgId: z.string().min(1).max(100).nullable().optional(),
   attachments: z.array(z.string().uuid()).max(5).optional(),
@@ -65,7 +70,8 @@ const SendBody = z.object({
 
 /** POST /api/messenger/c/:id/messages: send as me. The same clientMsgId
  *  twice stores one message and answers it again. A mention starts nothing
- *  (it is stored only). */
+ *  (it is stored only); a handle mention writes a copy line in that
+ *  handle's group, and a Reply on a copy line writes the line back. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = anyLoginCaller();
   const { id } = await ctx.params;

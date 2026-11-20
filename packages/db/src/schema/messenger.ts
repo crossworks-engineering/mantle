@@ -27,15 +27,34 @@ export type MessengerPreviewJson = {
   authorKind: 'login' | 'agent' | 'system';
 };
 
-/** A mention in a message: a login or an agent. */
-export type MessengerMentionJson = { kind: 'login' | 'agent'; id: string };
+/** A mention in a message: a login or an agent; or a handle (0394): a
+ *  group on this box named by its handle, `seq` the copy line the send
+ *  wrote there. */
+export type MessengerMentionJson =
+  | { kind: 'login' | 'agent'; id: string }
+  | { kind: 'handle'; id: string; handle?: string; seq?: number };
 
 /** What a system line marks: a call started, ended,
  *  or cut at the cap. The client tells them apart by `type`. */
 export type MessengerEventJson =
   | { type: 'call_started'; callId: string }
   | { type: 'call_ended'; callId: string; seconds: number; participants: number }
-  | { type: 'call_cap'; callId: string; seconds: number; participants: number };
+  | { type: 'call_cap'; callId: string; seconds: number; participants: number }
+  /** A copy line in a handle's group (0394): the message `seq` of
+   *  `conversationId` named the handle; `by` is the sender's login. */
+  | { type: 'intake'; from: { conversationId: string; seq: number }; by: string | null }
+  /** The line back in the first chat: a Reply on the copy line, message
+   *  `seq` of the handle's group `conversationId`. */
+  | {
+      type: 'intake_answer';
+      group: { conversationId: string; handle: string; seq: number };
+      by: string | null;
+    }
+  /** The group says the sender left the first chat, so the answer stays. */
+  | { type: 'intake_sender_left'; seq: number }
+  /** The first line of my own thread to a handle (a group of one, "To
+   *  @bugs"): the send finds the thread again by it. */
+  | { type: 'to_thread'; to: { conversationId: string } };
 
 export type MessengerCallEndedReason =
   'finished' | 'cap_reached' | 'closed_by_admin' | 'service_off' | 'reconciled';
@@ -54,6 +73,14 @@ export const messengerConversations = pgTable('messenger_conversations', {
    *  characters, written by its admins; null for a direct chat. Text the
    *  brain shows and never runs. */
   info: text('info'),
+  /** A group's handle (0394): its address on the box, shown as @bugs; 2 to
+   *  30 lowercase letters, digits and dashes, unique on the box; null for a
+   *  direct chat and a group without one. Every login on the box may post
+   *  to it; a message that names it writes a copy line in the group. */
+  handle: text('handle'),
+  /** A group's intake form (0394): bug, feature or request (the Send to IT
+   *  kinds), or null. The forms are fixed in @mantle/client-types. */
+  intake: text('intake').$type<'bug' | 'feature' | 'request'>(),
   workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
   agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   /** A direct chat's two login ids, sorted and joined; null for a group. */

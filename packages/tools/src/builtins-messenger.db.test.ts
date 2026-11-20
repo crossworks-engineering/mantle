@@ -318,7 +318,65 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     const outsider = await call('messenger_open', C, randomUUID(), { conversation: c });
     expect(outsider.ok).toBe(false);
     expect(JSON.stringify(outsider)).not.toContain('Post here when');
-    // No tool writes it after the create: there is no messenger_update.
-    expect(tools.MESSENGER_TOOLS.some((t) => t.slug === 'messenger_update')).toBe(false);
+  });
+
+  it('fleet chat: messenger_update sets a handle; to and answers post to it; the line comes back', async () => {
+    const k = randomUUID();
+    const made = await call('messenger_create', A, k, {
+      kind: 'group',
+      participants: [B],
+      title: 'Bugs desk',
+    });
+    const g = made.output!.conversation as string;
+    // A member who is no admin is refused, as by hand.
+    const refused = await call('messenger_update', B, randomUUID(), {
+      conversation: g,
+      handle: 'x1',
+    });
+    expect(refused.ok).toBe(false);
+    const set = await call('messenger_update', A, k, {
+      conversation: g,
+      handle: 'tool-bugs',
+      intake: 'bug',
+    });
+    expect(set.ok, set.error).toBe(true);
+    expect(set.output!.conversation).toMatchObject({ handle: 'tool-bugs', intake: 'bug' });
+    // The directory lists the handle with its questions to an outsider.
+    const dir = await call('messenger_directory', C, randomUUID(), { q: 'tool-bugs' });
+    const row = (dir.output!.entries as { kind: string; questions?: { key: string }[] }[]).find(
+      (e) => e.kind === 'handle',
+    );
+    expect(row?.questions?.map((q) => q.key)).toEqual(['did', 'happened', 'expected']);
+    // An outsider posts with to and answers: its own thread, the copy in the group.
+    const kc = randomUUID();
+    const sent = await call('messenger_send', C, kc, {
+      to: { handle: 'tool-bugs' },
+      text: '',
+      answers: { did: 'Saved', happened: 'An error' },
+    });
+    expect(sent.ok, sent.error).toBe(true);
+    const thread = sent.output!.conversation as string;
+    expect((sent.output!.message as { sentTo: string[] }).sentTo).toEqual(['@tool-bugs']);
+    const open = await call('messenger_open', A, k, { conversation: g });
+    const copy = (open.output!.messages as { seq: number; copyOf?: unknown }[]).at(-1)!;
+    expect(copy.copyOf).toEqual({ conversation: thread, seq: expect.any(Number) });
+    expect(open.output!.conversation).toMatchObject({ handle: 'tool-bugs', intake: 'bug' });
+    // A Reply on the copy goes back to the outsider's thread.
+    const answer = await call('messenger_send', A, k, {
+      conversation: g,
+      text: 'Fixed.',
+      reply_to_seq: copy.seq,
+    });
+    expect(answer.ok, answer.error).toBe(true);
+    const back = await call('messenger_open', C, kc, { conversation: thread });
+    expect((back.output!.messages as { text: string; answerFrom?: string }[]).at(-1)).toMatchObject(
+      {
+        text: '@tool-bugs, Ann: Fixed.',
+        answerFrom: '@tool-bugs',
+      },
+    );
+    // Nothing to change is refused.
+    const empty = await call('messenger_update', A, k, { conversation: g });
+    expect(empty.ok).toBe(false);
   });
 });

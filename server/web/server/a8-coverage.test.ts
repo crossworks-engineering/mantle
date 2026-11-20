@@ -261,6 +261,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'messenger_create',
   'messenger_mark_read',
   'messenger_send',
+  'messenger_update',
   'model_catalog',
   'model_pool_list',
   'model_pool_remove',

@@ -556,7 +556,7 @@
     },
     "PATCH /api/mcp-connectors/:slug": { "planned": "connector_update" },
     "PATCH /api/mcp-settings": { "none": "MCP box switch: over MCP it can only turn itself off" },
-    "PATCH /api/messenger/c/:id": { "planned": "messenger_update" },
+    "PATCH /api/messenger/c/:id": "messenger_update",
     "PATCH /api/messenger/c/:id/messages/:seq": { "planned": "messenger_message_edit" },
     "PATCH /api/model-pools/:id": {
       "tool": "model_pool_set",
@@ -882,7 +882,7 @@
     "POST /api/messenger/c/:id/leave": { "planned": "messenger_leave" },
     "POST /api/messenger/c/:id/messages": {
       "tool": "messenger_send",
-      "gap": "no mentions or attachments"
+      "gap": "no people mentions or attachments; a handle goes by `to`"
     },
     "POST /api/messenger/c/:id/messages/:seq/reactions": { "planned": "messenger_react" },
     "POST /api/messenger/c/:id/participants": { "planned": "messenger_member_add" },
@@ -890,8 +890,9 @@
     "POST /api/messenger/c/:id/typing": { "none": "machinery: the window says a person is typing" },
     "POST /api/messenger/conversations": {
       "tool": "messenger_create",
-      "gap": "no group icon or colour"
+      "gap": "no group icon or colour; messenger_update sets them"
     },
+    "POST /api/messenger/send": "messenger_send",
     "POST /api/model-combos/apply": { "planned": "model_combo_apply" },
     "POST /api/model-pools": "model_pool_set",
     "POST /api/network/activate": { "planned": "network_activate" },

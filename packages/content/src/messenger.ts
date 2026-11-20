@@ -27,6 +27,8 @@
 import { and, eq, inArray, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { envNum } from '@mantle/config';
 import {
+  advisoryXactLock,
+  conflictOnUnique,
   currentWorkspaceScope,
   db,
   loginPresence,
@@ -39,7 +41,7 @@ import {
   systemDb,
   type MessengerEventJson,
 } from '@mantle/db';
-import { InputError, defineDomainError, isUuid } from '@mantle/std';
+import { ConflictError, InputError, defineDomainError, isUuid } from '@mantle/std';
 import { callsServiceOn, livekitClient, loginIdentity } from './livekit';
 import {
   PEOPLE_ONLINE_MS,
@@ -52,6 +54,17 @@ import {
   type PersonAvatarView,
 } from './people';
 import { APP_TINTS, LUCIDE_ICON_PREFIX, isAppTint } from '@mantle/client-types/app-nav';
+import {
+  MESSENGER_HANDLE_RE,
+  MESSENGER_HANDLE_RESERVED,
+  MESSENGER_HANDLES_PER_MESSAGE,
+  MESSENGER_INTAKE_ANSWER_MAX,
+  MESSENGER_INTAKE_FORMS,
+  intakeText,
+  isMessengerIntakeKind,
+  type MessengerIntakeKind,
+} from '@mantle/client-types/messenger-intake';
+import { APP_VERSION } from '@mantle/client-types/version';
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import { workspaceAssistants } from './team-assistant';
 
@@ -170,7 +183,12 @@ export type MessengerActor = {
  *  (oauth:<client id>, key:<key id>, peer:<peer id>). */
 export type MessengerVia = { label: string | null; ref: string };
 
-export type MessengerMention = { kind: 'login' | 'agent'; id: string };
+/** A login or an agent of the chat; or a handle (0394): a group on this
+ *  box, `id` its conversation id; the send fills `handle` and `seq` (the
+ *  copy line it wrote in that group). */
+export type MessengerMention =
+  | { kind: 'login' | 'agent'; id: string }
+  | { kind: 'handle'; id: string; handle?: string; seq?: number };
 
 /** The avatar a login chose in Appearance (its seed and builder parts) or
  *  an agent's, drawn in the brain's one style; the shape GET /api/shell
@@ -211,6 +229,10 @@ export type MessengerConversationView = {
   /** A group's info (0343): plain text its admins wrote, shown and never
    *  run; null for a direct chat and a group that has none. */
   info: string | null;
+  /** A group's handle and intake form (0394); null for a direct chat and
+   *  a group without one. */
+  handle: string | null;
+  intake: MessengerIntakeKind | null;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -257,6 +279,8 @@ export type MessengerListRowView = {
   /** As on the conversation; absent on an agent thread. */
   icon?: string | null;
   color?: string | null;
+  /** A group's handle (0394); absent on an agent thread. */
+  handle?: string | null;
   lastSeq: number | null;
   lastMessageAt: string | null;
   preview: MessengerPreviewView | null;
@@ -269,7 +293,9 @@ export type MessengerListRowView = {
 };
 
 export type MessengerDirectoryEntryView = {
-  kind: 'login' | 'agent';
+  /** A login, an agent, or a handle (0394): a group on this box with a
+   *  handle, which every login may post to. */
+  kind: 'login' | 'agent' | 'handle';
   id: string;
   name: string;
   online: boolean;
@@ -280,6 +306,10 @@ export type MessengerDirectoryEntryView = {
   /** Logins only: who the person is to the team (its card's description),
    *  what an agent matches "the developer" against. */
   description?: string | null;
+  /** Handles only: the handle, its intake form, and whether I am in it. */
+  handle?: string;
+  intake?: MessengerIntakeKind | null;
+  member?: boolean;
 };
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -395,17 +425,80 @@ export async function messengerChatAgents(
     .map((a) => ({ id: a.id, slug: a.slug, name: a.name }));
 }
 
+/** The live groups with a handle on this box (fleet chat, 0394), by ids,
+ *  by one handle, or by a search `term` (the handle, an @ in front
+ *  dropped, or the title), with whether `actor` is in each. A handle is an
+ *  inbox, so its name and title are no secret on the box; what is said in
+ *  the group stays with its members. The system's read (`on`: a send's own
+ *  transaction). */
+async function handleRows(
+  actor: MessengerActor,
+  by: { ids: readonly string[] } | { handle: string } | { term: string },
+  on: Exec = systemDb,
+): Promise<
+  {
+    id: string;
+    handle: string;
+    title: string | null;
+    intake: MessengerIntakeKind | null;
+    member: boolean;
+  }[]
+> {
+  const c = messengerConversations;
+  let where: SQL;
+  if ('ids' in by) where = sql`${c.id} = any(${uuidArray(by.ids)})`;
+  else if ('handle' in by) where = sql`${c.handle} = ${by.handle}`;
+  else {
+    const t = by.term.replace(/^@/, '').toLowerCase();
+    const like = `%${t.replace(/[\\%_]/g, (x) => `\\${x}`)}%`;
+    where = t
+      ? sql`(${c.handle} like ${like} or lower(coalesce(${c.title}, '')) like ${like})`
+      : sql`true`;
+  }
+  return q(
+    on,
+    sql`select ${c.id}::text as id, ${c.handle} as handle, ${c.title} as title, ${c.intake} as intake,
+               exists (select 1 from messenger_participants p
+                        where p.conversation_id = ${c.id} and p.kind = 'login'
+                          and p.login_id = ${actor.loginId}::uuid and p.left_at is null) as member
+          from ${c}
+         where ${c.ownerId} = ${actor.ownerId}::uuid and ${c.kind} = 'group'
+           and ${c.handle} is not null and ${isNull(c.archivedAt)} and ${where}
+         order by ${c.handle}
+         limit 200`,
+  );
+}
+
+/** The handles of the box as directory rows (handleRows). */
+async function handleEntries(
+  actor: MessengerActor,
+  term: string,
+): Promise<MessengerDirectoryEntryView[]> {
+  const rows = await handleRows(actor, { term });
+  return rows.map((r) => ({
+    kind: 'handle' as const,
+    id: r.id,
+    name: r.title ?? `@${r.handle}`,
+    online: false,
+    handle: r.handle,
+    intake: r.intake,
+    member: r.member,
+  }));
+}
+
 /** GET /api/messenger/directory: people sharing a workspace with me (Admin
- *  users: everyone), then the agents I may chat with, with "online". */
+ *  users: everyone), then the agents I may chat with, with "online", then
+ *  the handles of the box (handleEntries). */
 export async function messengerDirectory(
   actor: MessengerActor,
   query = '',
 ): Promise<MessengerDirectoryEntryView[]> {
   const term = query.trim().slice(0, 100);
   const now = Date.now();
-  const [people, chatAgents] = await Promise.all([
+  const [people, chatAgents, handles] = await Promise.all([
     peopleVisibleTo(actor, { q: term || undefined }),
     messengerChatAgents(actor.ownerId, actor.loginId),
+    handleEntries(actor, term),
   ]);
   const t = term.toLowerCase();
   const agents = chatAgents.filter(
@@ -433,6 +526,7 @@ export async function messengerDirectory(
       slug: a.slug,
       avatar: faces.get(a.id)?.avatar ?? null,
     })),
+    ...handles,
   ];
 }
 
@@ -459,6 +553,8 @@ export type ConversationRow = {
   kind: 'direct' | 'group';
   title: string | null;
   info: string | null;
+  handle: string | null;
+  intake: MessengerIntakeKind | null;
   archived_at: Date | null;
   last_seq: string | number;
   workspace_id: string | null;
@@ -476,7 +572,7 @@ export async function lockForActor(
   const c = uuidOr(conversationId, 'The conversation');
   const [conv] = await q<ConversationRow>(
     tx,
-    sql`select id::text as id, kind, title, info, archived_at, last_seq,
+    sql`select id::text as id, kind, title, info, handle, intake, archived_at, last_seq,
                workspace_id::text as workspace_id, agent_id::text as agent_id
           from messenger_conversations
          where id = ${c}::uuid and owner_id = ${actor.ownerId}::uuid
@@ -503,7 +599,7 @@ export async function lockConversation(
 ): Promise<ConversationRow | null> {
   const [conv] = await q<ConversationRow>(
     tx,
-    sql`select id::text as id, kind, title, info, archived_at, last_seq,
+    sql`select id::text as id, kind, title, info, handle, intake, archived_at, last_seq,
                workspace_id::text as workspace_id, agent_id::text as agent_id
           from messenger_conversations
          where id = ${conversationId}::uuid
@@ -628,6 +724,10 @@ export type MessengerCreateInput = {
   color?: string | null;
   /** A group's info (infoText); a direct chat refuses it (InputError). */
   info?: string | null;
+  /** A group's handle (handleText) and intake form (intakeKind); a direct
+   *  chat refuses each (InputError). */
+  handle?: string | null;
+  intake?: string | null;
 };
 
 /** A group's info as given: trimmed, at most MESSENGER_INFO_MAX
@@ -681,6 +781,68 @@ function lookColor(v: string | null | undefined): string | null | undefined {
   return v;
 }
 
+/** The refusal a taken handle answers (409). */
+const HANDLE_TAKEN = 'That handle is taken on this box. Pick another one.';
+
+/** A group's handle as given (fleet chat, 0394): trimmed, a leading @
+ *  dropped, lowercased; null, or '', clears it; undefined leaves it. It
+ *  must match MESSENGER_HANDLE_RE and not be a reserved word (InputError).
+ *  The agent slugs and the box's other handles are checked at the write
+ *  (handleFree). */
+function handleText(v: string | null | undefined): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (typeof v !== 'string') throw new InputError('handle is text.');
+  const t = v.trim().replace(/^@/, '').toLowerCase();
+  if (!t) return null;
+  if (!MESSENGER_HANDLE_RE.test(t)) {
+    throw new InputError(
+      'A handle is 2 to 30 lowercase letters, digits and dashes, with no dash first or last.',
+    );
+  }
+  if (MESSENGER_HANDLE_RESERVED.includes(t)) {
+    throw new InputError(`"${t}" is a reserved word. Pick another handle.`);
+  }
+  return t;
+}
+
+/** A group's intake form as given: bug, feature or request; null, or '',
+ *  clears it; undefined leaves it. Anything else is an InputError. */
+function intakeKind(v: string | null | undefined): MessengerIntakeKind | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  if (!isMessengerIntakeKind(v)) {
+    throw new InputError('An intake form is one of: bug, feature, request.');
+  }
+  return v;
+}
+
+/** The handle is free on the box for group `self` (null: a new group): no
+ *  agent of the box has it as its slug (InputError) and no other group
+ *  holds it (ConflictError; the unique index is the backstop). */
+async function handleFree(
+  tx: Tx,
+  ownerId: string,
+  handle: string,
+  self: string | null,
+): Promise<void> {
+  const [agent] = await q<{ one: number }>(
+    tx,
+    sql`select 1 as one from agents where owner_id = ${ownerId}::uuid and slug = ${handle} limit 1`,
+  );
+  if (agent) throw new InputError(`"${handle}" is an agent's name on this box. Pick another one.`);
+  const [taken] = await q<{ one: number }>(
+    tx,
+    sql`select 1 as one from ${messengerConversations}
+         where ${messengerConversations.ownerId} = ${ownerId}::uuid
+           and ${messengerConversations.handle} = ${handle}
+           and ${isNull(messengerConversations.archivedAt)}
+           ${self ? sql`and ${messengerConversations.id} <> ${self}::uuid` : sql``}
+         limit 1`,
+  );
+  if (taken) throw new ConflictError(HANDLE_TAKEN);
+}
+
 /**
  * Create a conversation (POST /api/messenger/conversations). A direct chat
  * names exactly one other login; the pair has one chat, so a second create
@@ -717,6 +879,11 @@ export async function createMessengerConversation(
   const info = infoText(input.info) ?? null;
   if (info !== null && input.kind !== 'group') {
     throw new InputError('A direct chat has no info; only a group carries one.');
+  }
+  const handle = handleText(input.handle) ?? null;
+  const intake = intakeKind(input.intake) ?? null;
+  if ((handle !== null || intake !== null) && input.kind !== 'group') {
+    throw new InputError('A direct chat has no handle or intake form; only a group carries one.');
   }
   if (others.length > 0) {
     const reach = await peopleVisibleTo(actor, { only: others, limit: 500 });
@@ -756,22 +923,35 @@ export async function createMessengerConversation(
     });
   }
 
-  return systemDb.transaction(async (tx) => {
-    const [made] = await tx
-      .insert(messengerConversations)
-      .values({ ownerId: actor.ownerId, kind: 'group', title, icon, color, info, createdBy: self })
-      .returning({ id: messengerConversations.id });
-    await tx.insert(messengerParticipants).values(
-      [self, ...others].map((l) => ({
-        conversationId: made!.id,
-        kind: 'login' as const,
-        loginId: l,
-        admin: l === self,
-        addedBy: self,
-      })),
-    );
-    return { conversationId: made!.id, created: true };
-  });
+  return conflictOnUnique(HANDLE_TAKEN, () =>
+    systemDb.transaction(async (tx) => {
+      if (handle) await handleFree(tx, actor.ownerId, handle, null);
+      const [made] = await tx
+        .insert(messengerConversations)
+        .values({
+          ownerId: actor.ownerId,
+          kind: 'group',
+          title,
+          icon,
+          color,
+          info,
+          handle,
+          intake,
+          createdBy: self,
+        })
+        .returning({ id: messengerConversations.id });
+      await tx.insert(messengerParticipants).values(
+        [self, ...others].map((l) => ({
+          conversationId: made!.id,
+          kind: 'login' as const,
+          loginId: l,
+          admin: l === self,
+          addedBy: self,
+        })),
+      );
+      return { conversationId: made!.id, created: true };
+    }),
+  );
 }
 
 // ── Send, edit, delete, react ────────────────────────────────────────────────
@@ -782,7 +962,107 @@ export type MessengerSendInput = {
   replyToSeq?: number | null;
   clientMsgId?: string | null;
   attachments?: readonly string[];
+  /** The answers to the intake form of the one handle the message names
+   *  (MESSENGER_INTAKE_FORMS, by question key): the line is the filled form,
+   *  then `body` when it has text. */
+  answers?: Readonly<Record<string, string>> | null;
 };
+
+/** A handle's group as a send reads it (the system's read: every login on
+ *  the box may post to a handle). */
+type HandleGroup = { id: string; handle: string; intake: MessengerIntakeKind | null };
+
+/** The groups the handle mentions name, in the send's transaction: live
+ *  groups of this box with a handle. Anything else is an InputError. */
+async function handleGroups(
+  tx: Tx,
+  actor: MessengerActor,
+  ids: readonly string[],
+): Promise<HandleGroup[]> {
+  if (ids.length === 0) return [];
+  const rows = await handleRows(actor, { ids }, tx);
+  if (rows.length !== ids.length) {
+    throw new InputError(
+      'A handle must name a group with a handle on this box (messenger_directory).',
+    );
+  }
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.map((id) => byId.get(id)!);
+}
+
+/** The filled intake form of `group` as the line's text, or `body` when
+ *  no answers are given. An answer under a key the form lacks, an empty
+ *  form, or answers to a group with no form, is an InputError. */
+function intakeBody(
+  body: string,
+  answers: Readonly<Record<string, string>> | null | undefined,
+  group: HandleGroup | null,
+): string {
+  if (!answers) return body;
+  if (!group?.intake) {
+    throw new InputError('answers go with exactly one handle whose group has an intake form.');
+  }
+  const form = MESSENGER_INTAKE_FORMS[group.intake];
+  const keys = new Set(form.map((f) => f.key));
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(answers)) {
+    if (!keys.has(k)) {
+      throw new InputError(
+        `The ${group.intake} form has no question "${k}". Its keys: ${[...keys].join(', ')}.`,
+      );
+    }
+    if (typeof v !== 'string') throw new InputError('Each answer is text.');
+    if (v.length > MESSENGER_INTAKE_ANSWER_MAX) {
+      throw new InputError(`An answer is at most ${MESSENGER_INTAKE_ANSWER_MAX} characters.`);
+    }
+    clean[k] = v;
+  }
+  // The box adds its own version to each filled form (plan section 11).
+  const form1 = intakeText(group.intake, clean, [{ label: 'Box version', value: APP_VERSION }]);
+  if (!Object.values(clean).some((v) => v.trim())) {
+    throw new InputError('Answer at least one question of the form.');
+  }
+  return body.trim() ? `${form1}\n\n${body}` : form1;
+}
+
+/** `text` held to the body cap, with a note when cut: the whole text stays
+ *  in the line it copies. */
+function fitBody(text: string, note: string): string {
+  if (text.length <= MESSENGER_BODY_MAX) return text;
+  const tail = `\n\n(${note})`;
+  return text.slice(0, MESSENGER_BODY_MAX - tail.length).replace(/[\uD800-\uDBFF]$/, '') + tail;
+}
+
+/** The line a Reply answers, read in the send's transaction before its
+ *  locks (an event never changes once written): the first chat when it is
+ *  a copy line. */
+async function intakeOrigin(
+  tx: Tx,
+  conversationId: string,
+  seq: number | null,
+): Promise<{ conversationId: string; seq: number; by: string | null } | null> {
+  if (seq === null) return null;
+  const [row] = await q<{ event: MessengerEventJson | null }>(
+    tx,
+    sql`select event from messenger_messages
+         where conversation_id = ${conversationId}::uuid and seq = ${seq} and author_kind = 'system'`,
+  );
+  const e = row?.event;
+  return e && e.type === 'intake' && isUuid(e.from.conversationId)
+    ? { conversationId: e.from.conversationId.toLowerCase(), seq: e.from.seq, by: e.by }
+    : null;
+}
+
+/** Lock the conversation rows a send writes, in id order, so two sends
+ *  that write the same two chats (a copy one way, a line back the other)
+ *  never wait on each other in a circle. */
+async function lockInOrder(tx: Tx, ids: readonly string[]): Promise<void> {
+  const sorted = [...new Set(ids.map((i) => i.toLowerCase()))].sort();
+  if (sorted.length < 2) return;
+  await tx.execute(
+    sql`select id from messenger_conversations where id = any(${uuidArray(sorted)}) order by id for update`,
+  );
+}
 
 /**
  * Send a message as the actor (POST /api/messenger/c/:id/messages). The
@@ -791,6 +1071,13 @@ export type MessengerSendInput = {
  * participant; it moves that login's mention_seq and starts nothing
  * (no agent turn). The author's own read cursor moves to the new
  * seq.
+ *
+ * Fleet chat (0394): a handle mention (at most 3) also writes a copy line
+ * in that handle's group, a system line with the `intake` event that
+ * points back here; the mention keeps the copy's seq. Every login on the
+ * box may post to a handle. A Reply on a copy line also writes the line
+ * back in the first chat, while the sender is still in it; else the group
+ * hears that the sender left. Copies and lines back start nothing.
  */
 export async function sendMessengerMessage(
   actor: MessengerActor,
@@ -798,9 +1085,8 @@ export async function sendMessengerMessage(
   input: MessengerSendInput,
 ): Promise<{ message: MessengerMessageView; created: boolean }> {
   takeBudget(actor, 'send');
-  const body = typeof input.body === 'string' ? input.body : '';
-  if (body.trim() === '') throw new InputError('A message must have some text.');
-  if (body.length > MESSENGER_BODY_MAX) {
+  const rawBody = typeof input.body === 'string' ? input.body : '';
+  if (rawBody.length > MESSENGER_BODY_MAX) {
     throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
   }
   if (input.attachments && input.attachments.length > 0) {
@@ -810,12 +1096,31 @@ export async function sendMessengerMessage(
   if (clientMsgId && clientMsgId.length > MESSENGER_CLIENT_MSG_MAX) {
     throw new InputError(`A client message id is at most ${MESSENGER_CLIENT_MSG_MAX} characters.`);
   }
-  const mentions = dedupeMentions(input.mentions ?? []);
+  const { people: mentions, handles: handleIds } = dedupeMentions(input.mentions ?? []);
   const replyTo = input.replyToSeq == null ? null : seqOr(input.replyToSeq, 'reply_to_seq');
   const self = actor.loginId.toLowerCase();
+  const here = uuidOr(conversationId, 'The conversation');
+  // A handle to the chat itself writes no copy (the line is there).
+  if (input.answers && handleIds.length !== 1) {
+    throw new InputError('answers go with exactly one handle whose group has an intake form.');
+  }
+  if (!input.answers && rawBody.trim() === '')
+    throw new InputError('A message must have some text.');
 
   const out = await systemDb.transaction(async (tx) => {
-    const { conv, me } = await lockForActor(tx, actor, conversationId);
+    const named = await handleGroups(tx, actor, handleIds);
+    const groups = named.filter((g) => g.id !== here);
+    const body = intakeBody(rawBody, input.answers, named[0] ?? null);
+    if (body.length > MESSENGER_BODY_MAX) {
+      throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
+    }
+    const origin = await intakeOrigin(tx, here, replyTo);
+    await lockInOrder(tx, [
+      here,
+      ...groups.map((g) => g.id),
+      ...(origin ? [origin.conversationId] : []),
+    ]);
+    const { conv, me } = await lockForActor(tx, actor, here);
     if (conv.archived_at) throw new MessengerRefusedError('This chat is archived.');
     if (clientMsgId) {
       const [prior] = await q<{ seq: string | number }>(
@@ -843,13 +1148,40 @@ export async function sendMessengerMessage(
       }
     }
     const names = await loginNames([self], tx);
+    const myName = names.get(self) ?? null;
+    // The seq this line takes (the row is locked): the copies point at it.
+    const lineSeq = num(conv.last_seq) + 1;
+    const handleMentions: MessengerMention[] = [];
+    for (const g of groups) {
+      const target = await lockConversation(tx, g.id);
+      if (!target || target.archived_at || target.handle === null) {
+        throw new InputError('A handle must name a group with a handle on this box.');
+      }
+      const copySeq = await appendMessage(tx, target, {
+        authorKind: 'system',
+        authorLoginId: null,
+        authorName: myName,
+        via: actor.via ?? null,
+        body,
+        mentions: [],
+        replyToSeq: null,
+        clientMsgId: null,
+        event: { type: 'intake', from: { conversationId: conv.id, seq: lineSeq }, by: self },
+      });
+      handleMentions.push({ kind: 'handle', id: g.id, handle: target.handle, seq: copySeq });
+    }
+    // Handles the line names that are this chat itself keep their mention.
+    for (const id of handleIds) {
+      if (id === conv.id && conv.handle)
+        handleMentions.push({ kind: 'handle', id, handle: conv.handle });
+    }
     const seq = await appendMessage(tx, conv, {
       authorKind: 'login',
       authorLoginId: self,
-      authorName: names.get(self) ?? null,
+      authorName: myName,
       via: actor.via ?? null,
       body,
-      mentions,
+      mentions: [...mentions, ...handleMentions],
       replyToSeq: replyTo,
       clientMsgId,
     });
@@ -866,6 +1198,14 @@ export async function sendMessengerMessage(
           ),
         );
     }
+    if (origin)
+      await lineBack(tx, conv, origin, {
+        seq,
+        body,
+        by: self,
+        name: myName,
+        via: actor.via ?? null,
+      });
     if (num(me.last_read_seq) < seq)
       await tx
         .update(messengerParticipants)
@@ -873,27 +1213,173 @@ export async function sendMessengerMessage(
         .where(eq(messengerParticipants.id, me.id));
     return { seq, created: true };
   });
-  const [message] = await readMessagesBySeq(actor, conversationId, [out.seq]);
+  const [message] = await readMessagesBySeq(actor, here, [out.seq]);
   if (!message) throw new MessengerNotFoundError();
   return { message, created: out.created };
 }
 
-function dedupeMentions(list: readonly MessengerMention[]): MessengerMention[] {
+/** A Reply on a copy line, in the handle's group `group`: the answer goes
+ *  back to the first chat as a system line, while the sender is still in
+ *  it and it is not archived. Else the answer stays in the group, and the
+ *  group hears so. In the send's transaction (both rows are locked). */
+async function lineBack(
+  tx: Tx,
+  group: ConversationRow,
+  origin: { conversationId: string; seq: number; by: string | null },
+  answer: { seq: number; body: string; by: string; name: string | null; via: MessengerVia | null },
+): Promise<void> {
+  const first = await lockConversation(tx, origin.conversationId);
+  const [sender] =
+    first && origin.by
+      ? await q<{ left_at: Date | null }>(
+          tx,
+          sql`select left_at from messenger_participants
+               where conversation_id = ${first.id}::uuid and kind = 'login'
+                 and login_id = ${origin.by}::uuid`,
+        )
+      : [];
+  if (!first || first.archived_at || !sender || sender.left_at) {
+    await appendMessage(tx, group, {
+      authorKind: 'system',
+      authorLoginId: null,
+      authorName: null,
+      via: null,
+      body: 'The sender left the first chat, so this answer stays in the group.',
+      mentions: [],
+      replyToSeq: answer.seq,
+      clientMsgId: null,
+      event: { type: 'intake_sender_left', seq: answer.seq },
+    });
+    return;
+  }
+  const handle = group.handle ?? group.title ?? 'group';
+  await appendMessage(tx, first, {
+    authorKind: 'system',
+    authorLoginId: null,
+    authorName: answer.name,
+    via: answer.via,
+    body: fitBody(
+      `@${handle}, ${answer.name ?? 'Someone'}: ${answer.body}`,
+      `the rest is in @${handle}`,
+    ),
+    mentions: [],
+    replyToSeq: origin.seq,
+    clientMsgId: null,
+    event: {
+      type: 'intake_answer',
+      group: { conversationId: group.id, handle, seq: answer.seq },
+      by: answer.by,
+    },
+  });
+}
+
+/**
+ * Send to a handle with no open chat (POST /api/messenger/send, and
+ * messenger_send with `to`). A member of the handle's group posts in the
+ * group itself. Anyone else posts in their own thread for that address: a
+ * group with just them, titled "To @bugs", made once and used again (its
+ * first line, a `to_thread` system line, names the handle). The line names
+ * the handle, so the copy and the line back work as from any chat.
+ */
+export async function sendMessengerTo(
+  actor: MessengerActor,
+  to: { handle: string },
+  input: Omit<MessengerSendInput, 'mentions'> & { mentions?: readonly MessengerMention[] },
+): Promise<{ conversationId: string; message: MessengerMessageView; created: boolean }> {
+  const h = handleText(to.handle);
+  if (!h) throw new InputError('to.handle names a handle, e.g. "bugs".');
+  const group = await findHandleGroup(actor, h);
+  const mentions = [...(input.mentions ?? []), { kind: 'handle' as const, id: group.id }];
+  const conversationId = group.member ? group.id : await toThread(actor, group.id, h);
+  const out = await sendMessengerMessage(actor, conversationId, { ...input, mentions });
+  return { conversationId, ...out };
+}
+
+/** The live group with handle `handle` on this box, and whether I am in
+ *  it; an InputError when none has it. */
+export async function findHandleGroup(
+  actor: MessengerActor,
+  handle: string,
+): Promise<{ id: string; member: boolean }> {
+  const h = handleText(handle);
+  if (!h) throw new InputError('A handle names a group, e.g. "bugs".');
+  const [group] = await handleRows(actor, { handle: h });
+  if (!group)
+    throw new InputError(`No group on this box has the handle @${h} (messenger_directory).`);
+  return { id: group.id, member: group.member };
+}
+
+/** My own thread for the handle's group `groupId`, made once (under a lock
+ *  for the login and the address, so two sends at once make one). */
+async function toThread(actor: MessengerActor, groupId: string, handle: string): Promise<string> {
+  takeBudget(actor, 'write');
+  const self = actor.loginId.toLowerCase();
+  return systemDb.transaction(async (tx) => {
+    await advisoryXactLock(tx, `messenger-to:${self}:${groupId}`, 'hashtextextended');
+    const [found] = await q<{ id: string }>(
+      tx,
+      sql`select c.id::text as id from messenger_conversations c
+            join messenger_messages m on m.conversation_id = c.id and m.seq = 1
+            join messenger_participants p on p.conversation_id = c.id and p.kind = 'login'
+                 and p.login_id = ${self}::uuid and p.left_at is null
+           where c.owner_id = ${actor.ownerId}::uuid and c.kind = 'group'
+             and c.created_by = ${self}::uuid
+             and m.event @> ${JSON.stringify({ type: 'to_thread', to: { conversationId: groupId } })}::jsonb
+           limit 1`,
+    );
+    if (found) return found.id;
+    const [made] = await tx
+      .insert(messengerConversations)
+      .values({ ownerId: actor.ownerId, kind: 'group', title: `To @${handle}`, createdBy: self })
+      .returning({ id: messengerConversations.id });
+    await tx.insert(messengerParticipants).values({
+      conversationId: made!.id,
+      kind: 'login',
+      loginId: self,
+      admin: true,
+      addedBy: self,
+    });
+    const conv = await lockConversation(tx, made!.id);
+    await appendMessage(tx, conv!, {
+      authorKind: 'system',
+      authorLoginId: null,
+      authorName: null,
+      via: null,
+      body: `Your messages to @${handle}. The answers come back here.`,
+      mentions: [],
+      replyToSeq: null,
+      clientMsgId: null,
+      event: { type: 'to_thread', to: { conversationId: groupId } },
+    });
+    return made!.id;
+  });
+}
+
+/** The mentions of a send, each named once: the people and agents of the
+ *  chat, and the handles (group ids, at most MESSENGER_HANDLES_PER_MESSAGE). */
+function dedupeMentions(list: readonly MessengerMention[]): {
+  people: { kind: 'login' | 'agent'; id: string }[];
+  handles: string[];
+} {
   const seen = new Set<string>();
-  const out: MessengerMention[] = [];
+  const people: { kind: 'login' | 'agent'; id: string }[] = [];
+  const handles: string[] = [];
   for (const m of list) {
-    if (!m || (m.kind !== 'login' && m.kind !== 'agent')) {
-      throw new InputError('A mention must be a login or an agent.');
+    if (!m || (m.kind !== 'login' && m.kind !== 'agent' && m.kind !== 'handle')) {
+      throw new InputError('A mention must be a login, an agent or a handle.');
     }
     const id = uuidOr(String(m.id), 'A mention');
     const k = `${m.kind}:${id}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ kind: m.kind, id });
+    if (m.kind === 'handle') handles.push(id);
+    else people.push({ kind: m.kind, id });
   }
-  if (out.length > MESSENGER_PARTICIPANTS_MAX)
+  if (people.length > MESSENGER_PARTICIPANTS_MAX)
     throw new InputError(`A message must mention at most ${MESSENGER_PARTICIPANTS_MAX} people.`);
-  return out;
+  if (handles.length > MESSENGER_HANDLES_PER_MESSAGE)
+    throw new InputError(`A message names at most ${MESSENGER_HANDLES_PER_MESSAGE} handles.`);
+  return { people, handles };
 }
 
 type LockedMessage = {
@@ -1107,6 +1593,9 @@ export type MessengerPatchInput = {
   icon?: string | null;
   color?: string | null;
   info?: string | null;
+  /** A group's handle and intake form (0394): its admins'. */
+  handle?: string | null;
+  intake?: string | null;
   muted?: boolean;
 };
 
@@ -1123,65 +1612,107 @@ export async function patchMessengerConversation(
   const icon = lookIcon(input.icon);
   const color = lookColor(input.color);
   const info = infoText(input.info);
+  const handle = handleText(input.handle);
+  const intake = intakeKind(input.intake);
   const look = icon !== undefined || color !== undefined;
-  await systemDb.transaction(async (tx) => {
-    const { conv, me } = await lockForActor(tx, actor, conversationId, {
-      live: input.title !== undefined || info !== undefined || look,
-    });
-    if (look) {
-      requireGroupAdmin(conv, me);
-      await tx
-        .update(messengerConversations)
-        .set({
-          ...(icon !== undefined ? { icon } : {}),
-          ...(color !== undefined ? { color } : {}),
-        })
-        .where(eq(messengerConversations.id, conv.id));
-    }
-    if (input.title !== undefined) {
-      requireGroupAdmin(conv, me);
-      const title = (input.title ?? '').trim() || null;
-      if (title && title.length > MESSENGER_TITLE_MAX) {
-        throw new InputError(`A title is at most ${MESSENGER_TITLE_MAX} characters.`);
+  await conflictOnUnique(HANDLE_TAKEN, () =>
+    systemDb.transaction(async (tx) => {
+      const { conv, me } = await lockForActor(tx, actor, conversationId, {
+        live:
+          input.title !== undefined ||
+          info !== undefined ||
+          handle !== undefined ||
+          intake !== undefined ||
+          look,
+      });
+      if (handle !== undefined) {
+        // The same rights and the same record as a rename: a group admin,
+        // and a system line in the group when it changes.
+        requireGroupAdmin(conv, me);
+        if (handle !== conv.handle) {
+          if (handle) await handleFree(tx, actor.ownerId, handle, conv.id);
+          await tx
+            .update(messengerConversations)
+            .set({ handle })
+            .where(eq(messengerConversations.id, conv.id));
+          const names = await loginNames([actor.loginId], tx);
+          await systemLine(
+            tx,
+            conv,
+            `${names.get(actor.loginId) ?? 'Someone'} ${handle ? `set the group's handle to @${handle}` : "cleared the group's handle"}.`,
+          );
+        }
       }
-      if (title !== conv.title) {
+      if (intake !== undefined) {
+        requireGroupAdmin(conv, me);
+        if (intake !== conv.intake) {
+          await tx
+            .update(messengerConversations)
+            .set({ intake })
+            .where(eq(messengerConversations.id, conv.id));
+          const names = await loginNames([actor.loginId], tx);
+          await systemLine(
+            tx,
+            conv,
+            `${names.get(actor.loginId) ?? 'Someone'} ${intake ? `set the group's intake form to "${intake}"` : "cleared the group's intake form"}.`,
+          );
+        }
+      }
+      if (look) {
+        requireGroupAdmin(conv, me);
         await tx
           .update(messengerConversations)
-          .set({ title })
+          .set({
+            ...(icon !== undefined ? { icon } : {}),
+            ...(color !== undefined ? { color } : {}),
+          })
           .where(eq(messengerConversations.id, conv.id));
-        const names = await loginNames([actor.loginId], tx);
-        await systemLine(
-          tx,
-          conv,
-          `${names.get(actor.loginId) ?? 'Someone'} renamed the group${title ? ` to "${title}"` : ''}.`,
-        );
       }
-    }
-    if (info !== undefined) {
-      // The same rights and the same record as a title change: a group
-      // admin, and a system line in the group (the audit row) when the
-      // text changes. The text itself stays out of the line.
-      requireGroupAdmin(conv, me);
-      if (info !== conv.info) {
+      if (input.title !== undefined) {
+        requireGroupAdmin(conv, me);
+        const title = (input.title ?? '').trim() || null;
+        if (title && title.length > MESSENGER_TITLE_MAX) {
+          throw new InputError(`A title is at most ${MESSENGER_TITLE_MAX} characters.`);
+        }
+        if (title !== conv.title) {
+          await tx
+            .update(messengerConversations)
+            .set({ title })
+            .where(eq(messengerConversations.id, conv.id));
+          const names = await loginNames([actor.loginId], tx);
+          await systemLine(
+            tx,
+            conv,
+            `${names.get(actor.loginId) ?? 'Someone'} renamed the group${title ? ` to "${title}"` : ''}.`,
+          );
+        }
+      }
+      if (info !== undefined) {
+        // The same rights and the same record as a title change: a group
+        // admin, and a system line in the group (the audit row) when the
+        // text changes. The text itself stays out of the line.
+        requireGroupAdmin(conv, me);
+        if (info !== conv.info) {
+          await tx
+            .update(messengerConversations)
+            .set({ info })
+            .where(eq(messengerConversations.id, conv.id));
+          const names = await loginNames([actor.loginId], tx);
+          await systemLine(
+            tx,
+            conv,
+            `${names.get(actor.loginId) ?? 'Someone'} ${info ? 'changed' : 'cleared'} the group's info.`,
+          );
+        }
+      }
+      if (input.muted !== undefined && input.muted !== me.muted) {
         await tx
-          .update(messengerConversations)
-          .set({ info })
-          .where(eq(messengerConversations.id, conv.id));
-        const names = await loginNames([actor.loginId], tx);
-        await systemLine(
-          tx,
-          conv,
-          `${names.get(actor.loginId) ?? 'Someone'} ${info ? 'changed' : 'cleared'} the group's info.`,
-        );
+          .update(messengerParticipants)
+          .set({ muted: input.muted === true })
+          .where(eq(messengerParticipants.id, me.id));
       }
-    }
-    if (input.muted !== undefined && input.muted !== me.muted) {
-      await tx
-        .update(messengerParticipants)
-        .set({ muted: input.muted === true })
-        .where(eq(messengerParticipants.id, me.id));
-    }
-  });
+    }),
+  );
 }
 
 /** Delete history for everyone: a group admin removes
@@ -1744,6 +2275,8 @@ export async function getMessengerConversation(
     icon: string | null;
     color: string | null;
     info: string | null;
+    handle: string | null;
+    intake: MessengerIntakeKind | null;
     created_by: string | null;
     created_at: Date;
     archived_at: Date | null;
@@ -1758,7 +2291,7 @@ export async function getMessengerConversation(
     left_seq: string | number | null;
   }>(
     db,
-    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, c.info,
+    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, c.info, c.handle, c.intake,
                c.created_by::text as created_by, c.created_at,
                c.archived_at, me.last_seq, me.last_message_at,
                c.workspace_id::text as workspace_id,
@@ -1777,6 +2310,8 @@ export async function getMessengerConversation(
     icon: row.kind === 'direct' ? null : row.icon,
     color: row.kind === 'direct' ? null : row.color,
     info: row.kind === 'direct' ? null : row.info,
+    handle: row.kind === 'direct' ? null : row.handle,
+    intake: row.kind === 'direct' ? null : row.intake,
     createdBy: row.created_by,
     createdAt: iso(row.created_at),
     archivedAt: isoOrNull(row.archived_at),
@@ -1814,6 +2349,7 @@ type ListRow = {
   title: string | null;
   icon: string | null;
   color: string | null;
+  handle: string | null;
   last_seq: string | number;
   last_message_at: Date | null;
   last_preview: MessengerPreviewView | null;
@@ -1829,7 +2365,7 @@ type ListRow = {
 async function myConversationRows(actor: MessengerActor, unreadOnly = false): Promise<ListRow[]> {
   return q<ListRow>(
     db,
-    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, me.last_seq, me.last_message_at,
+    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, c.handle, me.last_seq, me.last_message_at,
                me.last_preview, me.muted,
                greatest(0, me.last_seq - greatest(me.last_read_seq, me.cleared_before_seq)) as unread,
                me.mention_seq > greatest(me.last_read_seq, me.cleared_before_seq) as mention,
@@ -1930,6 +2466,7 @@ export async function listMessengerConversations(
         title: titleFor(c.kind, c.title, ps, actor.loginId),
         icon: c.kind === 'direct' ? null : c.icon,
         color: c.kind === 'direct' ? null : c.color,
+        handle: c.kind === 'direct' ? null : c.handle,
         lastSeq: num(c.last_seq),
         lastMessageAt: isoOrNull(c.last_message_at),
         preview: c.last_preview,

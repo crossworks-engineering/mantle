@@ -45,12 +45,16 @@ const CreateBody = z.object({
   // A group's info (0343): trimmed, then at most 2000 (the store's rule,
   // the same over MCP); the store refuses it on a direct chat.
   info: z.string().trim().max(2000).nullable().optional(),
+  // A group's handle and intake form (fleet chat, 0394); the store checks
+  // the format, the reserved words and that the handle is free (409).
+  handle: z.string().max(64).nullable().optional(),
+  intake: z.enum(['bug', 'feature', 'request']).nullable().optional(),
 });
 
 /** POST /api/messenger/conversations: a direct chat (one other login; an
  *  existing pair answers its chat) or a group, with an optional icon and
- *  colour (a direct chat ignores them) and info (a direct chat refuses it,
- *  400). Only people who share a workspace with me (Admin users: anyone). */
+ *  colour (a direct chat ignores them), info, a handle and an intake form
+ *  (a direct chat refuses each, 400; a taken handle is 409). Only people who share a workspace with me (Admin users: anyone). */
 export async function POST(req: Request) {
   const login = anyLoginCaller();
   const body = await readBody(req, CreateBody);

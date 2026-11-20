@@ -148,6 +148,7 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   messenger_send: free('a message the caller writes as itself in a chat it is in'),
   messenger_create: free('a chat the caller starts with people in its directory'),
   messenger_mark_read: free("the caller's own read cursor"),
+  messenger_update: free("a chat's settings, as its group admin may set them by hand"),
 
   // ── Pages ────────────────────────────────────────────────────────────────
   page_create: creates('folder_id', 'parent_id'),

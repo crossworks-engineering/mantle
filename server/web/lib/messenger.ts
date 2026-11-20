@@ -28,6 +28,7 @@ export {
   removeMessengerFavourite,
   removeMessengerParticipant,
   sendMessengerMessage,
+  sendMessengerTo,
   setMessengerFavourite,
   toggleMessengerReaction,
   touchLoginPresence,

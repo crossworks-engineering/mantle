@@ -67,6 +67,9 @@ export type MessengerListRow = {
    *  agent thread. */
   icon?: string | null;
   color?: string | null;
+  /** A group's handle (0394), shown as @bugs; null for a direct chat and a
+   *  group without one; absent on an agent thread. */
+  handle?: string | null;
   /** null for an agent thread (its order is by time). */
   lastSeq: number | null;
   /** ISO, null when nothing was said yet. */
@@ -97,6 +100,14 @@ export type MessengerConversation = {
    *  most 2000 characters) its admins write; null for a direct chat and a
    *  group without one. Shown, never run. Not on a list row. */
   info: string | null;
+  /** A group's handle (0394): its address on the box, shown as @bugs.
+   *  Every login on the box may post to it; a message that names it writes
+   *  a copy line in the group. null for a direct chat and a group without
+   *  one. */
+  handle?: string | null;
+  /** A group's intake form (0394): bug, feature or request
+   *  (MESSENGER_INTAKE_FORMS in messenger-intake), or null. */
+  intake?: 'bug' | 'feature' | 'request' | null;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -118,14 +129,36 @@ export type MessengerConversation = {
   };
 };
 
-export type MessengerMention = { kind: MessengerParticipantKind; id: string };
+/** A mention: a login or an agent of the chat; or a handle (0394): a
+ *  group on this box, `id` its conversation id. The send fills `handle`
+ *  and `seq` (the copy line in that group); a client sends `id` only. */
+export type MessengerMention =
+  | { kind: MessengerParticipantKind; id: string }
+  | { kind: 'handle'; id: string; handle?: string; seq?: number };
 
 /** What a system line marks (calls plan section 8). The client tells a
  *  call line apart by `type`; `callId` names the call (GET .../calls). */
 export type MessengerEvent =
   | { type: 'call_started'; callId: string }
   | { type: 'call_ended'; callId: string; seconds: number; participants: number }
-  | { type: 'call_cap'; callId: string; seconds: number; participants: number };
+  | { type: 'call_cap'; callId: string; seconds: number; participants: number }
+  /** A copy line in a handle's group (0394): message `from.seq` of chat
+   *  `from.conversationId` named the handle; `by` the sender's login. A
+   *  Reply on this line goes back to the first chat. */
+  | { type: 'intake'; from: { conversationId: string; seq: number }; by: string | null }
+  /** The line back in the first chat: a Reply on the copy line, message
+   *  `group.seq` of the handle's group. */
+  | {
+      type: 'intake_answer';
+      group: { conversationId: string; handle: string; seq: number };
+      by: string | null;
+    }
+  /** In the group: the sender left the first chat, so the answer at `seq`
+   *  stays in the group. */
+  | { type: 'intake_sender_left'; seq: number }
+  /** The first line of my own thread to a handle (a group of one, "To
+   *  @bugs"): the send finds the thread again by it. */
+  | { type: 'to_thread'; to: { conversationId: string } };
 
 export type MessengerReaction = { emoji: string; count: number; mine: boolean };
 
@@ -183,6 +216,11 @@ export type MessengerCreateRequest = {
   /** A group's info (at most 2000 characters; whitespace trimmed, blank is
    *  none); a direct chat refuses it (400). */
   info?: string | null;
+  /** A group's handle (MESSENGER_HANDLE_RE, not a reserved word, free on
+   *  the box: 409 when taken); a direct chat refuses it (400). */
+  handle?: string | null;
+  /** A group's intake form; a direct chat refuses it (400). */
+  intake?: 'bug' | 'feature' | 'request' | null;
 };
 
 export type MessengerCreateResponse = {
@@ -200,6 +238,10 @@ export type MessengerPatchRequest = {
   color?: string | null;
   /** At most 2000 characters, whitespace trimmed; null clears it. */
   info?: string | null;
+  /** A group's handle; null clears it (409 when taken). */
+  handle?: string | null;
+  /** A group's intake form; null clears it. */
+  intake?: 'bug' | 'feature' | 'request' | null;
   muted?: boolean;
 };
 
@@ -207,6 +249,8 @@ export type MessengerPatchRequest = {
 export type MessengerSendRequest = {
   body: string;
   mentions?: MessengerMention[];
+  /** The answers to the intake form of the one handle named (fleet chat). */
+  answers?: Record<string, string>;
   replyToSeq?: number | null;
   clientMsgId?: string | null;
   attachments?: string[];
@@ -218,9 +262,26 @@ export type MessengerSendResponse = {
   created: boolean;
 };
 
-/** One entry of GET /api/messenger/directory. */
+/** POST /api/messenger/send (fleet chat, 0394): post to a handle with no
+ *  open chat. `answers` fill the group's intake form (by question key,
+ *  MESSENGER_INTAKE_FORMS); then `body` may be empty. */
+export type MessengerSendToRequest = {
+  to: { handle: string };
+  body: string;
+  answers?: Record<string, string>;
+  clientMsgId?: string | null;
+};
+
+/** The chat the line went in (the group, for a member; else my own
+ *  "To @handle" thread) and the line. */
+export type MessengerSendToResponse = MessengerSendResponse & { conversationId: string };
+
+/** One entry of GET /api/messenger/directory: a login, an agent, or a
+ *  handle (0394): a group with a handle on this box, which every login may
+ *  post to (`id` its conversation id, `name` its title, `member` whether I
+ *  am in it). */
 export type MessengerDirectoryEntry = {
-  kind: MessengerParticipantKind;
+  kind: MessengerParticipantKind | 'handle';
   id: string;
   name: string;
   /** Active in the last two minutes (logins only). */
@@ -233,6 +294,11 @@ export type MessengerDirectoryEntry = {
   photoVersion?: string | null;
   /** Logins only, as on a participant: who the person is to the team. */
   description?: string | null;
+  /** Handles only: the handle (shown as @bugs), its intake form, and
+   *  whether I am in the group. */
+  handle?: string;
+  intake?: 'bug' | 'feature' | 'request' | null;
+  member?: boolean;
 };
 
 export type MessengerDirectoryResponse = { entries: MessengerDirectoryEntry[] };

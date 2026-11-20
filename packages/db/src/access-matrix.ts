@@ -378,6 +378,8 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'icon',
       'color',
       'info',
+      'handle',
+      'intake',
       'last_seq',
       'last_message_at',
       'last_preview',
@@ -385,7 +387,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
       'voice_replies',
     ],
     delete: false,
-    why: "a chat made (create), its counters moved by a send, its title, icon, colour and info (0343), its archive when the last person leaves, a group admin's voice-replies switch (0342)",
+    why: "a chat made (create), its counters moved by a send, its title, icon, colour and info (0343), its handle and intake form (0394), its archive when the last person leaves, a group admin's voice-replies switch (0342)",
   },
   'public.messenger_participants': {
     insert: true,
@@ -1435,6 +1437,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       'icon',
       'color',
       'info',
+      'handle',
+      'intake',
       'workspace_id',
       'agent_id',
       'direct_key',
@@ -1749,7 +1753,7 @@ export type ColumnExists = (table: string, column: string) => boolean;
  */
 export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
   'public.tables': ['draft_path'], // 0283
-  'public.messenger_conversations': ['voice_replies', 'info'], // 0342, 0343
+  'public.messenger_conversations': ['voice_replies', 'info', 'handle', 'intake'], // 0342, 0343, 0394
   'public.messenger_messages': ['event'], // 0342
 };
 

@@ -41,6 +41,10 @@ const PatchBody = z
     // A group's info (0343): trimmed, then at most 2000 (the store's rule,
     // the same over MCP); null or blank clears it.
     info: z.string().trim().max(2000).nullable().optional(),
+    // A group's handle and intake form (fleet chat, 0394); the store checks
+    // the format, the reserved words and that the handle is free (409).
+    handle: z.string().max(64).nullable().optional(),
+    intake: z.enum(['bug', 'feature', 'request']).nullable().optional(),
     muted: z.boolean().optional(),
   })
   .refine(
@@ -49,12 +53,14 @@ const PatchBody = z
       b.icon !== undefined ||
       b.color !== undefined ||
       b.info !== undefined ||
+      b.handle !== undefined ||
+      b.intake !== undefined ||
       b.muted !== undefined,
     'nothing to change',
   );
 
-/** PATCH /api/messenger/c/:id: a group's title, icon, colour and info (its
- *  admins; a direct chat refuses each with 403), my own mute. The picture,
+/** PATCH /api/messenger/c/:id: a group's title, icon, colour, info,
+ *  handle and intake form (its admins; a taken handle is 409; a direct chat refuses each with 403), my own mute. The picture,
  *  the workspace and the agent arrive with Phases 3 and 4. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = anyLoginCaller();
