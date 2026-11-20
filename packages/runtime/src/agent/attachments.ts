@@ -114,6 +114,10 @@ export async function runVisionWorker(opts: {
    *  (a scanned page drawn again: its file's sha256 and page), for the
    *  answer's key (@mantle/db answer-cache.ts). Default: their sha256. */
   input?: string;
+  /** Whether the answer is one the caller can use, so it is kept (a try
+   *  again takes it). One it cannot use is not kept: a try again asks again.
+   *  Default: any text. */
+  accept?: (text: string) => boolean;
 }): Promise<VisionResult> {
   // The one resolution (@mantle/api-keys): the worker, its key reference,
   // a wired adapter (checked before the key is opened), the key.
@@ -199,8 +203,8 @@ export async function runVisionWorker(opts: {
       tokensOut: r.tokensOut,
     };
     // Kept before it is returned: whatever waits after it, a try again
-    // takes it and pays nothing twice.
-    await keepAnswer('vision', key, answer);
+    // takes it and pays nothing twice. Only an answer the caller accepts.
+    if ((opts.accept ?? hasText)(text)) await keepAnswer('vision', key, answer);
     return answer;
   } catch (err) {
     const wait = providerWaitOf(err);
@@ -213,6 +217,9 @@ export async function runVisionWorker(opts: {
     };
   }
 }
+
+/** The default answer a vision call keeps: any text. */
+const hasText = (text: string): boolean => text !== '';
 
 /** A model's answer that used its whole token budget stopped there, most
  *  likely in mid-description: said in the read's sink (an extract's;

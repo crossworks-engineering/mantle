@@ -338,6 +338,13 @@ export function pipelineAskOf(
         },
       },
       async (h): Promise<PipelineCallAnswer> => {
+        const answerOf = (text: string) =>
+          askAnswerOf(
+            text,
+            ask.fields,
+            ask.list,
+            pageText ? PAGE_TEXT_ANSWER_MAX_CHARS : undefined,
+          );
         const out = await d.vision({
           ownerId,
           bytes: ask.picture,
@@ -349,6 +356,9 @@ export function pipelineAskOf(
           // One time more when the provider failed: a failed ask stops the
           // asks after it in the run.
           tries: 2,
+          // Kept only when it is an answer (a try again of a reply that is
+          // no JSON object asks again).
+          accept: (text) => answerOf(text) !== null,
         });
         // No model: the box has no vision worker, so no call was made, and
         // the step is not one of the day count.
@@ -375,12 +385,7 @@ export function pipelineAskOf(
           h.setError(out.note ?? 'no text');
           return { ok: false, error: 'failed', reason: 'no_text' };
         }
-        const answer = askAnswerOf(
-          out.text,
-          ask.fields,
-          ask.list,
-          pageText ? PAGE_TEXT_ANSWER_MAX_CHARS : undefined,
-        );
+        const answer = answerOf(out.text);
         if (!answer) {
           h.setError('the answer is no JSON object');
           return { ok: false, error: 'failed', reason: 'no_json' };

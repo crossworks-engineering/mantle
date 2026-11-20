@@ -4,6 +4,7 @@
  * a made-up worker and adapter (no provider):
  *  - a kept answer is taken with no paid call; outside the cache's scope
  *    nothing is kept or taken;
+ *  - only an answer the caller accepts is kept (any text by default);
  *  - a kept string is well-formed (no NUL, no lone surrogate); each keep
  *    that fails is logged and marks the scope (answerKeepFailed);
  *  - the cache is per node: another node with the same bytes pays once for
@@ -26,6 +27,8 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({
   scan: new Map<string, ('read' | 'figure' | 'wait')[]>(),
   vision: [] as ('read' | 'wait')[],
+  /** The vision call's answer text (null: the pump curve). */
+  visionText: null as string | null,
   scanCalls: [] as string[],
   visionCalls: 0,
 }));
@@ -73,7 +76,11 @@ vi.mock('@mantle/voice', () => ({
       h.visionCalls += 1;
       const next = h.vision.shift() ?? 'read';
       if (next === 'wait') throw Object.assign(new Error('vision failed: 503'), { status: 503 });
-      return { text: 'A pump curve, flow against head.', tokensIn: 900, tokensOut: 20 };
+      return {
+        text: h.visionText ?? 'A pump curve, flow against head.',
+        tokensIn: 900,
+        tokensOut: 20,
+      };
     },
   }),
 }));
@@ -134,6 +141,7 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     h.vision = [];
     h.scanCalls = [];
     h.visionCalls = 0;
+    h.visionText = null;
     sha = randomUUID().replace(/-/g, '').padEnd(64, '0');
     node = await newNode();
   });
@@ -226,6 +234,33 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     const rows = await admin<{ node_id: string }[]>`select node_id::text from ai_answer_cache
       where node_id in (${node}::uuid, ${other}::uuid) order by created_at`;
     expect(rows.map((r) => r.node_id)).toEqual([node, other]);
+  });
+
+  it('only an answer the caller accepts is kept: an empty one and a refused one are asked again', async () => {
+    const ask = (prompt: string, accept?: (text: string) => boolean) => () =>
+      attachments.runVisionWorker({
+        ownerId: 'o-1',
+        bytes: Buffer.from(sha),
+        mimeType: 'image/png',
+        prompt,
+        ...(accept ? { accept } : {}),
+      });
+    // No text (the default): not kept, so a try again asks again.
+    h.visionText = '';
+    await asSystem(() => cache.withAnswerCache(ask('empty?'), null, node));
+    await asSystem(() => cache.withAnswerCache(ask('empty?'), null, node));
+    expect(h.visionCalls).toBe(2);
+    // Text the caller cannot use (no JSON): not kept either.
+    h.visionText = 'I cannot read this sheet.';
+    const json = (text: string) => text.startsWith('{');
+    await asSystem(() => cache.withAnswerCache(ask('json?', json), null, node));
+    await asSystem(() => cache.withAnswerCache(ask('json?', json), null, node));
+    expect(h.visionCalls).toBe(4);
+    // An answer it accepts: kept, paid once.
+    h.visionText = '{"Line number":"6-P-101"}';
+    await asSystem(() => cache.withAnswerCache(ask('json?', json), null, node));
+    await asSystem(() => cache.withAnswerCache(ask('json?', json), null, node));
+    expect(h.visionCalls).toBe(5);
   });
 
   it('a string with a lone surrogate or a NUL is kept well-formed, and taken', async () => {

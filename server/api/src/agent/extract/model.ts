@@ -20,7 +20,11 @@ import { backgroundFence, withFenceNote } from '@mantle/std';
 import { chatWithFailover, resolveChatRoutes, type ChatRoutes } from '@mantle/runtime/agent';
 import { type ChatResult } from '@mantle/voice';
 import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from '@mantle/embeddings';
-import { parseExtractorOutput, type ExtractorOutput } from '../extractor-parse';
+import {
+  extractorReplyIsJson,
+  parseExtractorOutput,
+  type ExtractorOutput,
+} from '../extractor-parse';
 import { DEFAULT_EXTRACTOR_PROMPT } from './prompts';
 import { extractWithPicture, presentPictureForPass } from './present-picture';
 
@@ -275,8 +279,10 @@ export async function runExtractorModel(
               ? await extractWithPicture(ownerId, systemPrompt, userPayload, picture, params)
               : await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
             r = { text: got.text, model: got.model ?? null };
-            // Kept before anything after it (the embeds) can wait.
-            await keepAnswer('extractor', key, r);
+            // Kept before anything after it (the embeds) can wait. Only a
+            // reply that parses to JSON: a try again of one that does not
+            // asks again.
+            if (extractorReplyIsJson(r.text)) await keepAnswer('extractor', key, r);
           }
           const model = (picture && r.model) || worker.model;
           const result = parseExtractorOutput(r.text, { nodeId: node.id, model });

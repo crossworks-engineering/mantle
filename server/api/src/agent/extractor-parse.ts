@@ -227,6 +227,37 @@ export function extractFirstJsonObject(text: string): string | null {
   return null; // unbalanced — truncated mid-object
 }
 
+/** The extractor reply's JSON, as parseExtractorOutput reads it (undefined:
+ *  none), and the reply with its fences cut. */
+function extractorJsonOf(raw: string): { cleaned: string; parsed: unknown } {
+  // Strip ```json fences if a model adds them.
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+  try {
+    return { cleaned, parsed: JSON.parse(cleaned) };
+  } catch {
+    // Fast path failed — most often the model appended prose or a stray
+    // fence after a complete object. Recover the first balanced {…}.
+    const candidate = extractFirstJsonObject(cleaned);
+    if (candidate) {
+      try {
+        return { cleaned, parsed: JSON.parse(candidate) };
+      } catch {
+        /* no JSON */
+      }
+    }
+    return { cleaned, parsed: undefined };
+  }
+}
+
+/** Whether an extractor reply parses to JSON (the answer cache keeps only
+ *  such a reply: a try again of one that does not asks again). */
+export function extractorReplyIsJson(raw: string): boolean {
+  return extractorJsonOf(raw).parsed !== undefined;
+}
+
 /**
  * Parse the extractor LLM response with sanity defaults. Distinct log
  * lines for "the model returned bad JSON" vs "the model returned valid
@@ -241,33 +272,14 @@ export function parseExtractorOutput(
   raw: string,
   context?: { nodeId?: string; model?: string },
 ): ExtractorOutput {
-  // Strip ```json fences if a model adds them.
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    // Fast path failed — most often the model appended prose or a stray
-    // fence after a complete object. Recover the first balanced {…}.
-    const candidate = extractFirstJsonObject(cleaned);
-    if (candidate) {
-      try {
-        parsed = JSON.parse(candidate);
-      } catch {
-        /* fall through to the empty-result log below */
-      }
-    }
-    if (parsed === undefined) {
-      console.error('[extractor] LLM returned non-JSON; producing empty result', {
-        nodeId: context?.nodeId,
-        model: context?.model,
-        preview: cleaned.slice(0, 200),
-      });
-      return { summary: '', facts: [], entities: [], relations: [] };
-    }
+  const { cleaned, parsed } = extractorJsonOf(raw);
+  if (parsed === undefined) {
+    console.error('[extractor] LLM returned non-JSON; producing empty result', {
+      nodeId: context?.nodeId,
+      model: context?.model,
+      preview: cleaned.slice(0, 200),
+    });
+    return { summary: '', facts: [], entities: [], relations: [] };
   }
   const obj = parsed as Partial<ExtractorOutput>;
   return {

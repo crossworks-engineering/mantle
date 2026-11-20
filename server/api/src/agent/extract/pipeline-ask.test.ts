@@ -7,7 +7,8 @@
  *    count's one source), and a box with no vision worker leaves no such step;
  *  - the model gets the fixed system text and the core's question, never a
  *    text of the step;
- *  - an answer that is no JSON is `failed`;
+ *  - an answer that is no JSON is `failed`, and the answer cache keeps
+ *    only an answer (`accept`);
  *  - an ask with the list part has its own system text and a larger answer
  *    cap, and its list is checked as data.
  */
@@ -118,6 +119,20 @@ describe('the paid ask of an Agent', () => {
     expect(calls[0]!.mimeType).toBe('image/png');
   });
 
+  it('the answer cache keeps only an answer: a reply that is no JSON object is asked again', async () => {
+    await mod.pipelineAskOf('owner', 'node', AGENT, deps())(ASK);
+    const accept = calls[0]!.accept!;
+    expect(accept).toBeTypeOf('function');
+    expect(accept('{"Line number":"6-P-101","Revision":"B"}')).toBe(true);
+    expect(accept('I cannot read this sheet.')).toBe(false);
+    expect(accept('')).toBe(false);
+    // A list ask: its list is checked as data.
+    calls = [];
+    await mod.pipelineAskOf('owner', 'node', AGENT, deps())({ ...ASK, list: true });
+    expect(calls[0]!.accept!('{"fields":{},"list":[{"Line number":"6-P-101"}]}')).toBe(true);
+    expect(calls[0]!.accept!('no list')).toBe(false);
+  });
+
   const guards: [string, Record<string, unknown>, string][] = [
     ['off in the file workspace', { offHere: async () => true }, 'off'],
     ['no model work for the file', { llmAllowed: async () => false }, 'no_llm_work'],
@@ -194,9 +209,11 @@ describe('the paid ask of an Agent', () => {
         model: 'made-up-vision',
       },
     });
-    // The call carries a picture and two texts, and nothing else a model could act with.
+    // The call carries a picture and two texts, and nothing else a model
+    // could act with (`accept` is the answer cache's check, never sent).
     expect(Object.keys(calls[0]!).sort()).toEqual(
       [
+        'accept',
         'bytes',
         'leastThinking',
         'maxTokens',
