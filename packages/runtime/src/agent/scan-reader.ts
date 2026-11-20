@@ -238,7 +238,7 @@ export async function runScanReader(opts: {
     };
     // Kept before it is returned: whatever waits after it (a figure's vision
     // call), a try again takes it and pays nothing twice.
-    await keepAnswer('scan_reader', key, answer);
+    await keepAnswer('scan_reader', key, answer, true);
     return resultOf(answer);
   } catch (err) {
     const wait = providerWaitOf(err);

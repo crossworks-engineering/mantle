@@ -114,8 +114,9 @@ export async function runVisionWorker(opts: {
    *  (a scanned page drawn again: its file's sha256 and page), for the
    *  answer's key (@mantle/db answer-cache.ts). Default: their sha256. */
   input?: string;
-  /** Whether the answer is one the caller can use, so it is kept (a try
-   *  again takes it). One it cannot use is not kept: a try again asks again.
+  /** Whether the answer is one the caller can use (any try again takes
+   *  it). One it cannot use is kept too, but taken only by a wait's try
+   *  again (the same answer, not paid again); a fresh job asks again.
    *  Default: any text. */
   accept?: (text: string) => boolean;
   /** false: no answer is taken or kept, for a call whose caller keeps its
@@ -207,8 +208,9 @@ export async function runVisionWorker(opts: {
       tokensOut: r.tokensOut,
     };
     // Kept before it is returned: whatever waits after it, a try again
-    // takes it and pays nothing twice. Only an answer the caller accepts.
-    if (cached && (opts.accept ?? hasText)(text)) await keepAnswer('vision', key, answer);
+    // takes it and pays nothing twice. One the caller does not accept is
+    // taken only by a wait's try again (answer-cache.ts).
+    if (cached) await keepAnswer('vision', key, answer, (opts.accept ?? hasText)(text));
     return answer;
   } catch (err) {
     const wait = providerWaitOf(err);

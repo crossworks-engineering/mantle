@@ -288,10 +288,10 @@ export async function runExtractorModel(
               ? await extractWithPicture(ownerId, systemPrompt, userPayload, picture, params)
               : await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
             r = { text: got.text, model: got.model ?? null };
-            // Kept before anything after it (the embeds) can wait. Only a
-            // reply that parses to JSON: a try again of one that does not
-            // asks again.
-            if (extractorReplyIsJson(r.text)) await keepAnswer('extractor', key, r);
+            // Kept before anything after it (the embeds) can wait. A reply
+            // that does not parse to JSON is taken only by a wait's try
+            // again (answer-cache.ts): a fresh job asks again.
+            await keepAnswer('extractor', key, r, extractorReplyIsJson(r.text));
           }
           const model = (picture && r.model) || worker.model;
           const result = parseExtractorOutput(r.text, { nodeId: node.id, model });

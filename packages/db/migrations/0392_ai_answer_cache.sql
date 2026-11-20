@@ -14,6 +14,10 @@
 -- `answer`: the provider's answer and its cost metadata (tokens, billed
 -- cost), as the caller rebuilds its result from it. A person's read again
 -- (file_reindex) takes only answers kept after it (`created_at`).
+-- `accepted`: whether the caller could use the answer (a vision answer with
+-- text, an extractor reply that is a JSON object). Every paid answer is
+-- kept; one not accepted is taken only by a wait's try again (the same
+-- answer as the first try, not paid again), and a fresh job asks again.
 --
 -- Written and read on the system pool only (@mantle/db answer-cache.ts),
 -- outside every scope: the workspace role holds no right on it
@@ -26,6 +30,7 @@ CREATE TABLE IF NOT EXISTS "public"."ai_answer_cache" (
   "key" text NOT NULL,
   "kind" text NOT NULL,
   "answer" jsonb NOT NULL,
+  "accepted" boolean NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT "ai_answer_cache_pkey" PRIMARY KEY ("node_id", "key"),
   CONSTRAINT "ai_answer_cache_key_ck" CHECK ("key" ~ '^[0-9a-f]{64}$'),

@@ -649,8 +649,10 @@ async function handleExtractJob(
     );
   // Every paid AI answer of the job is kept as it comes, for its node
   // (@mantle/db answer-cache.ts): a try again after a wait pays for none of
-  // them twice. The scope holds the job's wait too: after a keep that
-  // failed, no wait is sent (sendWaiting).
+  // them twice. A wait's try again (`data.wait`) takes an answer the first
+  // try could not use too, so it does what the first try did, unpaid. The
+  // scope holds the job's wait too: after a keep that failed, no wait is
+  // sent (sendWaiting).
   return withAnswerCache(
     async () => {
       const run = prev ? prev.catch(() => {}).then(extract) : extract();
@@ -699,6 +701,7 @@ async function handleExtractJob(
     },
     null,
     nodeId,
+    { retry: Boolean(data.wait) },
   );
 }
 

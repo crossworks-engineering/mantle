@@ -2,7 +2,8 @@
  * The extractor's call and the answer cache (./model.ts; @mantle/db
  * answer-cache.ts), the cache a map and the model a stub:
  *  - a reply that parses to JSON is kept, and a try again takes it with no
- *    call; a reply that does not is not kept, so a try again asks again.
+ *    call; a reply that does not is kept as not accepted, and a kept one
+ *    is read as it was when fresh (the empty result), with no call.
  *  - the key is the input the model is asked (built again with a fixed
  *    fence): a change to the prompt is a new ask.
  */
@@ -10,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   kept: new Map<string, unknown>(),
+  accepted: new Map<string, boolean>(),
   chatWithFailover: vi.fn(),
   /** Words added to the built system prompt, as a code change to the
    *  default prompt or the fence's note would. */
@@ -27,9 +29,12 @@ vi.mock('@mantle/std', async (orig) => {
 
 vi.mock('@mantle/db/answer-cache', async (orig) => ({
   ...(await orig<typeof import('@mantle/db/answer-cache')>()),
+  // As a wait's try again takes them: any kept answer, accepted or not
+  // (which a fresh job takes is answer-cache.db.test's).
   keptAnswer: vi.fn(async (key: string) => h.kept.get(key) ?? null),
-  keepAnswer: vi.fn(async (_kind: string, key: string, answer: unknown) => {
+  keepAnswer: vi.fn(async (_kind: string, key: string, answer: unknown, accepted: boolean) => {
     h.kept.set(key, answer);
+    h.accepted.set(key, accepted);
   }),
 }));
 vi.mock('@mantle/runtime/agent', () => ({
@@ -67,6 +72,7 @@ const reply = (text: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.kept.clear();
+  h.accepted.clear();
   h.promptEdit = '';
 });
 
@@ -79,19 +85,21 @@ describe("the extractor's call and the answer cache", () => {
     expect(h.kept.size).toBe(1);
   });
 
-  it('a reply that is no JSON is not kept: a try again asks again', async () => {
+  it('a reply that is no JSON is kept as not accepted; taken, it is read as when fresh', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       reply('I could not read this note.');
-      await run();
-      await run();
-      expect(h.chatWithFailover).toHaveBeenCalledTimes(2);
-      expect(h.kept.size).toBe(0);
-      // Its next reply, JSON, is kept.
+      const first = await run();
+      expect(first).toMatchObject({ summary: '', facts: [], entities: [] });
+      expect([...h.accepted.values()]).toEqual([false]);
+      // A wait's try again takes it: the same result, no call.
+      expect(await run()).toEqual(first);
+      expect(h.chatWithFailover).toHaveBeenCalledTimes(1);
+      // A reply that is JSON is kept as accepted.
+      h.kept.clear();
       reply(REPLY);
       await run();
-      await run();
-      expect(h.chatWithFailover).toHaveBeenCalledTimes(3);
+      expect([...h.accepted.values()]).toEqual([true]);
     } finally {
       error.mockRestore();
     }

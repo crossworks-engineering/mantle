@@ -161,9 +161,13 @@ job with the cache on for its node; a chat turn, or a call with no node, does
 not use it. A person's read again (`file_reindex`) stamps the file, and its
 extract takes only answers kept after that moment, so the person's read is
 read again, once. A node's answers go when it is deleted (`node_id`
-cascades); nothing else prunes them. Only an answer the caller can use is kept: a
-vision answer with text (an Agent's ask: one that reads as its answer), an
-extractor reply that parses to JSON; a try again of any other asks again. A keep that fails is logged, each one, and the
+cascades); nothing else prunes them. Every paid answer is kept, marked
+`accepted` when the caller can use it: a vision answer with text (an Agent's
+ask: one that reads as its answer), an extractor reply that is a JSON
+object. One not accepted is taken only by a wait's try again (the job's
+`wait`), which then does what its first try did without paying again; a
+fresh job (a person's run or read again) asks again, and its answer takes
+the row. A keep that fails is logged, each one, and the
 job then sends no wait: it takes pg-boss's bounded retries, so a cache that
 cannot keep never turns waits into an endless paid loop.
 

@@ -39,6 +39,10 @@ const runs = vi.hoisted(() => ({
   waits: new Map<string, number>(),
   /** Nodes whose try pays for an answer the cache cannot keep, then waits. */
   keepFails: new Set<string>(),
+  /** Nodes whose paid answer the caller cannot use: its first try waits. */
+  unaccepted: new Set<string>(),
+  /** What each try of such a node found kept ('kept' or 'none'). */
+  found: new Map<string, string[]>(),
 }));
 vi.mock('./extractor.js', async () => {
   const { ProviderWaitError } = await import('@mantle/std');
@@ -49,8 +53,22 @@ vi.mock('./extractor.js', async () => {
         // A paid answer the table refuses (its key check), then the
         // provider's "not now" to the next call.
         const { keepAnswer } = await import('@mantle/db/answer-cache');
-        await keepAnswer('vision', 'not-a-key', { text: 'paid' });
+        await keepAnswer('vision', 'not-a-key', { text: 'paid' }, true);
         throw new ProviderWaitError({ reason: 'rate_limit' }, 'vision');
+      }
+      if (runs.unaccepted.has(nodeId)) {
+        // The extractor's reply, paid and kept but not one it can use (no
+        // JSON); the first try then meets the provider's "not now".
+        const { answerKey, keepAnswer, keptAnswer } = await import('@mantle/db/answer-cache');
+        const key = answerKey('extractor', [nodeId]);
+        const kept = await keptAnswer(key);
+        const found = runs.found.get(nodeId) ?? [];
+        found.push(kept ? 'kept' : 'none');
+        runs.found.set(nodeId, found);
+        if (!kept) await keepAnswer('extractor', key, { text: 'no JSON here' }, false);
+        if (found.length === 1) throw new ProviderWaitError({ reason: 'rate_limit' }, 'extractor');
+        runs.ended.push(nodeId);
+        return;
       }
       const left = runs.waits.get(nodeId) ?? 0;
       if (left > 0) {
@@ -307,6 +325,29 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
       expect(await jobs(pdf)).toHaveLength(1);
     } finally {
       error.mockRestore();
+    }
+  }, 90_000);
+
+  it("a wait's try again takes the answer its first try could not use; a fresh job asks again", async () => {
+    const pdf = await file('scan-unaccepted.pdf');
+    runs.unaccepted.add(pdf);
+    try {
+      await q.enqueueExtract(pdf);
+      await until('the wait is sent', async () => (await jobs(pdf)).length === 2);
+      await su`update pgboss.job set start_after = now()
+        where data->>'nodeId' = ${pdf} and state = 'created'`;
+      await until('the try again ended', () => runs.ended.includes(pdf));
+      await until('its jobs are done', async () =>
+        (await jobs(pdf)).every((j) => j.state === 'completed'),
+      );
+      // The first try paid and kept; the wait's try again took it.
+      expect(runs.found.get(pdf)).toEqual(['none', 'kept']);
+      // A fresh job (a person's run again) asks again.
+      await q.enqueueExtract(pdf);
+      await until('the fresh job ran', () => (runs.found.get(pdf)?.length ?? 0) === 3);
+      expect(runs.found.get(pdf)).toEqual(['none', 'kept', 'none']);
+    } finally {
+      runs.unaccepted.delete(pdf);
     }
   }, 90_000);
 });

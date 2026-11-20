@@ -16,7 +16,11 @@
  *
  * Only inside withAnswerCache with a node: the extract queue runs each job
  * in it. Outside (a chat turn, a test), or with no node, nothing is read or
- * written. A person's read again
+ * written. Every paid answer is kept, with whether the caller accepted it
+ * (could use it). One not accepted is taken only by a wait's try again
+ * (`retry`), so that try does what the first did without paying again; a
+ * fresh job (a person's new run or read again) asks again, and its answer
+ * takes the row. A person's read again
  * (file_reindex) stamps the node (readAgainStampSql); its extract then takes
  * only answers kept after that moment (`since`), so it pays once for the read
  * the person asked for, and its own tries again after a wait still pay
@@ -41,24 +45,34 @@ export type AnswerKind = 'vision' | 'scan_reader' | 'extractor';
 /** A surrogate with no pair (a cut inside a pair, a provider's bad bytes). */
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 
-/** A scope: its node, its read again, and whether a keep failed in it or in
- *  the scope it runs in (one mark for the whole job). */
-type Scope = { since: Date | null; nodeId: string | null; failed: { keep: boolean } };
+/** A scope: its node, its read again, whether it is a wait's try again,
+ *  and whether a keep failed in it or in the scope it runs in (one mark for
+ *  the whole job). */
+type Scope = {
+  since: Date | null;
+  nodeId: string | null;
+  retry: boolean;
+  failed: { keep: boolean };
+};
 
 const scopes = new AsyncLocalStorage<Scope>();
 
 /**
  * Run `fn` with the answer cache on for the node `nodeId` (null: off).
  * `since`: only answers kept at or after it are taken (a person's read
- * again); null, any.
+ * again); null, any. `retry`: a wait's try again, which takes an answer
+ * not accepted too (default: the scope it runs in, else false).
  */
 export function withAnswerCache<T>(
   fn: () => Promise<T>,
   since: Date | null,
   nodeId: string | null,
+  opts: { retry?: boolean } = {},
 ): Promise<T> {
-  const failed = scopes.getStore()?.failed ?? { keep: false };
-  return scopes.run({ since, nodeId, failed }, fn);
+  const outer = scopes.getStore();
+  const failed = outer?.failed ?? { keep: false };
+  const retry = opts.retry ?? outer?.retry ?? false;
+  return scopes.run({ since, nodeId, retry, failed }, fn);
 }
 
 /** Whether a paid answer could not be kept in this scope: a try again
@@ -79,8 +93,8 @@ export function bytesKey(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** The kept answer of `key`, or null: none, too old for this read, no
- *  cache here, or the read failed. */
+/** The kept answer of `key`, or null: none, too old for this read, not
+ *  accepted outside a wait's try again, no cache here, or the read failed. */
 export async function keptAnswer<T>(key: string): Promise<T | null> {
   const scope = scopes.getStore();
   if (!scope?.nodeId) return null;
@@ -93,6 +107,7 @@ export async function keptAnswer<T>(key: string): Promise<T | null> {
           eq(aiAnswerCache.nodeId, scope.nodeId),
           eq(aiAnswerCache.key, key),
           scope.since ? gte(aiAnswerCache.createdAt, scope.since) : undefined,
+          scope.retry ? undefined : eq(aiAnswerCache.accepted, true),
         ),
       )
       .limit(1);
@@ -104,8 +119,14 @@ export async function keptAnswer<T>(key: string): Promise<T | null> {
 }
 
 /** Keep `answer` under `key` (a newer answer of the same key takes its
- *  place). Awaited by the gateway before it returns the answer. */
-export async function keepAnswer(kind: AnswerKind, key: string, answer: unknown): Promise<void> {
+ *  place), with whether the caller accepted it. Awaited by the gateway
+ *  before it returns the answer. */
+export async function keepAnswer(
+  kind: AnswerKind,
+  key: string,
+  answer: unknown,
+  accepted: boolean,
+): Promise<void> {
   const scope = scopes.getStore();
   const nodeId = scope?.nodeId;
   if (!scope || !nodeId) return;
@@ -120,10 +141,10 @@ export async function keepAnswer(kind: AnswerKind, key: string, answer: unknown)
     );
     await systemDb
       .insert(aiAnswerCache)
-      .values({ nodeId, key, kind, answer: kept })
+      .values({ nodeId, key, kind, answer: kept, accepted })
       .onConflictDoUpdate({
         target: [aiAnswerCache.nodeId, aiAnswerCache.key],
-        set: { answer: kept, createdAt: sql`now()` },
+        set: { answer: kept, accepted, createdAt: sql`now()` },
       });
   } catch (err) {
     scope.failed.keep = true;

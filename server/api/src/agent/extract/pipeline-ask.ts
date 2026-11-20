@@ -356,8 +356,8 @@ export function pipelineAskOf(
           // One time more when the provider failed: a failed ask stops the
           // asks after it in the run.
           tries: 2,
-          // Kept only when it is an answer (a try again of a reply that is
-          // no JSON object asks again).
+          // Accepted only when it is an answer: a reply that is no JSON
+          // object is taken only by a wait's try again (answer-cache.ts).
           accept: (text) => answerOf(text) !== null,
         });
         // No model: the box has no vision worker, so no call was made, and

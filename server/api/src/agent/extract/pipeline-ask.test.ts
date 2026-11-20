@@ -119,7 +119,7 @@ describe('the paid ask of an Agent', () => {
     expect(calls[0]!.mimeType).toBe('image/png');
   });
 
-  it('the answer cache keeps only an answer: a reply that is no JSON object is asked again', async () => {
+  it('the answer cache accepts only an answer: a reply that is no JSON object is not accepted', async () => {
     await mod.pipelineAskOf('owner', 'node', AGENT, deps())(ASK);
     const accept = calls[0]!.accept!;
     expect(accept).toBeTypeOf('function');

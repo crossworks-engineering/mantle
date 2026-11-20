@@ -4,7 +4,9 @@
  * a made-up worker and adapter (no provider):
  *  - a kept answer is taken with no paid call; outside the cache's scope
  *    nothing is kept or taken;
- *  - only an answer the caller accepts is kept (any text by default);
+ *  - every paid answer is kept; one the caller does not accept (no text by
+ *    default) is taken only by a wait's try again, and a fresh job asks
+ *    again and its answer takes the row;
  *  - a call with the cache off (the extractor's canvas pass) keeps nothing;
  *  - a kept string is well-formed (no NUL, no lone surrogate); each keep
  *    that fails is logged and marks the scope (answerKeepFailed);
@@ -237,7 +239,7 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     expect(rows.map((r) => r.node_id)).toEqual([node, other]);
   });
 
-  it('only an answer the caller accepts is kept: an empty one and a refused one are asked again', async () => {
+  it('a fresh job takes only an answer the caller accepts: an empty one and a refused one are asked again', async () => {
     const ask = (prompt: string, accept?: (text: string) => boolean) => () =>
       attachments.runVisionWorker({
         ownerId: 'o-1',
@@ -264,6 +266,42 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     expect(h.visionCalls).toBe(5);
   });
 
+  it("an answer not accepted is kept: a wait's try again takes it unpaid, a fresh job asks again", async () => {
+    const ask = () =>
+      attachments.runVisionWorker({
+        ownerId: 'o-1',
+        bytes: Buffer.from(sha),
+        mimeType: 'image/png',
+        prompt: 'figure?',
+      });
+    const fresh = () => asSystem(() => cache.withAnswerCache(ask, null, node));
+    // The extractor's scope inside the queue's takes its retry.
+    const retry = () =>
+      asSystem(() =>
+        cache.withAnswerCache(() => cache.withAnswerCache(ask, null, node), null, node, {
+          retry: true,
+        }),
+      );
+    h.visionText = '';
+    const first = await fresh();
+    expect(first).toMatchObject({ ran: true, text: '', note: 'Vision worker returned no text.' });
+    expect(h.visionCalls).toBe(1);
+    // A wait's try again: the same answer as the first try, no call.
+    expect(await retry()).toEqual(first);
+    expect(await retry()).toEqual(first);
+    expect(h.visionCalls).toBe(1);
+    // A fresh job asks again; its answer, with text, takes the row.
+    h.visionText = 'A pump curve.';
+    expect(await fresh()).toMatchObject({ text: 'A pump curve.' });
+    expect(h.visionCalls).toBe(2);
+    expect(await fresh()).toMatchObject({ text: 'A pump curve.' });
+    expect(await retry()).toMatchObject({ text: 'A pump curve.' });
+    expect(h.visionCalls).toBe(2);
+    const rows = await admin<{ accepted: boolean }[]>`select accepted from ai_answer_cache
+      where node_id = ${node}::uuid`;
+    expect(rows).toEqual([{ accepted: true }]);
+  });
+
   it('a call with the cache off takes and keeps nothing, in a scope', async () => {
     const ask = () =>
       attachments.runVisionWorker({
@@ -286,7 +324,7 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     const got = await asSystem(() =>
       cache.withAnswerCache(
         async () => {
-          await cache.keepAnswer('vision', key, { text });
+          await cache.keepAnswer('vision', key, { text }, true);
           return { kept: await cache.keptAnswer<{ text: string }>(key) };
         },
         null,
@@ -307,8 +345,8 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
             // refuses (its check), twice.
             const inner = await cache.withAnswerCache(
               async () => {
-                await cache.keepAnswer('vision', 'not-a-key', { text: 'paid' });
-                await cache.keepAnswer('vision', 'not-a-key', { text: 'paid' });
+                await cache.keepAnswer('vision', 'not-a-key', { text: 'paid' }, true);
+                await cache.keepAnswer('vision', 'not-a-key', { text: 'paid' }, true);
                 return cache.answerKeepFailed();
               },
               null,

@@ -1,4 +1,4 @@
-import { jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
 
 /**
@@ -17,6 +17,9 @@ export const aiAnswerCache = pgTable(
     key: text('key').notNull(),
     kind: text('kind').notNull(),
     answer: jsonb('answer').notNull(),
+    /** Whether the caller could use it: one not accepted is taken only by
+     *  a wait's try again (answer-cache.ts, keptAnswer). */
+    accepted: boolean('accepted').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [primaryKey({ name: 'ai_answer_cache_pkey', columns: [t.nodeId, t.key] })],
