@@ -417,8 +417,9 @@ describe('the PDF router', () => {
     expect([...(reader.match.kind ?? [])].sort()).toEqual(
       named.filter((k) => k !== 'document' && k !== 'book').sort(),
     );
-    // 1.1.1: the File tab's Rules version 3 (the kind `book`); 1.1.2: rules 4.
-    expect(reader.version).toBe('1.1.2');
+    // 1.1.1: the File tab's Rules version 3 (the kind `book`); 1.1.2: rules 4;
+    // 1.1.3: rules 5.
+    expect(reader.version).toBe('1.1.3');
   });
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {

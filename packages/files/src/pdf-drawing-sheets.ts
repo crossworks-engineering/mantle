@@ -33,8 +33,10 @@ const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
  *  too large to open is a scan. 3 (2026-11-18): a long run of office pages,
  *  mostly scans or typed text, is a `book` (bookOf, ./pdf-kind.ts). 4
  *  (2026-11-19): every office PDF is a book, whatever its size: a
- *  `document`, and a short file of office pages but for a few. */
-export const PDF_KIND_RULES_VERSION = 4;
+ *  `document`, and a short file of office pages but for a few. 5
+ *  (2026-11-20): a long file whose first pages fail the book sample is a
+ *  book when all its pages, read whole, pass bookOf. */
+export const PDF_KIND_RULES_VERSION = 5;
 
 /** The clock columns of a reader's tabs, by tab name: a time a read took,
  *  another number on every read of the same bytes. `Read ms` of `Pages` is

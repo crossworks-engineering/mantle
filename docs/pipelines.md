@@ -2415,7 +2415,7 @@ The built-ins on the page windows (M3 of the large-PDF plan, dev-brain page
 only for the pages OCR could not read well.
 
 **The kind `book`** (`bookOf`, `packages/files/src/pdf-kind.ts`;
-`PDF_KIND_RULES_VERSION` 4). Every office PDF is a book, whatever its size
+`PDF_KIND_RULES_VERSION` 5). Every office PDF is a book, whatever its size
 (Jason, 2026-11-19): typed or scanned, of 1 page or 1,679. The router names a
 PDF a book, with no ask, when the file is past the 256 MB pdfjs opens; when it
 has more than 20 pages (`job.pdfPageCount`, qpdf) and of its first 20 pages,
@@ -2430,7 +2430,13 @@ typed or scanned text pages (page kind `document`) but for a few (75%,
 the eye looked at with no slanted long lines (`TABLE_SLANT_MAX`, 0.005; an
 isometric sketch has 0.02 and more) and 150 areas of text or more
 (`TABLE_MIN_TEXT_AREAS`; the made-up spec table page has 267, a page of prose
-about 70), so a table-heavy scanned spec is a book. The router names `document` no more: no PDF is left
+about 70), so a table-heavy scanned spec is a book. A long file whose first
+20 pages fail that sample (damaged pages, drawn tables with a text layer up
+front) is a book too when all its pages, read whole, pass the long-file rule
+(rules 5, 2026-11-20, `pdf-router` 1.2.1): a spec book of 682 pages was
+named a drawing by its ruled scans before. A file stored under older rules
+(its File tab's `Rules version` below 5, with no decider answer used) is
+routed again on its next read, with no ask. The router names `document` no more: no PDF is left
 to the core's own text read and its scan read (the Scan reader, every page,
 docs/ai-workers.md "Scanned PDFs outside a book", runs only for a PDF whose
 Reader gave no text). A book hands the Reader no facts:

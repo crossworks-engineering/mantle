@@ -161,7 +161,9 @@ export const BUILTIN_PIPELINES = [
     // 1.1.0 (2026-11-18): the kind `book` (PDF_KIND_RULES_VERSION 3).
     // 1.2.0 (2026-11-19): every office PDF is a book, whatever its size
     // (PDF_KIND_RULES_VERSION 4); the rules name `document` no more.
-    version: '1.2.0',
+    // 1.2.1 (2026-11-20): a long file is a book by all its pages too
+    // (PDF_KIND_RULES_VERSION 5).
+    version: '1.2.1',
     match: { ext: ['pdf'] },
     // The eleven kinds of PDF_KINDS (../pdf-kind.ts). The rules name seven
     // (`book` by its own rule, bookOf); the decider may also answer the four
@@ -195,7 +197,8 @@ export const BUILTIN_PIPELINES = [
     // 1.1.1 (2026-11-18): the kind rules of PDF_KIND_RULES_VERSION 3 (the
     // File tab's Rules version).
     // 1.1.2 (2026-11-19): the kind rules of PDF_KIND_RULES_VERSION 4.
-    version: '1.1.2',
+    // 1.1.3 (2026-11-20): the kind rules of PDF_KIND_RULES_VERSION 5.
+    version: '1.1.3',
     // Every kind the router names but `document` and `book`: a document gets
     // no database, and a book is the book reader's (`pdf-pages`). An unsure
     // PDF gets one, as before the router. A new claim changes the pin and
@@ -428,8 +431,9 @@ export const BUILTIN_PIPELINES = [
     // owns them). 1.3.0 (2026-11-19): no local OCR (owner decision): every
     // scanned page is marked for the Agent with Why `scan` (the Scan reader
     // reads it) and its Lines (the check's evidence, counted from its
-    // picture); the options of OCR are gone.
-    version: '1.3.0',
+    // picture); the options of OCR are gone. 1.3.1 (2026-11-20): the File
+    // tab's Rules version 5.
+    version: '1.3.1',
     match: { ext: ['pdf'], kind: ['book'] },
     produces: { text: true, table: false, pages: true },
     // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy

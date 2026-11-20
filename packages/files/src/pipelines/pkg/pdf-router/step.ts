@@ -13,10 +13,10 @@
  *
  * Else read the page facts with no model, as the reader does, and name the
  * kind by the rules. Every office PDF is a book, whatever its size (Jason's
- * word, 2026-11-19): a file the rules name a `document`, and a file of
- * BOOK_MIN_PAGES pages or fewer whose pages bookOf finds office pages
- * (typed or scanned text but for a few, so a short scan with one ruled
- * table page too). A `document` is never named any more: no PDF is left to
+ * word, 2026-11-19): a file the rules name a `document`, and a file whose
+ * pages, read whole, bookOf finds office pages (typed or scanned text but
+ * for a few, so a short scan with one ruled table page too; a long file
+ * whose sample failed, by all its pages). A `document` is never named any more: no PDF is left to
  * the core's own text read and OCR. A drawing keeps its kind and its
  * reader. A file the rules leave `unsure`, in a run that may ask
  * (`request.asks`), asks the worker `decider` once: its input is the
@@ -79,10 +79,12 @@ export const step: PipelineStep = async (req, job) => {
     }
     const drawing = await readPdfDrawingInJob(await job.bytes(), job, box);
     // Every office PDF is a book, whatever its size (Jason's word,
-    // 2026-11-19): a document by the page rules, and a short file whose
-    // pages, read whole, are office pages, typed or scanned, but for a few.
+    // 2026-11-19): a document by the page rules, and a file whose pages,
+    // read whole, are office pages, typed or scanned, but for a few. A long
+    // file too: its first pages can fail the sample (damaged pages, drawn
+    // tables up front) while the whole file is a book.
     const count = pages ?? drawing.numPages;
-    if (drawing.kind === 'document' || (count <= BOOK_MIN_PAGES && bookOf(count, drawing.pages))) {
+    if (drawing.kind === 'document' || bookOf(count, drawing.pages)) {
       return { status: 'ok', kind: 'book' };
     }
     // A scan of typed pages and ruled pages (a table or a drawing form?),
