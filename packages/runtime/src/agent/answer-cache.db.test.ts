@@ -5,8 +5,9 @@
  *  - a kept answer is taken with no paid call; outside the cache's scope
  *    nothing is kept or taken;
  *  - every paid answer is kept; one the caller does not accept (no text by
- *    default) is taken only by a wait's try again, and a fresh job asks
- *    again and its answer takes the row;
+ *    default) is taken only by a wait's try again of the chain that kept it
+ *    (kept since its `from`), and a fresh job asks again and its answer
+ *    takes the row; a new chain's try again asks again too;
  *  - a call with the cache off (the extractor's canvas pass) keeps nothing;
  *  - a kept string is well-formed (no NUL, no lone surrogate); each keep
  *    that fails is logged and marks the scope (answerKeepFailed);
@@ -275,12 +276,13 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
         prompt: 'figure?',
       });
     const fresh = () => asSystem(() => cache.withAnswerCache(ask, null, node));
-    // The extractor's scope inside the queue's takes its retry.
+    // The chain's first try begins (the queue reads it once).
+    const from = await asSystem(() => cache.answerCacheNow());
+    expect(from).toBeInstanceOf(Date);
+    // The extractor's scope inside the queue's takes its chain's `from`.
     const retry = () =>
       asSystem(() =>
-        cache.withAnswerCache(() => cache.withAnswerCache(ask, null, node), null, node, {
-          retry: true,
-        }),
+        cache.withAnswerCache(() => cache.withAnswerCache(ask, null, node), null, node, { from }),
       );
     h.visionText = '';
     const first = await fresh();
@@ -300,6 +302,37 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     const rows = await admin<{ accepted: boolean }[]>`select accepted from ai_answer_cache
       where node_id = ${node}::uuid`;
     expect(rows).toEqual([{ accepted: true }]);
+  });
+
+  it("a try again takes an answer not accepted only when its own chain kept it, never an older job's", async () => {
+    const ask = () =>
+      attachments.runVisionWorker({
+        ownerId: 'o-1',
+        bytes: Buffer.from(sha),
+        mimeType: 'image/png',
+        prompt: 'chain?',
+      });
+    const tryAgain = (from: Date | null) =>
+      asSystem(() => cache.withAnswerCache(ask, null, node, { from }));
+    // An older job pays and keeps an answer it cannot use (no text), a
+    // minute before the new chain begins.
+    h.visionText = '';
+    await asSystem(() => cache.withAnswerCache(ask, null, node));
+    expect(h.visionCalls).toBe(1);
+    await admin`update ai_answer_cache set created_at = now() - interval '1 minute'
+      where node_id = ${node}::uuid`;
+    // A new chain begins; its first try waited before this ask. Its try
+    // again does not take the older job's answer: it asks again.
+    const from = await asSystem(() => cache.answerCacheNow());
+    expect(from).toBeInstanceOf(Date);
+    expect(await tryAgain(from)).toMatchObject({ ran: true, text: '' });
+    expect(h.visionCalls).toBe(2);
+    // That answer its own chain kept: the chain's next try again takes it.
+    expect(await tryAgain(from)).toMatchObject({ ran: true, text: '' });
+    expect(h.visionCalls).toBe(2);
+    // A first try (no `from`) takes none not accepted.
+    expect(await tryAgain(null)).toMatchObject({ ran: true, text: '' });
+    expect(h.visionCalls).toBe(3);
   });
 
   it('a call with the cache off takes and keeps nothing, in a scope', async () => {

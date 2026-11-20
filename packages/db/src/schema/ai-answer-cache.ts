@@ -18,7 +18,8 @@ export const aiAnswerCache = pgTable(
     kind: text('kind').notNull(),
     answer: jsonb('answer').notNull(),
     /** Whether the caller could use it: one not accepted is taken only by
-     *  a wait's try again (answer-cache.ts, keptAnswer). */
+     *  a wait's try again of the chain that kept it (answer-cache.ts,
+     *  keptAnswer). */
     accepted: boolean('accepted').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

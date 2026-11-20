@@ -8,7 +8,8 @@
  *  - waitAgain (extract-queue.ts): the same job, with its wait, sent with a
  *    growing gap; a run keeps its key and its "no retry" of anything else.
  *    A wait is only a wait: nothing is counted (a try again takes the paid
- *    answers kept before it, @mantle/db answer-cache.ts).
+ *    answers kept before it, @mantle/db answer-cache.ts); it carries its
+ *    chain's `from` for that cache.
  */
 import { describe, expect, it } from 'vitest';
 import { runWaitOf, DAY_CAP_MIN_GAP_MS, type PipelineRunResult } from './pipeline-run';
@@ -107,6 +108,19 @@ describe('waitAgain', () => {
     );
     expect(due).toEqual(new Date(at + 8 * 60_000));
     expect((sent[0]!.data.wait as { waits: number }).waits).toBe(3);
+  });
+
+  it("the wait carries its chain's from, for the answer cache of its try again", async () => {
+    sent.length = 0;
+    const from = new Date(at - 60_000).toISOString();
+    await waitAgain(
+      send,
+      { nodeId: 'n1' },
+      { for: 'provider', provider: { reason: 'rate_limit' } },
+      at,
+      { from },
+    );
+    expect(sent[0]!.data.wait).toMatchObject({ waits: 0, from });
   });
 
   it("an Agent's run at the day cap: its key, no retry of its own, due when the cap has room", async () => {

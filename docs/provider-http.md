@@ -164,13 +164,16 @@ read again, once. A node's answers go when it is deleted (`node_id`
 cascades); nothing else prunes them. Every paid answer is kept, marked
 `accepted` when the caller can use it: a vision answer with text (an Agent's
 ask: one that reads as its answer), an extractor reply that is a JSON
-object. One not accepted is taken only by a wait's try again (the job's
-`wait`), which then does what its first try did without paying again; a
-fresh job (a person's run or read again) asks again, and its answer takes
-the row. A keep that fails is logged, each one, and the
-job then sends no wait: a read takes pg-boss's bounded retries, so a cache
-that cannot keep never turns waits into an endless paid loop. An Agent's
-run has no retry: a failed keep fails the run once, its trace says no wait,
+object. One not accepted is taken only by a wait's try again, and only
+when its own chain of tries kept it: the job's `wait` carries `from`, the
+moment its first try began by the database's clock, and the try again takes
+an answer not accepted when it was kept at or after that. It then does what
+its first try did without paying again. A fresh job (a person's run or read
+again) asks again, and its answer takes the row; a new chain's try again
+never takes what an older job kept and could not use. A keep that fails is
+logged, each one, and the job then sends no wait: a read takes pg-boss's
+bounded retries, so a cache that cannot keep never turns waits into an
+endless paid loop. An Agent's run has no retry: a failed keep fails the run once, its trace says no wait,
 and a person runs it again.
 
 **Nothing starts by itself.** Every job sent again is work already asked for

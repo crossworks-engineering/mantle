@@ -278,8 +278,8 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     const WAITS = 8;
     runs.waits.set(pdf, WAITS);
     const main = () =>
-      su<{ state: string; waits: number | null; keys: string[] | null }[]>`
-        select state, (data->'wait'->>'waits')::int as waits,
+      su<{ state: string; waits: number | null; from: string | null; keys: string[] | null }[]>`
+        select state, (data->'wait'->>'waits')::int as waits, data->'wait'->>'from' as from,
                (select array_agg(k order by k) from jsonb_object_keys(data->'wait') k) as keys
         from pgboss.job
         where data->>'nodeId' = ${pdf} and name = 'mantle.extract' order by created_on`;
@@ -294,9 +294,13 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     await until('its job is done', async () => (await main()).at(-1)!.state === 'completed');
     const all = await main();
     // Each wait a new job with its wait alone on it (no count), every one
-    // completed: none in the retries, none in the dead letters.
+    // completed: none in the retries, none in the dead letters. Each carries
+    // its chain's `from`, the first try's, unchanged.
     expect(all.map((j) => j.waits)).toEqual([null, ...Array.from({ length: WAITS }, (_, i) => i)]);
-    for (const j of all.slice(1)) expect(j.keys).toEqual(['for', 'reason', 'until', 'waits']);
+    for (const j of all.slice(1)) {
+      expect(j.keys).toEqual(['for', 'from', 'reason', 'until', 'waits']);
+    }
+    expect(new Set(all.slice(1).map((j) => j.from)).size).toBe(1);
     expect(all.every((j) => j.state === 'completed')).toBe(true);
     const dead = await su<{ n: number }[]>`select count(*)::int as n from pgboss.job
       where data->>'nodeId' = ${pdf} and name = 'mantle.extract.dead'`;

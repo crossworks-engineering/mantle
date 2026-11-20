@@ -171,7 +171,7 @@ import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
 import { startTrace } from '@mantle/tracing';
 import { assertNoViewer } from '@mantle/db/viewer';
-import { answerKeepFailed, withAnswerCache } from '@mantle/db/answer-cache';
+import { answerCacheNow, answerKeepFailed, withAnswerCache } from '@mantle/db/answer-cache';
 import {
   errorMessage,
   providerWaitDelayMs,
@@ -181,13 +181,17 @@ import {
 } from '@mantle/std';
 
 /** A job's wait (point 7), as its data carries it: what it waits for, the
- *  provider's reason, how many times in a row it waited, and when it is
- *  due. extractJobWaitOf in @mantle/db reads it for a file's status. */
+ *  provider's reason, how many times in a row it waited, when it is due,
+ *  and when its chain's first try began (the database's clock, ISO): its
+ *  try again takes an answer not accepted only when that chain kept it
+ *  (@mantle/db answer-cache.ts). extractJobWaitOf in @mantle/db reads it
+ *  for a file's status. */
 type ExtractJobWait = {
   for: 'provider' | 'day_cap';
   reason?: ProviderWaitReason;
   waits: number;
   until: string;
+  from?: string;
 };
 
 /** What a wait is sent again for. */
@@ -278,7 +282,7 @@ export async function waitAgain(
   job: ExtractJob,
   wait: ExtractJobWaitInput,
   now = Date.now(),
-  opts: { progressed?: boolean } = {},
+  opts: { progressed?: boolean; from?: string } = {},
 ): Promise<Date> {
   // `waits` counts the waits in a row for the gap only: a try that got work
   // done (asks answered, facts applied) starts the gaps over.
@@ -293,6 +297,7 @@ export async function waitAgain(
       ...(wait.for === 'provider' ? { reason: wait.provider.reason } : {}),
       waits,
       until: due.toISOString(),
+      ...(opts.from ? { from: opts.from } : {}),
     },
   };
   await send(next, { ...sendOptionsOf(next), startAfter: due });
@@ -622,6 +627,8 @@ async function handleExtractJob(
   // The queue as this job found it: a wait at a graceful stop is still
   // sent (stopExtractQueue drops `boss` before the jobs end).
   const b = waitBoss;
+  // When this job's chain of tries began (the answer cache, below).
+  let from = data.wait?.from;
   // A book's read is one trace (the owner UI's Activity lists the running
   // ones): every pass inside it nests there (a pass opens its own trace only
   // when none is open, extract/trace.ts), and its lane ('book', inherited by
@@ -658,7 +665,7 @@ async function handleExtractJob(
                     out.wait.for === 'provider'
                       ? { for: 'provider', provider: { reason: out.wait.reason } }
                       : { for: 'day_cap', until: out.wait.until },
-                    { progressed: out.status === 'asked' && out.made > 0 },
+                    { progressed: out.status === 'asked' && out.made > 0, from },
                   );
                 }
               },
@@ -670,6 +677,7 @@ async function handleExtractJob(
                 if (out.deferred) {
                   await sendDeferredFacts(b, data, out.deferred, {
                     progressed: out.applied > 0,
+                    from,
                   });
                 }
               })
@@ -677,13 +685,20 @@ async function handleExtractJob(
     );
   // Every paid AI answer of the job is kept as it comes, for its node
   // (@mantle/db answer-cache.ts): a try again after a wait pays for none of
-  // them twice. A wait's try again (`data.wait`) takes an answer the first
-  // try could not use too, so it does what the first try did, unpaid. The
-  // scope holds the job's wait too: after a keep that failed, no wait is
-  // sent (sendWaiting).
+  // them twice. A wait's try again takes an answer its chain's tries could
+  // not use too, so it does what the first try did, unpaid: one kept since
+  // the chain's first try began (`from`, the database's clock), never one
+  // an older job kept. A first try reads that moment once as it starts
+  // (after the node's job before it), and every wait it sends carries it
+  // on. The scope holds the job's wait too: after a keep that failed, no
+  // wait is sent (sendWaiting).
+  const begin = async () => {
+    from ??= (await answerCacheNow())?.toISOString();
+    return extract();
+  };
   return withAnswerCache(
     async () => {
-      const run = prev ? prev.catch(() => {}).then(extract) : extract();
+      const run = prev ? prev.catch(() => {}).then(begin) : begin();
       const tracked: Promise<unknown> = run
         .catch(() => {})
         .finally(() => {
@@ -721,7 +736,7 @@ async function handleExtractJob(
         // what the try paid for is kept (withAnswerCache above).
         const wait = providerWaitOf(err);
         if (wait) {
-          await sendWaiting(b, data, { for: 'provider', provider: wait });
+          await sendWaiting(b, data, { for: 'provider', provider: wait }, { from });
           return;
         }
         throw err;
@@ -729,7 +744,7 @@ async function handleExtractJob(
     },
     null,
     nodeId,
-    { retry: Boolean(data.wait) },
+    { from: data.wait?.from ? new Date(data.wait.from) : null },
   );
 }
 
@@ -739,7 +754,7 @@ async function sendWaiting(
   b: PgBoss | null,
   job: ExtractJob,
   wait: ExtractJobWaitInput,
-  opts: { progressed?: boolean } = {},
+  opts: { progressed?: boolean; from?: string } = {},
 ): Promise<void> {
   // No queue to send to: fail the job, so pg-boss keeps it, rather than
   // ending it as done with its work lost.
@@ -766,7 +781,7 @@ async function sendDeferredFacts(
   b: PgBoss | null,
   job: ExtractJob,
   deferred: DeferredFactsOut,
-  opts: { progressed?: boolean } = {},
+  opts: { progressed?: boolean; from?: string } = {},
 ): Promise<void> {
   const next: ExtractJob = { nodeId: job.nodeId, facts: deferred.facts };
   if (deferred.wait) {

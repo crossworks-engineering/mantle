@@ -17,10 +17,13 @@
  * Only inside withAnswerCache with a node: the extract queue runs each job
  * in it. Outside (a chat turn, a test), or with no node, nothing is read or
  * written. Every paid answer is kept, with whether the caller accepted it
- * (could use it). One not accepted is taken only by a wait's try again
- * (`retry`), so that try does what the first did without paying again; a
- * fresh job (a person's new run or read again) asks again, and its answer
- * takes the row. A person's read again
+ * (could use it). One not accepted is taken only by a wait's try again, and
+ * only when its own chain kept it: kept at or after `from`, when the chain's
+ * first try began (the database's clock, which the wait carries), so that
+ * try does what the first did without paying again. A fresh job (a person's
+ * new run or read again) asks again, and its answer takes the row; and a
+ * new chain's try again never takes what an older job kept and could not
+ * use. A person's read again
  * (file_reindex) stamps the node (readAgainStampSql); its extract then takes
  * only answers kept after that moment (`since`), so it pays once for the read
  * the person asked for, and its own tries again after a wait still pay
@@ -35,7 +38,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
-import { and, eq, gte, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, or, sql, type SQL } from 'drizzle-orm';
 import { errorMessage } from '@mantle/std';
 import { systemDb } from './gateway/handles';
 import { aiAnswerCache } from './schema/ai-answer-cache';
@@ -46,13 +49,13 @@ export type AnswerKind = 'vision' | 'scan_reader' | 'extractor';
 /** A surrogate with no pair (a cut inside a pair, a provider's bad bytes). */
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 
-/** A scope: its node, its read again, whether it is a wait's try again,
- *  and whether a keep failed in it or in the scope it runs in (one mark for
- *  the whole job). */
+/** A scope: its node, its read again, for a wait's try again when its
+ *  chain's first try began, and whether a keep failed in it or in the scope
+ *  it runs in (one mark for the whole job). */
 type Scope = {
   since: Date | null;
   nodeId: string | null;
-  retry: boolean;
+  from: Date | null;
   failed: { keep: boolean };
 };
 
@@ -61,19 +64,47 @@ const scopes = new AsyncLocalStorage<Scope>();
 /**
  * Run `fn` with the answer cache on for the node `nodeId` (null: off).
  * `since`: only answers kept at or after it are taken (a person's read
- * again); null, any. `retry`: a wait's try again, which takes an answer
- * not accepted too (default: the scope it runs in, else false).
+ * again); null, any. `from`: a wait's try again, when its chain's first
+ * try began; it takes an answer not accepted too when it was kept at or
+ * after that (default: the scope it runs in, else none: accepted only).
  */
 export function withAnswerCache<T>(
   fn: () => Promise<T>,
   since: Date | null,
   nodeId: string | null,
-  opts: { retry?: boolean } = {},
+  opts: { from?: Date | null } = {},
 ): Promise<T> {
   const outer = scopes.getStore();
   const failed = outer?.failed ?? { keep: false };
-  const retry = opts.retry ?? outer?.retry ?? false;
-  return scopes.run({ since, nodeId, retry, failed }, fn);
+  const from = opts.from !== undefined ? opts.from : (outer?.from ?? null);
+  return scopes.run({ since, nodeId, from, failed }, fn);
+}
+
+/** A read of the cache on the system pool. A failed read is null, logged,
+ *  and never thrown: no answer (the call is made), or no clock. */
+async function cacheRead<T>(
+  what: string,
+  read: (db: typeof systemDb) => Promise<T | null>,
+): Promise<T | null> {
+  try {
+    return await read(systemDb);
+  } catch (err) {
+    console.error(`[answer-cache] ${what} could not be read: ${errorMessage(err)}`);
+    return null;
+  }
+}
+
+/** Now, by the database's clock (as `created_at` and the read again stamp):
+ *  when a job's first try begins, so a wait can carry it (`from`). Null when
+ *  it cannot be read: the try again then takes accepted answers only. */
+export function answerCacheNow(): Promise<Date | null> {
+  return cacheRead('the database clock', async (db) => {
+    const rows = (await db.execute(
+      sql`select floor(extract(epoch from now()) * 1000)::bigint as ms`,
+    )) as unknown as Array<{ ms: number | string }>;
+    const ms = Number(rows[0]?.ms);
+    return Number.isFinite(ms) && ms > 0 ? new Date(ms) : null;
+  });
 }
 
 /** Whether a paid answer could not be kept in this scope: a try again
@@ -95,28 +126,29 @@ export function bytesKey(bytes: Uint8Array): string {
 }
 
 /** The kept answer of `key`, or null: none, too old for this read, not
- *  accepted outside a wait's try again, no cache here, or the read failed. */
+ *  accepted and not kept by this wait's own chain, no cache here, or the
+ *  read failed. */
 export async function keptAnswer<T>(key: string): Promise<T | null> {
   const scope = scopes.getStore();
-  if (!scope?.nodeId) return null;
-  try {
-    const [row] = await systemDb
+  const nodeId = scope?.nodeId;
+  if (!scope || !nodeId) return null;
+  return cacheRead('a kept answer', async (db) => {
+    const [row] = await db
       .select({ answer: aiAnswerCache.answer })
       .from(aiAnswerCache)
       .where(
         and(
-          eq(aiAnswerCache.nodeId, scope.nodeId),
+          eq(aiAnswerCache.nodeId, nodeId),
           eq(aiAnswerCache.key, key),
           scope.since ? gte(aiAnswerCache.createdAt, scope.since) : undefined,
-          scope.retry ? undefined : eq(aiAnswerCache.accepted, true),
+          scope.from
+            ? or(eq(aiAnswerCache.accepted, true), gte(aiAnswerCache.createdAt, scope.from))
+            : eq(aiAnswerCache.accepted, true),
         ),
       )
       .limit(1);
     return (row?.answer as T | undefined) ?? null;
-  } catch (err) {
-    console.error(`[answer-cache] a kept answer could not be read: ${errorMessage(err)}`);
-    return null;
-  }
+  });
 }
 
 /** Keep `answer` under `key` (a newer answer of the same key takes its
