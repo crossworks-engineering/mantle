@@ -90,8 +90,8 @@ await esbuild.build({
 });
 // The present frame loads the same drawer from /canvas-runtime/ (its
 // script-src allows that path only; canvas-frame-html.ts CANVAS_LOOK_DRAWER).
-// `generate` builds the canvas runtime first, which empties that folder, so
-// this copy goes in after it.
+// A canvas runtime rebuild keeps it (app-build canvas-runtime.ts
+// CANVAS_RUNTIME_KEEP), so the build order does not matter.
 const canvasRuntime = join(webRoot, 'public/canvas-runtime');
 mkdirSync(canvasRuntime, { recursive: true });
 cpSync(join(outDir, 'frame-look.js'), join(canvasRuntime, 'frame-look.js'));

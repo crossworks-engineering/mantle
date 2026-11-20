@@ -245,6 +245,22 @@ export function canvasImportMapJson(manifest: Pick<CanvasRuntimeManifest, 'impor
   return JSON.stringify({ imports: manifest.imports });
 }
 
+/** Files another build writes into the canvas runtime folder, which a
+ *  rebuild keeps: frame-look.js, the present frame's drawer for `look`
+ *  (server/web/scripts/build-share-runtime.ts copies it in). Kept so
+ *  `pnpm canvas-runtime` on its own leaves presents able to draw
+ *  themselves, whatever the build order. */
+export const CANVAS_RUNTIME_KEEP: readonly string[] = ['frame-look.js'];
+
+/** Empty `outDir` for a rebuild, all but CANVAS_RUNTIME_KEEP. */
+export function clearCanvasRuntime(outDir: string): void {
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const name of fs.readdirSync(outDir)) {
+    if (CANVAS_RUNTIME_KEEP.includes(name)) continue;
+    fs.rmSync(path.join(outDir, name), { recursive: true, force: true });
+  }
+}
+
 /**
  * Build the canvas runtime into `outDir` (server/web/public/canvas-runtime)
  * and return its manifest. `urlPrefix` is the public path it is served at;
@@ -256,8 +272,7 @@ export async function buildCanvasRuntime(
   appDir = path.resolve(outDir, '..', '..'),
 ): Promise<CanvasRuntimeManifest> {
   const appRequire = createRequire(path.join(appDir, 'package.json'));
-  fs.rmSync(outDir, { recursive: true, force: true });
-  fs.mkdirSync(outDir, { recursive: true });
+  clearCanvasRuntime(outDir);
 
   const imports: Record<string, string> = {};
   const exports: Record<string, string[]> = {};
