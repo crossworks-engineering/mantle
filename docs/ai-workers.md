@@ -847,8 +847,12 @@ call made again. Still "not now", or no credit: no page after it is sent;
 the page and the rest are `unread`, `failed` (not final), and the extract
 throws `ProviderWaitError`, so the queue sends the job again later. The pages
 read before the wait are kept on the node, so that try reads only the rest.
-A figure whose vision call waits is the one page whose Scan reader read is
-paid again (the wait is `paid`: the queue bounds such waits). A chat turn
+Every paid answer is kept before the wait (docs/provider-http.md, "Kept
+answers"), so a figure whose vision call waits takes its Scan reader answer
+on the try again and makes only the vision call; nothing is counted. A
+page kept by a book as a pending figure is read by its vision call alone,
+whoever reads it. A keep that does not reach the node (gone, other bytes, a
+whole read on it) makes the read moot: it stops, with no wait. A chat turn
 says the pages it did not read and that the provider is waiting.
 
 **Shared reads** (owner decision 2026-11-19, "Share the reads";
