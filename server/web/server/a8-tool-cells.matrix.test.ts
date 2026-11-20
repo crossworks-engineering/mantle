@@ -795,6 +795,9 @@ const NOT_RUN: Readonly<Record<string, number>> = {
   // Translator's model.
   'an allowed call needs a model or the outside (stubbed)': 100,
   'an allowed call needs a sandbox (sandboxd, outside the box)': 8,
+  // Fleet chat (2026-11-21): messenger_attachment_save's allowed create
+  // cells, 2 over both modes on the MCP surface.
+  'an allowed call needs a chat file on a line the login reads (messenger-attachments.db.test.ts holds the refusal)': 4,
   'an allowed call needs a federated peer brain (outside the box)': 8,
   'an allowed call needs the parser service (outside the box), and a real drawing': 20,
   "an allowed call needs a file's database, built from a real table-type file (file-sql.db.test.ts)": 8,
