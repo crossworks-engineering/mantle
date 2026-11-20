@@ -141,9 +141,9 @@ minutes, then every hour (`providerWaitDelayMs`), or the provider's own
 Retry-After when it asks for longer (up to six hours). A job of the same
 key already waiting takes its place. A wait is only a wait: it is one
 check, nothing is counted, and it never goes to the dead letters. A
-recovery (the boot drain, the sweep) leaves a node that has a live job
+recovery (the boot drain, the sweep) leaves a node that has a live read
 (created, retry or active) to it, so it never makes a second job of the
-same work. A quota answer also reaches the provider circuit, which pauses
+same work; an Agent's run or deferred facts are no read. A quota answer also reaches the provider circuit, which pauses
 the whole queue once a probe confirms the account (docs/embeddings.md,
 "Provider outages").
 

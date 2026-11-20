@@ -642,13 +642,15 @@ export async function drainUnextractedNodes(ownerId: string): Promise<void> {
 }
 
 /**
- * Queue an extract of each node that has no live job (created, retry or
+ * Queue an extract of each node that has no live read (created, retry or
  * active, any lane: a read waiting for the provider, one in its retries, one
  * running): a recovery never makes a second job of the same work, and a
- * fresh job's waits never start their gaps over beside the old one.
+ * fresh job's waits never start their gaps over beside the old one. An
+ * Agent's run or deferred facts are no read: a node with only those is
+ * queued.
  */
 async function enqueueUnlessLive(ids: readonly string[]): Promise<void> {
-  const live = await extractJobsFor(ids);
+  const live = await extractJobsFor(ids, { reads: true });
   for (const id of ids) if (!live.has(id)) await enqueueExtract(id);
 }
 

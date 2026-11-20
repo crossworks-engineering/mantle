@@ -332,10 +332,13 @@ export type ExtractJobState = 'queued' | 'running' | 'waiting';
  * archive's extraction is no read of the file: its state is on the
  * archive's own stamp (data.archive_extract), not here. An empty map when
  * pg-boss has no schema or job table yet (a fresh brain) or no database is
- * reached; any other database error is thrown.
+ * reached; any other database error is thrown. `reads`: only a read of the
+ * file counts, not an Agent's run nor deferred facts (the recovery drain:
+ * a node whose only job is one of those still needs its read).
  */
 export async function extractJobsFor(
   ids: readonly string[],
+  opts: { reads?: boolean } = {},
 ): Promise<Map<string, ExtractJobState>> {
   const out = new Map<string, ExtractJobState>();
   if (ids.length === 0) return out;
@@ -348,6 +351,7 @@ export async function extractJobsFor(
         AND state IN ('created', 'retry', 'active')
         AND data->>'nodeId' = any(string_to_array(${ids.join(',')}, ','))
         AND NOT coalesce(data ? 'archive', false)
+        ${opts.reads ? sql`AND NOT data ? 'run' AND NOT data ? 'facts'` : sql``}
       GROUP BY 1`)) as unknown as Array<{ id: string; running: boolean; waiting: boolean }>;
     for (const r of rows) {
       out.set(r.id, r.running ? 'running' : r.waiting ? 'waiting' : 'queued');

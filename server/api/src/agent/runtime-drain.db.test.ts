@@ -1,9 +1,9 @@
 /**
  * The extractor's recovery drain (runtime.ts drainUnextractedNodes) on a
  * real, migrated scratch Postgres: a node with no embedding is queued for
- * its extract, but a node that already has a live job (created, retry or
+ * its extract, but a node that already has a live read (created, retry or
  * active, any lane) is left to it, so a recovery never makes a second job
- * of the same work. The queue is stood in for (enqueueExtract records),
+ * of the same work. An Agent's run or deferred facts are no read. The queue is stood in for (enqueueExtract records),
  * and pg-boss's job table is a stand-in with the columns read.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/runtime-drain.db.test.ts
  */
@@ -75,6 +75,15 @@ describe.skipIf(!URL)('the recovery drain', () => {
         values (${lane}, ${state},
                 jsonb_build_object('nodeId', ${id}::text, 'wait', jsonb_build_object('waits', 2)))`;
     }
+    // An Agent's run or deferred facts are no read: the node is queued.
+    const others: string[] = [];
+    for (const key of ['run', 'facts'] as const) {
+      const id = await file(`${key}-only.pdf`);
+      others.push(id);
+      await su`insert into pgboss.job (name, state, data)
+        values ('mantle.extract', 'created',
+                jsonb_build_object('nodeId', ${id}::text, ${key}::text, 'x'))`;
+    }
     // A job that ended is no live job: the node is queued again.
     const ended = await file('ended.pdf');
     await su`insert into pgboss.job (name, state, data)
@@ -84,7 +93,7 @@ describe.skipIf(!URL)('the recovery drain', () => {
     const seen = await m.runAsSystem('test:drain', () => m.extractJobsFor(Object.values(live)));
     expect(seen.size).toBe(3);
     await m.runAsSystem('test:drain', () => runtime.drainUnextractedNodes(owner));
-    expect(h.queued.sort()).toEqual([none, ended].sort());
+    expect(h.queued.sort()).toEqual([none, ended, ...others].sort());
     for (const id of Object.values(live)) expect(h.queued).not.toContain(id);
   }, 60_000);
 });
