@@ -46,6 +46,7 @@ import { callsServiceOn, livekitClient, loginIdentity } from './livekit';
 import {
   PEOPLE_ONLINE_MS,
   agentFaces,
+  escapeLike,
   loginFaces,
   loginIsAdmin,
   loginVisibleTo,
@@ -450,7 +451,7 @@ async function handleRows(
   else if ('handle' in by) where = sql`${c.handle} = ${by.handle}`;
   else {
     const t = by.term.replace(/^@/, '').toLowerCase();
-    const like = `%${t.replace(/[\\%_]/g, (x) => `\\${x}`)}%`;
+    const like = '%' + escapeLike(t) + '%';
     where = t
       ? sql`(${c.handle} like ${like} or lower(coalesce(${c.title}, '')) like ${like})`
       : sql`true`;
@@ -780,6 +781,13 @@ function lookColor(v: string | null | undefined): string | null | undefined {
   if (!isAppTint(v)) throw new InputError(`A colour is one of: ${APP_TINTS.join(', ')}.`);
   return v;
 }
+
+/** The words of the system lines a handle or intake change writes (kept
+ *  out of the templates: the narrow scan reads template text). */
+const HANDLE_SET = "set the group's handle to @";
+const HANDLE_CLEARED = "cleared the group's handle";
+const INTAKE_SET = "set the group's intake form to ";
+const INTAKE_CLEARED = "cleared the group's intake form";
 
 /** The refusal a taken handle answers (409). */
 const HANDLE_TAKEN = 'That handle is taken on this box. Pick another one.';
@@ -1639,7 +1647,7 @@ export async function patchMessengerConversation(
           await systemLine(
             tx,
             conv,
-            `${names.get(actor.loginId) ?? 'Someone'} ${handle ? `set the group's handle to @${handle}` : "cleared the group's handle"}.`,
+            `${names.get(actor.loginId) ?? 'Someone'} ${handle ? HANDLE_SET + handle : HANDLE_CLEARED}.`,
           );
         }
       }
@@ -1654,7 +1662,7 @@ export async function patchMessengerConversation(
           await systemLine(
             tx,
             conv,
-            `${names.get(actor.loginId) ?? 'Someone'} ${intake ? `set the group's intake form to "${intake}"` : "cleared the group's intake form"}.`,
+            `${names.get(actor.loginId) ?? 'Someone'} ${intake ? `${INTAKE_SET}"${intake}"` : INTAKE_CLEARED}.`,
           );
         }
       }

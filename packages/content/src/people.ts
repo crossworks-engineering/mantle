@@ -91,7 +91,8 @@ function uuidArray(ids: readonly string[]): SQL {
   return sql`${`{${ids.join(',')}}`}::uuid[]`;
 }
 
-function escapeLike(s: string): string {
+/** `s` with the LIKE wildcards and the escape escaped. */
+export function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 

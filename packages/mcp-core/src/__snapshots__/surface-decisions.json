@@ -2990,6 +2990,24 @@
    "peerRisky": false
   }
  },
+ "messenger_update": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": false
+  }
+ },
  "messenger_wait": {
   "readOnly": true,
   "peerRisky": false,

@@ -869,6 +869,7 @@
 "POST /api/messenger/c/:id/read": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerWrite"]},
 "POST /api/messenger/c/:id/typing": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerTyping"]},
 "POST /api/messenger/conversations": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerWrite"]},
+"POST /api/messenger/send": {"class":"self","scope":null,"open":"login","logins":"any","effect":"write","caller":"login","rateLimit":["messengerSend"]},
 "POST /api/model-combos/apply": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/model-pools": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/network/activate": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
