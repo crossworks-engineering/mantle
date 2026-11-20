@@ -529,7 +529,7 @@ more HEAD /api/workspaces/user-search key-revoked=h1 main=o1
 # rows added since main (no answer on main: each cell names, like=, the main answer of
 # a sibling row that takes the same gate path, and is held to it as the cells
 # above are held to theirs)
-# cells: 240
+# cells: 260
 first HEAD /api/assistant/turn/:turnId/stream none=h1 like=o1
 first HEAD /api/assistant/turn/:turnId/stream owner-cookie=h9 like=o9
 first HEAD /api/assistant/turn/:turnId/stream admin-cookie=h10 like=o10
@@ -543,6 +543,19 @@ first HEAD /api/assistant/turn/:turnId/stream key-write=h1 like=o1
 first HEAD /api/assistant/turn/:turnId/stream key-read-area=h1 like=o1
 first HEAD /api/assistant/turn/:turnId/stream key-write-area=h1 like=o1
 first HEAD /api/assistant/turn/:turnId/stream key-member=h1 like=o1
+first HEAD /api/messenger/attachments/:id none=h1 like=o1
+first HEAD /api/messenger/attachments/:id owner-cookie=h2 like=o2
+first HEAD /api/messenger/attachments/:id admin-cookie=h3 like=o3
+first HEAD /api/messenger/attachments/:id limited-cookie=h4 like=o4
+first HEAD /api/messenger/attachments/:id member-cookie=h5 like=o5
+first HEAD /api/messenger/attachments/:id admin-bearer=h6 like=o6
+first HEAD /api/messenger/attachments/:id member-bearer=h7 like=o7
+first HEAD /api/messenger/attachments/:id revoked-bearer=h8 like=o8
+first HEAD /api/messenger/attachments/:id key-read=h1 like=o1
+first HEAD /api/messenger/attachments/:id key-write=h1 like=o1
+first HEAD /api/messenger/attachments/:id key-read-area=h1 like=o1
+first HEAD /api/messenger/attachments/:id key-write-area=h1 like=o1
+first HEAD /api/messenger/attachments/:id key-member=h1 like=o1
 first HEAD /api/messenger/c/:id/calls none=h1 like=o1
 first HEAD /api/messenger/c/:id/calls owner-cookie=h2 like=o2
 first HEAD /api/messenger/c/:id/calls admin-cookie=h3 like=o3
@@ -582,19 +595,6 @@ first HEAD /api/messenger/photo/:loginId key-write=h1 like=o1
 first HEAD /api/messenger/photo/:loginId key-read-area=h1 like=o1
 first HEAD /api/messenger/photo/:loginId key-write-area=h1 like=o1
 first HEAD /api/messenger/photo/:loginId key-member=h1 like=o1
-first HEAD /api/messenger/attachments/:id none=h1 like=o1
-first HEAD /api/messenger/attachments/:id owner-cookie=h2 like=o2
-first HEAD /api/messenger/attachments/:id admin-cookie=h3 like=o3
-first HEAD /api/messenger/attachments/:id limited-cookie=h4 like=o4
-first HEAD /api/messenger/attachments/:id member-cookie=h5 like=o5
-first HEAD /api/messenger/attachments/:id admin-bearer=h6 like=o6
-first HEAD /api/messenger/attachments/:id member-bearer=h7 like=o7
-first HEAD /api/messenger/attachments/:id revoked-bearer=h8 like=o8
-first HEAD /api/messenger/attachments/:id key-read=h1 like=o1
-first HEAD /api/messenger/attachments/:id key-write=h1 like=o1
-first HEAD /api/messenger/attachments/:id key-read-area=h1 like=o1
-first HEAD /api/messenger/attachments/:id key-write-area=h1 like=o1
-first HEAD /api/messenger/attachments/:id key-member=h1 like=o1
 first HEAD /api/people none=h1 like=o1
 first HEAD /api/people owner-cookie=h2 like=o2
 first HEAD /api/people admin-cookie=h3 like=o3
@@ -706,6 +706,13 @@ more HEAD /api/assistant/turn/:turnId/stream rotated-bearer=h15 like=o15
 more HEAD /api/assistant/turn/:turnId/stream expired-bearer=h15 like=o15
 more HEAD /api/assistant/turn/:turnId/stream key-unknown=h1 like=o1
 more HEAD /api/assistant/turn/:turnId/stream key-revoked=h1 like=o1
+more HEAD /api/messenger/attachments/:id disabled-cookie=h8 like=o8
+more HEAD /api/messenger/attachments/:id bumped-cookie=h8 like=o8
+more HEAD /api/messenger/attachments/:id gone-cookie=h8 like=o8
+more HEAD /api/messenger/attachments/:id rotated-bearer=h8 like=o8
+more HEAD /api/messenger/attachments/:id expired-bearer=h8 like=o8
+more HEAD /api/messenger/attachments/:id key-unknown=h1 like=o1
+more HEAD /api/messenger/attachments/:id key-revoked=h1 like=o1
 more HEAD /api/messenger/c/:id/calls disabled-cookie=h8 like=o8
 more HEAD /api/messenger/c/:id/calls bumped-cookie=h8 like=o8
 more HEAD /api/messenger/c/:id/calls gone-cookie=h8 like=o8
@@ -727,13 +734,6 @@ more HEAD /api/messenger/photo/:loginId rotated-bearer=h8 like=o8
 more HEAD /api/messenger/photo/:loginId expired-bearer=h8 like=o8
 more HEAD /api/messenger/photo/:loginId key-unknown=h1 like=o1
 more HEAD /api/messenger/photo/:loginId key-revoked=h1 like=o1
-more HEAD /api/messenger/attachments/:id disabled-cookie=h8 like=o8
-more HEAD /api/messenger/attachments/:id bumped-cookie=h8 like=o8
-more HEAD /api/messenger/attachments/:id gone-cookie=h8 like=o8
-more HEAD /api/messenger/attachments/:id rotated-bearer=h8 like=o8
-more HEAD /api/messenger/attachments/:id expired-bearer=h8 like=o8
-more HEAD /api/messenger/attachments/:id key-unknown=h1 like=o1
-more HEAD /api/messenger/attachments/:id key-revoked=h1 like=o1
 more HEAD /api/people disabled-cookie=h8 like=o8
 more HEAD /api/people bumped-cookie=h8 like=o8
 more HEAD /api/people gone-cookie=h8 like=o8

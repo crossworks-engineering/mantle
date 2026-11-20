@@ -59,6 +59,8 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
       .replace(/^\/api\/messenger\/c\/:id/, `/api/messenger/c/${randomUUID()}`)
       // The owner's photo: it has none, so every signed-in login hears the one 404.
       .replace(/^\/api\/messenger\/photo\/:loginId/, `/api/messenger/photo/${owner}`)
+      // A chat file nobody reads (no such row): every login hears not found.
+      .replace(/^\/api\/messenger\/attachments\/:id/, `/api/messenger/attachments/${randomUUID()}`)
       // The owner's card and photo (no photo: the one 404 for its photo).
       .replace(/^\/api\/people\/:id/, `/api/people/${owner}`)
       // A turn id that names no login: every login hears not found, GET and
