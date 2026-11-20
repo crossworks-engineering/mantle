@@ -135,6 +135,9 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The Sync service's file map (0382): read and written by the sidecar's
   // routes (/api/sidecar/files) outside every scope.
   'packages/db/src/sync-items.ts': 'full',
+  // The answer cache (0392): kept and taken in the extract queue's jobs,
+  // outside every scope.
+  'packages/db/src/answer-cache.ts': 'full',
   // The push worker's count of parked extractions.
   'packages/db/src/extract-parked.ts': 'full',
   // A one-off maintenance script (extract-skip-stamp.ts).
