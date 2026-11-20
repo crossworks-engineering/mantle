@@ -1,9 +1,11 @@
 /**
  * name-versions-clear on a real, migrated Postgres
  * (lib/maintenance/name-versions-clear.ts): every file the removed name pass
- * marked (reason 'version') gets its mark cleared and salience 1; a
- * 'corrected' or 'migrated' file, a node that is not a file, and an unmarked
- * file are left as they are. The clear keeps updated_at (no edit of the
+ * marked (reason 'version', superseded by a file in the same folder) gets its
+ * mark cleared and salience 1; a 'version' mark of another shape (to a file
+ * in another folder, to a page: one set by hand), a 'corrected' or
+ * 'migrated' file, a node that is not a file, and an unmarked file are left
+ * as they are, and the dry run counts both kinds. The clear keeps updated_at (no edit of the
  * file: a moved stamp would queue a skipped file for a paid read). A second
  * run clears none. A scratch database,
  * dropped after (the clear is box-wide).
@@ -30,12 +32,16 @@ describe.skipIf(!URL)('name-versions-clear', () => {
   let scratch: { url: string; drop: () => Promise<void> } | undefined;
   let anchor = '';
   const id = {
+    dir: randomUUID(), // the folder the old pass grouped in
     head: randomUUID(), // the newest "version": never marked
     sheet2: randomUUID(), // marked 'version' under the head
     sheet3: randomUUID(), // marked 'version', salience already 1
     corrected: randomUUID(), // a person's correction
     migrated: randomUUID(), // made into a page
     rule: randomUUID(), // not a file: a learned rule (journal) retired as a 'version'
+    elsewhere: randomUUID(), // 'version' to a file in another folder: by hand
+    page: randomUUID(), // a page a person named the newer version
+    byHand: randomUUID(), // 'version' to that page: by hand
   };
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -54,12 +60,14 @@ describe.skipIf(!URL)('name-versions-clear', () => {
       nid: string,
       type: string,
       title: string,
-      mark: { by?: string; reason?: string; salience?: number } = {},
+      mark: { by?: string; reason?: string; salience?: number; parent?: string | null } = {},
     ) =>
       su(sql`insert into nodes (id, owner_id, type, title, path, salience,
-                                superseded_by, superseded_reason)
+                                superseded_by, superseded_reason, parent_id)
              values (${nid}, ${anchor}, ${type}, ${title}, 'files',
-                     ${mark.salience ?? 1}, ${mark.by ?? null}, ${mark.reason ?? null})`);
+                     ${mark.salience ?? 1}, ${mark.by ?? null}, ${mark.reason ?? null},
+                     ${mark.parent === undefined ? id.dir : mark.parent})`);
+    await node(id.dir, 'branch', 'drawings', { parent: null });
     await node(id.head, 'file', '12-62-29-sht-01.dwg');
     await node(id.sheet2, 'file', '12-62-29-sht-02.dwg', {
       by: id.head,
@@ -67,6 +75,18 @@ describe.skipIf(!URL)('name-versions-clear', () => {
       salience: 0.5,
     });
     await node(id.sheet3, 'file', '12-62-29-sht-03.dwg', { by: id.head, reason: 'version' });
+    await node(id.elsewhere, 'file', 'spec-rev-a.pdf', {
+      by: id.head,
+      reason: 'version',
+      salience: 0.5,
+      parent: null,
+    });
+    await node(id.page, 'page', 'spec rev B');
+    await node(id.byHand, 'file', 'spec-rev-b.pdf', {
+      by: id.page,
+      reason: 'version',
+      salience: 0.5,
+    });
     await node(id.corrected, 'file', 'old-spec.pdf', {
       by: id.head,
       reason: 'corrected',
@@ -96,7 +116,7 @@ describe.skipIf(!URL)('name-versions-clear', () => {
 
   it('counts the marked files, then clears exactly them', async () => {
     const before = await rows();
-    expect(await clear.countNameVersionMarks()).toEqual({ marked: 2, demoted: 1 });
+    expect(await clear.countNameVersionMarks()).toEqual({ toClear: 2, left: 2 });
     expect(await clear.clearNameVersionMarks()).toBe(2);
     const r = await rows();
     // No edit of the file: every updated_at is the one it had.
@@ -107,10 +127,13 @@ describe.skipIf(!URL)('name-versions-clear', () => {
     expect(r[id.corrected]).toMatchObject({ salience: 0.25, by: id.head, reason: 'corrected' });
     expect(r[id.migrated]).toMatchObject({ salience: 0.5, by: id.head, reason: 'migrated' });
     expect(r[id.rule]).toMatchObject({ salience: 0.5, by: id.head, reason: 'version' });
+    // A 'version' mark of another shape is a person's: left.
+    expect(r[id.elsewhere]).toMatchObject({ salience: 0.5, by: id.head, reason: 'version' });
+    expect(r[id.byHand]).toMatchObject({ salience: 0.5, by: id.page, reason: 'version' });
   });
 
   it('a second run clears none', async () => {
-    expect(await clear.countNameVersionMarks()).toEqual({ marked: 0, demoted: 0 });
+    expect(await clear.countNameVersionMarks()).toEqual({ toClear: 0, left: 2 });
     expect(await clear.clearNameVersionMarks()).toBe(0);
   });
 });

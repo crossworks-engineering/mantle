@@ -287,10 +287,13 @@ last id to go on from.
 
 `pnpm maintain name-versions-clear` clears the marks the removed name-based
 version pass left on files (docs/files.md, "File history"): every file node
-with `superseded_reason` 'version' gets `superseded_by` and
-`superseded_reason` cleared and salience 1. 'corrected' and 'migrated' marks
-are never touched. A dry run (the default) prints the count; `--apply` clears
-them in one UPDATE and prints how many. Free, short, manual only; on a box
+with `superseded_reason` 'version' whose `superseded_by` is a file in the
+same folder (the shape that pass wrote) gets `superseded_by` and
+`superseded_reason` cleared and salience 1, and keeps its `updated_at`. Any
+other 'version' mark (one set by hand through `content_supersede`) is left,
+and 'corrected' and 'migrated' marks are never touched. A dry run (the
+default) prints two counts, to clear and left; `--apply` clears them in one
+UPDATE and prints how many. Free, short, manual only; on a box
 `docker exec mantle_web pnpm maintain name-versions-clear [--apply]`.
 
 ## Long runs on a box (`scripts/box-maintain.sh`)

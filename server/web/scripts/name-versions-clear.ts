@@ -21,16 +21,18 @@ const apply = process.argv.slice(2).includes('--apply');
 async function main(): Promise<number> {
   const before = await countNameVersionMarks();
   console.log(
-    `[name-versions-clear] files marked superseded by name (reason 'version'): ${before.marked}; down-weighted: ${before.demoted}`,
+    `[name-versions-clear] files marked superseded by name (reason 'version', a file in the same folder): to clear ${before.toClear}; other 'version' marks: left ${before.left}`,
   );
-  if (before.marked === 0) return 0;
+  if (before.toClear === 0) return 0;
   if (!apply) {
     console.log('[name-versions-clear] DRY RUN: pass --apply to clear them');
     return 0;
   }
   const cleared = await clearNameVersionMarks();
   const after = await countNameVersionMarks();
-  console.log(`[name-versions-clear] cleared: ${cleared}; still marked: ${after.marked}`);
+  console.log(
+    `[name-versions-clear] cleared: ${cleared}; still to clear: ${after.toClear}; left: ${after.left}`,
+  );
   return 0;
 }
 

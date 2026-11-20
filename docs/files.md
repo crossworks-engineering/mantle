@@ -702,9 +702,12 @@ only in runs of digits and marked all but the newest superseded, reason
 `version`) is removed. The marks it left are cleared by hand (never
 automatically) with the maintenance task `name-versions-clear`
 (`server/web/lib/maintenance/name-versions-clear.ts`): a dry run counts the
-file nodes with reason `version`; `--apply` clears their `superseded_by` and
-`superseded_reason` and puts their salience back to 1. A `corrected` or
-`migrated` mark is never touched. It prints counts only. On a box:
+file nodes with reason `version` whose `superseded_by` is a file in the same
+folder (the shape the pass wrote: to clear) and the other `version` marks
+(one set by hand through `content_supersede`: left); `--apply` clears the
+first kind's `superseded_by` and `superseded_reason` and puts their salience
+back to 1, keeping `updated_at`. A `corrected` or `migrated` mark is never
+touched. It prints counts only. On a box:
 
 ```sh
 ssh <box> docker exec mantle_web pnpm maintain name-versions-clear          # dry run
