@@ -32,8 +32,16 @@
  * too. It does not read the off list: the person who runs the task picked
  * the files, and it only takes files the pipeline already wrote.
  *
- * `drawing-pdf`: a read again keeps the stored kind and the decider's answer
- * and asks no model. It is one read, the job and one conditional write, in
+ * `drawing-pdf`: a read again keeps the decider's answer and asks no model.
+ * It keeps the stored kind too, unless that kind came from older kind rules
+ * (the File tab's rules version under PDF_KIND_RULES_VERSION, 5 since
+ * drawing-pdf 1.1.3, and no decider answer used: pdfReadAgainOf's `reroute`,
+ * packages/content/src/pdf-read.ts): then the router names the kind again,
+ * by its rules, with no ask. So `--apply` can turn a stored drawing into a
+ * book, and the book read (the reader's pages, OCR in the parser) then runs
+ * inside this maintenance run, which a long book makes long. It stays
+ * manual: a person starts the run, and no model is asked for the route. It
+ * is one read, the job and one conditional write, in
  * buildFileDatabase, where this task and `pipeline_run` meet: a database
  * with a sketch read is skipped (`sketch`), a decider's `no-rows` too
  * (`not-drawing`), and a read that would change a database that changed
