@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   canonicaliseRelation,
   extractFirstJsonObject,
+  extractorReplyIsJson,
   isValidEntity,
   isValidFact,
   isValidRelation,
@@ -154,6 +155,20 @@ describe('parseExtractorOutput — error path', () => {
       expect.stringContaining('LLM returned non-JSON'),
       expect.objectContaining({ nodeId: 'node-123', model: 'anthropic/claude-haiku-4.5' }),
     );
+  });
+
+  it('JSON that is no object (null, a list, a number, a string) is the empty result, not accepted', () => {
+    for (const raw of ['null', '[]', '[{"summary":"x"}]', '42', '"a note"', '```json\nnull\n```']) {
+      expect(parseExtractorOutput(raw)).toEqual({
+        summary: '',
+        facts: [],
+        entities: [],
+        relations: [],
+      });
+      expect(extractorReplyIsJson(raw)).toBe(false);
+    }
+    expect(extractorReplyIsJson('{"summary":"x"}')).toBe(true);
+    expect(extractorReplyIsJson('{"summary":"x"} and some prose')).toBe(true);
   });
 
   it('does not log when the JSON is valid (even if facts are empty)', () => {

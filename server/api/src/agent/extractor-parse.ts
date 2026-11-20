@@ -227,23 +227,33 @@ export function extractFirstJsonObject(text: string): string | null {
   return null; // unbalanced — truncated mid-object
 }
 
-/** The extractor reply's JSON, as parseExtractorOutput reads it (undefined:
- *  none), and the reply with its fences cut. */
-function extractorJsonOf(raw: string): { cleaned: string; parsed: unknown } {
+/** A JSON object: not null, not a list (the extractor's reply is one). */
+const isJsonObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The extractor reply's JSON object, as parseExtractorOutput reads it
+ *  (undefined: none, or JSON that is no object: null, a list, a number or
+ *  a string), and the reply with its fences cut. */
+function extractorJsonOf(raw: string): {
+  cleaned: string;
+  parsed: Record<string, unknown> | undefined;
+} {
   // Strip ```json fences if a model adds them.
   const cleaned = raw
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/```\s*$/i, '')
     .trim();
   try {
-    return { cleaned, parsed: JSON.parse(cleaned) };
+    const parsed: unknown = JSON.parse(cleaned);
+    return { cleaned, parsed: isJsonObject(parsed) ? parsed : undefined };
   } catch {
     // Fast path failed — most often the model appended prose or a stray
     // fence after a complete object. Recover the first balanced {…}.
     const candidate = extractFirstJsonObject(cleaned);
     if (candidate) {
       try {
-        return { cleaned, parsed: JSON.parse(candidate) };
+        const parsed: unknown = JSON.parse(candidate);
+        return { cleaned, parsed: isJsonObject(parsed) ? parsed : undefined };
       } catch {
         /* no JSON */
       }
@@ -252,8 +262,9 @@ function extractorJsonOf(raw: string): { cleaned: string; parsed: unknown } {
   }
 }
 
-/** Whether an extractor reply parses to JSON (the answer cache keeps only
- *  such a reply: a try again of one that does not asks again). */
+/** Whether an extractor reply parses to a JSON object (the answer cache
+ *  marks only such a reply accepted: one that does not is taken only by a
+ *  wait's try again). */
 export function extractorReplyIsJson(raw: string): boolean {
   return extractorJsonOf(raw).parsed !== undefined;
 }
