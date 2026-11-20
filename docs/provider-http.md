@@ -161,7 +161,9 @@ job with the cache on for its node; a chat turn, or a call with no node, does
 not use it. A person's read again (`file_reindex`) stamps the file, and its
 extract takes only answers kept after that moment, so the person's read is
 read again, once. A node's answers go when it is deleted (`node_id`
-cascades); nothing else prunes them.
+cascades); nothing else prunes them. A keep that fails is logged, each one, and the
+job then sends no wait: it takes pg-boss's bounded retries, so a cache that
+cannot keep never turns waits into an endless paid loop.
 
 **Nothing starts by itself.** Every job sent again is work already asked for
 (an upload, a run, a read's facts). No trigger, timer or sweep starts paid

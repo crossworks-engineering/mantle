@@ -4,6 +4,8 @@
  * a made-up worker and adapter (no provider):
  *  - a kept answer is taken with no paid call; outside the cache's scope
  *    nothing is kept or taken;
+ *  - a kept string is well-formed (no NUL, no lone surrogate); each keep
+ *    that fails is logged and marks the scope (answerKeepFailed);
  *  - the cache is per node: another node with the same bytes pays once for
  *    its own, a scope with no node uses no cache, and deleting the file
  *    removes its kept answers (the cascade of 0392);
@@ -224,6 +226,60 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     const rows = await admin<{ node_id: string }[]>`select node_id::text from ai_answer_cache
       where node_id in (${node}::uuid, ${other}::uuid) order by created_at`;
     expect(rows.map((r) => r.node_id)).toEqual([node, other]);
+  });
+
+  it('a string with a lone surrogate or a NUL is kept well-formed, and taken', async () => {
+    const key = cache.answerKey('vision', [sha, 'surrogate']);
+    const text = `cut in a pair \ud83d, a NUL ${String.fromCharCode(0)}here, a pair \ud83d\ude00`;
+    const got = await asSystem(() =>
+      cache.withAnswerCache(
+        async () => {
+          await cache.keepAnswer('vision', key, { text });
+          return { kept: await cache.keptAnswer<{ text: string }>(key) };
+        },
+        null,
+        node,
+      ),
+    );
+    expect(got.kept?.text).toBe('cut in a pair \ufffd, a NUL here, a pair \ud83d\ude00');
+  });
+
+  it('each failed keep is logged, and marks its scope and the scope it runs in', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const got = await asSystem(() =>
+        cache.withAnswerCache(
+          async () => {
+            const before = cache.answerKeepFailed();
+            // The extractor's own scope inside the queue's: a key the table
+            // refuses (its check), twice.
+            const inner = await cache.withAnswerCache(
+              async () => {
+                await cache.keepAnswer('vision', 'not-a-key', { text: 'paid' });
+                await cache.keepAnswer('vision', 'not-a-key', { text: 'paid' });
+                return cache.answerKeepFailed();
+              },
+              null,
+              node,
+            );
+            return { before, inner, outer: cache.answerKeepFailed() };
+          },
+          null,
+          node,
+        ),
+      );
+      expect(got).toEqual({ before: false, inner: true, outer: true });
+      const logged = error.mock.calls.filter((c) => String(c[0]).includes('[answer-cache]'));
+      expect(logged).toHaveLength(2);
+      // A new scope (the job's try again) starts unmarked.
+      expect(
+        await asSystem(() =>
+          cache.withAnswerCache(async () => cache.answerKeepFailed(), null, node),
+        ),
+      ).toBe(false);
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('deleting the file removes its kept answers, and only its own', async () => {

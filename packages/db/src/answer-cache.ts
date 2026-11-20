@@ -22,8 +22,11 @@
  * the person asked for, and its own tries again after a wait still pay
  * nothing twice.
  *
- * A failed read is no answer (the call is made); a failed write is logged and
- * the answer in hand is used. Never throws.
+ * A failed read is no answer (the call is made); a failed write is logged,
+ * each one, and the answer in hand is used. Never throws. A keep that
+ * failed is marked on the scope (answerKeepFailed): the extract queue then
+ * sends no wait, the job takes pg-boss's bounded retries, so a cache that
+ * cannot keep never turns waits into an endless paid loop.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
@@ -35,7 +38,14 @@ import { aiAnswerCache } from './schema/ai-answer-cache';
 /** The kinds of answer kept. */
 export type AnswerKind = 'vision' | 'scan_reader' | 'extractor';
 
-const scopes = new AsyncLocalStorage<{ since: Date | null; nodeId: string | null }>();
+/** A surrogate with no pair (a cut inside a pair, a provider's bad bytes). */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+/** A scope: its node, its read again, and whether a keep failed in it or in
+ *  the scope it runs in (one mark for the whole job). */
+type Scope = { since: Date | null; nodeId: string | null; failed: { keep: boolean } };
+
+const scopes = new AsyncLocalStorage<Scope>();
 
 /**
  * Run `fn` with the answer cache on for the node `nodeId` (null: off).
@@ -47,7 +57,14 @@ export function withAnswerCache<T>(
   since: Date | null,
   nodeId: string | null,
 ): Promise<T> {
-  return scopes.run({ since, nodeId }, fn);
+  const failed = scopes.getStore()?.failed ?? { keep: false };
+  return scopes.run({ since, nodeId, failed }, fn);
+}
+
+/** Whether a paid answer could not be kept in this scope: a try again
+ *  would pay for it again, so a wait must not be sent as a wait. */
+export function answerKeepFailed(): boolean {
+  return scopes.getStore()?.failed.keep === true;
 }
 
 /** The key of an answer: sha256 of its kind and the parts of what was asked. */
@@ -81,7 +98,7 @@ export async function keptAnswer<T>(key: string): Promise<T | null> {
       .limit(1);
     return (row?.answer as T | undefined) ?? null;
   } catch (err) {
-    warnOnce(err);
+    console.error(`[answer-cache] a kept answer could not be read: ${errorMessage(err)}`);
     return null;
   }
 }
@@ -89,13 +106,16 @@ export async function keptAnswer<T>(key: string): Promise<T | null> {
 /** Keep `answer` under `key` (a newer answer of the same key takes its
  *  place). Awaited by the gateway before it returns the answer. */
 export async function keepAnswer(kind: AnswerKind, key: string, answer: unknown): Promise<void> {
-  const nodeId = scopes.getStore()?.nodeId;
-  if (!nodeId) return;
+  const scope = scopes.getStore();
+  const nodeId = scope?.nodeId;
+  if (!scope || !nodeId) return;
   try {
-    // No NUL: jsonb refuses it.
+    // Well-formed strings: jsonb refuses a NUL and a lone surrogate.
     const kept: unknown = JSON.parse(
       JSON.stringify(answer, (_k, v: unknown) =>
-        typeof v === 'string' ? v.split(String.fromCharCode(0)).join('') : v,
+        typeof v === 'string'
+          ? v.split(String.fromCharCode(0)).join('').replace(LONE_SURROGATE, '\uFFFD')
+          : v,
       ),
     );
     await systemDb
@@ -106,17 +126,11 @@ export async function keepAnswer(kind: AnswerKind, key: string, answer: unknown)
         set: { answer: kept, createdAt: sql`now()` },
       });
   } catch (err) {
-    warnOnce(err);
+    scope.failed.keep = true;
+    console.error(
+      `[answer-cache] a paid ${kind} answer was not kept (a wait takes the retries): ${errorMessage(err)}`,
+    );
   }
-}
-
-let warned = false;
-function warnOnce(err: unknown): void {
-  if (warned) return;
-  warned = true;
-  console.warn(
-    `[answer-cache] the answer cache could not be used (a try again may pay again): ${errorMessage(err)}`,
-  );
 }
 
 /** The key of nodes.data a person's read again stamps: when it was asked

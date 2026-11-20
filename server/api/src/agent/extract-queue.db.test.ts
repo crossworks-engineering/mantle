@@ -16,6 +16,8 @@
  *  - a wait is only a wait: a read the provider holds many times in a row
  *    is sent again as a wait each time (nothing counted), never into the
  *    retries or the dead letters, and ends once the provider answers.
+ *  - but a try whose paid answer could not be kept sends no wait: it takes
+ *    pg-boss's bounded retries, so a broken cache never loops paid tries.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -35,12 +37,21 @@ const runs = vi.hoisted(() => ({
   held: new Set<string>(),
   /** How many tries of a node meet the provider's "not now", in turn. */
   waits: new Map<string, number>(),
+  /** Nodes whose try pays for an answer the cache cannot keep, then waits. */
+  keepFails: new Set<string>(),
 }));
 vi.mock('./extractor.js', async () => {
   const { ProviderWaitError } = await import('@mantle/std');
   return {
     extractNode: vi.fn(async (nodeId: string) => {
       runs.started.push(nodeId);
+      if (runs.keepFails.has(nodeId)) {
+        // A paid answer the table refuses (its key check), then the
+        // provider's "not now" to the next call.
+        const { keepAnswer } = await import('@mantle/db/answer-cache');
+        await keepAnswer('vision', 'not-a-key', { text: 'paid' });
+        throw new ProviderWaitError({ reason: 'rate_limit' }, 'vision');
+      }
       const left = runs.waits.get(nodeId) ?? 0;
       if (left > 0) {
         runs.waits.set(nodeId, left - 1);
@@ -272,4 +283,30 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     expect(dead[0]!.n).toBe(0);
     expect(runs.started.filter((id) => id === pdf)).toHaveLength(WAITS + 1);
   }, 120_000);
+
+  it('a try whose paid answer was not kept sends no wait: it takes the retries', async () => {
+    const pdf = await file('scan-unkept.pdf');
+    runs.keepFails.add(pdf);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await q.enqueueExtract(pdf);
+      await until('the try is in the retries', async () =>
+        (await jobs(pdf)).some((j) => j.state === 'retry'),
+      );
+      // One job, in its retries: no new job sent as a wait.
+      expect(await jobs(pdf)).toEqual([{ name: 'mantle.extract', state: 'retry', lane: null }]);
+      expect(error.mock.calls.some((c) => String(c[0]).includes('[answer-cache]'))).toBe(true);
+      // Its retry, with the cache keeping again, reads the file.
+      runs.keepFails.delete(pdf);
+      await su`update pgboss.job set start_after = now()
+        where data->>'nodeId' = ${pdf} and state = 'retry'`;
+      await until('the read ended', () => runs.ended.includes(pdf));
+      await until('its job is done', async () =>
+        (await jobs(pdf)).every((j) => j.state === 'completed'),
+      );
+      expect(await jobs(pdf)).toHaveLength(1);
+    } finally {
+      error.mockRestore();
+    }
+  }, 90_000);
 });

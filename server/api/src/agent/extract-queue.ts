@@ -167,7 +167,7 @@ import { runArchiveExtract } from '@mantle/files/archive-extract';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
-import { withAnswerCache } from '@mantle/db/answer-cache';
+import { answerKeepFailed, withAnswerCache } from '@mantle/db/answer-cache';
 import {
   errorMessage,
   providerWaitDelayMs,
@@ -616,88 +616,90 @@ async function handleExtractJob(
   // The queue as this job found it: a wait at a graceful stop is still
   // sent (stopExtractQueue drops `boss` before the jobs end).
   const b = waitBoss;
-  // Every paid AI answer of the job is kept as it comes, for its node
-  // (@mantle/db answer-cache.ts): a try again after a wait pays for none of
-  // them twice.
   const extract = () =>
     under.run(() =>
-      withAnswerCache(
-        () =>
-          archive
-            ? runArchiveExtract(ownerId, nodeId).then(() => {})
-            : pipelineId
-              ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
-                  // An Agent's run held by the provider or the day cap: the same
-                  // run again later (point 7). Never a retry of anything else.
-                  if (out.wait) {
-                    await sendWaiting(
-                      b,
-                      data,
-                      out.wait.for === 'provider'
-                        ? { for: 'provider', provider: { reason: out.wait.reason } }
-                        : { for: 'day_cap', until: out.wait.until },
-                      { progressed: out.status === 'asked' && out.made > 0 },
-                    );
-                  }
-                })
-              : data.facts
-                ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
-                    // Facts left for later (the cost cap again, or the provider's
-                    // "not now"): the rest in a job of their own.
-                    if (out.deferred) {
-                      await sendDeferredFacts(b, data, out.deferred, {
-                        progressed: out.applied > 0,
-                      });
-                    }
-                  })
-                : extractNode(nodeId, ownerId),
-        null,
-        nodeId,
-      ),
+      archive
+        ? runArchiveExtract(ownerId, nodeId).then(() => {})
+        : pipelineId
+          ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
+              // An Agent's run held by the provider or the day cap: the same
+              // run again later (point 7). Never a retry of anything else.
+              if (out.wait) {
+                await sendWaiting(
+                  b,
+                  data,
+                  out.wait.for === 'provider'
+                    ? { for: 'provider', provider: { reason: out.wait.reason } }
+                    : { for: 'day_cap', until: out.wait.until },
+                  { progressed: out.status === 'asked' && out.made > 0 },
+                );
+              }
+            })
+          : data.facts
+            ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
+                // Facts left for later (the cost cap again, or the provider's
+                // "not now"): the rest in a job of their own.
+                if (out.deferred) {
+                  await sendDeferredFacts(b, data, out.deferred, {
+                    progressed: out.applied > 0,
+                  });
+                }
+              })
+            : extractNode(nodeId, ownerId),
     );
-  const run = prev ? prev.catch(() => {}).then(extract) : extract();
-  const tracked: Promise<unknown> = run
-    .catch(() => {})
-    .finally(() => {
-      if (inflightByNode.get(nodeId) === tracked) inflightByNode.delete(nodeId);
-    });
-  inflightByNode.set(nodeId, tracked);
-  // Let it throw: a thrown error propagates to pg-boss and triggers the
-  // queue's retry/backoff. A swallowed error is the bug we're fixing.
-  try {
-    await run;
-  } catch (err) {
-    // The heads check refused a write (plan V5): parked once, no retry.
-    if (
-      await parkHeadsFailure(err, nodeId, {
-        stamp: stampExtractParked,
-        park: boss
-          ? async (data) => {
-              await boss?.send(HEADS_DEAD_QUEUE, data);
-            }
-          : null,
-        alert: () => notifyParked(ownerId),
-        log: (msg) => console.error(`[extract-queue] ${msg}`),
-      })
-    ) {
-      return;
-    }
-    // An account error (no credits, refused key) pauses the queue once a
-    // probe confirms it; anything else retries as before. Not awaited: the
-    // confirm probe must not hold this job's failure back from pg-boss.
-    void circuit
-      ?.onJobError(err)
-      .catch((e) => console.error('[extract-queue] circuit:', errorMessage(e)));
-    // The provider's "not now": the job waits and is sent again, never a
-    // failure that ends in the dead letters (point 7). Nothing is counted:
-    // what the try paid for is kept (withAnswerCache above).
-    const wait = providerWaitOf(err);
-    if (wait) {
-      await sendWaiting(b, data, { for: 'provider', provider: wait });
-      return;
-    }
-    throw err;
-  }
+  // Every paid AI answer of the job is kept as it comes, for its node
+  // (@mantle/db answer-cache.ts): a try again after a wait pays for none of
+  // them twice. The scope holds the job's wait too: after a keep that
+  // failed, no wait is sent (sendWaiting).
+  return withAnswerCache(
+    async () => {
+      const run = prev ? prev.catch(() => {}).then(extract) : extract();
+      const tracked: Promise<unknown> = run
+        .catch(() => {})
+        .finally(() => {
+          if (inflightByNode.get(nodeId) === tracked) inflightByNode.delete(nodeId);
+        });
+      inflightByNode.set(nodeId, tracked);
+      // Let it throw: a thrown error propagates to pg-boss and triggers the
+      // queue's retry/backoff. A swallowed error is the bug we're fixing.
+      try {
+        await run;
+      } catch (err) {
+        // The heads check refused a write (plan V5): parked once, no retry.
+        if (
+          await parkHeadsFailure(err, nodeId, {
+            stamp: stampExtractParked,
+            park: boss
+              ? async (data) => {
+                  await boss?.send(HEADS_DEAD_QUEUE, data);
+                }
+              : null,
+            alert: () => notifyParked(ownerId),
+            log: (msg) => console.error(`[extract-queue] ${msg}`),
+          })
+        ) {
+          return;
+        }
+        // An account error (no credits, refused key) pauses the queue once a
+        // probe confirms it; anything else retries as before. Not awaited: the
+        // confirm probe must not hold this job's failure back from pg-boss.
+        void circuit
+          ?.onJobError(err)
+          .catch((e) => console.error('[extract-queue] circuit:', errorMessage(e)));
+        // The provider's "not now": the job waits and is sent again, never a
+        // failure that ends in the dead letters (point 7). Nothing is counted:
+        // what the try paid for is kept (withAnswerCache above).
+        const wait = providerWaitOf(err);
+        if (wait) {
+          await sendWaiting(b, data, { for: 'provider', provider: wait });
+          return;
+        }
+        throw err;
+      }
+    },
+    null,
+    nodeId,
+  );
 }
 
 /** Send a waiting job again (waitAgain) on the main queue, which takes it
@@ -711,6 +713,13 @@ async function sendWaiting(
   // No queue to send to: fail the job, so pg-boss keeps it, rather than
   // ending it as done with its work lost.
   if (!b) throw new Error('the extract queue is not running: the wait was not sent');
+  // A paid answer of this try was not kept (@mantle/db answer-cache.ts): a
+  // try again would pay for it again, so the job takes pg-boss's bounded
+  // retries instead of a wait, and a cache that cannot keep never makes an
+  // endless paid loop.
+  if (answerKeepFailed()) {
+    throw new Error('a paid answer was not kept: the wait takes the retries');
+  }
   const due = await waitAgain((d, o) => b.send(EXTRACT_QUEUE, d, o), job, wait, Date.now(), opts);
   console.log(
     `[extract-queue] ${job.run ? `run ${job.run} of` : job.facts ? 'facts of' : 'read of'} ${job.nodeId} waits ` +
