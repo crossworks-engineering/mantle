@@ -3123,6 +3123,41 @@
   }
  },
  {
+  "name": "messenger_attachment_save",
+  "description": "Copy one file of a chat line into a folder of Files (Save to Files), so you can read it with `file_read`. `attachment` is a file id from the `files` of a line in `messenger_open`; you must read that chat. The folder is yours to create in, as an upload by hand; a taken name is refused. Answers the new file.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "attachment": {
+     "type": "string",
+     "description": "The file id, from a line in messenger_open."
+    },
+    "parent_path": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 500,
+     "description": "ltree path of the destination folder, e.g. 'files.work'"
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "attachment",
+    "parent_path"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "messenger_attachment_save",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "messenger_create",
   "description": "Start a direct chat (kind \"direct\", exactly one other person: an existing chat with them is answered instead) or a group (kind \"group\", any number of people, none for a chat with yourself, with an optional title and info: what it is for and its rules, which `messenger_open` shows to everyone in it). A group may take a handle (e.g. \"bugs\": anyone on the box may post to @bugs, and the posts land in the group) and an intake form (bug, feature or request). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.",
   "inputSchema": {
@@ -3242,6 +3277,14 @@
       "handle"
      ],
      "description": "Post to a group handle of this box (messenger_directory lists them)."
+    },
+    "files": {
+     "maxItems": 5,
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Up to 5 file ids from Files that you may read, sent with the line (images show inline). A file over 10 MB is not sent: the line names it, and the answer lists it in leftOut."
     },
     "answers": {
      "type": "object",

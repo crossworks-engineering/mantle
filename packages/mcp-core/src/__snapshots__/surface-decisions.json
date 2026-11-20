@@ -2882,6 +2882,24 @@
   "adminOnly": false,
   "gate": null
  },
+ "messenger_attachment_save": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": true,
+   "keyArea": "files",
+   "peerRisky": false
+  }
+ },
  "messenger_create": {
   "readOnly": false,
   "peerRisky": false,

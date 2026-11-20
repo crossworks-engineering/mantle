@@ -269,6 +269,7 @@ const LISTS: Record<string, readonly string[]> = {
     'folder_create',
     'formula_create',
     'generate_image',
+    'messenger_attachment_save',
     'note_create',
     'note_from_file',
     'note_from_page',
