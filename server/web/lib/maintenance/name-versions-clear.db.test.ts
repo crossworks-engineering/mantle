@@ -1,8 +1,9 @@
 /**
  * name-versions-clear on a real, migrated Postgres
  * (lib/maintenance/name-versions-clear.ts): every file the removed name pass
- * marked (reason 'version', superseded by a file in the same folder) gets its
- * mark cleared and salience 1; a 'version' mark of another shape (to a file
+ * marked (reason 'version', superseded by a file in the same folder) and a
+ * 'version' mark whose successor was deleted get their mark cleared and
+ * salience 1; a 'version' mark of another shape (to a file
  * in another folder, to a page: one set by hand), a 'corrected' or
  * 'migrated' file, a node that is not a file, and an unmarked file are left
  * as they are, and the dry run counts both kinds. The clear keeps updated_at (no edit of the
@@ -42,6 +43,7 @@ describe.skipIf(!URL)('name-versions-clear', () => {
     elsewhere: randomUUID(), // 'version' to a file in another folder: by hand
     page: randomUUID(), // a page a person named the newer version
     byHand: randomUUID(), // 'version' to that page: by hand
+    dangling: randomUUID(), // 'version' to a node since deleted (no FK)
   };
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -87,6 +89,12 @@ describe.skipIf(!URL)('name-versions-clear', () => {
       reason: 'version',
       salience: 0.5,
     });
+    await node(id.dangling, 'file', 'spec-rev-c.pdf', {
+      by: randomUUID(),
+      reason: 'version',
+      salience: 0.5,
+      parent: null,
+    });
     await node(id.corrected, 'file', 'old-spec.pdf', {
       by: id.head,
       reason: 'corrected',
@@ -116,12 +124,12 @@ describe.skipIf(!URL)('name-versions-clear', () => {
 
   it('counts the marked files, then clears exactly them', async () => {
     const before = await rows();
-    expect(await clear.countNameVersionMarks()).toEqual({ toClear: 2, left: 2 });
-    expect(await clear.clearNameVersionMarks()).toBe(2);
+    expect(await clear.countNameVersionMarks()).toEqual({ toClear: 3, left: 2 });
+    expect(await clear.clearNameVersionMarks()).toBe(3);
     const r = await rows();
     // No edit of the file: every updated_at is the one it had.
     for (const k of Object.values(id)) expect(r[k]?.at, k).toBe(before[k]?.at);
-    for (const k of [id.sheet2, id.sheet3, id.head]) {
+    for (const k of [id.sheet2, id.sheet3, id.head, id.dangling]) {
       expect(r[k], k).toMatchObject({ salience: 1, by: null, reason: null });
     }
     expect(r[id.corrected]).toMatchObject({ salience: 0.25, by: id.head, reason: 'corrected' });

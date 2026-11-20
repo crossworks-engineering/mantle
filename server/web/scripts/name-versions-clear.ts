@@ -21,7 +21,7 @@ const apply = process.argv.slice(2).includes('--apply');
 async function main(): Promise<number> {
   const before = await countNameVersionMarks();
   console.log(
-    `[name-versions-clear] files marked superseded by name (reason 'version', a file in the same folder): to clear ${before.toClear}; other 'version' marks: left ${before.left}`,
+    `[name-versions-clear] files marked superseded by name (reason 'version', to a file in the same folder or to no node): to clear ${before.toClear}; other 'version' marks: left ${before.left}`,
   );
   if (before.toClear === 0) return 0;
   if (!apply) {

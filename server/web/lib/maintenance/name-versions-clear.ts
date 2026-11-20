@@ -9,10 +9,11 @@
  * as its "living" successor.
  *
  * A file node with reason 'version' whose `superseded_by` is a file in the
- * same folder (the same parent_id: the shape the old pass wrote) gets
- * `superseded_by` and `superseded_reason` cleared and salience 1. Any other
- * 'version' mark (one set by hand through content_supersede, to a page or to
- * a file in another folder) is left, and counted as left. A 'corrected' or
+ * same folder (the same parent_id: the shape the old pass wrote), or whose
+ * `superseded_by` points at no node any more, gets `superseded_by` and
+ * `superseded_reason` cleared and salience 1. Any other 'version' mark (one
+ * to a live page or to a live file in another folder: set by hand through
+ * content_supersede) is left, and counted as left. A 'corrected' or
  * 'migrated' mark is never touched, nor any node that is not a file.
  * `updated_at` is kept (mantle.keep_updated_at): the clear is no edit of the
  * file, so neither "last updated" nor the extractor's skipped and parked
@@ -26,13 +27,16 @@ import { db, nodes } from '@mantle/db';
 /** A file marked 'version'. */
 const VERSION = sql`${nodes.type} = 'file' and ${nodes.supersededReason} = 'version'`;
 
-/** The removed pass's shape: the successor is a file in the same folder.
- *  The outer row is named `nodes` in full (both the count and the UPDATE
- *  read the table by that name), so no column here can bind to `s`. */
-const OLD_SHAPE = sql`exists (select 1 from nodes s
-                               where s.id = nodes.superseded_by
-                                 and s.type = 'file'
-                                 and s.parent_id is not distinct from nodes.parent_id)`;
+/** The removed pass's shape: the successor is a file in the same folder,
+ *  or no node any more (superseded_by has no foreign key; such a mark only
+ *  lowers the file's search weight, so clearing it loses nothing). The
+ *  outer row is named `nodes` in full (both the count and the UPDATE read
+ *  the table by that name), so no column here can bind to `s`. */
+const OLD_SHAPE = sql`(exists (select 1 from nodes s
+                                where s.id = nodes.superseded_by
+                                  and s.type = 'file'
+                                  and s.parent_id is not distinct from nodes.parent_id)
+                       or not exists (select 1 from nodes s where s.id = nodes.superseded_by))`;
 
 /** How many files carry the old pass's mark (to clear), and how many other
  *  'version' marks stay (left). */
