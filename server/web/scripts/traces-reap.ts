@@ -11,7 +11,8 @@
  * abandonedTraceSql, reapAbandonedTracesAllOwners): status → error
  * 'abandoned…', finished_at = now, duration_ms = NULL (the true duration is
  * unknowable — never fabricate it from the reap time). Threshold:
- * MANTLE_EXTRACT_EXPIRE_MIN (default 60) + 15, and for a book read's traces
+ * the longer of MANTLE_EXTRACT_EXPIRE_MIN (default 60) and 720 (the most a
+ * saved base budget may be) + 15, and for a book read's traces
  * (`data.lane` 'book') the book lane's longest budget + 15, so a long-but-live
  * extract run is never false-flagged.
  *

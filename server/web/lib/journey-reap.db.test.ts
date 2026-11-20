@@ -1,11 +1,13 @@
 /**
  * The stale-trace reapers (journey.ts abandonedTraceSql) on a real, migrated
- * Postgres: a trace still `running` past the extract budget plus 15 minutes is
- * closed as abandoned, but a book read's trace (`data.lane` 'book', the
- * extract queue's book lane, and every trace opened inside it) has the book
- * lane's longest budget plus 15 (a saved base budget may be up to 12 hours, so
- * the longer cap): two hours in, and eleven, it stays running; thirteen hours
- * in, it is closed. The owner-scoped self-heal, the all-owner sweep and the
+ * Postgres: a plain trace still `running` past the longer of the extract
+ * budget env and the most a saved base budget may be (12 hours), plus 15
+ * minutes, is closed as abandoned: eleven hours in (past the old env + 15
+ * limit) it stays running, twelve and a half hours in it is closed. A book
+ * read's trace (`data.lane` 'book', the extract queue's book lane, and every
+ * trace opened inside it) has the book lane's longest budget plus 15 (the
+ * longer cap): two hours in, and eleven, it stays running; thirteen hours in,
+ * it is closed. The owner-scoped self-heal, the all-owner sweep and the
  * corpus audit's abandoned_traces check keep the one rule. A scratch
  * database (with a pg-boss schema: the audit's queue checks read it),
  * dropped after.
@@ -62,14 +64,16 @@ describe.skipIf(!URL)('the stale-trace reapers', () => {
     await scratch?.drop();
   });
 
-  it('a book read two hours in stays running; a plain trace two hours in is abandoned', async () => {
-    const plain = await trace(2);
+  it('a plain trace inside the saved budget cap stays running; past the cap plus 15 it is abandoned', async () => {
+    const dead = await trace(12.5);
+    const live = await trace(11); // past the old env + 15 limit (75 minutes)
     const book = await trace(2, 'book');
     const fresh = await trace(0.1);
-    expect((await j.listAbandonedTraces()).map((t) => t.id)).toEqual([plain]);
+    expect((await j.listAbandonedTraces()).map((t) => t.id)).toEqual([dead]);
     expect(await m.runAsSystem('test:reap', () => j.reapAbandonedTraces(anchor))).toBe(1);
-    expect(await statusOf(plain)).toMatchObject({ s: 'error' });
-    expect((await statusOf(plain)).error).toMatch(/^abandoned/);
+    expect(await statusOf(dead)).toMatchObject({ s: 'error' });
+    expect((await statusOf(dead)).error).toMatch(/^abandoned/);
+    expect(await statusOf(live)).toMatchObject({ s: 'running' });
     expect(await statusOf(book)).toMatchObject({ s: 'running' });
     expect(await statusOf(fresh)).toMatchObject({ s: 'running' });
   });
@@ -82,12 +86,14 @@ describe.skipIf(!URL)('the stale-trace reapers', () => {
     expect(await statusOf(live)).toMatchObject({ s: 'running' });
   });
 
-  it('the corpus audit reports what the reapers reap: a book read two hours in is live', async () => {
-    const plain = await trace(2);
+  it('the corpus audit reports what the reapers reap: a plain read eleven hours in and a book read two hours in are live', async () => {
+    const plain = await trace(13);
+    const live = await trace(11);
     const book = await trace(2, 'book');
     const { runCorpusAudit } = await import('./integrity/audit');
     const check = (await runCorpusAudit(anchor)).checks.find((c) => c.key === 'abandoned_traces');
     expect(check?.samples.map((r) => r.id)).toEqual([plain]);
+    expect(await statusOf(live)).toMatchObject({ s: 'running' });
     expect(await statusOf(book)).toMatchObject({ s: 'running' });
   });
 });

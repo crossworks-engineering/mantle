@@ -280,7 +280,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:
-      "Closes traces stuck 'running' past the abandon threshold (MANTLE_EXTRACT_EXPIRE_MIN + 15; a book read's traces, the book lane's longest budget + 15) — the cron twin of the owner-scoped reaper the live-activity view runs on poll. On a box nobody browses, crashed runs otherwise sit as \"active\" for days and skew every running-count rollup. Marks status=error 'abandoned…' with duration_ms NULL (the true duration is unknowable).",
+      "Closes traces stuck 'running' past the abandon threshold (the longer of MANTLE_EXTRACT_EXPIRE_MIN and 720, the most a saved base budget may be, + 15; a book read's traces, the book lane's longest budget + 15) — the cron twin of the owner-scoped reaper the live-activity view runs on poll. On a box nobody browses, crashed runs otherwise sit as \"active\" for days and skew every running-count rollup. Marks status=error 'abandoned…' with duration_ms NULL (the true duration is unknowable).",
     kind: 'recurring',
     status: 'live',
     cost: 'sql',

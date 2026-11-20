@@ -177,11 +177,13 @@ export async function listActivity(
 
 /** Real traces finish in seconds, but a bulky-document extraction on a slow CPU
  *  embedder can legitimately run for many minutes. Keep this ABOVE the extract
- *  queue's job-expiry (`MANTLE_EXTRACT_EXPIRE_MIN`, default 60) plus a buffer, so
- *  a long-but-live run isn't false-flagged as abandoned in the activity view —
- *  only a genuinely orphaned trace (process crashed before writing a terminal
- *  status) gets reaped. */
-const ABANDON_AFTER_MIN = envNum('MANTLE_EXTRACT_EXPIRE_MIN') + 15;
+ *  queue's job-expiry plus a buffer, so a long-but-live run isn't false-flagged
+ *  as abandoned in the activity view — only a genuinely orphaned trace (process
+ *  crashed before writing a terminal status) gets reaped. The expiry is the
+ *  saved base budget (up to EXTRACTION_TIME_BUDGET_MAX, 12 hours) or
+ *  `MANTLE_EXTRACT_EXPIRE_MIN` (default 60), so the longer of the two. */
+const ABANDON_AFTER_MIN =
+  Math.max(envNum('MANTLE_EXTRACT_EXPIRE_MIN'), EXTRACTION_TIME_BUDGET_MAX) + 15;
 /** A book read's traces (`data.lane` 'book': the one the extract queue opens
  *  for the book lane, and every trace opened inside it) run as long as the
  *  book: the book lane's longest budget plus the same buffer. A book's budget

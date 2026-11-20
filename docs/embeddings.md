@@ -329,8 +329,11 @@ opened inside it (the extractor's `extractor_run`) carries the lane too. A
 run on demand in the book lane keeps its own one trace, with the lane. The
 stale-trace reapers (`abandonedTraceSql`: the self-heal on each Activity
 poll, the nightly `traces-reap` sweep and `pnpm traces:reap`) close a
-`running` trace after the base budget plus 15 minutes, and a trace of the
-book lane after the book lane's longest budget plus 15 (the longer of
+`running` trace after the longer of `MANTLE_EXTRACT_EXPIRE_MIN` and
+`EXTRACTION_TIME_BUDGET_MAX` (12 hours, the most a saved base budget may be)
+plus 15 minutes, so a plain read with a saved budget up to that cap is not
+reaped early, and a trace of the book lane after the book lane's longest
+budget plus 15 (the longer of
 `BOOK_TIME_BUDGET_MAX`, 8 hours, and `EXTRACTION_TIME_BUDGET_MAX`, 12 hours,
 the most a saved base budget may be, which a book's budget never goes under;
 `@mantle/embeddings/extraction-concurrency`), so a long book's trace is not
