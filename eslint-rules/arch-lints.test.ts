@@ -574,7 +574,11 @@ describe('the architecture ratchets (pinned counts)', () => {
     // (owner, the settings area).
     // Extract contents of an archive (+3 with a caller): GET (+HEAD), POST
     // /api/files/files/:id/extract (owner, the file's read and edit).
-    expect(rows.filter((r) => r.caller).length).toBe(899);
+    // Fleet chat phase 1 (+6 with a caller): POST /api/messenger/send, POST
+    // /api/messenger/to, POST /api/messenger/c/:id/attachments, GET (+HEAD)
+    // /api/messenger/attachments/:id and POST .../attachments/:id/save
+    // (any login).
+    expect(rows.filter((r) => r.caller).length).toBe(905);
     // 894 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows

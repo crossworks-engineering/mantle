@@ -585,6 +585,10 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'member',
     limits: [login('messenger-read', 600)],
   }),
+  ...getHead('/api/messenger/attachments/:id', {
+    cred: 'member',
+    limits: [login('messenger-read', 600)],
+  }),
   ...getHead('/api/messenger/directory', {
     cred: 'member',
     limits: [login('messenger-read', 600)],
@@ -716,6 +720,30 @@ const SWEEP_CELLS: readonly SweepCell[] = [
   },
   {
     row: 'POST /api/messenger/conversations',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'POST /api/messenger/send',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('messenger-send', 60)],
+  },
+  {
+    row: 'POST /api/messenger/to',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'POST /api/messenger/c/:id/attachments',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('messenger-write', 120)],
+  },
+  {
+    row: 'POST /api/messenger/attachments/:id/save',
     cred: 'member',
     body: JSON_BODY,
     limits: [login('messenger-write', 120)],
