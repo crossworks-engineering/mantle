@@ -5,6 +5,7 @@
  *  - a kept answer is taken with no paid call; outside the cache's scope
  *    nothing is kept or taken;
  *  - only an answer the caller accepts is kept (any text by default);
+ *  - a call with the cache off (the extractor's canvas pass) keeps nothing;
  *  - a kept string is well-formed (no NUL, no lone surrogate); each keep
  *    that fails is logged and marks the scope (answerKeepFailed);
  *  - the cache is per node: another node with the same bytes pays once for
@@ -261,6 +262,22 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     await asSystem(() => cache.withAnswerCache(ask('json?', json), null, node));
     await asSystem(() => cache.withAnswerCache(ask('json?', json), null, node));
     expect(h.visionCalls).toBe(5);
+  });
+
+  it('a call with the cache off takes and keeps nothing, in a scope', async () => {
+    const ask = () =>
+      attachments.runVisionWorker({
+        ownerId: 'o-1',
+        bytes: Buffer.from(sha),
+        mimeType: 'image/png',
+        prompt: 'canvas?',
+        cache: false,
+      });
+    await asSystem(() => cache.withAnswerCache(ask, null, node));
+    await asSystem(() => cache.withAnswerCache(ask, null, node));
+    expect(h.visionCalls).toBe(2);
+    const rows = await admin`select 1 from ai_answer_cache where node_id = ${node}::uuid`;
+    expect(rows).toHaveLength(0);
   });
 
   it('a string with a lone surrogate or a NUL is kept well-formed, and taken', async () => {

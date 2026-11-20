@@ -118,6 +118,9 @@ export async function runVisionWorker(opts: {
    *  again takes it). One it cannot use is not kept: a try again asks again.
    *  Default: any text. */
   accept?: (text: string) => boolean;
+  /** false: no answer is taken or kept, for a call whose caller keeps its
+   *  own (the extractor's canvas pass, its prompt new each call). */
+  cache?: false;
 }): Promise<VisionResult> {
   // The one resolution (@mantle/api-keys): the worker, its key reference,
   // a wired adapter (checked before the key is opened), the key.
@@ -159,7 +162,8 @@ export async function runVisionWorker(opts: {
     opts.mimeType,
     opts.input ?? bytesKey(opts.bytes),
   ]);
-  const kept = await keptAnswer<VisionResult>(key);
+  const cached = opts.cache !== false;
+  const kept = cached ? await keptAnswer<VisionResult>(key) : null;
   if (kept) {
     noteAnswerCut(kept.tokensOut, maxTokens);
     return kept;
@@ -204,7 +208,7 @@ export async function runVisionWorker(opts: {
     };
     // Kept before it is returned: whatever waits after it, a try again
     // takes it and pays nothing twice. Only an answer the caller accepts.
-    if ((opts.accept ?? hasText)(text)) await keepAnswer('vision', key, answer);
+    if (cached && (opts.accept ?? hasText)(text)) await keepAnswer('vision', key, answer);
     return answer;
   } catch (err) {
     const wait = providerWaitOf(err);

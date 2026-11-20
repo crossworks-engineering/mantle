@@ -75,6 +75,8 @@ describe("a canvas's one extractor call", () => {
     expect(req.bytes).toEqual(Buffer.from('png-bytes'));
     expect(req.prompt).toContain('P-101 A/B');
     expect(req.systemPrompt).toMatch(/JSON/);
+    // The answer cache is the extractor's own key, not this inner call's.
+    expect(req.cache).toBe(false);
     expect(out).toMatchObject({ summary: 'A pump skid P&ID.', model: 'vision-model' });
   });
 

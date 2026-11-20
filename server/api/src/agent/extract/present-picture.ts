@@ -79,6 +79,9 @@ export async function extractWithPicture(
     // reply off, and a cut reply parses to nothing. runDocumentWorker's
     // generous default.
     maxTokens: params.max_tokens ?? EXTRACT_WITH_PICTURE_MAX_TOKENS,
+    // Not kept here: its prompt carries the fence's nonce (new each call),
+    // and the extractor's own key keeps its reply (model.ts).
+    cache: false,
   });
   // The provider's "not now" waits in the queue (extract-queue.ts); any
   // other failure retries as the extractor's text call does.
