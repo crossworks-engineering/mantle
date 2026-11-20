@@ -502,6 +502,7 @@
 "HEAD /api/member/push/subscriptions": {"class":"self","scope":{"kind":"self"},"open":"login","logins":"member","effect":"read","caller":"member"},
 "HEAD /api/member/realtime": {"class":"self","scope":{"kind":"self"},"open":"login","logins":"member","effect":"read","caller":"member"},
 "HEAD /api/mentions/search": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"read","caller":"owner"},
+"HEAD /api/messenger/attachments/:id": {"class":"self","scope":null,"open":"login","logins":"any","effect":"read","caller":"loginAsset","rateLimit":["messengerRead"]},
 "HEAD /api/messenger/c/:id": {"class":"self","scope":null,"open":"login","logins":"any","effect":"read","caller":"login","rateLimit":["messengerRead"]},
 "HEAD /api/messenger/c/:id/calls": {"class":"self","scope":null,"open":"login","logins":"any","effect":"read","caller":"login","rateLimit":["messengerRead"]},
 "HEAD /api/messenger/c/:id/messages": {"class":"self","scope":null,"open":"login","logins":"any","effect":"read","caller":"login","rateLimit":["messengerRead"]},

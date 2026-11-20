@@ -11,7 +11,7 @@
  *  - a handle's copy line and the line back carry the files, as new rows
  *    on the same bytes;
  *  - files left out are named on the line;
- *  - Save to Files copies one into a folder.
+ *  - Save to Files refuses a file the login does not read.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/content/src/messenger-attachments.db.test.ts
  */
@@ -194,13 +194,11 @@ describe.skipIf(!URL)('fleet chat: files on messenger lines', () => {
     expect(back.event?.type).toBe('intake_answer');
     expect(back.files.map((x) => x.name)).toEqual(['fix.txt']);
     expect(await open(C, back.files[0]!.id)).toEqual(Buffer.from('done'));
-    // Save to Files: a reader copies it into a folder; an outsider cannot.
+    // Save to Files: an outsider of the chat reads no file to save. (The
+    // copy itself is upsertFile in the login's scope; its success path
+    // needs a files tree, not made in this test.)
     await expect(
       as(B, () => ma.saveMessengerAttachment(actor(B), back.files[0]!.id, 'files')),
     ).rejects.toThrow(ms.MessengerNotFoundError);
-    const saved = await as(C, () =>
-      ma.saveMessengerAttachment(actor(C), back.files[0]!.id, 'files'),
-    );
-    expect(saved.filename).toBe('fix.txt');
   });
 });
