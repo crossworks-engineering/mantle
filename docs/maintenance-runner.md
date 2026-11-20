@@ -293,9 +293,10 @@ foreign key), gets `superseded_by` and `superseded_reason` cleared and
 salience 1, and keeps its `updated_at`. Any other 'version' mark (to a live
 page or a live file in another folder, set by hand through
 `content_supersede`) is left, and 'corrected' and 'migrated' marks are never
-touched. A dry run (the default) prints two counts, to clear and left;
-`--apply` clears them in one UPDATE and prints how many. Free, short, manual
-only; on a box
+touched. A 'version' mark a person set by hand between two files in the same
+folder looks the same as that pass's and is cleared too. A dry run (the
+default) prints two counts, to clear and left; `--apply` clears them in one
+UPDATE and prints how many. Free, short, manual only; on a box
 `docker exec mantle_web pnpm maintain name-versions-clear [--apply]`.
 
 ## Long runs on a box (`scripts/box-maintain.sh`)

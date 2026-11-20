@@ -707,8 +707,10 @@ folder (the shape the pass wrote) or no node any more (it has no foreign
 key): to clear; and the other `version` marks (to a live page or a live file
 in another folder, set by hand through `content_supersede`): left; `--apply`
 clears the first kind's `superseded_by` and `superseded_reason` and puts their salience
-back to 1, keeping `updated_at`. A `corrected` or `migrated` mark is never
-touched. It prints counts only. On a box:
+back to 1, keeping `updated_at`. A `version` mark a person set by hand
+between two files in the same folder looks the same as the pass's and is
+cleared too. A `corrected` or `migrated` mark is never touched. It prints
+counts only. On a box:
 
 ```sh
 ssh <box> docker exec mantle_web pnpm maintain name-versions-clear          # dry run
