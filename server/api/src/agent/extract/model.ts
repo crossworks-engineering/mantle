@@ -129,6 +129,10 @@ export async function pdfKindFactOf(node: {
   return file && file.kind !== 'unsure' ? pdfKindNote(file.kind) : null;
 }
 
+/** The fence's nonce in the answer cache's key of the extractor's call:
+ *  fixed, so a try again of the same ask has the same key. Never sent. */
+const ANSWER_KEY_NONCE = '0000000000000000';
+
 /**
  * The extractor's model input: its system prompt, the node's type, and its
  * title and body (the first 8000 characters) fenced as untrusted. Pure, so the prompt can be pinned
@@ -259,15 +263,20 @@ export async function runExtractorModel(
           const picture = await presentPictureForPass(node, ownerId);
           // The answer of this same ask, kept before (a try again after a
           // wait, an embed's "not now"): taken, no call. The key is what the
-          // model was asked, without the fence's nonce (a new one each call).
+          // model is asked, built again with a fixed fence (the call's own
+          // nonce is new each call), so a change to the prompt is a new ask.
+          const asked = buildExtractorInput(
+            worker.systemPrompt,
+            node,
+            body,
+            backgroundFence(ANSWER_KEY_NONCE),
+            pdfKind,
+          );
           const key = answerKey('extractor', [
             routes.primary.provider,
             routes.primary.model,
-            worker.systemPrompt ?? null,
-            node.type,
-            node.title,
-            body.slice(0, 8000),
-            pdfKind,
+            asked.system,
+            asked.user,
             params.temperature ?? null,
             params.max_tokens ?? null,
             params.top_p ?? null,

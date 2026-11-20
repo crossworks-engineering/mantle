@@ -3,13 +3,27 @@
  * answer-cache.ts), the cache a map and the model a stub:
  *  - a reply that parses to JSON is kept, and a try again takes it with no
  *    call; a reply that does not is not kept, so a try again asks again.
+ *  - the key is the input the model is asked (built again with a fixed
+ *    fence): a change to the prompt is a new ask.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   kept: new Map<string, unknown>(),
   chatWithFailover: vi.fn(),
+  /** Words added to the built system prompt, as a code change to the
+   *  default prompt or the fence's note would. */
+  promptEdit: '',
 }));
+
+vi.mock('@mantle/std', async (orig) => {
+  const real = await orig<typeof import('@mantle/std')>();
+  return {
+    ...real,
+    withFenceNote: (system: string, fence: Parameters<typeof real.withFenceNote>[1]) =>
+      real.withFenceNote(system, fence) + h.promptEdit,
+  };
+});
 
 vi.mock('@mantle/db/answer-cache', async (orig) => ({
   ...(await orig<typeof import('@mantle/db/answer-cache')>()),
@@ -53,6 +67,7 @@ const reply = (text: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.kept.clear();
+  h.promptEdit = '';
 });
 
 describe("the extractor's call and the answer cache", () => {
@@ -80,5 +95,21 @@ describe("the extractor's call and the answer cache", () => {
     } finally {
       error.mockRestore();
     }
+  });
+
+  it("a change to the prompt it is asked is a new ask; the call's own nonce is not", async () => {
+    reply(REPLY);
+    await run();
+    await run();
+    expect(h.chatWithFailover).toHaveBeenCalledTimes(1);
+    h.promptEdit = ' Name each pump by its tag.';
+    await run();
+    expect(h.chatWithFailover).toHaveBeenCalledTimes(2);
+    // The model was asked the new prompt.
+    expect(h.chatWithFailover.mock.calls[1]![2].messages[0].content).toContain(
+      'Name each pump by its tag.',
+    );
+    await run();
+    expect(h.chatWithFailover).toHaveBeenCalledTimes(2);
   });
 });
