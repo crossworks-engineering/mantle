@@ -255,11 +255,12 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
 
   it("a book's read is one trace, with the book lane; a run on demand there is told its lane", async () => {
     // Past BOOK_HEAVY_MIN_BYTES by its size alone: the book lane (no bytes,
-    // so no page count is read).
+    // so no page count is read). Built in SQL: a JSON text bound as a
+    // parameter lands as one jsonb string, with no keys to read.
     const id = randomUUID();
     await su`insert into nodes (id, owner_id, type, title, path, data)
       values (${id}, ${owner}, 'file', 'spec-book.pdf', 'files',
-              ${JSON.stringify({ filename: 'spec-book.pdf', size_bytes: 40_000_000 })}::jsonb)`;
+              jsonb_build_object('filename', 'spec-book.pdf', 'size_bytes', 40000000))`;
     await m.runAsSystem('test', () => q.enqueueExtract(id));
     await until('the book was read', () => runs.extracts.includes(id));
     await until('its jobs are done', async () =>
