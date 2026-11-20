@@ -82,12 +82,18 @@ export async function keptAnswer<T>(key: string): Promise<T | null> {
 export async function keepAnswer(kind: AnswerKind, key: string, answer: unknown): Promise<void> {
   if (!scopes.getStore()) return;
   try {
+    // No NUL: jsonb refuses it.
+    const kept: unknown = JSON.parse(
+      JSON.stringify(answer, (_k, v: unknown) =>
+        typeof v === 'string' ? v.split(String.fromCharCode(0)).join('') : v,
+      ),
+    );
     await systemDb
       .insert(aiAnswerCache)
-      .values({ key, kind, answer })
+      .values({ key, kind, answer: kept })
       .onConflictDoUpdate({
         target: aiAnswerCache.key,
-        set: { answer, createdAt: sql`now()` },
+        set: { answer: kept, createdAt: sql`now()` },
       });
   } catch (err) {
     warnOnce(err);

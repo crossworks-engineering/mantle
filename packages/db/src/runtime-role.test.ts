@@ -644,9 +644,10 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // cursors, read and written by the sidecar routes on the system pool only).
 // sync_items all (0382: the Sync service's file map, a system table the
 // sidecar routes write on the system pool, as ms_drive_items before it).
-// ai_answer_cache none (0392: the paid answers of queue work, read and
-// written on the system pool outside every scope, never by narrow work).
-const NARROW_COUNTS = { all: 109, read: 51, none: 12 };
+// ai_answer_cache all (0392: the paid answers of queue work, a system table
+// read and written on the system pool outside every scope, as
+// embedding_cache; no narrow write is granted).
+const NARROW_COUNTS = { all: 110, read: 51, none: 11 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

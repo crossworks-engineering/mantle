@@ -83,13 +83,14 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
   let reader: typeof import('./scan-reader');
   let attachments: typeof import('./attachments');
   let scan: typeof import('./scan-pdf');
-  let admin: import('postgres').Sql;
+  type Admin = Parameters<(typeof import('@mantle/db'))['ensureViewerRoles']>[0];
+  let admin: Admin;
   let since0 = new Date();
   /** A file of its own each test: its pages are keys of their own. */
   let sha = '';
 
   const asSystem = <T>(fn: () => Promise<T>) => m.runAsSystem('test:answer-cache', fn);
-  const dbNow = async () => (await admin<{ t: Date }[]>`select now() as t`)[0]!.t;
+  const dbNow = async () => new Date((await admin<{ t: string }[]>`select now()::text as t`)[0]!.t);
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -99,12 +100,13 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     reader = await import('./scan-reader');
     attachments = await import('./attachments');
     scan = await import('./scan-pdf');
-    admin = (m.systemDb as unknown as { $client: import('postgres').Sql }).$client;
+    admin = (m.systemDb as unknown as { $client: Admin }).$client;
     since0 = await dbNow();
   }, 60_000);
 
   afterAll(async () => {
-    if (admin) await admin`delete from ai_answer_cache where created_at >= ${since0}`;
+    if (admin)
+      await admin`delete from ai_answer_cache where created_at >= ${since0.toISOString()}::timestamptz`;
     await m?.closeDb();
   });
 

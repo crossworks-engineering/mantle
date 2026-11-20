@@ -40,6 +40,8 @@ describe.skipIf(!URL)('the recovery drain', () => {
       await su`create schema if not exists pgboss`;
       await su`create table pgboss.job (name text not null, state text not null,
         data jsonb, start_after timestamptz not null default now())`;
+      await su`grant usage on schema pgboss to mantle_system_narrow, mantle_runtime`;
+      await su`grant select on pgboss.job to mantle_system_narrow, mantle_runtime`;
     }
     m = await import('@mantle/db');
     runtime = await import('./runtime');
@@ -55,7 +57,7 @@ describe.skipIf(!URL)('the recovery drain', () => {
     const file = async (name: string) => {
       const id = randomUUID();
       await su`insert into nodes (id, owner_id, type, title, path, data)
-        values (${id}, ${owner}, 'file', ${name}, 'files', ${JSON.stringify({ filename: name })}::jsonb)`;
+        values (${id}, ${owner}, 'file', ${name}, 'files', jsonb_build_object('filename', ${name}::text))`;
       return id;
     };
     const none = await file('no-job.pdf');
@@ -67,14 +69,20 @@ describe.skipIf(!URL)('the recovery drain', () => {
     ] as const) {
       const id = await file(`${state}.pdf`);
       live[state] = id;
+      // Built in SQL: a JSON text bound as a parameter lands as one jsonb
+      // string, with no keys to read.
       await su`insert into pgboss.job (name, state, data)
-        values (${lane}, ${state}, ${JSON.stringify({ nodeId: id, wait: { waits: 2 } })}::jsonb)`;
+        values (${lane}, ${state},
+                jsonb_build_object('nodeId', ${id}::text, 'wait', jsonb_build_object('waits', 2)))`;
     }
     // A job that ended is no live job: the node is queued again.
     const ended = await file('ended.pdf');
     await su`insert into pgboss.job (name, state, data)
-      values ('mantle.extract', 'completed', ${JSON.stringify({ nodeId: ended })}::jsonb)`;
+      values ('mantle.extract', 'completed', jsonb_build_object('nodeId', ${ended}::text))`;
 
+    // The stand-in is the queue the drain reads.
+    const seen = await m.runAsSystem('test:drain', () => m.extractJobsFor(Object.values(live)));
+    expect(seen.size).toBe(3);
     await m.runAsSystem('test:drain', () => runtime.drainUnextractedNodes(owner));
     expect(h.queued.sort()).toEqual([none, ended].sort());
     for (const id of Object.values(live)) expect(h.queued).not.toContain(id);
