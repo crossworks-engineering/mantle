@@ -171,7 +171,6 @@ const READERS: Record<string, Reader> = {
   ),
   'MANTLE_EXTRACT_EXPIRE_MIN api/extract-queue': reg('MANTLE_EXTRACT_EXPIRE_MIN'),
   'MANTLE_EXTRACT_EXPIRE_MIN web/journey (+15)': reg('MANTLE_EXTRACT_EXPIRE_MIN', 15),
-  'MANTLE_EXTRACT_EXPIRE_MIN web/scripts/traces-reap (+15)': reg('MANTLE_EXTRACT_EXPIRE_MIN', 15),
   'MANTLE_MAX_AUTO_TABLE_TABLES api/extract/auto-table': reg('MANTLE_MAX_AUTO_TABLE_TABLES'),
   'MANTLE_EXTRACT_DRAIN_WINDOW_HOURS api/runtime': reg('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS'),
   'MANTLE_EXTRACT_DRAIN_LIMIT api/runtime': reg('MANTLE_EXTRACT_DRAIN_LIMIT'),
@@ -227,6 +226,8 @@ const RETIRED: Record<string, string> = {
     'renamed VIDEO_INGEST_MAX_FILE_BYTES when the media sidecar was removed; the old name is its legacy alias (ENV_ALIASES)',
   'MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede':
     "removed with the extractor's name-based version pass (owner, 2026-11-20: versions are never guessed from file names); the variable is read nowhere",
+  'MANTLE_EXTRACT_EXPIRE_MIN web/scripts/traces-reap (+15)':
+    "the script reaps by journey.ts's one rule now (abandonedTraceSql), so its own read went; the reader 'web/journey (+15)' answers the same",
 };
 
 function retired(cell: string): boolean {

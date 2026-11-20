@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   agents,
@@ -20,6 +20,7 @@ import type {
   LiveActivity,
 } from '@mantle/client-types/journey-format';
 import { envNum } from '@mantle/config';
+import { BOOK_TIME_BUDGET_MAX } from '@mantle/embeddings/extraction-concurrency';
 
 export type { LandedLayers, ActivityItem, JourneyDetail, LiveActivity };
 
@@ -178,6 +179,24 @@ export async function listActivity(
  *  only a genuinely orphaned trace (process crashed before writing a terminal
  *  status) gets reaped. */
 const ABANDON_AFTER_MIN = envNum('MANTLE_EXTRACT_EXPIRE_MIN') + 15;
+/** A book read's traces (`data.lane` 'book': the one the extract queue opens
+ *  for the book lane, and every trace opened inside it) run as long as the
+ *  book: the book lane's longest budget (BOOK_TIME_BUDGET_MAX, 8 hours, or
+ *  the base budget when that is longer) plus the same buffer. */
+const BOOK_ABANDON_AFTER_MIN = Math.max(BOOK_TIME_BUDGET_MAX + 15, ABANDON_AFTER_MIN);
+
+/** The one rule of an abandoned trace, for every reaper (the owner-scoped
+ *  self-heal, the all-owner sweep, `pnpm traces:reap`): still `running`
+ *  past its lane's budget plus the buffer, by the database clock. */
+export function abandonedTraceSql() {
+  return sql`${traces.status} = 'running' and ${traces.startedAt} < now() - make_interval(mins =>
+    case when ${traces.data}->>'lane' = 'book' then ${BOOK_ABANDON_AFTER_MIN}::int
+         else ${ABANDON_AFTER_MIN}::int end)`;
+}
+
+/** The error an abandoned trace is closed with. */
+const ABANDONED_ERROR =
+  'abandoned: no completion within its time budget (the process likely restarted or crashed mid-run)';
 
 /**
  * Reconcile orphaned traces: mark long-`running` rows as `error: abandoned`
@@ -208,9 +227,8 @@ export async function reapAbandonedTraces(userId: string): Promise<number> {
 }
 
 async function reapUnguarded(userId: string): Promise<number> {
-  const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
   try {
-    return await runReadPathWrite('repair:abandoned-traces', () => reapOnce(userId, cutoff));
+    return await runReadPathWrite('repair:abandoned-traces', () => reapOnce(userId));
   } catch (err) {
     // A self-heal is a convenience; the read it precedes is the point. Against a
     // read-only replica, a revoked grant, or a reader role, this UPDATE is
@@ -235,26 +253,32 @@ async function reapUnguarded(userId: string): Promise<number> {
  * silently report zero. Returns how many it reaped.
  */
 export async function reapAbandonedTracesAllOwners(): Promise<number> {
-  const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
   const rows = await db
     .update(traces)
-    .set({
-      status: 'error',
-      error: `abandoned — no completion after ${ABANDON_AFTER_MIN} min (the process likely restarted or crashed mid-run)`,
-      finishedAt: new Date(),
-      durationMs: null,
-    })
-    .where(and(eq(traces.status, 'running'), lt(traces.startedAt, cutoff)))
+    .set({ status: 'error', error: ABANDONED_ERROR, finishedAt: new Date(), durationMs: null })
+    .where(abandonedTraceSql())
     .returning({ id: traces.id });
   return rows.length;
 }
 
-async function reapOnce(userId: string, cutoff: Date): Promise<number> {
+/** The traces the reapers would close, oldest first: id, kind and start
+ *  (`pnpm traces:reap`'s dry run). */
+export async function listAbandonedTraces(): Promise<
+  Array<{ id: string; kind: string; startedAt: Date }>
+> {
+  return await db
+    .select({ id: traces.id, kind: sql<string>`${traces.kind}::text`, startedAt: traces.startedAt })
+    .from(traces)
+    .where(abandonedTraceSql())
+    .orderBy(traces.startedAt);
+}
+
+async function reapOnce(userId: string): Promise<number> {
   const rows = await db
     .update(traces)
     .set({
       status: 'error',
-      error: `abandoned — no completion after ${ABANDON_AFTER_MIN} min (the process likely restarted or crashed mid-run)`,
+      error: ABANDONED_ERROR,
       finishedAt: new Date(),
       // Honest unknown: the process died at some unrecorded moment, so
       // stamping "now - startedAt" fabricated absurd durations (a trace
@@ -263,9 +287,7 @@ async function reapOnce(userId: string, cutoff: Date): Promise<number> {
       // "we don't know", which is the truth.
       durationMs: null,
     })
-    .where(
-      and(eq(traces.ownerId, userId), eq(traces.status, 'running'), lt(traces.startedAt, cutoff)),
-    )
+    .where(and(eq(traces.ownerId, userId), abandonedTraceSql()))
     .returning({ id: traces.id });
   return rows.length;
 }

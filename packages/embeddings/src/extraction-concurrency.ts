@@ -36,6 +36,12 @@ export const EXTRACTION_TIME_BUDGET_DEFAULT = envNumDefault('MANTLE_EXTRACT_EXPI
 /** The most a saved budget may be, in minutes (the settings form's bound). */
 export const EXTRACTION_TIME_BUDGET_MAX = 720;
 
+/** The longest a book's extract may run, in minutes (server/api
+ *  extract-lanes.ts bookExpireMinutes, whose cap it is): 8 hours. The
+ *  stale-trace reapers (server/web journey.ts) give a book read's trace
+ *  this long before they take it as abandoned. */
+export const BOOK_TIME_BUDGET_MAX = 480;
+
 /** Saved config value (1 or more) → `MANTLE_EXTRACT_EXPIRE_MIN` env →
  *  default. A blank or zero saved value falls through to the env. */
 export function resolveExtractionTimeBudget(saved?: number | null): number {

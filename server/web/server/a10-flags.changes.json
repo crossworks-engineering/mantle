@@ -268,10 +268,6 @@
       "now": 75,
       "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
     },
-    "MANTLE_EXTRACT_EXPIRE_MIN web/scripts/traces-reap (+15) | =\"-1\"": {
-      "now": 75,
-      "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."
-    },
     "MANTLE_MAX_AUTO_TABLE_TABLES api/extract/auto-table | =\"-1\"": {
       "now": 20,
       "why": "A negative value means the default now; the `Number(x) || default` readers kept it (a negative expiry, batch, window or period). Boxes: one setting a negative value; none known."

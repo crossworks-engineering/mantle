@@ -104,8 +104,11 @@ The live view reflects reality, not stale rows:
   crash) that never fires and the row is stranded in `running` **forever**,
   showing as a permanent "active" entry and skewing every running count.
   `reapAbandonedTraces(userId)` (`lib/journey.ts`, called at the top of
-  `getLiveActivity`) marks any trace `running` longer than **10 min** as
-  `error: abandoned` with a finish time + computed duration. Owner-scoped and
+  `getLiveActivity`) marks a trace `running` longer than its budget
+  (`MANTLE_EXTRACT_EXPIRE_MIN` plus 15 minutes; a book read's traces,
+  `data.lane` 'book', the book lane's longest budget plus 15: docs/embeddings.md,
+  the lanes) as `error: abandoned` with a finish time and no duration
+  (`abandonedTraceSql`, the one rule of every reaper). Owner-scoped and
   idempotent, so it runs on every poll as a self-heal.
 - **Stall hint before the reap.** A still-running trace older than ~2 min
   (`STALL_THRESHOLD_S`) gets an amber "may be stalled" badge in *Active now*.

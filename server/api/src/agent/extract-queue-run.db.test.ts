@@ -13,7 +13,11 @@
  *    work done is sent again each time (nothing counted), never failed to
  *    the dead letters, and ends once the provider answers;
  *  - a run whose paid answer was not kept fails once on its wait (it has no
- *    retry): no new job, and a person runs it again.
+ *    retry): no new job, and a person runs it again;
+ *  - a book's read (the book lane) is one trace: a `pipeline_run` with
+ *    source and lane 'book', the extract runs in it, and a trace opened
+ *    inside carries the lane too; a run on demand in the book lane is told
+ *    its lane.
  * The notify is the real one (notifyPipelineRun), read on a LISTEN of the
  * test with the runtime's own parse (pipelineRunOfPayload).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue-run.db.test.ts
@@ -32,40 +36,55 @@ const runs = vi.hoisted(() => ({
   waits: new Map<string, number>(),
   /** Runs whose paid answer the cache cannot keep, then held. */
   keepFails: new Set<string>(),
+  /** The trace each extract ran in, and the trace it opened inside. */
+  traceOf: new Map<string, { outer: string | null; inner: string | null }>(),
+  /** The lane each run on demand was told. */
+  laneOf: new Map<string, string | undefined>(),
 }));
 vi.mock('./extractor.js', () => ({
-  extractNode: vi.fn(async (nodeId: string) => {
+  extractNode: vi.fn(async (nodeId: string, ownerId: string) => {
     if (runs.held.has(nodeId)) {
       await new Promise<void>((resolve) => runs.release.set(nodeId, resolve));
     }
+    // As the extractor opens its extractor_run trace: inside whatever is open.
+    const { currentTrace, startTrace } = await import('@mantle/tracing');
+    const outer = currentTrace()?.id ?? null;
+    const inner = await startTrace(
+      { kind: 'extractor_run', ownerId, subjectId: nodeId, subjectKind: 'node', data: {} },
+      async () => currentTrace()?.id ?? null,
+    );
+    runs.traceOf.set(nodeId, { outer, inner });
     runs.extracts.push(nodeId);
   }),
 }));
 vi.mock('./extract/pipeline-run.js', () => ({
   isAfterRun: (_ownerId: string, id: string) => Promise.resolve(id === 'site-tags'),
-  runPipelineJob: vi.fn(async (_owner: string, nodeId: string, pipelineId: string) => {
-    runs.jobs.push(`${pipelineId}:${nodeId}`);
-    const key = `${pipelineId}:${nodeId}`;
-    const left = runs.waits.get(key) ?? 0;
-    if (runs.keepFails.has(key)) {
-      // A paid answer the table refuses (its key check), in the job's scope.
-      const { keepAnswer } = await import('@mantle/db/answer-cache');
-      await keepAnswer('vision', 'not-a-key', { text: 'paid' }, true);
-    }
-    if (left > 0 || runs.keepFails.has(key)) {
-      runs.waits.set(key, left - 1);
-      return {
-        status: 'asked',
-        rows: 0,
-        made: 0,
-        reused: 0,
-        warnings: [],
-        stopped: 'provider_rate_limit',
-        wait: { for: 'provider', reason: 'rate_limit' },
-      };
-    }
-    return { status: 'built', tabs: 1, rows: 1 };
-  }),
+  runPipelineJob: vi.fn(
+    async (_owner: string, nodeId: string, pipelineId: string, lane?: string) => {
+      runs.jobs.push(`${pipelineId}:${nodeId}`);
+      const key = `${pipelineId}:${nodeId}`;
+      runs.laneOf.set(key, lane);
+      const left = runs.waits.get(key) ?? 0;
+      if (runs.keepFails.has(key)) {
+        // A paid answer the table refuses (its key check), in the job's scope.
+        const { keepAnswer } = await import('@mantle/db/answer-cache');
+        await keepAnswer('vision', 'not-a-key', { text: 'paid' }, true);
+      }
+      if (left > 0 || runs.keepFails.has(key)) {
+        runs.waits.set(key, left - 1);
+        return {
+          status: 'asked',
+          rows: 0,
+          made: 0,
+          reused: 0,
+          warnings: [],
+          stopped: 'provider_rate_limit',
+          wait: { for: 'provider', reason: 'rate_limit' },
+        };
+      }
+      return { status: 'built', tabs: 1, rows: 1 };
+    },
+  ),
 }));
 vi.mock('./extract/model.js', () => ({ probeExtractionModel: vi.fn(async () => {}) }));
 
@@ -232,5 +251,47 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
       runs.keepFails.delete(key);
       error.mockRestore();
     }
+  }, 90_000);
+
+  it("a book's read is one trace, with the book lane; a run on demand there is told its lane", async () => {
+    // Past BOOK_HEAVY_MIN_BYTES by its size alone: the book lane (no bytes,
+    // so no page count is read).
+    const id = randomUUID();
+    await su`insert into nodes (id, owner_id, type, title, path, data)
+      values (${id}, ${owner}, 'file', 'spec-book.pdf', 'files',
+              ${JSON.stringify({ filename: 'spec-book.pdf', size_bytes: 40_000_000 })}::jsonb)`;
+    await m.runAsSystem('test', () => q.enqueueExtract(id));
+    await until('the book was read', () => runs.extracts.includes(id));
+    await until('its jobs are done', async () =>
+      (await jobs(id)).every((j) => j.state === 'completed'),
+    );
+    expect((await jobs(id)).map((j) => j.name)).toEqual(['mantle.extract', 'mantle.extract.book']);
+    const seen = runs.traceOf.get(id)!;
+    await until('the traces closed', async () => {
+      const open = await su<{ n: number }[]>`
+        select count(*)::int as n from traces where subject_id = ${id} and status = 'running'`;
+      return open[0]!.n === 0;
+    });
+    const rows = await su<
+      { id: string; kind: string; status: string; source: string | null; lane: string | null }[]
+    >`select id, kind::text as kind, status::text as status, data->>'source' as source,
+             data->>'lane' as lane
+        from traces where subject_id = ${id} order by started_at`;
+    expect(rows.map((r) => [r.kind, r.status, r.source, r.lane])).toEqual([
+      ['pipeline_run', 'success', 'book', 'book'],
+      ['extractor_run', 'success', null, 'book'],
+    ]);
+    // The extract ran in the book's trace; the trace it opened is the other.
+    expect(seen.outer).toBe(rows[0]!.id);
+    expect(seen.inner).toBe(rows[1]!.id);
+
+    await m.runAsSystem('test', () => q.enqueuePipelineRun(id, 'pdf-page-read'));
+    await until('the run ran', () => runs.jobs.includes(`pdf-page-read:${id}`));
+    expect(runs.laneOf.get(`pdf-page-read:${id}`)).toBe('book');
+    // A file of the main queue: no lane, and no trace of the queue's own.
+    const small = await file('minutes-2.docx');
+    await m.runAsSystem('test', () => q.enqueueExtract(small));
+    await until('the small file was read', () => runs.extracts.includes(small));
+    expect(runs.traceOf.get(small)!.outer).toBeNull();
   }, 90_000);
 });

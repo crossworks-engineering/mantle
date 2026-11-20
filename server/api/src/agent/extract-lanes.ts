@@ -47,7 +47,10 @@
  * waits for any other read: a chat attachment, a thumbnail, a drawing tool,
  * a maintenance run.
  */
-import { resolveBookConcurrency } from '@mantle/embeddings/extraction-concurrency';
+import {
+  BOOK_TIME_BUDGET_MAX,
+  resolveBookConcurrency,
+} from '@mantle/embeddings/extraction-concurrency';
 import {
   PIPELINE_WINDOW_DEFAULT,
   extOf,
@@ -121,7 +124,7 @@ export const BOOK_EXPIRE_MIN_PER_WINDOW = 5;
  *  not start over: each page window the Reader read is kept as it ends
  *  (packages/content/src/window-stage.ts), and the next try reads on from
  *  the first window not kept. */
-export const BOOK_EXPIRE_MAX_MIN = 480;
+export const BOOK_EXPIRE_MAX_MIN = BOOK_TIME_BUDGET_MAX;
 
 /**
  * The time budget of a heavy PDF's extract (decision 3 of the large-PDF

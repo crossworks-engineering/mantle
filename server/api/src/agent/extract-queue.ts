@@ -169,6 +169,7 @@ import {
 import { runArchiveExtract } from '@mantle/files/archive-extract';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
+import { startTrace } from '@mantle/tracing';
 import { assertNoViewer } from '@mantle/db/viewer';
 import { answerKeepFailed, withAnswerCache } from '@mantle/db/answer-cache';
 import {
@@ -621,25 +622,47 @@ async function handleExtractJob(
   // The queue as this job found it: a wait at a graceful stop is still
   // sent (stopExtractQueue drops `boss` before the jobs end).
   const b = waitBoss;
+  // A book's read is one trace (the owner UI's Activity lists the running
+  // ones): every pass inside it nests there (a pass opens its own trace only
+  // when none is open, extract/trace.ts), and its lane ('book', inherited by
+  // the traces opened inside it) gives it the book lane's budget before the
+  // stale-trace reapers take it as abandoned (server/web journey.ts). A run
+  // on demand in the book lane keeps its own one trace, with the lane.
+  const book = under === bookCeiling;
+  const readNode = () =>
+    book
+      ? startTrace(
+          {
+            kind: 'pipeline_run',
+            ownerId,
+            subjectId: nodeId,
+            subjectKind: 'node',
+            data: { source: 'book', lane: 'book' },
+          },
+          () => extractNode(nodeId, ownerId),
+        )
+      : extractNode(nodeId, ownerId);
   const extract = () =>
     under.run(() =>
       archive
         ? runArchiveExtract(ownerId, nodeId).then(() => {})
         : pipelineId
-          ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
-              // An Agent's run held by the provider or the day cap: the same
-              // run again later (point 7). Never a retry of anything else.
-              if (out.wait) {
-                await sendWaiting(
-                  b,
-                  data,
-                  out.wait.for === 'provider'
-                    ? { for: 'provider', provider: { reason: out.wait.reason } }
-                    : { for: 'day_cap', until: out.wait.until },
-                  { progressed: out.status === 'asked' && out.made > 0 },
-                );
-              }
-            })
+          ? runPipelineJob(ownerId, nodeId, pipelineId, book ? 'book' : undefined).then(
+              async (out) => {
+                // An Agent's run held by the provider or the day cap: the same
+                // run again later (point 7). Never a retry of anything else.
+                if (out.wait) {
+                  await sendWaiting(
+                    b,
+                    data,
+                    out.wait.for === 'provider'
+                      ? { for: 'provider', provider: { reason: out.wait.reason } }
+                      : { for: 'day_cap', until: out.wait.until },
+                    { progressed: out.status === 'asked' && out.made > 0 },
+                  );
+                }
+              },
+            )
           : data.facts
             ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
                 // Facts left for later (the cost cap again, or the provider's
@@ -650,7 +673,7 @@ async function handleExtractJob(
                   });
                 }
               })
-            : extractNode(nodeId, ownerId),
+            : readNode(),
     );
   // Every paid AI answer of the job is kept as it comes, for its node
   // (@mantle/db answer-cache.ts): a try again after a wait pays for none of

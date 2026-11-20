@@ -320,6 +320,27 @@ on from the first page window it had not finished: each window the Reader
 read is kept as it ends (docs/pipelines.md, "A book read again"). A PDF under
 10 MB of 200 pages or fewer is light and keeps the base budget.
 
+A book's read is one trace: the book lane opens a `pipeline_run` trace with
+`data.source` and `data.lane` 'book' around the extract, so the owner UI's
+Activity (the running traces, server/web/lib/journey.ts `getLiveActivity`)
+shows the whole read as one row while it runs. Every pass of the read nests
+in it (a pass opens a trace of its own only when none is open), and a trace
+opened inside it (the extractor's `extractor_run`) carries the lane too. A
+run on demand in the book lane keeps its own one trace, with the lane. The
+stale-trace reapers (`abandonedTraceSql`: the self-heal on each Activity
+poll, the nightly `traces-reap` sweep and `pnpm traces:reap`) close a
+`running` trace after the base budget plus 15 minutes, and a trace of the
+book lane after the book lane's longest budget plus 15 (`BOOK_TIME_BUDGET_MAX`,
+8 hours, `@mantle/embeddings/extraction-concurrency`), so a long book's trace
+is not taken as abandoned while it reads.
+
+After a restart of the agent mid-book, pg-boss keeps the book's job `active`
+until the job's own time budget runs out (the book's, by its pages: 160
+minutes for 1,000 pages, 8 hours when the count could not be read), then
+tries it again; until then the file's status in Files reads as running. Its
+trace stays `running` until the reapers take it (8 hours 15 minutes at
+most), and the try again opens a new one.
+
 Light and heavy together never pass the extractor count: a box set to 1 runs
 one of those at a time, whatever it is. A book's place is its own lane's,
 outside that count: a book takes hours, and inside it would hold a place

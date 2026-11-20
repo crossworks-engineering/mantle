@@ -232,11 +232,14 @@ async function runOnce(
 
 /** Run one pipeline on one file, in a trace of its own with one step.
  *  Never throws: a failure is the step's error, and the job is done. A
- *  result with `wait` is a run the queue sends again later. */
+ *  result with `wait` is a run the queue sends again later. `lane` 'book':
+ *  a run in the book lane, said on its trace (the reapers give it the book
+ *  lane's budget). */
 export async function runPipelineJob(
   ownerId: string,
   nodeId: string,
   pipelineId: string,
+  lane?: 'book',
 ): Promise<PipelineRunResult & { wait?: RunWait }> {
   return startTrace(
     {
@@ -244,7 +247,7 @@ export async function runPipelineJob(
       ownerId,
       subjectId: nodeId,
       subjectKind: 'node',
-      data: { pipeline: pipelineId, source: 'run' },
+      data: { pipeline: pipelineId, source: 'run', ...(lane ? { lane } : {}) },
     },
     () =>
       step(

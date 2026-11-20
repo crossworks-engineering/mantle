@@ -153,6 +153,11 @@ export type TraceContext = {
   /** Who this trace's streamed steps should be attributed to (the delegated
    *  agent's display name), or null for the root turn's own steps. */
   readonly streamLabel: string | null;
+  /** The extract lane of the work, `data.lane` (the extract queue's book
+   *  read says 'book'), inherited by nested traces and stamped on their
+   *  rows: the stale-trace reapers give a book's traces the book lane's
+   *  budget (server/web journey.ts abandonedTraceSql). */
+  readonly lane?: string | null;
   startedAtMs: number;
   ordinalCounter: number; // next root-step ordinal
   childOrdinals: Map<string, number>; // parent step id -> next child ordinal
@@ -887,6 +892,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // silently misattributed to the responder.
   const streamLabel = init.streamLabel ?? parent?.streamLabel ?? null;
   const loginId = init.loginId ?? parent?.loginId ?? null;
+  const lane = typeof init.data?.lane === 'string' ? init.data.lane : (parent?.lane ?? null);
   const rowLogin = rowLoginFor(
     init.rowLoginId ?? init.loginId ?? parent?.rowLoginId ?? null,
     actingLogin(),
@@ -902,6 +908,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
     turnId,
     isStreamRoot,
     streamLabel,
+    lane,
     startedAtMs: Date.now(),
     ordinalCounter: 0,
     childOrdinals: new Map(),
@@ -949,6 +956,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
         // stop the ROOT turn.
         data: truncateJson({
           ...(init.data ?? {}),
+          ...(lane ? { lane } : {}),
           ...(turnId ? { turn_id: turnId } : {}),
         }) as Record<string, unknown>,
       })
