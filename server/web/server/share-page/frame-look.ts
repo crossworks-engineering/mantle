@@ -1,5 +1,8 @@
 /**
- * A mini app frame draws itself for `ui_look` (docs/agent-ui.md, "Look").
+ * A mini app frame, or a present's canvas frame, draws itself for `ui_look`
+ * and the client's area capture (docs/agent-ui.md, "Look"). The present
+ * frame loads it from /canvas-runtime/frame-look.js, a copy (see
+ * build-share-runtime.ts).
  * The host page cannot read inside a sandboxed app frame (opaque origin), so
  * when the agent looks at a window that shows an app, the host asks the
  * frame (`{ kind: 'look' }` over the app bridge) and the frame document's

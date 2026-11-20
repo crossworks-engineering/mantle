@@ -1,6 +1,7 @@
 import { createContext, runInContext, runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
+  CANVAS_LOOK_DRAWER,
   buildCanvasEmbedCsp,
   buildCanvasFrameCsp,
   buildCanvasFrameHtml,
@@ -205,6 +206,8 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
       win?: Record<string, unknown>;
       globals?: Record<string, unknown>;
       media?: boolean;
+      /** Stands in for the drawer's `import()` (a vm script has none). */
+      imp?: () => Promise<unknown>;
     } = {},
   ) {
     const html = buildCanvasFrameHtml({
@@ -220,6 +223,8 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
       nonce,
     });
     const prelude = /<script>(\(function\(\)\{[\s\S]*?\}\)\(\);)<\/script>/.exec(html)![1]!;
+    const run = o.imp ? prelude.replace(`import('${CANVAS_LOOK_DRAWER}')`, '__imp()') : prelude;
+    if (o.imp && run === prelude) throw new Error('the prelude does not import the drawer');
     const toParent: Record<string, unknown>[] = [];
     const handlers: Record<string, Array<(e: unknown) => void>> = {};
     const options: Record<string, unknown[]> = {};
@@ -244,6 +249,7 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     };
     const ctx = {
       ...o.globals,
+      ...(o.imp ? { __imp: o.imp } : {}),
       window: win,
       document: { currentScript: null, documentElement: el },
       Object,
@@ -258,7 +264,7 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     };
     // One realm: on Bun runInNewContext would give the prelude one of its own.
     createContext(ctx);
-    runInContext(prelude, ctx);
+    runInContext(run, ctx);
     // What a canvas runs after the prelude, in the same realm.
     if (canvas) runInContext(canvas, ctx);
     const api = (
@@ -295,6 +301,44 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
     });
     return PageTransitionEvent;
   }
+
+  it('look: draws itself for its parent only, once, at the asked scale, with no nonce', async () => {
+    const scales: number[] = [];
+    const f = frame('n-look', undefined, {
+      imp: () =>
+        Promise.resolve({
+          drawFrame: (s: number) => {
+            scales.push(s);
+            return Promise.resolve('data:image/png;base64,AAAA');
+          },
+        }),
+    });
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    // Not the parent: no picture.
+    f.reply({}, { v: 1, kind: 'look', id: 'x', scale: 2 });
+    f.reply(f.parent, { v: 1, kind: 'look', id: 'q1', scale: 1.5 });
+    await settle();
+    await settle();
+    expect(scales).toEqual([1.5]);
+    const res = f.toParent.filter((m) => m.kind === 'look.res');
+    expect(res).toEqual([
+      { ok: true, dataUrl: 'data:image/png;base64,AAAA', v: 1, kind: 'look.res', id: 'q1' },
+    ]);
+    expect(JSON.stringify(res)).not.toContain('n-look');
+  });
+
+  it('look: a drawer that fails answers why, cut short', async () => {
+    const f = frame('n1', undefined, {
+      imp: () => Promise.reject(new Error('x'.repeat(400))),
+    });
+    f.reply(f.parent, { v: 1, kind: 'look', id: 'q2', scale: 1 });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    const res = f.toParent.filter((m) => m.kind === 'look.res');
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ ok: false, id: 'q2' });
+    expect((res[0]!.error as string).length).toBe(300);
+  });
 
   it('runs in strict mode', () => {
     expect(frame('n0').prelude.startsWith("(function(){'use strict';")).toBe(true);
@@ -634,6 +678,41 @@ describe('the frame prelude: mantle.data (DWG phase 7a)', () => {
         [...f.toParent, ...old.toParent, ...render.toParent].filter((m) => m.kind === 'media'),
       ).toEqual([]);
     });
+  });
+});
+
+describe('the drawer for look: no policy line moved', () => {
+  const scriptSrc = (csp: string) =>
+    csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('script-src '));
+
+  it('the drawer is under the vendored runtime path that script-src already allows', () => {
+    expect(CANVAS_LOOK_DRAWER).toBe('/canvas-runtime/frame-look.js');
+    expect(scriptSrc(buildCanvasFrameCsp(ORIGIN, []))).toBe(
+      `script-src 'unsafe-inline' 'unsafe-eval' ${ORIGIN}/canvas-runtime/`,
+    );
+  });
+
+  it('the header and the parent embed policy allow the same scripts (an old client keeps its presents)', () => {
+    expect(scriptSrc(buildCanvasEmbedCsp(ORIGIN))).toBe(scriptSrc(buildCanvasFrameCsp(ORIGIN, [])));
+  });
+
+  it('the frame imports that one drawer and nothing else', () => {
+    const html = buildCanvasFrameHtml({
+      source: '<html><body>x</body></html>',
+      css: '',
+      importMapJson: '{"imports":{}}',
+      cls: '',
+      colorTheme: null,
+      size: 'fill',
+      theme: 'follow',
+      fontCss: '',
+      nonce: 'n',
+    });
+    expect(html.match(/import\(/g)).toEqual(['import(']);
+    expect(html).toContain(`import('${CANVAS_LOOK_DRAWER}')`);
   });
 });
 

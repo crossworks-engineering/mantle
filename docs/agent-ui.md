@@ -260,6 +260,16 @@ image: {mimeType, base64}}`: a PNG, or a JPEG at 0.85 when the PNG is over
   the frame's text draws in a fallback font and an image the redraw would
   fetch comes out blank. A frame that does not answer in 2 s stays blank and
   counts in `blankFrames`; the model is told.
+- Present frames answer the same `look` (the prelude in
+  `packages/share-ui/src/canvas-frame-html.ts`). They import the same drawer
+  from `/canvas-runtime/frame-look.js` (`CANVAS_LOOK_DRAWER`), a copy that
+  `server/web/scripts/build-share-runtime.ts` writes there. No line of the
+  present frame policy moved: its `script-src` already allows
+  `${origin}/canvas-runtime/`, in the frame's header and in the parent's
+  embed policy (the iframe `csp` attribute). Widening the header alone would
+  have broken every present for a client with the old embed policy, so the
+  file moved to the allowed path, not the policy to the file. The reply
+  carries no nonce. The client's area capture uses this path too.
 - The answer route takes a result with `image` up to
   `AGENT_UI_LOOK_MAX_BYTES` (1.5 MB); every other result keeps 64 KB. The
   tool checks the picture (PNG or JPEG, at most 1 MB) and hands it to the

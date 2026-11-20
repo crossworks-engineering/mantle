@@ -9,8 +9,11 @@
  *   islands.js        esbuild bundle of server/islands/entry.tsx (the three
  *                     interactive share presenters, React included).
  *   katex/            katex.min.css + its woff2 font files (math nodes).
- *   frame-look.js     a mini app frame's own picture for ui_look (loaded by
- *                     the frame document on request, never in an app).
+ *   frame-look.js     a mini app frame's own picture for ui_look and the
+ *                     area capture (loaded by the frame document on
+ *                     request, never in an app). Copied to
+ *                     public/canvas-runtime/frame-look.js for the present
+ *                     frame, whose script-src allows only /canvas-runtime/.
  *
  * Wired into predev/prebuild alongside app-runtime generation. Output is
  * gitignored; served by server/static.ts with no-cache semantics implicit in
@@ -85,6 +88,13 @@ await esbuild.build({
   sourcemap: false,
   logLevel: 'warning',
 });
+// The present frame loads the same drawer from /canvas-runtime/ (its
+// script-src allows that path only; canvas-frame-html.ts CANVAS_LOOK_DRAWER).
+// `generate` builds the canvas runtime first, which empties that folder, so
+// this copy goes in after it.
+const canvasRuntime = join(webRoot, 'public/canvas-runtime');
+mkdirSync(canvasRuntime, { recursive: true });
+cpSync(join(outDir, 'frame-look.js'), join(canvasRuntime, 'frame-look.js'));
 
 // ── 3. KaTeX css + fonts ─────────────────────────────────────────────────────
 const katexCss = require.resolve('katex/dist/katex.min.css');

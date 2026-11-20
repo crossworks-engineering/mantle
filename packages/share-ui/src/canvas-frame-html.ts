@@ -93,6 +93,12 @@ export function buildCanvasEmbedCsp(origin: string): string {
   );
 }
 
+/** The present frame's drawer for `look` (a copy of the mini app frame's
+ *  /share-runtime/frame-look.js, build-share-runtime.ts). Under
+ *  /canvas-runtime/, which `script-src` already allows, so the frame policy
+ *  and the parent's embed policy stay as they were. */
+export const CANVAS_LOOK_DRAWER = '/canvas-runtime/frame-look.js';
+
 /** JSON for an inline script: `<` and the two JS line separators escaped, so
  *  no value can close the tag. */
 function scriptJson(value: unknown): string {
@@ -155,6 +161,16 @@ function styleText(css: string): string {
  *    a media message, so the call refuses at once instead of waiting, and
  *    a render (no nonce) refuses at once too. The parent decides which
  *    files: those the canvas declared, that the viewer may read.
+ *  - Look (docs/agent-ui.md, "Look"; the area capture too): on
+ *    `{v:1, kind:'look', id, scale}` from the parent only, the frame
+ *    imports its drawer, `/canvas-runtime/frame-look.js` (the mini app
+ *    frame's drawer, server/web/server/share-page/frame-look.ts, copied
+ *    there by build-share-runtime.ts), and posts one
+ *    `{v:1, kind:'look.res', id, ok, dataUrl | error}` back: its own
+ *    viewport as a PNG. No policy line moved: `script-src` already allows
+ *    `${origin}/canvas-runtime/`, in the header and in the parent's embed
+ *    policy. The reply carries no nonce. A canvas could draw itself or
+ *    answer for itself anyway; the picture shows only its own frame.
  *  - Leaving: `{v:1, kind:'leaving', n}` as the document unloads (pagehide,
  *    taken in the capture phase, registered before any canvas code runs),
  *    so the parent takes the frame down before a navigated-to page runs.
@@ -220,7 +236,14 @@ function preludeScript(opts: {
     else if(m.kind==='media-reply'){var x=waits[m.id];if(!x||x.k!=='m')return;delete waits[m.id];clearTimeout(x.t);
       if(m.ok===true&&toStr.call(m.bytes)==='[object ArrayBuffer]'&&typeof m.mime==='string'){x.ok(m);}
       else{x.no(new Error(typeof m.error==='string'?m.error.slice(0,300):'the file could not be loaded'));}}
+    else if(m.kind==='look'&&typeof m.id==='string'){look(m.id,typeof m.scale==='number'?m.scale:1);}
   });
+  function look(id,scale){
+    function reply(r){r.v=1;r.kind='look.res';r.id=id;try{P.postMessage(r,'*');}catch(_){}}
+    import('${CANVAS_LOOK_DRAWER}')
+      .then(function(x){return x.drawFrame(scale);})
+      .then(function(u){reply({ok:true,dataUrl:u});},
+        function(err){reply({ok:false,error:String((err&&err.message)||err).slice(0,300)});});}
   function send(r){try{if(r.f){P.postMessage({v:1,kind:'media',n:nonce,id:r.id,file:r.f},'*');}
       else{P.postMessage({v:1,kind:'data',n:nonce,id:r.id,op:r.op,bucket:r.bucket,key:r.key,json:r.json,everyone:r.everyone,by:r.by},'*');}}
     catch(_){var w=waits[r.id];if(w){delete waits[r.id];clearTimeout(w.t);w.no(new Error(r.f?'the file could not be asked for':'the canvas data store is not available'));}}}
