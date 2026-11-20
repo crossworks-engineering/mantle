@@ -3,7 +3,9 @@
  * (lib/maintenance/name-versions-clear.ts): every file the removed name pass
  * marked (reason 'version') gets its mark cleared and salience 1; a
  * 'corrected' or 'migrated' file, a node that is not a file, and an unmarked
- * file are left as they are. A second run clears none. A scratch database,
+ * file are left as they are. The clear keeps updated_at (no edit of the
+ * file: a moved stamp would queue a skipped file for a paid read). A second
+ * run clears none. A scratch database,
  * dropped after (the clear is box-wide).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/maintenance/name-versions-clear.db.test.ts
  */
@@ -14,7 +16,13 @@ import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-type Row = { id: string; salience: number; by: string | null; reason: string | null };
+type Row = {
+  id: string;
+  salience: number;
+  by: string | null;
+  reason: string | null;
+  at: string;
+};
 
 describe.skipIf(!URL)('name-versions-clear', () => {
   let m: typeof import('@mantle/db');
@@ -80,15 +88,19 @@ describe.skipIf(!URL)('name-versions-clear', () => {
   const rows = async () =>
     Object.fromEntries(
       (
-        await x<Row>(sql`select id, salience, superseded_by as by, superseded_reason as reason
+        await x<Row>(sql`select id, salience, superseded_by as by, superseded_reason as reason,
+                                updated_at::text as at
                            from nodes where owner_id = ${anchor}::uuid`)
       ).map((r) => [r.id, r]),
     );
 
   it('counts the marked files, then clears exactly them', async () => {
+    const before = await rows();
     expect(await clear.countNameVersionMarks()).toEqual({ marked: 2, demoted: 1 });
     expect(await clear.clearNameVersionMarks()).toBe(2);
     const r = await rows();
+    // No edit of the file: every updated_at is the one it had.
+    for (const k of Object.values(id)) expect(r[k]?.at, k).toBe(before[k]?.at);
     for (const k of [id.sheet2, id.sheet3, id.head]) {
       expect(r[k], k).toMatchObject({ salience: 1, by: null, reason: null });
     }

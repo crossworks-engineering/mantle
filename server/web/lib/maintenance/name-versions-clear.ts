@@ -11,8 +11,11 @@
  * A file node with reason 'version' gets `superseded_by` and
  * `superseded_reason` cleared and salience 1. A 'corrected' or 'migrated'
  * mark (a person's, or a page made from the file) is never touched, nor any
- * node that is not a file. Manual only: no sweep, no cron. No model, no
- * queue: one UPDATE. Output is counts only.
+ * node that is not a file. `updated_at` is kept (mantle.keep_updated_at):
+ * the clear is no edit of the file, so neither "last updated" nor the
+ * extractor's skipped and parked stamps see one (a moved updated_at would
+ * queue a skipped file for a paid read). Manual only: no sweep, no cron. No
+ * model, no queue: one UPDATE. Output is counts only.
  */
 import { sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
@@ -33,10 +36,13 @@ export async function countNameVersionMarks(): Promise<{ marked: number; demoted
 
 /** Clear every mark: how many files were cleared. A second run clears none. */
 export async function clearNameVersionMarks(): Promise<number> {
-  const rows = await db
-    .update(nodes)
-    .set({ supersededBy: null, supersededReason: null, salience: 1 })
-    .where(MARKED)
-    .returning({ id: nodes.id });
-  return rows.length;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+    const rows = await tx
+      .update(nodes)
+      .set({ supersededBy: null, supersededReason: null, salience: 1 })
+      .where(MARKED)
+      .returning({ id: nodes.id });
+    return rows.length;
+  });
 }
