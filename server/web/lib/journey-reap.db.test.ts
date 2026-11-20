@@ -4,8 +4,10 @@
  * closed as abandoned, but a book read's trace (`data.lane` 'book', the
  * extract queue's book lane, and every trace opened inside it) has the book
  * lane's longest budget plus 15: two hours in, it stays running; nine hours
- * in, it is closed. The owner-scoped self-heal and the all-owner sweep keep
- * the one rule. A scratch database, dropped after.
+ * in, it is closed. The owner-scoped self-heal, the all-owner sweep and the
+ * corpus audit's abandoned_traces check keep the one rule. A scratch
+ * database (with a pg-boss schema: the audit's queue checks read it),
+ * dropped after.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/journey-reap.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -42,11 +44,16 @@ describe.skipIf(!URL)('the stale-trace reapers', () => {
   beforeAll(async () => {
     scratch = await (await import('@mantle/db/test-support')).createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key'; // as audit-read-only.db.test
     m = await import('@mantle/db');
     j = await import('./journey');
     const admin = (m.systemDb as unknown as { $client: Parameters<typeof ensureTestAnchor>[0] })
       .$client;
     anchor = await ensureTestAnchor(admin);
+    const { PgBoss } = await import('pg-boss');
+    const boss = new PgBoss({ connectionString: scratch.url, schema: 'pgboss' });
+    await boss.start();
+    await boss.stop({ graceful: false, timeout: 5_000 });
   }, 180_000);
 
   afterAll(async () => {
@@ -72,5 +79,14 @@ describe.skipIf(!URL)('the stale-trace reapers', () => {
     expect(await j.reapAbandonedTracesAllOwners()).toBe(1);
     expect(await statusOf(old)).toMatchObject({ s: 'error' });
     expect(await statusOf(live)).toMatchObject({ s: 'running' });
+  });
+
+  it('the corpus audit reports what the reapers reap: a book read two hours in is live', async () => {
+    const plain = await trace(2);
+    const book = await trace(2, 'book');
+    const { runCorpusAudit } = await import('./integrity/audit');
+    const check = (await runCorpusAudit(anchor)).checks.find((c) => c.key === 'abandoned_traces');
+    expect(check?.samples.map((r) => r.id)).toEqual([plain]);
+    expect(await statusOf(book)).toMatchObject({ s: 'running' });
   });
 });

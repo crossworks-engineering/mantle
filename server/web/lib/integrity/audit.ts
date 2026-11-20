@@ -27,6 +27,7 @@ import {
 } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
+import { abandonedTraceSql } from '../journey';
 import { fileDatabaseChecks } from './file-dbs-check';
 import { rowsOf } from './sql-util';
 import type { AuditCheck, AuditReport, AuditSeverity } from '@mantle/client-types/types/integrity';
@@ -439,16 +440,16 @@ const CHECKS: CheckDef[] = [
     key: 'abandoned_traces',
     label: 'Abandoned traces',
     severity: 'low',
-    note: "traces stuck 'running' past the 10-min reap threshold — a process died mid-run. The journey poller reaps these; a non-zero count here flags the rate.",
+    note: "traces stuck 'running' past the reapers' limit (journey.ts abandonedTraceSql: the extract budget plus 15 minutes, a book read's the book lane's) — a process died mid-run. The journey poller reaps these; a non-zero count here flags the rate.",
     query: (o) => sql`
       SELECT id, kind::text AS kind, to_char(started_at, 'MM-DD HH24:MI') AS detail
       FROM traces
-      WHERE owner_id = ${o} AND status = 'running' AND started_at < now() - interval '10 minutes'
+      WHERE owner_id = ${o} AND ${abandonedTraceSql()}
       LIMIT ${CAP}`,
     spanQuery: (o) => sql`
       SELECT min(started_at)::date::text AS oldest, max(started_at)::date::text AS newest
       FROM traces
-      WHERE owner_id = ${o} AND status = 'running' AND started_at < now() - interval '10 minutes'`,
+      WHERE owner_id = ${o} AND ${abandonedTraceSql()}`,
   },
   {
     key: 'dangling_source_file',
