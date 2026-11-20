@@ -20,7 +20,10 @@ import type {
   LiveActivity,
 } from '@mantle/client-types/journey-format';
 import { envNum } from '@mantle/config';
-import { BOOK_TIME_BUDGET_MAX } from '@mantle/embeddings/extraction-concurrency';
+import {
+  BOOK_TIME_BUDGET_MAX,
+  EXTRACTION_TIME_BUDGET_MAX,
+} from '@mantle/embeddings/extraction-concurrency';
 
 export type { LandedLayers, ActivityItem, JourneyDetail, LiveActivity };
 
@@ -181,9 +184,15 @@ export async function listActivity(
 const ABANDON_AFTER_MIN = envNum('MANTLE_EXTRACT_EXPIRE_MIN') + 15;
 /** A book read's traces (`data.lane` 'book': the one the extract queue opens
  *  for the book lane, and every trace opened inside it) run as long as the
- *  book: the book lane's longest budget (BOOK_TIME_BUDGET_MAX, 8 hours, or
- *  the base budget when that is longer) plus the same buffer. */
-const BOOK_ABANDON_AFTER_MIN = Math.max(BOOK_TIME_BUDGET_MAX + 15, ABANDON_AFTER_MIN);
+ *  book: the book lane's longest budget plus the same buffer. A book's budget
+ *  is at most BOOK_TIME_BUDGET_MAX (8 hours) or the base budget when that is
+ *  longer (extract-lanes.ts bookExpireMinutes), and a saved base budget may
+ *  be up to EXTRACTION_TIME_BUDGET_MAX (12 hours), so the longer of the two
+ *  caps. */
+const BOOK_ABANDON_AFTER_MIN = Math.max(
+  Math.max(BOOK_TIME_BUDGET_MAX, EXTRACTION_TIME_BUDGET_MAX) + 15,
+  ABANDON_AFTER_MIN,
+);
 
 /** The one rule of an abandoned trace, for every reaper (the owner-scoped
  *  self-heal, the all-owner sweep, `pnpm traces:reap`): still `running`

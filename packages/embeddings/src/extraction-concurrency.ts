@@ -39,7 +39,9 @@ export const EXTRACTION_TIME_BUDGET_MAX = 720;
 /** The longest a book's extract may run, in minutes (server/api
  *  extract-lanes.ts bookExpireMinutes, whose cap it is): 8 hours. The
  *  stale-trace reapers (server/web journey.ts) give a book read's trace
- *  this long before they take it as abandoned. */
+ *  the longer of this and EXTRACTION_TIME_BUDGET_MAX (a book's budget is
+ *  never under the saved base budget), plus 15 minutes, before they take it
+ *  as abandoned. */
 export const BOOK_TIME_BUDGET_MAX = 480;
 
 /** Saved config value (1 or more) → `MANTLE_EXTRACT_EXPIRE_MIN` env →

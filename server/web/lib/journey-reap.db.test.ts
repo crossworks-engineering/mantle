@@ -3,7 +3,8 @@
  * Postgres: a trace still `running` past the extract budget plus 15 minutes is
  * closed as abandoned, but a book read's trace (`data.lane` 'book', the
  * extract queue's book lane, and every trace opened inside it) has the book
- * lane's longest budget plus 15: two hours in, it stays running; nine hours
+ * lane's longest budget plus 15 (a saved base budget may be up to 12 hours, so
+ * the longer cap): two hours in, and eleven, it stays running; thirteen hours
  * in, it is closed. The owner-scoped self-heal, the all-owner sweep and the
  * corpus audit's abandoned_traces check keep the one rule. A scratch
  * database (with a pg-boss schema: the audit's queue checks read it),
@@ -74,8 +75,8 @@ describe.skipIf(!URL)('the stale-trace reapers', () => {
   });
 
   it('a book read past the book lane budget is abandoned, by the all-owner sweep too', async () => {
-    const old = await trace(9, 'book');
-    const live = await trace(7, 'book');
+    const old = await trace(13, 'book');
+    const live = await trace(11, 'book');
     expect(await j.reapAbandonedTracesAllOwners()).toBe(1);
     expect(await statusOf(old)).toMatchObject({ s: 'error' });
     expect(await statusOf(live)).toMatchObject({ s: 'running' });
