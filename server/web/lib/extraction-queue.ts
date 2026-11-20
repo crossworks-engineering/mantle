@@ -10,4 +10,8 @@
  * `pipeline_run` asks (EXTRACT_BUSY_JOBS, the same number as
  * scripts/box-maintain.sh). This file does not write the SQL again.
  */
-export { extractionQueueCounts, type ExtractionQueueCounts } from '@mantle/db';
+export {
+  extractionQueueCounts,
+  extractionQueueCountsOrNull,
+  type ExtractionQueueCounts,
+} from '@mantle/db';

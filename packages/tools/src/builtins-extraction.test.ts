@@ -22,7 +22,7 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  extractionQueueCounts: h.counts,
+  extractionQueueCountsOrNull: h.counts,
 }));
 
 import { EXTRACTION_TOOLS, extraction_get, extraction_set } from './builtins-extraction';

@@ -385,6 +385,7 @@ export {
   countExtractBacklog,
   extractQueueBusy,
   extractionQueueCounts,
+  extractionQueueCountsOrNull,
   type ExtractionQueueCounts,
   extractJobsFor,
   extractJobWaitOf,

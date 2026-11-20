@@ -23,7 +23,7 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
   saveExtractionLanePatch: h.save,
   clearEmbeddingModelCache: () => {},
 }));
-vi.mock('@/lib/extraction-queue', () => ({ extractionQueueCounts: h.counts }));
+vi.mock('@/lib/extraction-queue', () => ({ extractionQueueCountsOrNull: h.counts }));
 vi.mock('@/lib/embedding-config', () => ({ notifyProviderRecover: h.notify }));
 
 import { GET, PATCH } from './route';

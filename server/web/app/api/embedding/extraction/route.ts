@@ -8,7 +8,7 @@ import {
 } from '@mantle/embeddings';
 import { LANE_SETTING_RANGES } from '@mantle/embeddings/extraction-concurrency';
 import { ownerCaller } from '@/lib/auth';
-import { extractionQueueCounts } from '@/lib/extraction-queue';
+import { extractionQueueCountsOrNull } from '@/lib/extraction-queue';
 import { notifyProviderRecover } from '@/lib/embedding-config';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -35,7 +35,7 @@ export async function GET() {
     concurrency: settings.concurrency,
     book_concurrency: settings.book_concurrency,
     time_budget_minutes: settings.time_budget_minutes,
-    queue: await extractionQueueCounts(),
+    queue: await extractionQueueCountsOrNull(),
   });
 }
 

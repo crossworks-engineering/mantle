@@ -309,6 +309,20 @@ export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
   };
 }
 
+/** The counts, or null where pg-boss has no schema or job table yet (a
+ *  fresh brain, a test database): what the extraction settings (GET
+ *  /api/embedding/extraction, extraction_get) show. Any other answer of the
+ *  database (a refused grant, a bad query) is thrown: a fault to see. */
+export async function extractionQueueCountsOrNull(): Promise<ExtractionQueueCounts | null> {
+  try {
+    return await extractionQueueCounts();
+  } catch (err) {
+    const code = pgErrorCode(err);
+    if (code === '42P01' || code === '3F000') return null;
+    throw err;
+  }
+}
+
 /** An extract job for a file, as a file's status shows it: waiting
  *  (created or retry) or running (active). */
 /** The one read of pg-boss's job table for a file's jobs (the system

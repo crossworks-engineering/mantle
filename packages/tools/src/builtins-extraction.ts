@@ -21,7 +21,7 @@ import {
 // The ranges from the pure module, read when this file loads: a test that
 // mocks @mantle/embeddings leaves this one as it is.
 import { LANE_SETTING_RANGES } from '@mantle/embeddings/extraction-concurrency';
-import { extractionQueueCounts } from '@mantle/db';
+import { extractionQueueCountsOrNull } from '@mantle/db';
 import { publicErrorText } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { CS } from './client-sourced-rule';
@@ -46,7 +46,7 @@ export const extraction_get: BuiltinToolDef = {
     try {
       const [settings, queue] = await Promise.all([
         readExtractionLaneSettings(ctx.ownerId),
-        extractionQueueCounts(),
+        extractionQueueCountsOrNull(),
       ]);
       return { ok: true, output: { ...settings, queue } };
     } catch (err) {
