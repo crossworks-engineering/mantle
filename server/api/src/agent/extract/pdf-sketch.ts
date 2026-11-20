@@ -202,10 +202,9 @@ export async function sketchIngestPdfNode(
           );
           // Still "not now": the whole read waits in the queue
           // (extract-queue.ts), never written with pictures left unread.
-          // A wait after pictures this read paid for: the queue bounds it.
-          if (res.wait) {
-            throw new ProviderWaitError(res.wait, 'vision', { paid: model !== null });
-          }
+          // The pictures read before it are kept answers (@mantle/db
+          // answer-cache.ts): the try again pays for none of them twice.
+          if (res.wait) throw new ProviderWaitError(res.wait, 'vision');
           if (res.ran) model = res.model ?? 'unknown';
           else stopped = true;
           answers.push(res.ran ? res.text : null);

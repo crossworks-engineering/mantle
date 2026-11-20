@@ -74,12 +74,9 @@ import { pipelineAsksDayCap, pipelineAsksFreeAt } from '@mantle/content/pipeline
 import type { ProviderWaitReason } from '@mantle/std';
 
 /** Why a run job is sent again later (extract-queue.ts): the provider's
- *  "not now" (its reason), or the day cap of paid asks (when it has room).
- *  `paid`: the stop left a paid read unkept, which a run again pays for
- *  again (the queue bounds those waits, PAID_WAIT_RESENDS_MAX). */
-export type RunWait = (
-  { for: 'provider'; reason: ProviderWaitReason } | { for: 'day_cap'; until: Date }
-) & { paid?: true };
+ *  "not now" (its reason), or the day cap of paid asks (when it has room). */
+export type RunWait =
+  { for: 'provider'; reason: ProviderWaitReason } | { for: 'day_cap'; until: Date };
 
 /** The shortest gap before a run held at the day cap is tried again: a
  *  slot another run takes first sends it back, and each try is a parser
@@ -105,9 +102,8 @@ export async function runWaitOf(
   deps: Partial<RunWaitDeps> = {},
 ): Promise<RunWait | null> {
   if (out.status !== 'asked' || !('stopped' in out) || out.stopped === undefined) return null;
-  const paid = 'paidStop' in out && out.paidStop === true ? { paid: true as const } : {};
   const reason = providerWaitOfStop(out.stopped);
-  if (reason) return { for: 'provider', reason, ...paid };
+  if (reason) return { for: 'provider', reason };
   if (out.stopped !== DAY_CAP_STOP) return null;
   const d: RunWaitDeps = {
     dayCap: pipelineAsksDayCap,
@@ -121,16 +117,13 @@ export async function runWaitOf(
   return {
     for: 'day_cap',
     until: new Date(Math.max(free.getTime(), now.getTime() + DAY_CAP_MIN_GAP_MS)),
-    ...paid,
   };
 }
 
-/** `paidStop`: the Agent's run stopped with a paid read unkept
- *  (PipelineAsk paidUnkept). */
 export type PipelineRunResult =
   | FileDbBuild
   | FilePatch
-  | (FileAgentRun & { paidStop?: true })
+  | FileAgentRun
   | { status: 'skipped'; reason: 'unknown-pipeline' | 'gone' | 'no-reader' | 'bytes-gone' }
   | { status: 'failed' };
 
@@ -178,7 +171,6 @@ async function runOnce(
         : {}),
     });
     if (out.status !== 'asked') return out;
-    const paidStop = ask.paidUnkept() ? { paidStop: true as const } : {};
     // The text of the tabs as written, on the file node; it is not in the
     // trace step's meta. A failed write is a warning: the tabs stand.
     const { text, ...done } = out;
@@ -201,7 +193,7 @@ async function runOnce(
         });
       }
     }
-    return { ...done, ...paidStop };
+    return done;
   }
   if (isAfterPipeline(pipeline)) {
     return patchFileDatabase({

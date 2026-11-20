@@ -77,17 +77,12 @@
  *                          failure: the job is sent again with a growing
  *                          gap (1, 2, 4 ... minutes, then hourly; a try
  *                          that got work done starts the gaps over) and
- *                          never goes to the dead letters (waitAgain). A
- *                          wait AFTER calls the try paid for (pages or
- *                          pictures read before it, the extraction call
- *                          before an embed) re-pays them on a try again:
- *                          it is sent again PAID_WAIT_RESENDS_MAX times
- *                          (a wait in between with no paid call keeps
- *                          the count; only a try that got work done
- *                          starts it over); past that ANY wait, paid or
- *                          not, takes the old bounded retries (cost
- *                          safety; paidWaitResends): a wait sent again is
- *                          a new job, whose retries would start over. An
+ *                          never goes to the dead letters (waitAgain).
+ *                          Nothing is counted: every paid AI answer of a
+ *                          job is kept before anything after it can wait
+ *                          (@mantle/db answer-cache.ts, withAnswerCache
+ *                          around each job), so a try again takes it and
+ *                          pays for it once. An
  *                          Agent's run held at the day cap of paid asks
  *                          is sent again once the cap has room. While it
  *                          waits the job carries `wait`, and a file's
@@ -172,13 +167,11 @@ import { runArchiveExtract } from '@mantle/files/archive-extract';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
+import { withAnswerCache } from '@mantle/db/answer-cache';
 import {
   errorMessage,
-  PAID_WAIT_RESENDS_MAX,
   providerWaitDelayMs,
   providerWaitOf,
-  providerWaitPaid,
-  providerWaitProgressed,
   type ProviderWait,
   type ProviderWaitReason,
 } from '@mantle/std';
@@ -190,9 +183,6 @@ type ExtractJobWait = {
   for: 'provider' | 'day_cap';
   reason?: ProviderWaitReason;
   waits: number;
-  /** Waits after paid calls since the job last got work done
-   *  (paidWaitResends). */
-  paid?: number;
   until: string;
 };
 
@@ -284,16 +274,12 @@ export async function waitAgain(
   job: ExtractJob,
   wait: ExtractJobWaitInput,
   now = Date.now(),
-  opts: { progressed?: boolean; paid?: boolean } = {},
+  opts: { progressed?: boolean } = {},
 ): Promise<Date> {
-  // `waits` counts the waits in a row: a try that got work done (asks
-  // answered, facts applied) starts the gaps over.
+  // `waits` counts the waits in a row for the gap only: a try that got work
+  // done (asks answered, facts applied) starts the gaps over.
   const before = job.wait?.for === wait.for && !opts.progressed ? job.wait.waits : -1;
   const waits = before + 1;
-  // The waits after paid calls (PAID_WAIT_RESENDS_MAX): carried through a
-  // wait with no paid call between, so it never starts over while the same
-  // work is paid for again; only a try that got work done starts it over.
-  const paid = (opts.progressed ? 0 : (job.wait?.paid ?? 0)) + (opts.paid ? 1 : 0);
   const due =
     wait.for === 'day_cap' ? wait.until : new Date(now + providerWaitDelayMs(waits, wait.provider));
   const next: ExtractJob = {
@@ -302,20 +288,11 @@ export async function waitAgain(
       for: wait.for,
       ...(wait.for === 'provider' ? { reason: wait.provider.reason } : {}),
       waits,
-      ...(paid > 0 ? { paid } : {}),
       until: due.toISOString(),
     },
   };
   await send(next, { ...sendOptionsOf(next), startAfter: due });
   return due;
-}
-
-/** Whether a wait of this job is sent again as a wait, or (past
- *  PAID_WAIT_RESENDS_MAX waits after paid calls) takes the queue's old
- *  bounded retries, paid or not: each such try pays for those calls
- *  again. */
-export function paidWaitResends(job: ExtractJob): boolean {
-  return (job.wait?.paid ?? 0) < PAID_WAIT_RESENDS_MAX;
 }
 
 let boss: PgBoss | null = null;
@@ -639,43 +616,38 @@ async function handleExtractJob(
   // The queue as this job found it: a wait at a graceful stop is still
   // sent (stopExtractQueue drops `boss` before the jobs end).
   const b = waitBoss;
+  // Every paid AI answer of the job is kept as it comes (@mantle/db
+  // answer-cache.ts): a try again after a wait pays for none of them twice.
   const extract = () =>
     under.run(() =>
-      archive
-        ? runArchiveExtract(ownerId, nodeId).then(() => {})
-        : pipelineId
-          ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
-              // An Agent's run held by the provider or the day cap: the same
-              // run again later (point 7). Never a retry of anything else.
-              // A stop that left a paid read unkept is a paid wait; past the
-              // bound (paidWaitResends) any wait of a run that got no work
-              // done fails it to the dead letters (a run has no retry).
-              if (out.wait) {
-                const progressed = out.status === 'asked' && out.made > 0;
-                if (!progressed && !paidWaitResends(data)) {
-                  throw new Error(
-                    `run ${pipelineId} of ${nodeId}: ${PAID_WAIT_RESENDS_MAX} waits after paid reads with no work done`,
+      withAnswerCache(() =>
+        archive
+          ? runArchiveExtract(ownerId, nodeId).then(() => {})
+          : pipelineId
+            ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
+                // An Agent's run held by the provider or the day cap: the same
+                // run again later (point 7). Never a retry of anything else.
+                if (out.wait) {
+                  await sendWaiting(
+                    b,
+                    data,
+                    out.wait.for === 'provider'
+                      ? { for: 'provider', provider: { reason: out.wait.reason } }
+                      : { for: 'day_cap', until: out.wait.until },
+                    { progressed: out.status === 'asked' && out.made > 0 },
                   );
                 }
-                await sendWaiting(
-                  b,
-                  data,
-                  out.wait.for === 'provider'
-                    ? { for: 'provider', provider: { reason: out.wait.reason } }
-                    : { for: 'day_cap', until: out.wait.until },
-                  { progressed, paid: out.wait.paid === true },
-                );
-              }
-            })
-          : data.facts
-            ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
-                // Facts left for later (the cost cap again, or the provider's
-                // "not now"): the rest in a job of their own.
-                if (out.deferred) {
-                  await sendDeferredFacts(b, data, out.deferred, { progressed: out.applied > 0 });
-                }
               })
-            : extractNode(nodeId, ownerId),
+            : data.facts
+              ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
+                  // Facts left for later (the cost cap again, or the provider's
+                  // "not now"): the rest in a job of their own.
+                  if (out.deferred) {
+                    await sendDeferredFacts(b, data, out.deferred, { progressed: out.applied > 0 });
+                  }
+                })
+              : extractNode(nodeId, ownerId),
+      ),
     );
   const run = prev ? prev.catch(() => {}).then(extract) : extract();
   const tracked: Promise<unknown> = run
@@ -711,23 +683,11 @@ async function handleExtractJob(
       ?.onJobError(err)
       .catch((e) => console.error('[extract-queue] circuit:', errorMessage(e)));
     // The provider's "not now": the job waits and is sent again, never a
-    // failure that ends in the dead letters (point 7).
-    // Waits after paid calls (pages, pictures or the extraction call a try
-    // paid for and a try again pays for again) are sent again a few times
-    // only (paidWaitResends). Past that ANY wait throws, paid or not: a
-    // wait sent again is a new job, whose retries start over, so paid and
-    // unpaid waits in turn would never reach the dead letters. A try that
-    // kept new work (a scan's pages: progressed) is sent again past it, its
-    // count started over: a file has finitely many pages.
+    // failure that ends in the dead letters (point 7). Nothing is counted:
+    // what the try paid for is kept (withAnswerCache above).
     const wait = providerWaitOf(err);
-    const progressed = providerWaitProgressed(err);
-    if (wait && (progressed || paidWaitResends(data))) {
-      await sendWaiting(
-        b,
-        data,
-        { for: 'provider', provider: wait },
-        { paid: providerWaitPaid(err), progressed },
-      );
+    if (wait) {
+      await sendWaiting(b, data, { for: 'provider', provider: wait });
       return;
     }
     throw err;
@@ -740,7 +700,7 @@ async function sendWaiting(
   b: PgBoss | null,
   job: ExtractJob,
   wait: ExtractJobWaitInput,
-  opts: { progressed?: boolean; paid?: boolean } = {},
+  opts: { progressed?: boolean } = {},
 ): Promise<void> {
   // No queue to send to: fail the job, so pg-boss keeps it, rather than
   // ending it as done with its work lost.

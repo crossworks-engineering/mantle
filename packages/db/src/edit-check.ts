@@ -126,6 +126,10 @@ export const GATEWAY_KEY_WRITERS: Readonly<Record<string, { module: string; how:
     module: 'packages/db/src/index-work.ts',
     how: 'set with an embed stamp via markContentChanged only; dropped with the stamp',
   },
+  read_again: {
+    module: 'packages/db/src/answer-cache.ts',
+    how: "set by a person's read again (file_reindex, through readAgainStampSql only): its extract takes only answers kept after it; read with readAgainOf",
+  },
   published_summary: {
     module: 'packages/db/src/published-summary.ts',
     how: "set by an app's publish or its extract job, or a canvas's save, through writePublishedSummary only (Journal v3 J9); the extractor reads it with summaryToIndex",

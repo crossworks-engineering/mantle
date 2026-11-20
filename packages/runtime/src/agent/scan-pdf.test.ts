@@ -314,7 +314,6 @@ describe('readScannedPdf: the provider says "not now"', () => {
       { waitPauses: [] },
     );
     expect(r.wait).toEqual({ reason: 'quota', status: 402 });
-    expect(r.waitPaid).toBeUndefined();
     expect(r.pages).toHaveLength(45);
     // The first window is read whole; no page past the wait's window is sent.
     expect(r.pages.slice(0, 20).every((p) => p.method === 'scan_reader')).toBe(true);
@@ -351,18 +350,27 @@ describe('readScannedPdf: the provider says "not now"', () => {
     expect(calls.scan.sort((a, b) => a - b)).toEqual([1, 2, 2, 3]);
   });
 
-  it('a figure whose vision call waits is not final, and the wait says its read was paid', async () => {
+  it('a figure whose vision call waits is not final; each paid call names its page for its kept answer', async () => {
     const { d, calls } = deps({
       total: 2,
       scan: (n) => (n === 1 ? answer('FIG', { pictures: 1 }) : answer(ROWS)),
     });
-    d.vision = (async () => ({
-      ran: false,
-      text: '',
-      note: 'Vision worker failed: 503',
-      model: 'v',
-      wait: { reason: 'overloaded', status: 503 },
-    })) as ScanPdfDeps['vision'];
+    const inputs: string[] = [];
+    const scan = d.scan!;
+    d.scan = (async (o: Parameters<ScanPdfDeps['scan']>[0]) => {
+      inputs.push(`scan ${o.input}`);
+      return scan(o);
+    }) as ScanPdfDeps['scan'];
+    d.vision = (async (o: Parameters<ScanPdfDeps['vision']>[0]) => {
+      inputs.push(`vision ${o.input}`);
+      return {
+        ran: false,
+        text: '',
+        note: 'Vision worker failed: 503',
+        model: 'v',
+        wait: { reason: 'overloaded', status: 503 },
+      };
+    }) as ScanPdfDeps['vision'];
     const r = await readScannedPdf({
       ownerId: 'o1',
       bytes: Buffer.from('%PDF'),
@@ -372,10 +380,16 @@ describe('readScannedPdf: the provider says "not now"', () => {
       deps: d,
     });
     expect(r.wait).toEqual({ reason: 'overloaded', status: 503 });
-    expect(r.waitPaid).toBe(true);
     expect(r.pages[0]).toMatchObject({ page: 1, method: 'unread', why: 'failed' });
     expect(scanPageFinal(r.pages[0]!)).toBe(false);
     expect(calls.scan.sort()).toEqual([1, 2]);
+    // The file's sha256 and the page: a page cut again finds its answer.
+    const sha = 'a'.repeat(64);
+    expect(inputs.sort()).toEqual([
+      `scan ${sha}#page-1`,
+      `scan ${sha}#page-2`,
+      `vision ${sha}#page-1`,
+    ]);
   });
 });
 
@@ -573,52 +587,48 @@ describe('the reads shared by the readers of one upload (scan-share.ts)', () => 
     expect(chat.r.pages.filter((p) => p.method === 'scan_reader')).toHaveLength(12);
   });
 
-  it('a paid page whose keep did not reach the node makes the wait a paid one', async () => {
+  it('a keep that did not reach the node makes the read moot: it stops there, with no wait', async () => {
     const noCredit = { ...answer(''), ran: false, wait: { reason: 'quota' as const } };
-    const plan: Plan = {
-      total: 6,
-      scan: (n) => (n === 6 ? noCredit : answer(`${ROWS}\nPAGE ${n}`)),
-    };
-    // Kept on the node: a try again pays for none of pages 1 to 5.
-    const kept = await readWith(memoryShare(fresh(), 'extract'), plan, { waitPauses: [] });
-    expect(kept.r.wait).toEqual({ reason: 'quota' });
-    expect(kept.r.waitPaid).toBeUndefined();
-    // The node gone or of other bytes (keep wrote nothing): the try again
-    // pays for them again, so the wait is a paid one (the queue bounds it).
-    const lost: ScanShareHooks = {
-      ...memoryShare(fresh(), 'extract'),
-      keep: async () => false,
-    };
-    const unkept = await readWith(lost, plan, { waitPauses: [] });
-    expect(unkept.r.wait).toEqual({ reason: 'quota' });
-    expect(unkept.r.waitPaid).toBe(true);
+    // The node gone, of other bytes, or holding a whole read: keep wrote
+    // nothing. The pages in flight end, and no page after them is sent.
+    const lost: ScanShareHooks = { ...memoryShare(fresh(), 'extract'), keep: async () => false };
+    const moot = await readWith(lost, { total: 12 }, { waitPauses: [] });
+    expect(moot.r.moot).toBe(true);
+    expect(moot.r.wait).toBeUndefined();
+    expect(moot.calls.scan.length).toBeLessThan(12);
+    expect(Math.max(...moot.calls.scan)).toBeLessThanOrEqual(4);
+    // A wait in the same read: moot still, and no wait (nothing to try
+    // again for).
+    const both = await readWith(
+      lost,
+      { total: 6, scan: (n) => (n === 2 ? noCredit : answer(`${ROWS}\nPAGE ${n}`)) },
+      { waitPauses: [] },
+    );
+    expect(both.r.moot).toBe(true);
+    expect(both.r.wait).toBeUndefined();
+    // Kept: no moot.
+    const kept = await readWith(memoryShare(fresh(), 'extract'), { total: 3 });
+    expect(kept.r.moot).toBeUndefined();
   });
 
-  it('a read that kept pages it paid for before its wait says it got work done', async () => {
-    const noCredit = { ...answer(''), ran: false, wait: { reason: 'quota' as const } };
-    // Pages 1 to 5 read and kept, then "not now": progressed.
-    const first = await readWith(
-      memoryShare(fresh(), 'extract'),
-      { total: 6, scan: (n) => (n === 6 ? noCredit : answer(`${ROWS}\nPAGE ${n}`)) },
-      { waitPauses: [] },
-    );
-    expect(first.r.wait).toEqual({ reason: 'quota' });
-    expect(first.r.progressed).toBe(true);
-    // "Not now" before any page is paid for: nothing kept, no progress.
-    const none = await readWith(
-      memoryShare(fresh(), 'extract'),
-      { total: 6, scan: () => noCredit },
-      { waitPauses: [] },
-    );
-    expect(none.r.wait).toEqual({ reason: 'quota' });
-    expect(none.r.progressed).toBeUndefined();
-    // Read but not kept (the node gone): no progress either.
-    const lost = await readWith(
-      { ...memoryShare(fresh(), 'extract'), keep: async () => false },
-      { total: 6, scan: (n) => (n === 6 ? noCredit : answer(`${ROWS}\nPAGE ${n}`)) },
-      { waitPauses: [] },
-    );
-    expect(lost.r.progressed).toBeUndefined();
+  it('a pending figure is read by its vision call alone, whoever reads it', async () => {
+    for (const by of ['extract', 'chat'] as const) {
+      const store: ScanShareData = {
+        ...fresh(),
+        pages: { '2': ['unread', FIGURE_PENDING, ''] },
+      };
+      const r = await readWith(
+        memoryShare(store, by),
+        { total: 3 },
+        by === 'chat' ? { deadline: Date.now() + 60_000 } : {},
+      );
+      // No Scan reader call for page 2: its read is made.
+      expect(r.calls.scan.sort()).toEqual([1, 3]);
+      expect(r.calls.vision).toBe(1);
+      expect(r.r.pages.find((p) => p.page === 2)).toMatchObject({ method: 'vision' });
+      // The description is kept over the pending figure.
+      expect(store.pages['2']![0]).toBe('vision');
+    }
   });
 
   it('a page read with no answer is not kept: the next reader reads it', async () => {
@@ -666,15 +676,16 @@ describe('claimOn and keepOn', () => {
     expect(claimOn(share, [2], 'extract', 6000, 9000).mine).toEqual([2]);
   });
 
-  it('a book’s pending figure is no kept page for another reader: it claims and reads it', () => {
+  it('a book’s pending figure is no kept page for another reader: it claims it, its vision call only', () => {
     const share: ScanShareData = {
       sha256: 's',
       pages: { '4': ['unread', FIGURE_PENDING, ''] },
       claims: {},
     };
-    const c = claimOn(share, [4], 'chat', 0, 10);
+    const c = claimOn(share, [4, 5], 'chat', 0, 10);
     expect(c.kept.size).toBe(0);
-    expect(c.mine).toEqual([4]);
+    expect(c.mine).toEqual([4, 5]);
+    expect([...c.figures!]).toEqual([4]);
     // Its own read, final, is kept over it.
     keepOn(share, [{ page: 4, method: 'vision', text: 'A VALVE' }], 'chat', scanPageFinal);
     expect(share.pages['4']).toEqual(['vision', '', 'A VALVE']);

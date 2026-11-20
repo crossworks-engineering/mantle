@@ -790,7 +790,19 @@ export async function loadExtractableBody(
       if (!isTerminalParserError(err)) throw err;
       return unreadable(err);
     }
-    if (ocr.text && ocr.text.trim().length >= 20) {
+    if (ocr.moot) {
+      // The node no longer takes this read (gone, other bytes, or a whole
+      // read on it): nothing to index from it, no wait, no verdict.
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'read_moot',
+        details: { worker_slug: worker.slug, node_type: node.type, title: node.title },
+      });
+      return { ok: false };
+    } else if (ocr.text && ocr.text.trim().length >= 20) {
       rawBody = ocr.text;
     } else if (ocr.encrypted) {
       // Password-protected PDF. Try the vaulted passwords before giving up.

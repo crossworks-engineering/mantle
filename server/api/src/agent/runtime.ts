@@ -36,6 +36,7 @@ import {
   telegramAccounts,
   unextractedNodeConds,
   noExtractSinceWriteSql,
+  extractJobsFor,
   waitForOwner,
   loginHoldsAdmin,
   actorCheckMode,
@@ -601,9 +602,9 @@ async function drainPending(
  * sweep over a large backlog would be a cost burst. A truncated drain is logged
  * loudly so a partial self-heal is visible, not silent — re-run or raise the
  * cap to catch up. The extractor's own per-agent / per-type guards take it from
- * there.
+ * there. A node with a live job is left to it (enqueueUnlessLive).
  */
-async function drainUnextractedNodes(ownerId: string): Promise<void> {
+export async function drainUnextractedNodes(ownerId: string): Promise<void> {
   const windowHours = envNum('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS');
   const limit = envNum('MANTLE_EXTRACT_DRAIN_LIMIT');
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
@@ -637,7 +638,18 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
       `drain extractor: queueing ${rows.length} unextracted node(s) from last ${windowHours}h`,
     );
   }
-  for (const r of rows) await enqueueExtract(r.id);
+  await enqueueUnlessLive(rows.map((r) => r.id));
+}
+
+/**
+ * Queue an extract of each node that has no live job (created, retry or
+ * active, any lane: a read waiting for the provider, one in its retries, one
+ * running): a recovery never makes a second job of the same work, and a
+ * fresh job's waits never start their gaps over beside the old one.
+ */
+async function enqueueUnlessLive(ids: readonly string[]): Promise<void> {
+  const live = await extractJobsFor(ids);
+  for (const id of ids) if (!live.has(id)) await enqueueExtract(id);
 }
 
 /**
@@ -674,7 +686,7 @@ async function sweepMissedExtractions(ownerId: string): Promise<void> {
   logger.info(
     `extract sweep: re-queueing ${rows.length} node(s) with no extractor_run (missed node_ingested)`,
   );
-  for (const r of rows) await enqueueExtract(r.id);
+  await enqueueUnlessLive(rows.map((r) => r.id));
 }
 
 /**

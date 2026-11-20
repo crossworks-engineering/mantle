@@ -43,9 +43,10 @@
  * for it. A page the engine finds mostly a figure goes on to the vision
  * call above (a description of the figure), behind the same guards; when
  * that call waits (the provider's "not now", the day cap), the paid Scan
- * reader read is kept on the file as the book's pending figure
- * (keepBookFigure: no other reader takes it as final), so the run again
- * makes only the vision call. With no
+ * reader read is kept on the file as a pending figure (keepBookFigure:
+ * whoever reads the page next makes only the vision call), and its answer
+ * is kept by the gateway too (@mantle/db answer-cache.ts), so the run again
+ * never pays for it twice. With no
  * Scan reader on the brain the page is skipped with no stop (unread, said
  * so) and the run's other pages go on. The decider's `scan_read_check` is
  * asked where its answer can matter: in shadow it is only logged; live, it
@@ -122,16 +123,10 @@ export type PipelineAskDeps = {
   shared(page: number): Promise<BookScanTurn>;
   /** Keep one final page of the file in the shared reads (keepBookPage). */
   keep(page: ScanPage): Promise<unknown>;
-  /** Keep a figure page whose vision call waits, for this book's run again
-   *  alone (keepBookFigure); false: it was not kept. */
-  keepFigure(page: number): Promise<boolean>;
+  /** Keep a figure page whose vision call waits as a pending figure
+   *  (keepBookFigure). */
+  keepFigure(page: number): Promise<unknown>;
 };
-
-/** The ask of a run, and whether its stop left a paid read unkept: a
- *  figure's Scan reader read whose keep did not reach the node, which a
- *  run again pays for again (the queue then counts the run's wait as a
- *  paid one, PAID_WAIT_RESENDS_MAX). */
-export type PipelineAsk = AgentAskFn & { paidUnkept(): boolean };
 
 /**
  * The ask of one run of `pipeline` on the file `nodeId`. `deps`: the
@@ -142,7 +137,7 @@ export function pipelineAskOf(
   nodeId: string,
   pipeline: PipelineManifest,
   deps: Partial<PipelineAskDeps> = {},
-): PipelineAsk {
+): AgentAskFn {
   const d: PipelineAskDeps = {
     offHere: async () => {
       const state = await pipelineStateOf(ownerId, pipeline);
@@ -160,10 +155,10 @@ export function pipelineAskOf(
     keepFigure: (page) => keepBookFigure(nodeId, page),
     ...deps,
   };
-  // A figure's paid Scan reader read that was not kept (paidUnkept).
-  let unkept = false;
+  // Best effort: a figure not kept here still has its Scan reader answer in
+  // the answer cache, so a run again pays nothing twice.
   const keepFigure = async (page: number) => {
-    if (!(await d.keepFigure(page))) unkept = true;
+    await d.keepFigure(page);
   };
   // Guards 1 and 2, read one time for the run.
   let fixed: Promise<string | null> | undefined;
@@ -205,6 +200,8 @@ export function pipelineAskOf(
           pdf,
           ...(scan.lines !== null ? { expectedLines: scan.lines } : {}),
           tries: 2,
+          // The page by its picture's hash: the same page is the same ask.
+          input: `ask:${ask.hash}`,
         });
         // No Scan reader the box can use (none, no key, no engine): no call,
         // not one of the day count; the page stays unread, the run goes on.
@@ -398,9 +395,9 @@ export function pipelineAskOf(
       const described = typeof text === 'string' && text.trim() ? text : null;
       // The provider's "not now" to the vision call after this ask paid the
       // figure's Scan reader read: that read is kept (the book's pending
-      // figure, which also ends a shared claim), so the run again makes only
-      // the vision call, never the Scan reader's again. A chat turn reads
-      // the page itself.
+      // figure, which also ends a shared claim), so whoever reads the page
+      // next (the run again, a chat turn, the extract) makes only the
+      // vision call, never the Scan reader's again.
       const waited = paidFigure && !answer.ok && providerWaitOfStop(answer.reason) !== null;
       if (waited) {
         await keepFigure(page);
@@ -423,7 +420,7 @@ export function pipelineAskOf(
     }
     return answer;
   };
-  return Object.assign(askOne, { paidUnkept: () => unkept });
+  return askOne;
 }
 
 /** The value of field `name` in an ask's output (`{ values }`), or null. */

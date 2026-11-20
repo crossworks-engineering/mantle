@@ -1384,6 +1384,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // which the runtime role runs; it reads the table, never writes it.
   { ...none('public.member_turn_ledger', 'system'), runtime: 'read' },
   none('public.embedding_cache', 'system'),
+  // The answer cache (0392, docs/provider-http.md "Kept answers"): the paid
+  // AI answers of queue work, read and written by @mantle/db answer-cache.ts
+  // on the system pool outside every scope; narrow work holds no right.
+  { ...none('public.ai_answer_cache', 'system'), narrow: 'none' },
   none('public.assistant_read_cursors', 'system'),
   // Per-login pins and opens of the item tree (docs/folder-tree.md): each
   // login's own, the owner's and every member's (Recent, Most used, the
@@ -1784,6 +1788,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.control_service', // 0364
   'public.service_state', // 0380
   'public.sync_items', // 0382
+  'public.ai_answer_cache', // 0392
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

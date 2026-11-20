@@ -473,7 +473,6 @@ export {
   type ProviderErrorCode,
 } from './provider-error';
 export {
-  PAID_WAIT_RESENDS_MAX,
   PROVIDER_WAIT_IN_JOB_MS,
   PROVIDER_WAIT_MAX_GAP_MS,
   PROVIDER_WAIT_REASONS,
@@ -483,8 +482,6 @@ export {
   inJobPause,
   providerWaitDelayMs,
   providerWaitOf,
-  providerWaitPaid,
-  providerWaitProgressed,
   tooLargeForLimit,
   type ProviderWait,
   type ProviderWaitReason,

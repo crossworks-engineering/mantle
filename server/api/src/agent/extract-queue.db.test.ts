@@ -13,15 +13,13 @@
  *  - a book (a PDF of 10 MB or more) hops to `mantle.extract.book` and holds
  *    no place of the light and heavy ceiling: while it runs, a drawing and a
  *    document both run and end, on a box set to one extraction at a time;
- *  - past PAID_WAIT_RESENDS_MAX waits after paid calls, a wait with no paid
- *    call is no new job either: the job takes the queue's retries, which
- *    count to the dead letters; a try that kept new pages is sent again
- *    past the bound, its count started over.
+ *  - a wait is only a wait: a read the provider holds many times in a row
+ *    is sent again as a wait each time (nothing counted), never into the
+ *    retries or the dead letters, and ends once the provider answers.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { PAID_WAIT_RESENDS_MAX } from '@mantle/std';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -35,17 +33,18 @@ const runs = vi.hoisted(() => ({
   heavy: new Set<string>(),
   release: new Map<string, () => void>(),
   held: new Set<string>(),
-  /** The provider's "not now" each try of a node meets, in turn. */
-  waits: new Map<string, { paid?: boolean; progressed?: boolean }[]>(),
+  /** How many tries of a node meet the provider's "not now", in turn. */
+  waits: new Map<string, number>(),
 }));
 vi.mock('./extractor.js', async () => {
   const { ProviderWaitError } = await import('@mantle/std');
   return {
     extractNode: vi.fn(async (nodeId: string) => {
       runs.started.push(nodeId);
-      const wait = runs.waits.get(nodeId)?.shift();
-      if (wait) {
-        throw new ProviderWaitError({ reason: 'rate_limit' }, 'scan_reader', wait);
+      const left = runs.waits.get(nodeId) ?? 0;
+      if (left > 0) {
+        runs.waits.set(nodeId, left - 1);
+        throw new ProviderWaitError({ reason: 'rate_limit' }, 'scan_reader');
       }
       const isHeavy = runs.heavy.has(nodeId);
       if (isHeavy) runs.heavyMost = Math.max(runs.heavyMost, ++runs.heavyAtOnce);
@@ -243,68 +242,34 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     const counts = await m.extractionQueueCounts();
     expect(counts.running + counts.waiting).toBe(0);
   }, 120_000);
-  it('past the bound of waits after paid calls, a wait with no paid call takes the retries: no new job', async () => {
-    const pdf = await file('scan-past-the-bound.pdf');
-    // Paid waits up to the bound, then a wait before any paid call.
-    runs.waits.set(pdf, [
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => ({ paid: true })),
-      {},
-    ]);
+  it('a wait never dead-letters: eight waits in turn are each sent again as a wait, and the read ends', async () => {
+    const pdf = await file('scan-held-long.pdf');
+    const WAITS = 8;
+    runs.waits.set(pdf, WAITS);
     const main = () =>
-      su<{ state: string; paid: number | null }[]>`
-        select state, (data->'wait'->>'paid')::int as paid from pgboss.job
+      su<{ state: string; waits: number | null; keys: string[] | null }[]>`
+        select state, (data->'wait'->>'waits')::int as waits,
+               (select array_agg(k order by k) from jsonb_object_keys(data->'wait') k) as keys
+        from pgboss.job
         where data->>'nodeId' = ${pdf} and name = 'mantle.extract' order by created_on`;
     await q.enqueueExtract(pdf);
-    for (let sent = 1; sent <= PAID_WAIT_RESENDS_MAX; sent += 1) {
+    for (let sent = 1; sent <= WAITS; sent += 1) {
       await until(`wait ${sent} is sent`, async () => (await main()).length === sent + 1);
       // Due now, not after the wait's gap.
       await su`update pgboss.job set start_after = now()
         where data->>'nodeId' = ${pdf} and state = 'created'`;
     }
-    await until(
-      'the try past the bound ran',
-      () => runs.started.filter((id) => id === pdf).length === PAID_WAIT_RESENDS_MAX + 1,
-    );
-    await until('it ended', async () => (await main()).at(-1)!.state !== 'active');
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const all = await main();
-    // The waits under the bound were sent again, each counted; the last
-    // try threw into pg-boss's retries, and sent no job of its own.
-    expect(all.map((j) => j.paid)).toEqual([
-      null,
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, (_, i) => i + 1),
-    ]);
-    expect(all.map((j) => j.state)).toEqual([
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => 'completed'),
-      'retry',
-    ]);
-  }, 90_000);
-  it('a try that kept new pages is sent again past the bound, its count started over', async () => {
-    const pdf = await file('scan-long.pdf');
-    runs.waits.set(pdf, [
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => ({ paid: true })),
-      { paid: true, progressed: true },
-    ]);
-    const main = () =>
-      su<{ state: string; paid: number | null }[]>`
-        select state, (data->'wait'->>'paid')::int as paid from pgboss.job
-        where data->>'nodeId' = ${pdf} and name = 'mantle.extract' order by created_on`;
-    await q.enqueueExtract(pdf);
-    for (let sent = 1; sent <= PAID_WAIT_RESENDS_MAX + 1; sent += 1) {
-      await until(`wait ${sent} is sent`, async () => (await main()).length === sent + 1);
-      await su`update pgboss.job set start_after = now()
-        where data->>'nodeId' = ${pdf} and state = 'created'`;
-    }
-    // The try after it reads the rest and ends.
     await until('the read ended', () => runs.ended.includes(pdf));
     await until('its job is done', async () => (await main()).at(-1)!.state === 'completed');
     const all = await main();
-    expect(all.map((j) => j.paid)).toEqual([
-      null,
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, (_, i) => i + 1),
-      // Paid again, but counted from naught: the try got work done.
-      1,
-    ]);
+    // Each wait a new job with its wait alone on it (no count), every one
+    // completed: none in the retries, none in the dead letters.
+    expect(all.map((j) => j.waits)).toEqual([null, ...Array.from({ length: WAITS }, (_, i) => i)]);
+    for (const j of all.slice(1)) expect(j.keys).toEqual(['for', 'reason', 'until', 'waits']);
     expect(all.every((j) => j.state === 'completed')).toBe(true);
-  }, 90_000);
+    const dead = await su<{ n: number }[]>`select count(*)::int as n from pgboss.job
+      where data->>'nodeId' = ${pdf} and name = 'mantle.extract.dead'`;
+    expect(dead[0]!.n).toBe(0);
+    expect(runs.started.filter((id) => id === pdf)).toHaveLength(WAITS + 1);
+  }, 120_000);
 });

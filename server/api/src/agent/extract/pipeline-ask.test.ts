@@ -667,39 +667,22 @@ describe('the Scan reader of a scanned page', () => {
     expect(store.get(7)).toEqual({ page: 7, method: 'vision', text: 'A FIGURE OF A VALVE' });
   });
 
-  it('a figure whose keep did not reach the node makes the stop a paid one: the run again pays for it again', async () => {
+  it('a figure whose keep did not reach the node waits as any wait; the Scan reader is asked by the page', async () => {
     scanOut = { ...scanOut, text: 'FIG 1', pictures: 1 };
     const vision = async () => {
       visionCalls += 1;
       return { ran: false, text: '', note: '429', model: 'v', wait: { reason: 'rate_limit' } };
     };
-    const kept = mod.pipelineAskOf('owner', 'node', PAGES_AGENT, deps({ vision }));
-    await kept(PAGE);
-    expect(kept.paidUnkept()).toBe(false);
-    const lost = mod.pipelineAskOf(
-      'owner',
-      'node',
-      PAGES_AGENT,
-      deps({ vision, keepFigure: async () => false }),
-    );
-    expect(await lost(PAGE)).toMatchObject({ reason: 'provider_rate_limit' });
-    expect(lost.paidUnkept()).toBe(true);
-    // At the day cap too.
-    const capped = mod.pipelineAskOf(
-      'owner',
-      'node',
-      PAGES_AGENT,
-      deps({
-        keepFigure: async () => false,
-        asksToday: async () => {
-          const n = today;
-          today = 500;
-          return n;
-        },
-      }),
-    );
-    expect(await capped(PAGE)).toMatchObject({ reason: 'day_cap' });
-    expect(capped.paidUnkept()).toBe(true);
+    // The keep wrote nothing: the stop is the provider's wait all the same
+    // (the Scan reader's answer is kept by the gateway: a run again pays
+    // nothing twice).
+    expect(await run({ vision, keepFigure: async () => false })).toEqual({
+      ok: false,
+      error: 'not_available',
+      reason: 'provider_rate_limit',
+    });
+    // The page by its picture's hash, for its kept answer.
+    expect(scanCalls[0]!.input).toBe(`ask:${PAGE.hash}`);
   });
 
   it('a figure held at the day cap keeps its Scan reader read too', async () => {

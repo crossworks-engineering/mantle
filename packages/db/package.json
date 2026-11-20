@@ -20,7 +20,8 @@
     "./matrix/a8-tool-cells": "./src/matrix/test-support/a8-tool-cells.ts",
     "./matrix/a8-tool-content": "./src/matrix/test-support/a8-tool-content.ts",
     "./service-gateway-rules": "./src/service-gateway-rules.ts",
-    "./control-center": "./src/control-center.ts"
+    "./control-center": "./src/control-center.ts",
+    "./answer-cache": "./src/answer-cache.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

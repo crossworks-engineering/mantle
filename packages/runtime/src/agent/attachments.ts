@@ -20,6 +20,7 @@
 
 import { getApiKeyById, resolveDefaultWorker } from '@mantle/api-keys';
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
+import { answerKey, bytesKey, keepAnswer, keptAnswer } from '@mantle/db/answer-cache';
 import {
   extOf,
   isVisionImage,
@@ -109,6 +110,10 @@ export async function runVisionWorker(opts: {
    *  2026-11-17: 23 of 112 pieces of a flow diagram). At most one paid call
    *  more. Default 1. */
   tries?: 1 | 2;
+  /** What the bytes are, when one input's bytes may differ between reads
+   *  (a scanned page drawn again: its file's sha256 and page), for the
+   *  answer's key (@mantle/db answer-cache.ts). Default: their sha256. */
+  input?: string;
 }): Promise<VisionResult> {
   // The one resolution (@mantle/api-keys): the worker, its key reference,
   // a wired adapter (checked before the key is opened), the key.
@@ -136,15 +141,33 @@ export async function runVisionWorker(opts: {
 
   const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
   const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
+  const maxTokens = opts.maxTokens ?? params.max_tokens ?? 2000;
+  const systemPrompt = opts.systemPrompt ?? worker.systemPrompt ?? undefined;
+  // A paid answer of this same ask, kept before (a try again after a wait):
+  // taken, no call (@mantle/db answer-cache.ts).
+  const key = answerKey('vision', [
+    worker.provider,
+    worker.model,
+    prompt,
+    systemPrompt ?? null,
+    maxTokens,
+    opts.leastThinking === true,
+    opts.mimeType,
+    opts.input ?? bytesKey(opts.bytes),
+  ]);
+  const kept = await keptAnswer<VisionResult>(key);
+  if (kept) {
+    noteAnswerCut(kept.tokensOut, maxTokens);
+    return kept;
+  }
   // Vision providers can't read HEIC (iPhone default) — transcode to JPEG.
   const forVision = await transcodeImageForVision(opts.bytes, opts.mimeType, opts.filename);
-  const maxTokens = opts.maxTokens ?? params.max_tokens ?? 2000;
   const call = () =>
     adapter.extract(forVision.bytes, {
       ...credential,
       mimeType: forVision.mimeType,
       prompt,
-      systemPrompt: opts.systemPrompt ?? worker.systemPrompt ?? undefined,
+      systemPrompt,
       model: worker.model,
       maxTokens,
       ...(opts.leastThinking ? { leastThinking: true } : {}),
@@ -166,7 +189,7 @@ export async function runVisionWorker(opts: {
     // adapter registry on the step in context: the extractor's photo_ingest
     // extract_vision, or a conversational turn's attachment step
     // (docs/spend-recording.md, file-ingestion.md V1).
-    return {
+    const answer: VisionResult = {
       ran: true,
       text,
       note: text ? null : 'Vision worker returned no text.',
@@ -175,6 +198,10 @@ export async function runVisionWorker(opts: {
       tokensIn: r.tokensIn,
       tokensOut: r.tokensOut,
     };
+    // Kept before it is returned: whatever waits after it, a try again
+    // takes it and pays nothing twice.
+    await keepAnswer('vision', key, answer);
+    return answer;
   } catch (err) {
     const wait = providerWaitOf(err);
     return {
@@ -312,12 +339,12 @@ const PROVIDER_WAIT_TURN_TEXT: Readonly<Record<ProviderWait['reason'], string>> 
 const SCAN_CLAIM_SLACK_MS = 3 * 60_000;
 
 /** The shared reads for a chat turn: a store that fails is no share (the
- *  turn reads alone), never a failed answer. */
+ *  turn reads alone, and goes on), never a failed answer. */
 function lenient(h: ScanShareHooks): ScanShareHooks {
   return {
     claim: (pages) =>
       h.claim(pages).catch(() => ({ kept: new Map(), mine: [...pages], theirs: new Map() })),
-    keep: (pages, total) => h.keep(pages, total).catch(() => false),
+    keep: (pages, total) => h.keep(pages, total).catch(() => true),
     wait: (pages, until) => h.wait(pages, until).catch(() => new Map()),
   };
 }
@@ -401,7 +428,9 @@ async function scanPdfForTurn(opts: {
         total = pagesTotal;
       },
     });
-    if (r.readBefore && fileId) {
+    // Read whole by another reader meanwhile, or moot (the node no longer
+    // takes this read: gone, other bytes, or a whole read on it).
+    if ((r.readBefore || r.moot) && fileId) {
       // The whole read first: ending the turn's reading may drop the shared
       // pages beside it.
       const done = await scanFinalReadOf(fileId, sha256).catch(() => null);
@@ -413,6 +442,7 @@ async function scanPdfForTurn(opts: {
     // The provider said "not now": the pages from there on are unread, said
     // with why (the background read waits for the provider and reads them).
     if (r.wait) stopped = PROVIDER_WAIT_TURN_TEXT[r.wait.reason];
+    if (r.moot) stopped = 'the saved file changed or was removed meanwhile';
   } catch (err) {
     // The parser busy or the file unopenable: what was read stands, the
     // rest is said.

@@ -9,16 +9,15 @@
  *    kept; an `after` run of a drawing stays on the main queue;
  *  - a run is stored with retry limit 0, on the main queue and after the
  *    heavy hop; an extract keeps the queue's 5;
- *  - a run's wait whose stop left a paid read unkept is a paid wait: past
- *    PAID_WAIT_RESENDS_MAX of them, a run that got no work done fails to
- *    the dead letters on its next wait, paid or not, and sends no new job.
+ *  - a run's wait is only a wait: a run held many times in a row with no
+ *    work done is sent again each time (nothing counted), never failed to
+ *    the dead letters, and ends once the provider answers.
  * The notify is the real one (notifyPipelineRun), read on a LISTEN of the
  * test with the runtime's own parse (pipelineRunOfPayload).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue-run.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { PAID_WAIT_RESENDS_MAX } from '@mantle/std';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -27,9 +26,8 @@ const runs = vi.hoisted(() => ({
   jobs: [] as string[],
   release: new Map<string, () => void>(),
   held: new Set<string>(),
-  /** The waits each try of a run meets, in turn (`paid`: its stop left a
-   *  paid read unkept). */
-  waits: new Map<string, { paid?: true }[]>(),
+  /** How many tries of a run meet the provider's "not now", in turn. */
+  waits: new Map<string, number>(),
 }));
 vi.mock('./extractor.js', () => ({
   extractNode: vi.fn(async (nodeId: string) => {
@@ -43,8 +41,10 @@ vi.mock('./extract/pipeline-run.js', () => ({
   isAfterRun: (_ownerId: string, id: string) => Promise.resolve(id === 'site-tags'),
   runPipelineJob: vi.fn(async (_owner: string, nodeId: string, pipelineId: string) => {
     runs.jobs.push(`${pipelineId}:${nodeId}`);
-    const wait = runs.waits.get(`${pipelineId}:${nodeId}`)?.shift();
-    if (wait) {
+    const key = `${pipelineId}:${nodeId}`;
+    const left = runs.waits.get(key) ?? 0;
+    if (left > 0) {
+      runs.waits.set(key, left - 1);
       return {
         status: 'asked',
         rows: 0,
@@ -52,7 +52,7 @@ vi.mock('./extract/pipeline-run.js', () => ({
         reused: 0,
         warnings: [],
         stopped: 'provider_rate_limit',
-        wait: { for: 'provider', reason: 'rate_limit', ...wait },
+        wait: { for: 'provider', reason: 'rate_limit' },
       };
     }
     return { status: 'built', tabs: 1, rows: 1 };
@@ -179,39 +179,27 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
     expect(runs.extracts).not.toContain(dwg);
     expect(runs.extracts).not.toContain(dwg2);
   }, 90_000);
-  it('past the bound of paid waits, a run that got no work done fails on its next wait: no new job', async () => {
+  it('a run held many times with no work done is sent again each time, never failed, and ends', async () => {
     const pdf = await file('book-figures.pdf');
     const key = `pdf-page-read:${pdf}`;
-    runs.waits.set(key, [
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => ({ paid: true as const })),
-      {},
-    ]);
+    const WAITS = 6;
+    runs.waits.set(key, WAITS);
     const main = () =>
-      su<{ state: string; paid: number | null }[]>`
-        select state, (data->'wait'->>'paid')::int as paid from pgboss.job
+      su<{ state: string; waits: number | null }[]>`
+        select state, (data->'wait'->>'waits')::int as waits from pgboss.job
         where data->>'nodeId' = ${pdf} and name = 'mantle.extract' order by created_on`;
     await m.runAsSystem('test', () => q.enqueuePipelineRun(pdf, 'pdf-page-read'));
-    for (let sent = 1; sent <= PAID_WAIT_RESENDS_MAX; sent += 1) {
+    for (let sent = 1; sent <= WAITS; sent += 1) {
       await until(`wait ${sent} is sent`, async () => (await main()).length === sent + 1);
       // Due now, not after the wait's gap.
       await su`update pgboss.job set start_after = now()
         where data->>'nodeId' = ${pdf} and state = 'created'`;
     }
-    await until(
-      'the try past the bound ran',
-      () => runs.jobs.filter((j) => j === key).length === PAID_WAIT_RESENDS_MAX + 1,
-    );
-    await until('it ended', async () => (await main()).at(-1)!.state !== 'active');
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await until('the run built', () => runs.jobs.filter((j) => j === key).length === WAITS + 1);
+    await until('its job is done', async () => (await main()).at(-1)!.state === 'completed');
     const all = await main();
-    expect(all.map((j) => j.paid)).toEqual([
-      null,
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, (_, i) => i + 1),
-    ]);
-    // A run has no retry: it fails, to the dead letters.
-    expect(all.map((j) => j.state)).toEqual([
-      ...Array.from({ length: PAID_WAIT_RESENDS_MAX }, () => 'completed'),
-      'failed',
-    ]);
-  }, 90_000);
+    expect(all.map((j) => j.waits)).toEqual([null, ...Array.from({ length: WAITS }, (_, i) => i)]);
+    // Every try completed: none failed to the dead letters.
+    expect(all.every((j) => j.state === 'completed')).toBe(true);
+  }, 120_000);
 });

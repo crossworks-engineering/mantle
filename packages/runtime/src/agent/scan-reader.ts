@@ -26,6 +26,7 @@
  */
 import { resolveDefaultWorker } from '@mantle/api-keys';
 import { bumpWorkerUsage } from '@mantle/db';
+import { answerKey, bytesKey, keepAnswer, keptAnswer } from '@mantle/db/answer-cache';
 import { getVisionAdapter } from '@mantle/voice';
 import {
   providerErrorStatus,
@@ -69,6 +70,16 @@ export type ScanReaderResult = {
    *  @mantle/std provider-wait.ts): the page waits for a run again, it is
    *  not a bad read. Only with `ran: false`. */
   wait?: ProviderWait;
+};
+
+/** The engine's answer as kept (@mantle/db answer-cache.ts): its raw text
+ *  and what it cost. */
+type KeptScanRead = {
+  raw: string;
+  adapterName?: string;
+  tokensIn?: number;
+  tokensOut?: number;
+  costUsd?: number;
 };
 
 const notRun = (note: string, model: string | null, attempted = false): ScanReaderResult => ({
@@ -142,6 +153,10 @@ export async function runScanReader(opts: {
    *  path has none): the agreement check. */
   ocrWords?: readonly OcrWord[];
   tries?: 1 | 2;
+  /** What the page is (its file's sha256 and page number), for the
+   *  answer's key (@mantle/db answer-cache.ts): a page cut again may not be
+   *  the same bytes. Default: the sha256 of `pdf`. */
+  input?: string;
 }): Promise<ScanReaderResult> {
   if (!opts.pdf?.length) return notRun('No page to read.', null);
   const route = await resolveDefaultWorker(
@@ -163,6 +178,39 @@ export async function runScanReader(opts: {
   }
   const { worker, credential } = route;
   const adapter = getVisionAdapter(worker.provider)!;
+  // The engine's answer as the result: the quality is judged again from it
+  // with this caller's evidence (its words, its line count).
+  const resultOf = (a: KeptScanRead): ScanReaderResult => {
+    const text = cleanParsedText(a.raw);
+    return {
+      ran: true,
+      attempted: true,
+      text,
+      pictures: parsedPictureCount(a.raw),
+      note: text ? null : 'Scan reader returned no text.',
+      model: worker.model,
+      engine: SCAN_READER_ENGINE,
+      adapterName: a.adapterName,
+      tokensIn: a.tokensIn,
+      tokensOut: a.tokensOut,
+      ...(a.costUsd !== undefined ? { costUsd: a.costUsd } : {}),
+      // The text model's 16-token cut says nothing of the page: no `cut`.
+      quality: scanReadQualityOf(text, {
+        ocrWords: opts.ocrWords ?? [],
+        expectedLines: opts.expectedLines ?? null,
+      }),
+    };
+  };
+  // A paid read of this same page, kept before (a try again after a wait):
+  // taken, no call (@mantle/db answer-cache.ts).
+  const key = answerKey('scan_reader', [
+    worker.provider,
+    worker.model,
+    SCAN_READER_ENGINE,
+    opts.input ?? bytesKey(opts.pdf),
+  ]);
+  const kept = await keptAnswer<KeptScanRead>(key);
+  if (kept) return resultOf(kept);
   const parsePdf = adapter.parsePdf!.bind(adapter);
   const call = () =>
     parsePdf(opts.pdf, {
@@ -181,26 +229,17 @@ export async function runScanReader(opts: {
     };
     const r = await (opts.tries === 2 ? call().catch(again) : call());
     void bumpWorkerUsage(worker.id);
-    const raw = r.text ?? '';
-    const text = cleanParsedText(raw);
-    return {
-      ran: true,
-      attempted: true,
-      text,
-      pictures: parsedPictureCount(raw),
-      note: text ? null : 'Scan reader returned no text.',
-      model: worker.model,
-      engine: SCAN_READER_ENGINE,
+    const answer: KeptScanRead = {
+      raw: r.text ?? '',
       adapterName: adapter.adapterName,
       tokensIn: r.tokensIn,
       tokensOut: r.tokensOut,
       ...(r.reportedCostUsd !== undefined ? { costUsd: r.reportedCostUsd } : {}),
-      // The text model's 16-token cut says nothing of the page: no `cut`.
-      quality: scanReadQualityOf(text, {
-        ocrWords: opts.ocrWords ?? [],
-        expectedLines: opts.expectedLines ?? null,
-      }),
     };
+    // Kept before it is returned: whatever waits after it (a figure's vision
+    // call), a try again takes it and pays nothing twice.
+    await keepAnswer('scan_reader', key, answer);
+    return resultOf(answer);
   } catch (err) {
     const wait = providerWaitOf(err);
     return {

@@ -13,6 +13,7 @@ import {
   type ExtractorParams,
 } from '@mantle/db';
 import { step } from '@mantle/tracing';
+import { answerKey, bytesKey, keepAnswer, keptAnswer } from '@mantle/db/answer-cache';
 import { fileDbSqlitePath, isFileSha256, pdfKindNote } from '@mantle/files';
 import { storedPdfOf } from '@mantle/content/pdf-read';
 import { backgroundFence, withFenceNote } from '@mantle/std';
@@ -188,12 +189,13 @@ export async function runExtractorModel(
   body: string,
   existingData: Record<string, unknown>,
 ): Promise<ExtractorOutput & { model?: string }> {
+  const pdfKind = await pdfKindFactOf(node);
   const { system: systemPrompt, user: userPayload } = buildExtractorInput(
     worker.systemPrompt,
     node,
     body,
     undefined,
-    await pdfKindFactOf(node),
+    pdfKind,
   );
 
   // Shape-hash gate (Tables v2 §6): commitTable KEEPS data.summary when
@@ -251,9 +253,31 @@ export async function runExtractorModel(
           // picture when one is wired, else the text call (Journal v3 J9,
           // present-picture.ts). Never both, never a picture to a text model.
           const picture = await presentPictureForPass(node, ownerId);
-          const r = picture
-            ? await extractWithPicture(ownerId, systemPrompt, userPayload, picture, params)
-            : await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
+          // The answer of this same ask, kept before (a try again after a
+          // wait, an embed's "not now"): taken, no call. The key is what the
+          // model was asked, without the fence's nonce (a new one each call).
+          const key = answerKey('extractor', [
+            routes.primary.provider,
+            routes.primary.model,
+            worker.systemPrompt ?? null,
+            node.type,
+            node.title,
+            body.slice(0, 8000),
+            pdfKind,
+            params.temperature ?? null,
+            params.max_tokens ?? null,
+            params.top_p ?? null,
+            picture ? bytesKey(picture.png) : null,
+          ]);
+          let r = await keptAnswer<{ text: string; model: string | null }>(key);
+          if (!r) {
+            const got = picture
+              ? await extractWithPicture(ownerId, systemPrompt, userPayload, picture, params)
+              : await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
+            r = { text: got.text, model: got.model ?? null };
+            // Kept before anything after it (the embeds) can wait.
+            await keepAnswer('extractor', key, r);
+          }
           const model = (picture && r.model) || worker.model;
           const result = parseExtractorOutput(r.text, { nodeId: node.id, model });
           // Capture the full model output — summary, all entities,

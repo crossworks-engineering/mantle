@@ -796,6 +796,9 @@ export async function ocrIngestPdfNode(
   /** The pages not read, by why (none: every page read). */
   unread?: Partial<Record<ScanUnreadReason, number>>;
   pagesTotal?: number;
+  /** The node no longer takes this read (gone, other bytes, or a whole read
+   *  on it): stopped with no wait, nothing recorded. */
+  moot?: true;
 }> {
   // Bytes from disk (uploads) or object storage (email PDF attachments).
   const loaded = await loadFileBytes(node);
@@ -863,18 +866,15 @@ export async function ocrIngestPdfNode(
         if (err.code === 'too_large') return { ...none, tooLarge: msg, ran: false };
         return { ...none, rasterizeError: msg, ran: false };
       }
+      // Moot: a page's keep did not reach the node (the node gone, of other
+      // bytes, or holding a whole read). The read stops, with no wait.
+      if (read.moot) return { ...none, ran: false, moot: true };
       // The provider said "not now": the read waits in the queue
       // (extract-queue.ts). Each page read before it is kept on the node
-      // (data.ocr.scan, by the bytes' sha256), so the try again reads only
-      // the rest and pays for no page twice.
-      // A try that kept pages it paid for got work done: the queue sends it
-      // again past its bound of paid waits (a file has finitely many pages).
-      if (read.wait) {
-        throw new ProviderWaitError(read.wait, 'scan_reader', {
-          paid: read.waitPaid === true,
-          progressed: read.progressed === true,
-        });
-      }
+      // (data.ocr.scan, by the bytes' sha256), and each paid answer in the
+      // answer cache, so the try again reads only the rest and pays for no
+      // page twice.
+      if (read.wait) throw new ProviderWaitError(read.wait, 'scan_reader');
 
       const pages = [...keptBefore, ...read.pages].sort((a, b) => a.page - b.page);
       const total = read.pagesTotal || before?.total || pages.length;

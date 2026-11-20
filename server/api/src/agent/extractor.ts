@@ -48,7 +48,7 @@ import { noteReadCut, withReadCutSink } from '@mantle/files/read-cut-sink';
 import { notifyReadPartial, readCutStampSql } from './extract/read-cut-stamp';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { reusesTableSummary, runExtractorModel } from './extract/model';
-import { admitForExtraction } from './extract/gates';
+import { admitForExtraction, type ExtractAdmission } from './extract/gates';
 import { loadExtractableBody } from './extract/load-body';
 import {
   buildTableIndexPieces,
@@ -60,7 +60,7 @@ import { processRelations, reconcileEntities } from './extract/entities';
 import { processFacts, retireUnassertedFacts } from './extract/facts';
 import { retiresOnNoFacts } from './extract/rules';
 import { nodeParserFailures } from './extract/parser-failures';
-import { ProviderWaitError, providerWaitOf, providerWaitPaid } from '@mantle/std';
+import { readAgainOf, withAnswerCache } from '@mantle/db/answer-cache';
 
 /** Extract one node. Every parser exchange of the extract counts its
  *  failures on the node (./extract/parser-failures.ts), so a file the
@@ -84,6 +84,19 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
   // further explanation.
   const admission = await admitForExtraction(nodeId, ownerId);
   if (!admission.proceed) return;
+  // Every paid answer of the read is kept as it comes (@mantle/db
+  // answer-cache.ts), so a try again after a wait pays for none of them
+  // twice. A person's read again takes only answers kept after it.
+  await withAnswerCache(
+    () => extractAdmitted(admission, ownerId),
+    readAgainOf(admission.existingData),
+  );
+}
+
+async function extractAdmitted(
+  admission: Extract<ExtractAdmission, { proceed: true }>,
+  ownerId: string,
+): Promise<void> {
   const { node, worker, params, retrievalOnly, existingData } = admission;
 
   // Load the FULL extracted text — image vision, typed body dispatch, and the
@@ -172,10 +185,6 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
   const rowVersion = ver?.v ?? null;
   const seenWork = parseIndexWork(ver?.w);
 
-  // Set once the extraction call has answered (and been paid for): a
-  // provider's "not now" after it (an embed) re-pays it on a try again, so
-  // the queue bounds those waits (@mantle/std PAID_WAIT_RESENDS_MAX).
-  let paidCall = false;
   await startTrace(
     {
       kind: 'extractor_run',
@@ -207,7 +216,6 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
         body,
         existingData,
       );
-      paidCall = !parsed.reused;
 
       // ─── content_index pass ───────────────────────────────────────────
       // An app's or a canvas's published summary (its author's, or the one
@@ -314,11 +322,7 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
       await stampExtractCompleted(node);
       void bumpWorkerUsage(worker.id);
     },
-  ).catch((err: unknown) => {
-    const wait = paidCall && !providerWaitPaid(err) ? providerWaitOf(err) : null;
-    if (wait) throw new ProviderWaitError(wait, 'after the extraction call', { paid: true });
-    throw err;
-  });
+  );
 }
 
 /** Final step of a fully-successful extraction pass. The already_extracted

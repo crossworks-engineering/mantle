@@ -16,11 +16,11 @@
  * A page is kept only when final (scanPageFinal: read, blank, read badly,
  * too large, a figure not described); one a later read may cure (no Scan
  * reader yet, no answer, not cut) is not, so it is read again. One more,
- * not final, is the book's own (FIGURE_PENDING): a figure page whose Scan
- * reader read the book's ask paid before its vision call waited. Only the
- * book's ask takes it (bookScanTurn: only the vision call is left); every
- * other reader reads the page itself and keeps its own read over it.
- * Before a paid
+ * not final, is a figure page whose Scan reader read the book's ask paid
+ * before its vision call waited (FIGURE_PENDING). Whoever reads it next
+ * makes only the vision call (bookScanTurn for the book, claimOn's
+ * `figures` for a chat turn and the extract), and keeps the description
+ * over it. Before a paid
  * call a reader CLAIMS the page (a row lock on the node: one claim wins);
  * a page another reader holds a live claim on is waited for, never read
  * twice. A claim ends at its `until` (a reader that died), and a reader's
@@ -78,11 +78,11 @@ const finalRead = () =>
 export const SCAN_READ_MARK = 'scan_read';
 
 /** The `why` of a book's figure page whose vision call waits (see the
- *  module note): no ScanUnreadReason, and final for no reader but the
- *  book's ask. */
+ *  module note): no ScanUnreadReason, and final for no reader: the next
+ *  makes only its vision call. */
 export const FIGURE_PENDING = 'figure_pending';
 
-/** A stored page another reader takes: any but the book's pending figure. */
+/** A stored page another reader takes: any but a pending figure. */
 const keptForAll = (e: Entry | undefined): e is Entry =>
   !!e && !(e[0] === 'unread' && e[1] === FIGURE_PENDING);
 
@@ -137,6 +137,9 @@ export type ScanClaim = {
   final?: true;
   kept: Map<number, ScanPage>;
   mine: number[];
+  /** The pages of `mine` that are a pending figure (FIGURE_PENDING): their
+   *  Scan reader read is made, only the vision call is left. */
+  figures?: Set<number>;
   theirs: Map<number, number>;
 };
 
@@ -148,7 +151,7 @@ export function claimOn(
   now: number,
   until: number,
 ): ScanClaim {
-  const out: ScanClaim = { kept: new Map(), mine: [], theirs: new Map() };
+  const out: ScanClaim = { kept: new Map(), mine: [], figures: new Set(), theirs: new Map() };
   for (const n of pages) {
     const kept = share.pages[String(n)];
     if (keptForAll(kept)) {
@@ -162,6 +165,7 @@ export function claimOn(
     }
     share.claims[String(n)] = [by, until];
     out.mine.push(n);
+    if (kept) out.figures!.add(n);
   }
   return out;
 }
@@ -469,9 +473,10 @@ export function keepBookPage(nodeId: string, page: ScanPage): Promise<boolean> {
 /**
  * Keep page `page` of a book's own bytes as a figure whose Scan reader read
  * was paid before its vision call waited (FIGURE_PENDING), and end the
- * book's claim on it: the run again takes it (bookScanTurn) and makes only
- * the vision call. Not final for any other reader. True when it is on the
- * node; false: a run again pays for the Scan reader read again.
+ * book's claim on it: whoever reads it next (the run again: bookScanTurn; a
+ * chat turn or the extract: claimOn) makes only the vision call. True when
+ * it is on the node; false: the Scan reader's answer is still kept
+ * (@mantle/db answer-cache.ts), so a run again pays nothing twice.
  */
 export function keepBookFigure(nodeId: string, page: number): Promise<boolean> {
   return keepBook(nodeId, (share) => {

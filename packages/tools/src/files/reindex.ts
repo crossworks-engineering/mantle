@@ -8,7 +8,9 @@
  * and budgets (nothing new that spends):
  *  - its text read again from the bytes: the keys the extractor derived
  *    from them are dropped (the cached text, the summary, the reader's
- *    stamp, a skip or parked verdict), as a content change does, and
+ *    stamp, a skip or parked verdict), as a content change does, the node
+ *    is stamped as read again (its extract takes no paid answer kept before
+ *    it: @mantle/db answer-cache.ts), and
  *    markContentChanged asks the extractor for its whole pass (text,
  *    chunks, vector, facts, mentions). Only for a file whose bytes are
  *    there (one look at each, before anything is dropped): a file with no
@@ -66,6 +68,7 @@ import {
   keyWithoutSearch,
   loadFileHead,
 } from '@mantle/files';
+import { readAgainStampSql } from '@mantle/db/answer-cache';
 import { pdfTextKeptOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
@@ -270,10 +273,13 @@ export async function reindexFiles(
           // A sketched file keeps its cuts with its text; another keeps
           // them whole while one the next read does not say again is among
           // them (keptReadCuts).
-          data: sql`case when ${isSketched}
+          // The read-again stamp: the extract takes only the paid answers
+          // kept after it (@mantle/db answer-cache.ts), so the person's read
+          // again is read again, once.
+          data: sql`(case when ${isSketched}
             then coalesce(${nodes.data}, '{}'::jsonb) - ${keys(SKETCH_DROP_KEYS)}
             else (coalesce(${nodes.data}, '{}'::jsonb) - ${keys(REINDEX_DROP_KEYS)} - 'read_cut')
-                 || ${keptReadCuts()} end`,
+                 || ${keptReadCuts()} end) || ${readAgainStampSql()}`,
         })
         .where(
           and(

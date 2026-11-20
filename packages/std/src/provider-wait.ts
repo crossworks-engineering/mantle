@@ -80,59 +80,13 @@ function retryAfterOf(err: unknown): number | undefined {
 export class ProviderWaitError extends Error {
   readonly wait: ProviderWait;
   readonly what: string;
-  /** The job paid for calls before this wait that a try again pays for
-   *  again (pages or pictures read before it, the extraction call before
-   *  an embed): the queue then bounds the waits (PAID_WAIT_RESENDS_MAX). */
-  readonly paid: boolean;
-  /** The try kept new work before this wait that a try again does not pay
-   *  for again (a scan's pages kept on the node): the queue sends it again
-   *  past that bound, its count started over (a file has finitely many
-   *  pages). */
-  readonly progressed: boolean;
-  constructor(
-    wait: ProviderWait,
-    what: string,
-    opts: { paid?: boolean; progressed?: boolean } = {},
-  ) {
+  constructor(wait: ProviderWait, what: string) {
     super(`${what}: ${PROVIDER_WAIT_TEXT[wait.reason]}`);
     this.name = 'ProviderWaitError';
     this.wait = wait;
     this.what = what;
-    this.paid = opts.paid === true;
-    this.progressed = opts.progressed === true;
   }
 }
-
-/** True when `err` (or a cause) is a wait raised after paid calls. */
-export function providerWaitPaid(err: unknown): boolean {
-  for (const e of chain(err)) {
-    if ((e as { name?: unknown }).name === 'ProviderWaitError') {
-      return (e as { paid?: unknown }).paid === true;
-    }
-  }
-  return false;
-}
-
-/** True when `err` (or a cause) is a wait raised after the try kept new
- *  work (ProviderWaitError `progressed`). */
-export function providerWaitProgressed(err: unknown): boolean {
-  for (const e of chain(err)) {
-    if ((e as { name?: unknown }).name === 'ProviderWaitError') {
-      return (e as { progressed?: unknown }).progressed === true;
-    }
-  }
-  return false;
-}
-
-/**
- * How many times a job that waited AFTER paid calls (providerWaitPaid) is
- * sent again as a wait. Each such try pays for those calls again, so past
- * this the job takes the queue's old bounded retries (five, then the dead
- * letters, re-driven at a restart or a provider recovery). Cost safety, not
- * a limit on what is read: a wait before any paid call is sent again for
- * as long as the provider says "not now".
- */
-export const PAID_WAIT_RESENDS_MAX = 3;
 
 /** A 429 that no wait can pass: one request larger than the limit itself
  *  (OpenAI's "Request too large for gpt-x ... Limit 30000, Requested

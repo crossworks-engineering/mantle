@@ -11,8 +11,6 @@ import {
   ProviderWaitError,
   providerWaitDelayMs,
   providerWaitOf,
-  providerWaitPaid,
-  providerWaitProgressed,
   tooLargeForLimit,
   type ProviderWait,
 } from './provider-wait';
@@ -87,29 +85,6 @@ describe('a 429 that no wait can pass', () => {
     );
     expect(providerWaitOf(plain)?.reason).toBe('rate_limit');
     expect(tooLargeForLimit('Limit 30000, Used 29000, Requested 1500')).toBe(false);
-  });
-});
-
-describe('a wait after paid calls', () => {
-  it('says so, also under a wrapper', () => {
-    const paid = new ProviderWaitError({ reason: 'rate_limit' }, 'vision', { paid: true });
-    expect(providerWaitPaid(paid)).toBe(true);
-    expect(providerWaitPaid(new Error('x', { cause: paid }))).toBe(true);
-    expect(providerWaitPaid(new ProviderWaitError({ reason: 'rate_limit' }, 'vision'))).toBe(false);
-    expect(providerWaitPaid(http(429))).toBe(false);
-  });
-
-  it('says a try that kept new work, also under a wrapper', () => {
-    const kept = new ProviderWaitError({ reason: 'rate_limit' }, 'scan_reader', {
-      paid: true,
-      progressed: true,
-    });
-    expect(providerWaitProgressed(kept)).toBe(true);
-    expect(providerWaitProgressed(new Error('x', { cause: kept }))).toBe(true);
-    expect(providerWaitProgressed(new ProviderWaitError({ reason: 'quota' }, 'vision'))).toBe(
-      false,
-    );
-    expect(providerWaitProgressed(http(429))).toBe(false);
   });
 });
 

@@ -61,6 +61,7 @@ export * from './channels';
 export * from './agents';
 export * from './ai-workers';
 export * from './embedding-cache';
+export * from './ai-answer-cache';
 export * from './embedding-config';
 export * from './provider-alerts';
 export * from './entities';

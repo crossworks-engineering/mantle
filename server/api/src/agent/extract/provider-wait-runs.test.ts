@@ -7,11 +7,13 @@
  *    a cap of 0 is no wait (the operator's "no Agent may ask");
  *  - waitAgain (extract-queue.ts): the same job, with its wait, sent with a
  *    growing gap; a run keeps its key and its "no retry" of anything else.
+ *    A wait is only a wait: nothing is counted (a try again takes the paid
+ *    answers kept before it, @mantle/db answer-cache.ts).
  */
 import { describe, expect, it } from 'vitest';
 import { runWaitOf, DAY_CAP_MIN_GAP_MS, type PipelineRunResult } from './pipeline-run';
-import { enqueueDeferredFacts, paidWaitResends, waitAgain } from '../extract-queue';
-import { PAID_WAIT_RESENDS_MAX } from '@mantle/std';
+import { enqueueDeferredFacts, waitAgain } from '../extract-queue';
+import { PROVIDER_WAIT_MAX_GAP_MS } from '@mantle/std';
 
 const asked = (stopped?: string): PipelineRunResult => ({
   status: 'asked',
@@ -52,31 +54,6 @@ describe('runWaitOf', () => {
     expect(await runWaitOf('o', asked('day_cap'), deps(NOW))).toEqual({
       for: 'day_cap',
       until: new Date(NOW.getTime() + DAY_CAP_MIN_GAP_MS),
-    });
-  });
-
-  it('a stop that left a paid read unkept is a paid wait, for the provider and the day cap', async () => {
-    const unkept = (stopped: string): PipelineRunResult => ({
-      status: 'asked',
-      rows: 3,
-      made: 0,
-      reused: 2,
-      warnings: [],
-      stopped,
-      paidStop: true,
-    });
-    expect(await runWaitOf('o', unkept('provider_rate_limit'), deps(null))).toEqual({
-      for: 'provider',
-      reason: 'rate_limit',
-      paid: true,
-    });
-    expect(await runWaitOf('o', unkept('day_cap'), deps(NOW))).toMatchObject({
-      for: 'day_cap',
-      paid: true,
-    });
-    expect(await runWaitOf('o', asked('provider_rate_limit'), deps(null))).toEqual({
-      for: 'provider',
-      reason: 'rate_limit',
     });
   });
 
@@ -182,48 +159,25 @@ describe('waitAgain', () => {
     expect((sent[0]!.data.wait as { waits: number }).waits).toBe(0);
   });
 
-  it('a wait after paid calls is counted, and sent again only a few times', async () => {
+  it('a wait is only a wait: any waits in turn carry no count, and the gap grows to hourly, forever', async () => {
     sent.length = 0;
     let job: Parameters<typeof waitAgain>[1] = { nodeId: 'n4' };
-    let resends = 0;
-    while (paidWaitResends(job)) {
-      await waitAgain(send, job, { for: 'provider', provider: { reason: 'overloaded' } }, at, {
-        paid: true,
-      });
+    const reasons = ['rate_limit', 'overloaded', 'quota'] as const;
+    for (let i = 0; i < 40; i += 1) {
+      const due = await waitAgain(
+        send,
+        job,
+        { for: 'provider', provider: { reason: reasons[i % 3]! } },
+        at,
+      );
       job = sent.at(-1)!.data as typeof job;
-      resends++;
+      // Nothing but the wait itself on the job: no count to bound it.
+      expect(Object.keys(job.wait!).sort()).toEqual(['for', 'reason', 'until', 'waits']);
+      expect(sent.at(-1)!.opts.retryLimit).toBeUndefined();
+      expect(due.getTime() - at).toBeLessThanOrEqual(PROVIDER_WAIT_MAX_GAP_MS);
     }
-    expect(resends).toBe(PAID_WAIT_RESENDS_MAX);
-    // A wait before any paid call adds nothing to the count, but keeps it:
-    // the same work paid again after it is still past the bound.
-    await waitAgain(send, job, { for: 'provider', provider: { reason: 'overloaded' } }, at);
-    job = sent.at(-1)!.data as typeof job;
-    expect((job.wait as { paid?: number }).paid).toBe(PAID_WAIT_RESENDS_MAX);
-    expect(paidWaitResends(job)).toBe(false);
-  });
-
-  it('paid and unpaid waits in turn never start the paid count over', async () => {
-    sent.length = 0;
-    let job: Parameters<typeof waitAgain>[1] = { nodeId: 'n5' };
-    let tries = 0;
-    // A figure page paid then a wait, then a wait before any call, and so
-    // on: bounded all the same.
-    while (paidWaitResends(job) && tries < 20) {
-      await waitAgain(send, job, { for: 'provider', provider: { reason: 'rate_limit' } }, at, {
-        paid: tries % 2 === 0,
-      });
-      job = sent.at(-1)!.data as typeof job;
-      tries++;
-    }
-    expect(paidWaitResends(job)).toBe(false);
-    expect(tries).toBe(2 * PAID_WAIT_RESENDS_MAX - 1);
-    // A try that got work done starts it over.
-    await waitAgain(send, job, { for: 'provider', provider: { reason: 'rate_limit' } }, at, {
-      progressed: true,
-    });
-    job = sent.at(-1)!.data as typeof job;
-    expect((job.wait as { paid?: number }).paid).toBeUndefined();
-    expect(paidWaitResends(job)).toBe(true);
+    expect(sent).toHaveLength(40);
+    expect(new Date(job.wait!.until).getTime() - at).toBe(PROVIDER_WAIT_MAX_GAP_MS);
   });
 });
 
