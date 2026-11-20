@@ -163,7 +163,9 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     // the login's agent UI setting (GET /api/profile/agent-ui, any login)
     // and a turn's stream (GET /api/assistant/turn/:turnId/stream, a chat
     // row since members' turns stream).
-    expect(rows).toHaveLength(35);
+    // and a chat file (GET /api/messenger/attachments/:id, fleet chat, an
+    // <img> of a line, as the photo).
+    expect(rows).toHaveLength(36);
     const logins: Array<[string, string | null]> = [
       ['owner', owner],
       ['admin', admin],

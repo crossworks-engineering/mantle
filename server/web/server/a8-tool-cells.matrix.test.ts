@@ -158,6 +158,10 @@ const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   // the oracle cannot see); the route's db test extracts real archives.
   file_extract_archive:
     "an archive's bytes and the add of a folder beside it (archive-extract-route.db.test.ts extracts real ones)",
+  // Fleet chat (2026-11-21): Save to Files copies a chat file, which the
+  // matrix does not seed (a file on a messenger line the login reads).
+  messenger_attachment_save:
+    'a chat file on a line the login reads (messenger-attachments.db.test.ts holds the refusal)',
 };
 
 /** The app data tools act for a login's own MCP connection only (tools
