@@ -84,12 +84,13 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
   // further explanation.
   const admission = await admitForExtraction(nodeId, ownerId);
   if (!admission.proceed) return;
-  // Every paid answer of the read is kept as it comes (@mantle/db
-  // answer-cache.ts), so a try again after a wait pays for none of them
-  // twice. A person's read again takes only answers kept after it.
+  // Every paid answer of the read is kept as it comes, for this node
+  // (@mantle/db answer-cache.ts), so a try again after a wait pays for none
+  // of them twice. A person's read again takes only answers kept after it.
   await withAnswerCache(
     () => extractAdmitted(admission, ownerId),
     readAgainOf(admission.existingData),
+    admission.node.id,
   );
 }
 

@@ -616,37 +616,43 @@ async function handleExtractJob(
   // The queue as this job found it: a wait at a graceful stop is still
   // sent (stopExtractQueue drops `boss` before the jobs end).
   const b = waitBoss;
-  // Every paid AI answer of the job is kept as it comes (@mantle/db
-  // answer-cache.ts): a try again after a wait pays for none of them twice.
+  // Every paid AI answer of the job is kept as it comes, for its node
+  // (@mantle/db answer-cache.ts): a try again after a wait pays for none of
+  // them twice.
   const extract = () =>
     under.run(() =>
-      withAnswerCache(() =>
-        archive
-          ? runArchiveExtract(ownerId, nodeId).then(() => {})
-          : pipelineId
-            ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
-                // An Agent's run held by the provider or the day cap: the same
-                // run again later (point 7). Never a retry of anything else.
-                if (out.wait) {
-                  await sendWaiting(
-                    b,
-                    data,
-                    out.wait.for === 'provider'
-                      ? { for: 'provider', provider: { reason: out.wait.reason } }
-                      : { for: 'day_cap', until: out.wait.until },
-                    { progressed: out.status === 'asked' && out.made > 0 },
-                  );
-                }
-              })
-            : data.facts
-              ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
-                  // Facts left for later (the cost cap again, or the provider's
-                  // "not now"): the rest in a job of their own.
-                  if (out.deferred) {
-                    await sendDeferredFacts(b, data, out.deferred, { progressed: out.applied > 0 });
+      withAnswerCache(
+        () =>
+          archive
+            ? runArchiveExtract(ownerId, nodeId).then(() => {})
+            : pipelineId
+              ? runPipelineJob(ownerId, nodeId, pipelineId).then(async (out) => {
+                  // An Agent's run held by the provider or the day cap: the same
+                  // run again later (point 7). Never a retry of anything else.
+                  if (out.wait) {
+                    await sendWaiting(
+                      b,
+                      data,
+                      out.wait.for === 'provider'
+                        ? { for: 'provider', provider: { reason: out.wait.reason } }
+                        : { for: 'day_cap', until: out.wait.until },
+                      { progressed: out.status === 'asked' && out.made > 0 },
+                    );
                   }
                 })
-              : extractNode(nodeId, ownerId),
+              : data.facts
+                ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
+                    // Facts left for later (the cost cap again, or the provider's
+                    // "not now"): the rest in a job of their own.
+                    if (out.deferred) {
+                      await sendDeferredFacts(b, data, out.deferred, {
+                        progressed: out.applied > 0,
+                      });
+                    }
+                  })
+                : extractNode(nodeId, ownerId),
+        null,
+        nodeId,
       ),
     );
   const run = prev ? prev.catch(() => {}).then(extract) : extract();

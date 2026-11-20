@@ -4,6 +4,9 @@
  * a made-up worker and adapter (no provider):
  *  - a kept answer is taken with no paid call; outside the cache's scope
  *    nothing is kept or taken;
+ *  - the cache is per node: another node with the same bytes pays once for
+ *    its own, a scope with no node uses no cache, and deleting the file
+ *    removes its kept answers (the cascade of 0392);
  *  - a person's read again takes only answers kept after it, and its own
  *    try again then takes the answer it paid for;
  *  - a scanned figure page across tries pays its Scan reader read once and
@@ -88,6 +91,16 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
   let since0 = new Date();
   /** A file of its own each test: its pages are keys of their own. */
   let sha = '';
+  /** The node of the file each test (the cache is per node). */
+  let node = '';
+  let owner = '';
+  const newNode = async (): Promise<string> => {
+    const id = randomUUID();
+    const name = `answer-cache-${id}.pdf`;
+    await admin`insert into nodes (id, owner_id, type, title, path, data)
+      values (${id}, ${owner}, 'file', ${name}, 'files', jsonb_build_object('filename', ${name}::text))`;
+    return id;
+  };
 
   const asSystem = <T>(fn: () => Promise<T>) => m.runAsSystem('test:answer-cache', fn);
   const dbNow = async () => new Date((await admin<{ t: string }[]>`select now()::text as t`)[0]!.t);
@@ -101,21 +114,26 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     attachments = await import('./attachments');
     scan = await import('./scan-pdf');
     admin = (m.systemDb as unknown as { $client: Admin }).$client;
+    owner = await (await import('@mantle/db/test-support')).ensureTestAnchor(admin);
     since0 = await dbNow();
   }, 60_000);
 
   afterAll(async () => {
-    if (admin)
+    if (admin) {
       await admin`delete from ai_answer_cache where created_at >= ${since0.toISOString()}::timestamptz`;
+      await admin`delete from nodes where owner_id = ${owner}::uuid
+        and title like 'answer-cache-%.pdf'`;
+    }
     await m?.closeDb();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     h.scan.clear();
     h.vision = [];
     h.scanCalls = [];
     h.visionCalls = 0;
     sha = randomUUID().replace(/-/g, '').padEnd(64, '0');
+    node = await newNode();
   });
 
   const readPage = (input: string) =>
@@ -123,8 +141,8 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
 
   it('a kept answer is taken with no paid call; outside the scope nothing is kept or taken', async () => {
     const input = `${sha}#page-1`;
-    const first = await asSystem(() => cache.withAnswerCache(() => readPage(input)));
-    const again = await asSystem(() => cache.withAnswerCache(() => readPage(input)));
+    const first = await asSystem(() => cache.withAnswerCache(() => readPage(input), null, node));
+    const again = await asSystem(() => cache.withAnswerCache(() => readPage(input), null, node));
     expect(h.scanCalls).toEqual(['page 1']);
     expect(again).toEqual(first);
     expect(again.costUsd).toBe(0.002);
@@ -136,19 +154,22 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
         mimeType: 'image/png',
         prompt: 'what is it?',
       });
-    const v1 = await asSystem(() => cache.withAnswerCache(ask));
-    const v2 = await asSystem(() => cache.withAnswerCache(ask));
+    const v1 = await asSystem(() => cache.withAnswerCache(ask, null, node));
+    const v2 = await asSystem(() => cache.withAnswerCache(ask, null, node));
     expect(h.visionCalls).toBe(1);
     expect(v2).toEqual(v1);
     // Another prompt is another ask.
     await asSystem(() =>
-      cache.withAnswerCache(() =>
-        attachments.runVisionWorker({
-          ownerId: 'o-1',
-          bytes: Buffer.from(sha),
-          mimeType: 'image/png',
-          prompt: 'how many?',
-        }),
+      cache.withAnswerCache(
+        () =>
+          attachments.runVisionWorker({
+            ownerId: 'o-1',
+            bytes: Buffer.from(sha),
+            mimeType: 'image/png',
+            prompt: 'how many?',
+          }),
+        null,
+        node,
       ),
     );
     expect(h.visionCalls).toBe(2);
@@ -168,7 +189,7 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
 
   it("a person's read again takes only answers kept after it; its own try again takes what it paid for", async () => {
     const input = `${sha}#page-1`;
-    await asSystem(() => cache.withAnswerCache(() => readPage(input)));
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), null, node));
     expect(h.scanCalls).toHaveLength(1);
     // The stamp file_reindex writes, read back as the extractor reads it.
     const { sql } = await import('drizzle-orm');
@@ -179,12 +200,45 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
     expect(since).not.toBeNull();
     expect(Math.abs(since!.getTime() - (await dbNow()).getTime())).toBeLessThan(5_000);
     // The read again pays once, then its try again pays nothing.
-    await asSystem(() => cache.withAnswerCache(() => readPage(input), since));
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), since, node));
     expect(h.scanCalls).toHaveLength(2);
-    await asSystem(() => cache.withAnswerCache(() => readPage(input), since));
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), since, node));
     expect(h.scanCalls).toHaveLength(2);
     expect(cache.readAgainOf({})).toBeNull();
     expect(cache.readAgainOf({ read_again: 'x' })).toBeNull();
+  });
+
+  it('per node: a try again of the node pays once, another node with the same bytes pays once, no node no cache', async () => {
+    const input = `${sha}#page-1`;
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), null, node));
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), null, node));
+    expect(h.scanCalls).toHaveLength(1);
+    const other = await newNode();
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), null, other));
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), null, other));
+    expect(h.scanCalls).toHaveLength(2);
+    // A scope with no node: paid each time, nothing kept.
+    await asSystem(() => cache.withAnswerCache(() => readPage(`${sha}#page-2`), null, null));
+    await asSystem(() => cache.withAnswerCache(() => readPage(`${sha}#page-2`), null, null));
+    expect(h.scanCalls).toHaveLength(4);
+    const rows = await admin<{ node_id: string }[]>`select node_id::text from ai_answer_cache
+      where node_id in (${node}::uuid, ${other}::uuid) order by created_at`;
+    expect(rows.map((r) => r.node_id)).toEqual([node, other]);
+  });
+
+  it('deleting the file removes its kept answers, and only its own', async () => {
+    const input = `${sha}#page-1`;
+    const other = await newNode();
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), null, node));
+    await asSystem(() => cache.withAnswerCache(() => readPage(input), null, other));
+    const kept = (id: string) =>
+      admin<
+        { n: number }[]
+      >`select count(*)::int as n from ai_answer_cache where node_id = ${id}::uuid`;
+    expect((await kept(node))[0]!.n).toBe(1);
+    await admin`delete from nodes where id = ${node}::uuid`;
+    expect((await kept(node))[0]!.n).toBe(0);
+    expect((await kept(other))[0]!.n).toBe(1);
   });
 
   /** A scanned PDF of `total` pages, each a scanned page, read with the
@@ -206,15 +260,18 @@ describe.skipIf(!URL)('the answer cache at the worker gateway', () => {
       check: (async () => null) as import('./scan-pdf').ScanPdfDeps['check'],
     };
     return asSystem(() =>
-      cache.withAnswerCache(() =>
-        scan.readScannedPdf({
-          ownerId: 'o-1',
-          bytes: Buffer.from('%PDF'),
-          sha256: sha,
-          filename: 'scan.pdf',
-          waitPauses: [],
-          deps,
-        }),
+      cache.withAnswerCache(
+        () =>
+          scan.readScannedPdf({
+            ownerId: 'o-1',
+            bytes: Buffer.from('%PDF'),
+            sha256: sha,
+            filename: 'scan.pdf',
+            waitPauses: [],
+            deps,
+          }),
+        null,
+        node,
       ),
     );
   };

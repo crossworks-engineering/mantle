@@ -152,13 +152,16 @@ work is kept before anything after it can wait, so a try again never pays
 for it twice (`packages/db/src/answer-cache.ts`, table `ai_answer_cache`,
 migration 0392). The worker gateway keeps and takes them: `runVisionWorker`
 (pictures of a drawing, a figure page, an image), `runScanReader` (a page
-of a scan or a book) and the extractor's call. The key is a hash of the
-kind, the provider and model, the prompt, and the input (its bytes' hash,
-or its file's sha256 and page for a scanned page cut again). The extract
-queue runs each job with the cache on; a chat turn does not use it. A
-person's read again (`file_reindex`) stamps the file, and its extract takes
-only answers kept after that moment, so the person's read is read again,
-once. As `embedding_cache`, nothing prunes it.
+of a scan or a book) and the extractor's call. The key is the node the
+answer was paid for and a hash of the kind, the provider and model, the
+prompt, and the input (its bytes' hash, or its file's sha256 and page for a
+scanned page cut again): a try again of that node never pays twice, another
+node with the same bytes pays once for its own. The extract queue runs each
+job with the cache on for its node; a chat turn, or a call with no node, does
+not use it. A person's read again (`file_reindex`) stamps the file, and its
+extract takes only answers kept after that moment, so the person's read is
+read again, once. A node's answers go when it is deleted (`node_id`
+cascades); nothing else prunes them.
 
 **Nothing starts by itself.** Every job sent again is work already asked for
 (an upload, a run, a read's facts). No trigger, timer or sweep starts paid

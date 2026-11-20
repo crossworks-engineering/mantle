@@ -3,7 +3,8 @@
 -- migration: nothing runs it on its own.
 --
 -- Optional: the older image works with 0392 in place. It never reads or
--- writes `ai_answer_cache`, and the older migrate's grants leave a table its
+-- writes `ai_answer_cache`, a file it deletes takes its kept answers with
+-- it (`node_id` cascades), and the older migrate's grants leave a table its
 -- access matrix does not list closed to the workspace role. Dropping the
 -- table loses only kept answers: a try again after a wait then pays for
 -- them again.

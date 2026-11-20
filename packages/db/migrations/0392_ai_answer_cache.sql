@@ -5,8 +5,12 @@
 -- "not now" takes the kept answer, so it never pays for it twice, and a wait
 -- is only a wait: nothing is counted.
 --
--- Keyed by sha256 of (the kind, the provider and model, the prompt, the
--- input's bytes hash or name), hex, 64 chars, as embedding_cache (0014).
+-- Keyed by the node the answer was paid for and sha256 of (the kind, the
+-- provider and model, the prompt, the input's bytes hash or name), hex, 64
+-- chars: a try again of that node never pays twice, and another node with
+-- the same bytes pays once for its own. An answer never outlives its file:
+-- `node_id` cascades on the node's delete. The primary key leads with
+-- `node_id`, so it is the index the cascade reads.
 -- `answer`: the provider's answer and its cost metadata (tokens, billed
 -- cost), as the caller rebuilds its result from it. A person's read again
 -- (file_reindex) takes only answers kept after it (`created_at`).
@@ -18,10 +22,12 @@
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "public"."ai_answer_cache" (
-  "key" text PRIMARY KEY,
+  "node_id" uuid NOT NULL REFERENCES "public"."nodes"("id") ON DELETE CASCADE,
+  "key" text NOT NULL,
   "kind" text NOT NULL,
   "answer" jsonb NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT "ai_answer_cache_pkey" PRIMARY KEY ("node_id", "key"),
   CONSTRAINT "ai_answer_cache_key_ck" CHECK ("key" ~ '^[0-9a-f]{64}$'),
   CONSTRAINT "ai_answer_cache_kind_ck" CHECK ("kind" ~ '^[a-z][a-z_]{0,39}$')
 );

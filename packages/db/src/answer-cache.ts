@@ -7,13 +7,16 @@
  *
  * The worker gateway keeps and takes the answers (runVisionWorker and
  * runScanReader in @mantle/runtime, the extractor's call in server/api
- * extract/model.ts), keyed by sha256 of what was asked: the kind, the
- * provider and model, the prompt, and the input (its bytes' hash, or a name
- * the caller gives when the bytes of one input may differ between reads, as
- * a scanned page cut again). As embedding_cache, content addressed, no prune.
+ * extract/model.ts), keyed by the node in scope and sha256 of what was
+ * asked: the kind, the provider and model, the prompt, and the input (its
+ * bytes' hash, or a name the caller gives when the bytes of one input may
+ * differ between reads, as a scanned page cut again). Per node: a try again
+ * of that node never pays twice, another node with the same bytes pays once
+ * for its own, and a node's answers go with it (the cascade of 0392).
  *
- * Only inside withAnswerCache: the extract queue runs each job in it. Outside
- * (a chat turn, a test) nothing is read or written. A person's read again
+ * Only inside withAnswerCache with a node: the extract queue runs each job
+ * in it. Outside (a chat turn, a test), or with no node, nothing is read or
+ * written. A person's read again
  * (file_reindex) stamps the node (readAgainStampSql); its extract then takes
  * only answers kept after that moment (`since`), so it pays once for the read
  * the person asked for, and its own tries again after a wait still pay
@@ -32,14 +35,19 @@ import { aiAnswerCache } from './schema/ai-answer-cache';
 /** The kinds of answer kept. */
 export type AnswerKind = 'vision' | 'scan_reader' | 'extractor';
 
-const scopes = new AsyncLocalStorage<{ since: Date | null }>();
+const scopes = new AsyncLocalStorage<{ since: Date | null; nodeId: string | null }>();
 
 /**
- * Run `fn` with the answer cache on. `since`: only answers kept at or after
- * it are taken (a person's read again); null, any.
+ * Run `fn` with the answer cache on for the node `nodeId` (null: off).
+ * `since`: only answers kept at or after it are taken (a person's read
+ * again); null, any.
  */
-export function withAnswerCache<T>(fn: () => Promise<T>, since: Date | null = null): Promise<T> {
-  return scopes.run({ since }, fn);
+export function withAnswerCache<T>(
+  fn: () => Promise<T>,
+  since: Date | null,
+  nodeId: string | null,
+): Promise<T> {
+  return scopes.run({ since, nodeId }, fn);
 }
 
 /** The key of an answer: sha256 of its kind and the parts of what was asked. */
@@ -58,13 +66,14 @@ export function bytesKey(bytes: Uint8Array): string {
  *  cache here, or the read failed. */
 export async function keptAnswer<T>(key: string): Promise<T | null> {
   const scope = scopes.getStore();
-  if (!scope) return null;
+  if (!scope?.nodeId) return null;
   try {
     const [row] = await systemDb
       .select({ answer: aiAnswerCache.answer })
       .from(aiAnswerCache)
       .where(
         and(
+          eq(aiAnswerCache.nodeId, scope.nodeId),
           eq(aiAnswerCache.key, key),
           scope.since ? gte(aiAnswerCache.createdAt, scope.since) : undefined,
         ),
@@ -80,7 +89,8 @@ export async function keptAnswer<T>(key: string): Promise<T | null> {
 /** Keep `answer` under `key` (a newer answer of the same key takes its
  *  place). Awaited by the gateway before it returns the answer. */
 export async function keepAnswer(kind: AnswerKind, key: string, answer: unknown): Promise<void> {
-  if (!scopes.getStore()) return;
+  const nodeId = scopes.getStore()?.nodeId;
+  if (!nodeId) return;
   try {
     // No NUL: jsonb refuses it.
     const kept: unknown = JSON.parse(
@@ -90,9 +100,9 @@ export async function keepAnswer(kind: AnswerKind, key: string, answer: unknown)
     );
     await systemDb
       .insert(aiAnswerCache)
-      .values({ key, kind, answer: kept })
+      .values({ nodeId, key, kind, answer: kept })
       .onConflictDoUpdate({
-        target: aiAnswerCache.key,
+        target: [aiAnswerCache.nodeId, aiAnswerCache.key],
         set: { answer: kept, createdAt: sql`now()` },
       });
   } catch (err) {
