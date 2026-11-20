@@ -151,7 +151,6 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `MANTLE_RECENCY_CONTENT` | 0.06 | any | recency weight for content hits |
 | `MANTLE_SUPERSEDED_SALIENCE` | 0.5 | min 0, max 1 | salience a superseded node drops to |
 | `MANTLE_CORRECTED_SALIENCE` | 0.3 | min 0, max 1 | salience a corrected node drops to |
-| `MANTLE_SUPERSEDED_FILE_SALIENCE` | 0.5 | min 0, max 1 | salience of an older version of an exported file |
 | `MANTLE_SCOPE_EXACT_MAX_ROWS` | 15000 | whole, min 0 | most rows the exact scope path searches; 0 turns it off |
 | `MANTLE_SCOPE_EXACT_MAX_ITEMS` | 500 | whole, min 0 | most items a scope holds for the exact path; 0 turns it off |
 | `MANTLE_SHEET_PROFILE_ROWS` | 8 | any | data rows sampled into a sheet's profile chunk |

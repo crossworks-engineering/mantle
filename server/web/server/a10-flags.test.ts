@@ -150,7 +150,6 @@ const READERS: Record<string, Reader> = {
   'MANTLE_MEMBER_DAILY_TOKENS web/member-daily-cap': reg('MANTLE_MEMBER_DAILY_TOKENS'),
   'MANTLE_SUPERSEDED_SALIENCE content/supersede': reg('MANTLE_SUPERSEDED_SALIENCE'),
   'MANTLE_CORRECTED_SALIENCE content/supersede': reg('MANTLE_CORRECTED_SALIENCE'),
-  'MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede': reg('MANTLE_SUPERSEDED_FILE_SALIENCE'),
   'EXTRACT_CONCURRENCY embeddings/extraction-concurrency (no saved value)':
     reg('EXTRACT_CONCURRENCY'),
   'DWF_RENDER_DPI files/dwf': reg('DWF_RENDER_DPI'),
@@ -226,6 +225,8 @@ const RETIRED: Record<string, string> = {
     'renamed VIDEO_INGEST_MAX_AUDIO_BYTES when the media sidecar was removed; the old name is its legacy alias (ENV_ALIASES)',
   'MEDIA_MAX_VIDEO_BYTES tools/builtins-video':
     'renamed VIDEO_INGEST_MAX_FILE_BYTES when the media sidecar was removed; the old name is its legacy alias (ENV_ALIASES)',
+  'MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede':
+    "removed with the extractor's name-based version pass (owner, 2026-11-20: versions are never guessed from file names); the variable is read nowhere",
 };
 
 function retired(cell: string): boolean {

@@ -129,7 +129,6 @@ export {
 } from './render-page-email';
 
 export { renderDocx, type RenderDocxOptions, type LoadedImage } from './render-docx';
-export { fileFamilyKey } from './file-family';
 
 export {
   mentionRefs,

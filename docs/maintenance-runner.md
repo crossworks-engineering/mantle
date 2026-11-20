@@ -283,6 +283,16 @@ uses the parser slot as a read does, so run it when the box is quiet. One
 maintain run at a time on a box. Output is counts and fixed words, and the
 last id to go on from.
 
+## Version marks guessed from names (`name-versions-clear`)
+
+`pnpm maintain name-versions-clear` clears the marks the removed name-based
+version pass left on files (docs/files.md, "File history"): every file node
+with `superseded_reason` 'version' gets `superseded_by` and
+`superseded_reason` cleared and salience 1. 'corrected' and 'migrated' marks
+are never touched. A dry run (the default) prints the count; `--apply` clears
+them in one UPDATE and prints how many. Free, short, manual only; on a box
+`docker exec mantle_web pnpm maintain name-versions-clear [--apply]`.
+
 ## Long runs on a box (`scripts/box-maintain.sh`)
 
 A task that runs for more than a few minutes on a box (`chunk-windows

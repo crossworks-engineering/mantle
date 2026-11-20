@@ -39,12 +39,6 @@ export const ENV_NUMBERS = {
     max: 1,
     doc: 'salience a corrected node drops to',
   },
-  MANTLE_SUPERSEDED_FILE_SALIENCE: {
-    default: 0.5,
-    min: 0,
-    max: 1,
-    doc: 'salience of an older version of an exported file',
-  },
   MANTLE_SCOPE_EXACT_MAX_ROWS: {
     default: 15000,
     int: 'floor',

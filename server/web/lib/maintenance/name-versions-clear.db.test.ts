@@ -1,0 +1,104 @@
+/**
+ * name-versions-clear on a real, migrated Postgres
+ * (lib/maintenance/name-versions-clear.ts): every file the removed name pass
+ * marked (reason 'version') gets its mark cleared and salience 1; a
+ * 'corrected' or 'migrated' file, a node that is not a file, and an unmarked
+ * file are left as they are. A second run clears none. A scratch database,
+ * dropped after (the clear is box-wide).
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/maintenance/name-versions-clear.db.test.ts
+ */
+import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor } from '@mantle/db/test-support';
+
+const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+type Row = { id: string; salience: number; by: string | null; reason: string | null };
+
+describe.skipIf(!URL)('name-versions-clear', () => {
+  let m: typeof import('@mantle/db');
+  let clear: typeof import('./name-versions-clear');
+  let scratch: { url: string; drop: () => Promise<void> } | undefined;
+  let anchor = '';
+  const id = {
+    head: randomUUID(), // the newest "version": never marked
+    sheet2: randomUUID(), // marked 'version' under the head
+    sheet3: randomUUID(), // marked 'version', salience already 1
+    corrected: randomUUID(), // a person's correction
+    migrated: randomUUID(), // made into a page
+    rule: randomUUID(), // not a file: a learned rule (journal) retired as a 'version'
+  };
+  const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await m.systemDb.execute(q)) as unknown as T[];
+  const su = async (q: ReturnType<typeof sql>) =>
+    (await import('@mantle/db/test-support')).superuserExec(scratch!.url, q);
+
+  beforeAll(async () => {
+    scratch = await (await import('@mantle/db/test-support')).createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
+    m = await import('@mantle/db');
+    clear = await import('./name-versions-clear');
+    const admin = (m.systemDb as unknown as { $client: Parameters<typeof ensureTestAnchor>[0] })
+      .$client;
+    anchor = await ensureTestAnchor(admin);
+    const node = (
+      nid: string,
+      type: string,
+      title: string,
+      mark: { by?: string; reason?: string; salience?: number } = {},
+    ) =>
+      su(sql`insert into nodes (id, owner_id, type, title, path, salience,
+                                superseded_by, superseded_reason)
+             values (${nid}, ${anchor}, ${type}, ${title}, 'files',
+                     ${mark.salience ?? 1}, ${mark.by ?? null}, ${mark.reason ?? null})`);
+    await node(id.head, 'file', '12-62-29-sht-01.dwg');
+    await node(id.sheet2, 'file', '12-62-29-sht-02.dwg', {
+      by: id.head,
+      reason: 'version',
+      salience: 0.5,
+    });
+    await node(id.sheet3, 'file', '12-62-29-sht-03.dwg', { by: id.head, reason: 'version' });
+    await node(id.corrected, 'file', 'old-spec.pdf', {
+      by: id.head,
+      reason: 'corrected',
+      salience: 0.25,
+    });
+    await node(id.migrated, 'file', 'notes.md', { by: id.head, reason: 'migrated', salience: 0.5 });
+    await node(id.rule, 'journal', 'a learned rule', {
+      by: id.head,
+      reason: 'version',
+      salience: 0.5,
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    await m?.closeDb();
+    await scratch?.drop();
+  });
+
+  const rows = async () =>
+    Object.fromEntries(
+      (
+        await x<Row>(sql`select id, salience, superseded_by as by, superseded_reason as reason
+                           from nodes where owner_id = ${anchor}::uuid`)
+      ).map((r) => [r.id, r]),
+    );
+
+  it('counts the marked files, then clears exactly them', async () => {
+    expect(await clear.countNameVersionMarks()).toEqual({ marked: 2, demoted: 1 });
+    expect(await clear.clearNameVersionMarks()).toBe(2);
+    const r = await rows();
+    for (const k of [id.sheet2, id.sheet3, id.head]) {
+      expect(r[k], k).toMatchObject({ salience: 1, by: null, reason: null });
+    }
+    expect(r[id.corrected]).toMatchObject({ salience: 0.25, by: id.head, reason: 'corrected' });
+    expect(r[id.migrated]).toMatchObject({ salience: 0.5, by: id.head, reason: 'migrated' });
+    expect(r[id.rule]).toMatchObject({ salience: 0.5, by: id.head, reason: 'version' });
+  });
+
+  it('a second run clears none', async () => {
+    expect(await clear.countNameVersionMarks()).toEqual({ marked: 0, demoted: 0 });
+    expect(await clear.clearNameVersionMarks()).toBe(0);
+  });
+});

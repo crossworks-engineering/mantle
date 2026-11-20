@@ -624,11 +624,7 @@ time when the client sent none), and recorded in Activity (ingest source
 then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
 `capturedAt` for rights. The brain's image model reads the picture, as it
-reads any uploaded image, to make it searchable. The extractor's version
-pass (`server/api/src/agent/extract/supersede.ts`) leaves a screenshot
-alone, since one is never a version of another, and keeps every file's
-versions to its own home workspace, since the top of Files is one folder
-for every workspace.
+reads any uploaded image, to make it searchable.
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
@@ -694,6 +690,44 @@ recommended path for renames.
 
 New bytes over a file keep the bytes they replace (owner's decisions,
 2026-11-18; `packages/files/src/file-history.ts`, migration 0384).
+
+This is the brain's only version mechanism. A file's version is new bytes
+under the SAME name in the SAME folder (one node, its old bytes kept here).
+Versions are never guessed from file names (owner, 2026-11-20): two files
+whose names differ only in their numbers (`12-62-29-sht-1.dwg`,
+`12-62-29-sht-2.dwg`, `report-2026-02.xlsx`, `report-2026-03.xlsx`) are
+different files, and nothing demotes one under the other. The extractor's
+name-based pass that did (it grouped a folder's files whose names differed
+only in runs of digits and marked all but the newest superseded, reason
+`version`) is removed. The marks it left are cleared by hand (never
+automatically) with the maintenance task `name-versions-clear`
+(`server/web/lib/maintenance/name-versions-clear.ts`): a dry run counts the
+file nodes with reason `version`; `--apply` clears their `superseded_by` and
+`superseded_reason` and puts their salience back to 1. A `corrected` or
+`migrated` mark is never touched. It prints counts only. On a box:
+
+```sh
+ssh <box> docker exec mantle_web pnpm maintain name-versions-clear          # dry run
+ssh <box> docker exec mantle_web pnpm maintain name-versions-clear --apply  # clear
+```
+
+(or `scripts/box-maintain.sh <box> name-versions-clear [--apply]`; one
+maintain run at a time on a box). Locally: `pnpm maintain
+name-versions-clear [--apply]`.
+
+Every path that writes a file by name keeps one node per name and folder
+(the unique index `nodes_file_owner_path_slug_uq`, section 4): the upload
+route (`POST /api/files/files`, also `/api/v1/files`), MCP `file_upload` and
+`file_create`, and every other `upsertFile` caller either replace the file
+in place (with `replace=true` or `overwrite`, its old bytes kept as a
+version) or refuse the taken name (the 409 below, or "Already here" for the
+same bytes); none makes a second file. The watcher writes a changed disk
+file over its own node (its old bytes are not kept, section 11). A Sync
+drive's file is keyed by its drive item, not by name: new bytes of an item
+make its new node and retire the old one. Chat and Telegram attachments,
+exports, screenshots, task files and an archive's contents take a new name
+by design (a time stamp, or the next free number), since each is a new
+file, not a version.
 
 - **Upload clash.** An upload to a name already in the folder (no
   `replace`): the same bytes (`data.sha256`) answer 200

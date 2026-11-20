@@ -1120,8 +1120,8 @@ crowding out personal notes; this fixes it without losing anything.
 
 `nodes.superseded_by` + `superseded_reason` (migration 0125) lift the facts-layer
 lineage primitive (`facts.superseded_by`) to content: an uploaded file whose
-content was migrated into a corrected page, an older versioned export, or an
-explicitly-corrected node points at its living replacement. Measured motivation
+content was migrated into a corrected page, or an explicitly-corrected node,
+points at its living replacement. Measured motivation
 (a work brain, 2026-07): stale source files often carry MORE chunk vectors than the
 pages that replaced them, so passage retrieval preferred the dead copy daily.
 
@@ -1134,9 +1134,7 @@ auto-context annotate superseded items with the **living end of the chain**
 (`resolveSupersededTargets`, ≤5 hops; cycles are refused at write time) and the
 context-block headers instruct the model to prefer the successor. Writers:
 `page_from_file` / `page_from_note(s)` stamp `reason='migrated'` automatically
-(`supersede_source: false` opts out), the extractor's version-family step stamps
-`reason='version'` (never touching manual marks, ownership keys on the
-reason column, so bare marks are safe too), and the `content_supersede` tool
+(`supersede_source: false` opts out), and the `content_supersede` tool
 (owner-side only; `curation` group) handles corrections + undo. Emails and
 folders are refused: email salience is ingest-assigned bulk-mail weighting
 that a supersede/undo round-trip would clobber.

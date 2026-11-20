@@ -439,6 +439,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the parser service and the agent (server/api) running. Run the dry run first and read the counts; then --apply --before=<date> --limit=3. A file read after --before was read with the decoders and is left alone, and so is a file page OCR read with more than --ocr-max-chars (200) characters a page. A batch that does not finish in time stops the run; nothing is sent twice.',
   },
   {
+    slug: 'name-versions-clear',
+    title: 'Clear the version marks guessed from file names',
+    description:
+      "Until v0.709 the extractor marked a folder's files whose names differed only in runs of digits as older versions of the newest one (superseded_reason 'version', salience 0.5). Versions are never guessed from file names, so those marks are wrong. Dry run (default) counts the file nodes with reason 'version'. --apply clears superseded_by and superseded_reason and puts salience back to 1 on them, in one UPDATE. 'corrected' and 'migrated' marks and nodes that are not files are never touched. Prints counts only.",
+    kind: 'remedy',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/name-versions-clear.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Manual only. Free and short: run the dry run first, read the count, then --apply. A second run finds none.',
+  },
+  {
     slug: 'dwg-reindex',
     title: "Build table-type files' read-only databases",
     description:

@@ -144,18 +144,6 @@
       "now": 0.3,
       "why": "Not a number means this variable's own default (0.3) now; clamp01's NaN fallback answered 0.5, the superseded salience's default, for both readers. Boxes: one with a typo in the value."
     },
-    "MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede | =\"\"": {
-      "now": 0.5,
-      "why": "Blank ('' or spaces) means the default now; Number('') read it as 0 (a zero weight, the exact scope path off, a 1 MB upload cap, no profile rows). Compose does not pass these variables, so only a process whose .env names the variable with no value is affected."
-    },
-    "MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede | =\"16abc\"": {
-      "now": 0.5,
-      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
-    },
-    "MANTLE_SUPERSEDED_FILE_SALIENCE api/extract/supersede | =\"garbage\"": {
-      "now": 0.5,
-      "why": "Not a number means the default now; it read as NaN (a NaN ranking weight or salience, an unordered SQL sort) or as 0 (the exact scope path off). Boxes: one with a typo in the value."
-    },
     "EXTRACT_CONCURRENCY embeddings/extraction-concurrency (no saved value) | =\"1e3\"": {
       "now": 16,
       "why": "parseInt read the leading digits ('16abc' as 16, '1e3' as 1); the one dialect reads the whole value with Number() ('16abc' is not a number and means the default, '1e3' is 1000). Boxes: one with trailing text or an exponent in the value; none known."

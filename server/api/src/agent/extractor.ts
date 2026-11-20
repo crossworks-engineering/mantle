@@ -55,7 +55,6 @@ import {
   writeContentIndex,
   writeRetrievalChunks,
 } from './extract/index-writes';
-import { supersedeFileVersions } from './extract/supersede';
 import { processRelations, reconcileEntities } from './extract/entities';
 import { processFacts, retireUnassertedFacts } from './extract/facts';
 import { retiresOnNoFacts } from './extract/rules';
@@ -262,11 +261,6 @@ async function extractAdmitted(
 
       // ─── chunked retrieval index ─────────────────────────────────────
       await writeRetrievalChunks(node, ownerId, rawBody, tableProfilePieces);
-
-      // ─── versioned-export supersede (file nodes) ─────────────────────
-      if (node.type === 'file') {
-        await supersedeFileVersions(node, ownerId);
-      }
 
       // ─── entity reconciliation ───────────────────────────────────────
       // Retrieval-only docs skip this entirely: no entity rows, no

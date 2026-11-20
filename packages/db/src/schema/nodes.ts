@@ -76,8 +76,9 @@ export const nodes = pgTable(
     // + docs/recall-eval.md. Applied as ORDER BY (dist + λ·(1-salience)).
     salience: real('salience').notNull().default(1),
     /** Lineage: the node that replaced this one (a corrected page built from a
-     *  stale file, the newest sibling of a versioned export, an explicit
-     *  correction). Mirrors facts.superseded_by one layer up. Setting it also
+     *  stale file, an explicit correction). Never guessed from file names:
+     *  a file's versions are its own history (docs/files.md, "File
+     *  history"). Mirrors facts.superseded_by one layer up. Setting it also
      *  drops `salience` (materialized demotion — the existing ranking
      *  expression picks it up with zero query changes); read paths annotate
      *  hits with the successor so the model prefers it. See
