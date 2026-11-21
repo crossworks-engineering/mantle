@@ -350,6 +350,25 @@ describe('the piping specification pack', () => {
     }
   });
 
+  it('IN_GROUP: a group from a title holds for that table only; the next table with no header row gets no group', () => {
+    const sheets = specSheets();
+    const index = sheets.find((s) => s.name === 'Tables')!;
+    const columns = [
+      { name: 'Page', type: 'number' as const },
+      { name: 'ITEM NAME', type: 'text' as const },
+      { name: 'ITEM CODE', type: 'text' as const },
+      { name: 'DESCRIPTION', type: 'text' as const },
+    ];
+    index.rows.push(['30 K2 BOLTING p3', '30 K2 BOLTING', '3', 1], ['Next p3', null, '3', 1]);
+    sheets.push(
+      { name: '30 K2 BOLTING p3', columns, rows: [[3, 'NUT', 'ZX30003', 'HEX NUT A194 GR 2H']] },
+      { name: 'Next p3', columns, rows: [[3, 'WASHER', 'ZX30005', 'FLAT WASHER CS']] },
+    );
+    const l = pairs(linksOf(built(sheets).sheets), 'IN_GROUP');
+    expect(l).toContain('row:30 K2 BOLTING p3#1 > group:BOLTING');
+    expect(l.filter((p) => p.startsWith('row:Next p3'))).toEqual([]);
+  });
+
   it('the class facts: rating, base material, service and limits, the frame of the sheet left out', () => {
     expect(pairs(links, 'HAS_RATING')).toEqual([
       'class:K2 > rating:300',

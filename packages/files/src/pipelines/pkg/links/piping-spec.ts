@@ -372,12 +372,16 @@ function build(input: LinkInput, set: LinkSet): void {
   const group = new Map<string, string>();
   for (const t of input.tables) {
     const first = t.first !== null ? classes.get(t.first) : undefined;
+    let fromTitle = false;
     if (first && t.first !== null && !addendum.has(t.first)) {
       set.link(classId(first.code), t.id, 'CLASS_TABLE', t.first, sourceOf('class of page', t.tab));
       const title = titleGroupOf(t.title);
-      if (names.has(title)) group.set(first.code, title);
+      fromTitle = names.has(title);
+      if (fromTitle) group.set(first.code, title);
     }
     for (const r of t.rows) rowLinks(r, classes, addendum, group, set);
+    // A group from a title holds for its own table only.
+    if (fromTitle && !t.rows.some((r) => groupOf(r))) group.delete(first!.code);
   }
 
   // What the pack could not read.

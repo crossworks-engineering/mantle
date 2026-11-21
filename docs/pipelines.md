@@ -954,7 +954,7 @@ the grade stays in the row's text, so a grade question adds
 item row to the group header row above it, `****BOLTING****`; a table
 whose title, less its numbered lead words and its page mark, is exactly a
 group name of the book starts in that group, up to its own first header
-row), `HAS_RATING`
+row; a group from a title holds for that table only), `HAS_RATING`
 and `HAS_BASE_MATERIAL` (each fact from the first page of the class that
 states it), and for an addendum page `ADDENDUM_PAGE`, `CHANGES_CLASS`,
 `HAS_CHANGE`, `ADDENDUM_ROW`, `ADDENDUM_CODE` and `ADDENDUM_MATERIAL`. A row
@@ -983,8 +983,9 @@ list of codes links those codes to that chart row; a group header line that
 the Reader made a table's title gives its group only when the title is
 exactly a group name of the book: a title the scan misread, or one that is
 not a group name, leaves the rows the group before it (a wrong group); a
-group runs on into the next tables of its class until a header row, so rows
-of a table with no header row and no group title take the group before; text that the
+group from a header row runs on into the next tables of its class, but a
+group from a title does not, so the rows of a later table with no header
+line and no group title get no group, though they may be of that group; text that the
 scan read wrongly (a letter for a slash, a colon in a number) gives no link
 or a wrong one; a page text cut at the cell cap is read only to the cut.
 
