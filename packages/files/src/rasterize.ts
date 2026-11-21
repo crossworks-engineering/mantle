@@ -256,7 +256,22 @@ export type PageWindow = {
    *  it raises the cap for all. Only the sheet read of the PDF Agent asks;
    *  the Reader's eye and pieces keep the cap of every open. */
   largeImages?: boolean;
+  /** Give the picture as a grey JPEG of this quality (1 to 100), whatever
+   *  its size: the page picture of a page ask (the router's page types,
+   *  ./pdf-page-kinds.ts). The grey is OpenCV's (0.299 R + 0.587 G +
+   *  0.114 B), as the bench measured it. Left out: a PNG (see `maxBytes`). */
+  grayJpeg?: number;
 };
+
+/** Pixels in place as grey (OpenCV's weights), alpha left as it is. */
+export function toGray(rgba: Uint8ClampedArray): void {
+  for (let i = 0; i + 2 < rgba.length; i += 4) {
+    const y = Math.round(0.299 * rgba[i]! + 0.587 * rgba[i + 1]! + 0.114 * rgba[i + 2]!);
+    rgba[i] = y;
+    rgba[i + 1] = y;
+    rgba[i + 2] = y;
+  }
+}
 
 /** The image cap of one call of {@link renderPdfWindows}. */
 export function windowsImageCapOf(windows: readonly PageWindow[]): number {
@@ -266,8 +281,8 @@ export function windowsImageCapOf(windows: readonly PageWindow[]): number {
 }
 
 export type RenderedWindow = {
-  /** The picture: a PNG, or a JPEG when the window's `maxBytes` said so
-   *  (read its type from its first bytes). */
+  /** The picture: a PNG, or a JPEG when the window's `maxBytes` or
+   *  `grayJpeg` said so (read its type from its first bytes). */
   png: Buffer;
   widthPx: number;
   heightPx: number;
@@ -378,10 +393,23 @@ export async function renderPdfWindows(
             canvasContext: context as unknown as CanvasRenderingContext2D,
             viewport,
           }).promise;
-          blank = isBlank(context.getImageData(0, 0, widthPx, heightPx).data);
-          png = await canvas.encode('png');
-          if (w.maxBytes !== undefined && png.length > w.maxBytes) {
-            png = await canvas.encode('jpeg', 90);
+          const pixels = context.getImageData(0, 0, widthPx, heightPx);
+          blank = isBlank(pixels.data);
+          const quality = w.grayJpeg;
+          if (
+            quality !== undefined &&
+            Number.isInteger(quality) &&
+            quality >= 1 &&
+            quality <= 100
+          ) {
+            toGray(pixels.data);
+            context.putImageData(pixels, 0, 0);
+            png = await canvas.encode('jpeg', quality);
+          } else {
+            png = await canvas.encode('png');
+            if (w.maxBytes !== undefined && png.length > w.maxBytes) {
+              png = await canvas.encode('jpeg', 90);
+            }
           }
         } finally {
           // Let go of the pixels now, on every path.

@@ -49,11 +49,13 @@ import {
   sketchPageRead,
   sketchPagesOf,
   titleBlockOf,
+  withPageKinds,
   type PdfKind,
+  type PdfPageKind,
   type SketchRead,
 } from '@mantle/files';
 import { buildFileDatabase, readFileRowNow } from '@mantle/content/file-database';
-import { storedPdfOf } from '@mantle/content/pdf-read';
+import { storedPageKindsOf, storedPdfOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { runVisionWorker } from '@mantle/runtime/agent';
@@ -84,6 +86,16 @@ export async function sketchIngestPdfNode(
   if (!abs) return null;
   const file = await storedPdfOf(abs);
   if (!file || file.visionRead || !(SKETCH_KINDS as readonly string[]).includes(file.kind)) {
+    return null;
+  }
+  // The page types of its tab Pages (the router's part 2): the database is
+  // written whole below, so they are put in again. A tab that cannot be
+  // read is no sketch read now (before any spend): a paid page answer is
+  // never written over.
+  let pageKinds: PdfPageKind[];
+  try {
+    pageKinds = storedPageKindsOf(abs);
+  } catch {
     return null;
   }
   // The reader's off list (docs/pipelines.md, "Where a pipeline runs"): the
@@ -222,13 +234,15 @@ export async function sketchIngestPdfNode(
       const built = await step(
         { name: 'file_database', kind: 'compute', input: { sourceFileId: node.id } },
         async (h) => {
-          const { sheets, description } = pdfDrawingSheets(
+          const written = pdfDrawingSheets(
             cut.drawing,
             file.decision,
             sketch,
             // The stored kind stays the file's kind, as on a read again.
             file.kind as PdfKind,
           );
+          const { description } = written;
+          const sheets = withPageKinds(written.sheets, pageKinds);
           const out = await buildFileDatabase({
             fileId: node.id,
             ownerId,

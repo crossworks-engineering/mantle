@@ -197,6 +197,8 @@ export async function agentStep(
   asks: (PipelineCall & { call: 'worker' })[];
   pictures: ReadonlyMap<string, Buffer>;
   warnings: string[];
+  /** The step's `state`: the PDF router's pages of a window (its part 2). */
+  state?: unknown;
 }> {
   const request: PipelineStepRequest = {
     api: PIPELINE_API,
@@ -221,6 +223,7 @@ export async function agentStep(
     asks: calls as (PipelineCall & { call: 'worker' })[],
     pictures,
     warnings: [...(result.warnings ?? [])],
+    ...(result.state !== undefined ? { state: result.state } : {}),
   };
 }
 

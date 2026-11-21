@@ -93,6 +93,8 @@ export const DEFAULTS = {
  *  margin. */
 export const USE_TIMEOUT_FLOOR_MS: Partial<Record<DecisionUse, number>> = {
   scan_read_check: 5_000,
+  // The page ask of the router's page types holds a page picture (M3).
+  pdf_kind: 5_000,
 };
 
 export type DecisionMode = 'shadow' | 'live';

@@ -33,7 +33,7 @@ import { noteReadCut } from '@mantle/files/read-cut-sink';
 import { readsAsDelimited } from '@mantle/files/sheet-to-grid';
 import { importMaxRows } from '@mantle/tabledb';
 import { loadFileBytes, loadFileHead } from './file-bytes';
-import { askPdfKind } from './pdf-kind';
+import { askPdfKind, pdfPageDeciderOf } from './pdf-kind';
 import { inOwnTrace } from './trace';
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
@@ -199,6 +199,12 @@ async function readAndWrite(a: {
   // reader with no options sends none, as an extract always did.
   const options =
     reader && state && Object.keys(reader.options ?? {}).length > 0 ? state.options : undefined;
+  // The page types of a PDF (the router's part 2, M3 in shadow): only here,
+  // where `wantDb` says these bytes have no database yet, and only where the
+  // file may have model work and this box asks page types. A failed read of
+  // those guards is no page ask, never a failed read of the file.
+  const pdfPages =
+    isPdf && wantDb ? await pdfPageDeciderOf(ownerId, node.id).catch(() => null) : null;
   let parsed: ParsedFile;
   const readStart = Date.now();
   try {
@@ -208,6 +214,7 @@ async function readAndWrite(a: {
       // The decider, for a PDF the rules left unsure: at most one call, and
       // only here, where `wantDb` says these bytes have no database yet.
       ...(isPdf ? { pdfKind: (state) => askPdfKind(ownerId, node.id, state) } : {}),
+      ...(pdfPages ? { pdfPages } : {}),
       // An upload is a real read: the PDF router's run counts.
       count: { ownerId, fileId: node.id },
     });

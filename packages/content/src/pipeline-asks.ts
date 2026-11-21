@@ -2,7 +2,8 @@
  * The day cap of the Agents' paid asks (docs/pipelines.md, "Agents"): one
  * number for the box, and the count it is held against. The count has ONE
  * source, the trace: each paid ask is one step with `meta.use` =
- * PIPELINE_ASK_USE (server/api/src/agent/extract/pipeline-ask.ts). There is
+ * PIPELINE_ASK_USE (server/api/src/agent/extract/pipeline-ask.ts), or
+ * PDF_KIND_USE (the PDF router's decider asks, its page asks too). There is
  * no second counter, and no table.
  *
  * The cap paces, it never drops (owner decision 2026-11-19: the provider is
@@ -21,6 +22,11 @@ import { db, traceSteps, traces } from '@mantle/db';
 
 /** The `meta.use` of the trace step of one paid ask. */
 export const PIPELINE_ASK_USE = 'pipeline_ask';
+/** The `meta.use` of a decider ask of the PDF router (`decide_pdf_kind`):
+ *  its page asks count in the same day cap (plan page c607711a, section 5),
+ *  and so does its one ask of a file. Both run inside a `pipeline_run`
+ *  trace (an upload's file database pass, extract/auto-table.ts). */
+export const PDF_KIND_USE = 'pdf_kind';
 
 /** The most paid asks of all Agents of this box in 24 hours: the operator's
  *  `MANTLE_PIPELINE_ASKS_PER_DAY`. 0: no Agent may ask. */
@@ -28,15 +34,22 @@ export function pipelineAsksDayCap(): number {
   return envNum('MANTLE_PIPELINE_ASKS_PER_DAY');
 }
 
+/** How much longer than its steps a trace may have run before them: a
+ *  book's read is one `pipeline_run` trace of up to 8 hours
+ *  (BOOK_TIME_BUDGET_MAX of @mantle/embeddings, 480 minutes), and the
+ *  router's page asks may come late in it. 9 hours holds every step. */
+const TRACE_MARGIN_MS = 9 * 60 * 60 * 1000;
+
 /** The paid asks of this box in the last 24 hours. The paid ask is only
  *  ever made inside a `pipeline_run` trace (the run job,
- *  server/api/src/agent/extract/pipeline-run.ts), so the count looks at those
- *  traces only, by the index `traces_owner_kind_started_idx`. A run's trace
- *  starts before its steps, and a run job lasts minutes: one hour more on
- *  the trace's start holds every step of the last 24 hours. */
+ *  server/api/src/agent/extract/pipeline-run.ts, and the upload's file
+ *  database pass), so the count looks at those traces only, by the index
+ *  `traces_owner_kind_started_idx`. A trace starts before its steps:
+ *  TRACE_MARGIN_MS more on the trace's start holds every step of the last
+ *  24 hours. */
 export async function pipelineAsksToday(ownerId: string, now = new Date()): Promise<number> {
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const tracesSince = new Date(since.getTime() - 60 * 60 * 1000);
+  const tracesSince = new Date(since.getTime() - TRACE_MARGIN_MS);
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(traceSteps)
@@ -47,7 +60,7 @@ export async function pipelineAsksToday(ownerId: string, now = new Date()): Prom
         eq(traces.kind, 'pipeline_run'),
         gte(traces.startedAt, tracesSince),
         gte(traceSteps.startedAt, since),
-        sql`${traceSteps.meta}->>'use' = ${PIPELINE_ASK_USE}`,
+        sql`${traceSteps.meta}->>'use' in (${PIPELINE_ASK_USE}, ${PDF_KIND_USE})`,
       ),
     );
   return row?.n ?? 0;
@@ -72,7 +85,7 @@ export async function pipelineAsksFreeAt(
   const count = await pipelineAsksToday(ownerId, now);
   if (count < cap) return now;
   const since = new Date(now.getTime() - DAY_MS);
-  const tracesSince = new Date(since.getTime() - 60 * 60 * 1000);
+  const tracesSince = new Date(since.getTime() - TRACE_MARGIN_MS);
   const [row] = await db
     .select({ at: traceSteps.startedAt })
     .from(traceSteps)
@@ -83,7 +96,7 @@ export async function pipelineAsksFreeAt(
         eq(traces.kind, 'pipeline_run'),
         gte(traces.startedAt, tracesSince),
         gte(traceSteps.startedAt, since),
-        sql`${traceSteps.meta}->>'use' = ${PIPELINE_ASK_USE}`,
+        sql`${traceSteps.meta}->>'use' in (${PIPELINE_ASK_USE}, ${PDF_KIND_USE})`,
       ),
     )
     .orderBy(asc(traceSteps.startedAt))

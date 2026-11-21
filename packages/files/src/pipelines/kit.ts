@@ -32,6 +32,9 @@ export const PIPELINE_KIT_FILES: readonly string[] = [
   'pdf-rows.ts',
   'pdf-drawing-sheets.ts',
   'pdf-sketch.ts',
+  // The page types of the router's part 2: the router's step builds the
+  // page ask with it, the core checks it and keeps the answers with it.
+  'pdf-page-kinds.ts',
   // The tag grammar.
   'pdf-tags.ts',
   // The shapes, and the contract.

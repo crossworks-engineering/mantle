@@ -163,7 +163,11 @@ export const BUILTIN_PIPELINES = [
     // (PDF_KIND_RULES_VERSION 4); the rules name `document` no more.
     // 1.2.1 (2026-11-20): a long file is a book by all its pages too
     // (PDF_KIND_RULES_VERSION 5).
-    version: '1.2.1',
+    // 1.3.0 (2026-11-21): page types in shadow (plan page c607711a, M3):
+    // part 2, one decider ask a page with its picture, in page windows,
+    // where page asks are on (../../pdf-page-kinds.ts). The route does not
+    // change.
+    version: '1.3.0',
     match: { ext: ['pdf'] },
     // The eleven kinds of PDF_KINDS (../pdf-kind.ts). The rules name seven
     // (`book` by its own rule, bookOf); the decider may also answer the four
@@ -183,8 +187,14 @@ export const BUILTIN_PIPELINES = [
         { kind: 'book' },
       ],
     },
-    // The deadline of the old path's job (PARSER_JOB_TIMEOUT_MS.pdfDrawing).
-    needs: { weight: 'light', timeMs: 240_000, workers: { decider: 1 } },
+    // The deadline of the old path's job (PARSER_JOB_TIMEOUT_MS.pdfDrawing),
+    // a page window's job too. The decider: one ask a file (part 1, its step
+    // gives one at most) and one a page (part 2), to the page cap of a file.
+    needs: {
+      weight: 'light',
+      timeMs: 240_000,
+      workers: { decider: PIPELINE_ASK_PAGE_MAX },
+    },
   }),
   pkg({
     id: 'drawing-pdf',
@@ -198,7 +208,10 @@ export const BUILTIN_PIPELINES = [
     // File tab's Rules version).
     // 1.1.2 (2026-11-19): the kind rules of PDF_KIND_RULES_VERSION 4.
     // 1.1.3 (2026-11-20): the kind rules of PDF_KIND_RULES_VERSION 5.
-    version: '1.1.3',
+    // 1.1.4 (2026-11-21): the tab Pages may hold the page types (Kind from
+    // `rules: ...`, Decider kind, Decider confidence), put in by the core
+    // (../../pdf-page-kinds.ts).
+    version: '1.1.4',
     // Every kind the router names but `document` and `book`: a document gets
     // no database, and a book is the book reader's (`pdf-pages`). An unsure
     // PDF gets one, as before the router. A new claim changes the pin and
@@ -450,8 +463,10 @@ export const BUILTIN_PIPELINES = [
     // scanned page is marked for the Agent with Why `scan` (the Scan reader
     // reads it) and its Lines (the check's evidence, counted from its
     // picture); the options of OCR are gone. 1.3.1 (2026-11-20): the File
-    // tab's Rules version 5.
-    version: '1.3.1',
+    // tab's Rules version 5. 1.3.2 (2026-11-21): the tab Pages may hold the
+    // page types (Kind, Kind from, Decider kind, Decider confidence), put in
+    // by the core (../../pdf-page-kinds.ts).
+    version: '1.3.2',
     match: { ext: ['pdf'], kind: ['book'] },
     produces: { text: true, table: false, pages: true },
     // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy

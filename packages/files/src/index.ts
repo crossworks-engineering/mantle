@@ -569,6 +569,19 @@ export {
   type PdfKindDecision,
 } from './pdf-drawing-sheets';
 export {
+  PAGE_KIND_COLUMNS,
+  PAGE_KIND_FROM,
+  PDF_PAGE_PICTURE,
+  PDF_PAGE_SAMPLE_MAX_CHARS,
+  PDF_PAGE_WINDOW,
+  pageKindsOfRows,
+  pagePictureName,
+  pdfPageAskOf,
+  withPageKinds,
+  type PdfPageAsk,
+  type PdfPageKind,
+} from './pdf-page-kinds';
+export {
   SKETCH_KINDS,
   SKETCH_MAX_PAGES,
   SKETCH_PROMPT,

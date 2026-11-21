@@ -626,6 +626,38 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   read in `shadow` keeps its database, so it is not asked again when the use
   goes `live`. Nothing asks again for those bytes: the rebuild
   (`dwg-reindex --pdf`) reads PDFs with no model.
+- **One page, with its picture (page types, M3 of plan page c607711a,
+  shadow).** The same use asks the type of each page of a PDF at upload:
+  the same 8 options, about "this page" (`decidePdfPageKind`). Its state is
+  8 fields: `page`, `picture` (a grey JPEG of 1,024 px long side, as an
+  `image_url` part), `size`, `class`, the three counts of the page and
+  `text_sample` (500 characters of its text at most), checked in the core
+  by `pdfPageAskOf` (`packages/files/src/pdf-page-kinds.ts`). There is no
+  40-character floor: the picture is there to judge. The answer is the
+  page's route by the summed chance of its options (`pageRouteOf`: office =
+  document, table, datasheet; drawing = the five drawing options; the M2
+  bench, route right on 99.3% of 545 pages against 95.2% with the floor on
+  one option): `confidence` is that sum, and the floor (`defer_below`) is on
+  it. In M3 no page answer is used: the route of the file does not change.
+  The answers stand in the Reader's tab `Pages` (docs/pipelines.md, "Page
+  types").
+  - **Where it runs.** Only on a box whose decider worker's model is
+    `typesafe/jev-1.14` (`PDF_PAGE_MODEL`, the model the bench measured) and
+    whose use `pdf_kind` is on (`pdfPageAsksOn`), for a file that may have
+    model work. Every client box runs the shipped `~typesafe/jev-latest`, so
+    a roll sends no page picture from it (Jason, 2026-11-21: in shadow, page
+    pictures leave only dev and the bench). A box gets page types when its
+    decider is set to the pinned model, box by box.
+  - **Timeout.** The use's floor is 5 s (`USE_TIMEOUT_FLOOR_MS.pdf_kind`), as
+    for `scan_read_check`: a picture call runs in TypeSafe's long-context
+    mode. It holds for the file's one ask too.
+  - **The breaker.** The asks of a file are one `DecideBatch`: the breaker
+    hears the file once, at its end. Three failures in a row, or the breaker
+    open, stop the asks of the file; its other pages keep their rules type.
+  - **Cost.** About USD 0.13 per 1,000 pages (the bench's measure, 3,103
+    input tokens a page). Each ask counts in the box's day cap of paid asks
+    (docs/pipelines.md, "The day cap") and is kept in the answer cache (kind
+    `decider`), so an extract tried again pays for no page twice.
 
 ### `scan_read_check` (built; ships `live`)
 
@@ -653,7 +685,7 @@ its shape (line count, loops).
   pages; about 1.2 s. With no local OCR it is asked on nearly every scanned
   page.
 - **Live on fresh brains** (the manifest: `enabled: true, mode: 'live',
-  threshold: 0.5`; owner decision 2026-11-19, on the bench numbers above,
+threshold: 0.5`; owner decision 2026-11-19, on the bench numbers above,
   an exception to "a new use ships in shadow": with no local OCR it is the
   one check of a page's content). In shadow (an operator's choice) the
   answer is only logged. **Existing brains without the decider worker get

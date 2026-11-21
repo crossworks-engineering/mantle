@@ -24,6 +24,8 @@ function stored(file: {
   /** `shadow`: a decider answer is stored and not used. */
   source?: 'rules' | 'decider' | 'shadow';
   visionRead?: boolean;
+  /** The tab Pages: one row a page, as the page types leave it. */
+  pages?: (string | number | null)[][];
 }) {
   const sqlite = path.join(dir, `${randomUUID()}.sqlite`);
   const names = [
@@ -56,7 +58,22 @@ function stored(file: {
       ],
     ],
   };
-  writeFileDatabaseDoc(sqlite, ensureWorkbookDoc({ tabs: tabsOfSheets([sheet]) }), {
+  const pagesSheet = file.pages
+    ? [
+        {
+          name: 'Pages',
+          columns: [
+            { name: 'Page', type: 'number' as const },
+            { name: 'Kind', type: 'text' as const },
+            { name: 'Kind from', type: 'text' as const },
+            { name: 'Decider kind', type: 'text' as const },
+            { name: 'Decider confidence', type: 'number' as const },
+          ],
+          rows: file.pages,
+        },
+      ]
+    : [];
+  writeFileDatabaseDoc(sqlite, ensureWorkbookDoc({ tabs: tabsOfSheets([sheet, ...pagesSheet]) }), {
     fileId: randomUUID(),
     ownerId: randomUUID(),
   });
@@ -85,6 +102,45 @@ describe('a read again of a PDF', () => {
     expect(
       await pdfReadAgainOf(stored({ kind: 'scan', rulesVersion: 1, visionRead: true })),
     ).toEqual({ skip: 'sketch' });
+  });
+
+  it('a read again takes the stored page types back (M3), with no ask', async () => {
+    const again = await pdfReadAgainOf(
+      stored({
+        kind: 'book',
+        rulesVersion: PDF_KIND_RULES_VERSION,
+        pages: [
+          [1, 'document', 'rules: shadow', 'table', 0.93],
+          [2, 'none', 'rules: blank', null, null],
+          [3, 'document', 'rules: day cap', null, null],
+          [4, 'pid', 'picture', null, null],
+        ],
+      }),
+    );
+    expect(again).toMatchObject({
+      skip: null,
+      pageKinds: [
+        {
+          page: 1,
+          kind: 'document',
+          from: 'rules: shadow',
+          deciderKind: 'table',
+          deciderConfidence: 0.93,
+        },
+        { page: 2, kind: 'none', from: 'rules: blank', deciderKind: null, deciderConfidence: null },
+        {
+          page: 3,
+          kind: 'document',
+          from: 'rules: day cap',
+          deciderKind: null,
+          deciderConfidence: null,
+        },
+      ],
+    });
+    // A database before M3: no page type.
+    expect(
+      await pdfReadAgainOf(stored({ kind: 'pid', rulesVersion: PDF_KIND_RULES_VERSION })),
+    ).toMatchObject({ skip: null, pageKinds: [] });
   });
 
   it("the reader's state: the decision, the facts mark, and the node's older vision text", () => {

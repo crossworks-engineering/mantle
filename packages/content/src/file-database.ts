@@ -51,8 +51,10 @@ import {
   stampOfMeta,
   withAfterEntry,
   withoutAfterEntry,
+  withPageKinds,
   writeFileDbNone,
   type FileDbNoneWord,
+  type PdfPageKind,
   type PipelineManifest,
   type PipelineStamp,
   type ShapeId,
@@ -77,12 +79,14 @@ import {
 } from './pipeline-state';
 import {
   pdfNodeVisionOf,
+  pdfPageKindsOf,
   pdfReadAgainOf,
   readerStateOf,
   routePdf,
   storedPdfOf,
   type FileStamp,
   type PdfDecide,
+  type PdfPageDecide,
   type StoredPdf,
 } from './pdf-read';
 import { bookScanEvidenceOf, bookScanPagesOf, bookVisionPagesOf } from './book-pages';
@@ -222,7 +226,12 @@ type RouterCount = { ownerId: string; fileId: string };
 /** A PDF read again: its stored kind and decision. `reroute`: the kind came
  *  from older rules, so the router names it again with no ask, and the
  *  stored decision (a shadow or weak answer) stays in the File tab. */
-type PdfStored = Pick<StoredPdf, 'kind' | 'decision'> & { reroute?: boolean };
+type PdfStored = Pick<StoredPdf, 'kind' | 'decision'> & {
+  reroute?: boolean;
+  /** The page types of its tab Pages (the router's part 2), put in again
+   *  with no ask. */
+  pageKinds?: readonly PdfPageKind[];
+};
 
 /** The one read of a file's database: the box's reader for its extension
  *  (the registry). A file type with a router (a PDF) has its kind named
@@ -267,6 +276,31 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
  * router did not run.
  */
 async function readRouted(
+  router: PipelineManifest,
+  bytes: Buffer,
+  ext: string,
+  options: Readonly<Record<string, unknown>>,
+  opts: Pick<
+    ParseOpts,
+    'pdfKind' | 'pdfPages' | 'pdfStored' | 'pdfNodeVision' | 'count' | 'pipelines'
+  >,
+): Promise<ParsedFile> {
+  const parsed = await readRoutedSheets(router, bytes, ext, options, opts);
+  if (parsed.kind !== 'sheets') return parsed;
+  // The page types (the router's part 2, M3 in shadow), after the Reader's
+  // run, into its tab Pages: those stored, on a read again (no ask); at an
+  // upload, the asks of `pdfPages` (given only where they may be made).
+  const stored = opts.pdfStored;
+  const kinds = stored
+    ? (stored.pageKinds ?? [])
+    : opts.pdfPages
+      ? await pdfPageKindsOf(router, bytes, options, opts.pdfPages)
+      : [];
+  return kinds.length > 0 ? { ...parsed, sheets: withPageKinds(parsed.sheets, kinds) } : parsed;
+}
+
+/** readRouted's read, before the page types. */
+async function readRoutedSheets(
   router: PipelineManifest,
   bytes: Buffer,
   ext: string,
@@ -440,6 +474,10 @@ type ParseOpts = {
   /** The decider, for a PDF the rules left unsure (readRouted). Left out:
    *  no model call. */
   pdfKind?: PdfDecide;
+  /** The page asks of a PDF's page types (the router's part 2, readRouted):
+   *  given only at an upload's extract where they may be made. Left out:
+   *  no page ask. */
+  pdfPages?: PdfPageDecide;
   /** A PDF read again: its stored kind and decision (the File tab). The
    *  router does not run and no model is asked. */
   pdfStored?: PdfStored;
@@ -854,7 +892,14 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
   // PDF set"): it works from the stored state of these bytes, read once and
   // fail closed (pdfReadAgainOf), and writes only when that state did not
   // change and the new read is not poorer.
-  let again: { stored: StoredPdf | null; since: FileStamp | null; reroute: boolean } | undefined;
+  let again:
+    | {
+        stored: StoredPdf | null;
+        since: FileStamp | null;
+        reroute: boolean;
+        pageKinds: readonly PdfPageKind[];
+      }
+    | undefined;
   if (!args.parsed && pipelines.routerFor(ext)) {
     const state = await pdfReadAgainOf(names);
     if (state.skip) return { status: 'skipped', reason: state.skip };
@@ -866,6 +911,7 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
         kind: again.stored.kind,
         decision: again.stored.decision,
         ...(again.reroute ? { reroute: true } : {}),
+        pageKinds: again.pageKinds,
       }
     : undefined;
   const pdfNodeVision = again ? await pdfNodeVisionOf(fileId) : false;

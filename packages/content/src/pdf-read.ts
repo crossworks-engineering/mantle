@@ -22,17 +22,35 @@ import { readFile } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import {
   fileDbWordOf,
+  isParserUnavailable,
+  PAGE_KIND_COLUMNS,
+  PAGE_KIND_FROM,
   PDF_KIND_RULES_VERSION,
+  PDF_PAGE_WINDOW,
+  pageKindsOfRows,
   pdfFileTabOf,
   pdfKindAskOf,
+  pdfPageAskOf,
   type PdfKindAsk,
   type PdfKindDecision,
+  type PdfPageAsk,
+  type PdfPageKind,
   type PipelineManifest,
 } from '@mantle/files';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { runTableSql } from '@mantle/tabledb';
-import { runPackaged, stepFileOf, PipelineRunError, type PipelineAsk } from './pipeline-runner';
+import { readTabColumns, runTableSql } from '@mantle/tabledb';
+import { askCapOf } from './pipeline-agent';
+import {
+  agentStep,
+  isWindowLost,
+  pdfWindows,
+  runPackaged,
+  stepFileOf,
+  PipelineRunError,
+  windowJob,
+  type PipelineAsk,
+} from './pipeline-runner';
 
 /** What a PDF's stored File tab says (pdfFileTabOf). */
 export type StoredPdf = NonNullable<ReturnType<typeof pdfFileTabOf>>;
@@ -92,12 +110,17 @@ export type FileStamp = { ino: number; size: number; mtimeMs: number };
  *   ask). The stored answer, a shadow or weak one too, stays in the File
  *   tab (readRouted, ./file-database.ts).
  */
-export async function pdfReadAgainOf(names: {
-  sqlite: string;
-  none: string;
-}): Promise<
+export async function pdfReadAgainOf(names: { sqlite: string; none: string }): Promise<
   | { skip: 'sketch' | 'not-drawing' | 'kept' }
-  | { skip: null; stored: StoredPdf | null; since: FileStamp | null; reroute: boolean }
+  | {
+      skip: null;
+      stored: StoredPdf | null;
+      since: FileStamp | null;
+      reroute: boolean;
+      /** The page types of the tab Pages (the router's part 2), put in
+       *  again with no ask. */
+      pageKinds: PdfPageKind[];
+    }
 > {
   try {
     const at = statSync(names.sqlite, { throwIfNoEntry: false });
@@ -107,7 +130,7 @@ export async function pdfReadAgainOf(names: {
         throw err;
       });
       if (fileDbWordOf(word) === 'no-rows') return { skip: 'not-drawing' };
-      return { skip: null, stored: null, since: null, reroute: false };
+      return { skip: null, stored: null, since: null, reroute: false, pageKinds: [] };
     }
     const r = await runTableSql(names.sqlite, 'SELECT * FROM "File"', { cap: 1 });
     const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
@@ -118,10 +141,21 @@ export async function pdfReadAgainOf(names: {
       stored,
       since: { ino: at.ino, size: at.size, mtimeMs: at.mtimeMs },
       reroute: stored.rulesVersion < PDF_KIND_RULES_VERSION && !stored.decision?.used,
+      // In the same fail-closed read: a tab that cannot be read keeps the
+      // database, so a read again never loses a paid page answer.
+      pageKinds: storedPageKindsOf(names.sqlite),
     };
   } catch {
     return { skip: 'kept' };
   }
+}
+
+/** The page types stored in the tab Pages of the database at `abs` (none
+ *  for a database with no such tab). Throws what the read throws: the
+ *  caller fails closed. */
+export function storedPageKindsOf(abs: string): PdfPageKind[] {
+  const [rows] = readTabColumns(abs, [{ tab: 'Pages', columns: ['Page', ...PAGE_KIND_COLUMNS] }]);
+  return rows ? pageKindsOfRows(rows) : [];
 }
 
 /**
@@ -176,10 +210,14 @@ export async function routePdf(
   facts?: Record<string, unknown>;
 }> {
   let decision: PdfKindDecision | null = null;
+  // One ask a file: the router's cap of the decider is the page cap (part
+  // 2), so the file's one ask is held here.
+  let asked = false;
   const ask: PipelineAsk | undefined = decide
     ? async (call) => {
-        const state = call.worker === 'decider' ? pdfKindAskOf(call.input) : null;
+        const state = call.worker === 'decider' && !asked ? pdfKindAskOf(call.input) : null;
         if (!state) return { ok: false, error: 'refused' };
+        asked = true;
         decision = await decide(state);
         return decision ? { ok: true, output: decision } : { ok: false, error: 'not_available' };
       }
@@ -192,4 +230,176 @@ export async function routePdf(
     throw new PipelineRunError(`${router.id} named no kind (${run.status})`);
   }
   return { kind: run.kind, decision, ...(run.facts ? { facts: run.facts } : {}) };
+}
+
+/** The decider's answer for one page, as the caller heard it (PdfPageAnswer
+ *  of @mantle/decisions). */
+export type PdfPageDecision = {
+  kind: string;
+  /** The summed chance of the answer's route. */
+  confidence: number;
+  /** At or over the use's floor. */
+  sure: boolean;
+  model: string;
+  mode: 'shadow' | 'live';
+};
+
+/**
+ * How the caller asks page types of one file (server/api
+ * extract/pdf-kind.ts): given only where the file may have model work and
+ * page asks are on for this box (the one guard, pdfPageAsksOn), so at an
+ * upload's extract alone.
+ */
+export type PdfPageDecide = {
+  /** The paid asks the box's day cap leaves now. */
+  room(): Promise<number>;
+  /** One page ask: the answer; null, no answer; `stop`, ask no more pages
+   *  of this file (the calls keep failing, or the breaker is open). */
+  ask(ask: PdfPageAsk, picture: Buffer): Promise<PdfPageDecision | null | 'stop'>;
+  /** The file's asks are over: the breaker hears their one outcome. */
+  settle(): void;
+};
+
+/** Page asks of one window at once (the M2 bench asked 4 at once). */
+const PAGE_ASKS_AT_ONCE = 4;
+
+/** A page's type from its answer (M3: shadow, the rules' kind stays). */
+function pageKindOfAnswer(page: number, kind: string, d: PdfPageDecision): PdfPageKind {
+  return {
+    page,
+    kind,
+    from: d.sure ? PAGE_KIND_FROM.shadow : PAGE_KIND_FROM.low,
+    deciderKind: d.kind,
+    deciderConfidence: d.confidence,
+  };
+}
+
+/** The state's pages of one window: [page, rules kind, why no ask]. */
+function windowPagesOf(state: unknown): [number, string, string | null][] {
+  const raw =
+    state && typeof state === 'object' && Array.isArray((state as { pages?: unknown }).pages)
+      ? ((state as { pages: unknown[] }).pages as unknown[])
+      : [];
+  return raw.filter(
+    (p): p is [number, string, string | null] =>
+      Array.isArray(p) &&
+      Number.isInteger(p[0]) &&
+      typeof p[1] === 'string' &&
+      (p[2] === null || p[2] === 'blank' || p[2] === 'not drawn'),
+  );
+}
+
+/**
+ * The router's part 2 (docs/pipelines.md, "Page types"; plan page c607711a,
+ * M3 in shadow): the type of every page of a PDF, by one ask a page with
+ * its picture. Windows of 25 pages (PDF_PAGE_WINDOW), one parser job each,
+ * the router's step drawing the window's pictures with no model; then the
+ * core checks each ask (pdfPageAskOf, the one check of what leaves the box)
+ * and asks, 4 at once.
+ *
+ * Every cap ends in the rules, never in a wait: past the file's cap (the
+ * router's needs.workers.decider), past the day cap (`room`), or after a
+ * stop (`ask` says `stop`), the pages left keep their rules kind, and
+ * `Kind from` says why. No window is cut past a cap. A window the parser
+ * cannot cut or read is `rules: not drawn`. A busy or unavailable parser
+ * throws, as every job: the extract is tried again, and the answer cache
+ * holds the answers paid. Any other failure ends part 2 with what it has:
+ * the shadow never costs a file its database. Nothing is written here.
+ */
+export async function pdfPageKindsOf(
+  router: PipelineManifest,
+  bytes: Buffer,
+  options: Readonly<Record<string, unknown>>,
+  decide: PdfPageDecide,
+): Promise<PdfPageKind[]> {
+  const file = stepFileOf(bytes, 'pdf');
+  const cap = askCapOf(router, 'decider');
+  const out = new Map<number, PdfPageKind>();
+  const rulesOnly = (page: number, kind: string | null, from: string) =>
+    out.set(page, { page, kind, from, deciderKind: null, deciderConfidence: null });
+  let asked = 0;
+  let stopped: string | null = null;
+  let total = 0;
+  let readTo = 0;
+  try {
+    for await (const w of pdfWindows(bytes, file.sha256, PDF_PAGE_WINDOW)) {
+      total = w.part ? w.part.pagesTotal : w.pagesTotal;
+      const from = w.part ? w.part.pageFrom : w.from;
+      const to = w.part ? w.part.pageTo : w.to;
+      readTo = to;
+      if (!w.part) {
+        for (let n = from; n <= to; n++) rulesOnly(n, null, PAGE_KIND_FROM.notDrawn);
+        continue;
+      }
+      const run = await windowJob(() =>
+        agentStep(router, w.part!.bytes, file, options, {
+          window: { pageFrom: from, pageTo: to, pagesTotal: total },
+        }),
+      );
+      if (isWindowLost(run)) {
+        for (let n = from; n <= to; n++) rulesOnly(n, null, PAGE_KIND_FROM.notDrawn);
+        continue;
+      }
+      const kinds = new Map<number, string>();
+      for (const [n, kind, why] of windowPagesOf(run.state)) {
+        if (n < from || n > to) continue;
+        kinds.set(n, kind);
+        if (why)
+          rulesOnly(n, kind, why === 'blank' ? PAGE_KIND_FROM.blank : PAGE_KIND_FROM.notDrawn);
+      }
+      // The day cap, read once a window (the asks of a window are few).
+      let room = Math.max(0, await decide.room());
+      const queue: { ask: PdfPageAsk; picture: Buffer; kind: string }[] = [];
+      for (const call of run.asks) {
+        const ask = call.worker === 'decider' ? pdfPageAskOf(call.input) : null;
+        const picture = ask ? run.pictures.get(ask.picture) : undefined;
+        if (!ask || !picture || ask.page < from || ask.page > to || out.has(ask.page)) continue;
+        const kind = kinds.get(ask.page) ?? null;
+        if (kind === null) continue;
+        if (asked >= cap) rulesOnly(ask.page, kind, PAGE_KIND_FROM.cap);
+        else if (room <= 0) rulesOnly(ask.page, kind, PAGE_KIND_FROM.dayCap);
+        else {
+          asked += 1;
+          room -= 1;
+          queue.push({ ask, picture, kind });
+        }
+      }
+      for (let i = 0; i < queue.length; i += PAGE_ASKS_AT_ONCE) {
+        const part = queue.slice(i, i + PAGE_ASKS_AT_ONCE);
+        const answers = await Promise.all(
+          part.map((q) => (stopped ? Promise.resolve(null) : decide.ask(q.ask, q.picture))),
+        );
+        for (const [j, a] of answers.entries()) {
+          const q = part[j]!;
+          if (a === 'stop') stopped = PAGE_KIND_FROM.noAnswer;
+          if (a && a !== 'stop') out.set(q.ask.page, pageKindOfAnswer(q.ask.page, q.kind, a));
+          else rulesOnly(q.ask.page, q.kind, PAGE_KIND_FROM.noAnswer);
+        }
+      }
+      // A page of the window the step did not name (its read stopped
+      // short): no picture.
+      for (let n = from; n <= to; n++) {
+        if (!out.has(n)) rulesOnly(n, kinds.get(n) ?? null, PAGE_KIND_FROM.notDrawn);
+      }
+      // Past a cap or a stop, no window more is cut: the pages left are the
+      // rules', said below.
+      if (stopped) break;
+      if (asked >= cap) {
+        stopped = PAGE_KIND_FROM.cap;
+        break;
+      }
+      if (room <= 0 && to < total) {
+        stopped = PAGE_KIND_FROM.dayCap;
+        break;
+      }
+    }
+  } catch (err) {
+    if (isParserUnavailable(err)) throw err;
+    // Any other failure: the shadow ends with what it has.
+    stopped ??= PAGE_KIND_FROM.notDrawn;
+  } finally {
+    decide.settle();
+  }
+  if (stopped) for (let n = readTo + 1; n <= total; n++) rulesOnly(n, null, stopped);
+  return [...out.values()].sort((a, b) => a.page - b.page);
 }

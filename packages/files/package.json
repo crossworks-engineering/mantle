@@ -24,6 +24,7 @@
     "./cad-sniff": "./src/cad-sniff.ts",
     "./parser-wire": "./src/parser-wire.ts",
     "./pdf-sketch": "./src/pdf-sketch.ts",
+    "./pdf-page-kinds": "./src/pdf-page-kinds.ts",
     "./readers/document": "./src/read-document.ts",
     "./readers/images": "./src/embedded-images-read.ts",
     "./readers/grid": "./src/sheet-grid.ts",

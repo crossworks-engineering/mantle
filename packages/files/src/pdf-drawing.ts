@@ -124,6 +124,10 @@ export type PdfDrawingPage = PageFacts & {
    * text read, and a page past the file's row cap (its `notes` say so).
    */
   rows?: PageRows;
+  /** The page's own text sample (kindSample), for a read that asked for
+   *  one (`pageSampleChars`: the router's page asks, ./pdf-page-kinds.ts).
+   *  Left out: no such read. */
+  sample?: string;
 };
 
 export type PdfDrawing = {
@@ -169,6 +173,9 @@ export async function readPdfDrawing(
     /** The title block box of the rows (the reader's options). Left out:
      *  `TITLE_BLOCK_MM` (./pdf-rows.ts). */
     titleBlock?: TitleBlockMm;
+    /** Keep each page's own text sample of at most this many characters
+     *  (`sample` of the page). Left out: none. */
+    pageSampleChars?: number;
   } = {},
 ): Promise<PdfDrawing> {
   const deadline = Date.now() + (opts.eyeDeadlineMs ?? EYE_DEADLINE_MS);
@@ -176,6 +183,8 @@ export async function readPdfDrawing(
   // the raw bytes.
   const largeImageNotRead = declaresOversizeImage(bytes);
   const samples: string[] = [];
+  /** Each page's own sample, when asked (`pageSampleChars`). */
+  const pageSamples = new Map<number, string>();
   // The rows of each page, kept until the page's kind is final.
   const rowsOf = new Map<number, PageRows>();
   let listed = 0;
@@ -226,6 +235,12 @@ export async function readPdfDrawing(
         } else {
           facts.notes = [...(facts.notes ?? []), 'rows_not_listed'];
         }
+      }
+      if (opts.pageSampleChars !== undefined) {
+        pageSamples.set(
+          facts.page,
+          'texts' in p && p.texts ? kindSample(p.texts, opts.pageSampleChars) : '',
+        );
       }
       // Only an unsure page's text can be asked about, and only a few pages.
       if (
@@ -297,7 +312,8 @@ export async function readPdfDrawing(
       : kind !== kindOf(null, null)
         ? 'other_pages'
         : 'rules';
-    return { ...f, kind, kindFrom, eye };
+    const sample = pageSamples.get(f.page);
+    return { ...f, kind, kindFrom, eye, ...(sample !== undefined ? { sample } : {}) };
   });
   // Whether the reader left nothing out: every page has a row, every row
   // was read whole, no image was too large to open (its page then counts as
@@ -357,6 +373,9 @@ export function readPdfDrawingInJob(
   /** The first pages only (the router's book sample): a row for each of
    *  them, at most. */
   maxPages?: number,
+  /** Each page's own text sample of at most this many characters (the
+   *  router's page asks). */
+  pageSampleChars?: number,
 ): Promise<PdfDrawing> {
   const left = job.deadline - DRAWING_BUDGETS.maxMs - Date.now();
   return readPdfDrawing(bytes, {
@@ -365,6 +384,7 @@ export function readPdfDrawingInJob(
     render: job.pdfPictures,
     ...(titleBlock ? { titleBlock } : {}),
     ...(maxPages !== undefined ? { maxPages } : {}),
+    ...(pageSampleChars !== undefined ? { pageSampleChars } : {}),
   });
 }
 

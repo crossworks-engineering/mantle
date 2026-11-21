@@ -339,4 +339,55 @@ describe('the PDF router in a real read', () => {
     expect(ids).toEqual(['pdf-router', 'drawing-pdf']);
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
   });
+  it('a read again puts the stored page types in again, with no ask (M3)', async () => {
+    const ids = inProcess();
+    const pdfPages = {
+      room: vi.fn(async () => 100),
+      ask: vi.fn(async () => null),
+      settle: vi.fn(),
+    };
+    const parsed = await parseFileSheets(pdf('pid.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfPages,
+      pdfStored: {
+        kind: 'pid',
+        decision: null,
+        pageKinds: [
+          {
+            page: 1,
+            kind: 'isometric',
+            from: 'rules: shadow',
+            deciderKind: 'pid',
+            deciderConfidence: 0.98,
+          },
+        ],
+      },
+    });
+    // No page ask on a read again, an asker passed or not; no window cut.
+    expect(pdfPages.ask).not.toHaveBeenCalled();
+    expect(pdfPages.room).not.toHaveBeenCalled();
+    expect(ids).toEqual(['drawing-pdf']);
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
+    const at = (name: string) => pages.columns.findIndex((c) => c.name === name);
+    expect(pages.rows[0]![at('Kind from')]).toBe('rules: shadow');
+    expect(pages.rows[0]![at('Decider kind')]).toBe('pid');
+    expect(pages.rows[0]![at('Decider confidence')]).toBe(0.98);
+    // Its own Kind stays the drawing reader's, not the stored one.
+    expect(pages.rows[0]![at('Kind')]).not.toBe('isometric');
+    expect(typeof pages.rows[0]![at('Kind')]).toBe('string');
+  });
+
+  it('with no page types stored and no asker, the tab Pages is as before M3', async () => {
+    inProcess();
+    const parsed = await parseFileSheets(pdf('pid.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfStored: { kind: 'pid', decision: null, pageKinds: [] },
+    });
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
+    expect(pages.columns.some((c) => c.name.startsWith('Decider'))).toBe(false);
+  });
 });

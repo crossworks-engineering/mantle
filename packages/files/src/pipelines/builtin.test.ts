@@ -414,8 +414,8 @@ describe('the PDF router', () => {
     expect(byDecider.sort()).toEqual(['datasheet', 'equipment_drawing', 'pfd', 'table']);
   });
 
-  it('states its ask: the decider, at most once for a file', () => {
-    expect(router.needs.workers).toEqual({ decider: 1 });
+  it('states its ask: the decider, once a file (its step) and once a page, to the page cap (M3)', () => {
+    expect(router.needs.workers).toEqual({ decider: PIPELINE_ASK_PAGE_MAX });
     expect(router.needs.weight).toBe('light');
   });
 
@@ -424,8 +424,8 @@ describe('the PDF router', () => {
       named.filter((k) => k !== 'document' && k !== 'book').sort(),
     );
     // 1.1.1: the File tab's Rules version 3 (the kind `book`); 1.1.2: rules 4;
-    // 1.1.3: rules 5.
-    expect(reader.version).toBe('1.1.3');
+    // 1.1.3: rules 5; 1.1.4: the page types in Pages (M3).
+    expect(reader.version).toBe('1.1.4');
   });
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {

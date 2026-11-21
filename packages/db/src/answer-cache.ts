@@ -43,8 +43,9 @@ import { errorMessage } from '@mantle/std';
 import { systemDb } from './gateway/handles';
 import { aiAnswerCache } from './schema/ai-answer-cache';
 
-/** The kinds of answer kept. */
-export type AnswerKind = 'vision' | 'scan_reader' | 'extractor';
+/** The kinds of answer kept. `decider`: the page ask of the PDF router's
+ *  page types (server/api extract/pdf-kind.ts). */
+export type AnswerKind = 'vision' | 'scan_reader' | 'extractor' | 'decider';
 
 /** A surrogate with no pair (a cut inside a pair, a provider's bad bytes). */
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;

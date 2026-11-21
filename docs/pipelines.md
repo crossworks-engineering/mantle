@@ -320,9 +320,11 @@ question); a flow diagram drawn as strokes is `other_drawing` (`pfd` and
 also answer `pfd`, `equipment_drawing`, `datasheet` and `table`. Those four
 carry the flag `decider`: only the decider's answer names them.
 
-**The ask.** The manifest states it: `needs.workers` is `{ decider: 1 }`.
-An unsure PDF asks the decider at most once, at upload, as before. No new
-model call, and no new spend.
+**The ask.** An unsure PDF asks the decider at most once, at upload, as
+before: its step gives one call at most, and the core asks one a file
+(`routePdf`). The manifest's `needs.workers` is `{ decider: 10000 }`
+(PIPELINE_ASK_PAGE_MAX) since 1.3.0: the cap of the page asks of part 2
+(see "Page types" below).
 
 **The answer: more of a drawing, never less.** In `live` mode, at or over
 the use's floor, the decider's answer is the kind of an unsure file, by the
@@ -378,6 +380,54 @@ decider's) is named again by the router, with no ask, and that run counts
 `parseFileSheets`. The sketch read counts none: it is the reader's run. The count is the `runs` and `last_run_at`
 of the router's `pipeline_state` row, by `countPipelineRun`, as for a
 pipeline. No new column. A failed count is logged and never fails the read.
+
+**Page types (part 2, M3 of plan page c607711a, in shadow).** At an
+upload, after the Reader's run, the core asks the type of every page
+(`pdfPageKindsOf`, `packages/content/src/pdf-read.ts`): in page windows of
+25 pages (`PDF_PAGE_WINDOW`, cut by qpdf), one parser job of the router's
+step a window. A request with `pageFrom` is such a window: the step reads
+its page facts with no model, draws each page that is not blank as a grey
+JPEG of 1,024 px long side in the parser's pdfjs child, and gives one
+`decider` call a page with the 8 fields of the page ask; its `state` names
+each page with its rules kind and why a page has no ask (`blank`, `not
+drawn`). The core checks each ask (`pdfPageAskOf`, the one check of what
+leaves the box), asks 4 at once, and puts the answers in the Reader's tab
+`Pages` by `Page` (`withPageKinds`, `packages/files/src/pdf-page-kinds.ts`),
+for both Readers: `Kind` (the rules' kind of the page; the drawing reader
+writes its own), `Kind from`, `Decider kind` and `Decider confidence` (the
+summed chance of the answer's route, docs/decisions.md `pdf_kind`). The
+route of the file does not change in M3.
+
+- **Where.** Only at an upload's extract (the file database pass, where its
+  bytes have no database), for a file that may have model work, on a box
+  whose decider is pinned to `typesafe/jev-1.14` with `pdf_kind` on
+  (`pdfPageDeciderOf`, `server/api/src/agent/extract/pdf-kind.ts`). A client
+  box asks none: no window is cut, no picture drawn, and its rows are as
+  before (no new column). A read again (`pipeline_reread`, a Reader's
+  `pipeline_run`, `file_reindex`) and the sketch read ask none: they read
+  the page types of the tab `Pages` back and put them in again
+  (`pdfReadAgainOf`, `storedPageKindsOf`), fail closed. The pages of an
+  older file get no type: a person's run of the Reader that asks the pages
+  with no stored type (Jason's Q2) is left for M4, as the run job cannot
+  yet tell a person's run of one file from a read again of many.
+- **`Kind from`.** `rules: shadow` (an answer at or over the floor, only
+  recorded), `rules: low confidence` (under the floor), `rules: no answer`
+  (asked, none came: a failure, the breaker, the use off), `rules: cap`
+  (past the file's cap, the router's `needs.workers.decider`), `rules: day
+cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
+  the page could not be read, drawn or cut, or is under the decider's
+  smallest picture) and `rules: blank` (a blank page or a white picture:
+  free). M4 adds `decider`. A page of a Reader that had no part 2 keeps its
+  own word (the drawing reader's `rules`, `picture`, `other_pages`).
+- **Caps end in the rules, never in a wait.** Past the file's cap, the day
+  cap or a stop, no window more is cut and the pages left keep their rules
+  kind, with the word. Nothing asks them again by itself. A window the
+  parser cannot cut or read is `rules: not drawn`; a busy parser fails the
+  extract as every job (it is tried again, and the answer cache holds the
+  answers paid); any other failure ends part 2 with what it has.
+- **One ask a page, once for these bytes.** The answers are in the database
+  of the file's id and bytes, so a read again never asks; inside the
+  extract each answer is kept in the answer cache too.
 
 **The list row.** `kind` is `router`. `reads` gives the file types, `names`
 the kinds with their flag, and `description` and `workers` the ask. `runs`
@@ -1143,7 +1193,10 @@ bounds a day of Agent spend (20,000 asks are about $40 to $80 of vision
 calls at today's prices) without dropping a page.
 
 **The spend.** Each paid ask is one trace step named `pipeline_ask`, with
-`use: pipeline_ask` in its meta, in the trace of the run. The adapter
+`use: pipeline_ask` in its meta, in the trace of the run. The PDF router's
+decider asks (`decide_pdf_kind`, `use: pdf_kind`: its one ask of a file and
+its page asks, "Page types") count in the same cap; past it, a page keeps
+its rules type (`rules: day cap`) and is not deferred. The adapter
 writes the cost on it (`docs/spend-recording.md`). The day count reads these
 steps (`pipelineAsksToday`, `packages/content/src/pipeline-asks.ts`): there
 is no second counter. Two runs at the same time can pass the cap by the few

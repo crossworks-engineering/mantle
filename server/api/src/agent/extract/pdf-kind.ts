@@ -9,10 +9,23 @@
  * What leaves the box: page counts by class and size, three totals, and the
  * text sample the parser cut (about 1,500 characters). Nothing when the use
  * is off. The router's step builds it in the parser; this asks.
+ *
+ * The page types (pdfPageDeciderOf, plan page c607711a, M3 in shadow): one
+ * ask a page with its picture, at the same place and under the same guard,
+ * and only on a box whose decider is pinned to PDF_PAGE_MODEL.
  */
-import { decidePdfKind } from '@mantle/decisions';
+import {
+  DecideBatch,
+  PDF_PAGE_MODEL,
+  decidePdfKind,
+  decidePdfPageKind,
+  pdfPageAsksOn,
+} from '@mantle/decisions';
 import { llmWorkAllowed } from '@mantle/db';
+import { answerKey, bytesKey, keepAnswer, keptAnswer } from '@mantle/db/answer-cache';
 import type { PdfKindAsk, PdfKindDecision } from '@mantle/files';
+import type { PdfPageDecide, PdfPageDecision } from '@mantle/content/pdf-read';
+import { pipelineAsksDayCap, pipelineAsksToday } from '@mantle/content/pipeline-asks';
 
 /**
  * Ask the decider what an unsure PDF is. `state`: what the PDF router's step
@@ -32,4 +45,76 @@ export async function askPdfKind(
 ): Promise<PdfKindDecision | null> {
   if (!(await llmWorkAllowed(nodeId))) return null;
   return decidePdfKind(ownerId, state);
+}
+
+/** Failed page asks in a row that stop the asks of a file (the breaker's
+ *  own number: with one DecideBatch a file, the breaker hears the file
+ *  once, at its end). */
+export const PAGE_ASK_FAILURES_STOP = 3;
+
+/** What the page asks need, in a test stand-ins. */
+export type PdfPageDeciderDeps = {
+  allowed(nodeId: string): Promise<boolean>;
+  on(ownerId: string): Promise<boolean>;
+  decide: typeof decidePdfPageKind;
+  dayCap(): number;
+  today(ownerId: string): Promise<number>;
+};
+
+const DEPS: PdfPageDeciderDeps = {
+  allowed: (nodeId) => llmWorkAllowed(nodeId),
+  on: (ownerId) => pdfPageAsksOn(ownerId),
+  decide: (...a) => decidePdfPageKind(...a),
+  dayCap: () => pipelineAsksDayCap(),
+  today: (ownerId) => pipelineAsksToday(ownerId),
+};
+
+/**
+ * The page asks of one file (the router's part 2), or null: no page ask for
+ * this file. Two checks, here, once a file: the file may have model work
+ * (llmWorkAllowed, the guard of askPdfKind), and this box asks page types
+ * (pdfPageAsksOn: the use `pdf_kind` on and the decider pinned to
+ * PDF_PAGE_MODEL). A client box runs the shipped `~typesafe/jev-latest`,
+ * so it gets null, and no page picture leaves it (Jason, Q5).
+ *
+ * Each ask is kept in the answer cache (an extract tried again pays for
+ * none twice), counts in the box's day cap (`room`), and goes in the file's
+ * one DecideBatch. After PAGE_ASK_FAILURES_STOP failures in a row, or with
+ * the breaker open, it says `stop`: the rest of the file keeps its rules.
+ */
+export async function pdfPageDeciderOf(
+  ownerId: string,
+  nodeId: string,
+  deps: Partial<PdfPageDeciderDeps> = {},
+): Promise<PdfPageDecide | null> {
+  const d = { ...DEPS, ...deps };
+  if (!(await d.allowed(nodeId)) || !(await d.on(ownerId))) return null;
+  const batch = new DecideBatch();
+  let failedInRow = 0;
+  return {
+    room: async () => Math.max(0, d.dayCap() - (await d.today(ownerId))),
+    ask: async (ask, picture) => {
+      // The key: what is asked (the use, the model, the picture's bytes and
+      // the other fields), never the page alone.
+      const { picture: _name, ...fields } = ask;
+      const key = answerKey('decider', ['pdf_page', PDF_PAGE_MODEL, bytesKey(picture), fields]);
+      const kept = await keptAnswer<PdfPageDecision>(key);
+      if (kept) return kept;
+      const failedBefore = batch.failed;
+      const skippedBefore = batch.skipped;
+      const answer = await d.decide(ownerId, fields, picture, batch);
+      if (answer) {
+        failedInRow = 0;
+        await keepAnswer('decider', key, answer, true);
+        return answer;
+      }
+      if (batch.skipped > skippedBefore) return 'stop';
+      if (batch.failed > failedBefore) {
+        failedInRow += 1;
+        if (failedInRow >= PAGE_ASK_FAILURES_STOP) return 'stop';
+      }
+      return null;
+    },
+    settle: () => batch.settle(),
+  };
 }
