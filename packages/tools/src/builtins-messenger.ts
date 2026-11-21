@@ -393,7 +393,7 @@ export const messenger_send: BuiltinToolDef = {
 /** Files from Files for a line: each read in the caller's own scope (a
  *  file it may not read is "not found"), checked, and uploaded to the chat.
  *  The node's stored size is read before the bytes; the byte length after
- *  the read stays as the backstop for a size that was never stamped.
+ *  the read stays as the backstop for a size that was recorded wrong.
  *  One over the cap is not sent and is named in leftOut: never dropped
  *  without a word. */
 async function filesFor(
@@ -413,7 +413,7 @@ async function filesFor(
     if (!meta) throw notFound();
     if (meta.sizeBytes <= 0) {
       throw new MessengerRefusedError(
-        `${meta.filename}: its size is not recorded, so it is not read or sent. Leave it out, or upload it to Files again.`,
+        `${meta.filename}: its size is not recorded, or it is empty, so it is not read or sent.`,
       );
     }
     if (meta.sizeBytes > MESSENGER_ATTACHMENT_MAX_BYTES) {
