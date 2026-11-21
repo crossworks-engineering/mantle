@@ -527,19 +527,23 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
       expect(r.config, r.fn).toHaveLength(1);
       expect(r.config[0], r.fn).toMatch(/^search_path="?public"?, pg_temp$/);
     }
+    // Temporary test roles of other files come and go; they are no app roles.
     const roles = await su<{ r: string; ok: boolean }[]>`
       select r.rolname::text as r,
              has_function_privilege(r.oid, 'public.mantle_graph_walk(uuid,uuid,integer,text[],boolean,boolean,integer,uuid)', 'EXECUTE')
              and has_function_privilege(r.oid, 'public.mantle_graph_path(uuid,uuid,uuid,integer,text[],boolean,boolean)', 'EXECUTE') as ok
-        from pg_roles r where r.rolname like 'mantle\\_%'`;
+        from pg_roles r where r.rolname like 'mantle\\_%'
+         and r.rolname not like 'mantle\\_test\\_%'`;
     expect(roles.filter((r) => !r.ok)).toEqual([]);
   });
 
   it("as each app role that reads entity_edges: runs both, and never uses another owner's edges", async () => {
+    // Temporary test roles of other files come and go; they are no app roles.
     const roles = (
       await su<{ r: string }[]>`
         select r.rolname::text as r from pg_roles r
          where r.rolname like 'mantle\\_%' and not r.rolsuper
+           and r.rolname not like 'mantle\\_test\\_%'
            and has_table_privilege(r.oid, 'public.entity_edges', 'SELECT')
          order by 1`
     ).map((x) => x.r);
