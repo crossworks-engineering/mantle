@@ -70,6 +70,9 @@ export type MessengerListRow = {
   /** A group's handle (0394), shown as @qa; null for a direct chat and a
    *  group without one; absent on an agent thread. */
   handle?: string | null;
+  /** The box's Announcements group (0395): read-only, only the Control
+   *  Center posts. Absent on an agent thread and from an older brain. */
+  announcements?: boolean;
   /** null for an agent thread (its order is by time). */
   lastSeq: number | null;
   /** ISO, null when nothing was said yet. */
@@ -108,6 +111,10 @@ export type MessengerConversation = {
   /** A group's intake form (0394): bug, feature or request
    *  (MESSENGER_INTAKE_FORMS in messenger-intake), or null. */
   intake?: 'bug' | 'feature' | 'request' | null;
+  /** The box's Announcements group (0395): read-only (no composer), only
+   *  the Control Center posts; a send there is refused. Absent from an
+   *  older brain. */
+  announcements?: boolean;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -176,7 +183,10 @@ export type MessengerEvent =
   | { type: 'desk_answer'; desk: MessengerDeskKind; taskId: string }
   /** On the Control Center: a report from a box, in the group whose intake
    *  form is its kind. `taskId` is the CC's copy; a Reply here answers it. */
-  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } };
+  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } }
+  /** On a box: a Control Center broadcast in the Announcements group
+   *  (0395). The line's author name is who sent it. */
+  | { type: 'announcement'; broadcastId: string; title: string | null };
 
 /** A file on a line (fleet chat, plan section 8). */
 export type MessengerAttachment = {

@@ -332,6 +332,10 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'read',
     why: "the control service's public key line and its tick (0364): written only at the full-route spot control-center",
   },
+  'public.control_broadcasts': {
+    narrow: 'read',
+    why: "the Control Center's broadcasts and one mark per box (0395): written only at the full-route spot control-center (packages/db control-center.ts), read by its Fleet screen",
+  },
   'public.control_disables': {
     narrow: 'read',
     why: 'the logins the Control Center disabled and the disabled_at it set (0364): written only by the signed control route at the full-route spot login-credential (server/web lib/control/box.ts), read by its enable check',
@@ -1445,6 +1449,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       'info',
       'handle',
       'intake',
+      'announcements',
       'workspace_id',
       'agent_id',
       'direct_key',
@@ -1550,6 +1555,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.control_bans'), narrow: 'read' },
   { ...none('public.control_results'), narrow: 'read' },
   { ...none('public.control_service'), narrow: 'read' },
+  { ...none('public.control_broadcasts'), narrow: 'read' },
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),
@@ -1759,7 +1765,7 @@ export type ColumnExists = (table: string, column: string) => boolean;
  */
 export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
   'public.tables': ['draft_path'], // 0283
-  'public.messenger_conversations': ['voice_replies', 'info', 'handle', 'intake'], // 0342, 0343, 0394
+  'public.messenger_conversations': ['voice_replies', 'info', 'handle', 'intake', 'announcements'], // 0342, 0343, 0394, 0395
   'public.messenger_messages': ['event'], // 0342
 };
 
@@ -1796,6 +1802,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.control_bans', // 0364
   'public.control_results', // 0364
   'public.control_service', // 0364
+  'public.control_broadcasts', // 0395
   'public.service_state', // 0380
   'public.sync_items', // 0382
   'public.ai_answer_cache', // 0392

@@ -30,6 +30,10 @@ import { onFullSystemRoute } from './viewer';
 import {
   controlBans,
   controlBoxes,
+  controlBroadcasts,
+  CONTROL_BROADCAST_BODY_MAX,
+  CONTROL_BROADCAST_TITLE_MAX,
+  type ControlBroadcastMark,
   controlResults,
   controlService,
   CONTROL_MAX_WRITE_CHANGES,
@@ -1556,4 +1560,119 @@ export async function askControlInvite(
       waitMs,
     ),
   };
+}
+
+// --- broadcasts (0395) ---------------------------------------------------------
+
+export type ControlBroadcast = typeof controlBroadcasts.$inferSelect;
+
+/** The most broadcasts one box is sent in one run (the rest wait). */
+export const CONTROL_BROADCASTS_PER_RUN = 10;
+
+/** A broadcast as a CC Admin writes it: the text (1 to 8000 characters),
+ *  an optional title (at most 200). Both trimmed. */
+export function checkBroadcast(input: {
+  title?: unknown;
+  body?: unknown;
+}): Checked<{ title: string | null; body: string }> {
+  const body = typeof input.body === 'string' ? input.body.trim() : '';
+  if (!body) return { ok: false, error: 'Write the text of the broadcast.' };
+  if (body.length > CONTROL_BROADCAST_BODY_MAX) {
+    return { ok: false, error: `The text is at most ${CONTROL_BROADCAST_BODY_MAX} characters.` };
+  }
+  if (input.title !== undefined && input.title !== null && typeof input.title !== 'string') {
+    return { ok: false, error: 'The title is text.' };
+  }
+  const title = typeof input.title === 'string' ? input.title.trim() || null : null;
+  if (title && title.length > CONTROL_BROADCAST_TITLE_MAX) {
+    return { ok: false, error: `The title is at most ${CONTROL_BROADCAST_TITLE_MAX} characters.` };
+  }
+  return { ok: true, value: { title, body } };
+}
+
+/** The boxes a broadcast would go to: `boxIds` (those linked), or every
+ *  linked box. */
+export async function broadcastTargets(
+  boxIds?: readonly string[],
+): Promise<Pick<ControlBox, 'id' | 'url' | 'label'>[]> {
+  if (boxIds && boxIds.length === 0) return [];
+  return db
+    .select({ id: controlBoxes.id, url: controlBoxes.url, label: controlBoxes.label })
+    .from(controlBoxes)
+    .where(boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`true`)
+    .orderBy(asc(controlBoxes.url));
+}
+
+/** Stores one broadcast for the boxes `boxIds` names (those linked), or for
+ *  every linked box, and asks for their runs now. An error when no linked
+ *  box is named. */
+export async function makeControlBroadcast(
+  b: { title: string | null; body: string },
+  by: string,
+  boxIds?: readonly string[],
+): Promise<Checked<ControlBroadcast>> {
+  const ids = (await broadcastTargets(boxIds)).map((t) => t.id);
+  if (ids.length === 0) {
+    return { ok: false, error: 'No linked box: name box ids from the box list, or link a box.' };
+  }
+  const row = await controlWrite(() =>
+    db.transaction(async (tx) => {
+      const [made] = await tx
+        .insert(controlBroadcasts)
+        .values({ title: b.title, body: b.body, madeBy: by, boxIds: ids })
+        .returning();
+      await tx
+        .update(controlBoxes)
+        .set({ runRequestedAt: sql`now()` })
+        .where(inArray(controlBoxes.id, ids));
+      return made!;
+    }),
+  );
+  return { ok: true, value: row };
+}
+
+/** The broadcasts, newest first (at most `limit`). */
+export async function listControlBroadcasts(limit = 50): Promise<ControlBroadcast[]> {
+  return db
+    .select()
+    .from(controlBroadcasts)
+    .orderBy(desc(controlBroadcasts.madeAt))
+    .limit(Math.min(Math.max(1, limit), 200));
+}
+
+/** The broadcasts one box has not taken yet, oldest first. */
+export async function takeControlBroadcastsFor(boxId: string): Promise<ControlBroadcast[]> {
+  return db
+    .select()
+    .from(controlBroadcasts)
+    .where(
+      and(
+        sql`${boxId}::uuid = any(${controlBroadcasts.boxIds})`,
+        sql`not coalesce(${controlBroadcasts.marks} -> ${boxId}::text ? 'at', false)`,
+      ),
+    )
+    .orderBy(asc(controlBroadcasts.madeAt), asc(controlBroadcasts.id))
+    .limit(CONTROL_BROADCASTS_PER_RUN);
+}
+
+/** Puts one box's mark on a broadcast. A failure never takes the place of
+ *  a mark that says the box took it. */
+export async function markControlBroadcast(
+  id: string,
+  boxId: string,
+  mark: ControlBroadcastMark,
+): Promise<void> {
+  await controlWrite(() =>
+    db
+      .update(controlBroadcasts)
+      .set({
+        marks: sql`${controlBroadcasts.marks} || jsonb_build_object(${boxId}::text, ${JSON.stringify(mark)}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(controlBroadcasts.id, id),
+          sql`not coalesce(${controlBroadcasts.marks} -> ${boxId}::text ? 'at', false)`,
+        ),
+      ),
+  );
 }

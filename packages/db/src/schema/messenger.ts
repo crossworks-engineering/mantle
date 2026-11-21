@@ -66,7 +66,10 @@ export type MessengerEventJson =
   /** On a box: the IT desk's answer to a report (fleet chat M3). */
   | { type: 'desk_answer'; desk: 'bug' | 'feature' | 'request'; taskId: string }
   /** On a Control Center: a report from a box; `taskId` is the CC's copy. */
-  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } };
+  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } }
+  /** On a box: a Control Center broadcast in the Announcements group
+   *  (0395); `broadcastId` makes a second call write nothing. */
+  | { type: 'announcement'; broadcastId: string; title: string | null };
 
 export type MessengerCallEndedReason =
   'finished' | 'cap_reached' | 'closed_by_admin' | 'service_off' | 'reconciled';
@@ -93,6 +96,9 @@ export const messengerConversations = pgTable('messenger_conversations', {
   /** A group's intake form (0394): bug, feature or request (the Send to IT
    *  kinds), or null. The forms are fixed in @mantle/client-types. */
   intake: text('intake').$type<'bug' | 'feature' | 'request'>(),
+  /** The box's one Announcements group (0395): only the system posts in it
+   *  (the Control Center's broadcast); its members send nothing there. */
+  announcements: boolean('announcements').default(false).notNull(),
   workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
   agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   /** A direct chat's two login ids, sorted and joined; null for a group. */

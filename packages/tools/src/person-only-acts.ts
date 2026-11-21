@@ -69,6 +69,15 @@ export const PERSON_ONLY_ACTS: readonly PersonOnlyAct[] = [
     where: FLEET_SCREEN,
   },
   {
+    // On a Control Center only (the tool exists nowhere else): the draft is
+    // an agent's, the send a person's (owner, 2026-11-21).
+    tool: 'control_broadcast',
+    param: 'send',
+    agentValue: false,
+    why: 'one send reaches every person in the fleet, in the Announcements chat on every box, with a push',
+    where: FLEET_SCREEN,
+  },
+  {
     // On a Control Center only: POST /api/fleet/invite, no tool.
     tool: 'control_user_invite',
     why: 'an invite is a way into a box: a person at the CC asks for it, with their own password',

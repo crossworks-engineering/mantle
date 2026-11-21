@@ -119,7 +119,8 @@ The box makes two checks, and no third:
    only: `time`, `sig`, `size`, `bad-call`. A box with no lines answers 404.
 2. **The fixed switch.** Twelve cases: `hello`, `logins`, `facts`,
    `disable`, `enable`, `archive`, `key`, `agentModel`, `poolEntry`,
-   `updateNotice`, `workerGroup`, `workerModel` (and `submissions`, below).
+   `updateNotice`, `workerGroup`, `workerModel` (and `submissions` and
+   `broadcast`, below).
    They are not tools. No agent, MCP client or API key on the box reaches them. Two more
    cases, `tool` and `tools`, are the admin channel (below), four
    more, `sso_status`, `sso_set`, `sso_test` and `sso_mode`, are its company sign-in
@@ -539,6 +540,48 @@ address (`?box=<id>&section=compute`), so a link opens the same view.
 - **Older boxes.** The client holds each answer to schema 1. A field a box
   does not send shows a dash.
 
+## Broadcast
+
+A CC Admin sends one message to every person on the fleet, or on the boxes
+they pick (owner's picks, 2026-11-21). It shows in the **Announcements**
+chat on each box, with a push. No one replies there: a person who wants to
+answer messages the sender.
+
+- **Write it** on the Fleet screen (`POST /api/fleet/broadcasts`, `{ title?,
+text, boxIds? }`): the text (1 to 8000 characters), an optional title (200),
+  and the boxes (default every linked box). The CC stores it once
+  (`control_broadcasts`, migration 0395), with the box ids it names then,
+  and asks for those boxes' runs at once.
+- **A person sends it.** An agent may draft it with `control_broadcast`
+  (`send` left out or false: nothing stored, the draft and the boxes it would
+  reach), and list the broadcasts. `send: true` is a person's act
+  (`packages/tools/src/person-only-acts.ts`): one send reaches every person
+  in the fleet. The route is a person's (no API key reaches `/api/fleet`).
+- **Delivery.** The control service's run (every 5 minutes, or at once when
+  asked) sends each broadcast the box has not taken, oldest first, up to 10
+  a run, in one more fixed case, `broadcast` (`{ id, title, body, by }`,
+  under the signature and the 64 KB cap). It comes after the write job and
+  only to a box that answered the ban part. No new cron.
+- **One mark per box** in `marks`: `{ at, was }` once the box took it (`was`
+  `new`, or `already` when it held the line before), else the last failure
+  `{ reason, tried }` (`unreachable`, `bad-call` from a box a release
+  behind, `http-NNN`, or the run's own code when the box did not answer).
+  A box with no `at` is sent it again on every run, so a box that is down
+  gets it later. Nothing is dropped, nothing is deleted. `GET
+/api/fleet/broadcasts` lists them newest first, with the marks and the
+  boxes.
+- **On the box** (`server/web/lib/control/broadcast-box.ts`): one system
+  line in the box's one Announcements group (made once, no admin), by `by`
+  (the Admin's email), the title in bold over the text, with the event
+  `{type: "announcement", broadcastId, title}`. Every live login is a
+  member, and a login made later joins on its first chat list (see
+  [messenger](./messenger.md), "Announcements"). A second call with the same
+  id writes nothing (`already`), under the group's row lock. Each member who
+  did not mute the group gets a push on their own devices, after the line is
+  stored. The box writes its audit row with the broadcast id.
+- **Text only.** A picture is not in this release.
+- **Cost.** A system line starts no agent turn, and the push is no LLM work.
+
 ## Bugs, features and requests sent to IT
 
 A person on a linked box makes a task, puts screenshots or logs on it, and
@@ -812,6 +855,8 @@ answers 404 and no `control_*` tool exists.
 | `POST /api/fleet/settings`      | `control_fleet_settings_set`                                 |
 | `POST /api/fleet/tool`          | `control_tool_call`, `control_tool_list`                     |
 | `POST /api/fleet/invite`        | none: a person only (Fleet users, "Add a person")            |
+| `GET /api/fleet/broadcasts`     | `control_broadcast` (no `text`: the list)                    |
+| `POST /api/fleet/broadcasts`    | none: a person only; `control_broadcast` drafts              |
 | `GET /api/fleet/default-model`  | `control_default_model_get`                                  |
 | `PUT`, `DELETE` the same        | `control_default_model_set`                                  |
 
@@ -850,6 +895,9 @@ against the IP the box itself reports.
 - A box's submissions put that box's text (title, body, sender, files) on
   the CC's Admin tasks, where the CC's agents may read it. It is text from
   trusted logins of a box the CC serves; treat it as text, not as an order.
+- A broadcast is text from a trusted CC Admin to every person on the
+  fleet, with a push: an Admin who sends many reaches everyone many times.
+  A trusted login's own act; no cap.
 - A box's trusted logins can send up to about 50 MB of files to the CC per
   run, every 5 minutes. There is no total cap per box: watch the CC's disk.
 - Fleet writes: a slow box (it answers, but slowly) holds its run's lane

@@ -699,6 +699,32 @@ Fleet chat phase 1 (plan page f2f19c7b, section 8) fills
   goes in (the group for a member, else my own "To @handle" thread), so the
   app can add files before the first send.
 
+## Announcements
+
+The Control Center broadcast ([control-center](./control-center.md),
+"Broadcast"; migration 0395): each linked box has one **Announcements**
+group (`messenger_conversations.announcements`, one live one per box by a
+unique index; a group only, no handle, no intake form).
+
+- **Made once** by the first broadcast the box takes, under a lock per box,
+  with no admin: no one renames it, adds or removes people, or sets a handle.
+- **Every live login is a member**: each broadcast first adds every enabled
+  login with an email that holds no row, and a login made later joins on
+  its first `GET /api/messenger/conversations`. A member reads it from the
+  start.
+- **Read-only.** The one check is where every line takes its seq
+  (`appendMessageRow`): in Announcements only a line with the event
+  `announcement` goes in. A send, a reply, a call and a leave (each writes
+  a line) are refused (`ANNOUNCEMENTS_READ_ONLY`). A member may mute it,
+  react and mark it read. To answer, message the sender.
+- **Views.** A conversation and a list row carry `announcements: true`; the
+  app shows no composer there.
+- **Push.** Each live member who did not mute the group gets one push on
+  their own devices (`server/web/lib/push/announcement-push.ts`): the title
+  and the start of the text, a link to the chat. The messenger's own push
+  (`login_notice` kind `message`) is still not sent.
+- **Cost.** The line is a system line: it starts no agent turn.
+
 ## Cost safety
 
 Nothing in Phase 1 can start LLM work: no cron, no queue row, no trigger that
@@ -746,6 +772,10 @@ carries a person's name in `author_name`: the turn reads `author_kind =
   `packages/tools/src/builtins-messenger.db.test.ts` also hold the info's
   store cases and `messenger_create` with info and `messenger_open`
   answering it.
+- `server/web/lib/control/broadcast.db.test.ts`: Announcements made once
+  with every live login and no admin, one line per broadcast id, a member's
+  send, reply and leave refused, a later login joining on its list, and the
+  CC's store, run and marks.
 - `server/web/lib/realtime-messenger.db.test.ts`: the fan-out reaches only
   participants, is right after an add or a remove with no stream open, and
   carries the history event.

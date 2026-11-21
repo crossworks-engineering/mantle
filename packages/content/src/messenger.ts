@@ -263,6 +263,9 @@ export type MessengerConversationView = {
    *  a group without one. */
   handle: string | null;
   intake: MessengerIntakeKind | null;
+  /** The box's Announcements group (0395): read-only, only the Control
+   *  Center posts. False on every other chat. */
+  announcements: boolean;
   createdBy: string | null;
   createdAt: string;
   archivedAt: string | null;
@@ -331,6 +334,8 @@ export type MessengerListRowView = {
   color?: string | null;
   /** A group's handle (0394); absent on an agent thread. */
   handle?: string | null;
+  /** The box's Announcements group (0395); absent on an agent thread. */
+  announcements?: boolean;
   lastSeq: number | null;
   lastMessageAt: string | null;
   preview: MessengerPreviewView | null;
@@ -609,6 +614,8 @@ export type ConversationRow = {
   info: string | null;
   handle: string | null;
   intake: MessengerIntakeKind | null;
+  /** The box's Announcements group (0395): only an announcement line goes in. */
+  announcements: boolean;
   archived_at: Date | null;
   last_seq: string | number;
   workspace_id: string | null;
@@ -626,7 +633,7 @@ export async function lockForActor(
   const c = uuidOr(conversationId, 'The conversation');
   const [conv] = await q<ConversationRow>(
     tx,
-    sql`select id::text as id, kind, title, info, handle, intake, archived_at, last_seq,
+    sql`select id::text as id, kind, title, info, handle, intake, announcements, archived_at, last_seq,
                workspace_id::text as workspace_id, agent_id::text as agent_id
           from messenger_conversations
          where id = ${c}::uuid and owner_id = ${actor.ownerId}::uuid
@@ -653,7 +660,7 @@ export async function lockConversation(
 ): Promise<ConversationRow | null> {
   const [conv] = await q<ConversationRow>(
     tx,
-    sql`select id::text as id, kind, title, info, handle, intake, archived_at, last_seq,
+    sql`select id::text as id, kind, title, info, handle, intake, announcements, archived_at, last_seq,
                workspace_id::text as workspace_id, agent_id::text as agent_id
           from messenger_conversations
          where id = ${conversationId}::uuid
@@ -740,6 +747,11 @@ async function appendMessageRow(
   conv: ConversationRow,
   m: AppendInput,
 ): Promise<{ seq: number; id: string }> {
+  // The one check of Announcements, where every line takes its seq: only
+  // the Control Center's broadcast line goes in (0395).
+  if (conv.announcements && m.event?.type !== 'announcement') {
+    throw new MessengerRefusedError(ANNOUNCEMENTS_READ_ONLY);
+  }
   const seq = num(conv.last_seq) + 1;
   const [row] = await tx
     .insert(messengerMessages)
@@ -1030,6 +1042,8 @@ async function insertGroup(
     info?: string | null;
     handle?: string | null;
     intake?: MessengerIntakeKind | null;
+    /** The box's Announcements group (0395): no one is its admin. */
+    announcements?: boolean;
   },
   others: readonly string[] = [],
 ): Promise<string> {
@@ -1042,7 +1056,7 @@ async function insertGroup(
       conversationId: made!.id,
       kind: 'login' as const,
       loginId: l,
-      admin: l === self,
+      admin: l === self && look.announcements !== true,
       addedBy: self,
     })),
   );
@@ -1634,6 +1648,116 @@ export async function appendDeskCopy(
         null,
       ),
   );
+}
+
+// ── Announcements (0395) ────────────────────────────────────────────────────
+
+/** The refusal of every line but a broadcast in Announcements. */
+export const ANNOUNCEMENTS_READ_ONLY =
+  'Announcements is read-only: only the Control Center posts here. You can mute it. To answer, message the sender.';
+
+/** The Announcements group's look, as each box makes it. */
+const ANNOUNCEMENTS_LOOK = {
+  title: 'Announcements',
+  icon: '📣',
+  info: 'Messages from IT to every person on the fleet. Read-only: to answer, message the sender.',
+  announcements: true,
+} as const;
+
+/**
+ * Every enabled login with an email (or only `loginId`) that holds no row
+ * in the box's live Announcements group joins it as a member, reading it
+ * from the start. No group yet: nothing. A login that left stays out (its
+ * row is there).
+ */
+export async function joinAnnouncements(
+  on: Tx | typeof systemDb,
+  ownerId: string,
+  loginId?: string,
+): Promise<void> {
+  const missing = await q<{ conversation_id: string; login_id: string }>(
+    on,
+    sql`select messenger_conversations.id::text as conversation_id, u.id::text as login_id
+          from messenger_conversations
+          join auth.users u on u.email is not null and u.disabled_at is null
+               ${loginId ? sql`and u.id = ${loginId}::uuid` : sql``}
+         where messenger_conversations.owner_id = ${ownerId}::uuid
+           and messenger_conversations.announcements
+           and ${isNull(messengerConversations.archivedAt)}
+           and not exists (select 1 from messenger_participants p
+                            where p.conversation_id = messenger_conversations.id
+                              and p.kind = 'login' and p.login_id = u.id)`,
+  );
+  if (missing.length === 0) return;
+  await on
+    .insert(messengerParticipants)
+    .values(
+      missing.map((r) => ({
+        conversationId: r.conversation_id,
+        kind: 'login' as const,
+        loginId: r.login_id,
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+/**
+ * A Control Center broadcast, on the box (the signed `broadcast` case,
+ * server/web lib/control/broadcast-box.ts): a system line in the box's one
+ * Announcements group, by `by`, the title in bold over the text, with the
+ * event `announcement` that names the broadcast. The group is made once
+ * (under a lock per box) with no admin, and every live login joins it
+ * first. A second call with the same broadcast id writes nothing
+ * (`already`), under the group's row lock. The system's work; it starts no
+ * agent turn.
+ */
+export async function announcementLine(
+  ownerId: string,
+  b: { broadcastId: string; title: string | null; body: string; by: string },
+): Promise<{ was: 'new' | 'already'; conversationId: string; seq: number | null }> {
+  let conversationId = '';
+  let seq: number | null = null;
+  let already = false;
+  await writeSystemLine(
+    async (tx) => {
+      await advisoryXactLock(tx, `messenger-announcements:${ownerId}`, 'hashtextextended');
+      const [found] = await q<{ id: string }>(
+        tx,
+        sql`select id::text as id from messenger_conversations
+             where owner_id = ${ownerId}::uuid and announcements
+               and ${isNull(messengerConversations.archivedAt)}`,
+      );
+      conversationId = found?.id ?? (await insertGroup(tx, ownerId, ownerId, ANNOUNCEMENTS_LOOK));
+      await joinAnnouncements(tx, ownerId);
+      return conversationId;
+    },
+    async (tx, conv) => {
+      const [prior] = await q<{ seq: string | number }>(
+        tx,
+        sql`select seq from messenger_messages
+             where conversation_id = ${conv.id}::uuid
+               and event ->> 'type' = 'announcement'
+               and event ->> 'broadcastId' = ${b.broadcastId}
+             limit 1`,
+      );
+      if (prior) {
+        already = true;
+        seq = num(prior.seq);
+        return null;
+      }
+      const title = b.title?.trim() || null;
+      return {
+        ...SYSTEM_AUTHOR,
+        authorName: b.by.slice(0, 200) || 'IT',
+        body: fitBody(title ? `**${title}**\n\n${b.body}` : b.body, 'cut to fit'),
+        event: { type: 'announcement', broadcastId: b.broadcastId, title },
+      };
+    },
+    async (_tx, _conv, line) => {
+      seq = line.seq;
+    },
+  );
+  return { was: already ? 'already' : 'new', conversationId, seq };
 }
 
 /** A line I sent, as the send answers it. */
@@ -2929,6 +3053,7 @@ export async function getMessengerConversation(
     info: string | null;
     handle: string | null;
     intake: MessengerIntakeKind | null;
+    announcements: boolean;
     created_by: string | null;
     created_at: Date;
     archived_at: Date | null;
@@ -2944,7 +3069,7 @@ export async function getMessengerConversation(
   }>(
     db,
     sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, c.info, c.handle, c.intake,
-               c.created_by::text as created_by, c.created_at,
+               c.announcements, c.created_by::text as created_by, c.created_at,
                c.archived_at, me.last_seq, me.last_message_at,
                c.workspace_id::text as workspace_id,
                c.agent_id::text as agent_id, me.admin, me.last_read_seq, me.cleared_before_seq, me.muted,
@@ -2964,6 +3089,7 @@ export async function getMessengerConversation(
     info: row.kind === 'direct' ? null : row.info,
     handle: row.kind === 'direct' ? null : row.handle,
     intake: row.kind === 'direct' ? null : row.intake,
+    announcements: row.announcements === true,
     createdBy: row.created_by,
     createdAt: iso(row.created_at),
     archivedAt: isoOrNull(row.archived_at),
@@ -3002,6 +3128,7 @@ type ListRow = {
   icon: string | null;
   color: string | null;
   handle: string | null;
+  announcements: boolean;
   last_seq: string | number;
   last_message_at: Date | null;
   last_preview: MessengerPreviewView | null;
@@ -3017,7 +3144,8 @@ type ListRow = {
 async function myConversationRows(actor: MessengerActor, unreadOnly = false): Promise<ListRow[]> {
   return q<ListRow>(
     db,
-    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, c.handle, me.last_seq, me.last_message_at,
+    sql`select c.id::text as id, c.kind, c.title, c.icon, c.color, c.handle, c.announcements,
+               me.last_seq, me.last_message_at,
                me.last_preview, me.muted,
                greatest(0, me.last_seq - greatest(me.last_read_seq, me.cleared_before_seq)) as unread,
                me.mention_seq > greatest(me.last_read_seq, me.cleared_before_seq) as mention,
@@ -3101,6 +3229,8 @@ export async function listMessengerConversations(
   actor: MessengerActor,
   opts: { unreadOnly?: boolean } = {},
 ): Promise<MessengerListRowView[]> {
+  // A login made since the last broadcast joins Announcements here.
+  await joinAnnouncements(systemDb, actor.ownerId, actor.loginId);
   const [convs, threads] = await Promise.all([
     myConversationRows(actor, opts.unreadOnly === true),
     myAgentThreadRows(actor),
@@ -3119,6 +3249,7 @@ export async function listMessengerConversations(
         icon: c.kind === 'direct' ? null : c.icon,
         color: c.kind === 'direct' ? null : c.color,
         handle: c.kind === 'direct' ? null : c.handle,
+        announcements: c.announcements === true,
         lastSeq: num(c.last_seq),
         lastMessageAt: isoOrNull(c.last_message_at),
         preview: c.last_preview,
@@ -3193,21 +3324,23 @@ export async function messengerUnread(
  *  pool: the stream's listener holds no scope. */
 export async function messengerParticipantLogins(
   conversationId: string,
-): Promise<{ loginId: string; leftSeq: number | null; fromSeq: number }[]> {
+): Promise<{ loginId: string; leftSeq: number | null; fromSeq: number; muted: boolean }[]> {
   if (!isUuid(conversationId)) return [];
   const rows = await q<{
     login_id: string;
     left_seq: string | number | null;
     from_seq: string | number;
+    muted: boolean;
   }>(
     systemDb,
-    sql`select login_id::text as login_id, left_seq, from_seq from messenger_participants
+    sql`select login_id::text as login_id, left_seq, from_seq, muted from messenger_participants
          where conversation_id = ${conversationId}::uuid and kind = 'login'`,
   );
   return rows.map((r) => ({
     loginId: r.login_id,
     leftSeq: numOrNull(r.left_seq),
     fromSeq: num(r.from_seq),
+    muted: r.muted === true,
   }));
 }
 

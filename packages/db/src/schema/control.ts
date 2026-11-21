@@ -354,3 +354,31 @@ export const controlService = pgTable('control_service', {
   lastTickAt: timestamp('last_tick_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** One box's mark on a broadcast (0395): `at` once the box took it (its
+ *  `was`: new, or already when it held the line before); else the last
+ *  failure's code and when. */
+export type ControlBroadcastMark =
+  { at: string; was: 'new' | 'already' } | { reason: string; tried: string };
+
+/** The longest broadcast text (the messenger's line cap) and title. */
+export const CONTROL_BROADCAST_BODY_MAX = 8000;
+export const CONTROL_BROADCAST_TITLE_MAX = 200;
+
+/**
+ * A broadcast (0395, docs/control-center.md "Broadcast"): one message from a
+ * CC Admin to every person on the boxes it names, stored once. `marks` holds
+ * one mark per box id; a box with no `at` gets it on the next run. Never
+ * deleted.
+ */
+export const controlBroadcasts = pgTable('control_broadcasts', {
+  id: uuid('id')
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  title: text('title'),
+  body: text('body').notNull(),
+  madeBy: text('made_by').notNull(),
+  madeAt: timestamp('made_at', { withTimezone: true }).defaultNow().notNull(),
+  boxIds: uuid('box_ids').array().notNull(),
+  marks: jsonb('marks').$type<Record<string, ControlBroadcastMark>>().default({}).notNull(),
+});

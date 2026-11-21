@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkBan,
   checkBoxUrl,
+  checkBroadcast,
   checkModelChanges,
   checkSettingChanges,
   loginMatches,
@@ -486,5 +487,28 @@ describe('the sign-in view (0371)', () => {
     expect(
       nextSsoView(refused, call('sso_status'), { ok: true, reason: null, status }, 't3').mode,
     ).toEqual(refused.mode);
+  });
+});
+
+describe('checkBroadcast (a fleet broadcast as an Admin writes it)', () => {
+  it('takes the text and an optional title, both trimmed', () => {
+    expect(checkBroadcast({ body: '  Hello all  ' })).toEqual({
+      ok: true,
+      value: { title: null, body: 'Hello all' },
+    });
+    expect(checkBroadcast({ title: ' Tonight ', body: 'x' })).toEqual({
+      ok: true,
+      value: { title: 'Tonight', body: 'x' },
+    });
+    expect(checkBroadcast({ title: '   ', body: 'x' })).toMatchObject({ value: { title: null } });
+  });
+
+  it('refuses no text, a text or title too long, a title that is not text', () => {
+    expect(checkBroadcast({ body: '   ' }).ok).toBe(false);
+    expect(checkBroadcast({}).ok).toBe(false);
+    expect(checkBroadcast({ body: 'x'.repeat(8001) }).ok).toBe(false);
+    expect(checkBroadcast({ body: 'x'.repeat(8000) }).ok).toBe(true);
+    expect(checkBroadcast({ body: 'x', title: 'y'.repeat(201) }).ok).toBe(false);
+    expect(checkBroadcast({ body: 'x', title: 5 }).ok).toBe(false);
   });
 });

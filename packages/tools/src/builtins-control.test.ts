@@ -42,6 +42,7 @@ const tool = (slug: string) => CONTROL_TOOLS.find((t) => t.slug === slug)!;
 const SLUGS = [
   'control_agent_model_set',
   'control_ban',
+  'control_broadcast',
   'control_ban_lift',
   'control_ban_list',
   'control_box_add',
@@ -147,6 +148,7 @@ describe('the registry', () => {
     const WRITES = [
       'control_agent_model_set',
       'control_ban',
+      'control_broadcast',
       'control_ban_lift',
       'control_box_add',
       'control_box_remove',
@@ -253,5 +255,22 @@ describe("an archive is a person's act", () => {
       .properties;
     expect(props.archive).toMatchObject({ type: 'boolean' });
     expect(props.kind).toBeUndefined();
+  });
+});
+
+describe("a broadcast's send is a person's act", () => {
+  const agent = { caller: { entry: 'mcp' } } as never;
+  const person = { caller: { entry: 'owner-web' } } as never;
+
+  it('an agent may draft with send left out or false, never true', () => {
+    expect(personOnlyRefusal('control_broadcast', { text: 'Hi' }, agent)).toBeNull();
+    expect(personOnlyRefusal('control_broadcast', { text: 'Hi', send: false }, agent)).toBeNull();
+    expect(personOnlyRefusal('control_broadcast', { text: 'Hi', send: true }, agent)).toMatch(
+      /a person's act.*every person in the fleet.*Fleet screen/,
+    );
+  });
+
+  it('a person may send', () => {
+    expect(personOnlyRefusal('control_broadcast', { send: true }, person)).toBeNull();
   });
 });

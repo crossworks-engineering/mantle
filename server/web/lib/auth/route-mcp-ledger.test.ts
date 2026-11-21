@@ -46,8 +46,10 @@ type Ledger = { routes: Record<string, Line>; rightsDiffer: Record<string, strin
  *  secret or an issuer decides who signs in). 26 since POST
  *  /api/fleet/invite (owner's word 2026-11-13, "adding a user to a box under
  *  Fleet users"; harm: an invite is a way into a box, and an agent that asks
- *  for one decides who gets a login). */
-const PEOPLE_ONLY_ROWS = 26;
+ *  for one decides who gets a login). 27 since POST /api/fleet/broadcasts
+ *  (owner's word 2026-11-21, the CC broadcast: "an agent may draft, but only
+ *  a person may send"; harm: one send reaches every person in the fleet). */
+const PEOPLE_ONLY_ROWS = 27;
 
 const readJson = <T>(path: string): T =>
   JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as T;

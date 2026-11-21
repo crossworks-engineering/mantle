@@ -252,6 +252,10 @@
       "planned": "control_box_list",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; control_ban_list and control_public_key read the rest"
     },
+    "GET /api/fleet/broadcasts": {
+      "planned": "control_broadcast",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; with no text it lists the broadcasts and their marks per box"
+    },
     "GET /api/fleet/default-model": {
       "planned": "control_default_model_get",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
@@ -813,6 +817,9 @@
     "POST /api/fleet/boxes": {
       "planned": "control_box_add",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "POST /api/fleet/broadcasts": {
+      "people": "one send reaches every person in the fleet, in the Announcements chat on every box, with a push: an agent drafts it (control_broadcast with send false), and a person sends it"
     },
     "POST /api/fleet/invite": {
       "people": "it asks a box for a member invite: an invite is a way into a box, so an agent that asks for one decides who gets a login, and the route asks the person's password again on purpose"

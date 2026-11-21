@@ -22,6 +22,10 @@ import {
   queueControlWrites,
   checkBan,
   checkBoxUrl,
+  broadcastTargets,
+  checkBroadcast,
+  listControlBroadcasts,
+  makeControlBroadcast,
   controlServiceState,
   liftControlBan,
   listControlBans,
@@ -604,6 +608,74 @@ const control_default_model_set: BuiltinToolDef = {
     }),
 };
 
+const control_broadcast: BuiltinToolDef = {
+  slug: 'control_broadcast',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    matrix: { none: "names no item: a row of the Control Center's broadcasts" },
+    clientSourced: CS.always('it sends a message to every person on the fleet'),
+  },
+  name: 'Draft a fleet broadcast',
+  description:
+    "Draft a message to every person on the fleet, or on the boxes `boxIds` names: it shows in the read-only Announcements chat on each box, with a push. Without `send` it stores nothing and answers the draft (the text checked, the boxes it would reach) and the recent broadcasts, each with one mark per box (`at` taken, else the last failure's `reason`, tried again each run). `send: true` sends it: a person's act, so an agent may send only `send: false`; ask the user to send it on the Fleet screen. With no `text`, it lists the broadcasts only.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: {
+        type: 'string',
+        maxLength: 200,
+        description: 'A short title, e.g. Maintenance tonight.',
+      },
+      text: {
+        type: 'string',
+        maxLength: 8000,
+        description: 'The message every person reads, e.g. The boxes restart at 22:00 UTC.',
+      },
+      boxIds: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 1,
+        maxItems: 1000,
+        description: 'Box ids from control_box_list. Left out: every linked box.',
+      },
+      send: {
+        type: 'boolean',
+        description: "true sends it (a person's act). Left out or false: a draft only.",
+      },
+    },
+  },
+  handler: (input, ctx) =>
+    onCc('control_broadcast', async () => {
+      if (input.boxIds !== undefined && !Array.isArray(input.boxIds)) {
+        return { ok: false, error: 'boxIds must be a list of box ids from control_box_list.' };
+      }
+      const ids = Array.isArray(input.boxIds)
+        ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
+        : undefined;
+      const broadcasts = await listControlBroadcasts(20);
+      if (input.text === undefined) return { ok: true, output: { broadcasts } };
+      const c = checkBroadcast({ title: input.title, body: input.text });
+      if (!c.ok) return { ok: false, error: c.error };
+      if (input.send !== true) {
+        const boxes = await broadcastTargets(ids);
+        if (boxes.length === 0) {
+          return {
+            ok: false,
+            error:
+              'No linked box has those ids: take them from control_box_list, or leave boxIds out.',
+          };
+        }
+        return { ok: true, output: { draft: { ...c.value, boxes }, sent: false, broadcasts } };
+      }
+      const made = await makeControlBroadcast(c.value, by(ctx), ids);
+      if (!made.ok) return { ok: false, error: made.error };
+      return { ok: true, output: { broadcast: made.value, sent: true } };
+    }),
+};
+
 export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_public_key,
   control_box_list,
@@ -616,6 +688,7 @@ export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_key_set,
   control_agent_model_set,
   control_fleet_settings_set,
+  control_broadcast,
   control_tool_list,
   control_tool_call,
   control_default_model_get,

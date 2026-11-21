@@ -6,9 +6,9 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of twenty cases: hello, logins, facts, disable,
+ *  2. A fixed switch of twenty-one cases: hello, logins, facts, disable,
  *     enable, archive, key, agentModel, poolEntry, updateNotice,
- *     workerGroup, workerModel, submissions, the admin channel's tool
+ *     workerGroup, workerModel, submissions, broadcast, the admin channel's tool
  *     and tools (tool-channel.ts), its company sign-in cases sso_status,
  *     sso_set, sso_test and sso_mode (sso-channel.ts), and invite (a member
  *     invite, invite-channel.ts), these seven held by the box's own scope
@@ -29,6 +29,9 @@
  * submissions (plan 5559936a, submissions.ts) hands the CC the tasks
  * people sent to IT, one file at a time, takes their collected mark, and
  * puts the CC's reply on the person's task.
+ *
+ * broadcast (broadcast-box.ts) puts a CC Admin's message in the box's
+ * Announcements group, once per broadcast id, and pushes it to its members.
  *
  * agentModel (phase 4, agent-model.ts) sets the model of one agent the
  * system ships, the model field only, as the Agents screen does.
@@ -86,6 +89,7 @@ import { TOOL_CALLS, listToolsForCenter, runToolCall, toolAuditDetail } from './
 import { SSO_CALLS, runSsoCall, ssoAuditMore } from './sso-channel';
 import { INVITE_CALLS, inviteAuditDetail, runInviteCall } from './invite-channel';
 import { collectFacts } from './facts';
+import { BROADCAST_CALL, receiveBroadcast } from './broadcast-box';
 import {
   SUBMISSIONS_PER_LIST,
   fileForCenter,
@@ -166,6 +170,7 @@ const Call = z.discriminatedUnion('op', [
     })
     .strict(),
   ...WRITE_CALLS,
+  BROADCAST_CALL,
   ...TOOL_CALLS,
   ...SSO_CALLS,
   ...INVITE_CALLS,
@@ -253,6 +258,8 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
       return runWrite(actor.id, call);
     case 'submissions':
       return submissionsCase(actor.id, call.args);
+    case 'broadcast':
+      return receiveBroadcast(actor.id, call.args);
     case 'tool':
       return runToolCall(actor.id, call);
     case 'tools':
@@ -312,6 +319,8 @@ function auditMore(call: z.infer<typeof Call>): Record<string, unknown> {
     const { model, provider, endpoint } = call.args;
     return { model, ...(provider !== undefined ? { provider, endpoint } : {}) };
   }
+  // The broadcast's id and title: its text is the line on the box.
+  if (call.op === 'broadcast') return { broadcastId: call.args.id, title: call.args.title };
   if (
     call.op === 'poolEntry' ||
     call.op === 'updateNotice' ||

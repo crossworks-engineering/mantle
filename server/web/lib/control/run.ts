@@ -12,8 +12,11 @@
  *      it is sent;
  *   5. a write job (phase 4): each fleet write (an agent model, a pool
  *      entry, the update notice, a worker group) sent once, then taken off;
- *   6. facts (phase 3, the fleet matrix): numbers, settings and model ids.
- * 5 and 6 come after the ban part, and only to a box that answered it.
+ *   6. a broadcast the box has not taken (sendBroadcasts), each one call,
+ *      marked on the CC once the box takes it; a failure keeps it for the
+ *      next run, with its code shown;
+ *   7. facts (phase 3, the fleet matrix): numbers, settings and model ids.
+ * 5 to 7 come after the ban part, and only to a box that answered it.
  * Submissions sent to IT have their own sweep and timer (collect.ts), so
  * they never hold back a run.
  *
@@ -41,7 +44,9 @@ import {
   saveControlWriteResult,
   expireControlWriteJobs,
   expireControlToolCalls,
+  markControlBroadcast,
   saveControlRun,
+  takeControlBroadcastsFor,
   takeDueControlBoxes,
   type ControlBan,
   type ControlBoxRow,
@@ -381,6 +386,57 @@ export async function sendWriteJob(
   );
 }
 
+const BroadcastReply = z
+  .object({ kind: z.literal('broadcast'), ok: z.literal(true), was: z.enum(['new', 'already']) })
+  .strict();
+
+/** The broadcasts the box has not taken, oldest first, one call each. A
+ *  box that takes one gets its mark (`at`); a failure keeps the broadcast
+ *  for the next run, with its code and time shown. With `unsent` (the box
+ *  did not answer the run) each gets that code, with no call; after the
+ *  first call the box does not answer (unreachable), the rest get it too.
+ *  Never throws. */
+export async function sendBroadcasts(
+  key: KeyObject,
+  box: ControlBoxRow,
+  unsent?: string,
+): Promise<void> {
+  const list = await takeControlBroadcastsFor(box.id).catch((e) => {
+    log('control').error('reading broadcasts:', e);
+    return [];
+  });
+  let skip = unsent ?? null;
+  for (const b of list) {
+    const now = new Date().toISOString();
+    let mark: { at: string; was: 'new' | 'already' } | { reason: string; tried: string };
+    if (skip !== null) mark = { reason: skip, tried: now };
+    else {
+      try {
+        const r = BroadcastReply.safeParse(
+          await callBox(key, box.url, 'broadcast', {
+            id: b.id,
+            title: b.title ?? '',
+            body: b.body,
+            by: b.madeBy.slice(0, 200),
+          }),
+        );
+        if (!r.success) throw new CallFailed('bad-reply');
+        mark = { at: now, was: r.data.was };
+      } catch (err) {
+        const code = err instanceof CallFailed ? err.code : 'error';
+        if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} broadcast:`, err);
+        if (code === 'unreachable') skip = code;
+        mark = { reason: code, tried: now };
+      }
+    }
+    await markControlBroadcast(b.id, box.id, mark).catch((e) =>
+      log('control').error('saving a broadcast mark:', e),
+    );
+  }
+  if (list.length && skip === null)
+    log('control').info(`box ${box.id}: ${list.length} broadcasts sent`);
+}
+
 /** One box's run. Never throws: a failure is the box's reason code. */
 export async function runBox(
   key: KeyObject,
@@ -406,6 +462,7 @@ export async function runBox(
     // A write job, then the matrix's read (which then shows the new
     // models), both after the ban part, which they never hold back.
     await sendWriteJob(key, box);
+    await sendBroadcasts(key, box);
     await readFacts(key, box);
     if (plan.archive.length || plan.disable.length || plan.enable.length || plan.owners.length) {
       log('control').info(
@@ -425,6 +482,7 @@ export async function runBox(
       log('control').error('saving facts:', e),
     );
     await sendWriteJob(key, box, code);
+    await sendBroadcasts(key, box, code);
     await sendToolCalls(key, box, code);
   }
 }

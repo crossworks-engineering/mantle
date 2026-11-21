@@ -268,7 +268,7 @@ export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
     callers: ['server/web/lib/oidc/store.ts'],
   },
   // The Control Center: every write of control_boxes, control_bans,
-  // control_results and control_service (a box linked or removed, a ban made
+  // control_results, control_service and control_broadcasts (a box linked or removed, a ban made
   // or lifted, a run asked for, the control service's results and key row).
   controlWrite: {
     spot: 'control-center',
