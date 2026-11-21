@@ -27,8 +27,10 @@ import { errorMessage } from '@mantle/std';
 import { LEGACY_SHEET_EXTS } from './slug';
 
 /** A coarse column type, expressed as a plain string so this module needn't
- *  import @mantle/content. Validated/narrowed by `tableDocFromGrid`. */
-export type InferredColumnType = 'text' | 'number' | 'date' | 'datetime' | 'checkbox';
+ *  import @mantle/content. Validated/narrowed by `tableDocFromGrid`.
+ *  `select`: text the table engine indexes (createTab), for an id column
+ *  of a Transformer's tab (Links). No Reader infers it. */
+export type InferredColumnType = 'text' | 'number' | 'date' | 'datetime' | 'checkbox' | 'select';
 
 export type ParsedColumn = { name: string; type: InferredColumnType };
 

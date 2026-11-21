@@ -355,6 +355,24 @@ export const BUILTIN_PIPELINES = [
       },
     },
   }),
+  // An `after` pipeline: the links between the things of a file of pages
+  // (a PDF book's pages, tables and rows, or a PDF drawing's pages, tags and
+  // lines), written as the tabs Links and Link nodes. Model-free, a package
+  // (./pkg/links), one parser job a run. Its body is the shape pages-v1,
+  // with every table tab the Tables index names (docs/pipelines.md,
+  // "Links").
+  pkg({
+    id: 'links',
+    name: 'Links',
+    description:
+      "Reads the pages, tables and rows of a PDF's database and adds the tabs Links and Link nodes: which page holds which table, which row names which code, tag or line number, and, for a piping specification, which class a page, row, code and material belong to. It asks no model.",
+    version: '1.0.0',
+    match: { ext: ['pdf'], after: 'pages-v1' },
+    produces: { tabs: ['Links', 'Link nodes'] },
+    // The time of the light parser jobs. A book of 1,000 pages and 2,436
+    // tables took about a second of rules.
+    needs: { weight: 'light', timeMs: 120_000 },
+  }),
   // The first Agent: it reads the title block of a raster or plot
   // isometric. A package (./pkg/iso-title-block): its one step cuts two
   // pictures in the parser and asks the vision worker for each. It is no

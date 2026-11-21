@@ -366,6 +366,47 @@ describe('a packaged pipeline through a real parser job', () => {
     expect(AFTER_BODY_MAX_BYTES).toBe(64 * 1024 * 1024);
   });
 
+  it('afterBodyOf: a shape with listedIn sends its tabs, then each tab the index names with all its columns, in one open', () => {
+    const abs = path.join(workdir, `${randomUUID()}.sqlite`);
+    const t = (name: string) => ({ name, type: 'text' as const });
+    const n = (name: string) => ({ name, type: 'number' as const });
+    const sheets = [
+      { name: 'Pages', columns: [n('Page'), t('Text'), t('Paper')], rows: [[1, 'one', 'A4'], [2, 'two', 'A4']] },
+      {
+        name: 'Tables',
+        columns: [t('Tab'), t('Title'), t('Pages')],
+        rows: [['Table [a] (2) p1', 'T', '1'], ['Gone p9', null, '9'], ['Links', null, '1'], ['Pages', null, '1']],
+      },
+      { name: 'Table [a] (2) p1', columns: [n('Page'), t('ITEM CODE'), t('Size')], rows: [[1, 'ZX1001', '2']] },
+      // A tab the pipeline writes is never sent, though the index names it.
+      { name: 'Links', columns: [t('from_id')], rows: [['old']] },
+      { name: 'Other', columns: [t('A')], rows: [['not named']] },
+    ];
+    writeFileDatabaseDoc(abs, ensureWorkbookDoc({ tabs: tabsOfSheets(sheets) }), {
+      fileId: randomUUID(),
+      ownerId: randomUUID(),
+    });
+    const links: PipelineManifest = {
+      ...ECHO,
+      match: { ext: ['pdf'], after: 'pages-v1' },
+      produces: { tabs: ['Links', 'Link nodes'] },
+    };
+    const { body, warnings } = afterBodyOf(abs, links);
+    expect(warnings).toEqual([]);
+    expect(body.toString('utf8').trim().split('\n').map((l) => JSON.parse(l) as unknown)).toEqual([
+      { tab: 'Pages', columns: ['Page', 'Text', 'Method', 'Why'] },
+      [1, 'one', null, null],
+      [2, 'two', null, null],
+      { tab: 'Tables', columns: ['Tab', 'Title', 'Pages'] },
+      ['Table [a] (2) p1', 'T', '1'],
+      ['Gone p9', null, '9'],
+      ['Links', null, '1'],
+      ['Pages', null, '1'],
+      { tab: 'Table [a] (2) p1', columns: ['Page', 'ITEM CODE', 'Size'] },
+      [1, 'ZX1001', '2'],
+    ]);
+  });
+
   it('a picture the write names comes back as its bytes', async () => {
     const out = await run(body(), { mode: 'picture' });
     expect(out.write?.pictures).toEqual([

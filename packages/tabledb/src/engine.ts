@@ -601,6 +601,9 @@ export function patchDocFile(
   }
 }
 
+/** The options of one scan of a tab (scanTabColumns, TabScanner). */
+export type TabScanOpts = { maxRows: number; cellMaxChars: number; pageRows?: number };
+
 /**
  * Read some columns of one tab, by display name or by stored (physical)
  * name, a page at a time, opened read only. A display name is looked up
@@ -617,42 +620,74 @@ export function scanTabColumns(
   absPath: string,
   tab: string,
   columns: readonly string[],
-  opts: { maxRows: number; cellMaxChars: number; pageRows?: number },
+  opts: TabScanOpts,
   onRow: (row: Record<string, unknown>) => boolean,
 ): boolean {
+  return withTabScanner(absPath, (scan) => scan.rows(tab, columns, opts, onRow));
+}
+
+/** A file opened read only for many scans: one open, so a file of
+ *  thousands of tabs reads its schema once (withTabScanner). */
+export type TabScanner = {
+  /** The display names of a tab's columns, in their order; null when the
+   *  file has no such tab. */
+  columnsOf(tab: string): string[] | null;
+  /** The rows of one tab, as scanTabColumns gives them. */
+  rows(
+    tab: string,
+    columns: readonly string[],
+    opts: TabScanOpts,
+    onRow: (row: Record<string, unknown>) => boolean,
+  ): boolean;
+};
+
+/** Open the file at `absPath` read only, hand `fn` a scanner of its tabs,
+ *  and close it after. Fixed statements only. */
+export function withTabScanner<T>(absPath: string, fn: (scan: TabScanner) => T): T {
   const db = openTableFile(absPath, { readOnly: true });
   const q = (name: string) => `"${name.replaceAll('"', '""')}"`;
-  const pageRows = opts.pageRows ?? 5_000;
-  const cut = Math.max(1, Math.floor(opts.cellMaxChars));
-  try {
-    const t = db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE name = ?`).get(tab);
-    if (!t) return false;
-    const cols = db
-      .prepare(`SELECT name, physical FROM _columns WHERE tab_id = ?`)
-      .all(String(t.tab_id));
-    const physical = new Map(cols.map((c) => [String(c.name), String(c.physical)]));
-    const stored = new Set(cols.map((c) => String(c.physical)));
-    const select = columns.map((c, i) => {
-      const p = physical.get(c) ?? (stored.has(c) ? c : undefined);
-      return p
-        ? `CASE WHEN typeof(${q(p)}) = 'text' THEN substr(${q(p)}, 1, ${cut}) ELSE ${q(p)} END AS c${i}`
-        : `NULL AS c${i}`;
-    });
-    const page = db.prepare(
-      `SELECT rowid AS r, ${select.join(', ')} FROM ${q(String(t.physical_table))}
-        WHERE rowid > ? ORDER BY rowid LIMIT ?`,
-    );
-    let after = Number.MIN_SAFE_INTEGER;
-    let read = 0;
-    for (;;) {
-      const rows = page.all(after, Math.min(pageRows, opts.maxRows - read));
-      for (const r of rows) {
-        read += 1;
-        if (!onRow(Object.fromEntries(columns.map((c, i) => [c, r[`c${i}`]])))) return true;
+  const tabOf = db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE name = ?`);
+  const columnsOf = db.prepare(
+    `SELECT name, physical FROM _columns WHERE tab_id = ? ORDER BY position`,
+  );
+  const scanner: TabScanner = {
+    columnsOf(tab) {
+      const t = tabOf.get(tab);
+      return t ? columnsOf.all(String(t.tab_id)).map((c) => String(c.name)) : null;
+    },
+    rows(tab, columns, opts, onRow) {
+      const pageRows = opts.pageRows ?? 5_000;
+      const cut = Math.max(1, Math.floor(opts.cellMaxChars));
+      const t = tabOf.get(tab);
+      if (!t) return false;
+      const cols = columnsOf.all(String(t.tab_id));
+      const physical = new Map(cols.map((c) => [String(c.name), String(c.physical)]));
+      const stored = new Set(cols.map((c) => String(c.physical)));
+      const select = columns.map((c, i) => {
+        const p = physical.get(c) ?? (stored.has(c) ? c : undefined);
+        return p
+          ? `CASE WHEN typeof(${q(p)}) = 'text' THEN substr(${q(p)}, 1, ${cut}) ELSE ${q(p)} END AS c${i}`
+          : `NULL AS c${i}`;
+      });
+      const page = db.prepare(
+        `SELECT rowid AS r${select.length ? ', ' + select.join(', ') : ''} FROM ${q(String(t.physical_table))}
+          WHERE rowid > ? ORDER BY rowid LIMIT ?`,
+      );
+      let after = Number.MIN_SAFE_INTEGER;
+      let read = 0;
+      for (;;) {
+        const rows = page.all(after, Math.min(pageRows, opts.maxRows - read));
+        for (const r of rows) {
+          read += 1;
+          if (!onRow(Object.fromEntries(columns.map((c, i) => [c, r[`c${i}`]])))) return true;
+        }
+        if (rows.length === 0 || read >= opts.maxRows) return true;
+        after = Number(rows[rows.length - 1]!.r);
       }
-      if (rows.length === 0 || read >= opts.maxRows) return true;
-      after = Number(rows[rows.length - 1]!.r);
-    }
+    },
+  };
+  try {
+    return fn(scanner);
   } finally {
     db.close();
   }

@@ -46,7 +46,7 @@ import {
   type PipelineStepResult,
   type ShapeId,
 } from '@mantle/files';
-import { scanTabColumns } from '@mantle/tabledb';
+import { withTabScanner } from '@mantle/tabledb';
 import { AgentAskError, askCapOf } from './pipeline-agent';
 import {
   keepWindow,
@@ -701,12 +701,16 @@ export const AFTER_TEXT_ROWS_MAX = 500_000;
 export const AFTER_BODY_MAX_BYTES = 64 * 1024 * 1024;
 
 /**
- * The body of an `after` pipeline's job (@mantle/files tabs-body.ts): the
- * needed tabs of the shape it names in `match.after`, with their columns,
- * read from the database at `abs`, read only. A tab past the row cap, or a
- * body past `maxBytes`, is cut there, with the warning the adapter gave
- * ("Only the first N texts were read."). The body is built from Buffer
- * chunks, so it is held about once (twice for the moment of the concat).
+ * The body of an `after` pipeline's job (@mantle/files tabs-body.ts): each
+ * tab of the shape it names in `match.after` that the database at `abs`
+ * has, needed or not, with the shape's columns; then, for a shape with
+ * `listedIn`, every tab named in that column of that tab, with all its
+ * columns (a book's table tabs), but never a tab the pipeline writes or one
+ * already sent. Read only, in one open of the file, so a file of thousands
+ * of tabs reads its schema once. A tab past the row cap, or a body past
+ * `maxBytes`, is cut there, with the warning the adapter gave ("Only the
+ * first N texts were read."). The body is built from Buffer chunks, so it
+ * is held about once (twice for the moment of the concat).
  */
 export function afterBodyOf(
   abs: string,
@@ -725,30 +729,47 @@ export function afterBodyOf(
     return true;
   };
   const warnings: string[] = [];
-  for (const tab of shape.tabs.filter((t) => t.needed)) {
-    if (!add(tabHeadLine(tab.name, tab.columns))) break;
-    let rows = 0;
-    let full = false;
-    scanTabColumns(
-      abs,
-      tab.name,
-      tab.columns,
-      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
-      (row) => {
-        if (!add(tabRowLine(tab.columns.map((c) => row[c] ?? null)))) {
-          full = true;
-          return false;
-        }
-        rows += 1;
-        return true;
-      },
-    );
-    if (full || rows >= AFTER_TEXT_ROWS_MAX) {
-      warnings.push(
-        `Only the first ${rows.toLocaleString('en')} ${tab.name.toLowerCase()} were read.`,
+  const sent = new Set<string>(pipeline.produces.tabs ?? []);
+  const listed: string[] = [];
+  withTabScanner(abs, (scan) => {
+    /** One tab into the body; false once the body is full. */
+    const send = (name: string, columns: readonly string[]): boolean => {
+      sent.add(name);
+      if (!add(tabHeadLine(name, columns))) return false;
+      let rows = 0;
+      let full = false;
+      const listing = shape.listedIn?.tab === name ? columns.indexOf(shape.listedIn.column) : -1;
+      scan.rows(
+        name,
+        columns,
+        { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
+        (row) => {
+          const cells = columns.map((c) => row[c] ?? null);
+          if (!add(tabRowLine(cells))) {
+            full = true;
+            return false;
+          }
+          const named = listing >= 0 ? cells[listing] : null;
+          if (typeof named === 'string') listed.push(named);
+          rows += 1;
+          return true;
+        },
       );
+      if (full || rows >= AFTER_TEXT_ROWS_MAX) {
+        warnings.push(`Only the first ${rows.toLocaleString('en')} ${name.toLowerCase()} were read.`);
+      }
+      return !full;
+    };
+    for (const tab of shape.tabs) {
+      if (scan.columnsOf(tab.name) === null) continue;
+      if (!send(tab.name, tab.columns)) return;
     }
-    if (full) break;
-  }
+    for (const name of listed) {
+      if (sent.has(name)) continue;
+      const columns = scan.columnsOf(name);
+      if (columns === null) continue;
+      if (!send(name, columns)) return;
+    }
+  });
   return { body: Buffer.concat(chunks, bytes), warnings };
 }

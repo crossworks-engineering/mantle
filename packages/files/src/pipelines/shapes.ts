@@ -9,6 +9,12 @@
  *   circuit-v1   packages/tools/src/circuit-trace/read.ts
  *   pdf-file-v1  packages/files/src/pdf-drawing-sheets.ts (pdfFileTabOf)
  *   texts-v1     the `after` pipeline Site tags (./pkg/site-tags/site-tags.ts)
+ *   pages-v1     the `after` pipeline Links (./pkg/links/step.ts)
+ *
+ * The body of an `after` pipeline (afterBodyOf, packages/content) holds each
+ * tab of its shape the file has, needed or not, and, for a shape with
+ * `listedIn`, every tab named in that column of that tab, with all its
+ * columns (a book's table tabs, named by the Reader).
  */
 import type { ShapeId } from './contract';
 
@@ -22,7 +28,13 @@ export type ShapeTab = {
   neededColumns: readonly string[];
 };
 
-export type Shape = { id: ShapeId; tabs: readonly ShapeTab[] };
+export type Shape = {
+  id: ShapeId;
+  tabs: readonly ShapeTab[];
+  /** The tabs named in this column of this tab are read too, each with all
+   *  its columns: tabs a Reader names itself, as a book's table tabs. */
+  listedIn?: { tab: string; column: string };
+};
 
 /** The longest cell an `after` pipeline reads from the tabs of a shape: a
  *  drawing's text is a label or a note line, and a longer cell is cut. The
@@ -144,6 +156,21 @@ export const SHAPES: Readonly<Record<ShapeId, Shape>> = {
   'texts-v1': {
     id: 'texts-v1',
     tabs: [tab('Texts', true, ['Text', 'Page', 'Layer', 'X', 'Y', 'Region'], ['Text'])],
+  },
+  // Links reads a file of pages: the Pages tab of the PDF book reader (Page,
+  // Text, Method, Why) or of the PDF drawing reader (Page); the Agent's Page
+  // text (Key `page-N`, Text) when it ran; a book's Tables index and every
+  // table tab it names; a drawing's Tags and Lines.
+  'pages-v1': {
+    id: 'pages-v1',
+    tabs: [
+      tab('Pages', true, ['Page', 'Text', 'Method', 'Why'], ['Page']),
+      tab('Page text', false, ['Key', 'Text']),
+      tab('Tables', false, ['Tab', 'Title', 'Pages']),
+      tab('Tags', false, ['Page', 'Tag', 'Type', 'Region']),
+      tab('Lines', false, ['Page', 'Line number', 'Region']),
+    ],
+    listedIn: { tab: 'Tables', column: 'Tab' },
   },
 };
 

@@ -17,12 +17,15 @@ export {
   readWorkbookDoc,
   refLikeCells,
   scanTabColumns,
+  withTabScanner,
   shapeHashOf,
   shapeHashOfFile,
   snapshotFile,
 } from './engine';
 export type {
   ClippedDoc,
+  TabScanner,
+  TabScanOpts,
   TabStats,
   WorkbookColumnRef,
   WorkbookStats,

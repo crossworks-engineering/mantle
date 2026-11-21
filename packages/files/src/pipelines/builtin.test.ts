@@ -183,14 +183,19 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('the after built-ins: Site tags alone, never a reader, reading the texts-v1 shape', () => {
-    expect(AFTER.map((p) => p.id)).toEqual(['site-tags']);
+  it('the after built-ins: Site tags and Links, never a reader, each reading its shape', () => {
+    expect(AFTER.map((p) => p.id)).toEqual(['site-tags', 'links']);
     for (const ext of ['dwg', 'dxf', 'dgn', 'pdf'])
-      expect(readerFor(BUILTIN_PIPELINES, ext)?.id).not.toBe('site-tags');
+      for (const id of ['site-tags', 'links'])
+        expect(readerFor(BUILTIN_PIPELINES, ext)?.id).not.toBe(id);
     const site = AFTER[0]!;
     expect(site.match.after).toBe('texts-v1');
     expect(site.produces.tabs).toEqual(['Site tags']);
     expect(site.produces.shapes).toBeUndefined();
+    const links = AFTER[1]!;
+    expect(links.match).toEqual({ ext: ['pdf'], after: 'pages-v1' });
+    expect(links.produces.tabs).toEqual(['Links', 'Link nodes']);
+    expect(links.produces.shapes).toBeUndefined();
   });
 
   it('no reader promises or writes a tab an after pipeline names', () => {
@@ -256,6 +261,7 @@ describe('the roles', () => {
       'drawing-raster': 'reader',
       'site-tags': 'after',
       'iso-title-block': 'agent',
+      links: 'after',
       'pdf-sheet-read': 'agent',
       'pdf-pages': 'reader',
       'pdf-page-read': 'agent',

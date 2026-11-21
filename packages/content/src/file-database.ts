@@ -170,8 +170,10 @@ export function noneWordOf(err: unknown): FileDbNoneWord | null {
 
 const logger = log('file-database');
 
-/** What an `after` pipeline gives: its sheets, by tab name, and warnings. */
-type AfterResult = { sheets: ParsedSheet[]; warnings: string[] };
+/** What an `after` pipeline gives: its sheets, by tab name, and warnings;
+ *  and the columns its tabs keep out of search, when its write names some
+ *  (Links: ids and kinds, no words to search). */
+type AfterResult = { sheets: ParsedSheet[]; warnings: string[]; ftsSkipColumns?: string[] };
 
 /**
  * Run an `after` pipeline on the database at `abs`, read only: its sheets
@@ -206,7 +208,12 @@ export async function afterSheetsOf(
   if (run.status !== 'ok') {
     throw new PipelineRunError(`${pipeline.id} ended with the status ${run.status}`);
   }
-  return { sheets: run.write?.tabs ?? [], warnings: [...run.warnings, ...body.warnings] };
+  const skip = run.write?.ftsSkipColumns;
+  return {
+    sheets: run.write?.tabs ?? [],
+    warnings: [...run.warnings, ...body.warnings],
+    ...(skip && skip.length > 0 ? { ftsSkipColumns: [...skip] } : {}),
+  };
 }
 
 /** A real read: the router's run is counted for this box and file. */
@@ -1016,7 +1023,11 @@ async function patchDatabaseAt(
     columns: t.columns.map((c) => c.name),
   }));
   if (!afterMatches(pipeline, file.ext, tabs)) return { status: 'skipped', reason: 'no-match' };
-  const { sheets, warnings } = await afterSheetsOf(pipeline, file.sqlite, state.options);
+  const { sheets, warnings, ftsSkipColumns } = await afterSheetsOf(
+    pipeline,
+    file.sqlite,
+    state.options,
+  );
   const declared: readonly string[] = pipeline.produces.tabs ?? [];
   const own = new Set(declared);
   const stray = sheets.find((sheet) => !own.has(sheet.name));
@@ -1027,6 +1038,7 @@ async function patchDatabaseAt(
     since,
     replaceTabs: declared,
     tabs: written,
+    ...(ftsSkipColumns ? { ftsSkipColumns } : {}),
     setMeta: {
       pipelines_after: withAfterEntry(meta?.pipelines_after, pipeline, state.optionsHash),
     },
