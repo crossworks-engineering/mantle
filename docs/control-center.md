@@ -565,6 +565,12 @@ sends it as a bug, a feature or a request
 - One submission that fails waits for the next sweep. The others go on, and
   each box's replies go in every sweep.
 - The control service mounts the files store (`/data/files`) for this.
+- **From the messenger** (fleet chat, [messenger](./messenger.md), "IT
+  desks"): a line to `@bugs (IT)`, `@feature (IT)` or `@requests (IT)` is
+  the same Send to IT. On the CC, the sweep also writes a copy line, with
+  the files, in the CC's oldest live group whose intake form is the kind. A
+  Reply there is the reply on the copy, and the answer comes back as a line
+  in the chat the report was sent from.
 
 ## The admin channel
 

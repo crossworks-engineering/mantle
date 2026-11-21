@@ -124,6 +124,8 @@ export type {
   MessengerListResponse,
   MessengerListRow,
   MessengerMention,
+  MessengerDeskKind,
+  MessengerDeskStatus,
   MessengerMessage,
   MessengerMessageStatus,
   MessengerMessagesResponse,

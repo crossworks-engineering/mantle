@@ -39,11 +39,13 @@ import {
   MESSENGER_ATTACHMENT_MAX_BYTES,
   MessengerNotFoundError,
   addMessengerAttachmentRow,
+  appendDeskCopy,
   q,
   takeBudget,
   type MessengerActor,
   type MessengerAttachmentView,
 } from './messenger';
+import type { MessengerIntakeKind } from '@mantle/client-types/messenger-intake';
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 
@@ -163,4 +165,44 @@ export async function saveMessengerAttachment(
   takeBudget(actor, 'write');
   const { row, bytes } = await bytesOf(actor, id);
   return upsertFile({ ownerId: actor.ownerId, parentPath, filename: row.name, bytes });
+}
+
+/**
+ * A report from a box as a line on the Control Center (the submissions
+ * sweep, after its copy task is made): the report's files staged in the
+ * store (each one a line may carry: the type list and the cap; one that
+ * does not fit stays on the copy task only), then the copy line in the
+ * group whose intake form is the kind (appendDeskCopy). False when no
+ * group asks for the kind. The system's work.
+ */
+export async function deskCopyLine(
+  ownerId: string,
+  args: {
+    kind: MessengerIntakeKind;
+    authorName: string;
+    body: string;
+    copyTaskId: string;
+    box: { id: string; name: string };
+    files: readonly { filename: string; bytes: Buffer }[];
+  },
+): Promise<boolean> {
+  const files = [];
+  for (const f of args.files) {
+    const name = sanitizeFilename(f.filename);
+    if (!name || messengerFileRefusal(name, f.bytes.byteLength)) continue;
+    const ext = extOf(name);
+    const mime = mimeForExt(ext);
+    const { key } = await stageFileObject(f.bytes, mime);
+    files.push({
+      kind: IMAGE_EXTS.has(ext) ? ('image' as const) : ('file' as const),
+      name,
+      mime,
+      bytes: f.bytes.byteLength,
+      sha256: key.slice(key.lastIndexOf('/') + 1),
+      path: key,
+      width: null,
+      height: null,
+    });
+  }
+  return appendDeskCopy(ownerId, { ...args, files });
 }

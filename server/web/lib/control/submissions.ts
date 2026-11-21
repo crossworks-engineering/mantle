@@ -8,7 +8,9 @@
  *  - `file`: one file of such a task, base64 (at most 10 MB).
  *  - `collected`: the task ids the CC holds now; they leave the list.
  *  - `reply`: the CC's reply on one task sent to IT: the task becomes done
- *    (deliverReply). A second reply is answered `delivered: false`.
+ *    (deliverReply). A second reply is answered `delivered: false`. A task
+ *    sent from a chat to an IT desk (fleet chat M3) also gets the answer as
+ *    a line in that chat (deskAnswerLine).
  *
  * The person's task and its files stay on the box. The CC holds a copy.
  */
@@ -16,6 +18,9 @@ import { and, db, eq, inArray, nodes, sql } from '@mantle/db';
 import { TASK_FILE_MAX_BYTES, TASK_FILES_MAX } from '@mantle/client-types/task-files';
 import { deliverReply, listTaskFiles, replyOf } from '@mantle/content';
 import { readFileById } from '@mantle/files';
+import { deskAnswerLine } from '@mantle/content/messenger';
+import { log } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 
 /** The longest body one list call carries (the task routes' own cap). */
 const BODY_MAX = 50_000;
@@ -115,5 +120,13 @@ export async function replyFromCenter(
   args: { taskId: string; note: string; version: string; by: string },
 ): Promise<{ delivered: boolean }> {
   const reply = replyOf(args.note, args.version, args.by);
-  return { delivered: await deliverReply(ownerId, args.taskId, reply, 'it') };
+  const delivered = await deliverReply(ownerId, args.taskId, reply, 'it');
+  if (delivered) {
+    // The line in the chat it came from, if any. The task holds the answer
+    // either way, so a failed line never makes the CC send it again.
+    await deskAnswerLine(ownerId, args.taskId, { note: reply.note, by: reply.by }).catch((err) =>
+      log('control').warn(`desk answer line for ${args.taskId}: ${errorMessage(err)}`),
+    );
+  }
+  return { delivered };
 }

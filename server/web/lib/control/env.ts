@@ -52,13 +52,8 @@ export function subjectConfig(): SubjectConfig {
   return { on: true, centerUrl: lines.centerUrl, key, origin: lines.origin };
 }
 
-/** The Control Center's name on this box's Send button
- *  (MANTLE_CONTROL_CENTER_LABEL, set with the two CC lines): IT by default.
- *  Plain words only, at most 24 characters. */
-export function controlCenterLabel(): string {
-  const v = (env('MANTLE_CONTROL_CENTER_LABEL') ?? '').trim();
-  return /^[\p{L}\p{N} ._-]{1,24}$/u.test(v) ? v : 'IT';
-}
+/** The Control Center's name on this box (@mantle/config). */
+export { controlCenterLabel } from '@mantle/config';
 
 /** The admin channel's scope (docs/control-center.md, "The admin channel"):
  *  what a linked box lets the CC run through its signed `tool` call. */

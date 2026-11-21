@@ -603,6 +603,55 @@ by}` and a reply to the first line. Other talk in the group stays in the
 - **Cost.** A copy line and a line back are system lines. They start no
   agent turn, and a mention in them is stored only.
 
+## IT desks
+
+Fleet chat phase 1, milestone 3 (plan page f2f19c7b, section 7, D3 A), in
+`packages/content/src/messenger-desks.ts`. On a box linked to a Control
+Center (the two CC lines, the check Send to IT asks), the @ list shows
+three **IT desks**: `@bugs (IT)`, `@feature (IT)` and `@requests (IT)`
+(`IT_DESKS`; the site is `MANTLE_CONTROL_CENTER_LABEL`, IT by default).
+The three words are reserved handles, so no local group takes one.
+
+- **The directory** lists each desk to every login on a linked box: `kind:
+"desk"`, `id` its kind (bug, feature, request), `handle`, `intake` and
+  `site`. A box with no CC lists none, and a desk mention there is refused.
+- **A line to a desk** carries the mention `{kind: "desk", id: <kind>}` (one
+  desk a line; desks and handles at most 3 together). The send first makes
+  my own task, in my own scope, as by hand: the first line as its title
+  (200 characters), the line as its body, the filled form with `answers`.
+  Then, as the step `submissions` for that one new task, the line's files
+  become task files and the task is sent to `it` (`submitTask`), with the
+  chat in its block (`chat: {conversationId}`). Then the line, whose
+  mention gains `taskId`. A line that fails takes the task off again. A
+  retry with the same client id answers the stored line and makes no
+  second task.
+- **The status** is read on every read of the line from the task's block,
+  for every reader of the line: `sent`, `received` (the Control Center took
+  it) or `answered`.
+- **The answer.** The Control Center's one reply reaches the task in the
+  sweep (up to 5 minutes). The box then writes a system line in the chat:
+  `@bugs (IT), Dana: the note`, a reply to the first line, with the event
+  `{type: "desk_answer", desk, taskId}`. Text only. A chat that is gone or
+  archived gets no line; the task holds the answer.
+- **No open chat.** `to: {handle: "bugs", site?: "IT"}` (`POST
+/api/messenger/send`, `POST /api/messenger/to`, `messenger_send`) posts
+  in my own thread "To @bugs (IT)", made once and found by its first line
+  (`to_thread` with `{desk}`). A site the box does not know is refused; a
+  local handle takes no site.
+- **On the Control Center.** The submissions sweep, after it makes the copy
+  task, writes a copy line in the CC's oldest live group whose intake form
+  is the kind: a system line by `<name> (<box>)`, the title and the body,
+  the files (those a line may carry), and the event `{type: "desk_copy",
+taskId, box}` (the CC's copy). No such group: no line, the copy task is
+  still made. A Reply on that line is the reply on the copy, in the
+  replier's own scope, with the running version: who may edit the copy
+  answers it, once (the note is the first 2000 characters; the line keeps
+  the whole text). A Reply by who may not, or a second one, stays in the
+  group, and a system line says why.
+- **Cost.** A desk line, a copy line and an answer line start no agent turn
+  (see "Cost safety": a system line never starts one).
+  The road is the Send to IT sweep: no new signed case.
+
 ## Files on lines
 
 Fleet chat phase 1 (plan page f2f19c7b, section 8) fills
@@ -645,7 +694,10 @@ Fleet chat phase 1 (plan page f2f19c7b, section 8) fills
 
 Nothing in Phase 1 can start LLM work: no cron, no queue row, no trigger that
 spends. A mention is stored only. Phase 3 adds the group turn, started only by
-a login's message that tags the group's agent, never by an agent's message.
+a login's message that tags the group's agent, never by an agent's message
+and never by a system line. A fleet chat copy line, desk copy or answer
+carries a person's name in `author_name`: the turn reads `author_kind =
+'login'`, never the author's name.
 
 ## Tests
 

@@ -51,6 +51,9 @@ export type TaskSubmission =
       copyId?: string;
       collectedAt?: string;
       reply?: SubmissionReply;
+      /** Sent from a chat to an IT desk (fleet chat M3): the answer comes
+       *  back there as a line too. */
+      chat?: { conversationId: string };
     }
   | {
       side: 'received';

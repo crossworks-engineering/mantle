@@ -134,7 +134,19 @@ export type MessengerConversation = {
  *  and `seq` (the copy line in that group); a client sends `id` only. */
 export type MessengerMention =
   | { kind: MessengerParticipantKind; id: string }
-  | { kind: 'handle'; id: string; handle?: string; seq?: number };
+  | { kind: 'handle'; id: string; handle?: string; seq?: number }
+  /** An IT desk (fleet chat M3), on a box linked to a Control Center:
+   *  `id` the desk's kind (bug, feature, request). The send makes a Send
+   *  to IT task and fills `taskId`; a read fills `status` from it. A
+   *  client sends `kind` and `id` only. */
+  | { kind: 'desk'; id: MessengerDeskKind; taskId?: string; status?: MessengerDeskStatus };
+
+/** The kind of an IT desk: its Send to IT kind. */
+export type MessengerDeskKind = 'bug' | 'feature' | 'request';
+
+/** Where a report to an IT desk stands: sent (waits for the Control
+ *  Center), received (the Control Center took it), answered. */
+export type MessengerDeskStatus = 'sent' | 'received' | 'answered';
 
 /** What a system line marks (calls plan section 8). The client tells a
  *  call line apart by `type`; `callId` names the call (GET .../calls). */
@@ -158,7 +170,13 @@ export type MessengerEvent =
   | { type: 'intake_sender_left'; seq: number }
   /** The first line of my own thread to a handle (a group of one, "To
    *  @bugs"): the send finds the thread again by it. */
-  | { type: 'to_thread'; to: { conversationId: string } };
+  | { type: 'to_thread'; to: { conversationId: string } | { desk: MessengerDeskKind } }
+  /** On a box: the IT desk's answer to the report at the line this one
+   *  replies to (the Control Center's reply on task `taskId`). */
+  | { type: 'desk_answer'; desk: MessengerDeskKind; taskId: string }
+  /** On the Control Center: a report from a box, in the group whose intake
+   *  form is its kind. `taskId` is the CC's copy; a Reply here answers it. */
+  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } };
 
 /** A file on a line (fleet chat, plan section 8). */
 export type MessengerAttachment = {
@@ -173,8 +191,14 @@ export type MessengerAttachment = {
  *  `attachments`. At most 10 MB (413), 5 on a line, the task file types. */
 export type MessengerAttachmentResponse = { attachment: MessengerAttachment };
 
-/** POST /api/messenger/to {handle}: the chat a post to the handle goes in. */
-export type MessengerOpenToResponse = { conversationId: string; groupId: string; member: boolean };
+/** POST /api/messenger/to {handle, site?}: the chat a post to the handle
+ *  goes in. An IT desk has no group here: `groupId` null, `desk` its kind. */
+export type MessengerOpenToResponse = {
+  conversationId: string;
+  groupId: string | null;
+  member: boolean;
+  desk?: MessengerDeskKind;
+};
 
 export type MessengerReaction = { emoji: string; count: number; mine: boolean };
 
@@ -304,7 +328,7 @@ export type MessengerSendToResponse = MessengerSendResponse & { conversationId: 
  *  post to (`id` its conversation id, `name` its title, `member` whether I
  *  am in it). */
 export type MessengerDirectoryEntry = {
-  kind: MessengerParticipantKind | 'handle';
+  kind: MessengerParticipantKind | 'handle' | 'desk';
   id: string;
   name: string;
   /** Active in the last two minutes (logins only). */
@@ -322,6 +346,9 @@ export type MessengerDirectoryEntry = {
   handle?: string;
   intake?: 'bug' | 'feature' | 'request' | null;
   member?: boolean;
+  /** Desks only: the Control Center's name (shown as `@bugs (IT)`). A desk's
+   *  `id` is its kind, its `intake` the same kind. */
+  site?: string;
 };
 
 export type MessengerDirectoryResponse = { entries: MessengerDirectoryEntry[] };

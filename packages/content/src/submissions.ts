@@ -184,7 +184,14 @@ export async function taskFilesWithBytes(
 export async function submitTask(
   ownerId: string,
   taskId: string,
-  args: { kind: SubmissionKind; to: SubmitTarget; byLogin: string | null },
+  args: {
+    kind: SubmissionKind;
+    to: SubmitTarget;
+    byLogin: string | null;
+    /** Sent from a chat to an IT desk (fleet chat M3): the answer also
+     *  comes back there as a line. */
+    chat?: { conversationId: string };
+  },
 ): Promise<TaskRow | null> {
   return submissionsDoor(taskId, async () => {
     const task = await getTask(ownerId, taskId);
@@ -197,6 +204,7 @@ export async function submitTask(
       to: args.to,
       sentAt: new Date().toISOString(),
       by,
+      ...(args.chat ? { chat: { conversationId: args.chat.conversationId } } : {}),
     };
     // The claim first, so two sends at once make one copy.
     if (!(await swapBlock(taskId, null, sent))) {

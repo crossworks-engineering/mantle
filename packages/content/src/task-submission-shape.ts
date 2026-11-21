@@ -30,6 +30,7 @@ export function submissionOf(data: Record<string, unknown>): TaskSubmission | un
   const kind = s.kind as TaskSubmission['kind'];
   const reply = replyOf(s.reply);
   if (s.side === 'sent') {
+    const chat = rec(s.chat);
     if (!(SUBMIT_TARGETS as readonly unknown[]).includes(s.to) || !str(s.sentAt)) return undefined;
     return {
       side: 'sent',
@@ -39,6 +40,9 @@ export function submissionOf(data: Record<string, unknown>): TaskSubmission | un
       ...(str(s.copyId) ? { copyId: s.copyId } : {}),
       ...(str(s.collectedAt) ? { collectedAt: s.collectedAt } : {}),
       ...(reply ? { reply } : {}),
+      ...(chat && str(chat.conversationId)
+        ? { chat: { conversationId: chat.conversationId } }
+        : {}),
     };
   }
   if (s.side === 'received') {

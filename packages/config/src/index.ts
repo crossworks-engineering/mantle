@@ -591,4 +591,4 @@ export * from './parse';
 export * from './numbers';
 export * from './features';
 export * from './boot-smoke';
-export { controlSubjectLines, type ControlLines } from './control-lines';
+export { controlCenterLabel, controlSubjectLines, type ControlLines } from './control-lines';

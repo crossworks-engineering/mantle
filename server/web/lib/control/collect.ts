@@ -7,8 +7,10 @@
  *     does not hold yet (the box id and the task id find it), fetch its
  *     files one at a time (`file`), each held to the task file type list and
  *     the 10 MB cap, and make the copy in the CC's Admin workspace
- *     (makeReceivedCopy, the same as a local Send to Admin). Then mark them
- *     `collected` on the box.
+ *     (makeReceivedCopy, the same as a local Send to Admin). A copy line
+ *     goes in the CC's group whose intake form is the kind, with the files
+ *     (fleet chat M3, deskCopyLine; a Reply there answers the copy). Then
+ *     mark them `collected` on the box.
  *  2. Send each reply a CC Admin wrote on a copy from this box and the box
  *     has not had (`reply`), and note it sent.
  *
@@ -21,6 +23,7 @@ import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
 import { db, nodes, sql } from '@mantle/db';
 import { makeReceivedCopy } from '@mantle/content';
+import { deskCopyLine } from '@mantle/content/messenger-attachments';
 import {
   SUBMISSION_KINDS,
   SUBMISSION_NOTE_MAX,
@@ -150,13 +153,26 @@ async function collect(
     try {
       if (!(await holds(box.id, s.taskId))) {
         const files = await fetchFiles(key, box, s, budget);
-        await makeReceivedCopy(anchor, {
+        const from = { id: box.id, name: boxName(box) };
+        const copyId = await makeReceivedCopy(anchor, {
           kind: s.kind,
           title: `${boxName(box)}: ${s.title}`.slice(0, 200),
           body: s.body,
-          from: { box: { id: box.id, name: boxName(box) }, taskId: s.taskId, by: s.by },
+          from: { box: from, taskId: s.taskId, by: s.by },
           files,
         });
+        // The copy line for the developers. The copy task is the record: a
+        // failed line never holds the report back.
+        await deskCopyLine(anchor, {
+          kind: s.kind,
+          authorName: `${s.by.name || s.by.email || 'Someone'} (${from.name})`.slice(0, 200),
+          body: s.body.startsWith(s.title) ? s.body : `${s.title}\n\n${s.body}`,
+          copyTaskId: copyId,
+          box: from,
+          files,
+        }).catch((err) =>
+          log('control').warn(`box ${box.id} desk line ${s.taskId}: ${errorMessage(err)}`),
+        );
       }
       held.push(s.taskId);
     } catch (err) {

@@ -56,9 +56,16 @@ const SendBody = z.object({
   // Empty only with answers (the filled form is the text).
   body: z.string().max(8000),
   // A handle mention (fleet chat, 0394) names a group with a handle: the
-  // send writes a copy line there (at most 3, the store's rule).
+  // send writes a copy line there (at most 3, the store's rule). A desk
+  // mention (fleet chat M3) names an IT desk by its kind: the send makes a
+  // Send to IT task (one desk a line, on a box linked to a Control Center).
   mentions: z
-    .array(z.object({ kind: z.enum(['login', 'agent', 'handle']), id: z.string().uuid() }))
+    .array(
+      z.union([
+        z.object({ kind: z.enum(['login', 'agent', 'handle']), id: z.string().uuid() }),
+        z.object({ kind: z.literal('desk'), id: z.enum(['bug', 'feature', 'request']) }),
+      ]),
+    )
     .max(203)
     .optional(),
   // The answers to the intake form of the one handle named.

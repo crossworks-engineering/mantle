@@ -71,6 +71,21 @@ import { APP_VERSION } from '@mantle/client-types/version';
 import { TASK_FILE_MAX_BYTES, TASK_FILES_MAX } from '@mantle/client-types/task-files';
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import { workspaceAssistants } from './team-assistant';
+import { SUBMISSION_NOTE_MAX } from '@mantle/client-types/task-submissions';
+import {
+  checkDeskSite,
+  deskEntries,
+  deskLabel,
+  deskOfHandle,
+  deskStatusOf,
+  deskTask,
+  itDesksOn,
+  undoDeskTask,
+  type DeskKind,
+} from './messenger-desks';
+import { replyToSubmission } from './submissions';
+
+export { deskLabel } from './messenger-desks';
 
 // ── Limits ───────────────────────────────────────────────────────────────────
 
@@ -192,7 +207,15 @@ export type MessengerVia = { label: string | null; ref: string };
  *  copy line it wrote in that group). */
 export type MessengerMention =
   | { kind: 'login' | 'agent'; id: string }
-  | { kind: 'handle'; id: string; handle?: string; seq?: number };
+  | { kind: 'handle'; id: string; handle?: string; seq?: number }
+  /** An IT desk (fleet chat M3): `id` its kind; `taskId` the Send to IT
+   *  task the send made; `status` filled on read. */
+  | {
+      kind: 'desk';
+      id: MessengerIntakeKind;
+      taskId?: string;
+      status?: 'sent' | 'received' | 'answered';
+    };
 
 /** The avatar a login chose in Appearance (its seed and builder parts) or
  *  an agent's, drawn in the brain's one style; the shape GET /api/shell
@@ -317,9 +340,10 @@ export type MessengerListRowView = {
 };
 
 export type MessengerDirectoryEntryView = {
-  /** A login, an agent, or a handle (0394): a group on this box with a
-   *  handle, which every login may post to. */
-  kind: 'login' | 'agent' | 'handle';
+  /** A login, an agent, a handle (0394): a group on this box with a
+   *  handle, which every login may post to; or an IT desk (fleet chat M3,
+   *  a linked box only): `id` its kind. */
+  kind: 'login' | 'agent' | 'handle' | 'desk';
   id: string;
   name: string;
   online: boolean;
@@ -334,6 +358,8 @@ export type MessengerDirectoryEntryView = {
   handle?: string;
   intake?: MessengerIntakeKind | null;
   member?: boolean;
+  /** Desks only: the Control Center's name, shown as `@bugs (IT)`. */
+  site?: string;
 };
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -551,6 +577,7 @@ export async function messengerDirectory(
       avatar: faces.get(a.id)?.avatar ?? null,
     })),
     ...handles,
+    ...deskEntries(term),
   ];
 }
 
@@ -1068,7 +1095,7 @@ function attachmentIds(list: readonly string[] | undefined): string[] {
   return ids;
 }
 
-type AttachmentRow = {
+export type AttachmentRow = {
   id: string;
   kind: 'image' | 'file' | 'voice' | 'audio' | 'video';
   name: string;
@@ -1206,11 +1233,13 @@ async function handleGroups(
 function intakeBody(
   body: string,
   answers: Readonly<Record<string, string>> | null | undefined,
-  group: HandleGroup | null,
+  group: { intake: MessengerIntakeKind | null } | null,
 ): string {
   if (!answers) return body;
   if (!group?.intake) {
-    throw new InputError('answers go with exactly one handle whose group has an intake form.');
+    throw new InputError(
+      'answers go with exactly one handle whose group has an intake form, or one IT desk.',
+    );
   }
   const form = MESSENGER_INTAKE_FORMS[group.intake];
   const keys = new Set(form.map((f) => f.key));
@@ -1250,17 +1279,24 @@ async function intakeOrigin(
   tx: Tx,
   conversationId: string,
   seq: number | null,
-): Promise<{ conversationId: string; seq: number; by: string | null } | null> {
-  if (seq === null) return null;
+): Promise<{
+  origin: { conversationId: string; seq: number; by: string | null } | null;
+  deskCopy: string | null;
+}> {
+  if (seq === null) return { origin: null, deskCopy: null };
   const [row] = await q<{ event: MessengerEventJson | null }>(
     tx,
     sql`select event from messenger_messages
          where conversation_id = ${conversationId}::uuid and seq = ${seq} and author_kind = 'system'`,
   );
   const e = row?.event;
-  return e && e.type === 'intake' && isUuid(e.from.conversationId)
-    ? { conversationId: e.from.conversationId.toLowerCase(), seq: e.from.seq, by: e.by }
-    : null;
+  const origin =
+    e && e.type === 'intake' && isUuid(e.from.conversationId)
+      ? { conversationId: e.from.conversationId.toLowerCase(), seq: e.from.seq, by: e.by }
+      : null;
+  // A report from a box on the Control Center: a Reply answers its copy.
+  const deskCopy = e && e.type === 'desk_copy' && isUuid(e.taskId) ? e.taskId : null;
+  return { origin, deskCopy };
 }
 
 /** Lock the conversation rows a send writes, in id order, so two sends
@@ -1306,153 +1342,361 @@ export async function sendMessengerMessage(
   if (clientMsgId && clientMsgId.length > MESSENGER_CLIENT_MSG_MAX) {
     throw new InputError(`A client message id is at most ${MESSENGER_CLIENT_MSG_MAX} characters.`);
   }
-  const { people: mentions, handles: handleIds } = dedupeMentions(input.mentions ?? []);
+  const { people: mentions, handles: handleIds, desk } = dedupeMentions(input.mentions ?? []);
   const replyTo = input.replyToSeq == null ? null : seqOr(input.replyToSeq, 'reply_to_seq');
   const self = actor.loginId.toLowerCase();
   const here = uuidOr(conversationId, 'The conversation');
   // A handle to the chat itself writes no copy (the line is there).
-  if (input.answers && handleIds.length !== 1) {
-    throw new InputError('answers go with exactly one handle whose group has an intake form.');
+  if (input.answers && handleIds.length + (desk ? 1 : 0) !== 1) {
+    throw new InputError(
+      'answers go with exactly one handle whose group has an intake form, or one IT desk.',
+    );
   }
   if (!input.answers && rawBody.trim() === '' && fileIds.length === 0) {
     throw new InputError('A message must have some text or a file.');
   }
+  // A retry of a line already stored answers that line, before the handles
+  // are read again (a handle's group may be gone since) and before a desk
+  // makes a second task. Unlocked: the unique index is the backstop, and
+  // the check under the lock below stays.
+  if (clientMsgId) {
+    const prior = await priorLine(db, here, self, clientMsgId);
+    if (prior !== null) return readBack(actor, here, prior, false);
+  }
+  // A line to an IT desk is a Send to IT task, made first in my own scope
+  // (my own task): the line names it. A line that then fails takes it off.
+  const deskBody = desk ? intakeBody(rawBody, input.answers, { intake: desk }) : null;
+  if (deskBody !== null && deskBody.length > MESSENGER_BODY_MAX) {
+    throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
+  }
+  const deskTaskId = desk
+    ? await deskTask(actor, { kind: desk, body: deskBody!, conversationId: here, fileIds })
+    : null;
 
-  const out = await systemDb.transaction(async (tx) => {
-    // A retry of a line already stored answers that line, before the
-    // handles are read again (a handle's group may be gone since). Unlocked:
-    // the unique index is the backstop, and the check under the lock below
-    // stays.
-    if (clientMsgId) {
-      const prior = await priorLine(tx, here, self, clientMsgId);
-      if (prior !== null) return { seq: prior, created: false };
-    }
-    const named = await handleGroups(tx, actor, handleIds);
-    const groups = named.filter((g) => g.id !== here);
-    const body = intakeBody(rawBody, input.answers, named[0] ?? null);
-    if (body.length > MESSENGER_BODY_MAX) {
-      throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
-    }
-    const origin = await intakeOrigin(tx, here, replyTo);
-    await lockInOrder(tx, [
-      here,
-      ...groups.map((g) => g.id),
-      ...(origin ? [origin.conversationId] : []),
-    ]);
-    const { conv, me } = await lockForActor(tx, actor, here);
-    if (conv.archived_at) throw new MessengerRefusedError('This chat is archived.');
-    if (clientMsgId) {
-      const prior = await priorLine(tx, conv.id, self, clientMsgId);
-      if (prior !== null) return { seq: prior, created: false };
-    }
-    if (replyTo !== null && (replyTo < 1 || replyTo > num(conv.last_seq))) {
-      throw new InputError('reply_to_seq must be the seq of a message in this chat.');
-    }
-    if (mentions.length > 0) {
-      const live = await q<{ kind: 'login' | 'agent'; id: string }>(
-        tx,
-        sql`select kind, coalesce(login_id, agent_id)::text as id from messenger_participants
+  const out = await systemDb
+    .transaction(async (tx) => {
+      const named = await handleGroups(tx, actor, handleIds);
+      const groups = named.filter((g) => g.id !== here);
+      const body = deskBody ?? intakeBody(rawBody, input.answers, named[0] ?? null);
+      if (body.length > MESSENGER_BODY_MAX) {
+        throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
+      }
+      const { origin, deskCopy } = await intakeOrigin(tx, here, replyTo);
+      await lockInOrder(tx, [
+        here,
+        ...groups.map((g) => g.id),
+        ...(origin ? [origin.conversationId] : []),
+      ]);
+      const { conv, me } = await lockForActor(tx, actor, here);
+      if (conv.archived_at) throw new MessengerRefusedError('This chat is archived.');
+      if (clientMsgId) {
+        const prior = await priorLine(tx, conv.id, self, clientMsgId);
+        if (prior !== null) return { seq: prior, created: false, deskCopy: null, body };
+      }
+      if (replyTo !== null && (replyTo < 1 || replyTo > num(conv.last_seq))) {
+        throw new InputError('reply_to_seq must be the seq of a message in this chat.');
+      }
+      if (mentions.length > 0) {
+        const live = await q<{ kind: 'login' | 'agent'; id: string }>(
+          tx,
+          sql`select kind, coalesce(login_id, agent_id)::text as id from messenger_participants
              where conversation_id = ${conv.id}::uuid and left_at is null`,
-      );
-      const ok = new Set(live.map((p) => `${p.kind}:${p.id}`));
-      for (const m of mentions) {
-        if (!ok.has(`${m.kind}:${m.id}`)) {
-          throw new InputError('A mention must name someone in this chat.');
+        );
+        const ok = new Set(live.map((p) => `${p.kind}:${p.id}`));
+        for (const m of mentions) {
+          if (!ok.has(`${m.kind}:${m.id}`)) {
+            throw new InputError('A mention must name someone in this chat.');
+          }
         }
       }
-    }
-    const files = await claimAttachments(tx, conv.id, self, fileIds);
-    const names = await loginNames([self], tx);
-    const myName = names.get(self) ?? null;
-    // The seq this line takes (the row is locked): the copies point at it.
-    const lineSeq = num(conv.last_seq) + 1;
-    const handleMentions: MessengerMention[] = [];
-    for (const g of groups) {
-      const target = await lockConversation(tx, g.id);
-      if (!target || target.archived_at || target.handle === null) {
-        throw new InputError('A handle must name a group with a handle on this box.');
+      const files = await claimAttachments(tx, conv.id, self, fileIds);
+      const names = await loginNames([self], tx);
+      const myName = names.get(self) ?? null;
+      // The seq this line takes (the row is locked): the copies point at it.
+      const lineSeq = num(conv.last_seq) + 1;
+      const handleMentions: MessengerMention[] = [];
+      for (const g of groups) {
+        const target = await lockConversation(tx, g.id);
+        if (!target || target.archived_at || target.handle === null) {
+          throw new InputError('A handle must name a group with a handle on this box.');
+        }
+        const copyFiles = files.map(() => randomUUID());
+        const copy = await appendMessageRow(tx, target, {
+          authorKind: 'system',
+          authorLoginId: null,
+          authorName: myName,
+          via: actor.via ?? null,
+          body,
+          mentions: [],
+          replyToSeq: null,
+          clientMsgId: null,
+          event: { type: 'intake', from: { conversationId: conv.id, seq: lineSeq }, by: self },
+          attachments: copyFiles,
+        });
+        await copyAttachments(tx, files, copyFiles, target.id, copy.id, self);
+        const copySeq = copy.seq;
+        handleMentions.push({ kind: 'handle', id: g.id, handle: target.handle, seq: copySeq });
       }
-      const copyFiles = files.map(() => randomUUID());
-      const copy = await appendMessageRow(tx, target, {
-        authorKind: 'system',
-        authorLoginId: null,
+      // Handles the line names that are this chat itself keep their mention.
+      for (const id of handleIds) {
+        if (id === conv.id && conv.handle)
+          handleMentions.push({ kind: 'handle', id, handle: conv.handle });
+      }
+      const deskMentions: MessengerMention[] =
+        desk && deskTaskId ? [{ kind: 'desk', id: desk, taskId: deskTaskId }] : [];
+      const line = await appendMessageRow(tx, conv, {
+        authorKind: 'login',
+        authorLoginId: self,
         authorName: myName,
         via: actor.via ?? null,
         body,
-        mentions: [],
-        replyToSeq: null,
-        clientMsgId: null,
-        event: { type: 'intake', from: { conversationId: conv.id, seq: lineSeq }, by: self },
-        attachments: copyFiles,
+        mentions: [...mentions, ...handleMentions, ...deskMentions],
+        replyToSeq: replyTo,
+        clientMsgId,
+        attachments: fileIds,
       });
-      await copyAttachments(tx, files, copyFiles, target.id, copy.id, self);
-      const copySeq = copy.seq;
-      handleMentions.push({ kind: 'handle', id: g.id, handle: target.handle, seq: copySeq });
-    }
-    // Handles the line names that are this chat itself keep their mention.
-    for (const id of handleIds) {
-      if (id === conv.id && conv.handle)
-        handleMentions.push({ kind: 'handle', id, handle: conv.handle });
-    }
-    const line = await appendMessageRow(tx, conv, {
-      authorKind: 'login',
-      authorLoginId: self,
-      authorName: myName,
-      via: actor.via ?? null,
-      body,
-      mentions: [...mentions, ...handleMentions],
-      replyToSeq: replyTo,
-      clientMsgId,
-      attachments: fileIds,
+      const seq = line.seq;
+      if (fileIds.length > 0) {
+        await tx
+          .update(messengerAttachments)
+          .set({ messageId: line.id })
+          .where(inArray(messengerAttachments.id, fileIds));
+      }
+      const mentioned = mentions
+        .filter((m) => m.kind === 'login' && m.id !== self)
+        .map((m) => m.id);
+      if (mentioned.length > 0) {
+        await tx
+          .update(messengerParticipants)
+          .set({ mentionSeq: seq })
+          .where(
+            and(
+              eq(messengerParticipants.conversationId, conv.id),
+              eq(messengerParticipants.kind, 'login'),
+              inArray(messengerParticipants.loginId, mentioned),
+            ),
+          );
+      }
+      if (origin) {
+        await lineBack(tx, conv, origin, {
+          seq,
+          id: line.id,
+          body,
+          by: self,
+          name: myName,
+          via: actor.via ?? null,
+        });
+      }
+      // Read up to the chat's last line: a line the send itself wrote after
+      // mine (the group hears the sender left) is read too.
+      const readTo = num(conv.last_seq);
+      if (num(me.last_read_seq) < readTo)
+        await tx
+          .update(messengerParticipants)
+          .set({ lastReadSeq: readTo })
+          .where(eq(messengerParticipants.id, me.id));
+      return { seq, created: true, deskCopy, body };
+    })
+    .catch(async (err: unknown) => {
+      if (deskTaskId) await undoDeskTask(actor.ownerId, deskTaskId);
+      throw err;
     });
-    const seq = line.seq;
-    if (fileIds.length > 0) {
-      await tx
-        .update(messengerAttachments)
-        .set({ messageId: line.id })
-        .where(inArray(messengerAttachments.id, fileIds));
-    }
-    const mentioned = mentions.filter((m) => m.kind === 'login' && m.id !== self).map((m) => m.id);
-    if (mentioned.length > 0) {
-      await tx
-        .update(messengerParticipants)
-        .set({ mentionSeq: seq })
-        .where(
-          and(
-            eq(messengerParticipants.conversationId, conv.id),
-            eq(messengerParticipants.kind, 'login'),
-            inArray(messengerParticipants.loginId, mentioned),
-          ),
-        );
-    }
-    if (origin) {
-      await lineBack(tx, conv, origin, {
-        seq,
-        id: line.id,
-        body,
-        by: self,
-        name: myName,
-        via: actor.via ?? null,
-      });
-    }
-    // Read up to the chat's last line: a line the send itself wrote after
-    // mine (the group hears the sender left) is read too.
-    const readTo = num(conv.last_seq);
-    if (num(me.last_read_seq) < readTo)
-      await tx
-        .update(messengerParticipants)
-        .set({ lastReadSeq: readTo })
-        .where(eq(messengerParticipants.id, me.id));
-    return { seq, created: true };
-  });
-  const [message] = await readMessagesBySeq(actor, here, [out.seq]);
+  // A Reply on a report from a box (the Control Center): the answer goes on
+  // its copy task, and the sweep carries it to the box. After the commit,
+  // in my own scope: who may edit the copy answers it.
+  if (out.created && out.deskCopy) {
+    await answerDeskCopy(actor, here, out.deskCopy, out.body, out.seq);
+  }
+  return readBack(actor, here, out.seq, out.created);
+}
+
+/**
+ * The IT desk's answer, on the box (the Control Center's reply case,
+ * lib/control/submissions.ts): a system line in the chat the report was
+ * sent from, `@bugs (IT), Ann: the note`, a reply to the line that named
+ * the desk. Text only. Nothing when the report came from no chat, or the
+ * chat is gone or archived (the task holds the answer). The system's work.
+ */
+export async function deskAnswerLine(
+  ownerId: string,
+  taskId: string,
+  answer: { note: string; by: string },
+): Promise<boolean> {
+  let kind: MessengerIntakeKind | null = null;
+  return writeSystemLine(
+    async (tx) => {
+      const [task] = await q<{ block: Record<string, unknown> | null }>(
+        tx,
+        sql`select data -> 'submission' as block from nodes
+             where id = ${taskId}::uuid and owner_id = ${ownerId}::uuid and type = 'task'`,
+      );
+      const chat = task?.block?.chat as { conversationId?: unknown } | undefined;
+      const k = task?.block?.kind;
+      if (typeof chat?.conversationId !== 'string' || !isMessengerIntakeKind(k)) return null;
+      kind = k;
+      return chat.conversationId;
+    },
+    async (tx, conv) => {
+      const [line] = await q<{ seq: string | number }>(
+        tx,
+        sql`select seq from messenger_messages
+             where conversation_id = ${conv.id}::uuid
+               and mentions @> ${JSON.stringify([{ kind: 'desk', taskId }])}::jsonb
+             order by seq limit 1`,
+      );
+      const desk = kind!;
+      return {
+        ...SYSTEM_AUTHOR,
+        authorName: answer.by,
+        body: fitBody(`${deskLabel(desk)}, ${answer.by}: ${answer.note}`, 'cut to fit'),
+        replyToSeq: line ? num(line.seq) : null,
+        event: { type: 'desk_answer', desk, taskId },
+      };
+    },
+  );
+}
+
+/**
+ * A report from a box, on the Control Center (the submissions sweep,
+ * lib/control/collect.ts): a copy line in the CC's own oldest live group
+ * whose intake form is the report's kind. A system line with the sender's
+ * name and box, the title and the body, the files (`files`: rows on bytes
+ * already in the store), and the event `desk_copy` that names the CC's
+ * copy task. False when no group asks for that kind (the copy task is
+ * still made). The system's work; it starts no agent turn.
+ */
+export async function appendDeskCopy(
+  ownerId: string,
+  args: {
+    kind: MessengerIntakeKind;
+    authorName: string;
+    body: string;
+    copyTaskId: string;
+    box: { id: string; name: string };
+    files: readonly Omit<AttachmentRow, 'id'>[];
+  },
+): Promise<boolean> {
+  const ids = args.files.map(() => randomUUID());
+  return writeSystemLine(
+    async (tx) => {
+      const [group] = await q<{ id: string }>(
+        tx,
+        sql`select id::text as id from messenger_conversations
+             where owner_id = ${ownerId}::uuid and kind = 'group' and intake = ${args.kind}
+               and ${isNull(messengerConversations.archivedAt)}
+             order by created_at, id limit 1`,
+      );
+      return group?.id ?? null;
+    },
+    async () => ({
+      ...SYSTEM_AUTHOR,
+      authorName: args.authorName,
+      body: fitBody(args.body, 'cut to fit; the whole report is on its task'),
+      event: { type: 'desk_copy', taskId: args.copyTaskId, box: args.box },
+      attachments: ids,
+    }),
+    (tx, conv, line) =>
+      copyAttachments(
+        tx,
+        args.files.map((f, i) => ({ ...f, id: ids[i]! })),
+        ids,
+        conv.id,
+        line.id,
+        null,
+      ),
+  );
+}
+
+/** A line I sent, as the send answers it. */
+async function readBack(
+  actor: MessengerActor,
+  conversationId: string,
+  seq: number,
+  created: boolean,
+): Promise<{ message: MessengerMessageView; created: boolean }> {
+  const [message] = await readMessagesBySeq(actor, conversationId, [seq]);
   if (!message) throw new MessengerNotFoundError();
-  return { message, created: out.created };
+  return { message, created };
+}
+
+/** The reply of a Reply on a `desk_copy` line: one answer per report. When
+ *  the copy has an answer already, or I may not edit it, the group hears so
+ *  and my line stays in the group. */
+async function answerDeskCopy(
+  actor: MessengerActor,
+  conversationId: string,
+  copyTaskId: string,
+  body: string,
+  seq: number,
+): Promise<void> {
+  let refusal: string | null = null;
+  try {
+    const done = await replyToSubmission(actor.ownerId, copyTaskId, {
+      note: body
+        .trim()
+        .slice(0, SUBMISSION_NOTE_MAX)
+        .replace(/[\uD800-\uDBFF]$/, ''),
+      version: APP_VERSION,
+      byLogin: actor.loginId,
+    });
+    if (!done) refusal = 'The report is gone, so this answer stays here.';
+  } catch (err) {
+    if (err instanceof ConflictError) {
+      refusal = 'This report has its one answer already, so this line stays here.';
+    } else if ((err as { code?: string } | null)?.code === '42501') {
+      refusal = 'Only who may edit the report may answer it, so this line stays here.';
+    } else if (err instanceof InputError) {
+      refusal = `This answer did not go back: ${err.message}`;
+    } else {
+      throw err;
+    }
+  }
+  if (!refusal) return;
+  const text = refusal;
+  await writeSystemLine(
+    async () => conversationId,
+    async () => ({ ...SYSTEM_AUTHOR, body: text, replyToSeq: seq }),
+  );
+}
+
+/** A system line's author fields. */
+const SYSTEM_AUTHOR = {
+  authorKind: 'system',
+  authorLoginId: null,
+  authorName: null,
+  via: null,
+  mentions: [],
+  replyToSeq: null,
+  clientMsgId: null,
+} as const satisfies Omit<AppendInput, 'body'>;
+
+/**
+ * The one door of the IT desk lines (the system's work, no actor): in one
+ * transaction, `pick` names the chat, which must be live; `make` gives the
+ * line (null: none); `after` adds to it (its files). False when no line
+ * was written.
+ */
+async function writeSystemLine(
+  pick: (tx: Tx) => Promise<string | null>,
+  make: (tx: Tx, conv: ConversationRow) => Promise<AppendInput | null>,
+  after?: (tx: Tx, conv: ConversationRow, line: { id: string; seq: number }) => Promise<void>,
+): Promise<boolean> {
+  return systemDb.transaction(async (tx) => {
+    const id = await pick(tx);
+    if (!id || !isUuid(id)) return false;
+    const conv = await lockConversation(tx, id);
+    if (!conv || conv.archived_at) return false;
+    const input = await make(tx, conv);
+    if (!input) return false;
+    const line = await appendMessageRow(tx, conv, input);
+    if (after) await after(tx, conv, line);
+    return true;
+  });
 }
 
 /** The seq of my line in a chat with this client message id, or null. */
 async function priorLine(
-  tx: Tx,
+  tx: Exec,
   conversationId: string,
   self: string,
   clientMsgId: string,
@@ -1543,29 +1787,65 @@ async function lineBack(
  */
 export async function sendMessengerTo(
   actor: MessengerActor,
-  to: { handle: string },
+  to: { handle: string; site?: string | null },
   input: Omit<MessengerSendInput, 'mentions'> & { mentions?: readonly MessengerMention[] },
 ): Promise<{ conversationId: string; message: MessengerMessageView; created: boolean }> {
-  const h = handleText(to.handle);
-  if (!h) throw new InputError('to.handle names a handle, e.g. "bugs".');
-  const { conversationId, groupId } = await openHandleChat(actor, h);
-  const mentions = [...(input.mentions ?? []), { kind: 'handle' as const, id: groupId }];
-  const out = await sendMessengerMessage(actor, conversationId, { ...input, mentions });
-  return { conversationId, ...out };
+  const chat = await openHandleChat(actor, to.handle, to.site);
+  const named: MessengerMention = chat.desk
+    ? { kind: 'desk', id: chat.desk }
+    : { kind: 'handle', id: chat.groupId! };
+  const mentions = [...(input.mentions ?? []), named];
+  const out = await sendMessengerMessage(actor, chat.conversationId, { ...input, mentions });
+  return { conversationId: chat.conversationId, ...out };
 }
 
 /** The chat a post to `handle` goes in (POST /api/messenger/to): the
  *  handle's group for a member, else my own "To @handle" thread, made once.
- *  The app opens it to add files before the first send. */
+ *  An IT desk (`bugs`, on a linked box; `site` empty or the Control
+ *  Center's name) is always my own "To @bugs (IT)" thread. The app opens
+ *  it to add files before the first send. */
 export async function openHandleChat(
   actor: MessengerActor,
   handle: string,
-): Promise<{ conversationId: string; groupId: string; member: boolean }> {
+  site?: string | null,
+): Promise<{ conversationId: string; groupId: string | null; member: boolean; desk?: DeskKind }> {
+  const desk = typeof handle === 'string' ? deskOfHandle(handle) : null;
+  if (desk) {
+    if (!itDesksOn()) {
+      throw new InputError('This box has no IT desks: it is not linked to a Control Center.');
+    }
+    checkDeskSite(site);
+    const conversationId = await toThread(actor, { desk: desk.kind }, deskLabel(desk.kind));
+    return { conversationId, groupId: null, member: false, desk: desk.kind };
+  }
+  if (site && site.trim()) {
+    throw new InputError('A site goes with an IT desk only (bugs, feature, requests).');
+  }
   const h = handleText(handle);
-  if (!h) throw new InputError('A handle names a group, e.g. "bugs".');
+  if (!h) throw new InputError('A handle names a group, e.g. "qa".');
   const group = await findHandleGroup(actor, h);
-  const conversationId = group.member ? group.id : await toThread(actor, group.id, h);
+  const conversationId = group.member
+    ? group.id
+    : await toThread(actor, { conversationId: group.id }, `@${h}`);
   return { conversationId, groupId: group.id, member: group.member };
+}
+
+/** The mention a send with `to` adds in an open chat: an IT desk (`bugs`,
+ *  on a linked box), else the live group with that handle. */
+export async function handleMention(
+  actor: MessengerActor,
+  handle: string,
+  site?: string | null,
+): Promise<MessengerMention> {
+  const desk = deskOfHandle(handle);
+  if (desk) {
+    checkDeskSite(site);
+    return { kind: 'desk', id: desk.kind };
+  }
+  if (site && site.trim()) {
+    throw new InputError('A site goes with an IT desk only (bugs, feature, requests).');
+  }
+  return { kind: 'handle', id: (await findHandleGroup(actor, handle)).id };
 }
 
 /** The live group with handle `handle` on this box, and whether I am in
@@ -1582,13 +1862,19 @@ export async function findHandleGroup(
   return { id: group.id, member: group.member };
 }
 
-/** My own thread for the handle's group `groupId`, made once (under a lock
- *  for the login and the address, so two sends at once make one). */
-async function toThread(actor: MessengerActor, groupId: string, handle: string): Promise<string> {
+/** My own thread for an address, made once (under a lock for the login and
+ *  the address, so two sends at once make one): a handle's group, or an IT
+ *  desk. `label` is the address as shown (`@qa`, `@bugs (IT)`). */
+async function toThread(
+  actor: MessengerActor,
+  to: { conversationId: string } | { desk: DeskKind },
+  label: string,
+): Promise<string> {
   takeBudget(actor, 'write');
   const self = actor.loginId.toLowerCase();
+  const key = 'desk' in to ? `desk:${to.desk}` : to.conversationId;
   return systemDb.transaction(async (tx) => {
-    await advisoryXactLock(tx, `messenger-to:${self}:${groupId}`, 'hashtextextended');
+    await advisoryXactLock(tx, `messenger-to:${self}:${key}`, 'hashtextextended');
     const [found] = await q<{ id: string }>(
       tx,
       sql`select c.id::text as id from messenger_conversations c
@@ -1597,39 +1883,49 @@ async function toThread(actor: MessengerActor, groupId: string, handle: string):
                  and p.login_id = ${self}::uuid and p.left_at is null
            where c.owner_id = ${actor.ownerId}::uuid and c.kind = 'group'
              and c.created_by = ${self}::uuid
-             and m.event @> ${JSON.stringify({ type: 'to_thread', to: { conversationId: groupId } })}::jsonb
+             and m.event @> ${JSON.stringify({ type: 'to_thread', to })}::jsonb
            limit 1`,
     );
     if (found) return found.id;
-    const madeId = await insertGroup(tx, actor.ownerId, self, { title: `To @${handle}` });
+    const madeId = await insertGroup(tx, actor.ownerId, self, { title: `To ${label}` });
     const conv = await lockConversation(tx, madeId);
     await appendMessage(tx, conv!, {
       authorKind: 'system',
       authorLoginId: null,
       authorName: null,
       via: null,
-      body: `Your messages to @${handle}. The answers come back here.`,
+      body: `Your messages to ${label}. The answers come back here.`,
       mentions: [],
       replyToSeq: null,
       clientMsgId: null,
-      event: { type: 'to_thread', to: { conversationId: groupId } },
+      event: { type: 'to_thread', to },
     });
     return madeId;
   });
 }
 
 /** The mentions of a send, each named once: the people and agents of the
- *  chat, and the handles (group ids, at most MESSENGER_HANDLES_PER_MESSAGE). */
+ *  chat, the handles (group ids) and at most one IT desk (its kind); the
+ *  handles and the desk at most MESSENGER_HANDLES_PER_MESSAGE together. */
 function dedupeMentions(list: readonly MessengerMention[]): {
   people: { kind: 'login' | 'agent'; id: string }[];
   handles: string[];
+  desk: DeskKind | null;
 } {
   const seen = new Set<string>();
   const people: { kind: 'login' | 'agent'; id: string }[] = [];
   const handles: string[] = [];
+  const desks = new Set<DeskKind>();
   for (const m of list) {
+    if (m && m.kind === 'desk') {
+      if (!isMessengerIntakeKind(m.id)) {
+        throw new InputError('A desk mention names a desk kind: bug, feature or request.');
+      }
+      desks.add(m.id);
+      continue;
+    }
     if (!m || (m.kind !== 'login' && m.kind !== 'agent' && m.kind !== 'handle')) {
-      throw new InputError('A mention must be a login, an agent or a handle.');
+      throw new InputError('A mention must be a login, an agent, a handle or an IT desk.');
     }
     const id = uuidOr(String(m.id), 'A mention');
     const k = `${m.kind}:${id}`;
@@ -1640,9 +1936,13 @@ function dedupeMentions(list: readonly MessengerMention[]): {
   }
   if (people.length > MESSENGER_PARTICIPANTS_MAX)
     throw new InputError(`A message must mention at most ${MESSENGER_PARTICIPANTS_MAX} people.`);
-  if (handles.length > MESSENGER_HANDLES_PER_MESSAGE)
+  if (desks.size > 1) throw new InputError('A message goes to at most one IT desk.');
+  if (handles.length + desks.size > MESSENGER_HANDLES_PER_MESSAGE)
     throw new InputError(`A message names at most ${MESSENGER_HANDLES_PER_MESSAGE} handles.`);
-  return { people, handles };
+  if (desks.size > 0 && !itDesksOn()) {
+    throw new InputError('This box has no IT desks: it is not linked to a Control Center.');
+  }
+  return { people, handles, desk: [...desks][0] ?? null };
 }
 
 type LockedMessage = {
@@ -2352,6 +2652,7 @@ async function decorate(
       },
     ]),
   );
+  const statuses = await deskStatuses(actor.ownerId, rows);
   const byMessage = new Map<string, MessengerMessageView['reactions']>();
   for (const r of reactions) {
     const list = byMessage.get(r.message_id) ?? [];
@@ -2374,7 +2675,11 @@ async function decorate(
           const f = files.get(id);
           return f ? [f] : [];
         }),
-    mentions: r.mentions ?? [],
+    mentions: (r.mentions ?? []).map((m) =>
+      m.kind === 'desk' && m.taskId
+        ? { ...m, status: statuses.get(m.taskId.toLowerCase()) ?? 'sent' }
+        : m,
+    ),
     replyToSeq: numOrNull(r.reply_to_seq),
     clientMsgId: r.client_msg_id,
     status: r.status,
@@ -2384,6 +2689,31 @@ async function decorate(
     createdAt: iso(r.created_at),
     reactions: byMessage.get(r.id) ?? [],
   }));
+}
+
+/** Where the reports of desk mentions stand (deskStatusOf), by task id:
+ *  the system's read of the tasks' blocks, as every reader of the line
+ *  sees the status, not only its sender. */
+async function deskStatuses(
+  ownerId: string,
+  rows: readonly MessageRow[],
+): Promise<Map<string, 'sent' | 'received' | 'answered'>> {
+  const ids = [
+    ...new Set(
+      rows.flatMap((r) =>
+        (r.mentions ?? []).flatMap((m) =>
+          m.kind === 'desk' && m.taskId && isUuid(m.taskId) ? [m.taskId.toLowerCase()] : [],
+        ),
+      ),
+    ),
+  ];
+  if (ids.length === 0) return new Map();
+  const found = await q<{ id: string; block: Record<string, unknown> | null }>(
+    systemDb,
+    sql`select id::text as id, data -> 'submission' as block from nodes
+         where id = any(${uuidArray(ids)}) and owner_id = ${ownerId}::uuid and type = 'task'`,
+  );
+  return new Map(found.map((f) => [f.id, deskStatusOf(f.block)]));
 }
 
 const MESSAGE_COLUMNS = sql`m.id::text as id, m.conversation_id::text as conversation_id, m.seq,

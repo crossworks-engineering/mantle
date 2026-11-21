@@ -32,7 +32,15 @@ export type MessengerPreviewJson = {
  *  wrote there. */
 export type MessengerMentionJson =
   | { kind: 'login' | 'agent'; id: string }
-  | { kind: 'handle'; id: string; handle?: string; seq?: number };
+  | { kind: 'handle'; id: string; handle?: string; seq?: number }
+  /** An IT desk (fleet chat M3): `id` its kind, `taskId` the Send to IT
+   *  task the send made; `status` is filled on read, never stored. */
+  | {
+      kind: 'desk';
+      id: 'bug' | 'feature' | 'request';
+      taskId?: string;
+      status?: 'sent' | 'received' | 'answered';
+    };
 
 /** What a system line marks: a call started, ended,
  *  or cut at the cap. The client tells them apart by `type`. */
@@ -54,7 +62,11 @@ export type MessengerEventJson =
   | { type: 'intake_sender_left'; seq: number }
   /** The first line of my own thread to a handle (a group of one, "To
    *  @bugs"): the send finds the thread again by it. */
-  | { type: 'to_thread'; to: { conversationId: string } };
+  | { type: 'to_thread'; to: { conversationId: string } | { desk: 'bug' | 'feature' | 'request' } }
+  /** On a box: the IT desk's answer to a report (fleet chat M3). */
+  | { type: 'desk_answer'; desk: 'bug' | 'feature' | 'request'; taskId: string }
+  /** On a Control Center: a report from a box; `taskId` is the CC's copy. */
+  | { type: 'desk_copy'; taskId: string; box: { id: string; name: string } };
 
 export type MessengerCallEndedReason =
   'finished' | 'cap_reached' | 'closed_by_admin' | 'service_off' | 'reconciled';

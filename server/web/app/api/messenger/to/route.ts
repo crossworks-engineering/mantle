@@ -16,15 +16,19 @@ export const policy = routePolicy({
   },
 });
 
-const ToBody = z.object({ handle: z.string().min(1).max(64) });
+const ToBody = z.object({
+  handle: z.string().min(1).max(64),
+  // An IT desk's site (the Control Center's name); a local handle has none.
+  site: z.string().max(40).optional(),
+});
 
-/** POST /api/messenger/to {handle}: the chat a post to a handle goes in
- *  (fleet chat): the group for a member, else my own "To @handle" thread,
- *  made once. The app opens it so files can be added before the first
+/** POST /api/messenger/to {handle, site?}: the chat a post to a handle
+ *  goes in (fleet chat): the group for a member, else my own "To @handle"
+ *  thread, made once. An IT desk: my own "To @bugs (IT)" thread. The app opens it so files can be added before the first
  *  send. */
 export async function POST(req: Request) {
   const login = anyLoginCaller();
   const body = await readBody(req, ToBody);
-  const out = await openHandleChat(messengerActorOf(login), body.handle);
+  const out = await openHandleChat(messengerActorOf(login), body.handle, body.site);
   return NextResponse.json(out satisfies MessengerOpenToResponse);
 }

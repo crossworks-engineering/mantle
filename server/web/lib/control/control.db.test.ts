@@ -64,6 +64,18 @@ vi.hoisted(() => {
   process.env.MANTLE_MASTER_KEY_NEXT ??= Buffer.alloc(32, 9).toString('base64');
 });
 
+// The submissions case's copy line (fleet chat M3) stages the report's
+// files in the object store: a store in memory here.
+vi.mock('@mantle/files/broker', async (orig) => {
+  const { createHash: hash } = await import('node:crypto');
+  return {
+    ...(await orig<typeof import('@mantle/files/broker')>()),
+    stageFileObject: async (bytes: Buffer) => ({
+      key: `attachments/${hash('sha256').update(bytes).digest('hex')}`,
+    }),
+  };
+});
+
 // The key case's provider test, held by the test when it says so (a real
 // provider is never called from here).
 const probe = vi.hoisted(() => ({ answer: null as null | { ok: boolean; adapter: string } }));
@@ -892,6 +904,13 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     const content = await import('@mantle/content');
     const files = await import('@mantle/files');
     await files.ensureFilesRootBranch(anchor);
+    // The CC's group for bug reports (fleet chat M3): the sweep writes a
+    // copy line in it, with the report's files.
+    const ms = await import('@mantle/content/messenger');
+    const { conversationId: bugsGroup } = await ms.createMessengerConversation(
+      { ownerId: anchor, loginId: anchor, via: null },
+      { kind: 'group', participants: [], title: 'Bugs', intake: 'bug' },
+    );
     const t = await content.createTask(anchor, { title: `${tag} export bug`, body: 'dates go' });
     await content.addTaskFile({
       ownerId: anchor,
@@ -917,6 +936,18 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(sub.from.by.email).toBe(emailOf(pat));
     const got = await content.listTaskFiles(anchor, String(copy!.id));
     expect(got.map((f) => f.filename)).toEqual(['error.log']);
+    // The copy line in the bug group: the sender and box, the report, its file.
+    const desk = await sql<Row[]>`select author_kind, author_name, body, event, attachments
+      from messenger_messages where conversation_id = ${bugsGroup}
+       and event ->> 'type' = 'desk_copy'`;
+    expect(desk).toHaveLength(1);
+    expect(desk[0]).toMatchObject({
+      author_kind: 'system',
+      event: { type: 'desk_copy', taskId: String(copy!.id), box: { id: boxId, name: 'test box' } },
+    });
+    expect(String(desk[0]!.author_name)).toMatch(/\(test box\)$/);
+    expect(String(desk[0]!.body)).toContain('dates go');
+    expect(desk[0]!.attachments).toHaveLength(1);
     const mine = await content.getTask(anchor, t.id);
     expect(mine?.submission?.side === 'sent' && mine.submission.collectedAt).toBeTruthy();
     const second = await content.getTask(anchor, t2.id);

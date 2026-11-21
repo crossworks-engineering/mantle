@@ -47,3 +47,12 @@ export function controlSubjectLines(): ControlLines {
   if (origin === 'null') return { on: false, reason: 'MANTLE_PUBLIC_URL must be set' };
   return { on: true, centerUrl, keyLine, origin };
 }
+
+/** The Control Center's name on this box (MANTLE_CONTROL_CENTER_LABEL, set
+ *  with the two CC lines): the Send to IT button, and the site of the IT
+ *  desks in the messenger (`@bugs (IT)`). IT by default. Plain words only,
+ *  at most 24 characters. */
+export function controlCenterLabel(): string {
+  const v = (env('MANTLE_CONTROL_CENTER_LABEL') ?? '').trim();
+  return /^[\p{L}\p{N} ._-]{1,24}$/u.test(v) ? v : 'IT';
+}
