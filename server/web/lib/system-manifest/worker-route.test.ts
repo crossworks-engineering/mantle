@@ -139,6 +139,20 @@ describe('adoptWorkerParams', () => {
     expect(out).toMatchObject({ timeout_ms: 1500, defer_below: 0.6 });
   });
 
+  it("never ships pdf_kind's `pages` key, and keeps an operator's (the page asks' guard, Q5)", () => {
+    const shipped = (decider.params as { uses: Record<string, Record<string, unknown>> }).uses;
+    expect(shipped.pdf_kind).toBeDefined();
+    expect('pages' in shipped.pdf_kind!).toBe(false);
+    const fresh = adoptWorkerParams('decider', null, decider.params) as typeof decider.params;
+    expect('pages' in (fresh as { uses: Record<string, object> }).uses.pdf_kind!).toBe(false);
+    const dev = { uses: { pdf_kind: { enabled: true, mode: 'shadow' as const, pages: true } } };
+    const out = adoptWorkerParams('decider', dev, decider.params) as typeof dev;
+    expect(out.uses.pdf_kind.pages).toBe(true);
+    const client = { uses: { pdf_kind: { enabled: true, mode: 'shadow' as const } } };
+    const kept = adoptWorkerParams('decider', client, decider.params) as typeof dev;
+    expect('pages' in kept.uses.pdf_kind).toBe(false);
+  });
+
   it('takes the manifest params when the decider row has none', () => {
     expect(adoptWorkerParams('decider', null, decider.params)).toBe(decider.params);
   });

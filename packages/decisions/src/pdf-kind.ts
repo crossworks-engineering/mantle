@@ -112,13 +112,10 @@ export async function decidePdfKind(
 /**
  * The decider model the page ask is pinned to (the M2 bench, 2026-11-21:
  * both `typesafe/jev-1.14` and the alias `~typesafe/jev-latest` were served
- * by `typesafe/jev-1.14-20261014`; pin the one measured). A box asks page
- * types only when its decider worker's model is this one. That is also the
- * guard of where page pictures may leave a box in shadow (Jason, Q5,
- * 2026-11-21: only dev and the bench until pdf_kind is live): every client
- * box runs the shipped `~typesafe/jev-latest`, so a roll sends no page
- * picture from it. A box gets page types when its decider is set to this
- * model, box by box (M4).
+ * by `typesafe/jev-1.14-20261014`; pin the one measured). The second check
+ * of pdfPageAsksOn: a box asks page types only when its decider worker's
+ * model is this one. The first check is the operator's own key
+ * `uses.pdf_kind.pages: true`.
  */
 export const PDF_PAGE_MODEL = 'typesafe/jev-1.14';
 
@@ -214,13 +211,19 @@ export function pageRouteOf(
 }
 
 /**
- * Whether this box asks page types (the one check of where a page picture
- * may go): a decider worker whose model is PDF_PAGE_MODEL, with the use
- * `pdf_kind` on. The caller adds the file's own guard (llmWorkAllowed).
+ * Whether this box asks page types (where a page picture may go; Jason, Q5,
+ * 2026-11-21: only dev and the bench until pdf_kind is live). Two checks:
+ * the operator's key `uses.pdf_kind.pages: true` with the use on, and the
+ * decider pinned to PDF_PAGE_MODEL. The system manifest never ships
+ * `pages` (adoptWorkerParams keeps an operator's value and adds none), so a
+ * roll, a seed or a person who picks jev-1.14 for another use sends no
+ * page picture. The caller adds the file's own guard (llmWorkAllowed).
  */
 export async function pdfPageAsksOn(ownerId: string): Promise<boolean> {
   const r = await resolveDecider(ownerId);
-  return !!r && r.worker.model === PDF_PAGE_MODEL && resolveUse(r.params, 'pdf_kind').enabled;
+  if (!r) return false;
+  const pages = r.params?.uses?.pdf_kind?.pages === true;
+  return pages && resolveUse(r.params, 'pdf_kind').enabled && r.worker.model === PDF_PAGE_MODEL;
 }
 
 /**

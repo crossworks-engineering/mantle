@@ -6,8 +6,9 @@
  * - The Q5 guard (Jason, 2026-11-21: in shadow, page pictures leave only dev
  *   and the bench): a box whose decider runs the shipped
  *   `~typesafe/jev-latest`, as every client box does, with `pdf_kind` on in
- *   shadow, asks nothing and sends no picture. Only a decider pinned to
- *   PDF_PAGE_MODEL asks.
+ *   shadow, asks nothing and sends no picture. Nor does a box pinned to
+ *   PDF_PAGE_MODEL with no `uses.pdf_kind.pages: true` (the operator's key,
+ *   never shipped). Only both asks.
  * - The floor is on the summed chance of the route, not on one option's.
  * - The state is the bench's: its 8 fields in its order, the picture as an
  *   image_url part.
@@ -78,7 +79,7 @@ const ASK = {
   text_sample: 'SPECIFICATION GENERAL',
 };
 const PICTURE = jpeg(724, 1024);
-const ON = { uses: { pdf_kind: { enabled: true, mode: 'shadow' } } };
+const ON = { uses: { pdf_kind: { enabled: true, mode: 'shadow', pages: true } } };
 
 const outcome = (choice: string, probabilities: Record<string, number>, mode = 'shadow') => ({
   answers: { kind: { type: 'choice', choice, confidence: 0.3, probabilities } },
@@ -104,16 +105,35 @@ describe('the Q5 guard: where a page picture may go', () => {
     expect(h.calls).toHaveLength(0);
   });
 
+  it('a client box with jev-1.14 but no `pages` key asks nothing (the manifest never ships it)', async () => {
+    h.worker = {
+      model: PDF_PAGE_MODEL,
+      params: { uses: { pdf_kind: { enabled: true, mode: 'shadow' } } },
+    };
+    h.outcome = outcome('table', { table: 0.9 });
+    expect(await pdfPageAsksOn('o')).toBe(false);
+    expect(await decidePdfPageKind('o', ASK, PICTURE)).toBeNull();
+    h.worker = {
+      model: PDF_PAGE_MODEL,
+      params: { uses: { pdf_kind: { enabled: true, pages: 'yes' } } },
+    };
+    expect(await pdfPageAsksOn('o')).toBe(false);
+    expect(h.calls).toHaveLength(0);
+  });
+
   it('no decider, or pdf_kind off, asks nothing either', async () => {
     expect(await decidePdfPageKind('o', ASK, PICTURE)).toBeNull();
-    h.worker = { model: PDF_PAGE_MODEL, params: { uses: { pdf_kind: { enabled: false } } } };
+    h.worker = {
+      model: PDF_PAGE_MODEL,
+      params: { uses: { pdf_kind: { enabled: false, pages: true } } },
+    };
     expect(await decidePdfPageKind('o', ASK, PICTURE)).toBeNull();
     h.worker = { model: PDF_PAGE_MODEL, params: {} };
     expect(await decidePdfPageKind('o', ASK, PICTURE)).toBeNull();
     expect(h.calls).toHaveLength(0);
   });
 
-  it('a decider pinned to typesafe/jev-1.14 with pdf_kind on asks, one call a page', async () => {
+  it('a decider pinned to typesafe/jev-1.14 with pdf_kind on and `pages: true` asks, one call a page', async () => {
     expect(PDF_PAGE_MODEL).toBe('typesafe/jev-1.14');
     h.worker = { model: PDF_PAGE_MODEL, params: ON };
     h.outcome = outcome('table', { table: 0.5, datasheet: 0.4, pid: 0.1 });

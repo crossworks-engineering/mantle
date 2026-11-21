@@ -4,10 +4,12 @@
  * the answer cache:
  *  - the two checks of the file (model work, page asks on here): either "no"
  *    gives no asker, so no picture is drawn or sent (the Q5 guard);
- *  - an answer kept in the answer cache is taken with no call (an extract
- *    tried again pays for no page twice), and a new one is kept;
+ *  - a paid answer is kept in the answer cache, and `kept` reads it back
+ *    with no call (an extract tried again pays for no page twice); the key
+ *    holds the router's version;
  *  - the room of the day cap;
- *  - 3 failures in a row, or the breaker open, say `stop`.
+ *  - 3 nulls in a row (a failure or any other no answer), or the breaker
+ *    open, say `stop`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,7 +42,7 @@ const ASK = {
 const ANSWER = { kind: 'pid', confidence: 0.97, sure: true, model: 'm', mode: 'shadow' as const };
 
 /** The stand-ins: the guards, a decider that answers or fails, the cap. */
-function deps(over: Partial<Deps> & { answer?: 'ok' | 'fail' | 'skip' } = {}) {
+function deps(over: Partial<Deps> & { answer?: 'ok' | 'fail' | 'skip' | 'none' } = {}) {
   const calls: unknown[] = [];
   const d: Partial<Deps> = {
     allowed: async () => true,
@@ -84,36 +86,64 @@ describe('the page asks of a file', () => {
     expect(await lost!.room()).toBe(0);
   });
 
-  it('an answer is kept, and taken again with no call; the picture name is not what is asked', async () => {
+  it('a paid answer is kept; kept reads it back with no call; the picture name is not what is asked', async () => {
     const { d, calls } = deps();
     const asker = await pdfPageDeciderOf('o', 'n', d);
-    expect(await asker!.ask(ASK, Buffer.from('pixels'))).toEqual(ANSWER);
+    expect(await asker!.kept(ASK, Buffer.from('pixels'), V)).toBeNull();
+    expect(await asker!.ask(ASK, Buffer.from('pixels'), V)).toEqual(ANSWER);
     expect(h.keeps).toBe(1);
     expect(calls).toHaveLength(1);
     expect(calls[0]).not.toHaveProperty('picture');
-    // The same bytes and fields: the kept answer, no call.
+    // The same bytes and fields (an extract tried again): kept, no call.
     const again = await pdfPageDeciderOf('o', 'n', d);
-    expect(await again!.ask(ASK, Buffer.from('pixels'))).toEqual(ANSWER);
+    expect(await again!.kept(ASK, Buffer.from('pixels'), V)).toEqual(ANSWER);
     expect(calls).toHaveLength(1);
-    // Other bytes: a new ask.
-    await again!.ask(ASK, Buffer.from('other pixels'));
-    expect(calls).toHaveLength(2);
+    // Other bytes: nothing kept.
+    expect(await again!.kept(ASK, Buffer.from('other pixels'), V)).toBeNull();
+  });
+
+  it("the router's version is in the key: a new question finds no kept answer", async () => {
+    const asker = await pdfPageDeciderOf('o', 'n', deps().d);
+    await asker!.ask(ASK, Buffer.from('pixels'), V);
+    expect(await asker!.kept(ASK, Buffer.from('pixels'), V)).toEqual(ANSWER);
+    expect(await asker!.kept(ASK, Buffer.from('pixels'), '9.9.9')).toBeNull();
   });
 
   it(`${PAGE_ASK_FAILURES_STOP} failures in a row say stop; an open breaker says stop at once`, async () => {
     const failing = await pdfPageDeciderOf('o', 'n', deps({ answer: 'fail' }).d);
-    const outs: unknown[] = [];
-    for (let i = 0; i < PAGE_ASK_FAILURES_STOP; i++) {
-      outs.push(
-        await failing!.ask(
-          { ...ASK, page: i + 1, picture: `page-${i + 1}.jpg` },
-          Buffer.from(`p${i}`),
-        ),
-      );
-    }
-    expect(outs).toEqual([null, null, 'stop']);
+    expect(await nulls(failing!)).toEqual([null, null, 'stop']);
     expect(h.keeps).toBe(0);
     const open = await pdfPageDeciderOf('o', 'n', deps({ answer: 'skip' }).d);
-    expect(await open!.ask(ASK, Buffer.from('p'))).toBe('stop');
+    expect(await open!.ask(ASK, Buffer.from('p'), V)).toBe('stop');
+  });
+
+  it(`any null counts to the stop: ${PAGE_ASK_FAILURES_STOP} in a row with no failure (over the limits, no picture, no choice) say stop too`, async () => {
+    const none = await pdfPageDeciderOf('o', 'n', deps({ answer: 'none' }).d);
+    expect(await nulls(none!)).toEqual([null, null, 'stop']);
+    // An answer between resets the count.
+    let n = 0;
+    const mixed = await pdfPageDeciderOf(
+      'o',
+      'n',
+      deps({ decide: (async () => (++n === 2 ? ANSWER : null)) as Deps['decide'] }).d,
+    );
+    expect(await nulls(mixed!, 4)).toEqual([null, ANSWER, null, null]);
   });
 });
+
+const V = '1.3.0';
+
+/** `count` asks of other pages in a row. */
+async function nulls(asker: NonNullable<Awaited<ReturnType<typeof pdfPageDeciderOf>>>, count = 3) {
+  const outs: unknown[] = [];
+  for (let i = 0; i < count; i++) {
+    outs.push(
+      await asker.ask(
+        { ...ASK, page: i + 1, picture: `page-${i + 1}.jpg` },
+        Buffer.from(`p${i}`),
+        V,
+      ),
+    );
+  }
+  return outs;
+}

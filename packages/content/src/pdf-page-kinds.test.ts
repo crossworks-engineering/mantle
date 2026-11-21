@@ -4,8 +4,10 @@
  * (the qpdf cut and the router's window step), so the core's part is pinned
  * on its own: only the 8 checked fields of an ask reach the decider; every
  * page gets a type and a `Kind from`; each cap (the file's, the day's, a
- * stop) ends in the rules with its word and cuts no window more; the file's
- * one batch is settled once; a busy parser throws.
+ * stop) ends in the rules with its word and cuts no window more; a kept
+ * answer is free (a retry takes no room for it); a page with no row in the
+ * tab Pages is not asked; the file's one batch is settled once; a busy
+ * parser throws.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Files from '@mantle/files';
@@ -23,6 +25,8 @@ const { pdfPageKindsOf } = await import('./pdf-read');
 type Decide = import('./pdf-read').PdfPageDecide;
 
 const TOTAL = 60;
+/** Every page of the made-up file has a row in the tab Pages. */
+const ALL = new Set(Array.from({ length: TOTAL }, (_, i) => i + 1));
 /** A router with a page cap of `cap` decider asks. */
 const routerOf = (cap = 10_000) =>
   ({
@@ -40,12 +44,13 @@ const routerOf = (cap = 10_000) =>
     needs: { weight: 'light', workers: { decider: cap } },
   }) as never;
 
-/** Page 3 of each window is blank, page 4 is not drawn; the rest asks. A
- *  step's ask carries a key of its own, which must stay behind. */
-function windows() {
+/** Page 3 of each window is blank, page 4 is not drawn; the rest asks
+ *  (`plain`: every page asks). A step's ask carries a key of its own, which
+ *  must stay behind. */
+function windows(total = TOTAL, plain = false) {
   split.mockImplementation(async (_b: Buffer, o: { from: number; pages: number }) => {
-    const pageTo = Math.min(TOTAL, o.from + o.pages - 1);
-    return { bytes: Buffer.from(`w${o.from}`), pageFrom: o.from, pageTo, pagesTotal: TOTAL };
+    const pageTo = Math.min(total, o.from + o.pages - 1);
+    return { bytes: Buffer.from(`w${o.from}`), pageFrom: o.from, pageTo, pagesTotal: total };
   });
   step.mockImplementation(async (_body: Buffer, _p: unknown, req: Record<string, unknown>) => {
     const from = req.pageFrom as number;
@@ -55,8 +60,8 @@ function windows() {
     const pictures = new Map<string, Buffer>();
     for (let n = from; n <= to; n++) {
       const i = n - from + 1;
-      if (i === 3) pages.push([n, 'none', 'blank']);
-      else if (i === 4) pages.push([n, 'scan', 'not drawn']);
+      if (i === 3 && !plain) pages.push([n, 'none', 'blank']);
+      else if (i === 4 && !plain) pages.push([n, 'scan', 'not drawn']);
       else {
         pages.push([n, 'document', null]);
         const picture = pagePictureName(n);
@@ -84,14 +89,23 @@ function windows() {
 }
 
 /** A made-up decider: page N answers table at 0.9 (sure), but every 5th
- *  page at 0.45 (low). `room` the day cap leaves; `stopAt` a page that
- *  says `stop`. */
-function decider(opts: { room?: number; stopAt?: number } = {}) {
+ *  page at 0.45 (low). `room` the day cap leaves (a paid ask takes one);
+ *  `stopAt` a page that says `stop`; `keptTo` the pages 1 to N whose answer
+ *  is in the answer cache (an extract tried again). */
+function decider(opts: { room?: number; stopAt?: number; keptTo?: number } = {}) {
   const asked: Record<string, unknown>[] = [];
+  const versions = new Set<string>();
   let settled = 0;
   const d: Decide = {
     room: async () => (opts.room ?? 20_000) - asked.length,
-    ask: async (ask) => {
+    kept: async (ask, _picture, version) => {
+      versions.add(version);
+      return ask.page <= (opts.keptTo ?? 0)
+        ? { kind: 'pid', confidence: 0.95, sure: true, model: 'm', mode: 'shadow' }
+        : null;
+    },
+    ask: async (ask, _picture, version) => {
+      versions.add(version);
       asked.push({ ...ask });
       if (ask.page === opts.stopAt) return 'stop';
       const low = ask.page % 5 === 0;
@@ -107,7 +121,7 @@ function decider(opts: { room?: number; stopAt?: number } = {}) {
       settled += 1;
     },
   };
-  return { d, asked, settled: () => settled };
+  return { d, asked, versions, settled: () => settled };
 }
 
 beforeEach(() => {
@@ -119,7 +133,7 @@ describe('the page types of a PDF (part 2, shadow)', () => {
   it('only the 8 checked fields of an ask reach the decider', async () => {
     windows();
     const { d, asked } = decider();
-    await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d);
+    await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, ALL);
     expect(asked.length).toBe(TOTAL - 2 * 3);
     for (const a of asked) {
       expect(Object.keys(a).sort()).toEqual(
@@ -147,7 +161,7 @@ describe('the page types of a PDF (part 2, shadow)', () => {
       return out;
     });
     const { d, asked } = decider();
-    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d);
+    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, ALL);
     expect(asked.some((a) => a.page === 1)).toBe(false);
     expect(kinds.find((k) => k.page === 1)).toMatchObject({ from: PAGE_KIND_FROM.notDrawn });
   });
@@ -155,7 +169,7 @@ describe('the page types of a PDF (part 2, shadow)', () => {
   it('every page gets a type and its word; the rules kind stays the Kind', async () => {
     windows();
     const { d, settled } = decider();
-    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d);
+    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, ALL);
     expect(kinds.map((k) => k.page)).toEqual(Array.from({ length: TOTAL }, (_, i) => i + 1));
     expect(kinds[0]).toEqual({
       page: 1,
@@ -174,7 +188,7 @@ describe('the page types of a PDF (part 2, shadow)', () => {
   it("past the file's cap: rules, `cap`, and no window more is cut", async () => {
     windows();
     const { d, asked } = decider();
-    const kinds = await pdfPageKindsOf(routerOf(5), Buffer.from('pdf'), {}, d);
+    const kinds = await pdfPageKindsOf(routerOf(5), Buffer.from('pdf'), {}, d, ALL);
     expect(asked.length).toBe(5);
     expect(split).toHaveBeenCalledTimes(1);
     expect(kinds.filter((k) => k.from === PAGE_KIND_FROM.cap).length).toBe(TOTAL - 5 - 2);
@@ -184,7 +198,7 @@ describe('the page types of a PDF (part 2, shadow)', () => {
   it('past the day cap: rules, `day cap`, and no window more is cut', async () => {
     windows();
     const { d, asked } = decider({ room: 30 });
-    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d);
+    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, ALL);
     expect(asked.length).toBe(30);
     expect(split).toHaveBeenCalledTimes(2);
     const past = kinds.filter((k) => k.from === PAGE_KIND_FROM.dayCap);
@@ -196,7 +210,7 @@ describe('the page types of a PDF (part 2, shadow)', () => {
   it('a stop (failures, the breaker): the rest is `no answer`, nothing more asked', async () => {
     windows();
     const { d, asked } = decider({ stopAt: 2 });
-    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d);
+    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, ALL);
     // The ask in flight with it (4 at once) still came back; none after.
     expect(asked.length).toBeLessThanOrEqual(4);
     expect(split).toHaveBeenCalledTimes(1);
@@ -204,14 +218,53 @@ describe('the page types of a PDF (part 2, shadow)', () => {
     expect(kinds.find((k) => k.page === TOTAL)).toMatchObject({ from: PAGE_KIND_FROM.noAnswer });
   });
 
+  it('a retry: 4,000 kept answers and room for 1,000 write all 4,000 as answers; only real calls take room', async () => {
+    windows(6_000, true);
+    const { d, asked, versions } = decider({ room: 1_000, keptTo: 4_000 });
+    const rows = new Set(Array.from({ length: 6_000 }, (_, i) => i + 1));
+    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, rows);
+    const kept = kinds.filter((k) => k.page <= 4_000);
+    expect(kept.length).toBe(4_000);
+    expect(kept.every((k) => k.from === PAGE_KIND_FROM.shadow && k.deciderKind === 'pid')).toBe(
+      true,
+    );
+    // The room went to real calls only: 1,000 new pages asked, the rest the
+    // day cap's.
+    expect(asked.length).toBe(1_000);
+    expect(asked.every((a) => (a.page as number) > 4_000)).toBe(true);
+    expect(kinds.filter((k) => k.from === PAGE_KIND_FROM.dayCap).length).toBe(1_000);
+    expect(kinds.length).toBe(6_000);
+    // The router's version is what the key holds.
+    expect([...versions]).toEqual(['1.3.0']);
+  });
+
+  it('a page with no row in the tab Pages is not asked; a window with none is not cut', async () => {
+    windows();
+    const { d, asked } = decider();
+    // Rows for pages 1 to 10 only (the Reader lost the rest).
+    const rows = new Set(Array.from({ length: 10 }, (_, i) => i + 1));
+    await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, rows);
+    expect(asked.every((a) => (a.page as number) <= 10)).toBe(true);
+    expect(asked.length).toBe(10 - 2);
+    expect(step).toHaveBeenCalledTimes(1);
+    // No row at all: nothing is cut or asked.
+    split.mockClear();
+    step.mockClear();
+    expect(await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, new Set())).toEqual([]);
+    expect(split).not.toHaveBeenCalled();
+    expect(step).not.toHaveBeenCalled();
+  });
+
   it('a busy parser throws (the extract is tried again); another failure ends with what it has', async () => {
     windows();
     split.mockRejectedValueOnce(
       new ParserError('busy', 'busy', { retryable: true, terminal: false }),
     );
-    await expect(pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, decider().d)).rejects.toThrow();
+    await expect(
+      pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, decider().d, ALL),
+    ).rejects.toThrow();
     windows();
     split.mockRejectedValueOnce(new Error('qpdf could not read it'));
-    expect(await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, decider().d)).toEqual([]);
+    expect(await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, decider().d, ALL)).toEqual([]);
   });
 });

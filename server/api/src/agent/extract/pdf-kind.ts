@@ -12,7 +12,8 @@
  *
  * The page types (pdfPageDeciderOf, plan page c607711a, M3 in shadow): one
  * ask a page with its picture, at the same place and under the same guard,
- * and only on a box whose decider is pinned to PDF_PAGE_MODEL.
+ * and only on a box whose operator set `uses.pdf_kind.pages: true` on a
+ * decider pinned to PDF_PAGE_MODEL.
  */
 import {
   DecideBatch,
@@ -23,7 +24,7 @@ import {
 } from '@mantle/decisions';
 import { llmWorkAllowed } from '@mantle/db';
 import { answerKey, bytesKey, keepAnswer, keptAnswer } from '@mantle/db/answer-cache';
-import type { PdfKindAsk, PdfKindDecision } from '@mantle/files';
+import type { PdfKindAsk, PdfKindDecision, PdfPageAsk } from '@mantle/files';
 import type { PdfPageDecide, PdfPageDecision } from '@mantle/content/pdf-read';
 import { pipelineAsksDayCap, pipelineAsksToday } from '@mantle/content/pipeline-asks';
 
@@ -47,9 +48,9 @@ export async function askPdfKind(
   return decidePdfKind(ownerId, state);
 }
 
-/** Failed page asks in a row that stop the asks of a file (the breaker's
- *  own number: with one DecideBatch a file, the breaker hears the file
- *  once, at its end). */
+/** Page asks in a row with no answer that stop the asks of a file (the
+ *  breaker's own number: with one DecideBatch a file, the breaker hears the
+ *  file once, at its end). */
 export const PAGE_ASK_FAILURES_STOP = 3;
 
 /** What the page asks need, in a test stand-ins. */
@@ -73,14 +74,19 @@ const DEPS: PdfPageDeciderDeps = {
  * The page asks of one file (the router's part 2), or null: no page ask for
  * this file. Two checks, here, once a file: the file may have model work
  * (llmWorkAllowed, the guard of askPdfKind), and this box asks page types
- * (pdfPageAsksOn: the use `pdf_kind` on and the decider pinned to
- * PDF_PAGE_MODEL). A client box runs the shipped `~typesafe/jev-latest`,
- * so it gets null, and no page picture leaves it (Jason, Q5).
+ * (pdfPageAsksOn: the operator's `uses.pdf_kind.pages: true` with the use
+ * on, and the decider pinned to PDF_PAGE_MODEL). The manifest never ships
+ * `pages`, so a client box gets null, and no page picture leaves it
+ * (Jason, Q5).
  *
- * Each ask is kept in the answer cache (an extract tried again pays for
- * none twice), counts in the box's day cap (`room`), and goes in the file's
- * one DecideBatch. After PAGE_ASK_FAILURES_STOP failures in a row, or with
- * the breaker open, it says `stop`: the rest of the file keeps its rules.
+ * Each paid answer is kept in the answer cache, and `kept` reads it back
+ * (an extract tried again pays for none twice; the core takes kept answers
+ * first, free, with no day-cap room). The key holds the router's version,
+ * so a new question asks again. A paid ask counts in the box's day cap
+ * (`room`) and goes in the file's one DecideBatch. After
+ * PAGE_ASK_FAILURES_STOP asks in a row with no answer (any null: a failure,
+ * over the limits, no picture part, no choice, no route), or with the
+ * breaker open, it says `stop`: the rest of the file keeps its rules.
  */
 export async function pdfPageDeciderOf(
   ownerId: string,
@@ -90,32 +96,31 @@ export async function pdfPageDeciderOf(
   const d = { ...DEPS, ...deps };
   if (!(await d.allowed(nodeId)) || !(await d.on(ownerId))) return null;
   const batch = new DecideBatch();
-  let failedInRow = 0;
+  let noneInRow = 0;
+  // What is asked (the use, the model, the router's version, the picture's
+  // bytes and the other fields), never the page alone; and the fields sent.
+  const keyOf = (ask: PdfPageAsk, picture: Buffer, version: string) => {
+    const { picture: _name, ...fields } = ask;
+    const parts = ['pdf_page', PDF_PAGE_MODEL, version, bytesKey(picture), fields];
+    return { key: answerKey('decider', parts), fields };
+  };
   return {
     // A count that cannot be read is no room: the pages keep their rules
     // (`rules: day cap`), never an ask past the cap.
     room: async () => Math.max(0, d.dayCap() - (await d.today(ownerId).catch(() => Infinity))),
-    ask: async (ask, picture) => {
-      // The key: what is asked (the use, the model, the picture's bytes and
-      // the other fields), never the page alone.
-      const { picture: _name, ...fields } = ask;
-      const key = answerKey('decider', ['pdf_page', PDF_PAGE_MODEL, bytesKey(picture), fields]);
-      const kept = await keptAnswer<PdfPageDecision>(key);
-      if (kept) return kept;
-      const failedBefore = batch.failed;
+    kept: (ask, picture, version) => keptAnswer<PdfPageDecision>(keyOf(ask, picture, version).key),
+    ask: async (ask, picture, version) => {
+      const { key, fields } = keyOf(ask, picture, version);
       const skippedBefore = batch.skipped;
       const answer = await d.decide(ownerId, fields, picture, batch);
       if (answer) {
-        failedInRow = 0;
+        noneInRow = 0;
         await keepAnswer('decider', key, answer, true);
         return answer;
       }
       if (batch.skipped > skippedBefore) return 'stop';
-      if (batch.failed > failedBefore) {
-        failedInRow += 1;
-        if (failedInRow >= PAGE_ASK_FAILURES_STOP) return 'stop';
-      }
-      return null;
+      noneInRow += 1;
+      return noneInRow >= PAGE_ASK_FAILURES_STOP ? 'stop' : null;
     },
     settle: () => batch.settle(),
   };

@@ -351,6 +351,7 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
     const asked: { page: number; side: number; jpeg: boolean }[] = [];
     const d: PdfPageDecide = {
       room: async () => room - asked.length,
+      kept: async () => null,
       ask: async (ask, picture) => {
         const jpeg = picture[0] === 0xff && picture[1] === 0xd8;
         // The JPEG's size from its SOF0 marker (the step's canvas writes one).
@@ -376,8 +377,9 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       const total = readFileSync(path.join(DIR!, 'scans.truth.jsonl'), 'utf8')
         .trim()
         .split('\n').length;
+      const rows = new Set(Array.from({ length: total }, (_, i) => i + 1));
       const all = standIn();
-      const kinds = await pdfPageKindsOf(ROUTER, bytes, {}, all.d);
+      const kinds = await pdfPageKindsOf(ROUTER, bytes, {}, all.d, rows);
       expect(kinds.map((k) => k.page)).toEqual(Array.from({ length: total }, (_, i) => i + 1));
       const asked = all.asked.map((a) => a.page).sort((a, b) => a - b);
       // Every page with ink is asked once; the rest say why not.
@@ -392,7 +394,7 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       // A day cap of 30: 30 asks, the rest the rules' with the word, and no
       // window past the second is cut.
       const capped = standIn(30);
-      const after = await pdfPageKindsOf(ROUTER, bytes, {}, capped.d);
+      const after = await pdfPageKindsOf(ROUTER, bytes, {}, capped.d, rows);
       expect(capped.asked.length).toBe(30);
       expect(after.length).toBe(total);
       expect(after.filter((k) => k.from === PAGE_KIND_FROM.dayCap).length).toBeGreaterThan(
@@ -405,6 +407,7 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
         readFileSync(path.join(DIR!, 'typed7.pdf')),
         {},
         typed.d,
+        new Set([1, 2, 3, 4, 5, 6, 7]),
       );
       expect(tk.length).toBe(7);
       expect(typed.asked.length).toBe(7);

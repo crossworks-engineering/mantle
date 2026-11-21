@@ -253,9 +253,15 @@ export type PdfPageDecision = {
 export type PdfPageDecide = {
   /** The paid asks the box's day cap leaves now. */
   room(): Promise<number>;
-  /** One page ask: the answer; null, no answer; `stop`, ask no more pages
-   *  of this file (the calls keep failing, or the breaker is open). */
-  ask(ask: PdfPageAsk, picture: Buffer): Promise<PdfPageDecision | null | 'stop'>;
+  /** The answer kept for this ask (the answer cache: an extract tried
+   *  again), or null. Free: it takes no room and no place in the file's
+   *  cap. `version`: the router's, in the key, so a new question asks
+   *  again. */
+  kept(ask: PdfPageAsk, picture: Buffer, version: string): Promise<PdfPageDecision | null>;
+  /** One paid page ask: the answer (kept for a retry); null, no answer;
+   *  `stop`, ask no more pages of this file (no answer three times in a
+   *  row, or the breaker is open). */
+  ask(ask: PdfPageAsk, picture: Buffer, version: string): Promise<PdfPageDecision | null | 'stop'>;
   /** The file's asks are over: the breaker hears their one outcome. */
   settle(): void;
 };
@@ -305,13 +311,21 @@ function windowPagesOf(state: unknown): [number, string, string | null][] {
  * throws, as every job: the extract is tried again, and the answer cache
  * holds the answers paid. Any other failure ends part 2 with what it has:
  * the shadow never costs a file its database. Nothing is written here.
+ *
+ * An answer kept in the answer cache (an extract tried again) is taken
+ * first and is free: only a real call takes day-cap room and a place in
+ * the file's cap. `rows`: the pages that have a row in the Reader's tab
+ * Pages; a page with no row is not asked (its answer would stand nowhere),
+ * and a window with none is not cut.
  */
 export async function pdfPageKindsOf(
   router: PipelineManifest,
   bytes: Buffer,
   options: Readonly<Record<string, unknown>>,
   decide: PdfPageDecide,
+  rows: ReadonlySet<number>,
 ): Promise<PdfPageKind[]> {
+  if (rows.size === 0) return [];
   const file = stepFileOf(bytes, 'pdf');
   const cap = askCapOf(router, 'decider');
   const out = new Map<number, PdfPageKind>();
@@ -327,6 +341,9 @@ export async function pdfPageKindsOf(
       const from = w.part ? w.part.pageFrom : w.from;
       const to = w.part ? w.part.pageTo : w.to;
       readTo = to;
+      let hasRow = false;
+      for (let n = from; n <= to && !hasRow; n++) hasRow = rows.has(n);
+      if (!hasRow) continue;
       if (!w.part) {
         for (let n = from; n <= to; n++) rulesOnly(n, null, PAGE_KIND_FROM.notDrawn);
         continue;
@@ -347,16 +364,26 @@ export async function pdfPageKindsOf(
         if (why)
           rulesOnly(n, kind, why === 'blank' ? PAGE_KIND_FROM.blank : PAGE_KIND_FROM.notDrawn);
       }
-      // The day cap, read once a window (the asks of a window are few).
-      let room = Math.max(0, await decide.room());
-      const queue: { ask: PdfPageAsk; picture: Buffer; kind: string }[] = [];
+      const asks: { ask: PdfPageAsk; picture: Buffer; kind: string }[] = [];
       for (const call of run.asks) {
         const ask = call.worker === 'decider' ? pdfPageAskOf(call.input) : null;
         const picture = ask ? run.pictures.get(ask.picture) : undefined;
         if (!ask || !picture || ask.page < from || ask.page > to || out.has(ask.page)) continue;
+        if (!rows.has(ask.page)) continue;
         const kind = kinds.get(ask.page) ?? null;
-        if (kind === null) continue;
-        if (asked >= cap) rulesOnly(ask.page, kind, PAGE_KIND_FROM.cap);
+        if (kind !== null) asks.push({ ask, picture, kind });
+      }
+      // Kept answers first, free (an extract tried again paid for them).
+      const kept = await Promise.all(
+        asks.map((q) => decide.kept(q.ask, q.picture, router.version).catch(() => null)),
+      );
+      // The day cap, read once a window (the asks of a window are few).
+      let room = Math.max(0, await decide.room());
+      const queue: typeof asks = [];
+      for (const [i, { ask, picture, kind }] of asks.entries()) {
+        const k = kept[i];
+        if (k) out.set(ask.page, pageKindOfAnswer(ask.page, kind, k));
+        else if (asked >= cap) rulesOnly(ask.page, kind, PAGE_KIND_FROM.cap);
         else if (room <= 0) rulesOnly(ask.page, kind, PAGE_KIND_FROM.dayCap);
         else {
           asked += 1;
@@ -367,7 +394,9 @@ export async function pdfPageKindsOf(
       for (let i = 0; i < queue.length; i += PAGE_ASKS_AT_ONCE) {
         const part = queue.slice(i, i + PAGE_ASKS_AT_ONCE);
         const answers = await Promise.all(
-          part.map((q) => (stopped ? Promise.resolve(null) : decide.ask(q.ask, q.picture))),
+          part.map((q) =>
+            stopped ? Promise.resolve(null) : decide.ask(q.ask, q.picture, router.version),
+          ),
         );
         for (const [j, a] of answers.entries()) {
           const q = part[j]!;

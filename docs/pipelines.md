@@ -400,8 +400,11 @@ route of the file does not change in M3.
 
 - **Where.** Only at an upload's extract (the file database pass, where its
   bytes have no database), for a file that may have model work, on a box
-  whose decider is pinned to `typesafe/jev-1.14` with `pdf_kind` on
-  (`pdfPageDeciderOf`, `server/api/src/agent/extract/pdf-kind.ts`). A client
+  whose decider params hold `uses.pdf_kind.pages: true` (an operator's key
+  that the manifest never ships) and whose decider is pinned to
+  `typesafe/jev-1.14` with `pdf_kind` on (`pdfPageDeciderOf`,
+  `server/api/src/agent/extract/pdf-kind.ts`; docs/decisions.md `pdf_kind`
+  has the operator step). A client
   box asks none: no window is cut, no picture drawn, and its rows are as
   before (no new column). A read again (`pipeline_reread`, a Reader's
   `pipeline_run`, `file_reindex`) and the sketch read ask none: they read
@@ -427,7 +430,16 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   answers paid); any other failure ends part 2 with what it has.
 - **One ask a page, once for these bytes.** The answers are in the database
   of the file's id and bytes, so a read again never asks; inside the
-  extract each answer is kept in the answer cache too.
+  extract each answer is kept in the answer cache too (its key holds the
+  router's version). An extract tried again takes the kept answers first,
+  free: only a real call takes day-cap room and a place in the file's cap.
+- **Only pages with a row.** Part 2 runs after the Reader's run, so it
+  asks only the pages that have a row in the tab `Pages`; a window with no
+  such page is not cut. An answer never has nowhere to stand.
+- **Limits.** Room is read once a window, so files read at the same time
+  can pass the day cap by up to 25 asks each (the cap paces, it does not
+  lock). Each page ask is one trace step (`decide_pdf_kind`): a 1,000-page
+  upload has 1,000 steps in its trace.
 
 **The list row.** `kind` is `router`. `reads` gives the file types, `names`
 the kinds with their flag, and `description` and `workers` the ask. `runs`

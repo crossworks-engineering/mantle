@@ -641,23 +641,35 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   it. In M3 no page answer is used: the route of the file does not change.
   The answers stand in the Reader's tab `Pages` (docs/pipelines.md, "Page
   types").
-  - **Where it runs.** Only on a box whose decider worker's model is
-    `typesafe/jev-1.14` (`PDF_PAGE_MODEL`, the model the bench measured) and
-    whose use `pdf_kind` is on (`pdfPageAsksOn`), for a file that may have
-    model work. Every client box runs the shipped `~typesafe/jev-latest`, so
-    a roll sends no page picture from it (Jason, 2026-11-21: in shadow, page
-    pictures leave only dev and the bench). A box gets page types when its
-    decider is set to the pinned model, box by box.
+  - **Where it runs.** Two checks (`pdfPageAsksOn`): the decider's params
+    hold `uses.pdf_kind.pages: true` with the use on, and the decider
+    worker's model is `typesafe/jev-1.14` (`PDF_PAGE_MODEL`, the model the
+    bench measured). The file must also be one that may have model work.
+    The system manifest never ships `pages`, and an adopt keeps an
+    operator's value and adds none, so a roll, a seed or a person who picks
+    jev-1.14 for another use sends no page picture (Jason, 2026-11-21: in
+    shadow, page pictures leave only dev and the bench).
+  - **Operator step on dev and the bench.** Set the decider worker's model
+    to `typesafe/jev-1.14`, and add `"pages": true` to `uses.pdf_kind` in
+    its params (`"pdf_kind": { "enabled": true, "mode": "shadow", "pages":
+true }`). Remove the key to stop the page asks.
   - **Timeout.** The use's floor is 5 s (`USE_TIMEOUT_FLOOR_MS.pdf_kind`), as
     for `scan_read_check`: a picture call runs in TypeSafe's long-context
     mode. It holds for the file's one ask too.
   - **The breaker.** The asks of a file are one `DecideBatch`: the breaker
-    hears the file once, at its end. Three failures in a row, or the breaker
-    open, stop the asks of the file; its other pages keep their rules type.
+    hears the file once, at its end. Three asks in a row with no answer (a
+    failure, or any other null: over the limits, no picture part, no
+    choice), or the breaker open, stop the asks of the file; its other pages
+    keep their rules type.
   - **Cost.** About USD 0.13 per 1,000 pages (the bench's measure, 3,103
-    input tokens a page). Each ask counts in the box's day cap of paid asks
-    (docs/pipelines.md, "The day cap") and is kept in the answer cache (kind
-    `decider`), so an extract tried again pays for no page twice.
+    input tokens a page). Each paid ask counts in the box's day cap of paid
+    asks (docs/pipelines.md, "The day cap") and is kept in the answer cache
+    (kind `decider`, its key holds the router's version), so an extract
+    tried again pays for no page twice. The core reads the cache first: a
+    kept answer takes no day-cap room and no place in the file's cap.
+  - **Roll note.** The file's one ask of part 1 and every page ask now count
+    in the Agents' day cap of paid asks on every box (`pipelineAsksToday`
+    counts `meta.use = pdf_kind`). This is a tightening.
 
 ### `scan_read_check` (built; ships `live`)
 

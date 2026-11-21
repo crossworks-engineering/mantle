@@ -138,6 +138,31 @@ export const PAGE_KIND_COLUMNS = [
 
 const PAGES = 'Pages';
 
+/** The line the file's description gets when the core puts page types in
+ *  the tab Pages (withPageKinds): `Kind from` then holds a word of
+ *  PAGE_KIND_FROM in place of the Reader's own (`rules`, `picture`,
+ *  `other_pages`, which the drawing reader's description explains). */
+export const PAGE_KINDS_NOTE =
+  'Kind from of a row in Pages may say rules: and what the page ask gave (shadow, low' +
+  " confidence, no answer, cap, day cap, not drawn, blank) in place of the reader's own word;" +
+  ' the answer is in Decider kind and Decider confidence, and Kind is not changed.';
+
+/** The pages that have a row in the tab `Pages` (its column `Page`): the
+ *  pages whose type has a place to stand. No tab, no pages. */
+export function pagesWithRows(sheets: readonly ParsedSheet[]): Set<number> {
+  const out = new Set<number>();
+  for (const sheet of sheets) {
+    if (sheet.name !== PAGES) continue;
+    const at = sheet.columns.findIndex((c) => c.name === 'Page');
+    if (at < 0) continue;
+    for (const row of sheet.rows) {
+      const n = Number(row[at]);
+      if (Number.isInteger(n)) out.add(n);
+    }
+  }
+  return out;
+}
+
 /**
  * The sheets with the page types in the tab `Pages`, by its column `Page`:
  * a column of PAGE_KIND_COLUMNS the tab lacks is added; `Kind` is set only

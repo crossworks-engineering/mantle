@@ -363,6 +363,12 @@ export type DecisionUseConfig = {
    *  parallel requests of 25: a deeper pool finds passages search ranked far
    *  down (docs/recall-eval.md), at about $0.0005 per 25 scored. */
   pool?: number;
+  /** pdf_kind only: `true` lets this box ask the type of each page of a PDF,
+   *  with the page's picture (the PDF router's page types, plan page
+   *  c607711a). An operator sets it by hand on dev and the bench; the system
+   *  manifest never ships it, and adoptWorkerParams keeps an operator's
+   *  value. Missing = no page asks (Jason, Q5, 2026-11-21). */
+  pages?: boolean;
 };
 
 /** Params for `kind='decider'`. The model lives on the row's `model` column

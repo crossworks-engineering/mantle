@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CLOCK_COLUMNS, resetParserFailures } from '@mantle/files';
+import { CLOCK_COLUMNS, PAGE_KINDS_NOTE, resetParserFailures } from '@mantle/files';
 import { OPTS_LENGTH_HEADER } from '@mantle/files/parser-wire';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import { pipelinesOf } from './pipeline-registry';
@@ -343,6 +343,7 @@ describe('the PDF router in a real read', () => {
     const ids = inProcess();
     const pdfPages = {
       room: vi.fn(async () => 100),
+      kept: vi.fn(async () => null),
       ask: vi.fn(async () => null),
       settle: vi.fn(),
     };
@@ -374,6 +375,8 @@ describe('the PDF router in a real read', () => {
     expect(pages.rows[0]![at('Kind from')]).toBe('rules: shadow');
     expect(pages.rows[0]![at('Decider kind')]).toBe('pid');
     expect(pages.rows[0]![at('Decider confidence')]).toBe(0.98);
+    // The description says what the new words of Kind from are.
+    expect(parsed.description).toContain(PAGE_KINDS_NOTE);
     // Its own Kind stays the drawing reader's, not the stored one.
     expect(pages.rows[0]![at('Kind')]).not.toBe('isometric');
     expect(typeof pages.rows[0]![at('Kind')]).toBe('string');
@@ -389,5 +392,6 @@ describe('the PDF router in a real read', () => {
     if (parsed.kind !== 'sheets') throw new Error('no sheets');
     const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
     expect(pages.columns.some((c) => c.name.startsWith('Decider'))).toBe(false);
+    expect(parsed.description ?? '').not.toContain(PAGE_KINDS_NOTE);
   });
 });
