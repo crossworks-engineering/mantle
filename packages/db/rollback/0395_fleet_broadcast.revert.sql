@@ -28,4 +28,4 @@ ALTER TABLE "public"."messenger_conversations" DROP COLUMN IF EXISTS "announceme
 --> statement-breakpoint
 DROP TABLE IF EXISTS "public"."control_broadcasts";
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792320120000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792340060000;

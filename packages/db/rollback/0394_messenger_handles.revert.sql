@@ -49,4 +49,4 @@ ALTER TABLE "public"."messenger_conversations"
 ALTER TABLE "public"."messenger_conversations"
   DROP COLUMN IF EXISTS "handle";
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792320060000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792340000000;

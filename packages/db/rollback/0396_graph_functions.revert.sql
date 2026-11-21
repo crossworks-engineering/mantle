@@ -17,4 +17,4 @@ DROP FUNCTION IF EXISTS "public"."mantle_graph_path"(uuid, uuid, uuid, integer, 
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_graph_walk"(uuid, uuid, integer, text[], boolean, boolean, integer, uuid);
 --> statement-breakpoint
-DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792320180000;
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792340120000;
