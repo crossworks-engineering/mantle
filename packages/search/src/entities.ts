@@ -340,6 +340,12 @@ export type GraphPathResult = {
   path: GraphHop[];
 };
 
+/** `v` floored and clamped to lo..hi; missing or not a number: `dflt`. */
+function clampInt(v: number | undefined, dflt: number, lo: number, hi: number): number {
+  const n = Number(v ?? dflt);
+  return Number.isNaN(n) ? dflt : Math.min(Math.max(Math.floor(n), lo), hi);
+}
+
 function assertUuid(v: string, field: string): string {
   if (!UUID_RE.test(v)) throw new Error(`graphPath: ${field} is not a uuid`);
   return v;
@@ -375,8 +381,10 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
     .filter((r) => r.length > 0);
   const relations = normalised.length > 0 ? normalised : null;
   const rels = relations ? sql`${pgArrayLiteral(relations)}::text[]` : sql`null::text[]`;
-  const depth = Math.floor(opts.maxDepth ?? 3);
-  const limit = Math.floor(opts.limit ?? 50);
+  // Clamped here as well as in the function: a bound ::int past 2^31 fails
+  // in Postgres (22003) before the function can clamp it.
+  const depth = clampInt(opts.maxDepth, 3, 1, 6);
+  const limit = clampInt(opts.limit, 50, 1, 200);
   const directed = opts.directed ?? false;
   const currentOnly = opts.currentOnly ?? true;
   const call = toId
