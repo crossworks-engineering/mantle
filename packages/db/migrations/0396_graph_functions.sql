@@ -1,5 +1,5 @@
 -- The knowledge graph's walk as two functions (docs/knowledge-graph.md,
--- "6.1 The walk is two database functions (migration 0394)"). Before this,
+-- "6.1 The walk is two database functions (migration 0396)"). Before this,
 -- graph_path sent a recursive CTE as text that built every simple path and
 -- then kept the shortest one per entity: on a client brain (3,526
 -- entities, 4,636 entity-to-entity edges, one entity with 816 links) three
@@ -44,7 +44,7 @@
 -- caller gives no right the caller does not hold.
 --
 -- No table, column, index or trigger. No LLM work.
--- Rollback: packages/db/rollback/0394_graph_functions.revert.sql.
+-- Rollback: packages/db/rollback/0396_graph_functions.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_graph_walk"(
