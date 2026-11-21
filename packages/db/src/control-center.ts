@@ -1569,6 +1569,12 @@ export type ControlBroadcast = typeof controlBroadcasts.$inferSelect;
 /** The most broadcasts one box is sent in one run (the rest wait). */
 export const CONTROL_BROADCASTS_PER_RUN = 10;
 
+/** The longest text a broadcast with `title` takes: the chat line holds
+ *  the title, a blank line and the text (CONTROL_BROADCAST_BODY_MAX). */
+export function broadcastTextMax(title: string | null): number {
+  return CONTROL_BROADCAST_BODY_MAX - (title ? title.length + 2 : 0);
+}
+
 /** A broadcast as a CC Admin writes it: the text (1 to 8000 characters),
  *  an optional title (at most 200). Both trimmed. */
 export function checkBroadcast(input: {
@@ -1577,15 +1583,23 @@ export function checkBroadcast(input: {
 }): Checked<{ title: string | null; body: string }> {
   const body = typeof input.body === 'string' ? input.body.trim() : '';
   if (!body) return { ok: false, error: 'Write the text of the broadcast.' };
-  if (body.length > CONTROL_BROADCAST_BODY_MAX) {
-    return { ok: false, error: `The text is at most ${CONTROL_BROADCAST_BODY_MAX} characters.` };
-  }
   if (input.title !== undefined && input.title !== null && typeof input.title !== 'string') {
     return { ok: false, error: 'The title is text.' };
   }
   const title = typeof input.title === 'string' ? input.title.trim() || null : null;
   if (title && title.length > CONTROL_BROADCAST_TITLE_MAX) {
     return { ok: false, error: `The title is at most ${CONTROL_BROADCAST_TITLE_MAX} characters.` };
+  }
+  // The box's line is the title, a blank line, then the text, in one chat
+  // line: the whole of it fits, so no box cuts it.
+  const max = broadcastTextMax(title);
+  if (body.length > max) {
+    return {
+      ok: false,
+      error: title
+        ? `With this title the text is at most ${max} characters.`
+        : `The text is at most ${max} characters.`,
+    };
   }
   return { ok: true, value: { title, body } };
 }

@@ -511,4 +511,13 @@ describe('checkBroadcast (a fleet broadcast as an Admin writes it)', () => {
     expect(checkBroadcast({ body: 'x', title: 'y'.repeat(201) }).ok).toBe(false);
     expect(checkBroadcast({ body: 'x', title: 5 }).ok).toBe(false);
   });
+
+  it('holds title, blank line and text to one chat line, so no box cuts it', () => {
+    // 'Tonight' is 7 characters: 8000 - 7 - 2 = 7991 for the text.
+    expect(checkBroadcast({ title: 'Tonight', body: 'x'.repeat(7991) }).ok).toBe(true);
+    expect(checkBroadcast({ title: 'Tonight', body: 'x'.repeat(7992) })).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/With this title the text is at most 7991/),
+    });
+  });
 });
