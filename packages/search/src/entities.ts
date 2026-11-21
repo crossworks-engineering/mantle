@@ -11,8 +11,9 @@
  *   entityMentions  — content_store nodes that mention this entity.
  *
  *   graphPath       — multi-hop traversal over the entity↔entity graph
- *                     (recursive CTE): reachable neighbourhood within N hops,
- *                     or the shortest path(s) between two entities.
+ *                     (the mantle_graph_walk / mantle_graph_path functions):
+ *                     reachable neighbourhood within N hops, or the shortest
+ *                     path between two entities.
  *
  * entityNeighbors stays the simple one-hop primitive; graphPath is the
  * variable-depth walker for "how is X connected to Y?" / "what's within 2
@@ -26,7 +27,7 @@ import {
   entityEdges,
   facts,
   nodes,
-  readSql,
+  readOnlyTransaction,
   type Entity,
   type Fact,
 } from '@mantle/db';
@@ -314,7 +315,7 @@ export type GraphPathOptions = {
   /** Optional target entity id. Given → return shortest path(s) to it;
    *  omitted → return every entity reachable within maxDepth. */
   toId?: string;
-  /** Max hops to walk. Default 3, hard-capped at 6 to bound the CTE. */
+  /** Max hops to walk. Default 3, clamped to 1..6. */
   maxDepth?: number;
   /** Only traverse edges with these relation verbs (any, when omitted). */
   relations?: string[];
@@ -322,8 +323,10 @@ export type GraphPathOptions = {
    *  undirected for connectivity. Default false (undirected) — best for
    *  "how are these connected?". */
   directed?: boolean;
-  /** Max result rows. Default 50, capped 200. */
+  /** Max result rows, nearest first. Default 50, capped 200. */
   limit?: number;
+  /** Walk only edges still true (valid_to is null). Default true. */
+  currentOnly?: boolean;
 };
 
 export type GraphHop = { name: string; kind: string; relation: string };
@@ -337,127 +340,54 @@ export type GraphPathResult = {
   path: GraphHop[];
 };
 
-/**
- * Multi-hop traversal over the entity↔entity edge graph via a recursive CTE.
- * Only walks edges where BOTH endpoints are entities (source_kind = target_kind
- * = 'entity'), so `mentioned_in` (entity→node) and `references` (node→node)
- * never leak in — this is the *knowledge* graph, not the mention graph.
- *
- * Cycle-safe (never revisits a node on a path). Undirected by default so
- * "Sarah ── employed_by ──> Lister <── supplies ── Acme" connects Sarah↔Acme.
- * The walk returns id/relation arrays; entity names are resolved in one
- * follow-up query and assembled into readable hop chains.
- */
 function assertUuid(v: string, field: string): string {
   if (!UUID_RE.test(v)) throw new Error(`graphPath: ${field} is not a uuid`);
   return v;
 }
 
 /**
- * The walk's text for graphPath, every value inlined (see the note in
- * graphPath): run through readSql, which answers it unchanged. A relation
- * verb sits in a string literal, so no verb (`nextval`, `delete`) reads as
- * code there.
+ * Multi-hop traversal over the entity<->entity edge graph: the database's
+ * mantle_graph_walk / mantle_graph_path (migration 0394), breadth first,
+ * each entity visited once, so the cost grows with the entities and edges
+ * touched, not with the number of paths. Only walks edges where BOTH
+ * endpoints are entities (source_kind = target_kind = 'entity'), so
+ * `mentioned_in` (entity->node) and `references` (node->node) never leak
+ * in: this is the *knowledge* graph, not the mention graph. A retired edge
+ * (valid_to set) is not walked unless currentOnly is false.
+ *
+ * Undirected by default so "Sarah -- employed_by --> Lister <-- supplies --
+ * Acme" connects Sarah and Acme. Of two shortest paths the function keeps
+ * the one first when the hops are compared from the start (verb, then
+ * entity id). Rows come nearest first, so `limit` keeps the nearest
+ * entities. The walk runs in a READ ONLY transaction with bound
+ * parameters; entity names are resolved in one follow-up query and
+ * assembled into readable hop chains.
  */
-export function graphPathSql(opts: GraphPathOptions): string {
-  const maxDepth = Math.min(Math.max(1, Math.floor(opts.maxDepth ?? 3)), 6);
-  const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 50)), 200);
-  const relFilter = opts.relations && opts.relations.length > 0 ? opts.relations : null;
-
-  // This runs via postgres.js's SIMPLE query protocol (simpleReadOnly:
-  // db.$client's unsafe().simple()), NOT drizzle's db.execute, which uses the extended protocol
-  // (Parse/Bind/Execute). Under the extended protocol, a recursive-CTE array
-  // column's type isn't pinned at parse time, so the cycle guard
-  // `= any(path_ids)` fails with "op ANY/ALL requires array on right side";
-  // the simple protocol (what psql uses) resolves it fine. Because the simple
-  // protocol takes no bind params, every value is INLINED — injection-safe
-  // because all are validated: ids must match a strict UUID regex, depth/limit
-  // are clamped ints, and relation verbs are reduced to [a-z0-9_]
-  // (sanitiseRelation already guarantees this; re-enforced here).
-  const fromId = assertUuid(opts.fromId, 'fromId');
-  const ownerId = assertUuid(opts.ownerId, 'ownerId');
-  const toId = opts.toId ? assertUuid(opts.toId, 'toId') : null;
-  const relList = relFilter
-    ? relFilter.map((r) => r.toLowerCase().replace(/[^a-z0-9_]/g, '')).filter((r) => r.length > 0)
-    : null;
-  const relCond =
-    relList && relList.length > 0
-      ? `and e.relation in (${relList.map((r) => `'${r}'`).join(',')})`
-      : '';
-  const reverseLeg = opts.directed
-    ? ''
-    : `union all
-       select e.source_id as other, e.relation
-       from entity_edges e
-       where e.owner_id = '${ownerId}'::uuid
-         and e.source_kind = 'entity' and e.target_kind = 'entity'
-         and e.target_id = w.node_id ${relCond}`;
-
-  const queryText = `
-    with recursive walk as (
-      select s.id as node_id, array[s.id] as path_ids, '{}'::text[] as rels, 0 as depth
-      from (select '${fromId}'::uuid as id) s
-      union all
-      select nxt.other, w.path_ids || nxt.other, w.rels || nxt.relation, w.depth + 1
-      from walk w
-      cross join lateral (
-        select e.target_id as other, e.relation
-        from entity_edges e
-        where e.owner_id = '${ownerId}'::uuid
-          and e.source_kind = 'entity' and e.target_kind = 'entity'
-          and e.source_id = w.node_id ${relCond}
-        ${reverseLeg}
-      ) nxt
-      where w.depth < ${maxDepth}
-        and not (nxt.other = any(w.path_ids))
-    )
-    select distinct on (node_id) node_id, path_ids, rels, depth
-    from walk
-    where depth > 0 ${toId ? `and node_id = '${toId}'::uuid` : ''}
-    order by node_id, depth asc
-    limit ${limit}`;
-  return queryText;
-}
-
-/** The postgres.js client graphPath reads with (db.$client: the turn
- *  scope's client in a turn, else the system pool's). */
-type SimpleClient = {
-  unsafe: (q: string) => PromiseLike<unknown> & { simple: () => Promise<unknown[]> };
-};
-
-/**
- * Run `text` (readSql checks it) on postgres.js's simple protocol inside a
- * READ ONLY transaction: SET TRANSACTION READ ONLY is awaited before the
- * read is sent, so Postgres refuses a write a function the text calls
- * would make (see @mantle/db read-only-tx.ts for what that stops and what
- * it does not). Exported for graph-path-read-only.db.test.ts.
- */
-export async function simpleReadOnly(text: string): Promise<unknown[]> {
-  const client = (
-    db as unknown as {
-      $client: { begin: <T>(fn: (t: SimpleClient) => Promise<T>) => Promise<T> };
-    }
-  ).$client;
-  return client.begin(async (t) => {
-    // Awaited, never pipelined with the read: the transaction's client may
-    // wrap a statement (the actor's SET, the narrow route's role SET) and
-    // start it a microtask late, so a send order here is no order on the
-    // wire (the narrow route once sent the read first). One round trip more.
-    await t.unsafe('set transaction read only');
-    return t.unsafe(readSql(text)).simple();
-  });
-}
-
 export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult[]> {
-  // Simple protocol (see note above), no params, read only.
-  const rows = await simpleReadOnly(graphPathSql(opts));
-
-  const raw = rows as unknown as Array<{
+  const ownerId = assertUuid(opts.ownerId, 'ownerId');
+  const fromId = assertUuid(opts.fromId, 'fromId');
+  const toId = opts.toId ? assertUuid(opts.toId, 'toId') : null;
+  const relations = opts.relations && opts.relations.length > 0 ? opts.relations : null;
+  const rels = relations ? sql`${pgArrayLiteral(relations)}::text[]` : sql`null::text[]`;
+  const depth = Math.floor(opts.maxDepth ?? 3);
+  const limit = Math.floor(opts.limit ?? 50);
+  const directed = opts.directed ?? false;
+  const currentOnly = opts.currentOnly ?? true;
+  const call = toId
+    ? sql`public.mantle_graph_path(${ownerId}::uuid, ${fromId}::uuid, ${toId}::uuid,
+        ${depth}::int, ${rels}, ${directed}::boolean, ${currentOnly}::boolean)`
+    : sql`public.mantle_graph_walk(${ownerId}::uuid, ${fromId}::uuid, ${depth}::int,
+        ${rels}, ${directed}::boolean, ${currentOnly}::boolean, ${limit}::int)`;
+  const rows = (await readOnlyTransaction((tx) =>
+    tx.execute(sql`select w.entity_id::text as node_id, w.path_ids::text[] as path_ids,
+        w.relations as rels, w.depth from ${call} w`),
+  )) as unknown as Array<{
     node_id: string;
     path_ids: string[];
     rels: string[];
     depth: number;
   }>;
+  const raw = Array.from(rows);
   if (raw.length === 0) return [];
 
   // Resolve every entity id that appears in any path, in one query.
@@ -466,7 +396,7 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
   const entityRows = await db
     .select()
     .from(entities)
-    .where(and(eq(entities.ownerId, opts.ownerId), inArray(entities.id, Array.from(allIds))));
+    .where(and(eq(entities.ownerId, ownerId), inArray(entities.id, Array.from(allIds))));
   const byId = new Map(entityRows.map((e) => [e.id, e]));
 
   const results: GraphPathResult[] = [];
@@ -482,8 +412,6 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
     }
     results.push({ entity: endpoint, depth: r.depth, path });
   }
-  // Shortest paths first.
-  results.sort((a, b) => a.depth - b.depth);
   return results;
 }
 
