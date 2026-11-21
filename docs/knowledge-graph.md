@@ -12,7 +12,8 @@ extraction step is traced), and [`data-flow-tracing.md`](./data-flow-tracing.md)
 (verify one node by hand). Shipped 2026-05-29.
 
 > **No graph database.** The whole graph is Postgres: `entities` +
-> `entity_edges` tables, `ltree` for the tree, recursive CTEs for traversal.
+> `entity_edges` tables, `ltree` for the tree, two plpgsql functions for
+> multi-hop traversal (`mantle_graph_walk`, `mantle_graph_path`, §6).
 > This was re-confirmed with evidence at 2,200-edge / 1,365-document scale,
 > Postgres traverses your whole life instantly. The remaining hard problems
 > (entity resolution, verb consistency) are *modelling*, not engine, problems,
@@ -165,20 +166,81 @@ builtin tools (Saskia) and MCP tools (Claude Desktop/Code):
 
 - **`entity_neighbors`**: one hop, both directions, optional relation filter.
   The cheap "what's directly connected to X?".
-- **`graph_path`**: multi-hop via a recursive CTE. `from_id` only → everything
-  reachable within `max_depth`; `from_id` + `to_id` → shortest path(s) between
-  two entities ("how is Alice connected to Nedbank?" →
+- **`graph_path`**: multi-hop. `from_id` only → every entity reachable
+  within `max_depth`, nearest first; `from_id` + `to_id` → the shortest path
+  between two entities ("how is Alice connected to Nedbank?" →
   `Alice → employed_by → Cross-Works → banks_with → Nedbank`). Cycle-safe,
   relation-filterable, undirected by default for connectivity.
 
-> **Driver note (so the next person doesn't lose an hour):** the recursive CTE
-> runs via the postgres-js **simple** query protocol
-> (`db.$client.unsafe(sql).simple()`), not drizzle's `db.execute`, under the
-> extended protocol an array-column's type isn't pinned at parse time and the
-> cycle guard `= any(path_ids)` fails. Values are inlined + validated (UUID
-> regex, clamped ints, `[a-z0-9_]` verbs), so there are no bind params. And
-> resolving ids back to names uses drizzle's `inArray()`, not
-> `sql\`= any(${jsArray})\`` (which drizzle mis-binds).
+### 6.1 The walk is two database functions (migration 0394)
+
+`graphPath` calls `public.mantle_graph_walk` (`from_id` only) or
+`public.mantle_graph_path` (`from_id` + `to_id`) with bound parameters,
+inside a READ ONLY transaction (`readOnlyTransaction`), then resolves the
+ids to names in one query.
+
+```sql
+mantle_graph_walk(p_owner uuid, p_from uuid, p_max_depth int = 3,
+                  p_relations text[] = null, p_directed boolean = false,
+                  p_current_only boolean = true, p_limit int = 50,
+                  p_target uuid = null)
+mantle_graph_path(p_owner uuid, p_from uuid, p_to uuid, p_max_depth int = 3,
+                  p_relations text[] = null, p_directed boolean = false,
+                  p_current_only boolean = true)
+  -- both: returns table (entity_id uuid, depth int, path_ids uuid[], relations text[])
+```
+
+- **Level by level.** The walk is breadth first: one set query per level
+  finds the next level from the edges of the current one and leaves out
+  every entity already visited. Each entity is visited once and keeps a
+  parent pointer; the path is rebuilt from the pointers at the end. So the
+  cost grows with the entities and edges touched, not with the number of
+  paths. The text query before 0394 built every simple path and then kept
+  the shortest per entity: on a client brain (3,526 entities, 4,636
+  entity-to-entity edges, one entity with 816 links) three steps from the
+  busiest entity made 898,858 paths (2.1 s) and four steps did not end in
+  8 s. On a synthetic graph of that shape the functions answer in about
+  5 ms at any depth (the walk stops once a level fills the limit), and
+  about 27 ms for a six-step walk that must visit every level in full.
+- **What is walked.** Only edges with `source_kind` and `target_kind`
+  `'entity'`, only of `p_owner`. A retired edge (`valid_to` set) is skipped
+  unless `p_current_only` is false. `p_relations` null or empty means every
+  verb. Undirected (the default) walks an edge both ways.
+- **Clamps.** Depth 1..6 (default 3), rows 1..200 (default 50). Rows come
+  nearest first, so the limit keeps the nearest entities.
+- **Tie-break.** Of two shortest paths to one entity, the one kept is the
+  first when the hops are compared from the start, each hop by its relation
+  verb, then by the entity's id. The rows come in that order too.
+- **Rights.** Both are `SECURITY INVOKER`, `STABLE`, with `search_path`
+  pinned: they read as their caller, so the caller's grants and row rules on
+  `entity_edges` apply. They make no temporary table, so they run inside a
+  READ ONLY transaction. Open to PUBLIC, as the other invoker reads.
+- **Tests.** `packages/search/src/graph-functions.db.test.ts` (cycles,
+  retired edges, direction, filters, clamps, tie-break, owners, read only,
+  and a random graph checked against the old walk as the oracle) and
+  `graph-path-read-only.db.test.ts` (the walk is sent inside the read-only
+  transaction, in a turn scope and on the narrow system route).
+
+### 6.2 Later: the same tables as an SQL/PGQ property graph
+
+A later Postgres release with SQL/PGQ (`CREATE PROPERTY GRAPH`,
+`GRAPH_TABLE (... MATCH ...)`) can read these tables as a graph with no
+data change:
+
+- **Vertices:** `entities`, key `id`, one label (`entity`) with `kind`,
+  `name` and `owner_id` as properties (`kind` stays a property, not a
+  label: kinds are open text).
+- **Edges:** the entity-to-entity rows of `entity_edges`, `SOURCE KEY
+  (source_id) REFERENCES entities (id)`, `DESTINATION KEY (target_id)
+  REFERENCES entities (id)`, with `relation`, `valid_from`, `valid_to` as
+  properties. `entity_edges` is polymorphic (an end may be a fact or a
+  node), so the edge table is a view (or a table) of the rows where both
+  kinds are `'entity'`.
+- **Filters** stay in the `MATCH ... WHERE`: `owner_id`, and
+  `valid_to IS NULL` for current edges.
+
+Keep these functions for multi-hop until that release can match paths of
+variable length with a visited guard as cheaply.
 
 ### 6a. The graph in retrieval: auto-expansion (June 2026)
 
@@ -249,4 +311,5 @@ and the detail page lists the relations drawn (`subject → verb → object`).
 | Near-dup consolidation (`orgCompactKey`) | `packages/content/src/entity-dedup.ts` |
 | Review UI | `jackdaw/app/(app)/settings/entities/*` |
 | Backfill / dedupe scripts | `server/web/scripts/{relations-backfill,entities-dedupe}.ts` |
-| Migrations | 0055 (exact-dup merge + unique index), 0056 (dismissals) |
+| Multi-hop walk (`mantle_graph_walk`, `mantle_graph_path`) | `packages/db/migrations/0394_graph_functions.sql` |
+| Migrations | 0055 (exact-dup merge + unique index), 0056 (dismissals), 0394 (graph functions) |

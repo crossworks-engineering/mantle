@@ -1,7 +1,7 @@
 -- The knowledge graph's walk as two functions (docs/knowledge-graph.md,
--- "Multi-hop: graph_path"). Before this, graph_path sent a recursive CTE
--- as text that built every simple path and then kept the shortest one per
--- entity: on a client brain (3,526 entities, 4,636 entity-to-entity edges,
+-- "6.1 The walk is two database functions (migration 0394)"). Before this,
+-- graph_path sent a recursive CTE as text that built every simple path and
+-- then kept the shortest one per entity: on a client brain (3,526 entities, 4,636 entity-to-entity edges,
 -- one entity with 816 links) three steps from the busiest entity made
 -- 898,858 paths for 1,389 entities (2.1 s), and four steps did not end in
 -- 8 s. These walk level by level and visit each entity once, so the cost

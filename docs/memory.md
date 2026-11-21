@@ -542,8 +542,9 @@ production system: social graphs, fraud detection, recommendations at
 internet scale. None of those apply here.
 
 > **Shipped + confirmed (2026-05).** The graph axis is live: entity↔entity
-> relations extracted into `entity_edges`, multi-hop `graph_path` traversal via
-> recursive CTE, entity-resolution integrity, and near-dup consolidation. At
+> relations extracted into `entity_edges`, multi-hop `graph_path` traversal
+> (since 0394 two plpgsql functions that walk level by level, visit each
+> entity once and skip retired edges), entity-resolution integrity, and near-dup consolidation. At
 > 2,200 edges / 1,365 documents Postgres traverses instantly, and the remaining
 > hard problems (entity resolution, verb consistency) turned out to be
 > *modelling* problems a graph engine wouldn't solve, so the "no Neo4j" call
@@ -600,7 +601,10 @@ A glossary so the column above reads cleanly:
   matters: `content_index.embedding`, `facts.embedding`,
   `entities.embedding`, digest embeddings (insert-time since 2026-06-10).
 - **Graph**: *not* a separate database. Modeled as `entities` +
-  `entity_edges` tables in Postgres, traversed via recursive CTEs.
+  `entity_edges` tables in Postgres. Multi-hop traversal is
+  `mantle_graph_walk` / `mantle_graph_path` (migration 0394): breadth first,
+  level by level, each entity visited once, retired edges (`valid_to` set)
+  skipped by default ([`knowledge-graph.md` §6.1](./knowledge-graph.md#61-the-walk-is-two-database-functions-migration-0394)).
   Personal scale doesn't justify Neo4j. The graph axis lives inside the
   `profile` layer.
 - **ltree**: Postgres extension for hierarchical paths
@@ -1169,8 +1173,8 @@ Each step delivers value standalone.
    `searchEntities`, `entityNeighbors`, `entityFacts`, `entityMentions`;
    four matching MCP tools (`entity_search`, `entity_neighbors`,
    `entity_facts`, `entity_mentions`) ship the graph axis to Claude.
-   Single-hop only for now, recursive CTE multi-hop walker waits until
-   a query actually demands it.
+   Single-hop at first; the multi-hop walker shipped later as `graph_path`
+   (since 0394 the `mantle_graph_walk` / `mantle_graph_path` functions).
 8. **Web assistant surface**: DONE (MVP). `/assistant` page + `POST
    /api/assistant/turn` route; new `assistant_messages` table (migration
    0021); shared `packages/runtime/src/agent` exports `buildChatMessages` +
@@ -1209,8 +1213,8 @@ summarize-before-embed ingest design keeps that axis flat.
   scale data with room to spare. Pinecone et al. are right when you
   shard billions of vectors across regions; not us.
 - **No separate graph DB.** Neo4j is right when traversal is the
-  application's bottleneck. For one user's life, recursive CTEs on a few
-  thousand edges are fast and free.
+  application's bottleneck. For one user's life, a level-by-level walk in
+  plpgsql on a few thousand edges is fast and free.
 - **No Mem0 / Letta / Zep as infrastructure.** We borrow the *patterns*
   (taxonomy, retrieval ordering, ADD/UPDATE/DELETE classifier, temporal
   edges) and implement them inside Mantle's Postgres. One store, one
