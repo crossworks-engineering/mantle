@@ -951,7 +951,7 @@ read once from a title box alone is dropped), `CLASS_TABLE`, `CLASS_ROW`,
 specification number only, such as `mat:A193`, also in text with no spaces;
 the grade stays in the row's text, so a grade question adds
 `text LIKE '%B7M%'` on the row's node), `IN_GROUP` (an
-item row to the group header above it, `*****BOLTING*****`), `HAS_RATING`
+item row to the group header row above it, `****BOLTING****`), `HAS_RATING`
 and `HAS_BASE_MATERIAL` (each fact from the first page of the class that
 states it), and for an addendum page `ADDENDUM_PAGE`, `CHANGES_CLASS`,
 `HAS_CHANGE`, `ADDENDUM_ROW`, `ADDENDUM_CODE` and `ADDENDUM_MATERIAL`. A row
@@ -964,7 +964,8 @@ one before `SUPERSEDES`. A class's node has its facts as JSON in `text`
 `coverage` say so, for a reader to ask: what the two tabs are; each kind
 with its count; the pages with no text (unread scans), with their list; the
 page texts cut at the cell cap before the read; tables the body did not
-hold; whether each pack is on; and for the piping pack, the pages with text
+hold; the cut of the body, with the core's warnings (`coverage:input-cut`);
+whether each pack is on; and for the piping pack, the pages with text
 and no class, and how many classes have each fact. A Transformer cannot set
 the file's description, so the lines are rows:
 `SELECT label FROM "Link nodes" WHERE kind = 'coverage'`.
@@ -976,7 +977,8 @@ the grade. In text with no spaces, an item code that ends in a letter and a
 three digit number (`XYA802`) also gives a material link (`mat:A802`).
 Rules read what the Reader wrote: a chart row that the Reader merged with a
 list of codes links those codes to that chart row; a group header line that
-the Reader made a table's heading gives its rows no group; text that the
+the Reader made a table's title is no header row, so the rows of that table
+keep the group before it (a wrong group); text that the
 scan read wrongly (a letter for a slash, a colon in a number) gives no link
 or a wrong one; a page text cut at the cell cap is read only to the cut.
 
@@ -989,7 +991,9 @@ read again, picks it up. Existing files get links on a new upload and on a
 person's read again; nothing runs by itself at a roll.
 
 **Bounds.** The body holds at most 500,000 rows of a tab and 64 MB in all,
-a cell cut at 4,096 characters. The tabs hold at most 400,000 links and
+a cell cut at 4,096 characters; that is the one cut of the input, and
+`coverage:input-cut` says so. Links cuts nothing of its own: a node keeps
+its whole text, and a table's pages run to its last page in the file. The tabs hold at most 400,000 links and
 200,000 nodes; past them the rest is not written, and a coverage node and a
 warning say so. Measured on a workstation on a real book of 1,000 pages and
 2,436 tables (a 112 MB database): body 1.3 s, rules 0.4 s, patch 2.5 to
@@ -1767,7 +1771,10 @@ writes it (`afterBodyOf`), with the row cap of 500,000, the one cell cap
 `AFTER_CELL_MAX_CHARS` (4,096 characters, in `pipelines/shapes.ts`, the cap
 Site tags uses too) and a budget of 64 MB for the whole body
 (`AFTER_BODY_MAX_BYTES`; the largest honest body is 10 to 14 MB), and adds
-the warning "Only the first N texts were read." when it cuts. It builds the
+the warning "Only the first N texts were read." when it cuts (or "The tab X
+was not read: the input was full."). A cut body ends in one more line,
+`{"cut":[...]}`, with those warnings (`bodyCutLine`), so the step can say
+what it did not get; it is past the budget, as it is a few lines. It builds the
 body from Buffer chunks, so the brain holds it about once. The step reads it with
 `job.tabRows(tab)`, line by line.
 

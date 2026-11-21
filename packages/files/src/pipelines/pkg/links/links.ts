@@ -52,10 +52,6 @@ export const LINKS_FTS_SKIP: readonly string[] = [
   'id',
   'text',
 ];
-/** The longest text of a node (a row's cells), in characters. */
-export const NODE_TEXT_MAX = 400;
-/** The longest page list a coverage node spells out, in characters. */
-const PAGE_LIST_MAX = 2_000;
 
 type Cell = string | number | boolean | null;
 
@@ -109,6 +105,9 @@ export type LinkInput = {
   lines: { page: number | null; line: string; n: number }[];
   /** Tabs named in Tables that the body did not hold. */
   tablesNotRead: string[];
+  /** The core's warnings when it cut the body (a tab past its row cap, or
+   *  the body past its byte budget): what the rules did not get. */
+  bodyCut: string[];
 };
 
 /** A cell as text: a string as it is, a finite number in its shortest
@@ -148,7 +147,10 @@ export function pagesOfCell(v: unknown): { first: number; last: number } | null 
 }
 
 /** The rules' input from the body's tabs (./step.ts parses the body). */
-export function linkInputOf(tabs: ReadonlyMap<string, BodyTab>): LinkInput {
+export function linkInputOf(
+  tabs: ReadonlyMap<string, BodyTab>,
+  bodyCut: readonly string[] = [],
+): LinkInput {
   const col = (t: BodyTab | undefined, name: string) => (t ? t.columns.indexOf(name) : -1);
   const pagesTab = tabs.get('Pages');
   const agentTab = tabs.get('Page text');
@@ -251,6 +253,7 @@ export function linkInputOf(tabs: ReadonlyMap<string, BodyTab>): LinkInput {
     tags,
     lines,
     tablesNotRead,
+    bodyCut: [...bodyCut],
   };
 }
 
@@ -275,14 +278,14 @@ export class LinkSet {
       this.cut = true;
       return id;
     }
-    this.nodes.set(id, [id, kind, label, page, body.slice(0, NODE_TEXT_MAX) || null]);
+    this.nodes.set(id, [id, kind, label, page, body || null]);
     return id;
   }
 
   /** The text of a node, set once a rule knows it (a class's facts). */
   setText(id: string, body: string): void {
     const n = this.nodes.get(id);
-    if (n) n[4] = body.slice(0, NODE_TEXT_MAX);
+    if (n) n[4] = body;
   }
 
   link(from: string, to: string, kind: string, page: number | null, source: string): void {
@@ -409,6 +412,7 @@ const TAG_HEADER = /\btags?\b|\bline\s*(?:no\b|number)/i;
 export function genericLinks(input: LinkInput, set: LinkSet): void {
   const file = set.node(ids.file(), 'file', 'the file');
   const pageIds = new Set<number>();
+  const lastPage = input.pages.at(-1)?.page ?? 0;
   for (const p of input.pages) {
     set.node(ids.page(p.page), 'page', `page ${p.page}`, p.page);
     pageIds.add(p.page);
@@ -419,7 +423,7 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
   for (const t of input.tables) {
     set.node(t.id, 'table', t.title || t.tab, t.first, t.tab);
     if (t.first !== null && t.last !== null) {
-      for (let p = t.first; p <= t.last && p - t.first < 1_000; p += 1) {
+      for (let p = t.first; p <= Math.min(t.last, lastPage); p += 1) {
         if (pageIds.has(p))
           set.link(t.id, ids.page(p), 'TABLE_ON_PAGE', p, sourceOf('tables index', 'Tables'));
       }
@@ -508,7 +512,7 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
   }
 }
 
-/** A list of pages as runs: `1-3, 7, 9-12`, cut at PAGE_LIST_MAX. */
+/** A list of pages as runs: `1-3, 7, 9-12`. */
 export function pageList(pages: readonly number[]): string {
   const sorted = [...new Set(pages)].sort((a, b) => a - b);
   const parts: string[] = [];
@@ -518,8 +522,7 @@ export function pageList(pages: readonly number[]): string {
     parts.push(i === j ? `${sorted[i]}` : `${sorted[i]}-${sorted[j]}`);
     i = j + 1;
   }
-  const out = parts.join(', ');
-  return out.length > PAGE_LIST_MAX ? `${out.slice(0, PAGE_LIST_MAX)} ...` : out;
+  return parts.join(', ');
 }
 
 /** A coverage node: one short line, and its detail. */
@@ -552,7 +555,15 @@ function genericCoverage(input: LinkInput, set: LinkSet): void {
       set,
       'tables-not-read',
       `${input.tablesNotRead.length} tables named in Tables were not read (the input was full); their rows gave no links.`,
-      input.tablesNotRead.slice(0, 50).join(' | '),
+      input.tablesNotRead.join(' | '),
+    );
+  }
+  if (input.bodyCut.length > 0) {
+    coverage(
+      set,
+      'input-cut',
+      'The input of Links was cut: the rows and tabs past the cut gave no links.',
+      input.bodyCut.join(' '),
     );
   }
 }

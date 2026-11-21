@@ -283,7 +283,7 @@ export {
   type StepJob,
 } from './pipelines/contract';
 export { checkStepResult } from './pipelines/step-check';
-export { tabHeadLine, tabRowLine, tabRowsOf } from './pipelines/tabs-body';
+export { bodyCutLine, tabHeadLine, tabRowLine, tabRowsOf } from './pipelines/tabs-body';
 export {
   extractorRefusesFile,
   fileDataExt,

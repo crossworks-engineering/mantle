@@ -3,7 +3,7 @@
  * one or more pages a piping class (a code such as `K2` or `Q3X`), each with
  * a cover (service, rating, base material, temperature limits, corrosion
  * allowance) and the items of the class in tables under group headers
- * (`*****BOLTING*****`), with addendums that change a class. Pure: the
+ * (`****BOLTING****`), with addendums that change a class. Pure: the
  * input of ./links.ts in, links out. Data (the patterns below) and small
  * functions, so another pack (drawings) is one more file beside it.
  *
@@ -53,7 +53,7 @@ const BOX_LABELS = /\bREV\b.*\bCLASS\s*$/i;
 const BOX_VALUES = /\b\d?\.\d{2,4}\s+(?:\S+\s+){0,4}([A-Za-z0-9]{2,6})\s*$/;
 /** An addendum page: ADDENDUM opens a top line, or `ADDENDUM TO` /
  *  `ADDENDUM Page`. `Addendums` in a sentence is none. */
-const ADDENDUM_LINE = /^\W*ADDENDUM\b(?!S)|\bADDENDUM\s+(?:TO|PAGE|NO)\b/i;
+const ADDENDUM_LINE = /^\W*ADDENDUM\b|\bADDENDUM\s+(?:TO|PAGE|NO)\b/i;
 /** The code before `Revision` on an addendum's top line (`Q2X Revision: 0`). */
 const ADDENDUM_CLASS = /\b([A-Z0-9]{1,8})\s+Revision\b/;
 /** The revision of an addendum, read before `SUPERSEDES` (the old one is
@@ -65,12 +65,12 @@ const CHANGE =
   /^\s*(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s+((?:Add|Revise|Delete|Replace|Change|Remove|Use)\b.{0,160})/gim;
 /** A column of an item's name (`ITEM NAME`), never its code. */
 const ITEM_NAME = /\bITEM\s*NAME\b/i;
-/** A group header row: `*****BOLTING*****`. */
+/** A group header row: `****BOLTING****`. */
 const GROUP = /\*{3,}\s*([A-Z][A-Z &/,.-]*?)\s*\*{3,}/;
 
 /** The cover's facts. */
 const RATINGS = '150|300|400|600|800|900|1500|2500|3000|6000';
-/** `0.125 300 RF`, `0.125 Class 300 RF`: corrosion allowance, rating, face. */
+/** `0.063 600 RF`, `0.063 Class 600 RF`: corrosion allowance, rating, face. */
 const COVER_ROW = new RegExp(
   `\\b(\\d?\\.\\d{2,4})\\s+(?:CLASS\\s+)?(${RATINGS})#?\\s*(RF|FF|RTJ)\\b`,
   'i',
@@ -78,8 +78,8 @@ const COVER_ROW = new RegExp(
 /** `300# RF`, `300 #RFSF` (a raised face, smooth finish). */
 const RATING_FACE = new RegExp(`\\b(${RATINGS})\\s*#\\s*(RTJ|RF|FF)`);
 /** An older sheet's line: the base material, then the rating and face
- *  (`KILLED CARBON STEEL 150 #RFSF`, `304 STAINLESS STEEL 300 #RF`). The
- *  material ends in a material word, so an item line (`WN ORI SET 300#RF`)
+ *  (`FULLY KILLED STEEL 150 #RFSF`, `321 STAINLESS STEEL 600 #RF`). The
+ *  material ends in a material word, so an item line (`WN TAP PAIR 600#RF`)
  *  is none. */
 const MATERIAL_RATING = new RegExp(
   `^\\s*([A-Za-z0-9][A-Za-z0-9 /&-]{1,40}?(?:STEEL|STL|SS|ALLOY|IRON|MOLY|CHROME|NICKEL|BRONZE|BRASS|COPPER|LINED))\\s+(?:${RATINGS})\\s*#\\s*(?:RTJ|RF|FF)`,
@@ -166,7 +166,7 @@ export function addendumRevision(p: LinkPage): string {
  * The materials of a text, by specification number only: `A193`, `A106`,
  * `A105`, `API5L`. The grade stays in the row's text, where full text and
  * LIKE find it. A number right after `#` is a maker's model number
- * (`#A303CS`), no material. Text with no spaces (`STLA234WPB`) gets a space
+ * (`#A417KX`), no material. Text with no spaces (`FLGA105RF`) gets a space
  * before the number; OCR's `Al05` is A105.
  */
 export function materialsOf(raw: string): Set<string> {

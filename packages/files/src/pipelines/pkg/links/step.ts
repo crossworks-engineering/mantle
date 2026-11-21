@@ -12,9 +12,12 @@ import { buildLinks, linkInputOf, LINKS_FTS_SKIP, type BodyTab } from './links';
 import { LINK_PACKS } from './packs';
 
 /** The tabs of a body: a head line `{"tab", "columns"}`, then one JSON
- *  array a row. A line that is not JSON throws: the body is the core's. */
-export function bodyTabsOf(body: string): Map<string, BodyTab> {
+ *  array a row; and the core's warnings when it cut the body (its last
+ *  line, `{"cut": [...]}`). A line that is not JSON throws: the body is the
+ *  core's. */
+export function bodyTabsOf(body: string): { tabs: Map<string, BodyTab>; cut: string[] } {
   const tabs = new Map<string, { columns: string[]; rows: unknown[][] }>();
+  const cut: string[] = [];
   let current: { columns: string[]; rows: unknown[][] } | null = null;
   for (const line of body.split('\n')) {
     if (line === '') continue;
@@ -23,7 +26,8 @@ export function bodyTabsOf(body: string): Map<string, BodyTab> {
       current?.rows.push(value);
       continue;
     }
-    const head = value as { tab?: unknown; columns?: unknown };
+    const head = value as { tab?: unknown; columns?: unknown; cut?: unknown };
+    if (Array.isArray(head.cut)) cut.push(...head.cut.map(String));
     if (typeof head.tab !== 'string' || !Array.isArray(head.columns)) {
       current = null;
       continue;
@@ -31,11 +35,12 @@ export function bodyTabsOf(body: string): Map<string, BodyTab> {
     current = { columns: head.columns.map(String), rows: [] };
     if (!tabs.has(head.tab)) tabs.set(head.tab, current);
   }
-  return tabs;
+  return { tabs, cut };
 }
 
 export const step: PipelineStep = async (_req, job) => {
-  const input = linkInputOf(bodyTabsOf((await job.bytes()).toString('utf8')));
+  const { tabs, cut } = bodyTabsOf((await job.bytes()).toString('utf8'));
+  const input = linkInputOf(tabs, cut);
   const { sheets, warnings, packsOn } = buildLinks(input, LINK_PACKS);
   const links = sheets[0]?.rows.length ?? 0;
   return {

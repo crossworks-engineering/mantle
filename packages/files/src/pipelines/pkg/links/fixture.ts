@@ -15,9 +15,8 @@ const FRAME = ['SAMPLE PIPING MATERIALS SPECIFICATION', 'Springfield, Ohio'] as 
 export const SPEC_PAGES: Record<number, string> = {
   1: [
     'GENERAL NOTES',
-    'NOTE 4: Gaskets are per the gasket table.',
-    'For sizes see Table 2. For branches see page 3.',
-    'See Table 9 and see note 8: neither is in this book.',
+    'Gaskets are per the gasket table.',
+    'Branch connections are per the branch table.',
   ].join('\n'),
   2: [
     FRAME[0],
@@ -27,17 +26,10 @@ export const SPEC_PAGES: Record<number, string> = {
     `${FRAME[1]} CAUSTIC`,
     'PRESSURE LIMITS (PSIG): 700 ASME B16.5 MATERIAL CORR. ALLOW RATING FACE',
     'TEMPERATURE LIMITS (°F): -20 / 400 ASME B31.3 CARBON STEEL 0.125 300 RF',
-    'Material: CARBON STEEL Paint: NO MARKING',
+    'Material: CARBON STEEL Paint: GREY BAND',
   ].join('\n'),
   3: ['ITEMS CONTINUED', 'ZX10001 is the stud bolt of this class.'].join('\n'),
-  4: [
-    FRAME[0],
-    'K2',
-    'Piping Specification No:',
-    FRAME[1],
-    'LINE LIST AND TAGS',
-    'For the bolts see note 4.',
-  ].join('\n'),
+  4: [FRAME[0], 'K2', 'Piping Specification No:', FRAME[1], 'LINE LIST AND TAGS'].join('\n'),
   5: [
     'PipingSpecificationNo: Q3X',
     FRAME[1],
@@ -48,10 +40,10 @@ export const SPEC_PAGES: Record<number, string> = {
   6: [
     `${FRAME[1].toUpperCase()} HYDROCARBON CORR`,
     'GENERAL SERVICE CONSTRUCTION ALLOW DATE BY REV PA CLASS',
-    'DESIGN: ANSI B16.5',
+    'DESIGN CODE: B16.34',
     '2" & SMALLER - SOCKETWELD 0.125 0 3 Q1Rl',
-    'KILLED CARBON STEEL 150 #RFSF',
-    'FLG WN ORI SET 150#RFSF 304SS',
+    'FULLY KILLED STEEL 150 #RFSF',
+    'FLG WN TAP PAIR 150#RFSF 304SS',
     FRAME[1],
   ].join('\n'),
   7: [
@@ -93,10 +85,10 @@ export const SPEC_TABLES: { sheet: ParsedSheet; title: string; pages: string }[]
         text('DESCRIPTION'),
       ],
       rows: [
-        [2, null, null, null, '*****BOLTING*****'],
-        [2, '1', 'BOLS', 5551234, 'STUD-BOLT A193 GR B7 W/A194 GR 2H NUTS'],
+        [2, null, null, null, '****BOLTING****'],
+        [2, '1', 'BOLS', 5551234, 'BOLT SET A193 GR B7 AND A194 GR 2H HEX'],
         [2, '2', 'CAPS', null, 'CAP SCREW A193 GR B7, ITEM ZX10001'],
-        [3, null, null, null, '*****GASKETS*****'],
+        [3, null, null, null, '****GASKETS****'],
         [3, '3', 'GSKT', 'ZX20002*', 'GASKET SPIRAL WOUND 316 SS CL 300'],
         [3, '5', 'GSKS', null, 'GASKET SPECIAL, SEE SPECIALTY ITEM LIST'],
         [3, null, null, 'QN4', 'NIPPLE NOTE, RATING 3000'],
@@ -106,7 +98,7 @@ export const SPEC_TABLES: { sheet: ParsedSheet; title: string; pages: string }[]
     },
   },
   {
-    title: 'Table 2 Sizes',
+    title: 'Sizes',
     pages: '4',
     sheet: {
       name: 'Table [sizes] (2) p4',
@@ -136,10 +128,10 @@ export const SPEC_TABLES: { sheet: ParsedSheet; title: string; pages: string }[]
       name: 'Table p5',
       columns: [num('Page'), text('Column 1'), text('Column 2'), text('Column 3')],
       rows: [
-        [5, '1', '4411223', 'BOLTA193GRB7MW/A194GR2HMNUT'],
+        [5, '1', '4411223', 'STUDA193GRB7MW/A194GR2HMHEX'],
         [5, '2', '4411224', 'PIPE SMLS A106-B SCH 160'],
         [5, '3', '4411225', 'ELBOW A234 GR WPB'],
-        [5, '4', '4411226', 'FLANGE A182F22CL3'],
+        [5, '4', '4411226', 'FLANGE A182F5CL1'],
       ],
     },
   },
@@ -149,7 +141,7 @@ export const SPEC_TABLES: { sheet: ParsedSheet; title: string; pages: string }[]
     sheet: {
       name: 'Changes p8',
       columns: [num('Page'), text('ITEM CODE'), text('DESCRIPTION')],
-      rows: [[8, 'ZX10001', 'STUD-BOLT A193 GR B7M W/A194 GR 2HM NUTS']],
+      rows: [[8, 'ZX10001', 'BOLT SET A193 GR B7M AND A194 GR 2HM HEX']],
     },
   },
 ];

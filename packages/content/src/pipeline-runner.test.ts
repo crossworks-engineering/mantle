@@ -56,6 +56,7 @@ import {
   parserPipelineRun,
   parserText,
   resetParserFailures,
+  bodyCutLine,
   tabHeadLine,
   tabRowLine,
   AFTER_CELL_MAX_CHARS,
@@ -357,12 +358,16 @@ describe('a packaged pipeline through a real parser job', () => {
     const whole = afterBodyOf(abs, after);
     expect(whole.warnings).toEqual([]);
     expect(whole.body.toString('utf8').trim().split('\n')).toHaveLength(101);
-    // A budget of about a third: the head line and the rows that fit.
+    // A budget of about a third: the head line and the rows that fit, then
+    // the line of the cut (past the budget), so the step can say so.
     const cut = afterBodyOf(abs, after, Math.floor(whole.body.length / 3));
     const lines = cut.body.toString('utf8').trim().split('\n');
-    expect(cut.body.length).toBeLessThanOrEqual(Math.floor(whole.body.length / 3));
+    const last = lines.pop()!;
+    const kept = `${lines.join('\n')}\n`;
+    expect(Buffer.byteLength(kept)).toBeLessThanOrEqual(Math.floor(whole.body.length / 3));
     expect(cut.warnings).toEqual([`Only the first ${lines.length - 1} texts were read.`]);
-    expect(whole.body.toString('utf8').startsWith(cut.body.toString('utf8'))).toBe(true);
+    expect(last).toBe(bodyCutLine(cut.warnings).trim());
+    expect(whole.body.toString('utf8').startsWith(kept)).toBe(true);
     expect(AFTER_BODY_MAX_BYTES).toBe(64 * 1024 * 1024);
   });
 

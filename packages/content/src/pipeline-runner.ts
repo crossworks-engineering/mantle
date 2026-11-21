@@ -34,6 +34,7 @@ import {
   parserPipelineRun,
   parserRouteForExt,
   readerRunKey,
+  bodyCutLine,
   tabHeadLine,
   tabRowLine,
   type FileTabsWriteInput,
@@ -735,7 +736,10 @@ export function afterBodyOf(
     /** One tab into the body; false once the body is full. */
     const send = (name: string, columns: readonly string[]): boolean => {
       sent.add(name);
-      if (!add(tabHeadLine(name, columns))) return false;
+      if (!add(tabHeadLine(name, columns))) {
+        warnings.push(`The tab ${name} was not read: the input was full.`);
+        return false;
+      }
       let rows = 0;
       let full = false;
       const listing = shape.listedIn?.tab === name ? columns.indexOf(shape.listedIn.column) : -1;
@@ -773,5 +777,10 @@ export function afterBodyOf(
       if (!send(name, columns)) return;
     }
   });
+  if (warnings.length > 0) {
+    const line = Buffer.from(bodyCutLine(warnings), 'utf8');
+    chunks.push(line);
+    bytes += line.length;
+  }
   return { body: Buffer.concat(chunks, bytes), warnings };
 }

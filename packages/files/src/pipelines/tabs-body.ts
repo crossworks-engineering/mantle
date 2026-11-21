@@ -17,6 +17,13 @@ export function tabRowLine(row: readonly unknown[]): string {
   return `${JSON.stringify(row)}\n`;
 }
 
+/** The last line of a body the core cut, `{"cut":["Only the first ..."]}`:
+ *  its warnings, so a step can say what it did not get. Past the byte
+ *  budget, as it is a few lines of text. */
+export function bodyCutLine(warnings: readonly string[]): string {
+  return `${JSON.stringify({ cut: warnings })}\n`;
+}
+
 /** The rows of one tab, from the lines of a body. A line that is not JSON
  *  throws: the body is the core's own. */
 export async function* tabRowsOf(

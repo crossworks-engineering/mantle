@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { AFTER_CELL_MAX_CHARS, SHAPES } from '../../shapes';
+import { bodyCutLine } from '../../tabs-body';
 import type { StepJob } from '../../contract';
 import type { ParsedSheet } from '../../../sheet-to-grid';
 import { bodyOf, specSheets } from './fixture';
@@ -27,7 +28,7 @@ import { bodyTabsOf, step } from './step';
 const SHAPE_TABS = Object.fromEntries(SHAPES['pages-v1'].tabs.map((t) => [t.name, t.columns]));
 
 const built = (sheets: readonly ParsedSheet[]) =>
-  buildLinks(linkInputOf(bodyTabsOf(bodyOf(sheets, SHAPE_TABS))), LINK_PACKS);
+  buildLinks(linkInputOf(bodyTabsOf(bodyOf(sheets, SHAPE_TABS)).tabs), LINK_PACKS);
 
 type Link = { from: string; to: string; kind: string; page: number | null; source: string };
 const linksOf = (sheets: ParsedSheet[]): Link[] =>
@@ -85,6 +86,32 @@ describe('the two tabs', () => {
     for (const sheet of spec.sheets) {
       for (const c of sheet.columns) expect(c.name).not.toMatch(/^(from|to|select|order|group)$/i);
     }
+  });
+
+  it('the exact set of link kinds of the made-up spec', () => {
+    expect([...new Set(links.map((l) => l.kind))].sort()).toEqual([
+      'ADDENDUM_CODE',
+      'ADDENDUM_MATERIAL',
+      'ADDENDUM_PAGE',
+      'ADDENDUM_ROW',
+      'CHANGES_CLASS',
+      'CLASS_CODE',
+      'CLASS_MATERIAL',
+      'CLASS_PAGE',
+      'CLASS_ROW',
+      'CLASS_TABLE',
+      'HAS_BASE_MATERIAL',
+      'HAS_CHANGE',
+      'HAS_PAGE',
+      'HAS_RATING',
+      'HAS_ROW',
+      'IN_GROUP',
+      'NAMES_CODE',
+      'NAMES_LINE',
+      'NAMES_MATERIAL',
+      'NAMES_TAG',
+      'TABLE_ON_PAGE',
+    ]);
   });
 
   it('the same tabs make the same links (a run again replaces, never adds)', () => {
@@ -300,7 +327,7 @@ describe('the piping specification pack', () => {
     expect(pairs(links, 'HAS_BASE_MATERIAL')).toEqual([
       'class:K2 > basemat:CARBON STEEL',
       'class:Q3X > basemat:KILLED CARBON STEEL',
-      'class:Q1R1 > basemat:KILLED CARBON STEEL',
+      'class:Q1R1 > basemat:FULLY KILLED STEEL',
     ]);
     expect(JSON.parse(String(nodes.get('class:K2')?.[4]))).toEqual({
       corr: '0.125',
@@ -361,6 +388,57 @@ describe('coverage: what the links are and what was not read', () => {
     );
   });
 
+  it('a body the core cut says so once, with its warnings; a table the body did not hold says so', () => {
+    const sheets = specSheets();
+    sheets.find((s) => s.name === 'Tables')!.rows.push(['Not in the body p9', null, '9', 4]);
+    const body = bodyOf(sheets, SHAPE_TABS) + bodyCutLine(['Only the first 10 pages were read.']);
+    const { tabs, cut } = bodyTabsOf(body);
+    expect(cut).toEqual(['Only the first 10 pages were read.']);
+    const out = nodesOf(buildLinks(linkInputOf(tabs, cut), LINK_PACKS).sheets);
+    expect(String(out.get('coverage:input-cut')?.[2])).toMatch(/^The input of Links was cut/);
+    expect(out.get('coverage:input-cut')?.[4]).toBe('Only the first 10 pages were read.');
+    expect(String(out.get('coverage:tables-not-read')?.[2])).toMatch(/^1 tables named in Tables/);
+    expect(out.get('coverage:tables-not-read')?.[4]).toBe('Not in the body p9');
+    expect(nodes.has('coverage:input-cut')).toBe(false);
+  });
+
+  it('a node keeps its whole text, and a table spans to its last page within the file', () => {
+    const long = `GASKET ${'SPIRAL WOUND '.repeat(60)}`.trim();
+    const out = built([
+      {
+        name: 'Pages',
+        columns: [
+          { name: 'Page', type: 'number' },
+          { name: 'Text', type: 'text' },
+        ],
+        rows: [1, 2, 3].map((p) => [p, `page ${p}`]),
+      },
+      {
+        name: 'Tables',
+        columns: [
+          { name: 'Tab', type: 'text' },
+          { name: 'Title', type: 'text' },
+          { name: 'Pages', type: 'text' },
+        ],
+        rows: [['Long p1', 'Long', '1-5000']],
+      },
+      {
+        name: 'Long p1',
+        columns: [
+          { name: 'Page', type: 'number' },
+          { name: 'DESCRIPTION', type: 'text' },
+        ],
+        rows: [[1, long]],
+      },
+    ]);
+    expect(nodesOf(out.sheets).get('row:Long p1#1')?.[4]).toBe(long);
+    expect(pairs(linksOf(out.sheets), 'TABLE_ON_PAGE')).toEqual([
+      'table:Long p1 > page:1',
+      'table:Long p1 > page:2',
+      'table:Long p1 > page:3',
+    ]);
+  });
+
   it("the Agent's Page text stands in for a page the Reader had no text of", () => {
     const sheets = specSheets();
     sheets.push({
@@ -407,34 +485,34 @@ describe('the small rules', () => {
 
   it('materialsOf: the specification number only; the grade stays in the text', () => {
     const m = (s: string) => [...materialsOf(s)].sort();
-    expect(m('STUD-BOLT A193 GR B7 W/A194 GR 2H NUTS')).toEqual(['A193', 'A194']);
-    expect(m('STUDBOLTA193GRB7MW/A194,GR2HMNUTS')).toEqual(['A193', 'A194']);
-    expect(m('FLG BLIND CL 150 RF STL A105 ASME 16.47 SERIES A')).toEqual(['A105']);
+    expect(m('BOLT SET A193 GR B7 AND A194 GR 2H HEX')).toEqual(['A193', 'A194']);
+    expect(m('CAPSCRA193GRB7MW/A194,GR2HMHEX')).toEqual(['A193', 'A194']);
+    expect(m('BLIND DISC CL 600 RF FORGED A105 ASME 16.48 SERIES B')).toEqual(['A105']);
     expect(m('PIPE API 5L GR B, A335 P11, A312 TP316L')).toEqual(['A312', 'A335', 'API5L']);
     expect(m('FLANGE Al05')).toEqual(['A105']);
     expect(m('ASME B16.5 B31.3')).toEqual([]);
-    expect(m('BALL VALVE, MAKER #A303CS')).toEqual([]);
-    expect(m('SWAGECONCXXSSTLA234GRWPBTLE')).toEqual(['A234']);
+    expect(m('GATE VALVE, MAKER #A417KX')).toEqual([]);
+    expect(m('BENDLRCSTLA234GRWPCPE')).toEqual(['A234']);
   });
 
   it('classOfPage and addendumRevision on single pages', () => {
     const page = (text: string) => ({ page: 1, text, from: 'Pages', cut: false });
     expect(classOfPage(page('LINE CLASS: K7U ANGLE: 90'))).toEqual({ code: 'K7U', rule: 'header' });
     expect(classOfPage(page('Piping Specification No:\nNOTES'))).toBeNull();
-    expect(classOfPage(page('LINE CLASS: All DATE'))).toBeNull();
+    expect(classOfPage(page('LINE CLASS: All REV'))).toBeNull();
     expect(addendumRevision(page('ADDENDUM\nK2 Revision: 2 Date: x\nSUPERSEDES\nRevision C'))).toBe(
       '2',
     );
     expect(addendumRevision(page('ADDENDUM\nno revision here'))).toBe('?');
     // An older sheet's material line may start with a number; an item line is no material.
     expect(
-      coverFacts(page('304 STAINLESS STEEL 300 #RFSF\nFLG WN ORI SET 300#RFSF 304SS'), []),
+      coverFacts(page('321 STAINLESS STEEL 600 #RFSF\nFLG WN TAP PAIR 600#RFSF 321SS'), []),
     ).toEqual({
-      rating: '300',
+      rating: '600',
       face: 'RF',
-      material: '304 STAINLESS STEEL',
+      material: '321 STAINLESS STEEL',
     });
-    expect(coverFacts(page('FLG WN ORI SET 300#RFSF 304SS'), []).material).toBeUndefined();
+    expect(coverFacts(page('FLG WN TAP PAIR 600#RFSF 321SS'), []).material).toBeUndefined();
   });
 });
 
