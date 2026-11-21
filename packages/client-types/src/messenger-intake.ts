@@ -11,7 +11,8 @@ import { SUBMISSION_KINDS, type SubmissionKind } from './task-submissions';
 export const MESSENGER_HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])$/;
 
 /** Words no group may take as its handle. The box also refuses the slugs
- *  of its own agents. */
+ *  of its own agents. `bugs`, `feature` and `requests` are the IT desks
+ *  (IT_DESKS below): a local group never takes a desk's address. */
 export const MESSENGER_HANDLE_RESERVED: readonly string[] = [
   'all',
   'here',
@@ -19,6 +20,9 @@ export const MESSENGER_HANDLE_RESERVED: readonly string[] = [
   'admin',
   'system',
   'it',
+  'bugs',
+  'feature',
+  'requests',
 ];
 
 /** The most handles (and IT desks) one message may name. */

@@ -58,12 +58,12 @@ import {
 } from './people';
 import { APP_TINTS, LUCIDE_ICON_PREFIX, isAppTint } from '@mantle/client-types/app-nav';
 import {
-  MESSENGER_HANDLE_RE,
   MESSENGER_HANDLE_RESERVED,
   MESSENGER_HANDLES_PER_MESSAGE,
   MESSENGER_INTAKE_ANSWER_MAX,
   MESSENGER_INTAKE_FORMS,
   intakeText,
+  normalizeHandle,
   isMessengerIntakeKind,
   type MessengerIntakeKind,
 } from '@mantle/client-types/messenger-intake';
@@ -842,9 +842,9 @@ function handleText(v: string | null | undefined): string | null | undefined {
   if (v === undefined) return undefined;
   if (v === null) return null;
   if (typeof v !== 'string') throw new InputError('handle is text.');
-  const t = v.trim().replace(/^@/, '').toLowerCase();
-  if (!t) return null;
-  if (!MESSENGER_HANDLE_RE.test(t)) {
+  if (!v.trim().replace(/^@/, '')) return null;
+  const t = normalizeHandle(v);
+  if (t === null) {
     throw new InputError(
       'A handle is 2 to 30 lowercase letters, digits and dashes, with no dash first or last.',
     );
@@ -975,32 +975,48 @@ export async function createMessengerConversation(
   return conflictOnUnique(HANDLE_TAKEN, () =>
     systemDb.transaction(async (tx) => {
       if (handle) await handleFree(tx, actor.ownerId, handle, null);
-      const [made] = await tx
-        .insert(messengerConversations)
-        .values({
-          ownerId: actor.ownerId,
-          kind: 'group',
-          title,
-          icon,
-          color,
-          info,
-          handle,
-          intake,
-          createdBy: self,
-        })
-        .returning({ id: messengerConversations.id });
-      await tx.insert(messengerParticipants).values(
-        [self, ...others].map((l) => ({
-          conversationId: made!.id,
-          kind: 'login' as const,
-          loginId: l,
-          admin: l === self,
-          addedBy: self,
-        })),
+      const id = await insertGroup(
+        tx,
+        actor.ownerId,
+        self,
+        { title, icon, color, info, handle, intake },
+        others,
       );
-      return { conversationId: made!.id, created: true };
+      return { conversationId: id, created: true };
     }),
   );
+}
+
+/** A new group row and its people: `self` made it and is its admin;
+ *  `others` join as members. Answers the group's id. */
+async function insertGroup(
+  tx: Tx,
+  ownerId: string,
+  self: string,
+  look: {
+    title: string | null;
+    icon?: string | null;
+    color?: string | null;
+    info?: string | null;
+    handle?: string | null;
+    intake?: MessengerIntakeKind | null;
+  },
+  others: readonly string[] = [],
+): Promise<string> {
+  const [made] = await tx
+    .insert(messengerConversations)
+    .values({ ownerId, kind: 'group', ...look, createdBy: self })
+    .returning({ id: messengerConversations.id });
+  await tx.insert(messengerParticipants).values(
+    [self, ...others].map((l) => ({
+      conversationId: made!.id,
+      kind: 'login' as const,
+      loginId: l,
+      admin: l === self,
+      addedBy: self,
+    })),
+  );
+  return made!.id;
 }
 
 // ── Send, edit, delete, react ────────────────────────────────────────────────
@@ -1303,6 +1319,14 @@ export async function sendMessengerMessage(
   }
 
   const out = await systemDb.transaction(async (tx) => {
+    // A retry of a line already stored answers that line, before the
+    // handles are read again (a handle's group may be gone since). Unlocked:
+    // the unique index is the backstop, and the check under the lock below
+    // stays.
+    if (clientMsgId) {
+      const prior = await priorLine(tx, here, self, clientMsgId);
+      if (prior !== null) return { seq: prior, created: false };
+    }
     const named = await handleGroups(tx, actor, handleIds);
     const groups = named.filter((g) => g.id !== here);
     const body = intakeBody(rawBody, input.answers, named[0] ?? null);
@@ -1318,13 +1342,8 @@ export async function sendMessengerMessage(
     const { conv, me } = await lockForActor(tx, actor, here);
     if (conv.archived_at) throw new MessengerRefusedError('This chat is archived.');
     if (clientMsgId) {
-      const [prior] = await q<{ seq: string | number }>(
-        tx,
-        sql`select seq from messenger_messages
-             where conversation_id = ${conv.id}::uuid and author_login_id = ${self}::uuid
-               and client_msg_id = ${clientMsgId}`,
-      );
-      if (prior) return { seq: num(prior.seq), created: false };
+      const prior = await priorLine(tx, conv.id, self, clientMsgId);
+      if (prior !== null) return { seq: prior, created: false };
     }
     if (replyTo !== null && (replyTo < 1 || replyTo > num(conv.last_seq))) {
       throw new InputError('reply_to_seq must be the seq of a message in this chat.');
@@ -1416,16 +1435,35 @@ export async function sendMessengerMessage(
         via: actor.via ?? null,
       });
     }
-    if (num(me.last_read_seq) < seq)
+    // Read up to the chat's last line: a line the send itself wrote after
+    // mine (the group hears the sender left) is read too.
+    const readTo = num(conv.last_seq);
+    if (num(me.last_read_seq) < readTo)
       await tx
         .update(messengerParticipants)
-        .set({ lastReadSeq: seq })
+        .set({ lastReadSeq: readTo })
         .where(eq(messengerParticipants.id, me.id));
     return { seq, created: true };
   });
   const [message] = await readMessagesBySeq(actor, here, [out.seq]);
   if (!message) throw new MessengerNotFoundError();
   return { message, created: out.created };
+}
+
+/** The seq of my line in a chat with this client message id, or null. */
+async function priorLine(
+  tx: Tx,
+  conversationId: string,
+  self: string,
+  clientMsgId: string,
+): Promise<number | null> {
+  const [prior] = await q<{ seq: string | number }>(
+    tx,
+    sql`select seq from messenger_messages
+         where conversation_id = ${conversationId}::uuid and author_login_id = ${self}::uuid
+           and client_msg_id = ${clientMsgId}`,
+  );
+  return prior ? num(prior.seq) : null;
 }
 
 /** A Reply on a copy line, in the handle's group `group`: the answer goes
@@ -1563,18 +1601,8 @@ async function toThread(actor: MessengerActor, groupId: string, handle: string):
            limit 1`,
     );
     if (found) return found.id;
-    const [made] = await tx
-      .insert(messengerConversations)
-      .values({ ownerId: actor.ownerId, kind: 'group', title: `To @${handle}`, createdBy: self })
-      .returning({ id: messengerConversations.id });
-    await tx.insert(messengerParticipants).values({
-      conversationId: made!.id,
-      kind: 'login',
-      loginId: self,
-      admin: true,
-      addedBy: self,
-    });
-    const conv = await lockConversation(tx, made!.id);
+    const madeId = await insertGroup(tx, actor.ownerId, self, { title: `To @${handle}` });
+    const conv = await lockConversation(tx, madeId);
     await appendMessage(tx, conv!, {
       authorKind: 'system',
       authorLoginId: null,
@@ -1586,7 +1614,7 @@ async function toThread(actor: MessengerActor, groupId: string, handle: string):
       clientMsgId: null,
       event: { type: 'to_thread', to: { conversationId: groupId } },
     });
-    return made!.id;
+    return madeId;
   });
 }
 

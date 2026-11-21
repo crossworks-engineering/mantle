@@ -559,14 +559,14 @@ session that stays awake on `messenger_wait`.
 ## Handles
 
 Fleet chat phase 1 (plan page f2f19c7b, migration 0394): a group may have
-a **handle**, an address on the box such as `bugs`, shown as `@bugs`, and
+a **handle**, an address on the box such as `qa`, shown as `@qa`, and
 an **intake form**.
 
 - **The handle** is 2 to 30 lowercase letters, digits and dashes, with no
   dash first or last (`MESSENGER_HANDLE_RE` in
   `@mantle/client-types/messenger-intake`), unique among the live groups of
-  the box. The words `all`, `here`, `everyone`, `admin`, `system` and `it`
-  and the slugs of the box's agents are refused. A group admin sets or
+  the box. The words `all`, `here`, `everyone`, `admin`, `system` and `it`,
+  the IT desk words `bugs`, `feature` and `requests` (`IT_DESKS`), and the slugs of the box's agents are refused. A group admin sets or
   clears it, as the title (a system line records it); a taken handle is 409. A direct chat has none.
 - **Who posts:** every login on the box. A handle is an inbox. Who reads the
   group is unchanged: its members only. The directory lists every live
@@ -578,9 +578,9 @@ an **intake form**.
   same transaction: a system line with the sender's name, the same text
   and via, and the event `{type: "intake", from: {conversationId, seq},
 by}`. The stored mention gains `handle` and `seq` (the copy line), so the
-  first line shows "sent to @bugs".
+  first line shows "sent to @qa".
 - **The line back.** A member's Reply (`replyToSeq`) on a copy line also
-  writes a system line in the first chat: `@bugs, Ann: the answer`, with
+  writes a system line in the first chat: `@qa, Ann: the answer`, with
   the event `{type: "intake_answer", group: {conversationId, handle, seq},
 by}` and a reply to the first line. Other talk in the group stays in the
   group. When the sender left the first chat (or it is archived), the
@@ -589,7 +589,7 @@ by}` and a reply to the first line. Other talk in the group stays in the
 - **No open chat.** `POST /api/messenger/send` (`messenger_send` with `to`
   and no conversation) posts to `{handle}`. A member of the group posts in
   the group. Anyone else posts in their own thread, a group of one titled
-  "To @bugs", made once (a lock per login and address) and found again by
+  "To @qa", made once (a lock per login and address) and found again by
   its first line, a `to_thread` system line. The answers come back there.
 - **The intake form** is `bug`, `feature` or `request` (the Send to IT
   kinds), with three fixed forms (`MESSENGER_INTAKE_FORMS`). There is no
@@ -623,7 +623,8 @@ Fleet chat phase 1 (plan page f2f19c7b, section 8) fills
   an image shows inline). `GET /api/messenger/attachments/:id` serves the
   bytes (an `<img src>`: the login's `?at=` token, `isAssetPath`) to who
   reads the line, by the table's row security (an unsent file: its
-  uploader only). There is no Admin exception.
+  uploader only). A deleted line serves no file. There is no Admin
+  exception.
 - **Copies.** A handle's copy line and a line back carry the files as new
   rows on the same bytes, so the readers of each chat open them by that
   chat's own rule.
@@ -632,7 +633,8 @@ Fleet chat phase 1 (plan page f2f19c7b, section 8) fills
   upload by hand in my own scope; the folder decides how it is read.
 - **MCP.** `messenger_send` takes `files`: up to 5 file ids from Files the
   caller may read (each read in its own scope). One over 10 MB is not sent
-  and comes back in `leftOut`. `messenger_open` lists each line's `files`.
+  and comes back in `leftOut`; its stored size is checked first, so its
+  bytes are never read. `messenger_open` lists each line's `files`.
 - **Kept.** Nothing deletes a row or the bytes. An upload never sent stays
   as it is.
 - `POST /api/messenger/to {handle}` answers the chat a post to the handle

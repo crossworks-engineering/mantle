@@ -88,17 +88,27 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
   }, 120_000);
 
   it('a handle: format, reserved words, agent slugs, taken (409), admins only, a line', async () => {
-    const g = await group(A, [B], { title: 'Bugs', handle: '@Bugs', intake: 'bug' });
+    const g = await group(A, [B], { title: 'Bugs', handle: '@Defects', intake: 'bug' });
     const read = (who: string) => as(who, () => ms.getMessengerConversation(actor(who), g));
-    expect(await read(B)).toMatchObject({ handle: 'bugs', intake: 'bug' });
+    expect(await read(B)).toMatchObject({ handle: 'defects', intake: 'bug' });
     for (const bad of ['b', '-ab', 'ab-', 'a b', 'x'.repeat(31), 'ab_c']) {
       await expect(group(A, [], { handle: bad })).rejects.toThrow(/2 to 30/);
     }
-    for (const word of ['all', 'here', 'everyone', 'admin', 'system', 'it']) {
+    for (const word of [
+      'all',
+      'here',
+      'everyone',
+      'admin',
+      'system',
+      'it',
+      'bugs',
+      'feature',
+      'requests',
+    ]) {
       await expect(group(A, [], { handle: word })).rejects.toThrow(/reserved/);
     }
     await expect(group(A, [], { handle: agentSlug })).rejects.toThrow(/agent/);
-    await expect(group(C, [], { handle: 'bugs' })).rejects.toThrow(/taken/);
+    await expect(group(C, [], { handle: 'defects' })).rejects.toThrow(/taken/);
     await expect(group(A, [], { intake: 'order' })).rejects.toThrow(/bug, feature, request/);
     await expect(
       ms.createMessengerConversation(actor(A), { kind: 'direct', participants: [B], handle: 'dm' }),
@@ -111,10 +121,10 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
     await expect(ms.patchMessengerConversation(actor(A), g, { handle: 'cats' })).rejects.toThrow(
       /taken/,
     );
-    await ms.patchMessengerConversation(actor(A), g, { handle: 'bugs-2' });
-    expect((await lines(B, g)).at(-1)!.body).toBe("Ann set the group's handle to @bugs-2.");
-    await ms.patchMessengerConversation(actor(A), g, { handle: 'bugs', intake: null });
-    expect(await read(A)).toMatchObject({ handle: 'bugs', intake: null });
+    await ms.patchMessengerConversation(actor(A), g, { handle: 'defects-2' });
+    expect((await lines(B, g)).at(-1)!.body).toBe("Ann set the group's handle to @defects-2.");
+    await ms.patchMessengerConversation(actor(A), g, { handle: 'defects', intake: null });
+    expect(await read(A)).toMatchObject({ handle: 'defects', intake: null });
     expect((await lines(B, g)).at(-1)!.body).toBe("Ann cleared the group's intake form.");
     await ms.patchMessengerConversation(actor(A), g, { intake: 'bug' });
     // The checks hold past the module.
@@ -122,26 +132,26 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
       su(sqlTag`update messenger_conversations set handle = 'Bad Handle' where id = ${other}`),
     ).rejects.toThrow(/messenger_conversations_handle_ck/);
     await expect(
-      su(sqlTag`update messenger_conversations set handle = 'bugs' where id = ${other}`),
+      su(sqlTag`update messenger_conversations set handle = 'defects' where id = ${other}`),
     ).rejects.toThrow(/messenger_conversations_handle_uq/);
   });
 
   it('a handle in a message writes a copy in the group; a Reply on it goes back', async () => {
-    const bugs = await ms.findHandleGroup(actor(A), 'bugs');
+    const bugs = await ms.findHandleGroup(actor(A), 'defects');
     const mine = await group(C, []);
     const sent = await ms.sendMessengerMessage(actor(C), mine, {
-      body: '@bugs the export is blank',
+      body: '@defects the export is blank',
       mentions: [{ kind: 'handle', id: bugs.id }],
     });
     const copy = (await lines(A, bugs.id)).at(-1)!;
     expect(copy).toMatchObject({
       authorKind: 'system',
       authorName: 'Cat',
-      body: '@bugs the export is blank',
+      body: '@defects the export is blank',
       event: { type: 'intake', from: { conversationId: mine, seq: sent.message.seq }, by: C },
     });
     expect(sent.message.mentions).toEqual([
-      { kind: 'handle', id: bugs.id, handle: 'bugs', seq: copy.seq },
+      { kind: 'handle', id: bugs.id, handle: 'defects', seq: copy.seq },
     ]);
     // Cat reads nothing of the group: she is no member.
     await expect(as(C, () => ms.getMessengerConversation(actor(C), bugs.id))).rejects.toThrow(
@@ -159,9 +169,13 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
     const back = (await lines(C, mine)).at(-1)!;
     expect(back).toMatchObject({
       authorKind: 'system',
-      body: '@bugs, Ann: Fixed in the next release.',
+      body: '@defects, Ann: Fixed in the next release.',
       replyToSeq: sent.message.seq,
-      event: { type: 'intake_answer', group: { conversationId: bugs.id, handle: 'bugs' }, by: A },
+      event: {
+        type: 'intake_answer',
+        group: { conversationId: bugs.id, handle: 'defects' },
+        by: A,
+      },
     });
     // At most 3 handles; an unknown or archived group is refused.
     const extra = await Promise.all(
@@ -182,7 +196,7 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
   });
 
   it('the sender left the first chat: the answer stays in the group', async () => {
-    const bugs = await ms.findHandleGroup(actor(A), 'bugs');
+    const bugs = await ms.findHandleGroup(actor(A), 'defects');
     const shared = await group(B, [A]);
     const sent = await ms.sendMessengerMessage(actor(B), shared, {
       body: 'crash on save',
@@ -200,17 +214,40 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
       authorKind: 'system',
       event: { type: 'intake_sender_left', seq: answer.message.seq },
     });
+    // The replier read the line the send wrote after the reply too.
+    const row = (await as(A, () => ms.listMessengerConversations(actor(A)))).find(
+      (r) => r.id === bugs.id,
+    )!;
+    expect(row.unread).toBe(0);
   });
 
-  it('to a handle with no open chat: one "To @bugs" thread; a member posts in the group', async () => {
-    const bugs = await ms.findHandleGroup(actor(A), 'bugs');
+  it('a retry of a stored line answers it, though the handle is gone since', async () => {
+    const desk = await group(A, [], { handle: 'retry-desk' });
+    const mine = await group(C, []);
+    const first = await ms.sendMessengerMessage(actor(C), mine, {
+      body: 'once',
+      clientMsgId: 'retry-1',
+      mentions: [{ kind: 'handle', id: desk }],
+    });
+    await su(sqlTag`update messenger_conversations set archived_at = now() where id = ${desk}`);
+    const again = await ms.sendMessengerMessage(actor(C), mine, {
+      body: 'once',
+      clientMsgId: 'retry-1',
+      mentions: [{ kind: 'handle', id: desk }],
+    });
+    expect(again.created).toBe(false);
+    expect(again.message.seq).toBe(first.message.seq);
+  });
+
+  it('to a handle with no open chat: one "To @defects" thread; a member posts in the group', async () => {
+    const bugs = await ms.findHandleGroup(actor(A), 'defects');
     const [x, y] = await Promise.all([
-      ms.sendMessengerTo(actor(C), { handle: '@bugs' }, { body: 'first' }),
-      ms.sendMessengerTo(actor(C), { handle: 'bugs' }, { body: 'second' }),
+      ms.sendMessengerTo(actor(C), { handle: '@defects' }, { body: 'first' }),
+      ms.sendMessengerTo(actor(C), { handle: 'defects' }, { body: 'second' }),
     ]);
     expect(x.conversationId).toBe(y.conversationId);
     const thread = await as(C, () => ms.getMessengerConversation(actor(C), x.conversationId));
-    expect(thread).toMatchObject({ kind: 'group', title: 'To @bugs' });
+    expect(thread).toMatchObject({ kind: 'group', title: 'To @defects' });
     expect(thread.participants.map((p) => p.id)).toEqual([C]);
     const tl = await lines(C, x.conversationId);
     expect(tl[0]).toMatchObject({
@@ -223,11 +260,11 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
         .map((l) => l.body)
         .sort(),
     ).toEqual(['first', 'second']);
-    const z = await ms.sendMessengerTo(actor(C), { handle: 'bugs' }, { body: 'third' });
+    const z = await ms.sendMessengerTo(actor(C), { handle: 'defects' }, { body: 'third' });
     expect(z.conversationId).toBe(x.conversationId);
     // A member of the group posts in it, with no copy.
     const before = (await lines(A, bugs.id)).length;
-    const own = await ms.sendMessengerTo(actor(A), { handle: 'bugs' }, { body: 'note' });
+    const own = await ms.sendMessengerTo(actor(A), { handle: 'defects' }, { body: 'note' });
     expect(own.conversationId).toBe(bugs.id);
     expect((await lines(A, bugs.id)).length).toBe(before + 1);
     await expect(ms.sendMessengerTo(actor(C), { handle: 'nobody' }, { body: 'x' })).rejects.toThrow(
@@ -238,17 +275,17 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
   it('the intake answers: the filled form, the box version; unknown keys refused', async () => {
     const out = await ms.sendMessengerTo(
       actor(C),
-      { handle: 'bugs' },
+      { handle: 'defects' },
       { body: '', answers: { did: 'Opened the report', happened: 'A blank page' } },
     );
     expect(out.message.body).toMatch(
       /^\*\*What did you do\?\*\*\nOpened the report\n\n\*\*What happened\?\*\*\nA blank page\n\nBox version: /,
     );
     await expect(
-      ms.sendMessengerTo(actor(C), { handle: 'bugs' }, { body: '', answers: { why: 'x' } }),
+      ms.sendMessengerTo(actor(C), { handle: 'defects' }, { body: '', answers: { why: 'x' } }),
     ).rejects.toThrow(/no question "why"/);
     await expect(
-      ms.sendMessengerTo(actor(C), { handle: 'bugs' }, { body: '', answers: { did: '  ' } }),
+      ms.sendMessengerTo(actor(C), { handle: 'defects' }, { body: '', answers: { did: '  ' } }),
     ).rejects.toThrow(/at least one/);
     await expect(
       ms.sendMessengerTo(actor(C), { handle: 'cats' }, { body: '', answers: { did: 'x' } }),
@@ -258,14 +295,16 @@ describe.skipIf(!URL)('fleet chat: handles on one box (0394)', () => {
   it('the directory lists the handles to every login, with whether I am in it', async () => {
     const rows = (await ms.messengerDirectory(actor(C), '@bu')).filter((e) => e.kind === 'handle');
     expect(rows).toEqual([
-      expect.objectContaining({ handle: 'bugs', name: 'Bugs', intake: 'bug', member: false }),
+      expect.objectContaining({ handle: 'defects', name: 'Bugs', intake: 'bug', member: false }),
     ]);
-    const forA = (await ms.messengerDirectory(actor(A), 'bugs')).find((e) => e.handle === 'bugs');
+    const forA = (await ms.messengerDirectory(actor(A), 'defects')).find(
+      (e) => e.handle === 'defects',
+    );
     expect(forA?.member).toBe(true);
   });
 
   it('a copy one way and a line back the other way at once: both land', async () => {
-    const bugs = await ms.findHandleGroup(actor(A), 'bugs');
+    const bugs = await ms.findHandleGroup(actor(A), 'defects');
     const mine = await group(C, []);
     const first = await ms.sendMessengerMessage(actor(C), mine, {
       body: 'one',
