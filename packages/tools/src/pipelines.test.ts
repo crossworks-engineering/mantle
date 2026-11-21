@@ -12,7 +12,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BUILTIN_PIPELINES, fileDbPaths, fileDbsDir, isAgent } from '@mantle/files';
+import {
+  BUILTIN_PIPELINES,
+  PIPELINE_ASK_PAGE_MAX,
+  fileDbPaths,
+  fileDbsDir,
+  isAgent,
+} from '@mantle/files';
 import { writeDocFile } from '@mantle/tabledb/write';
 import type { ToolHandlerContext } from './types';
 
@@ -211,8 +217,9 @@ describe('listPipelines', () => {
       weight: 'light',
       shapes: [],
       workers: ['decider'],
-      // What it may ask for one file; the day's count is an Agent's only.
-      asks: [{ worker: 'decider', max: 1 }],
+      // What it may ask for one file: one ask a page of its page types (M3),
+      // to the page cap; the day's count is an Agent's only.
+      asks: [{ worker: 'decider', max: PIPELINE_ASK_PAGE_MAX }],
       asksToday: null,
       dayCap: null,
       tools: [],
