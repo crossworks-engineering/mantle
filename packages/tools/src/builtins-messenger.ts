@@ -39,7 +39,7 @@ import {
   saveMessengerAttachment,
   uploadMessengerAttachment,
 } from '@mantle/content/messenger-attachments';
-import { readFileById } from '@mantle/files';
+import { fileById, readFileById } from '@mantle/files';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { ownerSurfaceLoginId } from './surface';
 import { CS } from './client-sourced-rule';
@@ -364,6 +364,8 @@ export const messenger_send: BuiltinToolDef = {
 
 /** Files from Files for a line: each read in the caller's own scope (a
  *  file it may not read is "not found"), checked, and uploaded to the chat.
+ *  The node's stored size is read before the bytes; the byte length after
+ *  the read stays as the backstop for a size that was never stamped.
  *  One over the cap is not sent and is named in leftOut: never dropped
  *  without a word. */
 async function filesFor(
@@ -374,8 +376,18 @@ async function filesFor(
   const attachments: string[] = [];
   const leftOut: MessengerLeftOut[] = [];
   for (const id of ids) {
+    const notFound = () =>
+      new MessengerNotFoundError(`File ${id} not found (or you may not read it).`);
+    // The stored size first: a file over the cap is named, and its bytes
+    // are never read into memory.
+    const meta = await fileById({ ownerId: actor.ownerId, fileId: id });
+    if (!meta) throw notFound();
+    if (meta.sizeBytes > MESSENGER_ATTACHMENT_MAX_BYTES) {
+      leftOut.push({ name: meta.filename, bytes: meta.sizeBytes });
+      continue;
+    }
     const res = await readFileById({ ownerId: actor.ownerId, fileId: id });
-    if (!res) throw new MessengerNotFoundError(`File ${id} not found (or you may not read it).`);
+    if (!res) throw notFound();
     if (res.bytes.byteLength > MESSENGER_ATTACHMENT_MAX_BYTES) {
       leftOut.push({ name: res.row.filename, bytes: res.bytes.byteLength });
       continue;
