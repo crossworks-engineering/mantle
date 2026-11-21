@@ -367,6 +367,87 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
     expect(await path(app, { from: id('a'), to: id('p') })).toEqual([]);
   });
 
+  /** Entities with chosen ids (to set the id order a test needs). */
+  async function addWithIds(owner: string, named: Record<string, string>): Promise<void> {
+    for (const [n, v] of Object.entries(named)) ids.set(n, v);
+    await su.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true),
+                      set_config('mantle.write_mode', 'rw', true)`;
+      await tx`insert into entities (id, owner_id, kind, name)
+        select x.id, ${owner}::uuid, 'org', ${tag} || ' ' || x.n
+          from unnest(${Object.values(named)}::uuid[], ${Object.keys(named)}::text[]) as x(id, n)`;
+    });
+  }
+  /** n uuids, smallest first. */
+  const sortedIds = (n: number) => Array.from({ length: n }, () => randomUUID()).sort();
+
+  it('the limit keeps the nearest entities, not the smallest ids', async () => {
+    // l2 (two steps away) has a smaller id than l1 (one step away). The old
+    // walk kept the first N by id, so limit 1 gave l2.
+    const [small, large] = sortedIds(2);
+    await addEntities(ownerA, ['l0']);
+    await addWithIds(ownerA, { l2: small!, l1: large! });
+    await addEdges(ownerA, [
+      { s: 'l0', t: 'l1', rel: 'knows' },
+      { s: 'l1', t: 'l2', rel: 'knows' },
+    ]);
+    const one = await walk(app, { from: id('l0'), limit: 1 });
+    expect(one.map((r) => [r.entity_id, r.depth])).toEqual([[id('l1'), 1]]);
+    const viaTs = await s.graphPath({ ownerId: ownerA, fromId: id('l0'), limit: 1 });
+    expect(viaTs.map((r) => r.entity.id)).toEqual([id('l1')]);
+    // limit 2 takes the next level too, nearest first.
+    expect((await walk(app, { from: id('l0'), limit: 2 })).map((r) => r.entity_id)).toEqual([
+      id('l1'),
+      id('l2'),
+    ]);
+  });
+
+  it('the tie-break holds three steps deep (a double diamond)', async () => {
+    // 1. The first hop ties on its verb and the ids decide it, though the
+    //    other path's second verb is first: s -knows-> m1 (smaller id)
+    //    -supplies-> n1 -knows-> t, against s -knows-> m2 -owns-> n2 -knows-> t.
+    //    Hops compare from the start, so the path through m1 is kept.
+    const [m1, m2] = sortedIds(2);
+    await addEntities(ownerA, ['ds', 'dn1', 'dn2', 'dt']);
+    await addWithIds(ownerA, { dm1: m1!, dm2: m2! });
+    await addEdges(ownerA, [
+      { s: 'ds', t: 'dm2', rel: 'knows' },
+      { s: 'ds', t: 'dm1', rel: 'knows' },
+      { s: 'dm1', t: 'dn1', rel: 'supplies' },
+      { s: 'dm2', t: 'dn2', rel: 'owns' },
+      { s: 'dn1', t: 'dt', rel: 'knows' },
+      { s: 'dn2', t: 'dt', rel: 'knows' },
+    ]);
+    const [first] = await path(app, { from: id('ds'), to: id('dt') });
+    expect(first).toEqual({
+      entity_id: id('dt'),
+      depth: 3,
+      path_ids: [id('ds'), id('dm1'), id('dn1'), id('dt')],
+      relations: ['knows', 'supplies', 'knows'],
+    });
+    const viaWalk = (await walk(app, { from: id('ds') })).find((w) => w.entity_id === id('dt'));
+    expect(viaWalk).toEqual(first);
+
+    // 2. The first hop is the same; the paths part at level 2, where the
+    //    verb decides against the id order: es -knows-> em, then
+    //    em -owns-> eb (larger id) against em -supplies-> ea (smaller id).
+    const [ea, eb] = sortedIds(2);
+    await addEntities(ownerA, ['es', 'em', 'et']);
+    await addWithIds(ownerA, { ea: ea!, eb: eb! });
+    await addEdges(ownerA, [
+      { s: 'es', t: 'em', rel: 'knows' },
+      { s: 'em', t: 'ea', rel: 'supplies' },
+      { s: 'em', t: 'eb', rel: 'owns' },
+      { s: 'ea', t: 'et', rel: 'knows' },
+      { s: 'eb', t: 'et', rel: 'knows' },
+    ]);
+    const [second] = await path(app, { from: id('es'), to: id('et') });
+    expect(second!.path_ids).toEqual([id('es'), id('em'), id('eb'), id('et')]);
+    expect(second!.relations).toEqual(['knows', 'owns', 'knows']);
+    const viaWalk2 = (await walk(app, { from: id('es') })).find((w) => w.entity_id === id('et'));
+    expect(viaWalk2).toEqual(second);
+  });
+
   it("never walks another owner's edges, nor an edge to a node", async () => {
     // Owner B's u -> x is not owner A's.
     expect(depths(await walk(app, { from: id('u') }))).toEqual({ v: 1, w: 1 });
@@ -413,6 +494,22 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
     await expect(s.graphPath({ ownerId: ownerA, fromId: 'nope' })).rejects.toThrow(
       'graphPath: fromId is not a uuid',
     );
+  });
+
+  it('graphPath clamps depth and limit before Postgres sees them (no 22003 past 2^31)', async () => {
+    const reach = async (o: { maxDepth?: number; limit?: number; toId?: string }) =>
+      (await s.graphPath({ ownerId: ownerA, fromId: id('a'), ...o })).map((r) => r.depth);
+    // Past an int: clamped to 6 steps and 200 rows, not an error.
+    expect(await reach({ maxDepth: 3_000_000_000, limit: 3_000_000_000 })).toEqual([
+      1, 1, 2, 3, 4, 5, 6,
+    ]);
+    expect(await reach({ maxDepth: 3_000_000_000, toId: id('h') })).toEqual([6]);
+    expect(await reach({ maxDepth: Infinity })).toHaveLength(7);
+    expect(await reach({ maxDepth: -3_000_000_000, limit: -3_000_000_000 })).toEqual([1]);
+    // Not a number: the default (3 steps, 50 rows).
+    expect(await reach({ maxDepth: Number.NaN, limit: Number.NaN })).toEqual([1, 1, 2, 3]);
+    expect(await reach({ maxDepth: 'x' as unknown as number })).toEqual([1, 1, 2, 3]);
+    expect(await reach({ maxDepth: 2.9 })).toEqual([1, 1, 2]);
   });
 
   it('both run as their caller, STABLE, with search_path pinned, open to every app role', async () => {

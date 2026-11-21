@@ -119,8 +119,10 @@ BEGIN
                AND (rels IS NULL OR e.relation = ANY (rels))
                AND (NOT cur_only OR e.valid_to IS NULL)
           ) x
-         -- A hashed subplan: the visited set is hashed once per level.
-         WHERE x.other NOT IN (SELECT unnest(v_ids))
+         -- A hash anti join: the visited set is hashed once per level. Not
+         -- NOT IN: its hashed subplan falls back to a scan per row when the
+         -- set looks too large for work_mem.
+         WHERE NOT EXISTS (SELECT 1 FROM unnest(v_ids) AS v(id) WHERE v.id = x.other)
          ORDER BY x.other, x.par, x.relation
       ) c;
     n := cardinality(n_ids);

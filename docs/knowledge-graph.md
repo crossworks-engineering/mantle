@@ -205,7 +205,10 @@ mantle_graph_path(p_owner uuid, p_from uuid, p_to uuid, p_max_depth int = 3,
 - **What is walked.** Only edges with `source_kind` and `target_kind`
   `'entity'`, only of `p_owner`. A retired edge (`valid_to` set) is skipped
   unless `p_current_only` is false. `p_relations` null or empty means every
-  verb. Undirected (the default) walks an edge both ways.
+  verb. Undirected (the default) walks an edge both ways. The skip changed
+  in 0394: the old walk also walked retired edges. The `graph_path` tool has
+  no switch for it (`entity_neighbors` still shows a retired edge unless
+  `current_only` is set), and no code retires an edge today.
 - **Clamps.** Depth 1..6 (default 3), rows 1..200 (default 50). Rows come
   nearest first, so the limit keeps the nearest entities. This changed in
   0394: the old walk kept the first N entities by entity id and only then
