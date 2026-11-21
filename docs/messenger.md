@@ -652,6 +652,11 @@ taskId, box}` (the CC's copy). No such group: no line, the copy task is
   answers it, once (the note is the first 2000 characters; the line keeps
   the whole text). A Reply by who may not, or a second one, stays in the
   group, and a system line says why.
+- **One final answer.** Any Reply on a `desk_copy` line is the report's
+  one final answer: it closes the copy, marks the box's task done and goes
+  back as the answer, a quick "on it" too. Talk about a report in the
+  group without Reply. (It stays so while the owner's "Reply to sender"
+  choice is open.)
 - **Cost.** A desk line, a copy line and an answer line start no agent turn
   (see "Cost safety": a system line never starts one).
   The road is the Send to IT sweep: no new signed case.
