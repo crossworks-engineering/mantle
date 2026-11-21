@@ -1379,9 +1379,23 @@ export async function sendMessengerMessage(
     if (chat.archivedAt) throw new MessengerRefusedError('This chat is archived.');
     if (chat.me.leftSeq !== null) throw new MessengerRefusedError('You left this chat.');
   }
-  const deskTaskId = desk
-    ? await deskTask(actor, { kind: desk, body: deskBody!, conversationId: here, fileIds })
-    : null;
+  let deskTaskId: string | null = null;
+  if (desk) {
+    try {
+      deskTaskId = await deskTask(actor, {
+        kind: desk,
+        body: deskBody!,
+        conversationId: here,
+        fileIds,
+      });
+    } catch (err) {
+      // A retry whose first send committed meanwhile (its files are claimed
+      // now): answer the stored line, as the early check would have.
+      const prior = clientMsgId ? await priorLine(db, here, self, clientMsgId) : null;
+      if (prior !== null) return readBack(actor, here, prior, false);
+      throw err;
+    }
+  }
 
   const out = await systemDb
     .transaction(async (tx) => {
@@ -1666,7 +1680,7 @@ async function answerDeskCopy(
       // The Reply line is stored: a retry would answer it without a new
       // try, so the group hears it now, and the error is logged.
       logger.warn(`answer on copy ${copyTaskId} failed: ${errorMessage(err)}`);
-      refusal = 'This answer did not go back. Reply again.';
+      refusal = 'This answer did not go back. Reply to the report again.';
     }
   }
   if (!refusal) return;

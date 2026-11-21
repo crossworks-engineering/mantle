@@ -211,6 +211,9 @@ async function sendReplies(key: KeyObject, box: SweepBox): Promise<number> {
       }),
     );
     if (!answer.success) throw new Error('bad-reply');
+    if (!answer.data.delivered) {
+      log('control').warn(`box ${box.id} reply ${r.id}: box task gone or already answered`);
+    }
     // Delivered, or the box's task took a reply before (or is gone): the
     // reply is never sent twice.
     await db
