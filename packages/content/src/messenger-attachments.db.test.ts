@@ -269,9 +269,11 @@ describe.skipIf(!URL)('fleet chat: files on messenger lines', () => {
       asWriter(B, () => ma.saveMessengerAttachment(actor(B), f.id, editDir)),
     ).rejects.toThrow(/already exists/);
     // A folder Ben reads but may not create in: the database refuses it.
-    await expect(
-      asWriter(B, () => ma.saveMessengerAttachment(actor(B), f.id, readDir)),
-    ).rejects.toThrow();
+    // The row security refuses it (42501), not any other error.
+    const err = (await asWriter(B, () => ma.saveMessengerAttachment(actor(B), f.id, readDir)).catch(
+      (e: unknown) => e,
+    )) as { code?: string; cause?: { code?: string } } | undefined;
+    expect(err?.code ?? err?.cause?.code).toBe('42501');
     const inRead = (await m.systemDb.execute(sqlTag`select count(*)::int as n from nodes
       where owner_id = ${owner} and type = 'file' and path = ${readDir}::ltree`)) as unknown as {
       n: number;

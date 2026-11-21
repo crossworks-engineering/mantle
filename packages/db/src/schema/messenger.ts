@@ -61,7 +61,7 @@ export type MessengerEventJson =
   /** The group says the sender left the first chat, so the answer stays. */
   | { type: 'intake_sender_left'; seq: number }
   /** The first line of my own thread to a handle (a group of one, "To
-   *  @bugs"): the send finds the thread again by it. */
+   *  @qa"): the send finds the thread again by it. */
   | { type: 'to_thread'; to: { conversationId: string } | { desk: 'bug' | 'feature' | 'request' } }
   /** On a box: the IT desk's answer to a report (fleet chat M3). */
   | { type: 'desk_answer'; desk: 'bug' | 'feature' | 'request'; taskId: string }
@@ -85,7 +85,7 @@ export const messengerConversations = pgTable('messenger_conversations', {
    *  characters, written by its admins; null for a direct chat. Text the
    *  brain shows and never runs. */
   info: text('info'),
-  /** A group's handle (0394): its address on the box, shown as @bugs; 2 to
+  /** A group's handle (0394): its address on the box, shown as @qa; 2 to
    *  30 lowercase letters, digits and dashes, unique on the box; null for a
    *  direct chat and a group without one. Every login on the box may post
    *  to it; a message that names it writes a copy line in the group. */

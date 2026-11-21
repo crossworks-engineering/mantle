@@ -1781,7 +1781,7 @@ async function lineBack(
  * Send to a handle with no open chat (POST /api/messenger/send, and
  * messenger_send with `to`). A member of the handle's group posts in the
  * group itself. Anyone else posts in their own thread for that address: a
- * group with just them, titled "To @bugs", made once and used again (its
+ * group with just them, titled "To @qa", made once and used again (its
  * first line, a `to_thread` system line, names the handle). The line names
  * the handle, so the copy and the line back work as from any chat.
  */
@@ -1855,7 +1855,7 @@ export async function findHandleGroup(
   handle: string,
 ): Promise<{ id: string; member: boolean }> {
   const h = handleText(handle);
-  if (!h) throw new InputError('A handle names a group, e.g. "bugs".');
+  if (!h) throw new InputError('A handle names a group, e.g. "qa".');
   const [group] = await handleRows(actor, { handle: h });
   if (!group)
     throw new InputError(`No group on this box has the handle @${h} (messenger_directory).`);

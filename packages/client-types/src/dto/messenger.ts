@@ -67,7 +67,7 @@ export type MessengerListRow = {
    *  agent thread. */
   icon?: string | null;
   color?: string | null;
-  /** A group's handle (0394), shown as @bugs; null for a direct chat and a
+  /** A group's handle (0394), shown as @qa; null for a direct chat and a
    *  group without one; absent on an agent thread. */
   handle?: string | null;
   /** null for an agent thread (its order is by time). */
@@ -100,7 +100,7 @@ export type MessengerConversation = {
    *  most 2000 characters) its admins write; null for a direct chat and a
    *  group without one. Shown, never run. Not on a list row. */
   info: string | null;
-  /** A group's handle (0394): its address on the box, shown as @bugs.
+  /** A group's handle (0394): its address on the box, shown as @qa.
    *  Every login on the box may post to it; a message that names it writes
    *  a copy line in the group. null for a direct chat and a group without
    *  one. */
@@ -169,7 +169,7 @@ export type MessengerEvent =
    *  stays in the group. */
   | { type: 'intake_sender_left'; seq: number }
   /** The first line of my own thread to a handle (a group of one, "To
-   *  @bugs"): the send finds the thread again by it. */
+   *  @qa"): the send finds the thread again by it. */
   | { type: 'to_thread'; to: { conversationId: string } | { desk: MessengerDeskKind } }
   /** On a box: the IT desk's answer to the report at the line this one
    *  replies to (the Control Center's reply on task `taskId`). */
@@ -341,7 +341,7 @@ export type MessengerDirectoryEntry = {
   photoVersion?: string | null;
   /** Logins only, as on a participant: who the person is to the team. */
   description?: string | null;
-  /** Handles only: the handle (shown as @bugs), its intake form, and
+  /** Handles only: the handle (shown as @qa), its intake form, and
    *  whether I am in the group. */
   handle?: string;
   intake?: 'bug' | 'feature' | 'request' | null;
