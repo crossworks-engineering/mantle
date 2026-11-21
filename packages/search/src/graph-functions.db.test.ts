@@ -87,7 +87,7 @@ function rng(seed: number): () => number {
 }
 
 /** A postgres.js client (this package has no postgres dependency). */
-type Pg = ReturnType<typeof import('@mantle/db/test-support')['superuserClient']>;
+type Pg = ReturnType<(typeof import('@mantle/db/test-support'))['superuserClient']>;
 
 describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
   type Db = typeof import('@mantle/db');
@@ -130,10 +130,10 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
       await tx`insert into entity_edges
           (owner_id, source_id, source_kind, target_id, target_kind, relation, valid_to)
         select ${owner}::uuid, x.s, x.sk, x.t, x.tk, x.rel,
-               case when x.retired then now() end
+               case when x.retired = 'y' then now() end
           from unnest(${edges.map((e) => end(e.s))}::uuid[], ${edges.map((e) => e.kinds?.[0] ?? 'entity')}::text[],
                       ${edges.map((e) => end(e.t))}::uuid[], ${edges.map((e) => e.kinds?.[1] ?? 'entity')}::text[],
-                      ${edges.map((e) => e.rel)}::text[], ${edges.map((e) => !!e.retired)}::boolean[])
+                      ${edges.map((e) => e.rel)}::text[], ${edges.map((e) => (e.retired ? 'y' : 'n'))}::text[])
             as x(s, sk, t, tk, rel, retired)`;
     });
   }
@@ -282,6 +282,8 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
     expect(depths(await walk(app, { from: id('p'), relations: ['owns', 'knows'] }))).toEqual({
       q2: 1,
       r: 2,
+      // r to q1 by knows (undirected); p to q1 is supplies, left out.
+      q1: 3,
     });
     expect(depths(await walk(app, { from: id('a'), relations: [] }))).toEqual({
       b: 1,
@@ -356,8 +358,10 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
     const [ad] = await path(app, { from: id('a'), to: id('d') });
     expect(ad!.path_ids).toEqual([id('a'), id('c'), id('d')]);
     // Out of reach, to itself, or no target: no row.
-    expect(await path(app, { from: id('a'), to: id('i'), depth: 3 })).toEqual([]);
-    expect((await path(app, { from: id('a'), to: id('i'), depth: 6 }))[0]!.depth).toBe(6);
+    expect(await path(app, { from: id('a'), to: id('h'), depth: 3 })).toEqual([]);
+    expect((await path(app, { from: id('a'), to: id('h'), depth: 6 }))[0]!.depth).toBe(6);
+    // i is seven steps away: past the clamp.
+    expect(await path(app, { from: id('a'), to: id('i'), depth: 99 })).toEqual([]);
     expect(await path(app, { from: id('a'), to: id('a') })).toEqual([]);
     expect(await path(app, { from: id('a'), to: null })).toEqual([]);
     expect(await path(app, { from: id('a'), to: id('p') })).toEqual([]);
