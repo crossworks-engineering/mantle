@@ -42,12 +42,12 @@ const tool = (slug: string) => CONTROL_TOOLS.find((t) => t.slug === slug)!;
 const SLUGS = [
   'control_agent_model_set',
   'control_ban',
-  'control_broadcast',
   'control_ban_lift',
   'control_ban_list',
   'control_box_add',
   'control_box_list',
   'control_box_remove',
+  'control_broadcast',
   'control_default_model_get',
   'control_default_model_set',
   'control_fleet_matrix',
@@ -125,7 +125,7 @@ describe('the registry', () => {
     expect(loaded).toBe(false);
   });
 
-  it('on a Control Center registers the fifteen', async () => {
+  it('on a Control Center registers the sixteen', async () => {
     vi.resetModules();
     vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
     const reg = await import('./registry');
@@ -197,6 +197,7 @@ describe('the registry', () => {
       control_box_add: ['label', 'url'],
       control_box_list: [],
       control_box_remove: ['id'],
+      control_broadcast: ['boxIds', 'send', 'text', 'title'],
       control_default_model_get: [],
       control_default_model_set: ['clear', 'keyId', 'provider'],
       control_fleet_matrix: ['boxId'],
