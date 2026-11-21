@@ -11,11 +11,17 @@
  *  - a handle's copy line and the line back carry the files, as new rows
  *    on the same bytes;
  *  - files left out are named on the line;
- *  - Save to Files refuses a file the login does not read.
+ *  - Save to Files: a copy into a folder the login may create in, its bytes
+ *    read back; refused for a folder the login reads but may not create in,
+ *    and for a file the login does not read;
+ *  - a deleted line's file is not served.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/content/src/messenger-attachments.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,6 +62,12 @@ describe.skipIf(!URL)('fleet chat: files on messenger lines', () => {
   const B = randomUUID();
   const C = randomUUID();
   const W = randomUUID();
+  const EDIT = randomUUID(); // Ben moderates it: he creates in its folders
+  const READ = randomUUID(); // Ben only reads its folders
+  const editDir = `files.${tag}_edit`;
+  const readDir = `files.${tag}_read`;
+  let root = '';
+  let prevRoot: string | undefined;
   const PNG = Buffer.from('89504e470d0a1a0a0000', 'hex');
 
   const actor = (loginId: string) => ({ ownerId: owner, loginId, via: null });
@@ -72,10 +84,22 @@ describe.skipIf(!URL)('fleet chat: files on messenger lines', () => {
     return Buffer.concat(chunks);
   };
 
+  /** Run `fn` as `who`, in a write request's scope (as its routes do). */
+  const asWriter = async <T>(who: string, fn: () => Promise<T>): Promise<T> => {
+    const scope = await m.loginScopeFor(who);
+    return m.runInRequestSlot(async () => {
+      m.enterRequestScope(scope, { writes: true, drafts: false });
+      return fn();
+    });
+  };
+
   beforeAll(async () => {
     ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
+    prevRoot = process.env.MANTLE_FILES_ROOT;
+    root = await mkdtemp(path.join(tmpdir(), 'mantle-msgatt-'));
+    process.env.MANTLE_FILES_ROOT = root;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     ms = await import('./messenger');
@@ -96,6 +120,30 @@ describe.skipIf(!URL)('fleet chat: files on messenger lines', () => {
     await su(sqlTag`delete from workspace_users where login_id in (${A}, ${B}, ${C})`);
     await su(sqlTag`insert into workspace_users (workspace_id, login_id) values
       (${W}, ${A}), (${W}, ${B}), (${W}, ${C})`);
+    // Two folders of Files: one homed in a workspace Ben moderates, one in
+    // a workspace he only reads.
+    await su(sqlTag`insert into workspaces (id, owner_id, name) values
+      (${EDIT}, ${owner}, ${`${tag} Edit`}), (${READ}, ${owner}, ${`${tag} Read`})`);
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator) values
+      (${EDIT}, ${B}, true), (${READ}, ${B}, false)`);
+    const x = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+    await x(sqlTag`insert into nodes (owner_id, type, title, slug, path)
+      values (${owner}, 'branch', 'files', 'files', 'files') on conflict do nothing`);
+    for (const [dir, ws] of [
+      [editDir, EDIT],
+      [readDir, READ],
+    ] as const) {
+      const slug = dir.slice('files.'.length);
+      const [row] = (await x(sqlTag`insert into nodes (owner_id, type, title, slug, path)
+        values (${owner}, 'branch', ${slug}, ${slug}, ${dir}::ltree)
+        returning id::text as id`)) as unknown as { id: string }[];
+      await m.withSubtreeHeads(row!.id, [], async (tx) => {
+        await tx.execute(sqlTag`delete from item_grants where node_id = ${row!.id}`);
+        await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, is_home)
+                                values (${row!.id}, ${ws}, true)`);
+      });
+    }
+    await mkdir(path.join(root, 'files'), { recursive: true });
   }, 180_000);
 
   beforeEach(() => ms?.resetMessengerBudgetsForTests());
@@ -103,6 +151,9 @@ describe.skipIf(!URL)('fleet chat: files on messenger lines', () => {
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
+    if (prevRoot === undefined) delete process.env.MANTLE_FILES_ROOT;
+    else process.env.MANTLE_FILES_ROOT = prevRoot;
+    if (root) await rm(root, { recursive: true, force: true });
   }, 120_000);
 
   it('an upload: a participant only, the types and the cap; a send claims it', async () => {
@@ -194,11 +245,50 @@ describe.skipIf(!URL)('fleet chat: files on messenger lines', () => {
     expect(back.event?.type).toBe('intake_answer');
     expect(back.files.map((x) => x.name)).toEqual(['fix.txt']);
     expect(await open(C, back.files[0]!.id)).toEqual(Buffer.from('done'));
-    // Save to Files: an outsider of the chat reads no file to save. (The
-    // copy itself is upsertFile in the login's scope; its success path
-    // needs a files tree, not made in this test.)
+    // Save to Files: an outsider of the chat reads no file to save.
     await expect(
-      as(B, () => ma.saveMessengerAttachment(actor(B), back.files[0]!.id, 'files')),
+      asWriter(B, () => ma.saveMessengerAttachment(actor(B), back.files[0]!.id, editDir)),
     ).rejects.toThrow(ms.MessengerNotFoundError);
+  });
+
+  it('Save to Files copies a chat file into a folder I may create in, nowhere else', async () => {
+    const { conversationId: c } = await ms.createMessengerConversation(actor(A), {
+      kind: 'group',
+      participants: [B],
+    });
+    const bytes = Buffer.from('the site report, page 1');
+    const f = await up(A, c, 'report.txt', bytes);
+    await ms.sendMessengerMessage(actor(A), c, { body: 'the report', attachments: [f.id] });
+    const saved = await asWriter(B, () => ma.saveMessengerAttachment(actor(B), f.id, editDir));
+    expect(saved).toMatchObject({ filename: 'report.txt', parentPath: editDir });
+    const files = await import('@mantle/files');
+    const back = await files.readFileById({ ownerId: owner, fileId: saved.id });
+    expect(back?.bytes).toEqual(bytes);
+    // A taken name is refused, not overwritten.
+    await expect(
+      asWriter(B, () => ma.saveMessengerAttachment(actor(B), f.id, editDir)),
+    ).rejects.toThrow(/already exists/);
+    // A folder Ben reads but may not create in: the database refuses it.
+    await expect(
+      asWriter(B, () => ma.saveMessengerAttachment(actor(B), f.id, readDir)),
+    ).rejects.toThrow();
+    const inRead = (await m.systemDb.execute(sqlTag`select count(*)::int as n from nodes
+      where owner_id = ${owner} and type = 'file' and path = ${readDir}::ltree`)) as unknown as {
+      n: number;
+    }[];
+    expect(inRead[0]!.n).toBe(0);
+  });
+
+  it('a deleted line serves no file', async () => {
+    const { conversationId: c } = await ms.createMessengerConversation(actor(A), {
+      kind: 'group',
+      participants: [B],
+    });
+    const f = await up(A, c);
+    const sent = await ms.sendMessengerMessage(actor(A), c, { body: 'oops', attachments: [f.id] });
+    expect(await open(B, f.id)).toEqual(PNG);
+    await ms.deleteMessengerMessage(actor(A), c, sent.message.seq);
+    expect(await open(B, f.id)).toBeNull();
+    expect(await open(A, f.id)).toBeNull();
   });
 });

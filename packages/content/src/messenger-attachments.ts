@@ -105,8 +105,10 @@ export async function uploadMessengerAttachment(
 
 type ReadRow = { id: string; name: string; mime: string; bytes: string | number; path: string };
 
-/** The row of a file the actor may read (its line's rule, in the login's
- *  scope), or null. */
+/** The row of a file the actor may read, or null: an unsent upload, its
+ *  uploader only; a sent one, a reader of its live line (the row security
+ *  of messenger_messages holds the participant rule, in the login's
+ *  scope). A deleted line serves no file. */
 async function readable(actor: MessengerActor, id: string): Promise<ReadRow | null> {
   if (!isUuid(id)) return null;
   const [row] = await q<ReadRow>(
@@ -115,7 +117,9 @@ async function readable(actor: MessengerActor, id: string): Promise<ReadRow | nu
           from messenger_attachments a
           join messenger_conversations c on c.id = a.conversation_id
          where a.id = ${id}::uuid and c.owner_id = ${actor.ownerId}::uuid
-           and (a.message_id is not null or a.uploader_login_id = ${actor.loginId}::uuid)`,
+           and ((a.message_id is null and a.uploader_login_id = ${actor.loginId}::uuid)
+                or exists (select 1 from messenger_messages m
+                            where m.id = a.message_id and m.deleted_at is null))`,
   );
   return row ?? null;
 }

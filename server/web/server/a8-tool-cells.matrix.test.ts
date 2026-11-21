@@ -161,7 +161,7 @@ const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   // Fleet chat (2026-11-21): Save to Files copies a chat file, which the
   // matrix does not seed (a file on a messenger line the login reads).
   messenger_attachment_save:
-    'a chat file on a line the login reads (messenger-attachments.db.test.ts holds the refusal)',
+    'a chat file on a line the login reads (messenger-attachments.db.test.ts saves real ones and holds the refusals)',
 };
 
 /** The app data tools act for a login's own MCP connection only (tools
@@ -797,7 +797,7 @@ const NOT_RUN: Readonly<Record<string, number>> = {
   'an allowed call needs a sandbox (sandboxd, outside the box)': 8,
   // Fleet chat (2026-11-21): messenger_attachment_save's allowed create
   // cells, 2 over both modes on the MCP surface.
-  'an allowed call needs a chat file on a line the login reads (messenger-attachments.db.test.ts holds the refusal)': 4,
+  'an allowed call needs a chat file on a line the login reads (messenger-attachments.db.test.ts saves real ones and holds the refusals)': 4,
   'an allowed call needs a federated peer brain (outside the box)': 8,
   'an allowed call needs the parser service (outside the box), and a real drawing': 20,
   "an allowed call needs a file's database, built from a real table-type file (file-sql.db.test.ts)": 8,
