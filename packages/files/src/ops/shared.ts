@@ -10,6 +10,7 @@ import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../i
 import { extractionOf, type FileExtraction } from '../extraction-status';
 import { readStampsOf, type PipelineReadStamp, type ReadByStamp } from '../read-stamp';
 import { DETAIL_ONLY_CUT_REASONS } from '../read-cut';
+import { recordedFileSize } from '../file-read';
 import {
   db,
   isWriteRefused,
@@ -223,7 +224,9 @@ export function fileRowFromNode(row: Node): FileRow {
     filename,
     extension: ext,
     mimeType: typeof data.mime_type === 'string' ? (data.mime_type as string) : mimeForExt(ext),
-    sizeBytes: Number(data.size_bytes ?? 0),
+    // One size rule (recordedFileSize): `size_bytes` for the files tree,
+    // `sizeBytes` for attachments and drive files; 0 when none is recorded.
+    sizeBytes: recordedFileSize(data) ?? 0,
     sha256: typeof data.sha256 === 'string' ? (data.sha256 as string) : null,
     isText: TEXT_EXTS.has(ext),
     summary: typeof data.summary === 'string' ? (data.summary as string) : null,

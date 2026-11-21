@@ -320,6 +320,46 @@ describe.skipIf(!URL)('the messenger MCP tools (Messenger V1 Phase 1)', () => {
     expect(JSON.stringify(outsider)).not.toContain('Post here when');
   });
 
+  it('fleet chat files: over 10 MB by the recorded size is left out unread; no size is refused', async () => {
+    // Three file nodes with no bytes behind them: a Files node (size_bytes),
+    // an email attachment (sizeBytes, no filename), and one with no size.
+    const MB20 = 20 * 1024 * 1024;
+    const [big, mail, none] = [randomUUID(), randomUUID(), randomUUID()];
+    await m.systemDb.execute(sqlTag`insert into nodes (owner_id, type, title, slug, path)
+      values (${owner}, 'branch', 'files', 'files', 'files') on conflict do nothing`);
+    await m.systemDb
+      .execute(sqlTag`insert into nodes (id, owner_id, type, title, slug, path, data) values
+      (${big}, ${owner}, 'file', 'site.mp4', ${`${tag}-site.mp4`}, 'files',
+        ${JSON.stringify({ filename: `${tag}-site.mp4`, size_bytes: MB20 })}::jsonb),
+      (${mail}, ${owner}, 'file', 'scan.pdf', null, 'files',
+        ${JSON.stringify({ sha256: 'ab'.repeat(32), mimeType: 'application/pdf', sizeBytes: MB20 })}::jsonb),
+      (${none}, ${owner}, 'file', 'odd.png', ${`${tag}-odd.png`}, 'files',
+        ${JSON.stringify({ filename: `${tag}-odd.png` })}::jsonb)`);
+    for (const id of [big, mail, none]) {
+      await m.withHeads([id], 'update', async (tx) => {
+        await tx.execute(sqlTag`delete from item_grants where node_id = ${id}`);
+        await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, is_home)
+                                values (${id}, ${W}, true)`);
+      });
+    }
+    const k = randomUUID();
+    const made = await call('messenger_create', A, k, { kind: 'group', participants: [] });
+    const c = made.output!.conversation as string;
+    const sent = await call('messenger_send', A, k, {
+      conversation: c,
+      text: 'the site files',
+      files: [big, mail],
+    });
+    expect(sent.ok, sent.error).toBe(true);
+    expect(sent.output!.leftOut).toEqual([
+      { name: `${tag}-site.mp4`, bytes: MB20 },
+      { name: 'scan.pdf', bytes: MB20 },
+    ]);
+    const odd = await call('messenger_send', A, k, { conversation: c, text: 'x', files: [none] });
+    expect(odd.ok).toBe(false);
+    expect(odd.error).toMatch(/size is not recorded/);
+  });
+
   it('fleet chat: messenger_update sets a handle; to and answers post to it; the line comes back', async () => {
     const k = randomUUID();
     const made = await call('messenger_create', A, k, {

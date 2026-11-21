@@ -407,9 +407,15 @@ async function filesFor(
     const notFound = () =>
       new MessengerNotFoundError(`File ${id} not found (or you may not read it).`);
     // The stored size first: a file over the cap is named, and its bytes
-    // are never read into memory.
+    // are never read into memory. A size not recorded (0) is not trusted:
+    // the file is refused and never read.
     const meta = await fileById({ ownerId: actor.ownerId, fileId: id });
     if (!meta) throw notFound();
+    if (meta.sizeBytes <= 0) {
+      throw new MessengerRefusedError(
+        `${meta.filename}: its size is not recorded, so it is not read or sent. Leave it out, or upload it to Files again.`,
+      );
+    }
     if (meta.sizeBytes > MESSENGER_ATTACHMENT_MAX_BYTES) {
       leftOut.push({ name: meta.filename, bytes: meta.sizeBytes });
       continue;
@@ -447,7 +453,7 @@ const HANDLE_PROP = {
   type: 'string',
   maxLength: 64,
   description:
-    "A group's handle, its address on this box (shown as @bugs): 2 to 30 lowercase letters, digits and dashes. Every login on the box may post to it. Groups only.",
+    "A group's handle, its address on this box (shown as @qa): 2 to 30 lowercase letters, digits and dashes. Every login on the box may post to it. Groups only.",
 } as const;
 
 const INTAKE_PROP = {
@@ -469,7 +475,7 @@ export const messenger_create: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Start a chat',
   description:
-    'Start a direct chat (kind "direct", exactly one other person: an existing chat with them is answered instead) or a group (kind "group", any number of people, none for a chat with yourself, with an optional title and info: what it is for and its rules, which `messenger_open` shows to everyone in it). A group may take a handle (e.g. "bugs": anyone on the box may post to @bugs, and the posts land in the group) and an intake form (bug, feature or request). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.',
+    'Start a direct chat (kind "direct", exactly one other person: an existing chat with them is answered instead) or a group (kind "group", any number of people, none for a chat with yourself, with an optional title and info: what it is for and its rules, which `messenger_open` shows to everyone in it). A group may take a handle (e.g. "qa": anyone on the box may post to @qa, and the posts land in the group) and an intake form (bug, feature or request). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -659,7 +665,7 @@ export const messenger_update: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Change a chat',
   description:
-    'Change a group you are an admin of: its title, icon (one emoji), colour, info, handle (its address on this box, e.g. "bugs", shown as @bugs; a taken handle is refused) and intake form (bug, feature or request). An empty string or null clears one. `muted` is your own setting and works in any chat you are in. Answers the chat as `messenger_open` shows it.',
+    'Change a group you are an admin of: its title, icon (one emoji), colour, info, handle (its address on this box, e.g. "qa", shown as @qa; a taken handle is refused) and intake form (bug, feature or request). An empty string or null clears one. `muted` is your own setting and works in any chat you are in. Answers the chat as `messenger_open` shows it.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -3159,7 +3159,7 @@
  },
  {
   "name": "messenger_create",
-  "description": "Start a direct chat (kind \"direct\", exactly one other person: an existing chat with them is answered instead) or a group (kind \"group\", any number of people, none for a chat with yourself, with an optional title and info: what it is for and its rules, which `messenger_open` shows to everyone in it). A group may take a handle (e.g. \"bugs\": anyone on the box may post to @bugs, and the posts land in the group) and an intake form (bug, feature or request). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.",
+  "description": "Start a direct chat (kind \"direct\", exactly one other person: an existing chat with them is answered instead) or a group (kind \"group\", any number of people, none for a chat with yourself, with an optional title and info: what it is for and its rules, which `messenger_open` shows to everyone in it). A group may take a handle (e.g. \"qa\": anyone on the box may post to @qa, and the posts land in the group) and an intake form (bug, feature or request). Only people `messenger_directory` lists. Answers the conversation id for `messenger_send`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3192,7 +3192,7 @@
     "handle": {
      "type": "string",
      "maxLength": 64,
-     "description": "A group's handle, its address on this box (shown as @bugs): 2 to 30 lowercase letters, digits and dashes. Every login on the box may post to it. Groups only."
+     "description": "A group's handle, its address on this box (shown as @qa): 2 to 30 lowercase letters, digits and dashes. Every login on the box may post to it. Groups only."
     },
     "intake": {
      "type": "string",
@@ -3326,7 +3326,7 @@
  },
  {
   "name": "messenger_update",
-  "description": "Change a group you are an admin of: its title, icon (one emoji), colour, info, handle (its address on this box, e.g. \"bugs\", shown as @bugs; a taken handle is refused) and intake form (bug, feature or request). An empty string or null clears one. `muted` is your own setting and works in any chat you are in. Answers the chat as `messenger_open` shows it.",
+  "description": "Change a group you are an admin of: its title, icon (one emoji), colour, info, handle (its address on this box, e.g. \"qa\", shown as @qa; a taken handle is refused) and intake form (bug, feature or request). An empty string or null clears one. `muted` is your own setting and works in any chat you are in. Answers the chat as `messenger_open` shows it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3392,7 +3392,7 @@
        "type": "null"
       }
      ],
-     "description": "A group's handle, its address on this box (shown as @bugs): 2 to 30 lowercase letters, digits and dashes. Every login on the box may post to it. Groups only."
+     "description": "A group's handle, its address on this box (shown as @qa): 2 to 30 lowercase letters, digits and dashes. Every login on the box may post to it. Groups only."
     },
     "intake": {
      "description": "The form the group asks for (fixed questions; `messenger_directory` lists them). Groups only.",
