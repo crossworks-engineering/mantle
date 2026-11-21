@@ -548,13 +548,16 @@ chat on each box, with a push. No one replies there: a person who wants to
 answer messages the sender.
 
 - **Write it** on the Fleet screen (`POST /api/fleet/broadcasts`, `{ title?,
-text, boxIds? }`): the text (1 to 8000 characters), an optional title (200),
-  and the boxes (default every linked box). The CC stores it once
+text, boxIds? }`): the text, an optional title (200), and the boxes (default every linked box). The CC stores it once
   (`control_broadcasts`, migration 0395), with the box ids it names then,
-  and asks for those boxes' runs at once.
+  and asks for those boxes' runs at once. The title, a blank line and the
+  text fit one chat line (8000 characters), so no box cuts it: the text is
+  at most 8000, less the title and 2 when there is one.
 - **A person sends it.** An agent may draft it with `control_broadcast`
   (`send` left out or false: nothing stored, the draft and the boxes it would
-  reach), and list the broadcasts. `send: true` is a person's act
+  reach; a draft never waits in Pending), and list the broadcasts. A box id
+  that is not an id is refused. A person's send from the dev tool console
+  names their email, as the route does. `send: true` is a person's act
   (`packages/tools/src/person-only-acts.ts`): one send reaches every person
   in the fleet. The route is a person's (no API key reaches `/api/fleet`).
 - **Delivery.** The control service's run (every 5 minutes, or at once when
@@ -578,8 +581,9 @@ text, boxIds? }`): the text (1 to 8000 characters), an optional title (200),
   member, and a login made later joins on its first chat list (see
   [messenger](./messenger.md), "Announcements"). A second call with the same
   id writes nothing (`already`), under the group's row lock. Each member who
-  did not mute the group gets a push on their own devices, after the line is
-  stored. The box writes its audit row with the broadcast id.
+  did not mute the group, and whose messenger push is not off
+  (`push_login_prefs.messages`), gets a push on their own devices, after the
+  line is stored: the title only when their message preview is off. The box writes its audit row with the broadcast id.
 - **Text only.** A picture is not in this release.
 - **Cost.** A system line starts no agent turn, and the push is no LLM work.
 

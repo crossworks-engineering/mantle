@@ -719,9 +719,11 @@ unique index; a group only, no handle, no intake form).
   react and mark it read. To answer, message the sender.
 - **Views.** A conversation and a list row carry `announcements: true`; the
   app shows no composer there.
-- **Push.** Each live member who did not mute the group gets one push on
+- **Push.** Each live member who did not mute the group, and whose
+  messenger push (`push_login_prefs.messages`) is not off, gets one push on
   their own devices (`server/web/lib/push/announcement-push.ts`): the title
-  and the start of the text, a link to the chat. The messenger's own push
+  and the start of the text (the title only when `message_preview` is off),
+  a link to the chat. The messenger's own push
   (`login_notice` kind `message`) is still not sent.
 - **Cost.** The line is a system line: it starts no agent turn.
 
