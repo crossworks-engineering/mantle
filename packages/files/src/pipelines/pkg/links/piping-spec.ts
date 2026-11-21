@@ -162,7 +162,8 @@ export function addendumRevision(p: LinkPage): string {
 
 /**
  * The material grades of a text: `A193-B7M`, `A106-B`, `A105`,
- * `API5L-B`. Text with no spaces (`BOLTA193GRB7MW/A194GR2HMNUT`)
+ * `API5L-B`. A grade right after `#` is a maker's model number
+ * (`#A303CS`), no grade. Text with no spaces (`BOLTA193GRB7MW/A194GR2HMNUT`)
  * is spaced first at the edges a grade has; OCR's `Al05` is A105.
  */
 export function materialsOf(raw: string): Set<string> {
@@ -179,11 +180,15 @@ export function materialsOf(raw: string): Set<string> {
     out.add(`API5L${m[1] ? `-${m[1]}` : ''}`);
   }
   const grade =
-    /\b(?:ASTM\s*)?([AB])\s?(\d{3})(?![\d.])(?:(?:\s?-\s?|\s*,?\s*(?:GRADE|GR\.?|TYPE|TP)\s*)([A-Z0-9]{1,6}(?:\s?CL\s?\d)?)|\s?((?:WP(?:[A-Z]{1,3}|\d{1,3})|F\d{1,3}|P\d{1,3}|CF\d)(?:(?!CL\s?\d)[A-Z]){0,2}(?:\s?CL\s?\d)?)(?![A-Z0-9]))?/g;
+    /(?<!#)\b(?:ASTM\s*)?([AB])\s?(\d{3})(?![\d.])(?:(?:\s?-\s?|\s*,?\s*(?:GRADE|GR\.?|TYPE|TP)\s*)([A-Z0-9]{1,6}(?:\s?CL\s?\d)?)|\s?((?:WP(?:[A-Z]{1,3}|\d{1,3})|F\d{1,3}|P\d{1,3}|CF\d)(?:(?!CL\s?\d)[A-Z]){0,2}(?:\s?CL\s?\d)?)(?![A-Z0-9]))?/g;
   for (const m of s.matchAll(grade)) {
     const num = Number(m[2]);
     if (num < 100) continue;
-    let g = (m[3] ?? m[4] ?? '').replace(/\s+/g, '');
+    // A grade of text with no spaces ends where an end word begins
+    // (`WPBTLE`: WPB, then threaded large end).
+    let g = (m[3] ?? m[4] ?? '')
+      .replace(/\s+/g, '')
+      .replace(/(?<=.)(?:TBE|TLE|TOE|PBE|BBE|POE|THRD|SMLS)$/, '');
     if (/^(?:SCH|CL|RF|FF|SW|BW|TBE|PBE|SERIES)$/.test(g) || /^\d{3,}$/.test(g)) g = '';
     out.add(`${m[1]}${m[2]}${g ? `-${g}` : ''}`);
   }

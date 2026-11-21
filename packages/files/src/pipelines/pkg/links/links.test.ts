@@ -11,6 +11,7 @@ import type { ParsedSheet } from '../../../sheet-to-grid';
 import { bodyOf, specSheets } from './fixture';
 import {
   buildLinks,
+  codesOfCell,
   linkInputOf,
   LINK_NODES_TAB,
   LINKS_FTS_SKIP,
@@ -383,6 +384,15 @@ describe('coverage: what the links are and what was not read', () => {
 });
 
 describe('the small rules', () => {
+  it('codesOfCell: no codes from prose; a cell known by its cells takes the strict shape only', () => {
+    expect(codesOfCell('5551234', true)).toEqual(['5551234']);
+    expect(codesOfCell('QV1234* ZX20002', true)).toEqual(['QV1234', 'ZX20002']);
+    expect(codesOfCell('GATE 4411223 00.75 02', true)).toEqual(['4411223']);
+    expect(codesOfCell('USE THREADED FLANGES FOR VALVES, SPEC-50-3 QV1234', true)).toEqual([]);
+    expect(codesOfCell('4411223 316SS', false)).toEqual(['4411223']);
+    expect(codesOfCell('4411223 316SS', true)).toEqual(['4411223', '316SS']);
+  });
+
   it('pageOf: a whole number of 1 or more, never a fraction', () => {
     expect([pageOf(3), pageOf('4'), pageOf(2.5), pageOf(0), pageOf('p4'), pageOf(null)]).toEqual([
       3,
@@ -417,6 +427,8 @@ describe('the small rules', () => {
       'A194-2HM',
     ]);
     expect(m('ASME B16.5 B31.3')).toEqual([]);
+    expect(m('BALL VALVE, MAKER #A303CS')).toEqual([]);
+    expect(m('SWAGECONCXXSSTLA234GRWPBTLE')).toEqual(['A234-WPB']);
   });
 
   it('classOfPage and addendumRevision on single pages', () => {

@@ -341,13 +341,13 @@ const wordsOf = (s: string): string[] =>
     .filter((t) => t.length >= 3);
 
 /** The code columns of a table: by header, else by their cells. */
-export function codeColumnsOf(table: LinkTable): number[] {
-  const out: number[] = [];
+export function codeColumnsOf(table: LinkTable): { column: number; byHeader: boolean }[] {
+  const out: { column: number; byHeader: boolean }[] = [];
   const columns = table.rows[0]?.columns ?? [];
   columns.forEach((name, c) => {
     if (name === 'Page') return;
     if (CODE_HEADER.test(name)) {
-      out.push(c);
+      out.push({ column: c, byHeader: true });
       return;
     }
     let filled = 0;
@@ -359,9 +359,25 @@ export function codeColumnsOf(table: LinkTable): number[] {
       const t = codeTokens(cell);
       if (t.length === 1 && CODE_BY_VALUE.test(t[0]!)) codes += 1;
     }
-    if (codes >= CODE_COLUMN_MIN && codes >= filled * CODE_COLUMN_SHARE) out.push(c);
+    if (codes >= CODE_COLUMN_MIN && codes >= filled * CODE_COLUMN_SHARE) {
+      out.push({ column: c, byHeader: false });
+    }
   });
   return out;
+}
+
+/** A cell of prose: three words or more of letters alone. A note that a
+ *  misread row put in a code column is no list of codes. */
+const isProse = (tokens: readonly string[]) =>
+  tokens.filter((t) => /^[A-Z]{3,}$/.test(t)).length >= 3;
+
+/** The codes of one cell of a code column: none from prose; in a column
+ *  known by its header, each token of a code's shape; in one known by its
+ *  cells, only the strict shape that made it a code column. */
+export function codesOfCell(cell: string, byHeader: boolean): string[] {
+  const tokens = codeTokens(cell);
+  if (isProse(tokens)) return [];
+  return tokens.filter((t) => (byHeader ? isCodeInColumn(t) : CODE_BY_VALUE.test(t)));
 }
 
 /** Tags and line numbers of a text by the tag grammar (../../../pdf-tags.ts),
@@ -426,11 +442,10 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
   for (const t of input.tables) {
     const columns = codeColumnsOf(t);
     for (const r of t.rows) {
-      for (const c of columns) {
-        for (const tok of codeTokens(r.cells[c] ?? '')) {
-          if (!isCodeInColumn(tok)) continue;
-          vocab.add(tok);
-          r.codes.add(tok);
+      for (const { column, byHeader } of columns) {
+        for (const code of codesOfCell(r.cells[column] ?? '', byHeader)) {
+          vocab.add(code);
+          r.codes.add(code);
         }
       }
     }
