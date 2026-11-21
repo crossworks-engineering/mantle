@@ -69,7 +69,7 @@ describe('the registry of a box with the built-ins only', () => {
   });
 
   it('after, acted and dbExts as the derived tables were', () => {
-    expect(pipelines.after.map((p) => p.id)).toEqual(['site-tags']);
+    expect(pipelines.after.map((p) => p.id)).toEqual(['site-tags', 'links']);
     expect(pipelines.acted.map((p) => p.id)).toEqual(
       BUILTIN_PIPELINES.map((p) => p.id).filter((id) => id !== 'pdf-router'),
     );
@@ -114,7 +114,7 @@ describe('the registry of a box with own rows', () => {
     expect(box.readerFor('lx9')?.id).toBe('lx9-logger');
     expect(box.dbExts.has('lx9')).toBe(true);
     expect(box.acted.map((p) => p.id)).toContain('lx9-logger');
-    expect(box.after.map((p) => p.id)).toEqual(['site-tags']);
+    expect(box.after.map((p) => p.id)).toEqual(['site-tags', 'links']);
     expect(box.routerFor('lx9')).toBeNull();
     expect(box.problems.size).toBe(0);
     // A built-in's answers do not change.

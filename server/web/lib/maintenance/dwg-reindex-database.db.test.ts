@@ -932,10 +932,10 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(code).toBe(0);
       expect(text).toContain(`${file.id}: built (2 tabs, 2 rows)`);
       expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
-      // The router's job, then the reader's.
-      expect(parserCalls).toEqual([RUN, RUN]);
+      // The router's job, then the reader's, then Links (its Pages tab).
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
       expect((await run(scoped(file.id), '--pdf', '--apply')).text).toContain('1 already built');
-      expect(parserCalls).toEqual([RUN, RUN]);
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
     });
 
     it('reads with the title block box in force, and the stamp carries its hash', async () => {
@@ -1002,8 +1002,8 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
       // Every request of this process goes through the faked fetch: no
       // decider and no other model was asked (the router's one step, then
-      // the reader's).
-      expect(parserCalls).toEqual([RUN, RUN]);
+      // the reader's, then Links).
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
       const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
       const db = new DatabaseSync(f.fileDbPaths(file.id, sha256(bytes))!.sqlite, {
         readOnly: true,

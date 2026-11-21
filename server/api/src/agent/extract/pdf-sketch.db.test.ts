@@ -285,8 +285,8 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     const out = await read(file.id);
     // The parser twice (the page facts, the pieces), the model once a
     // picture. After the write, Site tags (on in every workspace) runs its
-    // one model-free job on the new Texts.
-    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces', 'site-tags 1']);
+    // one model-free job on the new Texts, and Links one on the Pages.
+    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces', 'site-tags 1', 'links 1']);
     expect(h.vision.map((v) => v.filename.replace(/^.*#/, ''))).toEqual([
       'page-1-part-1.png',
       'page-1-part-2.png',
@@ -347,6 +347,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(parserOpts).toEqual([
       'pdf-router {"title_block_width_mm":190,"title_block_height_mm":70}',
       'drawing-pdf {"title_block_width_mm":190,"title_block_height_mm":70}',
+      'links {}',
     ]);
     const plainStamp = f.stampOfMeta(await metaOf(plain.id));
     expect(plainStamp?.pipeline_options).toBeUndefined();
@@ -365,7 +366,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       parserOpts.length = 0;
       const wide = await scanFile('a made-up scan, a wider box');
       const sent = '{"title_block_width_mm":300,"title_block_height_mm":150}';
-      expect(parserOpts).toEqual([`pdf-router ${sent}`, `drawing-pdf ${sent}`]);
+      expect(parserOpts).toEqual([`pdf-router ${sent}`, `drawing-pdf ${sent}`, 'links {}']);
       expect((await metaOf(wide.id)).pipeline_options).toBe(hash);
       expect(f.readerIsCurrent(f.stampOfMeta(await metaOf(wide.id)), reader, hash)).toBe(true);
 

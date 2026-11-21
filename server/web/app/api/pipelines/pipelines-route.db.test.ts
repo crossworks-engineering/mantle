@@ -169,6 +169,7 @@ describe.skipIf(!URL)('GET /api/pipelines: the settings area is the check', () =
       'drawing-cad',
       'drawing-raster',
       'site-tags',
+      'links',
       'iso-title-block',
       'pdf-sheet-read',
       'pdf-pages',

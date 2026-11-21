@@ -1047,8 +1047,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       reply = drawing('pid');
       const file = await upload(unique('pdf'), 'a made-up drawing');
       await pass(file.id);
-      // The router's job, then the reader's.
-      expect(parserCalls).toEqual([RUN, RUN]);
+      // The router's job, then the reader's, then Links (its Pages tab).
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
       expect(h.kindCalls).toEqual([]);
       // No line set: a workbook would get a Table here. A PDF does not.
       expect(await tablesOf(file.id)).toEqual([]);
@@ -1331,9 +1331,9 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       }
       // No model: the rules named it, and only the parser was called: the
       // router, the reader, and Site tags (on in every workspace) on the
-      // Texts tab.
+      // Texts tab, and Links on its Pages tab.
       expect(h.kindCalls).toEqual([]);
-      expect(parserCalls).toEqual([RUN, RUN, RUN]);
+      expect(parserCalls).toEqual([RUN, RUN, RUN, RUN]);
     });
 
     it('the same bytes are not read or asked about again', async () => {
@@ -1359,8 +1359,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       await pass(file.id);
       await pass(file.id);
       // One read: the router's two steps (the second takes the answer) and
-      // the reader's job.
-      expect(parserCalls).toEqual([RUN, RUN, RUN]);
+      // the reader's job, then Links.
+      expect(parserCalls).toEqual([RUN, RUN, RUN, RUN]);
       expect(h.kindCalls).toEqual(['unsure']);
       expect(h.reads).toEqual([file.id]);
     });
@@ -1385,8 +1385,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
         filename: loaded.filename,
       });
       expect(out).toMatchObject({ status: 'built' });
-      // One job, the reader's: the router did not run and no model was asked.
-      expect(parserCalls).toEqual([RUN]);
+      // The reader's job and Links': the router did not run and no model was asked.
+      expect(parserCalls).toEqual([RUN, RUN]);
       expect(h.kindCalls).toEqual(['unsure']);
       // The same File tab; only the row id of the new write is new.
       const { _rid: _a, ...again } = fileTab(file.id, sha).row;
@@ -1607,8 +1607,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       });
       await pass(file.id);
       expect(h.kindCalls).toEqual(['unsure']);
-      // The router's two steps, then the reader, as for any unsure file.
-      expect(parserCalls).toEqual([RUN, RUN, RUN]);
+      // The router's two steps, then the reader and Links, as for any unsure file.
+      expect(parserCalls).toEqual([RUN, RUN, RUN, RUN]);
     });
 
     it("the decider's document on a file with something not read: the database stays", async () => {
@@ -1634,7 +1634,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const shaB = await shaOf(file.id);
       expect(shaB).not.toBe(shaA);
       expect(namesOf(file.id)).toEqual([sqliteName(shaB)]);
-      expect(parserCalls).toHaveLength(4);
+      expect(parserCalls).toHaveLength(6);
     });
 
     it('a failed read never fails the pass: the text of a PDF does not wait for it', async () => {
@@ -1771,7 +1771,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const on = await upload(unique('pdf'), 'an unsure drawing, reader on');
       await pass(on.id);
       expect(h.kindCalls).toEqual(['unsure']);
-      expect(parserCalls).toEqual([RUN, RUN, RUN]);
+      expect(parserCalls).toEqual([RUN, RUN, RUN, RUN]);
       expect(namesOf(on.id)).toEqual([sqliteName(await shaOf(on.id))]);
     });
 

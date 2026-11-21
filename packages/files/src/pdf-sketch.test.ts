@@ -462,7 +462,8 @@ describe('the shape the PDF tabs pass', () => {
         name: t.name,
         columns: t.columns.map((c) => c.name),
       }));
-      expect(shapesOf(tabs)).toEqual(['pdf-file-v1']);
+      // pages-v1 too: its Pages tab is the input of Links.
+      expect(shapesOf(tabs)).toEqual(['pdf-file-v1', 'pages-v1']);
       for (const t of SHAPES['pdf-file-v1'].tabs) {
         expect(tabs.find((w) => w.name === t.name)?.columns).toEqual(
           expect.arrayContaining([...t.columns]),
