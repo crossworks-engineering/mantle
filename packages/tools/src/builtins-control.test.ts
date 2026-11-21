@@ -275,3 +275,28 @@ describe("a broadcast's send is a person's act", () => {
     expect(personOnlyRefusal('control_broadcast', { send: true }, person)).toBeNull();
   });
 });
+
+describe('control_broadcast: a draft waits for nothing, a bad box id is refused', () => {
+  it('only a send waits in a turn that read a client text', () => {
+    const rule = tool('control_broadcast').policy!.clientSourced as {
+      kind: string;
+      when?: (i: Record<string, unknown>) => boolean;
+    };
+    expect(rule.kind).toBe('always');
+    expect(rule.when?.({ text: 'Hi' })).toBe(false);
+    expect(rule.when?.({ text: 'Hi', send: false })).toBe(false);
+    expect(rule.when?.({ text: 'Hi', send: true })).toBe(true);
+  });
+
+  it('refuses box ids that are not ids, and says where to find them', async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+    const r = await tool('control_broadcast').handler(
+      { text: 'Hi', boxIds: ['box-a', '00000000-0000-4000-8000-000000000002'] },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/not a box id.*control_box_list/),
+    });
+  });
+});

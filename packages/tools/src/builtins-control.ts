@@ -36,6 +36,7 @@ import {
   previewControlBan,
   removeControlBox,
 } from '@mantle/db/control-center';
+import { authUsers, db, eq } from '@mantle/db';
 import { isUuid, publicErrorText } from '@mantle/std';
 import { withHostIps } from '@mantle/std/host-ips';
 import { readFleetDefaultModel, setFleetDefaultModel } from './fleet-default-model';
@@ -65,6 +66,18 @@ export async function onCc(
 
 export const by = (ctx: ToolHandlerContext) => `mcp:${actingLoginId(ctx.surface) ?? ctx.ownerId}`;
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+
+/** Who sends a broadcast, as the route names them: the acting login's
+ *  email (the name on every box's line and push), never an id. */
+async function senderOf(ctx: ToolHandlerContext): Promise<string> {
+  const id = actingLoginId(ctx.surface) ?? ctx.ownerId;
+  const [row] = await db
+    .select({ email: authUsers.email })
+    .from(authUsers)
+    .where(eq(authUsers.id, id))
+    .limit(1);
+  return row?.email?.toLowerCase() || 'IT';
+}
 
 const control_public_key: BuiltinToolDef = {
   slug: 'control_public_key',
@@ -616,7 +629,12 @@ const control_broadcast: BuiltinToolDef = {
     scope: { area: 'settings' },
     peerRisky: true,
     matrix: { none: "names no item: a row of the Control Center's broadcasts" },
-    clientSourced: CS.always('it sends a message to every person on the fleet'),
+    // A draft or a list writes nothing: only a send waits.
+    clientSourced: {
+      kind: 'always',
+      why: 'it sends a message to every person on the fleet',
+      when: (input) => input.send === true,
+    },
   },
   name: 'Draft a fleet broadcast',
   description:
@@ -652,8 +670,16 @@ const control_broadcast: BuiltinToolDef = {
       if (input.boxIds !== undefined && !Array.isArray(input.boxIds)) {
         return { ok: false, error: 'boxIds must be a list of box ids from control_box_list.' };
       }
+      const bad = Array.isArray(input.boxIds) ? input.boxIds.filter((v) => !isUuid(v)) : [];
+      if (bad.length > 0) {
+        const what = bad.length === 1 ? 'a value' : `${bad.length} values`;
+        return {
+          ok: false,
+          error: `boxIds holds ${what} that is not a box id: take the ids from control_box_list, or leave boxIds out for every linked box.`,
+        };
+      }
       const ids = Array.isArray(input.boxIds)
-        ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
+        ? (input.boxIds as string[]).map((v) => v.toLowerCase())
         : undefined;
       const broadcasts = await listControlBroadcasts(20);
       if (input.text === undefined) return { ok: true, output: { broadcasts } };
@@ -670,7 +696,7 @@ const control_broadcast: BuiltinToolDef = {
         }
         return { ok: true, output: { draft: { ...c.value, boxes }, sent: false, broadcasts } };
       }
-      const made = await makeControlBroadcast(c.value, by(ctx), ids);
+      const made = await makeControlBroadcast(c.value, await senderOf(ctx), ids);
       if (!made.ok) return { ok: false, error: made.error };
       return { ok: true, output: { broadcast: made.value, sent: true } };
     }),
