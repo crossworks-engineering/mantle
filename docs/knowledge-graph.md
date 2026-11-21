@@ -172,7 +172,7 @@ builtin tools (Saskia) and MCP tools (Claude Desktop/Code):
   `Alice → employed_by → Cross-Works → banks_with → Nedbank`). Cycle-safe,
   relation-filterable, undirected by default for connectivity.
 
-### 6.1 The walk is two database functions (migration 0394)
+### 6.1 The walk is two database functions (migration 0396)
 
 `graphPath` calls `public.mantle_graph_walk` (`from_id` only) or
 `public.mantle_graph_path` (`from_id` + `to_id`) with bound parameters,
@@ -195,7 +195,7 @@ mantle_graph_path(p_owner uuid, p_from uuid, p_to uuid, p_max_depth int = 3,
   every entity already visited. Each entity is visited once and keeps a
   parent pointer; the path is rebuilt from the pointers at the end. So the
   cost grows with the entities and edges touched, not with the number of
-  paths. The text query before 0394 built every simple path and then kept
+  paths. The text query before 0396 built every simple path and then kept
   the shortest per entity: on a client brain (3,526 entities, 4,636
   entity-to-entity edges, one entity with 816 links) three steps from the
   busiest entity made 898,858 paths (2.1 s) and four steps did not end in
@@ -206,17 +206,17 @@ mantle_graph_path(p_owner uuid, p_from uuid, p_to uuid, p_max_depth int = 3,
   `'entity'`, only of `p_owner`. A retired edge (`valid_to` set) is skipped
   unless `p_current_only` is false. `p_relations` null or empty means every
   verb. Undirected (the default) walks an edge both ways. The skip changed
-  in 0394: the old walk also walked retired edges. The `graph_path` tool has
+  in 0396: the old walk also walked retired edges. The `graph_path` tool has
   no switch for it (`entity_neighbors` still shows a retired edge unless
   `current_only` is set), and no code retires an edge today.
 - **Clamps.** Depth 1..6 (default 3), rows 1..200 (default 50). Rows come
   nearest first, so the limit keeps the nearest entities. This changed in
-  0394: the old walk kept the first N entities by entity id and only then
+  0396: the old walk kept the first N entities by entity id and only then
   sorted them by depth, so a limit could drop a near entity and keep a far
   one.
 - **Verbs.** `graphPath` reduces each verb in `relations` to the form the
   extractor stores (lower case, `[a-z0-9_]` only), so `Works_At` matches
-  `works_at`, as before 0394. A verb that reduces to nothing is dropped;
+  `works_at`, as before 0396. A verb that reduces to nothing is dropped;
   none left means no filter.
 - **Tie-break.** Of two shortest paths to one entity, the one kept is the
   first when the hops are compared from the start, each hop by its relation
@@ -321,5 +321,5 @@ and the detail page lists the relations drawn (`subject → verb → object`).
 | Near-dup consolidation (`orgCompactKey`) | `packages/content/src/entity-dedup.ts` |
 | Review UI | `jackdaw/app/(app)/settings/entities/*` |
 | Backfill / dedupe scripts | `server/web/scripts/{relations-backfill,entities-dedupe}.ts` |
-| Multi-hop walk (`mantle_graph_walk`, `mantle_graph_path`) | `packages/db/migrations/0394_graph_functions.sql` |
-| Migrations | 0055 (exact-dup merge + unique index), 0056 (dismissals), 0394 (graph functions) |
+| Multi-hop walk (`mantle_graph_walk`, `mantle_graph_path`) | `packages/db/migrations/0396_graph_functions.sql` |
+| Migrations | 0055 (exact-dup merge + unique index), 0056 (dismissals), 0396 (graph functions) |

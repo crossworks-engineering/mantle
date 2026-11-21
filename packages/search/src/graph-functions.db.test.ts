@@ -1,5 +1,5 @@
 /**
- * mantle_graph_walk and mantle_graph_path (migration 0394) against a real,
+ * mantle_graph_walk and mantle_graph_path (migration 0396) against a real,
  * migrated Postgres:
  *  - a cycle does not loop, and each entity comes once;
  *  - a retired edge (valid_to set) is not walked by default, and is when
@@ -14,7 +14,7 @@
  *  - both run as their caller, STABLE, with a pinned search_path, and run
  *    in a READ ONLY transaction;
  *  - on a random graph the reached set and the depths equal the old walk's
- *    (the recursive CTE graph_path sent as text before 0394, kept here
+ *    (the recursive CTE graph_path sent as text before 0396, kept here
  *    only as the oracle), and every path is made of real edges.
  *
  * Fixtures go through a superuser client of this file's own (never the
@@ -30,7 +30,7 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 type WalkRow = { entity_id: string; depth: number; path_ids: string[]; relations: string[] };
 type Edge = { s: string; t: string; rel: string; retired?: boolean; kinds?: [string, string] };
 
-/** The walk graph_path sent as text before 0394 (every simple path, then
+/** The walk graph_path sent as text before 0396 (every simple path, then
  *  the shortest per entity), kept only as this file's oracle. It walks
  *  retired edges too. */
 function oldWalkSql(o: {

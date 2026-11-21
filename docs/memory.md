@@ -543,7 +543,7 @@ internet scale. None of those apply here.
 
 > **Shipped + confirmed (2026-05).** The graph axis is live: entity↔entity
 > relations extracted into `entity_edges`, multi-hop `graph_path` traversal
-> (since 0394 two plpgsql functions that walk level by level, visit each
+> (since 0396 two plpgsql functions that walk level by level, visit each
 > entity once and skip retired edges), entity-resolution integrity, and near-dup consolidation. At
 > 2,200 edges / 1,365 documents Postgres traverses instantly, and the remaining
 > hard problems (entity resolution, verb consistency) turned out to be
@@ -602,9 +602,9 @@ A glossary so the column above reads cleanly:
   `entities.embedding`, digest embeddings (insert-time since 2026-06-10).
 - **Graph**: *not* a separate database. Modeled as `entities` +
   `entity_edges` tables in Postgres. Multi-hop traversal is
-  `mantle_graph_walk` / `mantle_graph_path` (migration 0394): breadth first,
+  `mantle_graph_walk` / `mantle_graph_path` (migration 0396): breadth first,
   level by level, each entity visited once, retired edges (`valid_to` set)
-  skipped by default ([`knowledge-graph.md` §6.1](./knowledge-graph.md#61-the-walk-is-two-database-functions-migration-0394)).
+  skipped by default ([`knowledge-graph.md` §6.1](./knowledge-graph.md#61-the-walk-is-two-database-functions-migration-0396)).
   Personal scale doesn't justify Neo4j. The graph axis lives inside the
   `profile` layer.
 - **ltree**: Postgres extension for hierarchical paths
@@ -1174,7 +1174,7 @@ Each step delivers value standalone.
    four matching MCP tools (`entity_search`, `entity_neighbors`,
    `entity_facts`, `entity_mentions`) ship the graph axis to Claude.
    Single-hop at first; the multi-hop walker shipped later as `graph_path`
-   (since 0394 the `mantle_graph_walk` / `mantle_graph_path` functions).
+   (since 0396 the `mantle_graph_walk` / `mantle_graph_path` functions).
 8. **Web assistant surface**: DONE (MVP). `/assistant` page + `POST
    /api/assistant/turn` route; new `assistant_messages` table (migration
    0021); shared `packages/runtime/src/agent` exports `buildChatMessages` +

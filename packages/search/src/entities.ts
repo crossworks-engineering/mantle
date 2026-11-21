@@ -353,7 +353,7 @@ function assertUuid(v: string, field: string): string {
 
 /**
  * Multi-hop traversal over the entity<->entity edge graph: the database's
- * mantle_graph_walk / mantle_graph_path (migration 0394), breadth first,
+ * mantle_graph_walk / mantle_graph_path (migration 0396), breadth first,
  * each entity visited once, so the cost grows with the entities and edges
  * touched, not with the number of paths. Only walks edges where BOTH
  * endpoints are entities (source_kind = target_kind = 'entity'), so

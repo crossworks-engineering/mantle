@@ -1,5 +1,5 @@
 /**
- * graphPath's walk (mantle_graph_walk / mantle_graph_path, 0394) runs
+ * graphPath's walk (mantle_graph_walk / mantle_graph_path, 0396) runs
  * inside a READ ONLY transaction (readOnlyTransaction), against a real,
  * migrated Postgres:
  *  - the walk itself needs no write: it finds a two-hop path on seeded
