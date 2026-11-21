@@ -31,6 +31,12 @@
  *    Agent owns the page pictures), its scans painted over the page; a
  *    typed PDF of over 1,000,000 characters keeps every page whole; every
  *    picture of the 520 is kept, a small job size only paces the read.
+ *  - the router's page types (M3, plan page c607711a): a scanned book of 140
+ *    pages and a 7-page typed PDF are typed in windows of 25 pages through
+ *    the image (qpdf cut, the router's step, the pdfjs child): one ask a
+ *    page by its true page, each through the one check, each picture a
+ *    JPEG of 1,024 px long side; a day cap ends in the rules with no window
+ *    more cut. The decider is a stand-in: nothing leaves the box.
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -42,6 +48,7 @@ import {
   IMAGE_PAGE_COVER,
   MAX_EMBEDDED_IMAGES_CEILING,
   PDF_MAX_BYTES,
+  PAGE_KIND_FROM,
   effectiveOptions,
   extractionOf,
   fileDbsDir,
@@ -49,6 +56,7 @@ import {
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { picturesByWindows, picturesLeftOutOf } from './pdf-picture-windows';
+import { pdfPageKindsOf, type PdfPageDecide } from './pdf-read';
 import { pagesText } from './page-passages';
 import {
   agentStep,
@@ -335,6 +343,71 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       });
       expect(status.state).toBe('partial');
       expect(status.hint).toMatch(/^500 of 520 pictures kept\./);
+    },
+    LONG,
+  );
+  /** A stand-in decider: every page a table, sure; `room` the day cap. */
+  function standIn(room = 20_000) {
+    const asked: { page: number; side: number; jpeg: boolean }[] = [];
+    const d: PdfPageDecide = {
+      room: async () => room - asked.length,
+      ask: async (ask, picture) => {
+        const jpeg = picture[0] === 0xff && picture[1] === 0xd8;
+        // The JPEG's size from its SOF0 marker (the step's canvas writes one).
+        let side = 0;
+        for (let i = 2; i + 9 < picture.length; i++) {
+          if (picture[i] === 0xff && (picture[i + 1] === 0xc0 || picture[i + 1] === 0xc2)) {
+            side = Math.max(picture.readUInt16BE(i + 5), picture.readUInt16BE(i + 7));
+            break;
+          }
+        }
+        asked.push({ page: ask.page, side, jpeg });
+        return { kind: 'table', confidence: 0.9, sure: true, model: 'stand-in', mode: 'shadow' };
+      },
+      settle: () => {},
+    };
+    return { d, asked };
+  }
+
+  it.skipIf(!DIR || !has('typed7.pdf'))(
+    "the router's page types: one ask a page, by its true page, a grey JPEG of 1,024 px; a day cap ends in the rules",
+    async () => {
+      const bytes = readFileSync(path.join(DIR!, 'scans.pdf'));
+      const total = readFileSync(path.join(DIR!, 'scans.truth.jsonl'), 'utf8')
+        .trim()
+        .split('\n').length;
+      const all = standIn();
+      const kinds = await pdfPageKindsOf(ROUTER, bytes, {}, all.d);
+      expect(kinds.map((k) => k.page)).toEqual(Array.from({ length: total }, (_, i) => i + 1));
+      const asked = all.asked.map((a) => a.page).sort((a, b) => a - b);
+      // Every page with ink is asked once; the rest say why not.
+      expect(new Set(asked).size).toBe(asked.length);
+      for (const k of kinds) {
+        if (asked.includes(k.page))
+          expect(k).toMatchObject({ from: PAGE_KIND_FROM.shadow, deciderKind: 'table' });
+        else expect([PAGE_KIND_FROM.blank, PAGE_KIND_FROM.notDrawn]).toContain(k.from);
+      }
+      expect(asked.length).toBeGreaterThan(total * 0.9);
+      expect(all.asked.every((a) => a.jpeg && a.side === 1024)).toBe(true);
+      // A day cap of 30: 30 asks, the rest the rules' with the word, and no
+      // window past the second is cut.
+      const capped = standIn(30);
+      const after = await pdfPageKindsOf(ROUTER, bytes, {}, capped.d);
+      expect(capped.asked.length).toBe(30);
+      expect(after.length).toBe(total);
+      expect(after.filter((k) => k.from === PAGE_KIND_FROM.dayCap).length).toBeGreaterThan(
+        total - 60,
+      );
+      // A typed PDF: its pages carry their text sample.
+      const typed = standIn();
+      const tk = await pdfPageKindsOf(
+        ROUTER,
+        readFileSync(path.join(DIR!, 'typed7.pdf')),
+        {},
+        typed.d,
+      );
+      expect(tk.length).toBe(7);
+      expect(typed.asked.length).toBe(7);
     },
     LONG,
   );

@@ -149,6 +149,13 @@ describe('the pictures of an answer', () => {
     ]);
   });
 
+  it("sends the picture of a router's page ask too (the decider, M3 page types)", async () => {
+    const dir = folder();
+    expect(await picturesOf(dir, [ask('sheet.png', 'decider')])).toEqual([
+      { file: 'sheet.png', bytes_base64: b64('sheet') },
+    ]);
+  });
+
   it('sends each file one time, however many calls name it', async () => {
     const dir = folder();
     const sent = await picturesOf(dir, [
@@ -163,7 +170,7 @@ describe('the pictures of an answer', () => {
     const dir = folder();
     expect(
       await picturesOf(dir, [
-        ask('sheet.png', 'decider'),
+        ask('sheet.png', 'search'),
         ask(undefined),
         ask(7),
         ask('not-there.png'),

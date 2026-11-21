@@ -35,6 +35,7 @@ import { createInterface } from 'node:readline';
 import { env } from '@mantle/config';
 import {
   FILE_TABS_WRITE,
+  PICTURE_WORKERS,
   VISION_WORKER,
   type PipelineManifest,
   type PipelineStep,
@@ -94,7 +95,8 @@ export function jobHandle(p: JobPaths, jobEnd: number): StepJob {
 }
 
 /** The pictures a step names: those of a write call and the one of each
- *  vision ask of an Agent (docs/pipelines.md, "Agents"), files in the job's
+ *  vision ask of an Agent (docs/pipelines.md, "Agents") or decider ask of a
+ *  router's page (PICTURE_WORKERS), files in the job's
  *  folder, in order, each one time, until the answer's budget is spent.
  *  A test with no parser has a copy with no budget
  *  (packages/files/src/pipelines/test-job.ts picturesOf): the parser depends
@@ -114,7 +116,7 @@ export async function picturesOf(
     const named =
       c.call === 'tool' && c.tool === FILE_TABS_WRITE
         ? (input.pictures ?? [])
-        : c.call === 'worker' && c.worker === VISION_WORKER
+        : c.call === 'worker' && PICTURE_WORKERS.includes(String(c.worker))
           ? [{ file: input.picture }]
           : [];
     for (const pic of named) {

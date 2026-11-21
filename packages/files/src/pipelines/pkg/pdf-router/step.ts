@@ -50,6 +50,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
+  DECIDER_WORKER,
   PAGE_ASK_KEY_PREFIX,
   PIPELINE_FACTS_MAX_BYTES,
   PIPELINE_PICTURES_MAX_BYTES,
@@ -168,7 +169,12 @@ async function pageAsks(req: PipelineStepRequest, job: StepJob): Promise<Pipelin
       tag_like_tokens: p.tagLike,
       text_sample: (p.sample ?? '').slice(0, PDF_PAGE_SAMPLE_MAX_CHARS),
     };
-    calls.push({ call: 'worker', worker: 'decider', key: `${PAGE_ASK_KEY_PREFIX}${n}`, input });
+    calls.push({
+      call: 'worker',
+      worker: DECIDER_WORKER,
+      key: `${PAGE_ASK_KEY_PREFIX}${n}`,
+      input,
+    });
     pages.push([n, p.kind, null]);
   }
   pages.sort((a, b) => a[0] - b[0]);

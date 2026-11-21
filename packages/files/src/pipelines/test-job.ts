@@ -18,6 +18,7 @@ import path from 'node:path';
 import { errorMessage } from '@mantle/std';
 import { OPTS_LENGTH_HEADER, PARSER_ROUTES } from '../parser-wire';
 import {
+  PICTURE_WORKERS,
   VISION_WORKER,
   type PipelineStepRequest,
   type PipelineStepResult,
@@ -85,7 +86,7 @@ function picturesOf(
     const named =
       c.call === 'tool'
         ? (input.pictures ?? []).map((pic) => pic.file)
-        : c.worker === VISION_WORKER && typeof input.picture === 'string'
+        : PICTURE_WORKERS.includes(String(c.worker)) && typeof input.picture === 'string'
           ? [input.picture]
           : [];
     for (const file of named) {

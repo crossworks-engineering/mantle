@@ -57,6 +57,12 @@ export const PAGE_ASK_KEY_PREFIX = 'page-';
 /** The AI worker of an Agent's picture ask: the box's vision worker
  *  (docs/pipelines.md, "Agents"). */
 export const VISION_WORKER = 'vision';
+/** The AI worker of a router's page ask (the PDF router's page types,
+ *  ../pdf-page-kinds.ts): the box's decider. Its picture is sent with the
+ *  step's answer, as a vision ask's. */
+export const DECIDER_WORKER = 'decider';
+/** The workers whose ask carries a picture (`input.picture`). */
+export const PICTURE_WORKERS: readonly string[] = [VISION_WORKER, DECIDER_WORKER];
 /** The limits of one ask of an Agent: its key, its fields, a field's name
  *  and a field's hint, in characters. */
 export const PIPELINE_ASK_KEY_MAX_CHARS = 64;
