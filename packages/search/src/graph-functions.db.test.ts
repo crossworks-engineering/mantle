@@ -384,6 +384,21 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
     );
   });
 
+  it('graphPath normalises the verbs as before: case and stray marks; none left is no filter', async () => {
+    const reach = async (relations: string[]) =>
+      Object.fromEntries(
+        (await s.graphPath({ ownerId: ownerA, fromId: id('p'), relations })).map((r) => [
+          r.entity.name.slice(tag.length + 1),
+          r.depth,
+        ]),
+      );
+    expect(await reach(['Owns', ' KNOWS!'])).toEqual({ q2: 1, r: 2, q1: 3 });
+    expect(await reach(['OWNS'])).toEqual({ q2: 1 });
+    // Every verb reduces to nothing: no filter, every verb.
+    expect(await reach(['!!', ''])).toEqual({ q1: 1, q2: 1, r: 2 });
+    expect(await reach([])).toEqual({ q1: 1, q2: 1, r: 2 });
+  });
+
   it('graphPath keeps its result shape', async () => {
     const out = await s.graphPath({ ownerId: ownerA, fromId: id('p'), toId: id('r') });
     expect(out).toHaveLength(1);
@@ -421,6 +436,40 @@ describe.skipIf(!URL)('mantle_graph_walk and mantle_graph_path', () => {
              and has_function_privilege(r.oid, 'public.mantle_graph_path(uuid,uuid,uuid,integer,text[],boolean,boolean)', 'EXECUTE') as ok
         from pg_roles r where r.rolname like 'mantle\\_%'`;
     expect(roles.filter((r) => !r.ok)).toEqual([]);
+  });
+
+  it("as each app role that reads entity_edges: runs both, and never uses another owner's edges", async () => {
+    const roles = (
+      await su<{ r: string }[]>`
+        select r.rolname::text as r from pg_roles r
+         where r.rolname like 'mantle\\_%' and not r.rolsuper
+           and has_table_privilege(r.oid, 'public.entity_edges', 'SELECT')
+         order by 1`
+    ).map((x) => x.r);
+    expect(roles).toContain('mantle_runtime');
+    expect(roles).toContain('mantle_system_narrow');
+    for (const role of roles) {
+      const got = await su.begin(async (tx) => {
+        await tx`select set_config('role', ${role}, true)`;
+        const a = await tx<{ e: string }[]>`
+          select entity_id::text as e from mantle_graph_walk(${ownerA}::uuid, ${id('u')}::uuid)`;
+        const b = await tx<{ e: string }[]>`
+          select entity_id::text as e from mantle_graph_walk(${ownerB}::uuid, ${id('u')}::uuid)`;
+        const p = await tx<{ e: string }[]>`
+          select entity_id::text as e
+            from mantle_graph_path(${ownerA}::uuid, ${id('u')}::uuid, ${id('x')}::uuid)`;
+        return { a: a.map((r) => r.e), b: b.map((r) => r.e), p: p.length };
+      });
+      // Row rules may hide rows from a role with no scope; another owner's
+      // edge is never walked, whatever the role sees.
+      expect(got.a, role).not.toContain(id('x'));
+      for (const e of got.b) expect([id('x')], role).toContain(e);
+      expect(got.p, role).toBe(0);
+      if (role === 'mantle_runtime' || role === 'mantle_system_narrow') {
+        expect(got.a.sort(), role).toEqual([id('v'), id('w')].sort());
+        expect(got.b, role).toEqual([id('x')]);
+      }
+    }
   });
 
   it('runs inside a READ ONLY transaction, and the transaction refuses a write', async () => {
