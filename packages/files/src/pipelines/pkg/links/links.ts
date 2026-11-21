@@ -308,9 +308,11 @@ export class LinkSet {
 /** A column that holds codes, by its header: a header with the word code,
  *  or a part, stock or catalogue number. */
 const CODE_HEADER = /code|\b(?:part|stock|catalog(?:ue)?|item)\s*(?:no\b|number|#)/i;
-/** A code in a code column: 3 to 20 letters, digits or hyphens, a digit in
- *  it, and 4 digits or more when it is digits alone. */
-const CODE_IN_COLUMN = /^(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{2,19}$/;
+/** A code in a code column: 4 to 20 letters, digits or hyphens, a digit in
+ *  it, and 5 digits or more when it is digits alone. A short token there
+ *  is a note number (`NR4`) or a rating (`3000`) a misread row put in the
+ *  column. */
+const CODE_IN_COLUMN = /^(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{3,19}$/;
 /** A code a column of no code header holds: digits alone, 6 to 12 of them,
  *  or letters and 4 digits or more, 5 to 14 in all. Stricter, as the
  *  column is known only by its cells. */
@@ -327,7 +329,7 @@ const codeTokens = (cell: string): string[] =>
     .map((t) => t.replace(/[*.]+$/, ''))
     .filter((t) => t !== '');
 
-const isCodeInColumn = (t: string) => CODE_IN_COLUMN.test(t) && (/[A-Z]/.test(t) || t.length >= 4);
+const isCodeInColumn = (t: string) => CODE_IN_COLUMN.test(t) && (/[A-Z]/.test(t) || t.length >= 5);
 
 /** The words of a text that may be a code: split on all but letters,
  *  digits and hyphens. */

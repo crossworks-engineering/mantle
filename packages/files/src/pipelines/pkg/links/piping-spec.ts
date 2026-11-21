@@ -63,6 +63,8 @@ const SUPERSEDES = /\bSUPERSEDES\b/i;
 /** One numbered change of an addendum: `1.7 Revise ...`. */
 const CHANGE =
   /^\s*(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s+((?:Add|Revise|Delete|Replace|Change|Remove|Use)\b.{0,160})/gim;
+/** A column of an item's name (`ITEM NAME`), never its code. */
+const ITEM_NAME = /\bITEM\s*NAME\b/i;
 /** A group header row: `*****BOLTING*****`. */
 const GROUP = /\*{3,}\s*([A-Z][A-Z &/,.-]*?)\s*\*{3,}/;
 
@@ -177,7 +179,7 @@ export function materialsOf(raw: string): Set<string> {
     out.add(`API5L${m[1] ? `-${m[1]}` : ''}`);
   }
   const grade =
-    /\b(?:ASTM\s*)?([AB])\s?(\d{3})(?![\d.])(?:(?:\s?-\s?|\s*,?\s*(?:GR\.?|GRADE|TP|TYPE)\s*)([A-Z0-9]{1,6}(?:\s?CL\s?\d)?)|\s?((?:WP(?:[A-Z]{1,3}|\d{1,3})|F\d{1,3}|P\d{1,3}|CF\d)(?:(?!CL\s?\d)[A-Z]){0,2}(?:\s?CL\s?\d)?)(?![A-Z0-9]))?/g;
+    /\b(?:ASTM\s*)?([AB])\s?(\d{3})(?![\d.])(?:(?:\s?-\s?|\s*,?\s*(?:GRADE|GR\.?|TYPE|TP)\s*)([A-Z0-9]{1,6}(?:\s?CL\s?\d)?)|\s?((?:WP(?:[A-Z]{1,3}|\d{1,3})|F\d{1,3}|P\d{1,3}|CF\d)(?:(?!CL\s?\d)[A-Z]){0,2}(?:\s?CL\s?\d)?)(?![A-Z0-9]))?/g;
   for (const m of s.matchAll(grade)) {
     const num = Number(m[2]);
     if (num < 100) continue;
@@ -429,8 +431,11 @@ function rowLinks(
     group.set(c.code, clean(header[1]!).replace(/\s*CONTINUED$/, ''));
     return;
   }
+  // An item row: it has a code, or an item's name (a row of a special
+  // item may have no code).
   const g = group.get(c.code);
-  if (g && r.codes.size > 0) {
+  const named = r.columns.some((col, i) => ITEM_NAME.test(col) && (r.cells[i] ?? '') !== '');
+  if (g && (r.codes.size > 0 || named)) {
     set.link(
       r.id,
       set.node(`group:${g}`, 'item group', g),

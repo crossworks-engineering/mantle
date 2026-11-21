@@ -39,8 +39,8 @@ is the input of the registry (see "The registry" below), the one place that
 gives the pipelines of a box, the reader of a file's database among them.
 The file types that get a database (the registry's `dbExts`) are the union
 of the readers' extensions. The list also holds
-one Transformer, `site-tags` (see "Transformers" below): it reads a
-reader's database, and is no reader. And it holds one router, `pdf-router`
+two Transformers, `site-tags` and `links` (see "Transformers" below): each
+reads a reader's database, and is no reader. And it holds one router, `pdf-router`
 (see "The router" below): it names the kind of a PDF, and is no reader
 either. And it holds one Agent, `iso-title-block` (see "Agents" below): it
 is no reader of its extensions, so it adds nothing to `dbExts`. Their
@@ -56,6 +56,7 @@ reader is `drawing-raster`.
 | `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package          |
 | `drawing-raster`  | tif, tiff, smf, 000            | light  | none                       | package (Python) |
 | `site-tags`       | after a reader                 | light  | none                       | package          |
+| `links`           | pdf, after a reader            | light  | none                       | package          |
 | `iso-title-block` | tif, tiff, smf, 000 (an Agent) | heavy  | none                       | package          |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
@@ -148,6 +149,15 @@ fails without it today; the rest is read when it is there. Not so for the
 Inserts and Texts tabs of `circuit-v1`: `circuit_trace` selects their
 columns by name, so with one column missing it leaves that whole tab out of
 its trace. `shapesOf` names the shapes a list of tabs carries.
+
+The body of a Transformer (`afterBodyOf`) holds each tab of its shape that
+the file has, needed or not, with the shape's columns. A shape with
+`listedIn` also sends every tab named in that column of that tab, each with
+all its columns: `pages-v1` names `Tables` and `Tab`, so a book's table
+tabs, which the Reader names itself, reach Links. A tab the pipeline writes
+is never sent. The body is read in one open of the file (`withTabScanner`
+in `packages/tabledb`), so a file of thousands of tabs reads its schema
+once.
 
 ## The stamp
 
@@ -888,6 +898,91 @@ A crash of the parser (a hard kill: the connection is reset, which reads as
 `pipeline_run` on the folder gives the tabs to the files that have no entry,
 where Site tags is on. `pipeline-reread` does not take them: they were never
 patched.
+
+## Links
+
+The second Transformer, `links` (`pkg/links/`). It reads a PDF's database
+(the shape `pages-v1`: a `Pages` tab with a `Page` column; also `Page text`,
+`Tables` with every table tab it names, `Tags` and `Lines` when they are
+there) and adds two tabs. It runs after the book reader (`pdf-pages`) and
+after the drawing reader (`drawing-pdf`): both write `Pages`. It asks no
+model and calls no paid service.
+
+| Tab          | Columns                                      | One row for            |
+| ------------ | -------------------------------------------- | ---------------------- |
+| `Links`      | `from_id`, `to_id`, `kind`, `page`, `source` | one link               |
+| `Link nodes` | `id`, `kind`, `label`, `page`, `text`        | one thing a link names |
+
+Ids are text made by the builder, never by SQL and never from a number's
+printed form: `page:12`, `table:<tab>`, `row:<tab>#7` (the 7th row as the
+tab lists it), `code:<code>`, `tag:<tag>`, `line:<line>`, `note:<n>`. A tab
+name keeps its spaces and brackets. The id and kind columns are of type
+`select`, so the writer indexes them (`createTab`); `page` is a number. Only
+`label` is in the search shadow (`ftsSkipColumns`): ids, kinds, sources and
+a row's text, which its own tab holds, are not. `source` names the rule, the
+tab and the row a link came from (`code: SPEC K2 ITEMS p2-3 #5`).
+
+**The generic rules**, for every file of pages or tables:
+
+| Kind            | From and to                                                                                                                                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HAS_PAGE`      | the file (`file`) to each page                                                                                                                                                                                  |
+| `TABLE_ON_PAGE` | a table to each page its `Tables` row spans                                                                                                                                                                     |
+| `HAS_ROW`       | a table to each row, with the row's page                                                                                                                                                                        |
+| `NAMES_CODE`    | a row or a page to a code: the cells of a code column (a header with `code`, or a part, stock or catalogue number; or a column of no header whose cells are codes), then the same codes in any row or page text |
+| `NAMES_TAG`     | a page or row to a tag: a drawing's `Tags` rows, a book's tag column by the tag grammar (`pdf-tags.ts`)                                                                                                         |
+| `NAMES_LINE`    | the same for line numbers (`Lines`, a line number column)                                                                                                                                                       |
+| `REFERS_TO`     | a page to the table (`see Table 2`), note (`see note 4`) or page (`see page 7`) it names, only when that is in the file                                                                                         |
+
+The tag grammar does not run on a book's running text: there it reads
+grades and codes (`WP-11`) as tags.
+
+**Rule packs.** A pack is a file of the package (`piping-spec.ts`, listed in
+`packs.ts`): data and small functions for one kind of document. It switches
+itself on by a count of its own patterns, with no setting and no model. A
+second pack (drawings) is one more file and changes no other.
+
+The piping specification pack is on when 3 or more pages, and at least 5 %
+of the pages with text, carry a class header in their top lines
+(`Piping Specification No: K2`, `LINE CLASS: K2U`, the code on a line next
+to the header, an older title box whose last label is `CLASS`). Its kinds:
+`CLASS_PAGE` (a page between two pages of one class is that class; a class
+read once from a title box alone is dropped), `CLASS_TABLE`, `CLASS_ROW`,
+`CLASS_CODE`, `CLASS_MATERIAL`, `NAMES_MATERIAL` (a row to an ASTM or API
+grade, such as `mat:A193-B7M`, also in text with no spaces), `IN_GROUP` (an
+item row to the group header above it, `*****BOLTING*****`), `HAS_RATING`
+and `HAS_BASE_MATERIAL` (each fact from the first page of the class that
+states it), and for an addendum page `ADDENDUM_PAGE`, `CHANGES_CLASS`,
+`HAS_CHANGE`, `ADDENDUM_ROW`, `ADDENDUM_CODE` and `ADDENDUM_MATERIAL`. A row
+on an addendum page links to the addendum, never to the class: an addendum
+only changes a class. An addendum's id carries its current revision, the
+one before `SUPERSEDES`. A class's node has its facts as JSON in `text`
+(service, rating, face, material, corrosion allowance, temperatures).
+
+**Honesty.** A link set can be confidently incomplete. The nodes of kind
+`coverage` say so, for a reader to ask: what the two tabs are; each kind
+with its count; the pages with no text (unread scans), with their list; the
+page texts cut at the cell cap before the read; tables the body did not
+hold; whether each pack is on; and for the piping pack, the pages with text
+and no class, and how many classes have each fact. A Transformer cannot set
+the file's description, so the lines are rows:
+`SELECT label FROM "Link nodes" WHERE kind = 'coverage'`.
+
+**Rebuild.** The links are derived: a run again replaces the two tabs, and
+the same tabs give the same rows. A read again of the file rebuilds them
+after the Reader. The Reader's tabs are never changed (the patch replaces
+only `produces.tabs`). A Transformer does not run again when an Agent adds
+its tab later (`Page text`): a person's run of `links` on the file, or a
+read again, picks it up. Existing files get links on a new upload and on a
+person's read again; nothing runs by itself at a roll.
+
+**Bounds.** The body holds at most 500,000 rows of a tab and 64 MB in all,
+a cell cut at 4,096 characters. The tabs hold at most 400,000 links and
+200,000 nodes; past them the rest is not written, and a coverage node and a
+warning say so. Measured on a workstation on a real book of 1,000 pages and
+2,436 tables (a 112 MB database): body 1.2 s, rules 0.4 s, patch 2.6 to
+8.3 s (the patch copies the file), about 70,000 links, the step's answer
+9 MB, the file 141 MB after (+25 %).
 
 ## Agents
 

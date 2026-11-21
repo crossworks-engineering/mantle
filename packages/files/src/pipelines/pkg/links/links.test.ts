@@ -117,7 +117,7 @@ describe('the generic rules', () => {
 
   it('HAS_ROW: a table to its rows, with the row page', () => {
     const rows = links.filter((l) => l.kind === 'HAS_ROW');
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(18);
     expect(rows).toContainEqual({
       from: 'table:Table [sizes] (2) p4',
       to: 'row:Table [sizes] (2) p4#2',
@@ -139,8 +139,9 @@ describe('the generic rules', () => {
     expect(codes).toContain('row:SPEC K2 ITEMS p2-3#3 > code:ZX10001');
     expect(codes).toContain('page:3 > code:ZX10001');
     expect(codes).toContain('page:8 > code:ZX10001');
-    // Row numbers and sizes are no codes.
-    expect(codes.filter((c) => /code:(1|2|3|4|80|SCH)$/.test(c))).toEqual([]);
+    // Row numbers and sizes are no codes, nor a short note number or a
+    // rating a misread row put in the code column.
+    expect(codes.filter((c) => /code:(1|2|3|4|80|SCH|QN4|3000)$/.test(c))).toEqual([]);
     expect([...nodes.keys()].filter((id) => /\.0($|#)/.test(id))).toEqual([]);
   });
 
@@ -289,7 +290,9 @@ describe('the piping specification pack', () => {
       'row:SPEC K2 ITEMS p2-3#2 > group:BOLTING',
       'row:SPEC K2 ITEMS p2-3#3 > group:BOLTING',
       'row:SPEC K2 ITEMS p2-3#5 > group:GASKETS',
+      // An item with a name and no code is an item too.
       'row:SPEC K2 ITEMS p2-3#6 > group:GASKETS',
+      'row:SPEC K2 ITEMS p2-3#9 > group:GASKETS',
     ]);
   });
 
@@ -409,6 +412,10 @@ describe('the small rules', () => {
       'API5L-B',
     ]);
     expect(m('FLANGE Al05')).toEqual(['A105']);
+    expect(m('STUD-BOLT ASTM A193 GRADE B7M W/ ASTM A194 GRADE 2HM')).toEqual([
+      'A193-B7M',
+      'A194-2HM',
+    ]);
     expect(m('ASME B16.5 B31.3')).toEqual([]);
   });
 
