@@ -78,31 +78,60 @@ export async function uploadMessengerAttachment(
 ): Promise<MessengerAttachmentView> {
   takeBudget(actor, 'write');
   if (!isUuid(conversationId)) throw new MessengerNotFoundError();
-  const name = sanitizeFilename(file.filename);
-  if (!name) throw new InputError('The file name is not valid.');
-  const size = file.bytes ? file.bytes.byteLength : (file.spooled?.size ?? 0);
-  const refusal = messengerFileRefusal(name, size);
-  if (refusal) throw new InputError(refusal);
-  const ext = extOf(name);
-  const mime = mimeForExt(ext);
-  const kind = IMAGE_EXTS.has(ext) ? ('image' as const) : ('file' as const);
   // Content-addressed bytes first (users of a brain are trusted; the
   // same bytes land once), then the row with the participant check.
-  // Through the files store's broker (docs/store-brokers.md): the key is
-  // the content address, so its last part is the sha256.
-  const { key } = file.bytes
-    ? await stageFileObject(file.bytes, mime)
-    : await stageSpooledObject(file.spooled!, mime);
-  const stored = { key, size, sha256: key.slice(key.lastIndexOf('/') + 1) };
+  const staged = await stageChatFile(file);
+  if (typeof staged === 'string') throw new InputError(staged);
+  const { kind, name, mime, bytes, sha256, path } = staged;
   const id = await addMessengerAttachmentRow(actor, conversationId, {
     kind,
     name,
     mime,
-    bytes: stored.size,
-    sha256: stored.sha256,
-    path: stored.key,
+    bytes,
+    sha256,
+    path,
   });
-  return { id, name, mime, bytes: stored.size, kind };
+  return { id, name, mime, bytes, kind };
+}
+
+/** A chat file's bytes staged in the store, as a row describes them; or
+ *  why it may not go on a line (the name, the types, the cap). Through the
+ *  files store's broker (docs/store-brokers.md): the key is the content
+ *  address, so its last part is the sha256. The one staging step of an
+ *  upload and of a report's copy line. */
+async function stageChatFile(file: {
+  filename: string;
+  bytes?: Buffer;
+  spooled?: SpooledUpload;
+}): Promise<
+  | {
+      kind: 'image' | 'file';
+      name: string;
+      mime: string;
+      bytes: number;
+      sha256: string;
+      path: string;
+    }
+  | string
+> {
+  const name = sanitizeFilename(file.filename);
+  if (!name) return 'The file name is not valid.';
+  const size = file.bytes ? file.bytes.byteLength : (file.spooled?.size ?? 0);
+  const refusal = messengerFileRefusal(name, size);
+  if (refusal) return refusal;
+  const ext = extOf(name);
+  const mime = mimeForExt(ext);
+  const { key } = file.bytes
+    ? await stageFileObject(file.bytes, mime)
+    : await stageSpooledObject(file.spooled!, mime);
+  return {
+    kind: IMAGE_EXTS.has(ext) ? 'image' : 'file',
+    name,
+    mime,
+    bytes: size,
+    sha256: key.slice(key.lastIndexOf('/') + 1),
+    path: key,
+  };
 }
 
 type ReadRow = { id: string; name: string; mime: string; bytes: string | number; path: string };
@@ -188,21 +217,9 @@ export async function deskCopyLine(
 ): Promise<boolean> {
   const files = [];
   for (const f of args.files) {
-    const name = sanitizeFilename(f.filename);
-    if (!name || messengerFileRefusal(name, f.bytes.byteLength)) continue;
-    const ext = extOf(name);
-    const mime = mimeForExt(ext);
-    const { key } = await stageFileObject(f.bytes, mime);
-    files.push({
-      kind: IMAGE_EXTS.has(ext) ? ('image' as const) : ('file' as const),
-      name,
-      mime,
-      bytes: f.bytes.byteLength,
-      sha256: key.slice(key.lastIndexOf('/') + 1),
-      path: key,
-      width: null,
-      height: null,
-    });
+    const staged = await stageChatFile(f);
+    // One a line may not carry stays on the copy task only.
+    if (typeof staged !== 'string') files.push({ ...staged, width: null, height: null });
   }
   return appendDeskCopy(ownerId, { ...args, files });
 }
