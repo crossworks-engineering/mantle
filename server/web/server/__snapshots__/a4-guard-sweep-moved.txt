@@ -255,7 +255,7 @@ m253 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m254 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m255 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10963
+# cells whose guard entry moved to the pipeline: 10999
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2367,6 +2367,27 @@ first DELETE /api/fleet/boxes/:id member-cookie=m24
 first DELETE /api/fleet/boxes/:id admin-bearer=m38
 first DELETE /api/fleet/boxes/:id member-bearer=m26
 first DELETE /api/fleet/boxes/:id revoked-bearer=m27
+first GET /api/fleet/broadcasts owner-cookie=m35
+first GET /api/fleet/broadcasts admin-cookie=m36
+first GET /api/fleet/broadcasts limited-cookie=m43
+first GET /api/fleet/broadcasts member-cookie=m24
+first GET /api/fleet/broadcasts admin-bearer=m38
+first GET /api/fleet/broadcasts member-bearer=m26
+first GET /api/fleet/broadcasts revoked-bearer=m27
+first POST /api/fleet/broadcasts owner-cookie=m35
+first POST /api/fleet/broadcasts admin-cookie=m36
+first POST /api/fleet/broadcasts limited-cookie=m43
+first POST /api/fleet/broadcasts member-cookie=m24
+first POST /api/fleet/broadcasts admin-bearer=m38
+first POST /api/fleet/broadcasts member-bearer=m26
+first POST /api/fleet/broadcasts revoked-bearer=m27
+first HEAD /api/fleet/broadcasts owner-cookie=m39
+first HEAD /api/fleet/broadcasts admin-cookie=m40
+first HEAD /api/fleet/broadcasts limited-cookie=m44
+first HEAD /api/fleet/broadcasts member-cookie=m31
+first HEAD /api/fleet/broadcasts admin-bearer=m42
+first HEAD /api/fleet/broadcasts member-bearer=m33
+first HEAD /api/fleet/broadcasts revoked-bearer=m34
 first GET /api/fleet/default-model owner-cookie=m35
 first GET /api/fleet/default-model admin-cookie=m36
 first GET /api/fleet/default-model limited-cookie=m43
@@ -8224,6 +8245,21 @@ more DELETE /api/fleet/boxes/:id bumped-cookie=m27
 more DELETE /api/fleet/boxes/:id gone-cookie=m27
 more DELETE /api/fleet/boxes/:id rotated-bearer=m27
 more DELETE /api/fleet/boxes/:id expired-bearer=m27
+more GET /api/fleet/broadcasts disabled-cookie=m27
+more GET /api/fleet/broadcasts bumped-cookie=m27
+more GET /api/fleet/broadcasts gone-cookie=m27
+more GET /api/fleet/broadcasts rotated-bearer=m27
+more GET /api/fleet/broadcasts expired-bearer=m27
+more POST /api/fleet/broadcasts disabled-cookie=m27
+more POST /api/fleet/broadcasts bumped-cookie=m27
+more POST /api/fleet/broadcasts gone-cookie=m27
+more POST /api/fleet/broadcasts rotated-bearer=m27
+more POST /api/fleet/broadcasts expired-bearer=m27
+more HEAD /api/fleet/broadcasts disabled-cookie=m34
+more HEAD /api/fleet/broadcasts bumped-cookie=m34
+more HEAD /api/fleet/broadcasts gone-cookie=m34
+more HEAD /api/fleet/broadcasts rotated-bearer=m34
+more HEAD /api/fleet/broadcasts expired-bearer=m34
 more GET /api/fleet/default-model disabled-cookie=m27
 more GET /api/fleet/default-model bumped-cookie=m27
 more GET /api/fleet/default-model gone-cookie=m27

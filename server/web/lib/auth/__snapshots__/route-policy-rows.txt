@@ -170,6 +170,7 @@ GET /api/files/folders class=content scope=content caller=owner gone=false
 GET /api/files/folders/:id class=content scope=content caller=owner gone=false
 GET /api/files/stale class=content scope=content caller=owner gone=false
 GET /api/fleet class=area scope=area:settings caller=owner gone=false
+GET /api/fleet/broadcasts class=area scope=area:settings caller=owner gone=false
 GET /api/fleet/default-model class=area scope=area:settings caller=owner gone=false
 GET /api/fleet/matrix class=area scope=area:settings caller=owner gone=false
 GET /api/formulas class=content scope=content caller=owner gone=false
@@ -471,6 +472,7 @@ HEAD /api/files/folders class=content scope=content caller=owner gone=false
 HEAD /api/files/folders/:id class=content scope=content caller=owner gone=false
 HEAD /api/files/stale class=content scope=content caller=owner gone=false
 HEAD /api/fleet class=area scope=area:settings caller=owner gone=false
+HEAD /api/fleet/broadcasts class=area scope=area:settings caller=owner gone=false
 HEAD /api/fleet/default-model class=area scope=area:settings caller=owner gone=false
 HEAD /api/fleet/matrix class=area scope=area:settings caller=owner gone=false
 HEAD /api/formulas class=content scope=content caller=owner gone=false
@@ -823,6 +825,7 @@ POST /api/files/reindex class=content scope=content caller=owner gone=false
 POST /api/fleet/bans class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/bans/:id/lift class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/boxes class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/broadcasts class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/invite class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/keys class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/models class=area scope=area:settings caller=owner gone=false
