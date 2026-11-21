@@ -22,7 +22,8 @@ import {
   withCreateHome,
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
-import { InputError } from '@mantle/std';
+import { InputError, errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { IT_DESKS, type MessengerIntakeKind } from '@mantle/client-types/messenger-intake';
 import { createTask, deleteTask } from './tasks';
 import { addTaskFile } from './task-files';
@@ -202,9 +203,12 @@ async function fileAndSend(
 /** Take a desk's task off again (its line was not written), as the same
  *  step: a task left sent would reach the Control Center. */
 export async function undoDeskTask(ownerId: string, taskId: string): Promise<void> {
-  await systemStep('submissions', { items: 'none', why: UNDO }, () =>
+  const off = await systemStep('submissions', { items: 'none', why: UNDO }, () =>
     deleteTask(ownerId, taskId),
-  ).catch(() => false);
+  ).catch((err: unknown) => errorMessage(err));
+  if (off !== true) {
+    log('messenger').warn(`a desk task ${taskId} was not taken off: ${off || 'not found'}`);
+  }
 }
 
 const UNDO = 'take off the task of a line to an IT desk that was not written';

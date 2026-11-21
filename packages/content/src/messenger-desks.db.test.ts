@@ -263,6 +263,17 @@ describe.skipIf(!URL)('fleet chat: the IT desks', () => {
     expect(again.created).toBe(false);
     expect(again.message.seq).toBe(first.message.seq);
     expect(await count('once only')).toBe(1);
+    // Two sends at the same moment: one line, one task (the late one's
+    // task goes again once it finds the stored line).
+    const twin = {
+      body: 'at once',
+      clientMsgId: 'desk-2',
+      mentions: [{ kind: 'desk' as const, id: 'bug' as const }],
+    };
+    const [x, y] = await Promise.all([send(A, mine, twin), send(A, mine, twin)]);
+    expect(x.message.seq).toBe(y.message.seq);
+    expect([x.created, y.created].sort()).toEqual([false, true]);
+    expect(await count('at once')).toBe(1);
     await expect(
       send(A, mine, {
         body: 'two',

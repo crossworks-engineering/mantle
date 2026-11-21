@@ -43,7 +43,8 @@ import {
   systemDb,
   type MessengerEventJson,
 } from '@mantle/db';
-import { ConflictError, InputError, defineDomainError, isUuid } from '@mantle/std';
+import { ConflictError, InputError, defineDomainError, errorMessage, isUuid } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { callsServiceOn, livekitClient, loginIdentity } from './livekit';
 import {
   PEOPLE_ONLINE_MS,
@@ -88,6 +89,8 @@ import { replyToSubmission } from './submissions';
 export { deskLabel } from './messenger-desks';
 
 // ── Limits ───────────────────────────────────────────────────────────────────
+
+const logger = log('messenger');
 
 export const MESSENGER_BODY_MAX = 8000;
 export const MESSENGER_PARTICIPANTS_MAX = 200;
@@ -1369,6 +1372,13 @@ export async function sendMessengerMessage(
   if (deskBody !== null && deskBody.length > MESSENGER_BODY_MAX) {
     throw new InputError(`A message is at most ${MESSENGER_BODY_MAX} characters.`);
   }
+  if (desk) {
+    // The send's own rule, read before the task is made: I am in this live
+    // chat (the check under the lock below stays the rule of the write).
+    const chat = await getMessengerConversation(actor, here);
+    if (chat.archivedAt) throw new MessengerRefusedError('This chat is archived.');
+    if (chat.me.leftSeq !== null) throw new MessengerRefusedError('You left this chat.');
+  }
   const deskTaskId = desk
     ? await deskTask(actor, { kind: desk, body: deskBody!, conversationId: here, fileIds })
     : null;
@@ -1501,6 +1511,9 @@ export async function sendMessengerMessage(
       if (deskTaskId) await undoDeskTask(actor.ownerId, deskTaskId);
       throw err;
     });
+  // A retry at the same moment as the first send found the stored line
+  // under the lock: its own task goes again, so IT gets one report.
+  if (deskTaskId && !out.created) await undoDeskTask(actor.ownerId, deskTaskId);
   // A Reply on a report from a box (the Control Center): the answer goes on
   // its copy task, and the sweep carries it to the box. After the commit,
   // in my own scope: who may edit the copy answers it.
@@ -1586,6 +1599,8 @@ export async function appendDeskCopy(
                and ${isNull(messengerConversations.archivedAt)}
              order by created_at, id limit 1`,
       );
+      // No group asks for this kind: the copy task is the record.
+      if (!group) logger.info(`no live group with the ${args.kind} intake form for a report`);
       return group?.id ?? null;
     },
     async () => ({
@@ -1648,7 +1663,10 @@ async function answerDeskCopy(
     } else if (err instanceof InputError) {
       refusal = `This answer did not go back: ${err.message}`;
     } else {
-      throw err;
+      // The Reply line is stored: a retry would answer it without a new
+      // try, so the group hears it now, and the error is logged.
+      logger.warn(`answer on copy ${copyTaskId} failed: ${errorMessage(err)}`);
+      refusal = 'This answer did not go back. Reply again.';
     }
   }
   if (!refusal) return;
