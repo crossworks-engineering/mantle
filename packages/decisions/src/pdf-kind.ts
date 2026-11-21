@@ -147,6 +147,29 @@ export type PdfPageState = {
   text_sample: string;
 };
 
+/** The one question of a page ask. */
+export const PDF_PAGE_QUESTIONS: Record<string, DecisionQuestion> = {
+  kind: { type: 'choice', instructions: PDF_PAGE_INSTRUCTIONS, criteria: PDF_KIND_CRITERIA },
+};
+
+/** The state of a page ask (pure): the 8 fields in the order the M2 bench
+ *  sent them, the picture as its part. */
+export function pdfPageStateOf(
+  ask: Omit<PdfPageState, 'picture'>,
+  picture: DecisionPicturePart,
+): PdfPageState {
+  return {
+    page: ask.page,
+    picture,
+    size: ask.size,
+    class: ask.class,
+    instrument_tags: ask.instrument_tags,
+    line_numbers: ask.line_numbers,
+    tag_like_tokens: ask.tag_like_tokens,
+    text_sample: ask.text_sample,
+  };
+}
+
 /** The answer for one page. `kind`: the likeliest option of the likelier
  *  route; `confidence`: the summed chance of that route (the M2 bench's
  *  rule: a page is typed by its route, office or drawing, and the floor is
@@ -217,24 +240,11 @@ export async function decidePdfPageKind(
   if (!(await pdfPageAsksOn(ownerId))) return null;
   const part = await decisionPictureOf(picture, 'image/jpeg', shrink).catch(() => null);
   if (!part) return null;
-  // The fields in the order the bench sent them.
-  const state: PdfPageState = {
-    page: ask.page,
-    picture: part.part,
-    size: ask.size,
-    class: ask.class,
-    instrument_tags: ask.instrument_tags,
-    line_numbers: ask.line_numbers,
-    tag_like_tokens: ask.tag_like_tokens,
-    text_sample: ask.text_sample,
-  };
   const outcome = await decide({
     ownerId,
     use: 'pdf_kind',
-    state,
-    questions: {
-      kind: { type: 'choice', instructions: PDF_PAGE_INSTRUCTIONS, criteria: PDF_KIND_CRITERIA },
-    },
+    state: pdfPageStateOf(ask, part.part),
+    questions: PDF_PAGE_QUESTIONS,
     ...(batch ? { batch } : {}),
     timeoutFactor: 3,
   });
