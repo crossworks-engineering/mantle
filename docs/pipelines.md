@@ -951,7 +951,10 @@ read once from a title box alone is dropped), `CLASS_TABLE`, `CLASS_ROW`,
 specification number only, such as `mat:A193`, also in text with no spaces;
 the grade stays in the row's text, so a grade question adds
 `text LIKE '%B7M%'` on the row's node), `IN_GROUP` (an
-item row to the group header row above it, `****BOLTING****`), `HAS_RATING`
+item row to the group header row above it, `****BOLTING****`; a table
+whose title, less its numbered lead words and its page mark, is exactly a
+group name of the book starts in that group, up to its own first header
+row), `HAS_RATING`
 and `HAS_BASE_MATERIAL` (each fact from the first page of the class that
 states it), and for an addendum page `ADDENDUM_PAGE`, `CHANGES_CLASS`,
 `HAS_CHANGE`, `ADDENDUM_ROW`, `ADDENDUM_CODE` and `ADDENDUM_MATERIAL`. A row
@@ -977,8 +980,11 @@ the grade. In text with no spaces, an item code that ends in a letter and a
 three digit number (`XYA802`) also gives a material link (`mat:A802`).
 Rules read what the Reader wrote: a chart row that the Reader merged with a
 list of codes links those codes to that chart row; a group header line that
-the Reader made a table's title is no header row, so the rows of that table
-keep the group before it (a wrong group); text that the
+the Reader made a table's title gives its group only when the title is
+exactly a group name of the book: a title the scan misread, or one that is
+not a group name, leaves the rows the group before it (a wrong group); a
+group runs on into the next tables of its class until a header row, so rows
+of a table with no header row and no group title take the group before; text that the
 scan read wrongly (a letter for a slash, a colon in a number) gives no link
 or a wrong one; a page text cut at the cell cap is read only to the cut.
 

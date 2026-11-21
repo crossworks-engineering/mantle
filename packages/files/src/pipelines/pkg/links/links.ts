@@ -41,6 +41,12 @@ export const LINK_NODES_TAB = 'Link nodes';
 /** The most rows of each tab. */
 export const LINKS_ROWS_MAX = 400_000;
 export const LINK_NODES_ROWS_MAX = 200_000;
+/** The caps of the two tabs; a test lowers them. */
+export type Caps = { links: number; nodes: number };
+const CAPS: Caps = { links: LINKS_ROWS_MAX, nodes: LINK_NODES_ROWS_MAX };
+/** The text of the cap, for the coverage node and the warning. */
+const capText = (c: Caps) =>
+  `${c.links.toLocaleString('en')} links or ${c.nodes.toLocaleString('en')} nodes`;
 /** The columns of the two tabs kept out of the search shadow: ids, kinds
  *  and sources are no words to search, and a row's text is searched in its
  *  own tab already. Only a node's label is searched. */
@@ -271,10 +277,12 @@ export class LinkSet {
   /** A cap was reached: the rest was not written. */
   cut = false;
 
+  constructor(readonly caps: Caps = CAPS) {}
+
   node(id: string, kind: string, label: string, page: number | null = null, body = ''): string {
     if (this.nodes.has(id)) return id;
     // A coverage node is always written: it says what was cut.
-    if (kind !== 'coverage' && this.nodes.size >= LINK_NODES_ROWS_MAX) {
+    if (kind !== 'coverage' && this.nodes.size >= this.caps.nodes) {
       this.cut = true;
       return id;
     }
@@ -292,7 +300,7 @@ export class LinkSet {
     if (!this.nodes.has(from) || !this.nodes.has(to)) return;
     const key = `${from}\u0000${to}\u0000${kind}\u0000${page ?? ''}`;
     if (this.seen.has(key)) return;
-    if (this.links.length >= LINKS_ROWS_MAX) {
+    if (this.links.length >= this.caps.links) {
       this.cut = true;
       return;
     }
@@ -579,11 +587,7 @@ function closingCoverage(set: LinkSet): void {
     coverage(set, `kind:${kind}`, `${kind}: ${n.toLocaleString('en')} links`);
   }
   if (set.cut) {
-    coverage(
-      set,
-      'cut',
-      `A cap was reached (${LINKS_ROWS_MAX.toLocaleString('en')} links or ${LINK_NODES_ROWS_MAX.toLocaleString('en')} nodes): the rest was not written.`,
-    );
+    coverage(set, 'cut', `A cap was reached (${capText(set.caps)}): the rest was not written.`);
   }
 }
 
@@ -622,11 +626,12 @@ export type LinkPack = {
 export function buildLinks(
   input: LinkInput,
   packs: readonly LinkPack[],
+  caps: Caps = CAPS,
 ): { sheets: ParsedSheet[]; warnings: string[]; packsOn: string[] } {
   if (input.pages.length === 0 && input.tables.length === 0) {
     return { sheets: [], warnings: [], packsOn: [] };
   }
-  const set = new LinkSet();
+  const set = new LinkSet(caps);
   genericLinks(input, set);
   const packsOn: string[] = [];
   for (const pack of packs) {
@@ -644,9 +649,7 @@ export function buildLinks(
   genericCoverage(input, set);
   closingCoverage(set);
   const warnings = set.cut
-    ? [
-        `Links reached a cap (${LINKS_ROWS_MAX.toLocaleString('en')} links or ${LINK_NODES_ROWS_MAX.toLocaleString('en')} nodes); the rest was not written.`,
-      ]
+    ? [`Links reached a cap (${capText(caps)}); the rest was not written.`]
     : [];
   return {
     sheets: [

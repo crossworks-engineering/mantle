@@ -318,6 +318,38 @@ describe('the piping specification pack', () => {
     ]);
   });
 
+  it('IN_GROUP: a table whose title is exactly a group name of the book starts in that group, up to its own header row', () => {
+    const withTable = (title: string) => {
+      const sheets = specSheets();
+      const tab = `${title} p3`;
+      sheets.find((s) => s.name === 'Tables')!.rows.push([tab, title, '3', 3]);
+      sheets.push({
+        name: tab,
+        columns: [
+          { name: 'Page', type: 'number' },
+          { name: 'ITEM NAME', type: 'text' },
+          { name: 'ITEM CODE', type: 'text' },
+          { name: 'DESCRIPTION', type: 'text' },
+        ],
+        rows: [
+          [3, 'NUT', 'ZX30003', 'HEX NUT A194 GR 2H'],
+          [3, null, null, '****GASKETS****'],
+          [3, 'RING', 'ZX30004', 'RING JOINT OVAL'],
+        ],
+      });
+      return pairs(linksOf(built(sheets).sheets), 'IN_GROUP').filter((p) => p.includes(tab));
+    };
+    // Less its numbered lead words and its page mark, the title is BOLTING.
+    expect(withTable('12 K2 BOLTING p3')).toEqual([
+      'row:12 K2 BOLTING p3 p3#1 > group:BOLTING',
+      'row:12 K2 BOLTING p3 p3#3 > group:GASKETS',
+    ]);
+    // Not exactly a group name: the group before goes on.
+    for (const title of ['12 K2 BOLTING NUTS', '12 K2 BOLT', 'MORE BOLTING']) {
+      expect(withTable(title)[0]).toBe(`row:${title} p3#1 > group:GASKETS`);
+    }
+  });
+
   it('the class facts: rating, base material, service and limits, the frame of the sheet left out', () => {
     expect(pairs(links, 'HAS_RATING')).toEqual([
       'class:K2 > rating:300',
@@ -400,6 +432,22 @@ describe('coverage: what the links are and what was not read', () => {
     expect(String(out.get('coverage:tables-not-read')?.[2])).toMatch(/^1 tables named in Tables/);
     expect(out.get('coverage:tables-not-read')?.[4]).toBe('Not in the body p9');
     expect(nodes.has('coverage:input-cut')).toBe(false);
+  });
+
+  it('a build past the output cap writes up to it, and the coverage node and the warning say so', () => {
+    const out = buildLinks(
+      linkInputOf(bodyTabsOf(bodyOf(specSheets(), SHAPE_TABS)).tabs),
+      LINK_PACKS,
+      { links: 5, nodes: 1_000 },
+    );
+    expect(out.sheets[0]!.rows).toHaveLength(5);
+    expect(String(nodesOf(out.sheets).get('coverage:cut')?.[2])).toBe(
+      'A cap was reached (5 links or 1,000 nodes): the rest was not written.',
+    );
+    expect(out.warnings).toEqual([
+      'Links reached a cap (5 links or 1,000 nodes); the rest was not written.',
+    ]);
+    expect(nodes.has('coverage:cut')).toBe(false);
   });
 
   it('a node keeps its whole text, and a table spans to its last page within the file', () => {

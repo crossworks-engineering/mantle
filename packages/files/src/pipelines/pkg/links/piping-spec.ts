@@ -357,12 +357,25 @@ function build(input: LinkInput, set: LinkSet): void {
     if (f.temp) count.temp += 1;
   }
 
-  // Tables and rows: to their class, or to the addendum of their page.
+  // Tables and rows: to their class, or to the addendum of their page. A
+  // table whose title, less its numbered lead words and its page mark, is
+  // exactly a group name of the book starts in that group: the Reader made
+  // the group's header line the title.
+  const names = new Set<string>();
+  for (const t of input.tables) {
+    for (const r of t.rows) {
+      const own = r.page !== null && classes.has(r.page) && !addendum.has(r.page);
+      const g = own ? groupOf(r) : null;
+      if (g) names.add(g);
+    }
+  }
   const group = new Map<string, string>();
   for (const t of input.tables) {
     const first = t.first !== null ? classes.get(t.first) : undefined;
     if (first && t.first !== null && !addendum.has(t.first)) {
       set.link(classId(first.code), t.id, 'CLASS_TABLE', t.first, sourceOf('class of page', t.tab));
+      const title = titleGroupOf(t.title);
+      if (names.has(title)) group.set(first.code, title);
     }
     for (const r of t.rows) rowLinks(r, classes, addendum, group, set);
   }
@@ -393,6 +406,20 @@ function build(input: LinkInput, set: LinkSet): void {
   }
 }
 
+/** The group a header row opens (`****BOLTING****`), or null. */
+function groupOf(r: LinkRow): string | null {
+  const m = GROUP.exec(r.text.replace(/\s*\|\s*/g, ' '));
+  return m ? clean(m[1]!).replace(/\s*CONTINUED$/, '') : null;
+}
+
+/** A table title as a group name: upper case, less its lead words with a
+ *  digit (`412 K2`) and its page mark (`p40`). */
+function titleGroupOf(title: string): string {
+  const words = clean(title.toUpperCase().replace(/\s+P\d+(?:-\d+)?$/, '')).split(' ');
+  while (words.length > 0 && /\d/.test(words[0]!)) words.shift();
+  return words.join(' ');
+}
+
 /** One row: its class or addendum, its codes, materials and group. */
 function rowLinks(
   r: LinkRow,
@@ -418,9 +445,9 @@ function rowLinks(
   }
   // A group runs on over the pages of a class, never into an addendum.
   if (!c || add) return;
-  const header = GROUP.exec(r.text.replace(/\s*\|\s*/g, ' '));
+  const header = groupOf(r);
   if (header) {
-    group.set(c.code, clean(header[1]!).replace(/\s*CONTINUED$/, ''));
+    group.set(c.code, header);
     return;
   }
   // An item row: it has a code, or an item's name (a row of a special

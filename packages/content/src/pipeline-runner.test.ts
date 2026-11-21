@@ -432,6 +432,14 @@ describe('a packaged pipeline through a real parser job', () => {
       { tab: 'Table [a] (2) p1', columns: ['Page', 'ITEM CODE', 'Size'] },
       [1, 'ZX1001', '2'],
     ]);
+    // A budget that ends before the head line of the table tab: that tab is
+    // not read, the warning says so, and the body ends in the line of the cut.
+    const budget = body.indexOf(Buffer.from('{"tab":"Table [a] (2) p1"'));
+    const cut = afterBodyOf(abs, links, budget);
+    expect(cut.warnings).toEqual(['The tab Table [a] (2) p1 was not read: the input was full.']);
+    const lines = cut.body.toString('utf8').trim().split('\n');
+    expect(lines.at(-1)).toBe(bodyCutLine(cut.warnings).trim());
+    expect(`${lines.slice(0, -1).join('\n')}\n`).toBe(body.subarray(0, budget).toString('utf8'));
   });
 
   it('a picture the write names comes back as its bytes', async () => {
