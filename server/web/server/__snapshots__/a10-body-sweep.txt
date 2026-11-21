@@ -3016,3 +3016,10 @@ POST /api/messenger/to member empty => 400 application/json {"error":"handle: In
 POST /api/messenger/to member nul => 400 application/json {"error":"handle: Invalid input: expected string, received undefined"}
 POST /api/messenger/to member array => 400 application/json {"error":"Invalid input: expected object, received array"}
 POST /api/messenger/to member chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+# 2026-11-21 (the CC broadcast, docs/control-center.md "Broadcast"): POST /api/fleet/broadcasts had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
+POST /api/fleet/broadcasts owner valid => 404 application/json {"error":"not found"}
+POST /api/fleet/broadcasts owner malformed => 404 application/json {"error":"not found"}
+POST /api/fleet/broadcasts owner empty => 404 application/json {"error":"not found"}
+POST /api/fleet/broadcasts owner nul => 404 application/json {"error":"not found"}
+POST /api/fleet/broadcasts owner array => 404 application/json {"error":"not found"}
+POST /api/fleet/broadcasts owner chunked => 404 application/json {"error":"not found"}

@@ -18,7 +18,9 @@ export const TOOL_LIST_PINS = {
   'packages/content-core/src/profile-projections.ts': { lists: 1, entries: 4 },
   // The owner's one list: what a person alone may do (2026-11-07). 3 to 4
   // (2026-11-10): control_ban.archive, a permanent disable (Control Center).
-  'packages/tools/src/person-only-acts.ts': { lists: 1, entries: 4 },
+  // 4 to 5 (2026-11-21): control_broadcast.send, one message to every
+  // person in the fleet (the CC broadcast).
+  'packages/tools/src/person-only-acts.ts': { lists: 1, entries: 5 },
 };
 
 /** @type {Record<string, number>} route lists per file. Each route file's
