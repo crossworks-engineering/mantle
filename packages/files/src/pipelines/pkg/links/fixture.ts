@@ -51,6 +51,7 @@ export const SPEC_PAGES: Record<number, string> = {
     'DESIGN: ANSI B16.5',
     '2" & SMALLER - SOCKETWELD 0.125 0 3 Q1Rl',
     'KILLED CARBON STEEL 150 #RFSF',
+    'FLG WN ORI SET 150#RFSF 304SS',
     FRAME[1],
   ].join('\n'),
   7: [

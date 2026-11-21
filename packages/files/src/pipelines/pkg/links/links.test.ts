@@ -21,7 +21,7 @@ import {
   pagesOfCell,
 } from './links';
 import { LINK_PACKS } from './packs';
-import { addendumRevision, classOfPage, materialsOf } from './piping-spec';
+import { addendumRevision, classOfPage, coverFacts, materialsOf } from './piping-spec';
 import { bodyTabsOf, step } from './step';
 
 const SHAPE_TABS = Object.fromEntries(SHAPES['pages-v1'].tabs.map((t) => [t.name, t.columns]));
@@ -440,6 +440,15 @@ describe('the small rules', () => {
       '2',
     );
     expect(addendumRevision(page('ADDENDUM\nno revision here'))).toBe('?');
+    // An older sheet's material line may start with a number; an item line is no material.
+    expect(
+      coverFacts(page('304 STAINLESS STEEL 300 #RFSF\nFLG WN ORI SET 300#RFSF 304SS'), []),
+    ).toEqual({
+      rating: '300',
+      face: 'RF',
+      material: '304 STAINLESS STEEL',
+    });
+    expect(coverFacts(page('FLG WN ORI SET 300#RFSF 304SS'), []).material).toBeUndefined();
   });
 });
 

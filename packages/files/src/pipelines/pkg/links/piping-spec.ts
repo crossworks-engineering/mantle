@@ -78,10 +78,12 @@ const COVER_ROW = new RegExp(
 /** `300# RF`, `300 #RFSF` (a raised face, smooth finish). */
 const RATING_FACE = new RegExp(`\\b(${RATINGS})\\s*#\\s*(RTJ|RF|FF)`);
 /** An older sheet's line: the base material, then the rating and face
- *  (`KILLED CARBON STEEL 150 #RFSF`). */
+ *  (`KILLED CARBON STEEL 150 #RFSF`, `304 STAINLESS STEEL 300 #RF`). The
+ *  material ends in a material word, so an item line (`WN ORI SET 300#RF`)
+ *  is none. */
 const MATERIAL_RATING = new RegExp(
-  `^\\s*([A-Za-z][A-Za-z /&-]{2,40}?)\\s+(?:${RATINGS})\\s*#\\s*(?:RTJ|RF|FF)`,
-  'm',
+  `^\\s*([A-Za-z0-9][A-Za-z0-9 /&-]{1,40}?(?:STEEL|STL|SS|ALLOY|IRON|MOLY|CHROME|NICKEL|BRONZE|BRASS|COPPER|LINED))\\s+(?:${RATINGS})\\s*#\\s*(?:RTJ|RF|FF)`,
+  'im',
 );
 /** The base material after the design code: `ASME B31.3 KILLED CARBON
  *  STEEL 0.125 300 RF`. */
