@@ -189,12 +189,6 @@ describe('the generic rules', () => {
     expect(pairs(l, 'NAMES_LINE')).toEqual(['page:1 > line:3-P-1001-B2']);
     expect(drawing.packsOn).toEqual([]);
   });
-
-  it('REFERS_TO: to a table, a note or a page that is there, and nothing else', () => {
-    expect(pairs(links, 'REFERS_TO').sort()).toEqual(
-      ['page:1 > page:3', 'page:1 > table:Table [sizes] (2) p4', 'page:4 > note:4'].sort(),
-    );
-  });
 });
 
 describe('the piping specification pack', () => {
@@ -259,30 +253,30 @@ describe('the piping specification pack', () => {
     expect(pairs(links, 'ADDENDUM_ROW')).toEqual(['addendum:K2:1 > row:Changes p8#1']);
     expect(pairs(links, 'ADDENDUM_CODE')).toEqual(['addendum:K2:1 > code:ZX10001']);
     expect(pairs(links, 'ADDENDUM_MATERIAL').sort()).toEqual([
-      'addendum:K2:1 > mat:A193-B7M',
-      'addendum:K2:1 > mat:A194-2HM',
+      'addendum:K2:1 > mat:A193',
+      'addendum:K2:1 > mat:A194',
     ]);
     expect(pairs(links, 'CLASS_MATERIAL')).toEqual(
       expect.arrayContaining([
-        'class:K2 > mat:A193-B7',
-        'class:K2 > mat:A194-2H',
+        'class:K2 > mat:A193',
+        'class:K2 > mat:A194',
         'class:K2 > mat:A105',
-        'class:Q3X > mat:A193-B7M',
+        'class:Q3X > mat:A193',
       ]),
     );
   });
 
-  it('NAMES_MATERIAL: grades in spaced text and in text with no spaces', () => {
+  it('NAMES_MATERIAL: the specification number, in spaced text and in text with no spaces', () => {
     expect(
       pairs(links, 'NAMES_MATERIAL')
         .filter((p) => p.startsWith('row:Table p5'))
         .sort(),
     ).toEqual([
-      'row:Table p5#1 > mat:A193-B7M',
-      'row:Table p5#1 > mat:A194-2HM',
-      'row:Table p5#2 > mat:A106-B',
-      'row:Table p5#3 > mat:A234-WPB',
-      'row:Table p5#4 > mat:A182-F22CL3',
+      'row:Table p5#1 > mat:A193',
+      'row:Table p5#1 > mat:A194',
+      'row:Table p5#2 > mat:A106',
+      'row:Table p5#3 > mat:A234',
+      'row:Table p5#4 > mat:A182',
     ]);
   });
 
@@ -411,24 +405,16 @@ describe('the small rules', () => {
     expect(pageList([5, 1, 2, 3, 9, 10])).toBe('1-3, 5, 9-10');
   });
 
-  it('materialsOf', () => {
+  it('materialsOf: the specification number only; the grade stays in the text', () => {
     const m = (s: string) => [...materialsOf(s)].sort();
-    expect(m('STUD-BOLT A193 GR B7 W/A194 GR 2H NUTS')).toEqual(['A193-B7', 'A194-2H']);
-    expect(m('STUDBOLTA193GRB7MW/A194,GR2HMNUTS')).toEqual(['A193-B7M', 'A194-2HM']);
+    expect(m('STUD-BOLT A193 GR B7 W/A194 GR 2H NUTS')).toEqual(['A193', 'A194']);
+    expect(m('STUDBOLTA193GRB7MW/A194,GR2HMNUTS')).toEqual(['A193', 'A194']);
     expect(m('FLG BLIND CL 150 RF STL A105 ASME 16.47 SERIES A')).toEqual(['A105']);
-    expect(m('PIPE API 5L GR B, A335 P11, A312 TP316L')).toEqual([
-      'A312-316L',
-      'A335-P11',
-      'API5L-B',
-    ]);
+    expect(m('PIPE API 5L GR B, A335 P11, A312 TP316L')).toEqual(['A312', 'A335', 'API5L']);
     expect(m('FLANGE Al05')).toEqual(['A105']);
-    expect(m('STUD-BOLT ASTM A193 GRADE B7M W/ ASTM A194 GRADE 2HM')).toEqual([
-      'A193-B7M',
-      'A194-2HM',
-    ]);
     expect(m('ASME B16.5 B31.3')).toEqual([]);
     expect(m('BALL VALVE, MAKER #A303CS')).toEqual([]);
-    expect(m('SWAGECONCXXSSTLA234GRWPBTLE')).toEqual(['A234-WPB']);
+    expect(m('SWAGECONCXXSSTLA234GRWPBTLE')).toEqual(['A234']);
   });
 
   it('classOfPage and addendumRevision on single pages', () => {

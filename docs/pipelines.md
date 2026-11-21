@@ -915,7 +915,7 @@ model and calls no paid service.
 
 Ids are text made by the builder, never by SQL and never from a number's
 printed form: `page:12`, `table:<tab>`, `row:<tab>#7` (the 7th row as the
-tab lists it), `code:<code>`, `tag:<tag>`, `line:<line>`, `note:<n>`. A tab
+tab lists it), `code:<code>`, `tag:<tag>`, `line:<line>`, `mat:<number>`. A tab
 name keeps its spaces and brackets. The id and kind columns are of type
 `select`, so the writer indexes them (`createTab`); `page` is a number. Only
 `label` is in the search shadow (`ftsSkipColumns`): ids, kinds, sources and
@@ -932,7 +932,6 @@ tab and the row a link came from (`code: SPEC K2 ITEMS p2-3 #5`).
 | `NAMES_CODE`    | a row or a page to a code: the cells of a code column (a header with `code`, or a part, stock or catalogue number; or a column of no header whose cells are codes), then the same codes in any row or page text |
 | `NAMES_TAG`     | a page or row to a tag: a drawing's `Tags` rows, a book's tag column by the tag grammar (`pdf-tags.ts`)                                                                                                         |
 | `NAMES_LINE`    | the same for line numbers (`Lines`, a line number column)                                                                                                                                                       |
-| `REFERS_TO`     | a page to the table (`see Table 2`), note (`see note 4`) or page (`see page 7`) it names, only when that is in the file                                                                                         |
 
 The tag grammar does not run on a book's running text: there it reads
 grades and codes (`WP-11`) as tags.
@@ -949,7 +948,9 @@ to the header, an older title box whose last label is `CLASS`). Its kinds:
 `CLASS_PAGE` (a page between two pages of one class is that class; a class
 read once from a title box alone is dropped), `CLASS_TABLE`, `CLASS_ROW`,
 `CLASS_CODE`, `CLASS_MATERIAL`, `NAMES_MATERIAL` (a row to an ASTM or API
-grade, such as `mat:A193-B7M`, also in text with no spaces), `IN_GROUP` (an
+specification number only, such as `mat:A193`, also in text with no spaces;
+the grade stays in the row's text, so a grade question adds
+`text LIKE '%B7M%'` on the row's node), `IN_GROUP` (an
 item row to the group header above it, `*****BOLTING*****`), `HAS_RATING`
 and `HAS_BASE_MATERIAL` (each fact from the first page of the class that
 states it), and for an addendum page `ADDENDUM_PAGE`, `CHANGES_CLASS`,
@@ -967,6 +968,17 @@ hold; whether each pack is on; and for the piping pack, the pages with text
 and no class, and how many classes have each fact. A Transformer cannot set
 the file's description, so the lines are rows:
 `SELECT label FROM "Link nodes" WHERE kind = 'coverage'`.
+
+**Known limits.** No link names a page by a reference such as "see page 7":
+in a book of many specifications that number is the page of one class's own
+sheets, not of the book. A material link names the specification number, not
+the grade. In text with no spaces, an item code that ends in a letter and a
+three digit number (`XYA802`) also gives a material link (`mat:A802`).
+Rules read what the Reader wrote: a chart row that the Reader merged with a
+list of codes links those codes to that chart row; a group header line that
+the Reader made a table's heading gives its rows no group; text that the
+scan read wrongly (a letter for a slash, a colon in a number) gives no link
+or a wrong one; a page text cut at the cell cap is read only to the cut.
 
 **Rebuild.** The links are derived: a run again replaces the two tabs, and
 the same tabs give the same rows. A read again of the file rebuilds them

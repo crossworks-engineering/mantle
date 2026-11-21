@@ -191,12 +191,16 @@ describe.skipIf(!URL)('links through the after chain', () => {
           WHERE kind = 'NAMES_CODE' AND to_id = 'code:ZX10001' ORDER BY 1`,
       ),
     ).toEqual([[2], [3], [8]]);
-    // The classes that call for a grade, the one in text with no spaces.
+    // The classes that call for a grade: the material by its number, the
+    // grade by LIKE on the row text (here text with no spaces).
     expect(
       await sql(
         file.abs,
-        `SELECT DISTINCT n.label FROM Links l JOIN "Link nodes" n ON n.id = l.from_id
-          WHERE l.kind = 'CLASS_MATERIAL' AND l.to_id = 'mat:A193-B7M'`,
+        `SELECT DISTINCT c.label FROM Links cr
+          JOIN "Link nodes" c ON c.id = cr.from_id
+          JOIN "Link nodes" r ON r.id = cr.to_id
+          JOIN Links m ON m.from_id = cr.to_id AND m.kind = 'NAMES_MATERIAL' AND m.to_id = 'mat:A193'
+          WHERE cr.kind = 'CLASS_ROW' AND r.text LIKE '%B7M%'`,
       ),
     ).toEqual([['Q3X']]);
     // Two hops: the rating of the class of page 5.

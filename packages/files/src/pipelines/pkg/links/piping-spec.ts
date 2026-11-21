@@ -163,36 +163,21 @@ export function addendumRevision(p: LinkPage): string {
 }
 
 /**
- * The material grades of a text: `A193-B7M`, `A106-B`, `A105`,
- * `API5L-B`. A grade right after `#` is a maker's model number
- * (`#A303CS`), no grade. Text with no spaces (`BOLTA193GRB7MW/A194GR2HMNUT`)
- * is spaced first at the edges a grade has; OCR's `Al05` is A105.
+ * The materials of a text, by specification number only: `A193`, `A106`,
+ * `A105`, `API5L`. The grade stays in the row's text, where full text and
+ * LIKE find it. A number right after `#` is a maker's model number
+ * (`#A303CS`), no material. Text with no spaces (`STLA234WPB`) gets a space
+ * before the number; OCR's `Al05` is A105.
  */
 export function materialsOf(raw: string): Set<string> {
   const out = new Set<string>();
   const s = raw
     .toUpperCase()
     .replace(/\bA[LI](\d{2})\b/g, 'A1$1')
-    .replace(/\b(A\d{3}\s*(?:GR\.?\s*)?)[~\\]PB\b/g, '$1WPB')
-    // No spaces: a grade's edges get one.
-    .replace(/(?<=[A-Z/-])(?=[AB]\d{3}(?!\d))/g, ' ')
-    .replace(/(?<=[\d,])GR(?=[A-Z0-9])/g, ' GR ')
-    .replace(/(?<=\d[A-Z]{0,2})(?=W\/|NUTS?\b|STUDS?\b|BOLTS?\b|WITH\b)/g, ' ');
-  for (const m of s.matchAll(/\bAPI[- ]?5L[- ]?(?:GR\.?\s*)?(B|X\d{2})?\b/g)) {
-    out.add(`API5L${m[1] ? `-${m[1]}` : ''}`);
-  }
-  const grade =
-    /(?<!#)\b(?:ASTM\s*)?([AB])\s?(\d{3})(?![\d.])(?:(?:\s?-\s?|\s*,?\s*(?:GRADE|GR\.?|TYPE|TP)\s*)([A-Z0-9]{1,6}(?:\s?CL\s?\d)?)|\s?((?:WP(?:[A-Z]{1,3}|\d{1,3})|F\d{1,3}|P\d{1,3}|CF\d)(?:(?!CL\s?\d)[A-Z]){0,2}(?:\s?CL\s?\d)?)(?![A-Z0-9]))?/g;
-  for (const m of s.matchAll(grade)) {
-    const num = Number(m[2]);
-    if (num < 100) continue;
-    // A grade of text with no spaces ends where an end word begins
-    // (`WPBTLE`: WPB, then threaded large end).
-    let g = (m[3] ?? m[4] ?? '')
-      .replace(/\s+/g, '')
-      .replace(/(?<=.)(?:TBE|TLE|TOE|PBE|BBE|POE|THRD|SMLS)$/, '');
-    if (/^(?:SCH|CL|RF|FF|SW|BW|TBE|PBE|SERIES)$/.test(g) || /^\d{3,}$/.test(g)) g = '';
-    out.add(`${m[1]}${m[2]}${g ? `-${g}` : ''}`);
+    .replace(/(?<=[A-Z/-])(?=[AB]\d{3}(?!\d))/g, ' ');
+  if (/\bAPI[- ]?5L/.test(s)) out.add('API5L');
+  for (const m of s.matchAll(/(?<!#)\b(?:ASTM\s*)?([AB])\s?(\d{3})(?![\d.])/g)) {
+    if (Number(m[2]) >= 100) out.add(`${m[1]}${m[2]}`);
   }
   return out;
 }
@@ -428,7 +413,7 @@ function rowLinks(
   const mats = materialsOf(desc >= 0 && r.cells[desc] ? r.cells[desc]! : r.text);
   for (const m of mats) {
     set.node(matId(m), 'material', m);
-    set.link(r.id, matId(m), 'NAMES_MATERIAL', r.page, sourceOf('material grade', r.tab, r.n));
+    set.link(r.id, matId(m), 'NAMES_MATERIAL', r.page, sourceOf('material', r.tab, r.n));
     if (owner) set.link(owner, matId(m), kind('MATERIAL'), r.page, source);
   }
   // A group runs on over the pages of a class, never into an addendum.

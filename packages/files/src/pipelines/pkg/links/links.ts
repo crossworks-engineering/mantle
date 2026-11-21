@@ -8,13 +8,13 @@
  *
  * Two layers of rules:
  *  - the generic rules here, for any file of pages or tables: HAS_PAGE,
- *    TABLE_ON_PAGE, HAS_ROW, NAMES_CODE, NAMES_TAG, NAMES_LINE, REFERS_TO;
+ *    TABLE_ON_PAGE, HAS_ROW, NAMES_CODE, NAMES_TAG, NAMES_LINE;
  *  - rule packs for a kind of document (./packs.ts), each switched on by a
  *    count of its own patterns.
  *
  * Ids are text, made here, never by SQL and never from a number's printed
  * form: `page:12`, `table:<tab>`, `row:<tab>#7`, `code:<code>`,
- * `tag:<tag>`, `line:<line>`, `note:<n>`, `coverage:<what>`.
+ * `tag:<tag>`, `line:<line>`, `coverage:<what>`.
  *
  * Honesty: the nodes of kind `coverage` say what the links are, how many of
  * each kind there are, and what could not be read (pages with no text, page
@@ -135,7 +135,6 @@ export const ids = {
   code: (code: string) => `code:${code}`,
   tag: (tag: string) => `tag:${tag}`,
   line: (line: string) => `line:${line}`,
-  note: (n: string) => `note:${n}`,
   coverage: (what: string) => `coverage:${what}`,
 };
 
@@ -406,11 +405,6 @@ function tagsOfText(s: string): { kind: 'tag' | 'line'; value: string }[] {
 /** A column of tags or line numbers, by its header. */
 const TAG_HEADER = /\btags?\b|\bline\s*(?:no\b|number)/i;
 
-const SEE_TABLE = /\b(?:see|refer to|per|in)\s+table\s+(\d+(?:\.\d+)*[A-Z]?)\b/gi;
-const SEE_NOTE = /\b(?:see|refer to|per)\s+(?:general\s+)?notes?\s+(\d+(?:\.\d+)*)\b/gi;
-const SEE_PAGE = /\b(?:see|on|refer to)\s+page\s+(\d{1,6})\b/gi;
-const NOTE_LINE = /^\s*NOTE\s+(\d+(?:\.\d+)*)\s*[:.)-]?\s+\S/i;
-
 /** The generic rules: they fill `set`, and give each row its codes. */
 export function genericLinks(input: LinkInput, set: LinkSet): void {
   const file = set.node(ids.file(), 'file', 'the file');
@@ -510,41 +504,6 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
     for (const r of t.rows) {
       const cells = columns.map((c) => r.cells[c] ?? '').join(' ');
       tagLinks(r.id, cells, r.page, sourceOf('tag grammar', t.tab, r.n));
-    }
-  }
-
-  // References: to a table, a note or a page that is there.
-  const tableByNumber = new Map<string, string>();
-  for (const t of input.tables) {
-    for (const name of [t.title, t.tab]) {
-      const m = /^\s*table\s+(\d+(?:\.\d+)*[A-Z]?)\b/i.exec(name);
-      if (m && !tableByNumber.has(m[1]!.toUpperCase()))
-        tableByNumber.set(m[1]!.toUpperCase(), t.id);
-    }
-  }
-  const notes = new Map<string, number>();
-  for (const p of input.pages) {
-    for (const line of p.text.split('\n')) {
-      const m = NOTE_LINE.exec(line);
-      if (m && !notes.has(m[1]!)) notes.set(m[1]!, p.page);
-    }
-  }
-  for (const [n, page] of notes) set.node(ids.note(n), 'note', `note ${n}`, page);
-  for (const p of input.pages) {
-    if (p.text === '') continue;
-    const from = ids.page(p.page);
-    const source = sourceOf('reference', p.from, p.page);
-    for (const m of p.text.matchAll(SEE_TABLE)) {
-      const to = tableByNumber.get(m[1]!.toUpperCase());
-      if (to) set.link(from, to, 'REFERS_TO', p.page, source);
-    }
-    for (const m of p.text.matchAll(SEE_NOTE)) {
-      if (notes.has(m[1]!)) set.link(from, ids.note(m[1]!), 'REFERS_TO', p.page, source);
-    }
-    for (const m of p.text.matchAll(SEE_PAGE)) {
-      const to = Number(m[1]);
-      if (to !== p.page && pageIds.has(to))
-        set.link(from, ids.page(to), 'REFERS_TO', p.page, source);
     }
   }
 }
