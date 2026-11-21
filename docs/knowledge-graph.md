@@ -207,7 +207,14 @@ mantle_graph_path(p_owner uuid, p_from uuid, p_to uuid, p_max_depth int = 3,
   unless `p_current_only` is false. `p_relations` null or empty means every
   verb. Undirected (the default) walks an edge both ways.
 - **Clamps.** Depth 1..6 (default 3), rows 1..200 (default 50). Rows come
-  nearest first, so the limit keeps the nearest entities.
+  nearest first, so the limit keeps the nearest entities. This changed in
+  0394: the old walk kept the first N entities by entity id and only then
+  sorted them by depth, so a limit could drop a near entity and keep a far
+  one.
+- **Verbs.** `graphPath` reduces each verb in `relations` to the form the
+  extractor stores (lower case, `[a-z0-9_]` only), so `Works_At` matches
+  `works_at`, as before 0394. A verb that reduces to nothing is dropped;
+  none left means no filter.
 - **Tie-break.** Of two shortest paths to one entity, the one kept is the
   first when the hops are compared from the start, each hop by its relation
   verb, then by the entity's id. The rows come in that order too.

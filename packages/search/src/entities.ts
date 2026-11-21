@@ -367,7 +367,13 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
   const ownerId = assertUuid(opts.ownerId, 'ownerId');
   const fromId = assertUuid(opts.fromId, 'fromId');
   const toId = opts.toId ? assertUuid(opts.toId, 'toId') : null;
-  const relations = opts.relations && opts.relations.length > 0 ? opts.relations : null;
+  // Verbs as the extractor stores them (sanitiseRelation): lower case,
+  // [a-z0-9_] only, so `Works_At` matches `works_at`. A verb that reduces
+  // to nothing is dropped; none left means no filter.
+  const normalised = (opts.relations ?? [])
+    .map((r) => r.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+    .filter((r) => r.length > 0);
+  const relations = normalised.length > 0 ? normalised : null;
   const rels = relations ? sql`${pgArrayLiteral(relations)}::text[]` : sql`null::text[]`;
   const depth = Math.floor(opts.maxDepth ?? 3);
   const limit = Math.floor(opts.limit ?? 50);
