@@ -1704,8 +1704,9 @@ export async function joinAnnouncements(
 /**
  * A Control Center broadcast, on the box (the signed `broadcast` case,
  * server/web lib/control/broadcast-box.ts): a system line in the box's one
- * Announcements group, by `by`, the title in bold over the text, with the
- * event `announcement` that names the broadcast. The group is made once
+ * Announcements group, by `by`, the title on its own first line over the
+ * text (a chat line is plain text), with the event `announcement` that
+ * names the broadcast. The group is made once
  * (under a lock per box) with no admin, and every live login joins it
  * first. A second call with the same broadcast id writes nothing
  * (`already`), under the group's row lock. The system's work; it starts no
@@ -1749,7 +1750,7 @@ export async function announcementLine(
       return {
         ...SYSTEM_AUTHOR,
         authorName: b.by.slice(0, 200) || 'IT',
-        body: fitBody(title ? `**${title}**\n\n${b.body}` : b.body, 'cut to fit'),
+        body: fitBody(title ? `${title}\n\n${b.body}` : b.body, 'cut to fit'),
         event: { type: 'announcement', broadcastId: b.broadcastId, title },
       };
     },

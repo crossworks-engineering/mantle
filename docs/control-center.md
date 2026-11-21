@@ -572,7 +572,8 @@ text, boxIds? }`): the text (1 to 8000 characters), an optional title (200),
   boxes.
 - **On the box** (`server/web/lib/control/broadcast-box.ts`): one system
   line in the box's one Announcements group (made once, no admin), by `by`
-  (the Admin's email), the title in bold over the text, with the event
+  (the Admin's email), the title on its own first line over the text, with
+  the event
   `{type: "announcement", broadcastId, title}`. Every live login is a
   member, and a login made later joins on its first chat list (see
   [messenger](./messenger.md), "Announcements"). A second call with the same

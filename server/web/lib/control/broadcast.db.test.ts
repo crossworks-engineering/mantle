@@ -186,7 +186,7 @@ describe.skipIf(!URL_)('the Control Center broadcast through the app', () => {
     expect(got[0]).toMatchObject({
       author_kind: 'system',
       author_name: 'it@example.com',
-      body: '**Maintenance**\n\nThe boxes restart at 22:00.',
+      body: 'Maintenance\n\nThe boxes restart at 22:00.',
       event: { type: 'announcement', broadcastId: id, title: 'Maintenance' },
     });
     // A second broadcast goes in the same group; no title, the text alone.
@@ -196,7 +196,7 @@ describe.skipIf(!URL_)('the Control Center broadcast through the app', () => {
     });
     expect((await second.json()) as Row).toMatchObject({ was: 'new' });
     expect((await lines(String(g!.id))).map((l) => l.body)).toEqual([
-      '**Maintenance**\n\nThe boxes restart at 22:00.',
+      'Maintenance\n\nThe boxes restart at 22:00.',
       'Done.',
     ]);
     const groups = await sql<Row[]>`select count(*)::int as n from messenger_conversations
