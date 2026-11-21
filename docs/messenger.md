@@ -591,6 +591,10 @@ by}` and a reply to the first line. Other talk in the group stays in the
   the group. Anyone else posts in their own thread, a group of one titled
   "To @qa", made once (a lock per login and address) and found again by
   its first line, a `to_thread` system line. The answers come back there.
+  Accepted: a retry by the same client id after the handle's group was
+  archived, or after another group took the handle, does not answer the
+  stored line (it is refused, or posts again in a new thread); a fix would
+  need a new key.
 - **The intake form** is `bug`, `feature` or `request` (the Send to IT
   kinds), with three fixed forms (`MESSENGER_INTAKE_FORMS`). There is no
   form editor. A send to one handle may give `answers` by question key: the
