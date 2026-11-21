@@ -75,6 +75,13 @@ describe('the page asks of a file', () => {
     expect(await asker!.room()).toBe(60);
     const full = await pdfPageDeciderOf('o', 'n', deps({ today: async () => 500 }).d);
     expect(await full!.room()).toBe(0);
+    // A count that cannot be read: no room.
+    const lost = await pdfPageDeciderOf(
+      'o',
+      'n',
+      deps({ today: async () => Promise.reject(new Error('db down')) }).d,
+    );
+    expect(await lost!.room()).toBe(0);
   });
 
   it('an answer is kept, and taken again with no call; the picture name is not what is asked', async () => {

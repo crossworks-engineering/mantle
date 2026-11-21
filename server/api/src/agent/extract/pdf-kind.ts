@@ -92,7 +92,9 @@ export async function pdfPageDeciderOf(
   const batch = new DecideBatch();
   let failedInRow = 0;
   return {
-    room: async () => Math.max(0, d.dayCap() - (await d.today(ownerId))),
+    // A count that cannot be read is no room: the pages keep their rules
+    // (`rules: day cap`), never an ask past the cap.
+    room: async () => Math.max(0, d.dayCap() - (await d.today(ownerId).catch(() => Infinity))),
     ask: async (ask, picture) => {
       // The key: what is asked (the use, the model, the picture's bytes and
       // the other fields), never the page alone.
