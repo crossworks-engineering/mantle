@@ -41,7 +41,14 @@ describe.skipIf(!URL)('links through the after chain', () => {
   const off = randomUUID();
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-links-'));
   const runs: string[] = [];
-  const READER_TABS = ['Pages', 'Tables', 'File', ...specSheets().slice(3).map((s) => s.name)];
+  const READER_TABS = [
+    'Pages',
+    'Tables',
+    'File',
+    ...specSheets()
+      .slice(3)
+      .map((s) => s.name),
+  ];
 
   const su = async (q: ReturnType<typeof sqlTag>) =>
     (await import('@mantle/db/test-support')).superuserExec(scratch!.url, q);
@@ -203,7 +210,11 @@ describe.skipIf(!URL)('links through the after chain', () => {
     // The coverage lines a reader of the file can ask for.
     const coverage = await sql(file.abs, `SELECT id FROM "Link nodes" WHERE kind = 'coverage'`);
     expect(coverage.map((r) => r[0])).toEqual(
-      expect.arrayContaining(['coverage:links', 'coverage:pages-no-text', 'coverage:pack:piping-spec']),
+      expect.arrayContaining([
+        'coverage:links',
+        'coverage:pages-no-text',
+        'coverage:pack:piping-spec',
+      ]),
     );
   });
 

@@ -44,7 +44,14 @@ export const LINK_NODES_ROWS_MAX = 200_000;
 /** The columns of the two tabs kept out of the search shadow: ids, kinds
  *  and sources are no words to search, and a row's text is searched in its
  *  own tab already. Only a node's label is searched. */
-export const LINKS_FTS_SKIP: readonly string[] = ['from_id', 'to_id', 'kind', 'source', 'id', 'text'];
+export const LINKS_FTS_SKIP: readonly string[] = [
+  'from_id',
+  'to_id',
+  'kind',
+  'source',
+  'id',
+  'text',
+];
 /** The longest text of a node (a row's cells), in characters. */
 export const NODE_TEXT_MAX = 400;
 /** The longest page list a coverage node spells out, in characters. */
@@ -114,7 +121,8 @@ const text = (v: unknown): string => {
 /** A page number from a cell: a whole number of 1 or more, else null. A
  *  number column is a REAL, so 12 may come as 12 or '12'. */
 export function pageOf(v: unknown): number | null {
-  const n = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN;
+  const n =
+    typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN;
   return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
@@ -400,7 +408,8 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
     set.node(t.id, 'table', t.title || t.tab, t.first, t.tab);
     if (t.first !== null && t.last !== null) {
       for (let p = t.first; p <= t.last && p - t.first < 1_000; p += 1) {
-        if (pageIds.has(p)) set.link(t.id, ids.page(p), 'TABLE_ON_PAGE', p, sourceOf('tables index', 'Tables'));
+        if (pageIds.has(p))
+          set.link(t.id, ids.page(p), 'TABLE_ON_PAGE', p, sourceOf('tables index', 'Tables'));
       }
     }
     for (const r of t.rows) {
@@ -439,7 +448,13 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
     for (const w of wordsOf(p.text)) if (vocab.has(w)) seen.add(w);
     for (const code of seen) {
       set.node(ids.code(code), 'code', code);
-      set.link(ids.page(p.page), ids.code(code), 'NAMES_CODE', p.page, sourceOf('code', p.from, p.page));
+      set.link(
+        ids.page(p.page),
+        ids.code(code),
+        'NAMES_CODE',
+        p.page,
+        sourceOf('code', p.from, p.page),
+      );
     }
   }
 
@@ -455,7 +470,13 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
   for (const l of input.lines) {
     if (l.page === null || !pageIds.has(l.page)) continue;
     set.node(ids.line(l.line), 'line', l.line);
-    set.link(ids.page(l.page), ids.line(l.line), 'NAMES_LINE', l.page, sourceOf('line', 'Lines', l.n));
+    set.link(
+      ids.page(l.page),
+      ids.line(l.line),
+      'NAMES_LINE',
+      l.page,
+      sourceOf('line', 'Lines', l.n),
+    );
   }
   const tagLinks = (from: string, s: string, page: number | null, source: string) => {
     for (const t of tagsOfText(s)) {
@@ -480,7 +501,8 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
   for (const t of input.tables) {
     for (const name of [t.title, t.tab]) {
       const m = /^\s*table\s+(\d+(?:\.\d+)*[A-Z]?)\b/i.exec(name);
-      if (m && !tableByNumber.has(m[1]!.toUpperCase())) tableByNumber.set(m[1]!.toUpperCase(), t.id);
+      if (m && !tableByNumber.has(m[1]!.toUpperCase()))
+        tableByNumber.set(m[1]!.toUpperCase(), t.id);
     }
   }
   const notes = new Map<string, number>();
@@ -504,7 +526,8 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
     }
     for (const m of p.text.matchAll(SEE_PAGE)) {
       const to = Number(m[1]);
-      if (to !== p.page && pageIds.has(to)) set.link(from, ids.page(to), 'REFERS_TO', p.page, source);
+      if (to !== p.page && pageIds.has(to))
+        set.link(from, ids.page(to), 'REFERS_TO', p.page, source);
     }
   }
 }
@@ -513,7 +536,7 @@ export function genericLinks(input: LinkInput, set: LinkSet): void {
 export function pageList(pages: readonly number[]): string {
   const sorted = [...new Set(pages)].sort((a, b) => a - b);
   const parts: string[] = [];
-  for (let i = 0; i < sorted.length; ) {
+  for (let i = 0; i < sorted.length;) {
     let j = i;
     while (j + 1 < sorted.length && sorted[j + 1] === sorted[j]! + 1) j += 1;
     parts.push(i === j ? `${sorted[i]}` : `${sorted[i]}-${sorted[j]}`);
@@ -634,7 +657,9 @@ export function buildLinks(
   genericCoverage(input, set);
   closingCoverage(set);
   const warnings = set.cut
-    ? [`Links reached a cap (${LINKS_ROWS_MAX.toLocaleString('en')} links or ${LINK_NODES_ROWS_MAX.toLocaleString('en')} nodes); the rest was not written.`]
+    ? [
+        `Links reached a cap (${LINKS_ROWS_MAX.toLocaleString('en')} links or ${LINK_NODES_ROWS_MAX.toLocaleString('en')} nodes); the rest was not written.`,
+      ]
     : [];
   return {
     sheets: [

@@ -371,13 +371,29 @@ describe('a packaged pipeline through a real parser job', () => {
     const t = (name: string) => ({ name, type: 'text' as const });
     const n = (name: string) => ({ name, type: 'number' as const });
     const sheets = [
-      { name: 'Pages', columns: [n('Page'), t('Text'), t('Paper')], rows: [[1, 'one', 'A4'], [2, 'two', 'A4']] },
+      {
+        name: 'Pages',
+        columns: [n('Page'), t('Text'), t('Paper')],
+        rows: [
+          [1, 'one', 'A4'],
+          [2, 'two', 'A4'],
+        ],
+      },
       {
         name: 'Tables',
         columns: [t('Tab'), t('Title'), t('Pages')],
-        rows: [['Table [a] (2) p1', 'T', '1'], ['Gone p9', null, '9'], ['Links', null, '1'], ['Pages', null, '1']],
+        rows: [
+          ['Table [a] (2) p1', 'T', '1'],
+          ['Gone p9', null, '9'],
+          ['Links', null, '1'],
+          ['Pages', null, '1'],
+        ],
       },
-      { name: 'Table [a] (2) p1', columns: [n('Page'), t('ITEM CODE'), t('Size')], rows: [[1, 'ZX1001', '2']] },
+      {
+        name: 'Table [a] (2) p1',
+        columns: [n('Page'), t('ITEM CODE'), t('Size')],
+        rows: [[1, 'ZX1001', '2']],
+      },
       // A tab the pipeline writes is never sent, though the index names it.
       { name: 'Links', columns: [t('from_id')], rows: [['old']] },
       { name: 'Other', columns: [t('A')], rows: [['not named']] },
@@ -393,7 +409,13 @@ describe('a packaged pipeline through a real parser job', () => {
     };
     const { body, warnings } = afterBodyOf(abs, links);
     expect(warnings).toEqual([]);
-    expect(body.toString('utf8').trim().split('\n').map((l) => JSON.parse(l) as unknown)).toEqual([
+    expect(
+      body
+        .toString('utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as unknown),
+    ).toEqual([
       { tab: 'Pages', columns: ['Page', 'Text', 'Method', 'Why'] },
       [1, 'one', null, null],
       [2, 'two', null, null],

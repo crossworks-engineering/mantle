@@ -64,7 +64,14 @@ describe('the two tabs', () => {
       { name: 'text', type: 'text' },
     ]);
     // Only the label is searched: ids, kinds, sources and row texts are not.
-    expect([...LINKS_FTS_SKIP].sort()).toEqual(['from_id', 'id', 'kind', 'source', 'text', 'to_id']);
+    expect([...LINKS_FTS_SKIP].sort()).toEqual([
+      'from_id',
+      'id',
+      'kind',
+      'source',
+      'text',
+      'to_id',
+    ]);
     expect(spec.warnings).toEqual([]);
   });
 
@@ -85,7 +92,9 @@ describe('the two tabs', () => {
 
   it('a file with no page and no table gives no tab and no error', () => {
     expect(built([]).sheets).toEqual([]);
-    expect(built([{ name: 'Pages', columns: [{ name: 'Page', type: 'number' }], rows: [] }]).sheets).toEqual([]);
+    expect(
+      built([{ name: 'Pages', columns: [{ name: 'Page', type: 'number' }], rows: [] }]).sheets,
+    ).toEqual([]);
   });
 });
 
@@ -98,7 +107,10 @@ describe('the generic rules', () => {
 
   it('TABLE_ON_PAGE: a table to each page it spans', () => {
     expect(pairs(links, 'TABLE_ON_PAGE')).toEqual(
-      expect.arrayContaining(['table:SPEC K2 ITEMS p2-3 > page:2', 'table:SPEC K2 ITEMS p2-3 > page:3']),
+      expect.arrayContaining([
+        'table:SPEC K2 ITEMS p2-3 > page:2',
+        'table:SPEC K2 ITEMS p2-3 > page:3',
+      ]),
     );
     expect(pairs(links, 'TABLE_ON_PAGE')).toHaveLength(6);
   });
@@ -145,15 +157,28 @@ describe('the generic rules', () => {
 
   it("NAMES_TAG and NAMES_LINE: a drawing's own Tags and Lines rows", () => {
     const drawing = built([
-      { name: 'Pages', columns: [{ name: 'Page', type: 'number' }, { name: 'Kind', type: 'text' }], rows: [[1, 'pid']] },
+      {
+        name: 'Pages',
+        columns: [
+          { name: 'Page', type: 'number' },
+          { name: 'Kind', type: 'text' },
+        ],
+        rows: [[1, 'pid']],
+      },
       {
         name: 'Tags',
-        columns: ['Page', 'Tag', 'Type', 'Region'].map((name) => ({ name, type: name === 'Page' ? ('number' as const) : ('text' as const) })),
+        columns: ['Page', 'Tag', 'Type', 'Region'].map((name) => ({
+          name,
+          type: name === 'Page' ? ('number' as const) : ('text' as const),
+        })),
         rows: [[1, 'LIC-201', 'instrument', null]],
       },
       {
         name: 'Lines',
-        columns: [{ name: 'Page', type: 'number' }, { name: 'Line number', type: 'text' }],
+        columns: [
+          { name: 'Page', type: 'number' },
+          { name: 'Line number', type: 'text' },
+        ],
         rows: [[1, '3-P-1001-B2']],
       },
     ]);
@@ -177,13 +202,23 @@ describe('the piping specification pack', () => {
     const plain = built([
       {
         name: 'Pages',
-        columns: [{ name: 'Page', type: 'number' }, { name: 'Text', type: 'text' }],
+        columns: [
+          { name: 'Page', type: 'number' },
+          { name: 'Text', type: 'text' },
+        ],
         rows: [1, 2, 3, 4].map((p) => [p, `Chapter ${p}\nA plain report page with steel prices.`]),
       },
     ]);
     expect(plain.packsOn).toEqual([]);
-    expect(linksOf(plain.sheets).map((l) => l.kind)).toEqual(['HAS_PAGE', 'HAS_PAGE', 'HAS_PAGE', 'HAS_PAGE']);
-    expect(String(nodesOf(plain.sheets).get('coverage:pack:piping-spec')?.[2])).toMatch(/: off \(0 of/);
+    expect(linksOf(plain.sheets).map((l) => l.kind)).toEqual([
+      'HAS_PAGE',
+      'HAS_PAGE',
+      'HAS_PAGE',
+      'HAS_PAGE',
+    ]);
+    expect(String(nodesOf(plain.sheets).get('coverage:pack:piping-spec')?.[2])).toMatch(
+      /: off \(0 of/,
+    );
   });
 
   it('CLASS_PAGE: the header (two layouts and no spaces), a page between two of one class, the title box; one title box page alone is dropped', () => {
@@ -196,7 +231,9 @@ describe('the piping specification pack', () => {
       'class:Q1R1 > page:7',
       'class:K2 > page:8',
     ]);
-    expect(links.find((l) => l.to === 'page:3' && l.kind === 'CLASS_PAGE')?.source).toBe('class between: Pages #3');
+    expect(links.find((l) => l.to === 'page:3' && l.kind === 'CLASS_PAGE')?.source).toBe(
+      'class between: Pages #3',
+    );
     expect(nodes.has('class:Z9Z9')).toBe(false);
   });
 
@@ -207,20 +244,38 @@ describe('the piping specification pack', () => {
     expect(pairs(links, 'CLASS_TABLE').some((p) => p.includes('Changes p8'))).toBe(false);
     expect(pairs(links, 'CLASS_ROW')).toContain('class:K2 > row:SPEC K2 ITEMS p2-3#2');
     expect(pairs(links, 'CLASS_CODE')).toEqual(
-      expect.arrayContaining(['class:K2 > code:5551234', 'class:K2 > code:ZX10001', 'class:Q3X > code:4411223']),
+      expect.arrayContaining([
+        'class:K2 > code:5551234',
+        'class:K2 > code:ZX10001',
+        'class:Q3X > code:4411223',
+      ]),
     );
     // The addendum's row: ADDENDUM_*, never CLASS_* (an addendum only changes a class).
-    expect(links.filter((l) => l.from.startsWith('class:') && l.page === 8 && l.kind !== 'CLASS_PAGE')).toEqual([]);
+    expect(
+      links.filter((l) => l.from.startsWith('class:') && l.page === 8 && l.kind !== 'CLASS_PAGE'),
+    ).toEqual([]);
     expect(pairs(links, 'ADDENDUM_ROW')).toEqual(['addendum:K2:1 > row:Changes p8#1']);
     expect(pairs(links, 'ADDENDUM_CODE')).toEqual(['addendum:K2:1 > code:ZX10001']);
-    expect(pairs(links, 'ADDENDUM_MATERIAL').sort()).toEqual(['addendum:K2:1 > mat:A193-B7M', 'addendum:K2:1 > mat:A194-2HM']);
+    expect(pairs(links, 'ADDENDUM_MATERIAL').sort()).toEqual([
+      'addendum:K2:1 > mat:A193-B7M',
+      'addendum:K2:1 > mat:A194-2HM',
+    ]);
     expect(pairs(links, 'CLASS_MATERIAL')).toEqual(
-      expect.arrayContaining(['class:K2 > mat:A193-B7', 'class:K2 > mat:A194-2H', 'class:K2 > mat:A105', 'class:Q3X > mat:A193-B7M']),
+      expect.arrayContaining([
+        'class:K2 > mat:A193-B7',
+        'class:K2 > mat:A194-2H',
+        'class:K2 > mat:A105',
+        'class:Q3X > mat:A193-B7M',
+      ]),
     );
   });
 
   it('NAMES_MATERIAL: grades in spaced text and in text with no spaces', () => {
-    expect(pairs(links, 'NAMES_MATERIAL').filter((p) => p.startsWith('row:Table p5')).sort()).toEqual([
+    expect(
+      pairs(links, 'NAMES_MATERIAL')
+        .filter((p) => p.startsWith('row:Table p5'))
+        .sort(),
+    ).toEqual([
       'row:Table p5#1 > mat:A193-B7M',
       'row:Table p5#1 > mat:A194-2HM',
       'row:Table p5#2 > mat:A106-B',
@@ -239,7 +294,11 @@ describe('the piping specification pack', () => {
   });
 
   it('the class facts: rating, base material, service and limits, the frame of the sheet left out', () => {
-    expect(pairs(links, 'HAS_RATING')).toEqual(['class:K2 > rating:300', 'class:Q3X > rating:600', 'class:Q1R1 > rating:150']);
+    expect(pairs(links, 'HAS_RATING')).toEqual([
+      'class:K2 > rating:300',
+      'class:Q3X > rating:600',
+      'class:Q1R1 > rating:150',
+    ]);
     expect(pairs(links, 'HAS_BASE_MATERIAL')).toEqual([
       'class:K2 > basemat:CARBON STEEL',
       'class:Q3X > basemat:KILLED CARBON STEEL',
@@ -253,14 +312,22 @@ describe('the piping specification pack', () => {
       temp: '-20/400',
       service: 'CAUSTIC',
     });
-    expect(JSON.parse(String(nodes.get('class:Q3X')?.[4]))).toMatchObject({ service: 'STEAM', temp: '0/750' });
+    expect(JSON.parse(String(nodes.get('class:Q3X')?.[4]))).toMatchObject({
+      service: 'STEAM',
+      temp: '0/750',
+    });
   });
 
   it('an addendum: its page, its class, its numbered changes, at its current revision', () => {
     expect(pairs(links, 'ADDENDUM_PAGE')).toEqual(['addendum:K2:1 > page:8']);
     expect(pairs(links, 'CHANGES_CLASS')).toEqual(['addendum:K2:1 > class:K2']);
-    expect(pairs(links, 'HAS_CHANGE')).toEqual(['addendum:K2:1 > change:K2:1:1.1', 'addendum:K2:1 > change:K2:1:2.1']);
-    expect(nodes.get('change:K2:1:1.1')?.[2]).toBe('Revise upper temperature limit from 400 to 450.');
+    expect(pairs(links, 'HAS_CHANGE')).toEqual([
+      'addendum:K2:1 > change:K2:1:1.1',
+      'addendum:K2:1 > change:K2:1:2.1',
+    ]);
+    expect(nodes.get('change:K2:1:1.1')?.[2]).toBe(
+      'Revise upper temperature limit from 400 to 450.',
+    );
     expect(nodes.has('addendum:K2:B')).toBe(false);
   });
 });
@@ -272,25 +339,38 @@ describe('coverage: what the links are and what was not read', () => {
     expect(cov('kind:HAS_PAGE')).toBe('HAS_PAGE: 10 links');
     expect(cov('pages-no-text')).toMatch(/^1 of 10 pages have no text/);
     expect(nodes.get('coverage:pages-no-text')?.[4]).toBe('9');
-    expect(cov('pack:piping-spec:classes')).toMatch(/^3 classes on 7 pages; 2 pages with text have no class/);
+    expect(cov('pack:piping-spec:classes')).toMatch(
+      /^3 classes on 7 pages; 2 pages with text have no class/,
+    );
   });
 
   it('a page text at the cell cap was cut before the read, and says so', () => {
     const long = built([
       {
         name: 'Pages',
-        columns: [{ name: 'Page', type: 'number' }, { name: 'Text', type: 'text' }],
-        rows: [[1, 'x'.repeat(AFTER_CELL_MAX_CHARS)], [2, 'short']],
+        columns: [
+          { name: 'Page', type: 'number' },
+          { name: 'Text', type: 'text' },
+        ],
+        rows: [
+          [1, 'x'.repeat(AFTER_CELL_MAX_CHARS)],
+          [2, 'short'],
+        ],
       },
     ]);
-    expect(String(nodesOf(long.sheets).get('coverage:pages-text-cut')?.[2])).toMatch(/^1 page texts were cut/);
+    expect(String(nodesOf(long.sheets).get('coverage:pages-text-cut')?.[2])).toMatch(
+      /^1 page texts were cut/,
+    );
   });
 
   it("the Agent's Page text stands in for a page the Reader had no text of", () => {
     const sheets = specSheets();
     sheets.push({
       name: 'Page text',
-      columns: [{ name: 'Key', type: 'text' }, { name: 'Text', type: 'text' }],
+      columns: [
+        { name: 'Key', type: 'text' },
+        { name: 'Text', type: 'text' },
+      ],
       rows: [['page-9', 'A scanned page that names ZX10001.']],
     });
     const out = built(sheets);
@@ -301,13 +381,20 @@ describe('coverage: what the links are and what was not read', () => {
 
 describe('the small rules', () => {
   it('pageOf: a whole number of 1 or more, never a fraction', () => {
-    expect([pageOf(3), pageOf('4'), pageOf(2.5), pageOf(0), pageOf('p4'), pageOf(null)]).toEqual([3, 4, null, null, null, null]);
-    expect([pagesOfCell('12'), pagesOfCell('12-14'), pagesOfCell('7 on'), pagesOfCell('x')]).toEqual([
-      { first: 12, last: 12 },
-      { first: 12, last: 14 },
-      { first: 7, last: 7 },
+    expect([pageOf(3), pageOf('4'), pageOf(2.5), pageOf(0), pageOf('p4'), pageOf(null)]).toEqual([
+      3,
+      4,
+      null,
+      null,
+      null,
       null,
     ]);
+    expect([
+      pagesOfCell('12'),
+      pagesOfCell('12-14'),
+      pagesOfCell('7 on'),
+      pagesOfCell('x'),
+    ]).toEqual([{ first: 12, last: 12 }, { first: 12, last: 14 }, { first: 7, last: 7 }, null]);
     expect(pageList([5, 1, 2, 3, 9, 10])).toBe('1-3, 5, 9-10');
   });
 
@@ -316,7 +403,11 @@ describe('the small rules', () => {
     expect(m('STUD-BOLT A193 GR B7 W/A194 GR 2H NUTS')).toEqual(['A193-B7', 'A194-2H']);
     expect(m('STUDBOLTA193GRB7MW/A194,GR2HMNUTS')).toEqual(['A193-B7M', 'A194-2HM']);
     expect(m('FLG BLIND CL 150 RF STL A105 ASME 16.47 SERIES A')).toEqual(['A105']);
-    expect(m('PIPE API 5L GR B, A335 P11, A312 TP316L')).toEqual(['A312-316L', 'A335-P11', 'API5L-B']);
+    expect(m('PIPE API 5L GR B, A335 P11, A312 TP316L')).toEqual([
+      'A312-316L',
+      'A335-P11',
+      'API5L-B',
+    ]);
     expect(m('FLANGE Al05')).toEqual(['A105']);
     expect(m('ASME B16.5 B31.3')).toEqual([]);
   });
@@ -326,18 +417,22 @@ describe('the small rules', () => {
     expect(classOfPage(page('LINE CLASS: K7U ANGLE: 90'))).toEqual({ code: 'K7U', rule: 'header' });
     expect(classOfPage(page('Piping Specification No:\nNOTES'))).toBeNull();
     expect(classOfPage(page('LINE CLASS: All DATE'))).toBeNull();
-    expect(addendumRevision(page('ADDENDUM\nK2 Revision: 2 Date: x\nSUPERSEDES\nRevision C'))).toBe('2');
+    expect(addendumRevision(page('ADDENDUM\nK2 Revision: 2 Date: x\nSUPERSEDES\nRevision C'))).toBe(
+      '2',
+    );
     expect(addendumRevision(page('ADDENDUM\nno revision here'))).toBe('?');
   });
 });
 
 describe('the step', () => {
-  const job = (body: string) => ({ bytes: async () => Buffer.from(body, 'utf8') }) as unknown as StepJob;
+  const job = (body: string) =>
+    ({ bytes: async () => Buffer.from(body, 'utf8') }) as unknown as StepJob;
   it('one write of the two tabs, with the search skip list; none for an empty file', async () => {
     const out = await step({ api: 1, step: 1, options: {} }, job(bodyOf(specSheets(), SHAPE_TABS)));
     expect(out.status).toBe('ok');
     expect(out.calls).toHaveLength(1);
-    const input = (out.calls![0] as { input: { tabs: ParsedSheet[]; ftsSkipColumns: string[] } }).input;
+    const input = (out.calls![0] as { input: { tabs: ParsedSheet[]; ftsSkipColumns: string[] } })
+      .input;
     expect(input.tabs.map((t) => t.name)).toEqual([LINKS_TAB, LINK_NODES_TAB]);
     expect(input.ftsSkipColumns).toEqual(LINKS_FTS_SKIP);
     expect(out.counts).toMatchObject({ links: links.length, packs: 1 });

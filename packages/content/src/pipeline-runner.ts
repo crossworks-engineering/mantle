@@ -756,7 +756,9 @@ export function afterBodyOf(
         },
       );
       if (full || rows >= AFTER_TEXT_ROWS_MAX) {
-        warnings.push(`Only the first ${rows.toLocaleString('en')} ${name.toLowerCase()} were read.`);
+        warnings.push(
+          `Only the first ${rows.toLocaleString('en')} ${name.toLowerCase()} were read.`,
+        );
       }
       return !full;
     };

@@ -42,9 +42,11 @@ const CLASS_CODE = /^(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\d)[A-Z0-9]{1,8}$/;
 /** A class header with its code on the same line: `Piping Specification
  *  No: K2G`, `PipingSpecificationNo: K2G`, `LINE CLASS: K2U`, `PIPE CLASS
  *  K1`. */
-const HEADER_SAME = /\b(?:PIPING|PIPE|LINE)\s*(?:SPECIFICATION|SPEC|CLASS)\s*(?:NO\.?|NUMBER)?\s*[:;.]?\s*([A-Za-z0-9]{1,8})\b/i;
+const HEADER_SAME =
+  /\b(?:PIPING|PIPE|LINE)\s*(?:SPECIFICATION|SPEC|CLASS)\s*(?:NO\.?|NUMBER)?\s*[:;.]?\s*([A-Za-z0-9]{1,8})\b/i;
 /** A class header alone on its line; the code is on a line next to it. */
-const HEADER_ALONE = /^\W*(?:PIPING|PIPE|LINE)\s*(?:SPECIFICATION|SPEC|CLASS)\s*(?:NO\.?|NUMBER)?\s*[:;.]?\s*$/i;
+const HEADER_ALONE =
+  /^\W*(?:PIPING|PIPE|LINE)\s*(?:SPECIFICATION|SPEC|CLASS)\s*(?:NO\.?|NUMBER)?\s*[:;.]?\s*$/i;
 /** A title box whose last label is CLASS (an older sheet): the code ends a
  *  line below it, after the corrosion allowance (`0.125 0 3 Q1R1`). */
 const BOX_LABELS = /\bREV\b.*\bCLASS\s*$/i;
@@ -59,19 +61,26 @@ const ADDENDUM_CLASS = /\b([A-Z0-9]{1,8})\s+Revision\b/;
 const REVISION = /\bRevision\s*(?:No\.?)?\s*[:;]?\s*([A-Z0-9]{1,3})\b/i;
 const SUPERSEDES = /\bSUPERSEDES\b/i;
 /** One numbered change of an addendum: `1.7 Revise ...`. */
-const CHANGE = /^\s*(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s+((?:Add|Revise|Delete|Replace|Change|Remove|Use)\b.{0,160})/gim;
+const CHANGE =
+  /^\s*(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s+((?:Add|Revise|Delete|Replace|Change|Remove|Use)\b.{0,160})/gim;
 /** A group header row: `*****BOLTING*****`. */
 const GROUP = /\*{3,}\s*([A-Z][A-Z &/,.-]*?)\s*\*{3,}/;
 
 /** The cover's facts. */
 const RATINGS = '150|300|400|600|800|900|1500|2500|3000|6000';
 /** `0.125 300 RF`, `0.125 Class 300 RF`: corrosion allowance, rating, face. */
-const COVER_ROW = new RegExp(`\\b(\\d?\\.\\d{2,4})\\s+(?:CLASS\\s+)?(${RATINGS})#?\\s*(RF|FF|RTJ)\\b`, 'i');
+const COVER_ROW = new RegExp(
+  `\\b(\\d?\\.\\d{2,4})\\s+(?:CLASS\\s+)?(${RATINGS})#?\\s*(RF|FF|RTJ)\\b`,
+  'i',
+);
 /** `300# RF`, `300 #RFSF` (a raised face, smooth finish). */
 const RATING_FACE = new RegExp(`\\b(${RATINGS})\\s*#\\s*(RTJ|RF|FF)`);
 /** An older sheet's line: the base material, then the rating and face
  *  (`KILLED CARBON STEEL 150 #RFSF`). */
-const MATERIAL_RATING = new RegExp(`^\\s*([A-Za-z][A-Za-z /&-]{2,40}?)\\s+(?:${RATINGS})\\s*#\\s*(?:RTJ|RF|FF)`, 'm');
+const MATERIAL_RATING = new RegExp(
+  `^\\s*([A-Za-z][A-Za-z /&-]{2,40}?)\\s+(?:${RATINGS})\\s*#\\s*(?:RTJ|RF|FF)`,
+  'm',
+);
 /** The base material after the design code: `ASME B31.3 KILLED CARBON
  *  STEEL 0.125 300 RF`. */
 const MATERIAL_ROW = /\bB31\.\d+\s+([A-Za-z0-9][A-Za-z0-9 /&-]*?[A-Za-z])\s+\d?\.\d{2,4}\s/;
@@ -84,7 +93,8 @@ function labelValue(rest: string): string {
   return rest.slice(0, colon).replace(/\s*\S+\s*$/, '');
 }
 const SERVICE = /\bSERVICE(?:\s+DESCRIPTION)?\s*:\s*(.*)$/im;
-const TEMPS = /\bTEMP(?:ERATURE)?\.?\s*LIMITS?[^:\n]*:\s*(-?\s?\d+)\s*(?:°\s*[FC])?\s*(?:\/|TO)\s*(-?\s?\d+)/i;
+const TEMPS =
+  /\bTEMP(?:ERATURE)?\.?\s*LIMITS?[^:\n]*:\s*(-?\s?\d+)\s*(?:°\s*[FC])?\s*(?:\/|TO)\s*(-?\s?\d+)/i;
 
 /** A line is boilerplate when it is on this share of the pages with text
  *  (a sheet's frame: the company, the place). */
@@ -230,7 +240,10 @@ export function coverFacts(p: LinkPage, boilerplate: readonly string[]): Facts {
     };
     let service = strip(m[1]!);
     if (service.length < 3) {
-      const after = t.slice(m.index + m[0].length).split('\n').find((l) => l.trim() !== '');
+      const after = t
+        .slice(m.index + m[0].length)
+        .split('\n')
+        .find((l) => l.trim() !== '');
       service = after ? strip(after.trim()) : '';
     }
     if (service.length >= 3) f.service = service.slice(0, 160);
@@ -273,18 +286,34 @@ function build(input: LinkInput, set: LinkSet): void {
     const c = classes.get(p.page);
     if (c) {
       set.node(classId(c.code), 'class', c.code);
-      set.link(classId(c.code), `page:${p.page}`, 'CLASS_PAGE', p.page, sourceOf(`class ${c.rule}`, p.from, p.page));
+      set.link(
+        classId(c.code),
+        `page:${p.page}`,
+        'CLASS_PAGE',
+        p.page,
+        sourceOf(`class ${c.rule}`, p.from, p.page),
+      );
     }
     if (p.text === '' || !isAddendum(p)) continue;
     const cls = c?.code ?? 'general';
     const rev = addendumRevision(p);
-    const id = set.node(`addendum:${cls}:${rev}`, 'addendum', `addendum revision ${rev} to ${cls}`, p.page);
+    const id = set.node(
+      `addendum:${cls}:${rev}`,
+      'addendum',
+      `addendum revision ${rev} to ${cls}`,
+      p.page,
+    );
     addendum.set(p.page, id);
     const source = sourceOf('addendum', p.from, p.page);
     set.link(id, `page:${p.page}`, 'ADDENDUM_PAGE', p.page, source);
     if (c) set.link(id, classId(c.code), 'CHANGES_CLASS', p.page, source);
     for (const m of p.text.matchAll(CHANGE)) {
-      const change = set.node(`change:${cls}:${rev}:${m[1]}`, 'addendum change', clean(m[2]!).slice(0, 160), p.page);
+      const change = set.node(
+        `change:${cls}:${rev}:${m[1]}`,
+        'addendum change',
+        clean(m[2]!).slice(0, 160),
+        p.page,
+      );
       set.link(id, change, 'HAS_CHANGE', p.page, source);
     }
   }
@@ -345,7 +374,9 @@ function build(input: LinkInput, set: LinkSet): void {
   }
 
   // What the pack could not read.
-  const noClass = input.pages.filter((p) => p.text !== '' && !classes.has(p.page)).map((p) => p.page);
+  const noClass = input.pages
+    .filter((p) => p.text !== '' && !classes.has(p.page))
+    .map((p) => p.page);
   const codes = new Set([...classes.values()].map((c) => c.code));
   coverage(
     set,
@@ -382,7 +413,8 @@ function rowLinks(
   const owner = add ?? (c ? classId(c.code) : undefined);
   const kind = (what: string) => (add ? `ADDENDUM_${what}` : `CLASS_${what}`);
   if (owner) set.link(owner, r.id, kind('ROW'), r.page, source);
-  if (owner) for (const code of r.codes) set.link(owner, `code:${code}`, kind('CODE'), r.page, source);
+  if (owner)
+    for (const code of r.codes) set.link(owner, `code:${code}`, kind('CODE'), r.page, source);
   const desc = r.columns.findIndex((col) => /DESC/i.test(col));
   const mats = materialsOf(desc >= 0 && r.cells[desc] ? r.cells[desc]! : r.text);
   for (const m of mats) {
@@ -399,15 +431,23 @@ function rowLinks(
   }
   const g = group.get(c.code);
   if (g && r.codes.size > 0) {
-    set.link(r.id, set.node(`group:${g}`, 'item group', g), 'IN_GROUP', r.page, sourceOf('group header', r.tab, r.n));
+    set.link(
+      r.id,
+      set.node(`group:${g}`, 'item group', g),
+      'IN_GROUP',
+      r.page,
+      sourceOf('group header', r.tab, r.n),
+    );
   }
 }
 
 export const PIPING_SPEC_PACK: LinkPack = {
   id: 'piping-spec',
   name: 'piping material specification',
-  count: (input) => input.pages.filter((p) => p.text !== '' && classOfPage(p)?.rule === 'header').length,
+  count: (input) =>
+    input.pages.filter((p) => p.text !== '' && classOfPage(p)?.rule === 'header').length,
   on: (count, input) =>
-    count >= CLASS_PAGES_MIN && count >= input.pages.filter((p) => p.text !== '').length * CLASS_PAGES_SHARE,
+    count >= CLASS_PAGES_MIN &&
+    count >= input.pages.filter((p) => p.text !== '').length * CLASS_PAGES_SHARE,
   build,
 };

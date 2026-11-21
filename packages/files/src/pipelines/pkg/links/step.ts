@@ -42,7 +42,13 @@ export const step: PipelineStep = async (_req, job) => {
     status: 'ok',
     calls:
       sheets.length > 0
-        ? [{ call: 'tool', tool: FILE_TABS_WRITE, input: { tabs: sheets, ftsSkipColumns: LINKS_FTS_SKIP } }]
+        ? [
+            {
+              call: 'tool',
+              tool: FILE_TABS_WRITE,
+              input: { tabs: sheets, ftsSkipColumns: LINKS_FTS_SKIP },
+            },
+          ]
         : [],
     warnings,
     counts: { links, nodes: sheets[1]?.rows.length ?? 0, packs: packsOn.length },

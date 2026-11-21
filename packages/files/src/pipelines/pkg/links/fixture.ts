@@ -9,7 +9,7 @@
  */
 import type { ParsedSheet } from '../../../sheet-to-grid';
 
-const FRAME = ['SAMPLE PIPING MATERIALS SPECIFICATION', 'Springfield, Ohio'];
+const FRAME = ['SAMPLE PIPING MATERIALS SPECIFICATION', 'Springfield, Ohio'] as const;
 
 /** The page texts, by page. */
 export const SPEC_PAGES: Record<number, string> = {
@@ -30,7 +30,14 @@ export const SPEC_PAGES: Record<number, string> = {
     'Material: CARBON STEEL Paint: NO MARKING',
   ].join('\n'),
   3: ['ITEMS CONTINUED', 'ZX10001 is the stud bolt of this class.'].join('\n'),
-  4: [FRAME[0], 'K2', 'Piping Specification No:', FRAME[1], 'LINE LIST AND TAGS', 'For the bolts see note 4.'].join('\n'),
+  4: [
+    FRAME[0],
+    'K2',
+    'Piping Specification No:',
+    FRAME[1],
+    'LINE LIST AND TAGS',
+    'For the bolts see note 4.',
+  ].join('\n'),
   5: [
     'PipingSpecificationNo: Q3X',
     FRAME[1],
@@ -77,7 +84,13 @@ export const SPEC_TABLES: { sheet: ParsedSheet; title: string; pages: string }[]
     pages: '2-3',
     sheet: {
       name: 'SPEC K2 ITEMS p2-3',
-      columns: [num('Page'), text('SEQ. NO'), text('ITEM NAME'), num('ITEM CODE'), text('DESCRIPTION')],
+      columns: [
+        num('Page'),
+        text('SEQ. NO'),
+        text('ITEM NAME'),
+        num('ITEM CODE'),
+        text('DESCRIPTION'),
+      ],
       rows: [
         [2, null, null, null, '*****BOLTING*****'],
         [2, '1', 'BOLS', 5551234, 'STUD-BOLT A193 GR B7 W/A194 GR 2H NUTS'],
@@ -146,7 +159,12 @@ export function specSheets(): ParsedSheet[] {
     {
       name: 'Pages',
       columns: [num('Page'), text('Method'), text('Why'), text('Text')],
-      rows: pages.map((p) => [p, SPEC_PAGES[p] === '' ? 'vision' : 'text', SPEC_PAGES[p] === '' ? 'scan' : null, SPEC_PAGES[p] || null]),
+      rows: pages.map((p) => [
+        p,
+        SPEC_PAGES[p] === '' ? 'vision' : 'text',
+        SPEC_PAGES[p] === '' ? 'scan' : null,
+        SPEC_PAGES[p] || null,
+      ]),
     },
     {
       name: 'Tables',
@@ -165,13 +183,17 @@ export function specSheets(): ParsedSheet[] {
 /** The body the core writes from these tabs for the shape pages-v1
  *  (afterBodyOf): the shape's tabs with its columns, then each listed tab
  *  with all its columns. */
-export function bodyOf(sheets: readonly ParsedSheet[], shapeTabs: Record<string, readonly string[]>): string {
+export function bodyOf(
+  sheets: readonly ParsedSheet[],
+  shapeTabs: Record<string, readonly string[]>,
+): string {
   const lines: string[] = [];
   const byName = new Map(sheets.map((s) => [s.name, s]));
   const put = (sheet: ParsedSheet, columns: readonly string[]) => {
     lines.push(JSON.stringify({ tab: sheet.name, columns }));
     const at = columns.map((c) => sheet.columns.findIndex((x) => x.name === c));
-    for (const r of sheet.rows) lines.push(JSON.stringify(at.map((i) => (i >= 0 ? (r[i] ?? null) : null))));
+    for (const r of sheet.rows)
+      lines.push(JSON.stringify(at.map((i) => (i >= 0 ? (r[i] ?? null) : null))));
   };
   for (const [name, columns] of Object.entries(shapeTabs)) {
     const sheet = byName.get(name);
@@ -180,7 +202,11 @@ export function bodyOf(sheets: readonly ParsedSheet[], shapeTabs: Record<string,
   const index = byName.get('Tables');
   for (const r of index?.rows ?? []) {
     const sheet = byName.get(String(r[0]));
-    if (sheet) put(sheet, sheet.columns.map((c) => c.name));
+    if (sheet)
+      put(
+        sheet,
+        sheet.columns.map((c) => c.name),
+      );
   }
   return `${lines.join('\n')}\n`;
 }
