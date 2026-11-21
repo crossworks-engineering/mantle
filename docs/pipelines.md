@@ -980,9 +980,11 @@ person's read again; nothing runs by itself at a roll.
 a cell cut at 4,096 characters. The tabs hold at most 400,000 links and
 200,000 nodes; past them the rest is not written, and a coverage node and a
 warning say so. Measured on a workstation on a real book of 1,000 pages and
-2,436 tables (a 112 MB database): body 1.2 s, rules 0.4 s, patch 2.6 to
-8.3 s (the patch copies the file), about 70,000 links, the step's answer
-9 MB, the file 141 MB after (+25 %).
+2,436 tables (a 112 MB database): body 1.3 s, rules 0.4 s, patch 2.5 to
+2.8 s (the patch copies the file), about 65,000 links and 23,000 nodes, the
+step's answer 9 MB, the file 140 MB after (+24 %), 410 MB peak memory for
+all three in one process. The made-up spec of the tests (10 pages): about
+20 ms in all.
 
 ## Agents
 
