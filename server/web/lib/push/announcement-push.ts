@@ -1,9 +1,10 @@
 // The push of a Control Center broadcast (docs/control-center.md
 // "Broadcast"): one push to each live member of the box's Announcements
-// group who did not mute it, on that login's own devices (an Admin's from
+// group who did not mute it and whose messenger push is not off
+// (push_login_prefs.messages), on that login's own devices (an Admin's from
 // listAdminSubscriptions, a member's from listLoginSubscriptions), sealed
 // like every push. The text is the line itself, which every member may
-// open. No LLM work.
+// open; with message_preview off, the title only. No LLM work.
 //
 // The messenger's own push (login_notice kind 'message') is not sent yet
 // (docs/messenger.md "Live delivery"); this is the broadcast's alone.
@@ -14,6 +15,7 @@ import { sendToDevices, type PushResult } from './notify';
 import {
   getPushInstance,
   listAdminSubscriptions,
+  getLoginMessagePrefs,
   listLoginSubscriptions,
   type DeviceRow,
 } from './store';
@@ -46,14 +48,19 @@ export async function pushAnnouncement(
     itemLink: link,
     ts: now,
   };
+  /** The title only: a login that keeps message text off its lock screen. */
+  const quiet = { ...content, b: 'New announcement' };
   let attempted = 0;
   let delivered = 0;
   let dropped = 0;
   for (const p of told) {
+    const prefs = await getLoginMessagePrefs(p.loginId);
+    if (prefs.messages === 'off') continue;
     const devices = admins.get(p.loginId) ?? (await listLoginSubscriptions(ownerId, p.loginId));
     if (devices.length === 0) continue;
     attempted += devices.length;
-    const r = await sendToDevices(instance, devices, content, `announcement:${a.seq}`, {
+    const body = prefs.messagePreview ? content : quiet;
+    const r = await sendToDevices(instance, devices, body, `announcement:${a.seq}`, {
       opaqueFor: p.loginId,
     });
     delivered += r.delivered;

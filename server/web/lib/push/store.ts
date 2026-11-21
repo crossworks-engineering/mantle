@@ -505,6 +505,19 @@ export async function getLoginPushPrefs(loginId: string): Promise<LoginPushPrefe
   return { chatReplies: row.chatReplies, reviewResults: row.reviewResults };
 }
 
+/** One login's messenger push settings (push_login_prefs.messages and
+ *  message_preview): all, with the text, when it never changed them. */
+export async function getLoginMessagePrefs(
+  loginId: string,
+): Promise<{ messages: 'all' | 'mentions' | 'off'; messagePreview: boolean }> {
+  const [row] = await db
+    .select({ messages: pushLoginPrefs.messages, messagePreview: pushLoginPrefs.messagePreview })
+    .from(pushLoginPrefs)
+    .where(eq(pushLoginPrefs.loginId, loginId))
+    .limit(1);
+  return row ?? { messages: 'all', messagePreview: true };
+}
+
 export async function updateLoginPushPrefs(
   loginId: string,
   patch: Partial<LoginPushPreferences>,
