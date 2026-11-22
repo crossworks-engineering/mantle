@@ -120,6 +120,10 @@ export const PIPELINE_RUN_CHANNEL = 'pipeline_run';
 
 const PIPELINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
+/** The third part of a `pipeline_run` notify: the page asks of a person's
+ *  run of one PDF (Q2). */
+const PAGES_MARK = 'pages';
+
 /**
  * Ask the api to run one pipeline on one file: `pipeline_run` and its two
  * routes call it, after the gate's edit of the file or folder and the busy
@@ -131,25 +135,35 @@ const PIPELINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
  * A notify while the api is down is lost, and nothing sends it again: the stamp
  * shows what ran. Outside any transaction, as notifyNodeIngested. It throws on
  * a failed notify, so the caller does not count a run that was not asked.
+ *
+ * `pages`: the run may ask the page types of a PDF's pages that have none
+ * stored (Q2, plan page c607711a). Only `pipeline_run` with one `file_id`
+ * and a Reader sends it (packages/tools/src/pipeline-run.ts), so a
+ * person's run of one file; every other sender leaves it out, and its run
+ * asks no model.
  */
-export async function notifyPipelineRun(nodeId: string, pipelineId: string): Promise<void> {
+export async function notifyPipelineRun(
+  nodeId: string,
+  pipelineId: string,
+  opts: { pages?: true } = {},
+): Promise<void> {
   if (!PIPELINE_ID_RE.test(pipelineId) || !UUID_RE.test(nodeId)) {
     throw new Error('notifyPipelineRun: not a pipeline id and a node id');
   }
-  await executeWrite(
-    sql`SELECT pg_notify(${PIPELINE_RUN_CHANNEL}, ${`${pipelineId}:${nodeId}`}::text)`,
-  );
+  const payload = `${pipelineId}:${nodeId}${opts.pages ? `:${PAGES_MARK}` : ''}`;
+  await executeWrite(sql`SELECT pg_notify(${PIPELINE_RUN_CHANNEL}, ${payload}::text)`);
 }
 
 /** The run a `pipeline_run` notify names, or null for a payload of any
- *  other form. */
+ *  other form. `pages`: the payload's third part is the page mark. */
 export function pipelineRunOfPayload(
   payload: string | null | undefined,
-): { pipelineId: string; nodeId: string } | null {
-  const [pipelineId, nodeId, ...rest] = (payload ?? '').split(':');
+): { pipelineId: string; nodeId: string; pages?: true } | null {
+  const [pipelineId, nodeId, mark, ...rest] = (payload ?? '').split(':');
   if (rest.length > 0 || !pipelineId || !nodeId) return null;
+  if (mark !== undefined && mark !== PAGES_MARK) return null;
   if (!PIPELINE_ID_RE.test(pipelineId) || !UUID_RE.test(nodeId)) return null;
-  return { pipelineId, nodeId: nodeId.toLowerCase() };
+  return { pipelineId, nodeId: nodeId.toLowerCase(), ...(mark ? { pages: true as const } : {}) };
 }
 
 /** The channel of an archive's "Extract contents" (docs/files.md,

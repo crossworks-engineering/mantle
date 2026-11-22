@@ -438,3 +438,37 @@ export async function pdfPageKindsOf(
   if (stopped) for (let n = readTo + 1; n <= total; n++) rulesOnly(n, null, stopped);
   return [...out.values()].sort((a, b) => a.page - b.page);
 }
+
+/** Whether a stored page type is done: the page has an answer (shadow or
+ *  low confidence), or it is blank (no ask is due). Such a page is never
+ *  asked again; every other page may be (Q2). */
+function pageTypeDone(k: PdfPageKind): boolean {
+  return k.deciderKind !== null || k.from === PAGE_KIND_FROM.blank;
+}
+
+/**
+ * The page types of a read with the asks of `decide`, over the stored ones
+ * (`stored`: none at an upload). Only the pages with a row and no stored
+ * answer are asked (pdfPageKindsOf, its caps and its one check); a stored
+ * answer is never asked again and stands over the new read. A stored rules
+ * word is kept where the new read says nothing of its page. So a person's
+ * run of one file (Q2, plan page c607711a) types the pages an older read
+ * left, and a second run asks nothing. Nothing is written here.
+ */
+export async function pdfPageKindsOver(
+  router: PipelineManifest,
+  bytes: Buffer,
+  options: Readonly<Record<string, unknown>>,
+  decide: PdfPageDecide,
+  rows: ReadonlySet<number>,
+  stored: readonly PdfPageKind[],
+): Promise<PdfPageKind[]> {
+  const out = new Map(stored.map((k) => [k.page, k]));
+  const open = new Set([...rows].filter((n) => !(out.has(n) && pageTypeDone(out.get(n)!))));
+  if (open.size === 0) return [...stored];
+  for (const k of await pdfPageKindsOf(router, bytes, options, decide, open)) {
+    const was = out.get(k.page);
+    if (!was || !pageTypeDone(was)) out.set(k.page, k);
+  }
+  return [...out.values()].sort((a, b) => a.page - b.page);
+}

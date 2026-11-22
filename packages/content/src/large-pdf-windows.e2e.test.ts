@@ -56,7 +56,7 @@ import {
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { picturesByWindows, picturesLeftOutOf } from './pdf-picture-windows';
-import { pdfPageKindsOf, type PdfPageDecide } from './pdf-read';
+import { pdfPageKindsOf, pdfPageKindsOver, type PdfPageDecide } from './pdf-read';
 import { pagesText } from './page-passages';
 import {
   agentStep,
@@ -400,6 +400,18 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       expect(after.filter((k) => k.from === PAGE_KIND_FROM.dayCap).length).toBeGreaterThan(
         total - 60,
       );
+      // A person's run of the file later (Q2), over those stored types: only
+      // the pages with no answer are asked, the 30 answers stand.
+      const paid = new Set(after.filter((k) => k.deciderKind !== null).map((k) => k.page));
+      expect(paid.size).toBe(30);
+      const person = standIn();
+      const over = await pdfPageKindsOver(ROUTER, bytes, {}, person.d, rows, after);
+      expect(person.asked.some((a) => paid.has(a.page))).toBe(false);
+      expect(person.asked.length).toBe(asked.length - 30);
+      expect(over.filter((k) => k.deciderKind !== null).length).toBe(asked.length);
+      for (const k of after.filter((x) => paid.has(x.page))) {
+        expect(over.find((x) => x.page === k.page)).toEqual(k);
+      }
       // A typed PDF: its pages carry their text sample.
       const typed = standIn();
       const tk = await pdfPageKindsOf(

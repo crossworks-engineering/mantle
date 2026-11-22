@@ -938,7 +938,7 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
     listenAs('listen:pipeline-run', (payload) => {
       const run = pipelineRunOfPayload(payload);
       if (!run) return;
-      return enqueuePipelineRun(run.nodeId, run.pipelineId).catch((err) =>
+      return enqueuePipelineRun(run.nodeId, run.pipelineId, run.pages).catch((err) =>
         logger.error('enqueue pipeline run error:', errorMessage(err)),
       );
     }),

@@ -99,7 +99,7 @@ vi.mock('@mantle/tracing', async (orig) => ({
 const spend = vi.hoisted(() => () => {
   throw new Error('a run on demand asked a model');
 });
-vi.mock('./pdf-kind', () => ({ askPdfKind: vi.fn(spend) }));
+vi.mock('./pdf-kind', () => ({ askPdfKind: vi.fn(spend), pdfPageDeciderOf: vi.fn(spend) }));
 vi.mock('./pdf-sketch', () => ({ sketchIngestPdfNode: vi.fn(spend) }));
 vi.mock('../extractor.js', () => ({ extractNode: vi.fn(spend) }));
 vi.mock('@mantle/db', async (orig) => ({
@@ -234,6 +234,44 @@ describe('the job of a run on demand', () => {
       'sha256',
     ]);
     expect(h.patches).toEqual([]);
+  });
+
+  it("a person's run of one PDF (`pages`) gives the read the page asks, behind the decider's two checks; no other run does (Q2)", async () => {
+    const asks = { room: vi.fn(), kept: vi.fn(), ask: vi.fn(), settle: vi.fn() };
+    const asked: string[] = [];
+    const pageDecider = vi.fn(async (_o: string, n: string) => {
+      asked.push(n);
+      return asks;
+    });
+    // The job's mark: the read gets the page asks.
+    await runPipelineJob(OWNER, PDF, 'drawing-pdf', undefined, true, { pageDecider });
+    expect(asked).toEqual([PDF]);
+    expect(h.builds[0]!.pdfPages).toBe(asks);
+    // The two checks say no (the guard off, no `pages` key; no model work
+    // for the file): no page asks, the read as every read again.
+    h.builds = [];
+    const off = vi.fn(async () => null);
+    await runPipelineJob(OWNER, PDF, 'drawing-pdf', undefined, true, { pageDecider: off });
+    expect(off).toHaveBeenCalledTimes(1);
+    expect(h.builds[0]).not.toHaveProperty('pdfPages');
+    // A read of the checks that fails is no page ask either.
+    h.builds = [];
+    const lost = vi.fn(async () => {
+      throw new Error('made-up db blip');
+    });
+    await runPipelineJob(OWNER, PDF, 'drawing-pdf', undefined, true, { pageDecider: lost });
+    expect(h.builds[0]).not.toHaveProperty('pdfPages');
+    // No mark (pipeline_reread, file_reindex, a folder's run, the `after`
+    // chain): the checks are not even read.
+    h.builds = [];
+    asked.length = 0;
+    await runPipelineJob(OWNER, PDF, 'drawing-pdf', undefined, false, { pageDecider });
+    await runPipelineJob(OWNER, PDF, 'drawing-pdf');
+    expect(asked).toEqual([]);
+    expect(h.builds.every((b) => !('pdfPages' in b))).toBe(true);
+    // The mark on a file type with no router (not a PDF): nothing to ask.
+    await runPipelineJob(OWNER, DXF, 'drawing-cad', undefined, true, { pageDecider });
+    expect(asked).toEqual([]);
   });
 
   it('a throw of the patch is a failed run, and the job does not throw', async () => {

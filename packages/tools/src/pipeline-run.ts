@@ -13,7 +13,11 @@
  *    and does nothing else (server/api/src/agent/extract/pipeline-run.ts).
  *
  * A reader's run builds the file's database again from its bytes, with no
- * model; the `after` chain then runs as at upload. An `after` pipeline's run
+ * model; the `after` chain then runs as at upload. One case asks: a
+ * reader's run of ONE file (`file_id`, not a folder) is sent with the page
+ * mark (notifyPipelineRun's `pages`), so its job may ask the page types
+ * of a PDF's pages with none stored (Q2), behind that job's two checks
+ * (pdfPageDeciderOf) and the caps, the day cap among them. An `after` pipeline's run
  * is the patch. An Agent's run is the one run that asks a model
  * (docs/pipelines.md, "Agents"): its step cuts pictures from the file's
  * bytes, the core answers each ask from the Agent's tab or with one paid
@@ -290,9 +294,13 @@ export async function runPipelines(
   }
 
   let queued = 0;
+  // A Reader's run of ONE file (Q2): its job may ask the page types of a
+  // PDF's pages with none stored (`pages`), behind the job's own two
+  // checks and the caps. A folder's run asks none.
+  const pages = fileId !== undefined && one !== null && roleOf(one) === 'reader';
   if (apply && one && !busy) {
     for (const fid of take) {
-      await notifyPipelineRun(fid, one.id);
+      await notifyPipelineRun(fid, one.id, pages ? { pages: true } : {});
       queued += 1;
     }
   }
@@ -311,7 +319,9 @@ export const pipeline_run: BuiltinToolDef = {
     effect: 'write',
     // The tool calls no model: it queues. An Agent's job spends on the
     // box's vision worker behind its own guards and the day cap
-    // (pipeline-ask.ts), as an upload's job spends behind its own.
+    // (pipeline-ask.ts), as an upload's job spends behind its own; a
+    // Reader's run of one PDF spends on page asks behind the same guards
+    // as an upload's (pdfPageDeciderOf) and the same day cap.
     spends: 'none',
     // An Agent's run can spend on the box's vision worker, so an API key or
     // a peer must have this tool named. A member keeps what he may do by hand.
@@ -326,7 +336,7 @@ export const pipeline_run: BuiltinToolDef = {
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Run a pipeline',
   description:
-    "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer ('site-tags') writes its tabs again; neither asks a model. An Agent asks a model: at most `asksMax` asks, within the box's day cap; a second run of the same file pays nothing. Nothing else changes. `skipped` counts files left, by word, when one `pipeline` is named; a queued PDF's job can still leave one. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
+    "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer ('site-tags') writes its tabs again; neither asks a model, but a reader's run of one PDF (`file_id`) on a box with page types on may cost one page ask for each page with no stored type (within the box's day cap; a typed page is never asked again). An Agent asks a model: at most `asksMax` asks, within the box's day cap; a second run of the same file pays nothing. Nothing else changes. `skipped` counts files left, by word, when one `pipeline` is named; a queued PDF's job can still leave one. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {

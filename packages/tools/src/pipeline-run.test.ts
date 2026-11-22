@@ -32,7 +32,7 @@ const SHA = 'a'.repeat(64);
 const h = vi.hoisted(() => ({
   own: [] as { id: string; manifest: string | null }[],
   busy: false,
-  notified: [] as { nodeId: string; pipelineId: string }[],
+  notified: [] as { nodeId: string; pipelineId: string; pages?: true }[],
   rows: [] as FileDataRow[],
   total: 0,
   limits: [] as number[],
@@ -52,9 +52,11 @@ vi.mock('@mantle/db', async (orig) => ({
     h.asked.push(`${need} ${id}`);
     if (h.refuse) throw new Error('You cannot change this item in your workspaces');
   }),
-  notifyPipelineRun: vi.fn(async (nodeId: string, pipelineId: string) => {
-    h.notified.push({ nodeId, pipelineId });
-  }),
+  notifyPipelineRun: vi.fn(
+    async (nodeId: string, pipelineId: string, opts: { pages?: true } = {}) => {
+      h.notified.push({ nodeId, pipelineId, ...(opts.pages ? { pages: true as const } : {}) });
+    },
+  ),
 }));
 
 vi.mock('@mantle/files', async (orig) => ({
@@ -183,6 +185,38 @@ describe('the run', () => {
       { nodeId: h.rows[0]!.id, pipelineId: 'drawing-cad' },
       { nodeId: h.rows[1]!.id, pipelineId: 'drawing-cad' },
     ]);
+  });
+
+  it("only a Reader's run of ONE file has the page mark (Q2): a folder's run, a Transformer's and an Agent's have none", async () => {
+    const pdf = file('c.pdf');
+    const tif = file('iso.tif');
+    const dxf = file('a.dxf');
+    h.rows = [pdf, tif, dxf];
+    h.withDb.add(tif.id);
+    h.withDb.add(dxf.id);
+    // One file, its Reader: the job may ask its untyped pages.
+    await run({ file_id: pdf.id, pipeline: 'drawing-pdf', apply: true });
+    expect(h.notified).toEqual([{ nodeId: pdf.id, pipelineId: 'drawing-pdf', pages: true }]);
+    // The same file in a folder's run: no mark.
+    h.notified = [];
+    h.rows = [pdf];
+    await run({ folder_id: FOLDER, pipeline: 'drawing-pdf', apply: true });
+    expect(h.notified).toEqual([{ nodeId: pdf.id, pipelineId: 'drawing-pdf' }]);
+    // One file, a Transformer and an Agent: no mark.
+    h.notified = [];
+    h.rows = [pdf, tif, dxf];
+    await run({ file_id: dxf.id, pipeline: 'site-tags', apply: true });
+    await run({ file_id: tif.id, pipeline: 'iso-title-block', apply: true });
+    expect(h.notified).toEqual([
+      { nodeId: dxf.id, pipelineId: 'site-tags' },
+      { nodeId: tif.id, pipelineId: 'iso-title-block' },
+    ]);
+    // The dry run sends nothing.
+    h.notified = [];
+    await run({ file_id: pdf.id, pipeline: 'drawing-pdf' });
+    expect(h.notified).toEqual([]);
+    // The tool's sentence says what a run of one PDF may cost.
+    expect(pipeline_run.description).toContain('one page ask for each page with no stored type');
   });
 
   it('the reader of a PDF drawing queues its file: the dry run does not look into the database', async () => {

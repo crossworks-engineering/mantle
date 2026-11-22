@@ -627,7 +627,9 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   goes `live`. Nothing asks again for those bytes: the rebuild
   (`dwg-reindex --pdf`) reads PDFs with no model.
 - **One page, with its picture (page types, M3 of plan page c607711a,
-  shadow).** The same use asks the type of each page of a PDF at upload:
+  shadow).** The same use asks the type of each page of a PDF at upload,
+  and of each page with no stored type at a person's run of one file
+  (Jason's Q2; docs/pipelines.md, "Page types"):
   the same 8 options, about "this page" (`decidePdfPageKind`). Its state is
   8 fields: `page`, `picture` (a grey JPEG of 1,024 px long side, as an
   `image_url` part), `size`, `class`, the three counts of the page and

@@ -80,7 +80,7 @@ import {
 } from './pipeline-state';
 import {
   pdfNodeVisionOf,
-  pdfPageKindsOf,
+  pdfPageKindsOver,
   pdfReadAgainOf,
   readerStateOf,
   routePdf,
@@ -289,14 +289,21 @@ async function readRouted(
   const parsed = await readRoutedSheets(router, bytes, ext, options, opts);
   if (parsed.kind !== 'sheets') return parsed;
   // The page types (the router's part 2, M3 in shadow), after the Reader's
-  // run, into its tab Pages: those stored, on a read again (no ask); at an
-  // upload, the asks of `pdfPages` (given only where they may be made).
-  const stored = opts.pdfStored;
-  const kinds = stored
-    ? (stored.pageKinds ?? [])
-    : opts.pdfPages
-      ? await pdfPageKindsOf(router, bytes, options, opts.pdfPages, pagesWithRows(parsed.sheets))
-      : [];
+  // run, into its tab Pages: those stored, on a read again (no ask). With
+  // `pdfPages` (given only where they may be made: an upload's extract, or
+  // a person's run of one file, Q2), the pages with no stored answer are
+  // asked; a stored answer is never asked again (pdfPageKindsOver).
+  const stored = opts.pdfStored?.pageKinds ?? [];
+  const kinds = opts.pdfPages
+    ? await pdfPageKindsOver(
+        router,
+        bytes,
+        options,
+        opts.pdfPages,
+        pagesWithRows(parsed.sheets),
+        stored,
+      )
+    : stored;
   if (kinds.length === 0) return parsed;
   // The note of the words of Kind from comes with them (withPageKinds).
   return { ...parsed, ...withPageKinds(parsed, kinds) };
@@ -478,8 +485,9 @@ type ParseOpts = {
    *  no model call. */
   pdfKind?: PdfDecide;
   /** The page asks of a PDF's page types (the router's part 2, readRouted):
-   *  given only at an upload's extract where they may be made. Left out:
-   *  no page ask. */
+   *  given only where they may be made, at an upload's extract and at a
+   *  person's run of one file (Q2, buildFileDatabase's `pdfPages`). Left
+   *  out: no page ask. */
   pdfPages?: PdfPageDecide;
   /** A PDF read again: its stored kind and decision (the File tab). The
    *  router does not run and no model is asked. */
@@ -867,6 +875,13 @@ type BuildArgs = {
    *  none: the Agents' tabs are kept over its write, and it starts no
    *  model work. */
   upload?: true;
+  /** A read again of a PDF with the page asks of a person's run of one
+   *  file (Q2; server/api extract/pipeline-run.ts gives it, behind
+   *  pdfPageDeciderOf's two checks, and nothing else does): the pages with
+   *  no stored answer are asked. Left out, as for every other build: the
+   *  stored page types are put back and no model is asked. With `parsed`:
+   *  not read (the caller read it). */
+  pdfPages?: PdfPageDecide;
 };
 
 /**
@@ -888,7 +903,8 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
   const pipelines = args.pipelines ?? (await boxPipelines(ownerId));
   const reader = pipelines.readerFor(ext);
   // A read here, with no `parsed`, is a read again with no model (a run on
-  // demand, a re-read). `dwg-reindex --pdf` passes `parsed`, so it is not
+  // demand, a re-read), but for the page asks of a person's run of one PDF
+  // (`pdfPages`, Q2). `dwg-reindex --pdf` passes `parsed`, so it is not
   // here: it makes its own check before its parse, as before. For a file
   // type with a router (a PDF) it
   // is ONE read, the job, and ONE conditional write (docs/pipelines.md, "The
@@ -927,6 +943,7 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
       ...(options ? { options } : {}),
       ...(pdfStored ? { pdfStored } : {}),
       ...(pdfNodeVision ? { pdfNodeVision } : {}),
+      ...(args.pdfPages ? { pdfPages: args.pdfPages } : {}),
       count: { ownerId, fileId },
     }));
   // The read is done: whatever this build does with it, the windows its

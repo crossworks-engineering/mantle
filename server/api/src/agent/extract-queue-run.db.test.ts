@@ -40,6 +40,8 @@ const runs = vi.hoisted(() => ({
   traceOf: new Map<string, { outer: string | null; inner: string | null }>(),
   /** The lane each run on demand was told. */
   laneOf: new Map<string, string | undefined>(),
+  /** Whether each run on demand was told the page mark (Q2). */
+  pagesOf: [] as [string, boolean][],
 }));
 vi.mock('./extractor.js', () => ({
   extractNode: vi.fn(async (nodeId: string, ownerId: string) => {
@@ -60,10 +62,11 @@ vi.mock('./extractor.js', () => ({
 vi.mock('./extract/pipeline-run.js', () => ({
   isAfterRun: (_ownerId: string, id: string) => Promise.resolve(id === 'site-tags'),
   runPipelineJob: vi.fn(
-    async (_owner: string, nodeId: string, pipelineId: string, lane?: string) => {
+    async (_owner: string, nodeId: string, pipelineId: string, lane?: string, pages = false) => {
       runs.jobs.push(`${pipelineId}:${nodeId}`);
       const key = `${pipelineId}:${nodeId}`;
       runs.laneOf.set(key, lane);
+      runs.pagesOf.push([key, pages]);
       const left = runs.waits.get(key) ?? 0;
       if (runs.keepFails.has(key)) {
         // A paid answer the table refuses (its key check), in the job's scope.
@@ -133,7 +136,9 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
     const sub = await su.listen(m.PIPELINE_RUN_CHANNEL, (payload) => {
       const run = m.pipelineRunOfPayload(payload);
       if (run)
-        void m.runAsSystem('test:listen', () => q.enqueuePipelineRun(run.nodeId, run.pipelineId));
+        void m.runAsSystem('test:listen', () =>
+          q.enqueuePipelineRun(run.nodeId, run.pipelineId, run.pages),
+        );
     });
     unlisten = () => sub.unlisten();
   }, 180_000);
@@ -207,6 +212,36 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
     expect(runs.extracts).not.toContain(dwg);
     expect(runs.extracts).not.toContain(dwg2);
   }, 90_000);
+  it("the page mark of a person's run of one file reaches the run, in a job of its own key (Q2)", async () => {
+    const busy = await file('minutes-2.docx');
+    runs.held.add(busy);
+    await m.runAsSystem('test', () => q.enqueueExtract(busy));
+    await until('the main worker is held', () => runs.release.has(busy));
+    const pdf = await file('older-plan.pdf');
+    const key = `drawing-pdf:${pdf}`;
+    // A read again with no mark, then a person's run with it, while the
+    // first waits: two jobs, the mark's never taken by the other.
+    await m.runAsSystem('test', () => m.notifyPipelineRun(pdf, 'drawing-pdf'));
+    await m.runAsSystem('test', () => m.notifyPipelineRun(pdf, 'drawing-pdf', { pages: true }));
+    await until('both are queued', async () => (await jobs(pdf)).length === 2);
+    expect((await jobs(pdf)).map((j) => j.key)).toEqual([key, `${key}:pages`]);
+    runs.release.get(busy)!();
+    await until('both ran', () => runs.pagesOf.filter(([k]) => k === key).length === 2);
+    expect(
+      runs.pagesOf
+        .filter(([k]) => k === key)
+        .map(([, p]) => p)
+        .sort(),
+    ).toEqual([false, true]);
+    // A payload of another form gives no run.
+    expect(m.pipelineRunOfPayload(`drawing-pdf:${pdf}:other`)).toBeNull();
+    expect(m.pipelineRunOfPayload(`drawing-pdf:${pdf}:pages:x`)).toBeNull();
+    expect(m.pipelineRunOfPayload(`drawing-pdf:${pdf}`)).toEqual({
+      pipelineId: 'drawing-pdf',
+      nodeId: pdf,
+    });
+  }, 90_000);
+
   it('a run held many times with no work done is sent again each time, never failed, and ends', async () => {
     const pdf = await file('book-figures.pdf');
     const key = `pdf-page-read:${pdf}`;

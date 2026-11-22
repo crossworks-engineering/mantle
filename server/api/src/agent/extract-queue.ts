@@ -240,6 +240,9 @@ const EXTRACT_QUEUE_OPTIONS = {
 type ExtractJob = {
   nodeId: string;
   run?: string;
+  /** With `run`: the page asks of a person's run of one PDF (Q2,
+   *  notifyPipelineRun's `pages`). */
+  pages?: true;
   wait?: ExtractJobWait;
   facts?: DeferredFacts;
   archive?: true;
@@ -252,7 +255,9 @@ const keyOf = (job: ExtractJob): string =>
   job.archive
     ? `archive:${job.nodeId}`
     : job.run
-      ? `${job.run}:${job.nodeId}`
+      ? // A person's run with page asks keeps its own key: a model-free run
+        // of the same file waiting never takes its place.
+        `${job.run}:${job.nodeId}${job.pages ? ':pages' : ''}`
       : job.facts
         ? // The read's token in the key: a newer read's deferred facts never
           // collapse into an older read's job still waiting (the 'short'
@@ -654,22 +659,26 @@ async function handleExtractJob(
       archive
         ? runArchiveExtract(ownerId, nodeId).then(() => {})
         : pipelineId
-          ? runPipelineJob(ownerId, nodeId, pipelineId, book ? 'book' : undefined).then(
-              async (out) => {
-                // An Agent's run held by the provider or the day cap: the same
-                // run again later (point 7). Never a retry of anything else.
-                if (out.wait) {
-                  await sendWaiting(
-                    b,
-                    data,
-                    out.wait.for === 'provider'
-                      ? { for: 'provider', provider: { reason: out.wait.reason } }
-                      : { for: 'day_cap', until: out.wait.until },
-                    { progressed: out.status === 'asked' && out.made > 0, from },
-                  );
-                }
-              },
-            )
+          ? runPipelineJob(
+              ownerId,
+              nodeId,
+              pipelineId,
+              book ? 'book' : undefined,
+              data.pages === true,
+            ).then(async (out) => {
+              // An Agent's run held by the provider or the day cap: the same
+              // run again later (point 7). Never a retry of anything else.
+              if (out.wait) {
+                await sendWaiting(
+                  b,
+                  data,
+                  out.wait.for === 'provider'
+                    ? { for: 'provider', provider: { reason: out.wait.reason } }
+                    : { for: 'day_cap', until: out.wait.until },
+                  { progressed: out.status === 'asked' && out.made > 0, from },
+                );
+              }
+            })
           : data.facts
             ? processDeferredFacts(nodeId, ownerId, data.facts).then(async (out) => {
                 // Facts left for later (the cost cap again, or the provider's
@@ -945,15 +954,20 @@ export async function enqueueDeferredFacts(
  * `after` chain, once, when the parser was busy or unavailable
  * (model-free), and an upload's build for each Agent of the file type), and
  * nothing else sends one. Its singleton key
- * is `<pipeline>:<node>`, so a second notify for the same file and
+ * is `<pipeline>:<node>` (`:pages` after it for a person's run with page
+ * asks, `pages`), so a second notify for the same file and
  * pipeline while the first waits sends no second job. A reader's run of a
  * heavy file or a book goes on to the heavy or the book lane as an extract
  * does (handleMainJob); an `after` run stays on this queue. No-op if the queue isn't started.
  */
-export async function enqueuePipelineRun(nodeId: string, pipelineId: string): Promise<void> {
+export async function enqueuePipelineRun(
+  nodeId: string,
+  pipelineId: string,
+  pages?: true,
+): Promise<void> {
   assertNoViewer('enqueuePipelineRun');
   if (!boss || !nodeId || !pipelineId) return;
-  const job = { nodeId, run: pipelineId } satisfies ExtractJob;
+  const job = { nodeId, run: pipelineId, ...(pages ? { pages } : {}) } satisfies ExtractJob;
   await boss.send(EXTRACT_QUEUE, job, sendOptionsOf(job));
 }
 

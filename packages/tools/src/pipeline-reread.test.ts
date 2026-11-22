@@ -40,8 +40,11 @@ const h = vi.hoisted(() => ({
 vi.mock('@mantle/db', async (orig) => ({
   ...(await orig<typeof import('@mantle/db')>()),
   extractQueueBusy: vi.fn(async () => h.busy),
-  notifyPipelineRun: vi.fn(async (nodeId: string, pipelineId: string) => {
-    h.notified.push(`${pipelineId} ${nodeId}`);
+  // A notify with more than the two ids (the page mark of a person's run
+  // of one file, Q2) would show here and fail every list below: a re-read
+  // never sends it, so its runs ask no page type.
+  notifyPipelineRun: vi.fn(async (nodeId: string, pipelineId: string, ...more: unknown[]) => {
+    h.notified.push(`${pipelineId} ${nodeId}${more.length > 0 ? ` ${JSON.stringify(more)}` : ''}`);
   }),
 }));
 

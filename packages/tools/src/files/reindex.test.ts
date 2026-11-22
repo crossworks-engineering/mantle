@@ -47,6 +47,8 @@ const h = vi.hoisted(() => ({
    *  none, or cannot be read (the reader pool throws). */
   dbs: new Map<string, 'sketch' | 'plain' | 'unreadable'>(),
   sets: [] as unknown[],
+  /** The box's Reader of every type, or none (the default). */
+  reader: null as { id: string } | null,
 }));
 
 vi.mock('@mantle/db', async (orig) => ({
@@ -85,7 +87,7 @@ vi.mock('@mantle/files', async (orig) => ({
   loadFileHead: vi.fn(async (node: { id: string }) =>
     h.gone.has(node.id) ? null : Buffer.from('x'),
   ),
-  fileDbNameExists: vi.fn(async () => false),
+  fileDbNameExists: vi.fn(async () => h.reader !== null),
   fileDbSqlitePath: vi.fn(async (id: string) => (h.dbs.has(id) ? `/made-up/${id}` : null)),
 }));
 
@@ -102,7 +104,12 @@ vi.mock('@mantle/tabledb', async (orig) => ({
 }));
 
 vi.mock('@mantle/content/pipeline-registry', () => ({
-  boxPipelines: async () => ({ readerFor: () => null }),
+  boxPipelines: async () => ({ readerFor: () => h.reader }),
+}));
+
+vi.mock('@mantle/content/pipeline-state', async (orig) => ({
+  ...(await orig<typeof import('@mantle/content/pipeline-state')>()),
+  pipelineStateOf: vi.fn(async () => ({ offIn: [], options: {}, optionsHash: '' })),
 }));
 
 const { file_reindex, reindexFiles, ReindexQueueUnreadError } = await import('./reindex');
@@ -138,6 +145,8 @@ beforeEach(() => {
   h.changed = [];
   h.dbs = new Map();
   h.sets = [];
+  h.reader = null;
+  vi.mocked(dbMock.notifyPipelineRun).mockClear();
 });
 
 describe('file_reindex has the marks of pipeline_run', () => {
@@ -207,6 +216,18 @@ describe('reindexFiles', () => {
     }
     expect(keys).not.toContain('agent_text');
     expect(keys).not.toContain('pipeline_read');
+  });
+
+  it("the Reader's run of a PDF it queues has no page mark: a reindex asks no page type (Q2)", async () => {
+    h.rows = [row(A, 'a.pdf'), row(B, 'b.pdf')];
+    h.reader = { id: 'drawing-pdf' };
+    const got = await reindexFiles(OWNER, [A, B]);
+    expect(got.databases).toBe(2);
+    // The two ids only: no `pages` (notifyPipelineRun's third argument).
+    expect(vi.mocked(dbMock.notifyPipelineRun).mock.calls).toEqual([
+      [A, 'drawing-pdf'],
+      [B, 'drawing-pdf'],
+    ]);
   });
 
   it('a file that is no PDF never keeps its text, even with a database', async () => {

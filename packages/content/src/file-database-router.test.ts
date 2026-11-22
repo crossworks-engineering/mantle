@@ -347,29 +347,39 @@ describe('the PDF router in a real read', () => {
       ask: vi.fn(async () => null),
       settle: vi.fn(),
     };
+    const answer = (page: number) => ({
+      page,
+      kind: 'isometric',
+      from: 'rules: shadow',
+      deciderKind: 'pid',
+      deciderConfidence: 0.98,
+    });
     const parsed = await parseFileSheets(pdf('pid.pdf'), 'pdf', {
       pipelines,
       count,
-      pdfPages,
-      pdfStored: {
-        kind: 'pid',
-        decision: null,
-        pageKinds: [
-          {
-            page: 1,
-            kind: 'isometric',
-            from: 'rules: shadow',
-            deciderKind: 'pid',
-            deciderConfidence: 0.98,
-          },
-        ],
-      },
+      pdfStored: { kind: 'pid', decision: null, pageKinds: [answer(1)] },
     });
-    // No page ask on a read again, an asker passed or not; no window cut.
-    expect(pdfPages.ask).not.toHaveBeenCalled();
-    expect(pdfPages.room).not.toHaveBeenCalled();
+    // No asker (every read again but a person's run of one file): no ask.
     expect(ids).toEqual(['drawing-pdf']);
     if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    // With an asker (a person's run, Q2) over a file whose every page has
+    // its stored answer: no page ask and no window cut.
+    const tab = parsed.sheets.find((s) => s.name === 'Pages')!;
+    const pageAt = tab.columns.findIndex((c) => c.name === 'Page');
+    const rows = tab.rows.map((r) => Number(r[pageAt]));
+    expect(rows.length).toBeGreaterThan(0);
+    ids.length = 0;
+    const again = await parseFileSheets(pdf('pid.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfPages,
+      pdfStored: { kind: 'pid', decision: null, pageKinds: rows.map(answer) },
+    });
+    expect(again.kind).toBe('sheets');
+    expect(pdfPages.ask).not.toHaveBeenCalled();
+    expect(pdfPages.room).not.toHaveBeenCalled();
+    expect(pdfPages.kept).not.toHaveBeenCalled();
+    expect(ids).toEqual(['drawing-pdf']);
     const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
     const at = (name: string) => pages.columns.findIndex((c) => c.name === name);
     expect(pages.rows[0]![at('Kind from')]).toBe('rules: shadow');

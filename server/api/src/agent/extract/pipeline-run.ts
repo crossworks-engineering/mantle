@@ -8,12 +8,25 @@
  * (extract-queue.ts, enqueuePipelineRun) like any other job of a file.
  *
  *  - A reader: its database is built again from the file's bytes with
- *    `buildFileDatabase`, with no parse result and no decider, so no model
- *    is asked. The `after` chain then runs as at upload.
+ *    `buildFileDatabase`, with no parse result and no decider of the
+ *    file's kind, so no model is asked, but in one case: the page types
+ *    of a PDF (Q2, plan page c607711a). A job with `pages` (a person's run
+ *    of ONE file: `pipeline_run` with a `file_id`, the tool or the Run
+ *    button, notifyPipelineRun's `pages`) gives the read the page asks
+ *    when pdfPageDeciderOf allows them (its two checks: llmWorkAllowed,
+ *    and pdfPageAsksOn: `uses.pdf_kind.pages: true` with the use on and
+ *    the model pin). The read then asks only the pages with no stored
+ *    answer, under the file's cap, the box's day cap, the 3-in-a-row stop
+ *    and the breaker; a kept answer is free (pdfPageKindsOver). Every cap
+ *    ends in the rules, never in a wait. No other job has `pages`:
+ *    pipeline_run of a folder, pipeline_reread, file_reindex, the `after`
+ *    chain and an upload's Agent runs ask no model here. The `after`
+ *    chain then runs as at upload.
  *  - An `after` pipeline: the patch, `patchFileDatabase`. It reads the
  *    database, never the bytes, and keeps every other row.
  *  - An Agent: `runAgentOnFile`, with the one guarded ask
- *    (./pipeline-ask.ts). It is the only run that may pay for a model. A
+ *    (./pipeline-ask.ts). It is the one run that may pay for a model,
+ *    with the page asks of a Reader's run above (`pages`) the one other. A
  *    job a person or an agent queued starts it, and so does the build of
  *    an upload, which queues one run of it. A Reader's run on demand or
  *    read again queues none. The job has no retry
@@ -70,6 +83,7 @@ import { writeAgentText } from './agent-text.js';
 import { bookPagePicturesFor } from './images.js';
 import { writeRetrievalChunks } from './index-writes.js';
 import { pipelineAskOf } from './pipeline-ask.js';
+import { pdfPageDeciderOf } from './pdf-kind.js';
 import { DAY_CAP_STOP, providerWaitOfStop } from '@mantle/content/pipeline-agent';
 import { pipelineAsksDayCap, pipelineAsksFreeAt } from '@mantle/content/pipeline-asks';
 import type { ProviderWaitReason } from '@mantle/std';
@@ -141,6 +155,8 @@ async function runOnce(
   ownerId: string,
   nodeId: string,
   pipelineId: string,
+  pages: boolean,
+  deps: RunDeps,
 ): Promise<PipelineRunResult> {
   const pipelines = await boxPipelines(ownerId);
   const pipeline = pipelines.byId(pipelineId);
@@ -218,8 +234,13 @@ async function runOnce(
   }
   const loaded = await readFileNodeBytes(row);
   if (!loaded) return { status: 'skipped', reason: 'bytes-gone' };
-  // No `parsed` and no decider: the read asks no model. A PDF keeps its
-  // stored kind, and one with a sketch read is skipped (`sketch`).
+  // No `parsed` and no decider of the kind: a PDF keeps its stored kind,
+  // and one with a sketch read is skipped (`sketch`). The page asks only
+  // for a person's run of one PDF (`pages`), behind their two checks.
+  const pdfPages =
+    pages && pipelines.routerFor(ext)
+      ? await deps.pageDecider(ownerId, nodeId).catch(() => null)
+      : null;
   return buildFileDatabase({
     fileId: nodeId,
     ownerId,
@@ -227,27 +248,42 @@ async function runOnce(
     bytes: loaded.bytes,
     filename: loaded.filename,
     pipelines,
+    ...(pdfPages ? { pdfPages } : {}),
   });
 }
+
+/** What a run reads for the page asks: a stand-in in a test. */
+export type RunDeps = { pageDecider: typeof pdfPageDeciderOf };
+
+const RUN_DEPS: RunDeps = { pageDecider: (o, n) => pdfPageDeciderOf(o, n) };
 
 /** Run one pipeline on one file, in a trace of its own with one step.
  *  Never throws: a failure is the step's error, and the job is done. A
  *  result with `wait` is a run the queue sends again later. `lane` 'book':
  *  a run in the book lane, said on its trace (the reapers give it the book
- *  lane's budget). */
+ *  lane's budget). `pages`: the job's mark of a person's run of one file
+ *  (Q2): a Reader's read of a PDF may ask its untyped pages (runOnce). */
 export async function runPipelineJob(
   ownerId: string,
   nodeId: string,
   pipelineId: string,
   lane?: 'book',
+  pages = false,
+  deps: Partial<RunDeps> = {},
 ): Promise<PipelineRunResult & { wait?: RunWait }> {
+  const d: RunDeps = { ...RUN_DEPS, ...deps };
   return startTrace(
     {
       kind: 'pipeline_run',
       ownerId,
       subjectId: nodeId,
       subjectKind: 'node',
-      data: { pipeline: pipelineId, source: 'run', ...(lane ? { lane } : {}) },
+      data: {
+        pipeline: pipelineId,
+        source: 'run',
+        ...(lane ? { lane } : {}),
+        ...(pages ? { pages: true } : {}),
+      },
     },
     () =>
       step(
@@ -258,7 +294,7 @@ export async function runPipelineJob(
         },
         async (h): Promise<PipelineRunResult & { wait?: RunWait }> => {
           try {
-            const out = await runOnce(ownerId, nodeId, pipelineId);
+            const out = await runOnce(ownerId, nodeId, pipelineId, pages, d);
             // A read of the wait that fails is no wait: the run stops as a
             // stop always did, and a person runs it again.
             const wait = await runWaitOf(ownerId, out).catch(() => null);

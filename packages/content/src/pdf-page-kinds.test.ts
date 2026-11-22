@@ -21,7 +21,7 @@ vi.mock('@mantle/files', async (orig) => ({
 }));
 
 const { PAGE_KIND_FROM, ParserError, pagePictureName } = await import('@mantle/files');
-const { pdfPageKindsOf } = await import('./pdf-read');
+const { pdfPageKindsOf, pdfPageKindsOver } = await import('./pdf-read');
 type Decide = import('./pdf-read').PdfPageDecide;
 
 const TOTAL = 60;
@@ -305,5 +305,109 @@ describe('the page types of a PDF (part 2, shadow)', () => {
     windows();
     split.mockRejectedValueOnce(new Error('qpdf could not read it'));
     expect(await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, decider().d, ALL)).toEqual([]);
+  });
+});
+
+describe("a person's run of one file over the stored page types (Q2)", () => {
+  /** A stored answer of page n (an upload's). */
+  const answered = (n: number) => ({
+    page: n,
+    kind: 'document',
+    from: PAGE_KIND_FROM.shadow,
+    deciderKind: 'pid',
+    deciderConfidence: 0.97,
+  });
+  const ruled = (n: number, from: string) => ({
+    page: n,
+    kind: 'document',
+    from,
+    deciderKind: null,
+    deciderConfidence: null,
+  });
+
+  it('an older file (no stored type): every page with ink is asked, and the answers are its types', async () => {
+    windows();
+    const { d, asked } = decider();
+    const kinds = await pdfPageKindsOver(routerOf(), Buffer.from('pdf'), {}, d, ALL, []);
+    expect(asked.length).toBe(TOTAL - 2 * 3);
+    expect(kinds.length).toBe(TOTAL);
+    expect(kinds[0]).toMatchObject({ from: PAGE_KIND_FROM.shadow, deciderKind: 'table' });
+  });
+
+  it('only the pages with no stored answer are asked; a stored answer stands, a stored rules word is asked again', async () => {
+    windows();
+    const { d, asked } = decider();
+    // Window 1 (pages 1 to 25) typed at upload, its blank and not-drawn
+    // pages too; pages 26 to 60 left by the day cap.
+    const stored = [
+      ...Array.from({ length: 25 }, (_, i) => i + 1).map((n) =>
+        n % 25 === 3
+          ? ruled(n, PAGE_KIND_FROM.blank)
+          : n === 4
+            ? ruled(n, PAGE_KIND_FROM.notDrawn)
+            : answered(n),
+      ),
+      ...Array.from({ length: 35 }, (_, i) => ruled(i + 26, PAGE_KIND_FROM.dayCap)),
+    ];
+    const kinds = await pdfPageKindsOver(routerOf(), Buffer.from('pdf'), {}, d, ALL, stored);
+    // Window 1 holds page 4 (not drawn: no answer), so it is cut again, but
+    // no page of it with an answer is asked; windows 2 and 3 are asked.
+    const pages = asked.map((a) => a.page as number);
+    expect(pages.every((n) => n > 25)).toBe(true);
+    expect(pages.length).toBe(35 - 2 * 2);
+    // The stored answers stand as they were, not the new read's word.
+    for (const n of [1, 2, 5, 25]) expect(kinds.find((k) => k.page === n)).toEqual(answered(n));
+    expect(kinds.find((k) => k.page === 3)).toEqual(ruled(3, PAGE_KIND_FROM.blank));
+    // The pages the day cap left now have their answers.
+    expect(kinds.find((k) => k.page === 26)).toMatchObject({
+      from: PAGE_KIND_FROM.shadow,
+      deciderKind: 'table',
+    });
+    expect(kinds.length).toBe(TOTAL);
+  });
+
+  it('a second run asks nothing and cuts no window: every page is done', async () => {
+    windows();
+    const first = decider();
+    const stored = await pdfPageKindsOver(routerOf(), Buffer.from('pdf'), {}, first.d, ALL, []);
+    // The not-drawn pages (no answer) are the ones a run would cut for:
+    // here they are given as answered, so the file is whole.
+    const whole = stored.map((k) =>
+      k.deciderKind || k.from === PAGE_KIND_FROM.blank ? k : answered(k.page),
+    );
+    split.mockClear();
+    step.mockClear();
+    const again = decider();
+    const kinds = await pdfPageKindsOver(routerOf(), Buffer.from('pdf'), {}, again.d, ALL, whole);
+    expect(again.asked).toEqual([]);
+    expect(split).not.toHaveBeenCalled();
+    expect(step).not.toHaveBeenCalled();
+    expect(again.settled()).toBe(0);
+    expect(kinds).toEqual(whole);
+  });
+
+  it('a day cap of 0: nothing is asked, the untyped pages say `day cap`, and the stored answers stand', async () => {
+    windows();
+    const { d, asked } = decider({ room: 0 });
+    const stored = [answered(1), answered(2)];
+    const kinds = await pdfPageKindsOver(routerOf(), Buffer.from('pdf'), {}, d, ALL, stored);
+    expect(asked).toEqual([]);
+    expect(kinds.find((k) => k.page === 1)).toEqual(answered(1));
+    expect(kinds.find((k) => k.page === 5)).toMatchObject({
+      from: PAGE_KIND_FROM.dayCap,
+      deciderKind: null,
+    });
+    expect(kinds.filter((k) => k.page > 25).every((k) => k.from === PAGE_KIND_FROM.dayCap)).toBe(
+      true,
+    );
+    expect(kinds.length).toBe(TOTAL);
+  });
+
+  it('a kept answer (the answer cache) is taken free, with no room', async () => {
+    windows();
+    const { d, asked } = decider({ room: 0, keptTo: 60 });
+    const kinds = await pdfPageKindsOver(routerOf(), Buffer.from('pdf'), {}, d, ALL, []);
+    expect(asked).toEqual([]);
+    expect(kinds.filter((k) => k.deciderKind === 'pid').length).toBe(TOTAL - 2 * 3);
   });
 });

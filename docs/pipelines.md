@@ -399,8 +399,8 @@ writes its own), `Kind from`, `Decider kind` and `Decider confidence` (the
 summed chance of the answer's route, docs/decisions.md `pdf_kind`). The
 route of the file does not change in M3.
 
-- **Where.** Only at an upload's extract (the file database pass, where its
-  bytes have no database), for a file that may have model work, on a box
+- **Where.** At an upload's extract (the file database pass, where its
+  bytes have no database), and at a person's run of one file (below), for a file that may have model work, on a box
   whose decider params hold `uses.pdf_kind.pages: true` (an operator's key
   that the manifest never ships) and whose decider is pinned to
   `typesafe/jev-1.14` with `pdf_kind` on (`pdfPageDeciderOf`,
@@ -408,12 +408,25 @@ route of the file does not change in M3.
   has the operator step). A client
   box asks none: no window is cut, no picture drawn, and its rows are as
   before (no new column). A read again (`pipeline_reread`, a Reader's
-  `pipeline_run`, `file_reindex`) and the sketch read ask none: they read
-  the page types of the tab `Pages` back and put them in again
-  (`pdfReadAgainOf`, `storedPageKindsOf`), fail closed. The pages of an
-  older file get no type: a person's run of the Reader that asks the pages
-  with no stored type (Jason's Q2) is left for M4, as the run job cannot
-  yet tell a person's run of one file from a read again of many.
+  `pipeline_run` of a folder, `file_reindex`, the `after` chain's run) and
+  the sketch read ask none: they read the page types of the tab `Pages`
+  back and put them in again (`pdfReadAgainOf`, `storedPageKindsOf`), fail
+  closed.
+- **A person's run of one file (Jason's Q2).** `pipeline_run` of a Reader
+  with a `file_id` (the tool, or the Run button of one file) sends its
+  notify with the page mark (`<pipeline>:<node>:pages`, notifyPipelineRun's
+  `pages`; the job's field `pages`). Nothing else sends it. That job, and
+  only it, gives the read again of a PDF the page asks, behind the same two
+  checks (`pdfPageDeciderOf`). The read asks only the pages with a row and
+  no stored answer (`pdfPageKindsOver`): a page with `Decider kind`, or
+  `rules: blank`, is never asked again, and its stored row stands over the
+  new read. So the pages of an older file get their types, and a second
+  run asks nothing. The same caps hold (the file's cap, the day cap, the
+  3-in-a-row stop, the breaker), each ending in the rules; kept answers are
+  free. The read's write is the read again's: one conditional write, not
+  when the read is poorer (`pdfReadPoorer`) or the database changed, and
+  every Reader and Agent row stays. A write so refused keeps the paid
+  answers in the answer cache, so the next run takes them free.
 - **`Kind from`.** `rules: shadow` (an answer at or over the floor, only
   recorded), `rules: low confidence` (under the floor), `rules: no answer`
   (asked, none came: a failure, the breaker, the use off), `rules: cap`
