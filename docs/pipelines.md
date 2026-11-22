@@ -413,7 +413,7 @@ route of the file does not change in M3.
   back and put them in again (`pdfReadAgainOf`, `storedPageKindsOf`), fail
   closed.
 - **A person's run of one file (Jason's Q2).** `pipeline_run` of a Reader
-  with a `file_id` (the tool, or the Run button of one file) sends its
+  with the `file_id` of a PDF (the tool, or the Run button of one file) sends its
   notify with the page mark (`<pipeline>:<node>:pages`, notifyPipelineRun's
   `pages`; the job's field `pages`). Nothing else sends it. That job, and
   only it, gives the read again of a PDF the page asks, behind the same two

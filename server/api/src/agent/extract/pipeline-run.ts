@@ -11,8 +11,8 @@
  *    `buildFileDatabase`, with no parse result and no decider of the
  *    file's kind, so no model is asked, but in one case: the page types
  *    of a PDF (Q2, plan page c607711a). A job with `pages` (a person's run
- *    of ONE file: `pipeline_run` with a `file_id`, the tool or the Run
- *    button, notifyPipelineRun's `pages`) gives the read the page asks
+ *    of ONE PDF: `pipeline_run` of a Reader with a `file_id`, the tool or
+ *    the Run button, notifyPipelineRun's `pages`) gives the read the page asks
  *    when pdfPageDeciderOf allows them (its two checks: llmWorkAllowed,
  *    and pdfPageAsksOn: `uses.pdf_kind.pages: true` with the use on and
  *    the model pin). The read then asks only the pages with no stored

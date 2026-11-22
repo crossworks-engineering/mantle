@@ -138,7 +138,7 @@ const PAGES_MARK = 'pages';
  *
  * `pages`: the run may ask the page types of a PDF's pages that have none
  * stored (Q2, plan page c607711a). Only `pipeline_run` with one `file_id`
- * and a Reader sends it (packages/tools/src/pipeline-run.ts), so a
+ * of a PDF (a type with a router) and its Reader sends it (packages/tools/src/pipeline-run.ts), so a
  * person's run of one file; every other sender leaves it out, and its run
  * asks no model.
  */

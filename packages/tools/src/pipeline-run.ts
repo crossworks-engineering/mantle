@@ -14,7 +14,7 @@
  *
  * A reader's run builds the file's database again from its bytes, with no
  * model; the `after` chain then runs as at upload. One case asks: a
- * reader's run of ONE file (`file_id`, not a folder) is sent with the page
+ * reader's run of ONE PDF (`file_id`, not a folder) is sent with the page
  * mark (notifyPipelineRun's `pages`), so its job may ask the page types
  * of a PDF's pages with none stored (Q2), behind that job's two checks
  * (pdfPageDeciderOf) and the caps, the day cap among them. An `after` pipeline's run
@@ -294,10 +294,15 @@ export async function runPipelines(
   }
 
   let queued = 0;
-  // A Reader's run of ONE file (Q2): its job may ask the page types of a
-  // PDF's pages with none stored (`pages`), behind the job's own two
-  // checks and the caps. A folder's run asks none.
-  const pages = fileId !== undefined && one !== null && roleOf(one) === 'reader';
+  // A Reader's run of ONE file of a type with a router (a PDF; Q2): its
+  // job may ask the page types of the pages with none stored (`pages`),
+  // behind the job's own two checks and the caps. A folder's run asks none.
+  const only = fileId !== undefined && page.rows.length === 1 ? page.rows[0]! : null;
+  const pages =
+    only !== null &&
+    one !== null &&
+    roleOf(one) === 'reader' &&
+    pipelines.routerFor(fileDataExt(only)) !== null;
   if (apply && one && !busy) {
     for (const fid of take) {
       await notifyPipelineRun(fid, one.id, pages ? { pages: true } : {});
@@ -336,7 +341,7 @@ export const pipeline_run: BuiltinToolDef = {
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Run a pipeline',
   description:
-    "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer ('site-tags') writes its tabs again; neither asks a model, but a reader's run of one PDF (`file_id`) on a box with page types on may cost one page ask for each page with no stored type (within the box's day cap; a typed page is never asked again). An Agent asks a model: at most `asksMax` asks, within the box's day cap; a second run of the same file pays nothing. Nothing else changes. `skipped` counts files left, by word, when one `pipeline` is named; a queued PDF's job can still leave one. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
+    "Run a pipeline again on a file or a folder tree. Without `apply`, a dry run: `choices` lists the pipelines that can run and the files each takes. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database, a Transformer ('site-tags') writes its tabs again; neither asks a model, but a reader's run of one PDF (`file_id`) on a box with page types on may cost one page ask per page with no stored type. An Agent asks at most `asksMax`; a second run pays nothing. Asks stay within the box's day cap. `skipped` counts files left, by word. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {
