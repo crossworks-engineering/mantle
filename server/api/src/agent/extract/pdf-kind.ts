@@ -18,6 +18,7 @@
 import {
   DecideBatch,
   PDF_PAGE_MODEL,
+  PDF_PAGE_QUESTIONS,
   decidePdfKind,
   decidePdfPageKind,
   pdfPageAsksOn,
@@ -81,8 +82,9 @@ const DEPS: PdfPageDeciderDeps = {
  *
  * Each paid answer is kept in the answer cache, and `kept` reads it back
  * (an extract tried again pays for none twice; the core takes kept answers
- * first, free, with no day-cap room). The key holds the router's version,
- * so a new question asks again. A paid ask counts in the box's day cap
+ * first, free, with no day-cap room). The key holds the question (its text
+ * and options, PDF_PAGE_QUESTIONS), so a new question asks again and a new
+ * router version alone does not. A paid ask counts in the box's day cap
  * (`room`) and goes in the file's one DecideBatch. After
  * PAGE_ASK_FAILURES_STOP asks in a row with no answer (any null: a failure,
  * over the limits, no picture part, no choice, no route), or with the
@@ -97,20 +99,22 @@ export async function pdfPageDeciderOf(
   if (!(await d.allowed(nodeId)) || !(await d.on(ownerId))) return null;
   const batch = new DecideBatch();
   let noneInRow = 0;
-  // What is asked (the use, the model, the router's version, the picture's
-  // bytes and the other fields), never the page alone; and the fields sent.
-  const keyOf = (ask: PdfPageAsk, picture: Buffer, version: string) => {
+  // What is asked (the use, the model, the question: its text and its
+  // options, the picture's bytes and the other fields), never the page
+  // alone; and the fields sent. The question, not the router's version: a
+  // router change that is not of the question keeps the kept answers.
+  const keyOf = (ask: PdfPageAsk, picture: Buffer) => {
     const { picture: _name, ...fields } = ask;
-    const parts = ['pdf_page', PDF_PAGE_MODEL, version, bytesKey(picture), fields];
+    const parts = ['pdf_page', PDF_PAGE_MODEL, PDF_PAGE_QUESTIONS, bytesKey(picture), fields];
     return { key: answerKey('decider', parts), fields };
   };
   return {
     // A count that cannot be read is no room: the pages keep their rules
     // (`rules: day cap`), never an ask past the cap.
     room: async () => Math.max(0, d.dayCap() - (await d.today(ownerId).catch(() => Infinity))),
-    kept: (ask, picture, version) => keptAnswer<PdfPageDecision>(keyOf(ask, picture, version).key),
-    ask: async (ask, picture, version) => {
-      const { key, fields } = keyOf(ask, picture, version);
+    kept: (ask, picture) => keptAnswer<PdfPageDecision>(keyOf(ask, picture).key),
+    ask: async (ask, picture) => {
+      const { key, fields } = keyOf(ask, picture);
       const skippedBefore = batch.skipped;
       const answer = await d.decide(ownerId, fields, picture, batch);
       if (answer) {

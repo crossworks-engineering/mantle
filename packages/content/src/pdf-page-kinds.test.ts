@@ -28,12 +28,12 @@ const TOTAL = 60;
 /** Every page of the made-up file has a row in the tab Pages. */
 const ALL = new Set(Array.from({ length: TOTAL }, (_, i) => i + 1));
 /** A router with a page cap of `cap` decider asks. */
-const routerOf = (cap = 10_000) =>
+const routerOf = (cap = 10_000, version = '1.3.0') =>
   ({
     id: 'pdf-router',
     name: 'PDF router',
     description: 'Names the kind of a PDF.',
-    version: '1.3.0',
+    version,
     api: 1,
     runtime: 'bun',
     entry: 'step.ts',
@@ -94,18 +94,21 @@ function windows(total = TOTAL, plain = false) {
  *  is in the answer cache (an extract tried again). */
 function decider(opts: { room?: number; stopAt?: number; keptTo?: number } = {}) {
   const asked: Record<string, unknown>[] = [];
-  const versions = new Set<string>();
+  /** How many arguments the core gives kept and ask (the ask and the
+   *  picture: no router version, which is not of the key). */
+  const argCounts = new Set<number>();
   let settled = 0;
   const d: Decide = {
     room: async () => (opts.room ?? 20_000) - asked.length,
-    kept: async (ask, _picture, version) => {
-      versions.add(version);
-      return ask.page <= (opts.keptTo ?? 0)
+    kept: async (...a) => {
+      argCounts.add(a.length);
+      return a[0].page <= (opts.keptTo ?? 0)
         ? { kind: 'pid', confidence: 0.95, sure: true, model: 'm', mode: 'shadow' }
         : null;
     },
-    ask: async (ask, _picture, version) => {
-      versions.add(version);
+    ask: async (...a) => {
+      argCounts.add(a.length);
+      const ask = a[0];
       asked.push({ ...ask });
       if (ask.page === opts.stopAt) return 'stop';
       const low = ask.page % 5 === 0;
@@ -121,7 +124,7 @@ function decider(opts: { room?: number; stopAt?: number; keptTo?: number } = {})
       settled += 1;
     },
   };
-  return { d, asked, versions, settled: () => settled };
+  return { d, asked, argCounts, settled: () => settled };
 }
 
 beforeEach(() => {
@@ -220,7 +223,7 @@ describe('the page types of a PDF (part 2, shadow)', () => {
 
   it('a retry: 4,000 kept answers and room for 1,000 write all 4,000 as answers; only real calls take room', async () => {
     windows(6_000, true);
-    const { d, asked, versions } = decider({ room: 1_000, keptTo: 4_000 });
+    const { d, asked, argCounts } = decider({ room: 1_000, keptTo: 4_000 });
     const rows = new Set(Array.from({ length: 6_000 }, (_, i) => i + 1));
     const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, rows);
     const kept = kinds.filter((k) => k.page <= 4_000);
@@ -234,8 +237,44 @@ describe('the page types of a PDF (part 2, shadow)', () => {
     expect(asked.every((a) => (a.page as number) > 4_000)).toBe(true);
     expect(kinds.filter((k) => k.from === PAGE_KIND_FROM.dayCap).length).toBe(1_000);
     expect(kinds.length).toBe(6_000);
-    // The router's version is what the key holds.
-    expect([...versions]).toEqual(['1.3.0']);
+    // No router version is given: the key is the question's (the decider's).
+    expect([...argCounts]).toEqual([2]);
+  });
+
+  it('a retry with no day-cap room: 4,000 kept answers are all written as answers, past window 1 too', async () => {
+    windows(6_000, true);
+    const { d, asked } = decider({ room: 0, keptTo: 4_000 });
+    const rows = new Set(Array.from({ length: 6_000 }, (_, i) => i + 1));
+    // A release between the tries with a new router version (not of the
+    // question): the kept answers are still taken.
+    const kinds = await pdfPageKindsOf(routerOf(10_000, '1.3.1'), Buffer.from('pdf'), {}, d, rows);
+    const kept = kinds.filter((k) => k.page <= 4_000);
+    expect(kept.length).toBe(4_000);
+    expect(kept.every((k) => k.from === PAGE_KIND_FROM.shadow && k.deciderKind === 'pid')).toBe(
+      true,
+    );
+    expect(asked.length).toBe(0);
+    // The first window with a page turned away (pages 4,001 to 4,025) is
+    // the last cut: the rest is the day cap's.
+    expect(split).toHaveBeenCalledTimes(4_000 / 25 + 1);
+    const past = kinds.filter((k) => k.from === PAGE_KIND_FROM.dayCap);
+    expect(past.length).toBe(2_000);
+    expect(past.every((k) => k.page > 4_000 && k.deciderKind === null)).toBe(true);
+    expect(kinds.length).toBe(6_000);
+  });
+
+  it('no day-cap room and no kept answer: the run stops after the first window that turned a page away', async () => {
+    windows();
+    const { d, asked } = decider({ room: 0 });
+    const kinds = await pdfPageKindsOf(routerOf(), Buffer.from('pdf'), {}, d, ALL);
+    expect(asked.length).toBe(0);
+    expect(split).toHaveBeenCalledTimes(1);
+    // Window 1: its asks turned away; then every page left is the day cap's.
+    expect(kinds.find((k) => k.page === 1)).toMatchObject({ from: PAGE_KIND_FROM.dayCap });
+    expect(kinds.filter((k) => k.page > 25).every((k) => k.from === PAGE_KIND_FROM.dayCap)).toBe(
+      true,
+    );
+    expect(kinds.length).toBe(TOTAL);
   });
 
   it('a page with no row in the tab Pages is not asked; a window with none is not cut', async () => {

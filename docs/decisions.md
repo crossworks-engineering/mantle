@@ -664,9 +664,10 @@ true }`). Remove the key to stop the page asks.
   - **Cost.** About USD 0.13 per 1,000 pages (the bench's measure, 3,103
     input tokens a page). Each paid ask counts in the box's day cap of paid
     asks (docs/pipelines.md, "The day cap") and is kept in the answer cache
-    (kind `decider`, its key holds the router's version), so an extract
-    tried again pays for no page twice. The core reads the cache first: a
-    kept answer takes no day-cap room and no place in the file's cap.
+    (kind `decider`, its key holds the question, `PDF_PAGE_QUESTIONS`, not
+    the router's version), so an extract tried again pays for no page
+    twice, also across a release. The core reads the cache first: a kept
+    answer takes no day-cap room and no place in the file's cap.
   - **Roll note.** The file's one ask of part 1 and every page ask now count
     in the Agents' day cap of paid asks on every box (`pipelineAsksToday`
     counts `meta.use = pdf_kind`). This is a tightening.

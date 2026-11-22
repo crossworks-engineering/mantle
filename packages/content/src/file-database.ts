@@ -51,7 +51,6 @@ import {
   stampOfMeta,
   withAfterEntry,
   withoutAfterEntry,
-  PAGE_KINDS_NOTE,
   pagesWithRows,
   withPageKinds,
   writeFileDbNone,
@@ -299,10 +298,8 @@ async function readRouted(
       ? await pdfPageKindsOf(router, bytes, options, opts.pdfPages, pagesWithRows(parsed.sheets))
       : [];
   if (kinds.length === 0) return parsed;
-  const description = parsed.description
-    ? `${parsed.description} ${PAGE_KINDS_NOTE}`
-    : PAGE_KINDS_NOTE;
-  return { ...parsed, sheets: withPageKinds(parsed.sheets, kinds), description };
+  // The note of the words of Kind from comes with them (withPageKinds).
+  return { ...parsed, ...withPageKinds(parsed, kinds) };
 }
 
 /** readRouted's read, before the page types. */

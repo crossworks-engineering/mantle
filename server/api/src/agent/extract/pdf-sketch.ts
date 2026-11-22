@@ -241,8 +241,8 @@ export async function sketchIngestPdfNode(
             // The stored kind stays the file's kind, as on a read again.
             file.kind as PdfKind,
           );
-          const { description } = written;
-          const sheets = withPageKinds(written.sheets, pageKinds);
+          // The page types put back, with their note (withPageKinds).
+          const { sheets, description } = withPageKinds(written, pageKinds);
           const out = await buildFileDatabase({
             fileId: node.id,
             ownerId,

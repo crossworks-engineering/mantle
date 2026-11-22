@@ -392,7 +392,8 @@ JPEG of 1,024 px long side in the parser's pdfjs child, and gives one
 each page with its rules kind and why a page has no ask (`blank`, `not
 drawn`). The core checks each ask (`pdfPageAskOf`, the one check of what
 leaves the box), asks 4 at once, and puts the answers in the Reader's tab
-`Pages` by `Page` (`withPageKinds`, `packages/files/src/pdf-page-kinds.ts`),
+`Pages` by `Page` (`withPageKinds`, `packages/files/src/pdf-page-kinds.ts`,
+which also adds `PAGE_KINDS_NOTE` to the description, on every path),
 for both Readers: `Kind` (the rules' kind of the page; the drawing reader
 writes its own), `Kind from`, `Decider kind` and `Decider confidence` (the
 summed chance of the answer's route, docs/decisions.md `pdf_kind`). The
@@ -431,8 +432,12 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
 - **One ask a page, once for these bytes.** The answers are in the database
   of the file's id and bytes, so a read again never asks; inside the
   extract each answer is kept in the answer cache too (its key holds the
-  router's version). An extract tried again takes the kept answers first,
-  free: only a real call takes day-cap room and a place in the file's cap.
+  question, `PDF_PAGE_QUESTIONS`: its text and options, not the router's
+  version, so a release between the tries keeps them). An extract tried
+  again takes the kept answers first, free: only a real call takes day-cap
+  room and a place in the file's cap. The day cap stops the run only after
+  a window that turned a page away, so a retry with the day cap full still
+  takes every kept answer.
 - **Only pages with a row.** Part 2 runs after the Reader's run, so it
   asks only the pages that have a row in the tab `Pages`; a window with no
   such page is not cut. An answer never has nowhere to stand.

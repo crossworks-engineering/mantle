@@ -255,13 +255,13 @@ export type PdfPageDecide = {
   room(): Promise<number>;
   /** The answer kept for this ask (the answer cache: an extract tried
    *  again), or null. Free: it takes no room and no place in the file's
-   *  cap. `version`: the router's, in the key, so a new question asks
-   *  again. */
-  kept(ask: PdfPageAsk, picture: Buffer, version: string): Promise<PdfPageDecision | null>;
+   *  cap. The key holds the question itself, not the router's version, so
+   *  a router change that is not of the question keeps the answers. */
+  kept(ask: PdfPageAsk, picture: Buffer): Promise<PdfPageDecision | null>;
   /** One paid page ask: the answer (kept for a retry); null, no answer;
    *  `stop`, ask no more pages of this file (no answer three times in a
    *  row, or the breaker is open). */
-  ask(ask: PdfPageAsk, picture: Buffer, version: string): Promise<PdfPageDecision | null | 'stop'>;
+  ask(ask: PdfPageAsk, picture: Buffer): Promise<PdfPageDecision | null | 'stop'>;
   /** The file's asks are over: the breaker hears their one outcome. */
   settle(): void;
 };
@@ -306,7 +306,9 @@ function windowPagesOf(state: unknown): [number, string, string | null][] {
  * Every cap ends in the rules, never in a wait: past the file's cap (the
  * router's needs.workers.decider), past the day cap (`room`), or after a
  * stop (`ask` says `stop`), the pages left keep their rules kind, and
- * `Kind from` says why. No window is cut past a cap. A window the parser
+ * `Kind from` says why. No window is cut past a cap: the day cap stops the
+ * run after the window that turned a page away for it (a window whose
+ * pages all had kept answers turned none away). A window the parser
  * cannot cut or read is `rules: not drawn`. A busy or unavailable parser
  * throws, as every job: the extract is tried again, and the answer cache
  * holds the answers paid. Any other failure ends part 2 with what it has:
@@ -375,17 +377,23 @@ export async function pdfPageKindsOf(
       }
       // Kept answers first, free (an extract tried again paid for them).
       const kept = await Promise.all(
-        asks.map((q) => decide.kept(q.ask, q.picture, router.version).catch(() => null)),
+        asks.map((q) => decide.kept(q.ask, q.picture).catch(() => null)),
       );
       // The day cap, read once a window (the asks of a window are few).
       let room = Math.max(0, await decide.room());
+      // This window turned a page away for the day cap: only then does the
+      // run stop for it. No room alone is no stop: the next window's kept
+      // answers are free (a retry with the day cap full takes them all).
+      let turnedAway = false;
       const queue: typeof asks = [];
       for (const [i, { ask, picture, kind }] of asks.entries()) {
         const k = kept[i];
         if (k) out.set(ask.page, pageKindOfAnswer(ask.page, kind, k));
         else if (asked >= cap) rulesOnly(ask.page, kind, PAGE_KIND_FROM.cap);
-        else if (room <= 0) rulesOnly(ask.page, kind, PAGE_KIND_FROM.dayCap);
-        else {
+        else if (room <= 0) {
+          rulesOnly(ask.page, kind, PAGE_KIND_FROM.dayCap);
+          turnedAway = true;
+        } else {
           asked += 1;
           room -= 1;
           queue.push({ ask, picture, kind });
@@ -394,9 +402,7 @@ export async function pdfPageKindsOf(
       for (let i = 0; i < queue.length; i += PAGE_ASKS_AT_ONCE) {
         const part = queue.slice(i, i + PAGE_ASKS_AT_ONCE);
         const answers = await Promise.all(
-          part.map((q) =>
-            stopped ? Promise.resolve(null) : decide.ask(q.ask, q.picture, router.version),
-          ),
+          part.map((q) => (stopped ? Promise.resolve(null) : decide.ask(q.ask, q.picture))),
         );
         for (const [j, a] of answers.entries()) {
           const q = part[j]!;
@@ -417,7 +423,7 @@ export async function pdfPageKindsOf(
         stopped = PAGE_KIND_FROM.cap;
         break;
       }
-      if (room <= 0 && to < total) {
+      if (turnedAway && to < total) {
         stopped = PAGE_KIND_FROM.dayCap;
         break;
       }

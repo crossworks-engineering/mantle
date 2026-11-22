@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PAGE_KIND_FROM,
+  PAGE_KINDS_NOTE,
   PDF_PAGE_SAMPLE_MAX_CHARS,
   pageKindsOfRows,
   pagePictureName,
@@ -81,7 +82,7 @@ describe('withPageKinds, the columns of the tab Pages', () => {
         [3, 'three'],
       ],
     };
-    const [out] = withPageKinds([pages], kinds);
+    const [out] = withPageKinds({ sheets: [pages] }, kinds).sheets;
     expect(out!.columns.map((c) => c.name)).toEqual([
       'Page',
       'Text',
@@ -107,13 +108,30 @@ describe('withPageKinds, the columns of the tab Pages', () => {
       ],
       rows: [[1, 'pid', 'picture']],
     };
-    const [out] = withPageKinds([pages], kinds);
+    const [out] = withPageKinds({ sheets: [pages] }, kinds).sheets;
     expect(out!.rows).toEqual([[1, 'pid', 'rules: shadow', 'table', 0.91]]);
   });
 
-  it('no page types: the sheets as they are (a box with no page ask)', () => {
+  it('no page types: the sheets and the description as they are (a box with no page ask)', () => {
     const sheets: ParsedSheet[] = [{ name: 'Pages', columns: [], rows: [] }];
-    expect(withPageKinds(sheets, [])).toEqual(sheets);
+    expect(withPageKinds({ sheets, description: 'A P&ID.' }, [])).toEqual({
+      sheets,
+      description: 'A P&ID.',
+    });
+  });
+
+  it('page types bring their note to the description, on every path (one place)', () => {
+    const pages: ParsedSheet = {
+      name: 'Pages',
+      columns: [{ name: 'Page', type: 'number' }],
+      rows: [[1]],
+    };
+    // A Reader's description (an upload, a read again, the sketch read).
+    expect(withPageKinds({ sheets: [pages], description: 'A P&ID.' }, kinds).description).toBe(
+      `A P&ID. ${PAGE_KINDS_NOTE}`,
+    );
+    // No description: the note alone.
+    expect(withPageKinds({ sheets: [pages] }, kinds).description).toBe(PAGE_KINDS_NOTE);
   });
 
   it('reads back what it wrote; a row of a Reader before M3 holds no type', () => {

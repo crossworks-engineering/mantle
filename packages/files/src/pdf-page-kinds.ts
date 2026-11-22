@@ -163,19 +163,33 @@ export function pagesWithRows(sheets: readonly ParsedSheet[]): Set<number> {
   return out;
 }
 
+/** A Reader's read: its sheets and the description of its database. */
+export type PageKindsRead = { sheets: readonly ParsedSheet[]; description?: string | undefined };
+
 /**
- * The sheets with the page types in the tab `Pages`, by its column `Page`:
+ * The read with the page types in the tab `Pages`, by its column `Page`:
  * a column of PAGE_KIND_COLUMNS the tab lacks is added; `Kind` is set only
  * where the Reader left it empty (the drawing reader names its own page
  * kinds); the other three are set. A page with no row keeps no type (its
- * window was not read). No page types: the sheets as they are, so a file
- * with no page ask has the rows it had before M3.
+ * window was not read). The description gets PAGE_KINDS_NOTE here, the one
+ * place, so every path that puts page types back (an upload, a read again,
+ * the sketch read) says what the words of `Kind from` are. No page types:
+ * the read as it is, so a file with no page ask has the rows and the
+ * description it had before M3.
  */
 export function withPageKinds(
+  read: PageKindsRead,
+  kinds: readonly PdfPageKind[],
+): { sheets: ParsedSheet[]; description?: string | undefined } {
+  if (kinds.length === 0) return { sheets: [...read.sheets], description: read.description };
+  const description = read.description ? `${read.description} ${PAGE_KINDS_NOTE}` : PAGE_KINDS_NOTE;
+  return { sheets: sheetsWithPageKinds(read.sheets, kinds), description };
+}
+
+function sheetsWithPageKinds(
   sheets: readonly ParsedSheet[],
   kinds: readonly PdfPageKind[],
 ): ParsedSheet[] {
-  if (kinds.length === 0) return [...sheets];
   const byPage = new Map(kinds.map((k) => [k.page, k]));
   return sheets.map((sheet) => {
     if (sheet.name !== PAGES) return sheet;
