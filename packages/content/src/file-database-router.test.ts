@@ -429,13 +429,14 @@ describe('the PDF router in a real read', () => {
     const rows = await pagesOf('unsure-vector.pdf', 'unsure');
     const ids = inProcess();
     const pdfPages = noAsks(true);
-    // Stored as a book; its pages' answers say drawing: the drawing lane,
-    // as unsure (the frame picks the lane, not a kind of its own).
+    // Stored as an office kind of an older file ask (table, read by the
+    // drawing reader); its pages' answers say drawing: the drawing lane, as
+    // unsure (the frame picks the lane, not a kind of its own).
     const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
       pipelines,
       count,
       pdfPages,
-      pdfStored: { kind: 'book', decision: null, pageKinds: typed(rows, 'pfd') },
+      pdfStored: { kind: 'table', decision: null, pageKinds: typed(rows, 'pfd') },
     });
     expect(pdfPages.ask).not.toHaveBeenCalled();
     expect(ids).toEqual(['drawing-pdf']);

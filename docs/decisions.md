@@ -662,9 +662,10 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
 "enabled": true, "mode": "shadow", "pages": true }`); the bench measured
     `typesafe/jev-1.14`. Live on one box: the same with `"mode": "live"`
     (`"pdf_kind": { "enabled": true, "mode": "live", "pages": true }`). Back
-    to `shadow` to stop routing; remove `pages` to stop the page asks. A
-    file keeps the kind its last read named until it is read with the page
-    decider again (a new upload, or a person's run of the file).
+    to `shadow` to stop routing; remove `pages` to stop the page asks.
+    Back in shadow no new page answer is used: a file keeps the kind its
+    live read named, its page lanes go back on its next person's run, and
+    a new upload of the file routes it by the rules.
   - **Timeout.** The use's floor is 5 s (`USE_TIMEOUT_FLOOR_MS.pdf_kind`), as
     for `scan_read_check`: a picture call runs in TypeSafe's long-context
     mode. It holds for the file's one ask too.

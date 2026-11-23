@@ -15,7 +15,11 @@
  *    text of its row, taken by hash: no second paid call;
  *  - a page whose read failed is not saved (no empty picture), and the
  *    count is asked at the end of every run;
- *  - an answer that keeps an older row after a stop saves no picture.
+ *  - an answer that keeps an older row after a stop saves no picture;
+ *  - M4: in a book the Agent's page text goes to the passages by page (no
+ *    text of its own); in a PDF drawing (its office pages, by lane) it goes
+ *    to the file's text, as any Agent's, so no paid page text is out of
+ *    search.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -125,9 +129,10 @@ const builtin = (id: string) => ({
 });
 const AGENT = builtin('pdf-page-read');
 const READER = builtin('pdf-pages');
+const DRAWING = builtin('drawing-pdf');
 const pipelines = {
-  all: [READER, AGENT],
-  byId: (id: string) => [READER, AGENT].find((p) => p.id === id) ?? null,
+  all: [READER, DRAWING, AGENT],
+  byId: (id: string) => [READER, DRAWING, AGENT].find((p) => p.id === id) ?? null,
   readerFor: () => null,
   routerFor: () => builtin('pdf-router'),
   after: [],
@@ -212,6 +217,53 @@ beforeEach(() => {
   h.events.length = 0;
   h.states.length = 0;
   fail = undefined;
+});
+
+/** A PDF drawing of 40 pages (the drawing reader's database) whose pages
+ *  in `office` are office scans by a used page answer (M4). */
+function drawing(office: number[]): { fileId: string; bytes: Buffer; sha256: string } {
+  const fileId = randomUUID();
+  const bytes = Buffer.from(`made-up drawing ${fileId}`);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const pages = Array.from({ length: TOTAL }, (_, i) => i + 1);
+  writeFileDatabaseDoc(
+    path.join(dir, `${fileId}.sqlite`),
+    ensureWorkbookDoc({
+      tabs: fd.tabsOfSheets([
+        {
+          name: 'File',
+          columns: ['Kind', 'Rules kind'].map((name) => ({ name, type: 'text' as const })),
+          rows: [['scan', 'scan']],
+        },
+        {
+          name: 'Pages',
+          columns: ['Page', 'Class', 'Kind', 'Kind from'].map((name) => ({
+            name,
+            type: name === 'Page' ? ('number' as const) : ('text' as const),
+          })),
+          rows: pages.map((n) =>
+            office.includes(n) ? [n, 'scan', 'table', 'decider'] : [n, 'scan', 'scan', 'rules'],
+          ),
+        },
+      ]),
+    }),
+    { fileId, ownerId: randomUUID(), stamp: pipelineStampOf(DRAWING as never, []) },
+  );
+  return { fileId, bytes, sha256 };
+}
+
+describe("where the Agent's page text goes (M4)", () => {
+  it("a book: by page (no text of its own); a PDF drawing: to the file's text", async () => {
+    const b = book([2]);
+    h.row = { sha256: b.sha256 };
+    const inBook = await run(b, sink().pictures);
+    expect(inBook).toMatchObject({ status: 'asked', made: 1, text: '' });
+    const d = drawing([4]);
+    h.row = { sha256: d.sha256 };
+    const inDrawing = await run(d, sink().pictures);
+    expect(inDrawing).toMatchObject({ status: 'asked', made: 1 });
+    expect(inDrawing.status === 'asked' && inDrawing.text).toContain('the text of page-4');
+  });
 });
 
 describe("a book's page pictures: render, read and save in the Agent's run", () => {

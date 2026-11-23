@@ -243,16 +243,18 @@ describe('pdfFrameKindOf: the frame of a file (Q4, M4)', () => {
       rulesOnly(2, 'scan', PAGE_KIND_FROM.dayCap),
       rulesOnly(3, 'pid', PAGE_KIND_FROM.cap),
     ];
-    expect(pdfFrameKindOf(ks, 'book')).toBe('unsure');
+    expect(pdfFrameKindOf(ks, 'unsure')).toBe('unsure');
   });
 
-  it('drawing wins: a drawing kind stays, else unsure (the frame picks the lane, never a kind of its own)', () => {
+  it('drawing wins: a drawing kind or a book stays, else unsure (the frame picks the lane, never a kind of its own)', () => {
     const ks = live([answered(1, 'pfd', 0.9), answered(2, 'pfd', 0.9), answered(3, 'pid', 0.9)]);
     expect(pdfFrameKindOf(ks, 'pid')).toBe('pid');
     expect(pdfFrameKindOf(ks, 'scan')).toBe('scan');
     // A raster set the rules left unsure keeps the readers of unsure.
     expect(pdfFrameKindOf(ks, 'unsure')).toBe('unsure');
-    expect(pdfFrameKindOf(ks, 'book')).toBe('unsure');
+    // A book stays a book (its reader reads in windows; its drawing pages
+    // go to the sheet read by lane).
+    expect(pdfFrameKindOf(ks, 'book')).toBe('book');
     expect(pdfFrameKindOf(ks, 'table')).toBe('unsure');
   });
 

@@ -324,7 +324,8 @@ export function pageKindsAt(
  * route of its `Kind` (a used answer's, else its rules kind: pageRouteOfKind);
  * a blank page and a page with no route do not vote. With no used answer
  * (`decider`) on any page the kind is `kind`, as named before. Office wins:
- * `book`. Drawing wins: `kind` when it is a drawing kind, else `unsure`.
+ * `book`. Drawing wins: `kind` when it is a drawing kind or `book`, else
+ * `unsure`.
  * The frame picks the lane, never a drawing kind of its own: a kind names
  * the readers of a file (`unsure` is read by the drawing reader, the sketch
  * read and the PDF sheet read; a `pid` by its text layer alone), so a raster
@@ -341,5 +342,8 @@ export function pdfFrameKindOf(kinds: readonly PdfPageKind[], kind: string): str
     else if (route === 'drawing') drawing += 1;
   }
   if (office >= drawing) return 'book';
-  return pageRouteOfKind(kind) === 'drawing' ? kind : 'unsure';
+  // A book stays a book: its reader reads in page windows (a file past the
+  // size pdfjs opens, a long file), which the drawing reader cannot, and
+  // its drawing pages go to the PDF sheet read by their lane.
+  return pageRouteOfKind(kind) === 'drawing' || kind === 'book' ? kind : 'unsure';
 }

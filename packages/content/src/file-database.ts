@@ -1266,6 +1266,27 @@ export async function agentInputOf(
   };
 }
 
+/**
+ * Whether an Agent's page text reaches the file's passages by page (P3): it
+ * says `produces.pages`, and so does the Reader of the database at `sqlite`
+ * (its stamp; the book reader), as filePagesOf reads them. Else (an office
+ * page of a PDF drawing, M4) its text goes to the file's text as any
+ * Agent's (agentTextOf), so no paid page text is out of search.
+ */
+function pagesGiveText(
+  agent: Pick<PipelineManifest, 'produces'>,
+  sqlite: string,
+  pipelines: BoxPipelines,
+): boolean {
+  if (agent.produces.pages !== true) return false;
+  try {
+    const stamp = stampOfMeta(readDocMeta(sqlite, [...PIPELINE_STAMP_KEYS]));
+    return stamp !== null && pipelines.byId(stamp.pipeline_id)?.produces.pages === true;
+  } catch {
+    return false;
+  }
+}
+
 export type FileAgentRun =
   /** The asks are answered, as far as they were. `made`: paid calls of this
    *  run. `reused`: asks answered from the tab, with no call. `stopped`: why
@@ -1445,7 +1466,10 @@ export async function runAgentOnFile(args: {
       },
     });
     if (!stopped) await countRun(ownerId, pipeline.id, fileId);
-    return { ...done, text: pipeline.produces.pages === true ? '' : agentTextOf(sheets) };
+    return {
+      ...done,
+      text: pagesGiveText(pipeline, names.sqlite, pipelines) ? '' : agentTextOf(sheets),
+    };
   });
 }
 
@@ -1738,8 +1762,9 @@ async function runAgentWindowed(args: {
     warnings,
     ...(pagePictures ? { pictures: picturesSaved } : {}),
     // An Agent of page text gives the file's passages by page (P3), not the
-    // text of its tab: no copy of every page in the node's data.
-    text: pipeline.produces.pages === true ? '' : agentTextOf(sheets),
+    // text of its tab: no copy of every page in the node's data. Only where
+    // the file's Reader gives pages too (a book; pagesGiveText).
+    text: pagesGiveText(pipeline, sqlite, args.pipelines) ? '' : agentTextOf(sheets),
   };
 }
 

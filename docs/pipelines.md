@@ -481,9 +481,11 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   their `Kind` (a used answer's, else the rules kind: document, table,
   datasheet office; the drawing options and `scan` drawing; `unsure`,
   `none` and blank pages no vote). Office wins or ties: the book. Drawing
-  wins: the kind stays when it is a drawing kind, else `unsure`; a drawing
-  kind is never the frame's own pick, so a raster set the rules left
-  `unsure` keeps the readers of `unsure`. With no used answer the kind is
+  wins: the kind stays when it is a drawing kind or `book` (the book reader
+  reads in page windows, the drawing reader cannot; a book's drawing pages
+  go to the sheet read by lane), else `unsure`; a drawing kind is never the
+  frame's own pick, so a raster set the rules left `unsure` keeps the
+  readers of `unsure`. With no used answer the kind is
   as named before. Only a read with the page decider (an upload, a person's run of one PDF) asks or works out
   which answers are used; a read again with no ask names the frame again by
   the stored used answers (`decider` rows), so it keeps a live read's frame,
@@ -499,8 +501,11 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   text layer (Class `scan`, `raster_with_text`, for the Scan reader). PDF
   sheet read (`pdf-sheet-read`, 1.2.0) reads the pages the core names
   (`state.drawingPages`), the first 10: a book's drawing-lane pages, and in
-  a drawing file every page but those the Scan reader reads; a file with no page of an Agent's lane runs no job for it, nor a
-  PDF past the size pdfjs opens for an Agent with no windows.
+  a drawing file every page but those the Scan reader reads. A file with
+  no page of an Agent's lane runs no job for it, nor a PDF past the size
+  pdfjs opens for an Agent with no windows. The page text PDF page read
+  reads in a drawing file goes to the file's text as any Agent's (its
+  Reader gives no pages for passages by page).
 - **Pictures kept (M4, Jason 2026-11-23).** A graph, a chart, a sketch
   chart or a cover page stays in the office lane, and its picture is kept
   so an LLM can look at it at question time: on a live box, a page whose

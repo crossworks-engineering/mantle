@@ -32,6 +32,7 @@
  * withViewer; the tool runs in it). Not a person-only act: it writes
  * nothing and asks no model.
  */
+import { pdfPageUseOf } from '@mantle/decisions';
 import { afterSheetsOf, agentInputOf, parseFileSheets } from '@mantle/content/file-database';
 import { AgentAskError, checkAsks } from '@mantle/content/pipeline-agent';
 import { agentStep, stepFileOf } from '@mantle/content/pipeline-runner';
@@ -262,7 +263,9 @@ async function testWith(
     if (!loaded) return result('failed', { word: 'unreadable' });
     try {
       // The kind and the Reader's options, as a real run gives them.
-      const from = await agentInputOf(ownerId, ext, pipelines, sqlite, p);
+      // As a real run: on a live box a page of unsure type is read too.
+      const live = (await pdfPageUseOf(ownerId).catch(() => null))?.live === true;
+      const from = await agentInputOf(ownerId, ext, pipelines, sqlite, p, live);
       // The one step, in one parser job. No ask is sent, so nothing is paid.
       const step = await withParserScope({ interactive: true, failures: NO_LEDGER }, () =>
         agentStep(p, loaded.bytes, stepFileOf(loaded.bytes, ext), options, from),
