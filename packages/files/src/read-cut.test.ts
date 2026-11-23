@@ -203,7 +203,7 @@ describe('the sentences of the newer cuts', () => {
     ).toBe(
       'No database was built: its sheets hold 2,500,000 rows, past the 2,000,000 row limit, so file_sql has no rows of it. Its text is read as usual.',
     );
-    // Read in part since ingest program A2 and C3: the first rows go in.
+    // Read in part since the ingest program: the first rows go in.
     expect(
       readCutHint('database_rows', {
         what: 'rows',

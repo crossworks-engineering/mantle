@@ -11,8 +11,8 @@
  * delimited text (parseDelimited), whatever their extension, as the old path
  * did. A file the engine cannot read throws, and the job fails with its word.
  *
- * A long file is read in part, never refused whole (ingest program A2 and
- * C3): the database keeps the first rows up to the import ceiling
+ * A long file is read in part, never refused whole (the ingest program):
+ * the database keeps the first rows up to the import ceiling
  * (TABLE_IMPORT_MAX_ROWS) and the read budget (MANTLE_FILE_DB_CSV_MAX_MB of
  * cell text), the rest is counted, and the write says the cut (`readCuts`,
  * docs/files.md "Read in part"). A CSV is read as a stream, and a workbook

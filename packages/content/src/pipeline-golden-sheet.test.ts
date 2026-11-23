@@ -17,7 +17,7 @@
  *   ./pipeline-runner.test.ts). Before, the CSV's word came from
  *   DelimitedReadError in this process; now it comes from the job.
  * - over-cap.csv: it was refused whole (`too-large`, the core's early cap).
- *   Now the step reads it in part (ingest program A2 and C3): the first rows
+ *   Now the step reads it in part (the ingest program): the first rows
  *   to the read budget or the import ceiling, and the cut in its write. So
  *   it has no golden file: its case says the head and the cut.
  * - macro.xlsm: `.xlsm` is not in the reader's match list, so no upload
@@ -32,11 +32,8 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { readerFor, BUILTIN_PIPELINES, PIPELINE_API, pipelineStampOf } from '@mantle/files';
 import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
 import { inProcessStepJob } from '@mantle/files/pipelines/test-job';
-import { parsedFileOfRun, parseFileSheets, type ParsedFile } from './file-database';
+import { parsedFileOfRun, type ParsedFile } from './file-database';
 import { goldenOf } from './pipeline-golden';
-import { pipelinesOf } from './pipeline-registry';
-/** The box's pipelines (the registry): the built-ins. */
-const pipelines = pipelinesOf([]);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'sheet');
@@ -129,7 +126,7 @@ describe('sheet: the step gives what the old path gave', () => {
     });
   }
 
-  it('over-cap.csv past the read budget: the head of the file, and the cut (A2, C3)', async () => {
+  it('over-cap.csv past the read budget: the head of the file, and the cut', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '0.25');
     const parsed = await readInProcess('over-cap.csv');
     if (parsed.kind !== 'sheets') throw new Error('no sheets');

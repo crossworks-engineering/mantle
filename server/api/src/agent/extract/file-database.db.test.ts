@@ -577,7 +577,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(await wordOf(empty.id)).toBe('no-rows');
     });
 
-    // Read in part, never refused whole (ingest program A2 and C3): the
+    // Read in part, never refused whole (the ingest program): the
     // database keeps the first rows, the cut is said on the file, and no
     // Table is made of a cut read.
     it('past TABLE_IMPORT_MAX_ROWS the first rows go in, and the cut is said', async () => {

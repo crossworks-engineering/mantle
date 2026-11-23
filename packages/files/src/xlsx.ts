@@ -95,7 +95,7 @@ function rowsToCsv(rows: RawCell[][]): string {
 type SheetRows = { name: string; rows: RawCell[][]; rowsTotal: number; colsTotal: number };
 
 /** The sheets of a workbook for its text. One past the size check of
- *  ./sheet-read.ts is read as a stream (ingest program A2): every row is
+ *  ./sheet-read.ts is read as a stream (the ingest program): every row is
  *  counted, the first ones are kept, and nothing is refused whole. */
 async function sheetsOf(buf: Buffer): Promise<SheetRows[]> {
   try {

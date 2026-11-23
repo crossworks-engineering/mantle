@@ -2109,8 +2109,8 @@ did. With the parser busy or down, the extract of a CSV waits and retries
 (the client's busy waits, then the extract's own retries) and can end in the
 dead letter queue, where before a CSV made no parser call. A run on demand
 and a Test on a CSV can answer `busy`.
-A long file is read in part, never refused whole (ingest program A2 and
-C3, 2026-11-23). The early cap on delimited text in the core is gone. The
+A long file is read in part, never refused whole (the ingest
+program, 2026-11-23). The early cap on delimited text in the core is gone. The
 step keeps the first rows of the file, in order, up to the import ceiling
 (`TABLE_IMPORT_MAX_ROWS`, 2,000,000) and the read budget
 (`MANTLE_FILE_DB_CSV_MAX_MB` of cell text, a cell counting its text plus 3

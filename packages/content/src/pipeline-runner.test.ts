@@ -660,7 +660,7 @@ describe('sheet through a real parser job (the move MV3)', () => {
     }
   }, 180_000);
 
-  // The old early cap is gone (ingest program A2 and C3): a long CSV costs
+  // The old early cap is gone (the ingest program): a long CSV costs
   // its one job like any other. The parser here runs with the box's budget,
   // so the file is whole; the cut itself is pinned in process
   // (pipeline-golden-sheet.test.ts).

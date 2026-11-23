@@ -1,5 +1,5 @@
 /**
- * Long sheets read in part, never refused whole (ingest program A2 and C3):
+ * Long sheets read in part, never refused whole (the ingest program):
  * the stream reader of a workbook past the size check, the row keeper of a
  * file database read, and a CSV read as a stream. Made-up data only.
  */
@@ -171,7 +171,7 @@ async function pastTheSizeCheck() {
   });
 }
 
-describe('a workbook past the size check (A2)', () => {
+describe('a workbook past the size check', () => {
   it('its text is read as a stream: the same text and the same cut', async () => {
     const buf = await workbook(6200);
     const whole = await withReadCutSink(async () => (await import('./xlsx')).parseXlsx(buf));
@@ -228,7 +228,7 @@ describe('RowKeeper', () => {
   });
 });
 
-describe('a CSV read as a stream (C3)', () => {
+describe('a CSV read as a stream', () => {
   it('bytes give what the text gives, on every golden CSV that reads', async () => {
     for (const name of readdirSync(FIXTURES).filter((n) => n.endsWith('.csv'))) {
       const buf = readFileSync(path.join(FIXTURES, name));
@@ -249,7 +249,7 @@ describe('a CSV read as a stream (C3)', () => {
   });
 });
 
-describe('markup read whole as a stream (C3)', () => {
+describe('markup read whole as a stream', () => {
   it('a page past one 32 MB window is read to its end, with no cut', async () => {
     const { parseMarkupBytes } = await import('./markup');
     const row = '<p>filler text here</p>\n';

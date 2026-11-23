@@ -75,7 +75,7 @@ const GRID_MAX_COLS_PER_SHEET = 16_384;
  * because a partial or empty grid import would silently look like a
  * successful one. A file database read gives a `keep` (RowKeeper): it reads
  * such a workbook as a stream and keeps its head, and the keeper says the
- * cut (ingest program A2 and C3).
+ * cut (the ingest program).
  */
 export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<ParsedSheet[]> {
   if (bytesLookLikeLegacyBiff(buf)) {
@@ -91,7 +91,7 @@ export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<P
     wb = await loadWorkbook(buf);
   } catch (err) {
     // A file database read (`keep`) reads a workbook past the size check as
-    // a stream and keeps its head (ingest program A2). An import (no
+    // a stream and keeps its head (the ingest program). An import (no
     // `keep`) still refuses it whole: a partial import would be a lie.
     if (!keep || !(err instanceof SpreadsheetTooLargeError)) throw err;
     const sheets = new Map<string, unknown[][]>();

@@ -144,7 +144,7 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
     `${ofTotal(c)} sheets were read: the others are past the ${limitText(c, 'cell', '1,000,000-cell')} limit of a legacy spreadsheet. Save it as .xlsx and upload it to read them.`,
   markup_bytes: (c) =>
     `Only ${ofTotal(c)} bytes were read: their text reached the ${limitText(c, 'character', '32 MB')} limit of an HTML or XML read. The rest is not in search.`,
-  // A cut of 0 rows read is a file of before ingest program A2 and C3,
+  // A cut of 0 rows read is a file of before the ingest program,
   // when such a file got no database at all.
   database_size: (c) =>
     c.what === 'rows'

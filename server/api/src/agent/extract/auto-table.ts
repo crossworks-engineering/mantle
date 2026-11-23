@@ -248,7 +248,7 @@ async function readAndWrite(a: {
     return; // the Table alone: leave it as a plain file, as ever
   }
   const readMs = Date.now() - readStart;
-  // A long sheet is read in part (ingest program A2 and C3): the database
+  // A long sheet is read in part (the ingest program): the database
   // keeps the first rows, and the cut is said on the file (docs/files.md,
   // "Read in part"). The Reader says its own cut (the package `sheet`: the
   // import ceiling or the read budget); a read past the import ceiling is

@@ -320,8 +320,8 @@ function* windowsOf(bytes: Buffer): Generator<Window> {
 }
 
 /** File-ingest entry: `.xml` takes the XML reader, everything else the HTML
- *  scanner. The whole file is read, as a stream of windows (ingest program
- *  C3); only the text cap stops it, and that cut is said on the file. */
+ *  scanner. The whole file is read, as a stream of windows (the ingest
+ *  program); only the text cap stops it, and that cut is said on the file. */
 export function parseMarkupBytes(bytes: Buffer, ext: string): string {
   const read =
     (ext === 'xml' ? xmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_CHARS) : null) ??

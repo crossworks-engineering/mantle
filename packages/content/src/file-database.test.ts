@@ -72,7 +72,7 @@ describe('a CSV, read by the package sheet', () => {
     });
   });
 
-  it('past the read budget: one job, never refused whole (A2, C3); the Reader keeps the head', async () => {
+  it('past the read budget: one job, never refused whole; the Reader keeps the head', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
     const calls = stubParser(ranSheets([SHEET]));
     const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 0x61)]);

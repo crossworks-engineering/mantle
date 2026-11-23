@@ -231,8 +231,8 @@ export type RowCut = {
 };
 
 /**
- * The rows a file database read keeps (the package `sheet`'s step; ingest
- * program A2 and C3): the first rows of the file, in order, up to `maxRows`
+ * The rows a file database read keeps (the package `sheet`'s step; the
+ * ingest program): the first rows of the file, in order, up to `maxRows`
  * rows and about `maxBytes` bytes of cell text over all its sheets. A row
  * past either is counted, not kept, and every later row too, so the kept
  * rows are always the head of the file. The cut is said on the file

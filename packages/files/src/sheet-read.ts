@@ -56,8 +56,8 @@
  * size of the worksheet parts, and refuse in-process parsing past a ceiling
  * ({@link SpreadsheetTooLargeError}). Past it, the text read (./xlsx.ts) and
  * a file database read (./sheet-grid.ts with a row keeper) read the
- * workbook as a stream instead ({@link streamWorkbookRows}, ingest program
- * A2): in part where their caps stop, never refused whole. A by-hand import
+ * workbook as a stream instead ({@link streamWorkbookRows}, the ingest
+ * program): in part where their caps stop, never refused whole. A by-hand import
  * still refuses it (`too_large`): a partial import would be a lie. The
  * whole-workbook reader stays under the ceiling, as it fills merged cells
  * and the stream does not (sheet-read-stream.test.ts).
@@ -145,7 +145,7 @@ export async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
  * The rows of every sheet of an OOXML workbook, read as a stream (exceljs's
  * `stream.xlsx.WorkbookReader`), one row at a time: a workbook past
  * {@link MAX_SHEET_XML_BYTES} is read this way, in part where its reader
- * stops (ingest program A2), never refused whole. Memory holds the shared
+ * stops (the ingest program), never refused whole. Memory holds the shared
  * strings and the row in hand, not the sheet.
  *
  * The stream reader needs `xl/workbook.xml` before the sheets (see the

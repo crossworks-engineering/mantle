@@ -155,7 +155,7 @@ export type ParsedFile =
        *  the pages of the file, kept in the database's `_meta`. */
       pages?: { read: number; total: number };
       /** What the Reader's read left out (its write's `readCuts`): a long
-       *  sheet read in part (the package `sheet`, ingest program A2 and C3).
+       *  sheet read in part (the package `sheet`, the ingest program).
        *  The extract says them on the file (auto-table.ts). */
       readCuts?: FileTabsWriteInput['readCuts'];
       /** The Reader that made these sheets when it is not the reader of the
@@ -520,7 +520,7 @@ export function parsedFileOfRun(
  * decides (the extract retries).
  *
  * A long CSV or workbook is read in part by the package `sheet`, never
- * refused here (ingest program A2 and C3): its write says the cut. An XML
+ * refused here (the ingest program): its write says the cut. An XML
  * that is no plan earns its answer here, with no job, for every caller.
  */
 type ParseOpts = {
@@ -686,7 +686,7 @@ function rowsOf(parsed: Extract<ParsedFile, { kind: 'sheets' }>): number {
 }
 
 /** The head of a read past the import ceiling: its sheets in order, and the
- *  rows of each while the ceiling lasts (ingest program C3: the first rows
+ *  rows of each while the ceiling lasts (the ingest program: the first rows
  *  are kept, never no database). The extract says the cut on the file
  *  (auto-table.ts, `database_rows`). */
 export function headOfSheets<T extends { columns: readonly unknown[]; rows: readonly unknown[] }>(
@@ -742,7 +742,7 @@ async function writeRowsOrWord(
   if (parsed.kind === 'none') return word(parsed.word);
   // The stamp and the count name the Reader that made the sheets.
   if (parsed.readBy) file = { ...file, pipeline: parsed.readBy };
-  // Past the import ceiling, the first rows are written (C3); the cut is
+  // Past the import ceiling, the first rows are written; the cut is
   // said on the file by the extract (auto-table.ts).
   const max = importMaxRows();
   const sheets = rowsOf(parsed) > max ? headOfSheets(parsed.sheets, max) : parsed.sheets;
@@ -794,7 +794,7 @@ async function writeRowsOrWord(
     await countRun(file.ownerId, file.pipeline.id, file.fileId);
     await stampPipelineRead(file.fileId, file.sha256, file.pipeline);
   }
-  return { status: 'built', tabs: tabs.length, rows };
+  return { status: 'built', tabs: tabs.length, rows: rowsOf({ ...parsed, sheets }) };
 }
 
 /**
