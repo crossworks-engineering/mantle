@@ -283,10 +283,12 @@ describe('a CSV read as a stream', () => {
 
 describe('markup read whole as a stream', () => {
   it('a page past one 32 MB window is read to its end, with no cut', async () => {
+    // The modules of this point (other cases reset them): one sink.
     const { parseMarkupBytes } = await import('./markup');
+    const { withReadCutSink: sink } = await import('./read-cut-sink');
     const row = '<p>filler text here</p>\n';
     const html = `<html><body>${row.repeat(Math.ceil((40 * 1024 * 1024) / row.length))}<p>THE-END</p></body></html>`;
-    const { value, cuts } = await withReadCutSink(async () =>
+    const { value, cuts } = await sink(async () =>
       parseMarkupBytes(Buffer.from(html), 'html'),
     );
     expect(value.endsWith('THE-END')).toBe(true);
@@ -294,11 +296,13 @@ describe('markup read whole as a stream', () => {
   }, 60_000);
 
   it('text past the cap in the last window is cut, and the cut is said', async () => {
+    // The modules of this point (other cases reset them): one sink.
     const { parseMarkupBytes } = await import('./markup');
+    const { withReadCutSink: sink } = await import('./read-cut-sink');
     const limit = 32 * 1024 * 1024;
     // Two windows of text, about 40 MB: the cap falls in the second.
     const html = `<p>${'w'.repeat(limit - 16)}</p><p>${'z'.repeat(8 * 1024 * 1024)}</p>`;
-    const { value, cuts } = await withReadCutSink(async () =>
+    const { value, cuts } = await sink(async () =>
       parseMarkupBytes(Buffer.from(html), 'html'),
     );
     expect(Buffer.byteLength(value)).toBeLessThanOrEqual(limit);
@@ -306,10 +310,12 @@ describe('markup read whole as a stream', () => {
   }, 60_000);
 
   it('an XML past one window is read through one parser, to its end', async () => {
+    // The modules of this point (other cases reset them): one sink.
     const { parseMarkupBytes } = await import('./markup');
+    const { withReadCutSink: sink } = await import('./read-cut-sink');
     const item = '<item><name>n</name></item>';
     const xml = `<?xml version="1.0"?><root>${item.repeat(Math.ceil((40 * 1024 * 1024) / item.length))}<last>THE-END</last></root>`;
-    const { value, cuts } = await withReadCutSink(async () =>
+    const { value, cuts } = await sink(async () =>
       parseMarkupBytes(Buffer.from(xml), 'xml'),
     );
     expect(value.endsWith('THE-END')).toBe(true);
