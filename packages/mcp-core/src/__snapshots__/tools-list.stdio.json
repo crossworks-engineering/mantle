@@ -12258,7 +12258,7 @@
  },
  {
   "name": "file_sql",
-  "description": "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Project XML and drawings (tabs Texts, Symbols, Placements, Segments, Shapes) have one, built from the file's bytes. **For many files pass `file_ids` or `folder`; never loop or copy:** `sql` runs on each file, rows get `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads all rows as table `results`, e.g. sql `SELECT \"Key\" FROM \"Placements\"`, then_sql `SELECT \"Key\", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names; **always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`; for text use `file_read`.",
+  "description": "Run one read-only SELECT on an uploaded file's database and return columns + rows; with no `sql`, its tabs, columns and description. Spreadsheets, CSVs, Project XML, drawings (tabs Texts, Symbols, Placements, Segments, Shapes) and some PDFs have one; a PDF's may hold `Links` and `Link nodes`: no `sql` says how to follow them. **For many files pass `file_ids` or `folder`; never loop or copy:** `sql` runs on each file, rows get `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads them as `results`, e.g. `SELECT \"Key\", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names; **always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`, for text `file_read`.",
   "inputSchema": {
    "type": "object",
    "properties": {
