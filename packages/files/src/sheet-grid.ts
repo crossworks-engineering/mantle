@@ -98,7 +98,7 @@ export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<P
     await streamWorkbookRows(buf, (name, cells, sheetNo) => {
       let sheet = sheets.get(sheetNo);
       if (!sheet) sheets.set(sheetNo, (sheet = { name, rows: [] }));
-      if (!keep.take(cells)) {
+      if (!keep.take(cells, sheetNo)) {
         // The stream stops at the cut: the rows past it are not counted.
         keep.atLeast = true;
         return false;

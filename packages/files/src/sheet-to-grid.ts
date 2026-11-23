@@ -249,15 +249,25 @@ export class RowKeeper {
    *  then the rows seen, at least. */
   atLeast = false;
   private bytes = 0;
+  /** The sheet in hand, its widest row and its rows kept: the grid pads
+   *  each sheet to its own width. */
+  private sheet: unknown = undefined;
   private width = 0;
+  private sheetKept = 0;
   private stopped: 'rows' | 'bytes' | null = null;
   constructor(
     readonly maxRows: number,
     readonly maxBytes: number,
   ) {}
 
-  /** Whether to keep this row. Every row is counted. */
-  take(cells: readonly unknown[]): boolean {
+  /** Whether to keep this row of `sheet` (any key; one sheet when left
+   *  out). Every row is counted. */
+  take(cells: readonly unknown[], sheet?: unknown): boolean {
+    if (sheet !== this.sheet) {
+      this.sheet = sheet;
+      this.width = 0;
+      this.sheetKept = 0;
+    }
     this.total += 1;
     if (this.stopped) return false;
     if (this.kept >= this.maxRows) {
@@ -266,9 +276,9 @@ export class RowKeeper {
     }
     // The answer's bytes: each cell's UTF-8 plus 3 (quotes and comma), a
     // blank 5 (`null,`), a short row padded to the widest row, and a wider
-    // row the padding of every row kept before it (the grid pads them all).
+    // row the padding of every row of its sheet kept before it.
     const width = Math.max(this.width, cells.length);
-    let size = (this.kept * (width - this.width) + (width - cells.length)) * 5;
+    let size = (this.sheetKept * (width - this.width) + (width - cells.length)) * 5;
     for (const c of cells) {
       size += (c === null || c === undefined ? 2 : Buffer.byteLength(String(c))) + 3;
     }
@@ -277,6 +287,7 @@ export class RowKeeper {
       return false;
     }
     this.width = width;
+    this.sheetKept += 1;
     this.kept += 1;
     this.bytes += size;
     return true;
