@@ -65,8 +65,9 @@ afterEach(() => {
 
 describe('streamWorkbookRows', () => {
   it('gives the cells the whole-workbook reader gives, on every golden workbook, but three kinds', async () => {
-    // The kinds the stream leaves blank: a formula's cached error (#DIV/0!)
-    // and a formula's empty text (both sides lose them here; typed.xlsx has
+    // The kinds the stream leaves blank: a formula's cached error (#DIV/0!),
+    // a NaN (the whole reader's NaN is no value in a grid either) and a
+    // formula's empty text (both sides lose them here; typed.xlsx has
     // them), and a merged cell past its first (sheets.xlsx, its Merged).
     const lossy = (sheets: Record<string, RawCell[][]>) =>
       Object.fromEntries(
@@ -74,7 +75,13 @@ describe('streamWorkbookRows', () => {
           k,
           rows
             .map((r) => {
-              const c = r.map((v) => (v === '' || (typeof v === 'string' && /^#[A-Z/0!?]+[!?A]$/.test(v)) ? null : v));
+              const c = r.map((v) =>
+                v === '' ||
+                (typeof v === 'number' && Number.isNaN(v)) ||
+                (typeof v === 'string' && /^#[A-Z/0!?]+[!?A]$/.test(v))
+                  ? null
+                  : v,
+              );
               while (c.length > 0 && c[c.length - 1] === null) c.pop();
               return c;
             })
