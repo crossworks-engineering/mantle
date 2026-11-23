@@ -22,7 +22,7 @@ import {
   pagesOfCell,
 } from './links';
 import { LINK_PACKS } from './packs';
-import { addendumRevision, classOfPage, coverFacts, materialsOf } from './piping-spec';
+import { addendumRevision, classOfPage, coverFacts, materialsOf, rangesOf } from './piping-spec';
 import { bodyTabsOf, step } from './step';
 
 const SHAPE_TABS = Object.fromEntries(SHAPES['pages-v1'].tabs.map((t) => [t.name, t.columns]));
@@ -599,17 +599,36 @@ describe('the small rules', () => {
       const text = out.get(`class:${code}`)?.[4];
       return text ? (JSON.parse(String(text)) as { temp?: string }).temp : undefined;
     };
-    expect(['R1A', 'R2B', 'R3C', 'R4D', 'R5E', 'R6F'].map(temp)).toEqual([
+    expect(['R1A', 'R2B', 'R3C', 'R4D', 'R5E', 'R6F', 'R7G'].map(temp)).toEqual([
       '-20/650',
       undefined,
       '-20/400 °F',
       undefined,
       '-29/343 °C',
       undefined,
+      undefined,
     ]);
     expect(String(out.get('coverage:pack:piping-spec:covers')?.[2])).toMatch(
       /temperature limits for 3 \(from a limits or range line; 2 with the unit their line states\)/,
     );
+  });
+
+  it('rangesOf stays fast on a line of many spaces, wherever the spaces stand', () => {
+    const sp = ' '.repeat(4_000);
+    const lines = [
+      `Temperature Range${sp}`,
+      `Temperature Range -20${sp}`,
+      `Temperature Range -20 /${sp}`,
+      `Temperature Range -20 /650${sp}x`,
+      `Temperature Range${sp}-20${sp}/${sp}650${sp}`,
+    ];
+    const page = (text: string) => ({ page: 1, text, from: 'Pages', cut: false });
+    for (const line of lines) {
+      const t = performance.now();
+      rangesOf(page(line));
+      expect(performance.now() - t).toBeLessThan(500);
+    }
+    expect(rangesOf(page(lines[4]!))).toEqual(['-20/650']);
   });
 
   it('coverFacts: the temperature limits keep the unit their line states, once, never a guess', () => {
