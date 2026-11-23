@@ -235,8 +235,9 @@ export function xmlToText(xml: string): string {
 /** A window of a markup file: its text and the byte where it ends. */
 type Window = [text: string, end: number];
 
-/** A read of markup: its text, and the bytes it read before the text cap. */
-type MarkupRead = { text: string; bytes: number };
+/** A read of markup: its text, the bytes it read, and whether the text cap
+ *  cut it (then `bytes` is where the cut window starts). */
+type MarkupRead = { text: string; bytes: number; capped: boolean };
 
 /** XML windows to text through one streaming parser, or null when the
  *  bytes are no well-formed XML (the HTML scanner reads them then). */
@@ -262,9 +263,11 @@ function xmlRead(windows: Iterable<Window>, maxBytes: number): MarkupRead | null
   parser.on('opentag', end);
   parser.on('closetag', end);
   let bytes = 0;
+  let start = 0;
   try {
     for (const [text, at] of windows) {
       parser.write(text);
+      start = bytes;
       bytes = at;
       if (out >= maxBytes) break;
     }
@@ -273,8 +276,8 @@ function xmlRead(windows: Iterable<Window>, maxBytes: number): MarkupRead | null
     return null;
   }
   end();
-  const text = lines.join('\n');
-  return { text: headBytes(text, maxBytes), bytes };
+  const capped = out > maxBytes;
+  return { text: headBytes(lines.join('\n'), maxBytes), bytes: capped ? start : bytes, capped };
 }
 
 /** HTML windows to text, a window at a time. */
@@ -284,14 +287,16 @@ function htmlRead(windows: Iterable<Window>, maxBytes: number): MarkupRead {
   let read = 0;
   for (const [text, at] of windows) {
     const part = htmlToText(text);
+    if (part) {
+      const kept = headBytes(part, maxBytes - bytes);
+      parts.push(kept);
+      bytes += Buffer.byteLength(kept) + 1;
+      if (kept.length < part.length) return { text: parts.join('\n'), bytes: read, capped: true };
+    }
     read = at;
-    if (!part) continue;
-    const kept = headBytes(part, maxBytes - bytes);
-    parts.push(kept);
-    bytes += Buffer.byteLength(kept) + 1;
-    if (kept.length < part.length || bytes >= maxBytes) break;
+    if (bytes >= maxBytes) break;
   }
-  return { text: parts.join('\n'), bytes: read };
+  return { text: parts.join('\n'), bytes: read, capped: false };
 }
 
 /** The head of a text in at most `max` UTF-8 bytes (a character cut in two
@@ -337,7 +342,7 @@ export function parseMarkupBytes(bytes: Buffer, ext: string): string {
     htmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_BYTES);
   // The rest is not read: said on the file (./read-cut.ts). A read that
   // stopped early ends before the file (a file of a BOM alone reads 0).
-  if (read.bytes > 0 && read.bytes < bytes.length) {
+  if (read.capped || (read.bytes > 0 && read.bytes < bytes.length)) {
     noteReadCut('markup_bytes', {
       what: 'bytes',
       read: read.bytes,

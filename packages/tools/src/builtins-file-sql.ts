@@ -34,7 +34,6 @@ import {
   SQL_ROW_CAP_DEFAULT,
   SQL_ROW_CAP_MAX,
   describeWorkbook,
-  importMaxRows,
   runTableSql,
   type WorkbookTabRef,
 } from '@mantle/tabledb';
@@ -58,22 +57,21 @@ function kindOf(ext: string): 'workbook' | 'csv' | 'plan' | 'drawing' {
 
 /**
  * Why a file's `.none` says there are no rows. No "call again": the word stays
- * until new bytes or a rebuild replace it. One word covers the 32 MB ceiling of
- * sheet XML and the row cap, and only the ceiling is helped by a CSV, so a
- * workbook is told both.
+ * until new bytes or a rebuild replace it. A long sheet keeps its first rows
+ * now (the ingest program), so the word is from the parser's own limits, or
+ * from a read before that: a read again may help, and a CSV may.
  */
 function noneReason(word: FileDbNoneWord, ext: string): string {
-  const cap = importMaxRows().toLocaleString('en-US');
   const words: Record<ReturnType<typeof kindOf>, Record<FileDbNoneWord, string>> = {
     workbook: {
-      'too-large': `This workbook was too large to read when it was uploaded (past 32 MB of sheet XML, or past ${cap} rows). Read it again: its first rows now go in, and the cut is said on the file.`,
+      'too-large': `This workbook is too large to read: past the parser's limits, or read before a long workbook kept its first rows. A person may read it again; if the word stays, save it as CSV and upload that, or split it into smaller files.`,
       'no-rows':
         'This workbook has no rows to read: no sheet has both a header and data. Read its text with file_read.',
       unreadable:
         'This workbook could not be read: it may be encrypted or damaged. Save an open copy and upload that.',
     },
     csv: {
-      'too-large': `This CSV was too large to read when it was uploaded (past the size limit, or past ${cap} rows). Read it again: its first rows now go in, and the cut is said on the file.`,
+      'too-large': `This CSV is too large to read: past the parser's limits, or read before a long CSV kept its first rows. A person may read it again; if the word stays, split it into smaller files and upload those.`,
       'no-rows':
         'This CSV has no rows to read: it needs both a header and data. Read its text with file_read.',
       unreadable:

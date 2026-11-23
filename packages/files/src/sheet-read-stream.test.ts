@@ -168,6 +168,14 @@ describe('streamWorkbookRows', () => {
     expect(tight.take(['x'])).toBe(false); // 4 + 10 more
   });
 
+  it('a wide row late counts the padding of every row kept before it', () => {
+    const keep = new RowKeeper(100, 100);
+    for (let i = 0; i < 10; i++) expect(keep.take(['a'])).toBe(true); // 40
+    // 10 more columns: 10 rows x 10 x 5 = 500 bytes of padding.
+    expect(keep.take(Array.from({ length: 11 }, () => 'b'))).toBe(false);
+    expect(keep.cut()).toMatchObject({ database_size: { read: 10, total: 11 } });
+  });
+
   it('stops when the visit says so', async () => {
     let seen = 0;
     await streamWorkbookRows(await workbook(500), () => ++seen < 10);
@@ -283,6 +291,18 @@ describe('markup read whole as a stream', () => {
     );
     expect(value.endsWith('THE-END')).toBe(true);
     expect(cuts).toEqual({});
+  }, 60_000);
+
+  it('text past the cap in the last window is cut, and the cut is said', async () => {
+    const { parseMarkupBytes } = await import('./markup');
+    const limit = 32 * 1024 * 1024;
+    // Two windows of text, about 40 MB: the cap falls in the second.
+    const html = `<p>${'w'.repeat(limit - 16)}</p><p>${'z'.repeat(8 * 1024 * 1024)}</p>`;
+    const { value, cuts } = await withReadCutSink(async () =>
+      parseMarkupBytes(Buffer.from(html), 'html'),
+    );
+    expect(Buffer.byteLength(value)).toBeLessThanOrEqual(limit);
+    expect(cuts.markup_bytes).toMatchObject({ what: 'bytes', total: html.length, limit });
   }, 60_000);
 
   it('an XML past one window is read through one parser, to its end', async () => {

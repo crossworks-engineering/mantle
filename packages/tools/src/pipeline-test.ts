@@ -74,7 +74,7 @@ import {
   withParserScope,
   type ParserFailureLedger,
 } from '@mantle/files';
-import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
+import { databaseCutOf, type ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { describeWorkbook, importMaxRows } from '@mantle/tabledb';
 import type { PipelineTestResult } from '@mantle/client-types';
 import { FILE_ID_PRE } from './builtins-common';
@@ -344,9 +344,12 @@ async function testWith(
   const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
   const max = importMaxRows();
   const { tabs, warnings } = tabsOf(rows > max ? headOfSheets(parsed.sheets, max) : parsed.sheets);
-  const cut = Object.values(parsed.readCuts ?? {})[0];
-  if (cut) warnings.push(`The database keeps ${cut.read} of ${cut.total} rows; the cut is said on the file.`);
-  else if (rows > max) warnings.push(`The database keeps the first ${max} of ${rows} rows.`);
+  const dbCut = databaseCutOf(parsed.readCuts);
+  const cut = dbCut?.database_rows ?? dbCut?.database_size;
+  if (cut) {
+    const of = `${cut.atLeast ? 'at least ' : ''}${cut.total}`;
+    warnings.push(`The database keeps ${cut.read} of ${of} rows; the cut is said on the file.`);
+  } else if (rows > max) warnings.push(`The database keeps the first ${max} of ${rows} rows.`);
   // A Reader whose text is the file's (readerGivesText): the length of the
   // text its run gave. With no tabs that text is its whole result.
   const textLength = readerGivesText(p, ext) ? (parsed.readerText ?? 0) : undefined;

@@ -199,7 +199,7 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
       total: sheetsTotal,
       limit: MAX_TEXT_CHARS,
     });
-  } else if (sheets.length < sheetsTotal) {
+  } else if (atLeast && sheets.length < sheetsTotal) {
     // A stream read that stopped in a long sheet: the sheets after it are
     // not read (no limit: the sentence says why).
     noteReadCut('sheet_text', { what: 'sheets', read: sheets.length, total: sheetsTotal });

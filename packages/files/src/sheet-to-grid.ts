@@ -265,10 +265,10 @@ export class RowKeeper {
       return false;
     }
     // The answer's bytes: each cell's UTF-8 plus 3 (quotes and comma), a
-    // blank 5 (`null,`), and a short row padded to the widest row so far,
-    // as the grid pads it.
-    this.width = Math.max(this.width, cells.length);
-    let size = (this.width - cells.length) * 5;
+    // blank 5 (`null,`), a short row padded to the widest row, and a wider
+    // row the padding of every row kept before it (the grid pads them all).
+    const width = Math.max(this.width, cells.length);
+    let size = (this.kept * (width - this.width) + (width - cells.length)) * 5;
     for (const c of cells) {
       size += (c === null || c === undefined ? 2 : Buffer.byteLength(String(c))) + 3;
     }
@@ -276,6 +276,7 @@ export class RowKeeper {
       this.stopped = 'bytes';
       return false;
     }
+    this.width = width;
     this.kept += 1;
     this.bytes += size;
     return true;
@@ -303,6 +304,16 @@ export function fileDbRowKeeper(): RowKeeper {
     envNum('TABLE_IMPORT_MAX_ROWS'),
     envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024,
   );
+}
+
+/** The database cuts of a read's cuts (a Reader's write says others too: a
+ *  drawing's label counts), or null. */
+export function databaseCutOf(cuts: Readonly<Record<string, unknown>> | undefined): RowCut | null {
+  const out: RowCut = {};
+  for (const key of ['database_rows', 'database_size'] as const) {
+    if (cuts?.[key]) out[key] = cuts[key] as RowCutValue;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 /** CSV/TSV text → grid, delimiter sniffed from the first line. Bytes are

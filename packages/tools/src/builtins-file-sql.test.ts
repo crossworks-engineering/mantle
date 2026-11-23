@@ -186,15 +186,13 @@ describe('file_sql, in order', () => {
     expect(h.tableNamingFile).not.toHaveBeenCalled();
   });
 
-  it('only a workbook is told about CSV, and only under the row cap', async () => {
+  it('only a workbook is told about CSV', async () => {
     const reason = async (title: string) => {
       h.fileDataRow.mockResolvedValue(row(title));
       h.readFileDbNone.mockResolvedValue('too-large');
       return errorOf();
     };
-    expect(await reason('sheet.xlsx')).toMatch(
-      /past 32 MB of sheet XML, or past 2,000,000 rows\. Under 2,000,000 rows, save it as CSV/,
-    );
+    expect(await reason('sheet.xlsx')).toMatch(/past the parser's limits.*save it as CSV/);
     for (const title of ['data.csv', 'plan.xml', 'sheet.dwg', 'sheet.dxf', 'set.dwf']) {
       expect(await reason(title), title).not.toMatch(/as CSV/);
     }

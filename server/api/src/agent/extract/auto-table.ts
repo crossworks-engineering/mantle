@@ -30,6 +30,7 @@ import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { noteReadCut, noteReadCuts } from '@mantle/files/read-cut-sink';
+import { databaseCutOf } from '@mantle/files/sheet-to-grid';
 import { importMaxRows } from '@mantle/tabledb';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 import { askPdfKind, pdfPageDeciderOf } from './pdf-kind';
@@ -253,7 +254,9 @@ async function readAndWrite(a: {
   // "Read in part"). The Reader says its own cut (the package `sheet`: the
   // import ceiling or the read budget); a read past the import ceiling is
   // cut by the write (writeRowsOrWord) and said here.
-  const readerCut = parsed.kind === 'sheets' && Object.keys(parsed.readCuts ?? {}).length > 0;
+  // The Reader's database cut only: a drawing's write says its label cuts
+  // too, which its text pass says on the file itself.
+  const readerCut = parsed.kind === 'sheets' ? databaseCutOf(parsed.readCuts) : null;
   const rows =
     parsed.kind === 'sheets'
       ? parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0)
@@ -261,9 +264,9 @@ async function readAndWrite(a: {
   const max = importMaxRows();
   // Whether the read is cut, for the Table below too (a database built
   // before keeps no Table from being made of a cut read).
-  const cut = readerCut || rows > max;
+  const cut = readerCut !== null || rows > max;
   if (wantDb && parsed.kind === 'sheets') {
-    if (readerCut) noteReadCuts(parsed.readCuts);
+    if (readerCut) noteReadCuts(readerCut);
     else if (rows > max) {
       noteReadCut('database_rows', { what: 'rows', read: max, total: rows, limit: max });
     }
