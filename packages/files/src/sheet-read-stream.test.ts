@@ -180,7 +180,12 @@ describe('streamWorkbookRows', () => {
     const keep = new RowKeeper(100, 100);
     for (let i = 0; i < 10; i++) expect(keep.take(['a'], 1)).toBe(true); // 40
     // Sheet 2 starts at its own width: 11 cells of 4, no padding of sheet 1.
-    expect(keep.take(Array.from({ length: 11 }, () => 'b'), 2)).toBe(true); // 44: 84
+    expect(
+      keep.take(
+        Array.from({ length: 11 }, () => 'b'),
+        2,
+      ),
+    ).toBe(true); // 44: 84
     expect(keep.cut()).toBeNull();
   });
 
