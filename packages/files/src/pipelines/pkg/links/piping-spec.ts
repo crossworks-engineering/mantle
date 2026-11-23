@@ -97,8 +97,16 @@ function labelValue(rest: string): string {
   return rest.slice(0, colon).replace(/\s*\S+\s*$/, '');
 }
 const SERVICE = /\bSERVICE(?:\s+DESCRIPTION)?\s*:\s*(.*)$/im;
+/** `TEMPERATURE LIMITS (°F): -20 / 400`: the label, the low limit, a unit
+ *  beside it, the high limit. */
 const TEMPS =
-  /\bTEMP(?:ERATURE)?\.?\s*LIMITS?[^:\n]*:\s*(-?\s?\d+)\s*(?:°\s*[FC])?\s*(?:\/|TO)\s*(-?\s?\d+)/i;
+  /\bTEMP(?:ERATURE)?\.?\s*LIMITS?([^:\n]*):\s*(-?\s?\d+)\s*(°\s*[FC])?\s*(?:\/|TO)\s*(-?\s?\d+)/i;
+/** A unit of temperature: `°F`, `° F`, `DEG F`, `DEG. F`, the same with C.
+ *  A bare F or C is none. */
+const UNIT = String.raw`(?:° ?|\bDEG\.? )([FC])(?![A-Z])`;
+const TEMP_UNIT = new RegExp(UNIT, 'gi');
+/** A unit right after the high limit. */
+const TEMP_UNIT_AFTER = new RegExp(`^[ \\t]*${UNIT}`, 'i');
 
 /** A line is boilerplate when it is on this share of the pages with text
  *  (a sheet's frame: the company, the place). */
@@ -225,7 +233,21 @@ export function coverFacts(p: LinkPage, boilerplate: readonly string[]): Facts {
     f.material = clean(mat).toUpperCase();
   }
   m = TEMPS.exec(t);
-  if (m) f.temp = `${m[1]!.replace(/\s/g, '')}/${m[2]!.replace(/\s/g, '')}`;
+  if (m) {
+    // The unit the line states: in the label, beside the low limit, or
+    // right after the high limit. None when it states none, or two.
+    const units = new Set(
+      [
+        ...[...m[1]!.matchAll(TEMP_UNIT)].map((u) => u[1]),
+        m[3]?.slice(-1),
+        TEMP_UNIT_AFTER.exec(t.slice(m.index + m[0].length))?.[1],
+      ]
+        .filter((u) => u !== undefined)
+        .map((u) => u.toUpperCase()),
+    );
+    const unit = units.size === 1 ? ` °${[...units][0]}` : '';
+    f.temp = `${m[2]!.replace(/\s/g, '')}/${m[4]!.replace(/\s/g, '')}${unit}`;
+  }
   m = SERVICE.exec(t);
   if (m) {
     const strip = (line: string) => {
@@ -327,7 +349,7 @@ function build(input: LinkInput, set: LinkSet): void {
       entry.pages[k] = p.page;
     }
   }
-  const count = { rating: 0, material: 0, service: 0, temp: 0 };
+  const count = { rating: 0, material: 0, service: 0, temp: 0, unit: 0 };
   for (const [code, { facts: f, pages }] of factsOf) {
     if (Object.keys(f).length === 0) continue;
     set.setText(classId(code), JSON.stringify(f));
@@ -355,6 +377,7 @@ function build(input: LinkInput, set: LinkSet): void {
     }
     if (f.service) count.service += 1;
     if (f.temp) count.temp += 1;
+    if (f.temp?.includes('°')) count.unit += 1;
   }
 
   // Tables and rows: to their class, or to the addendum of their page. A
@@ -398,7 +421,7 @@ function build(input: LinkInput, set: LinkSet): void {
   coverage(
     set,
     'pack:piping-spec:covers',
-    `Class facts of ${codes.size} classes: a rating for ${count.rating}, a base material for ${count.material}, a service for ${count.service}, temperature limits for ${count.temp}. A class with none read has no facts.`,
+    `Class facts of ${codes.size} classes: a rating for ${count.rating}, a base material for ${count.material}, a service for ${count.service}, temperature limits for ${count.temp} (${count.unit} with the unit their line states). A class with none read has no facts.`,
   );
   if (addendum.size > 0) {
     coverage(

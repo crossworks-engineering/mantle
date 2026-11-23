@@ -1098,7 +1098,8 @@ states it), and for an addendum page `ADDENDUM_PAGE`, `CHANGES_CLASS`,
 on an addendum page links to the addendum, never to the class: an addendum
 only changes a class. An addendum's id carries its current revision, the
 one before `SUPERSEDES`. A class's node has its facts as JSON in `text`
-(service, rating, face, material, corrosion allowance, temperatures).
+(service, rating, face, material, corrosion allowance, temperatures; the
+temperatures as `-20/400 °F`, with a unit only when their line states one).
 
 **Honesty.** A link set can be confidently incomplete. The nodes of kind
 `coverage` say so, for a reader to ask: what the two tabs are; each kind
