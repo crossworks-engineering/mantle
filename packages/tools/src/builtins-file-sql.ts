@@ -223,21 +223,33 @@ const tabOut = (t: WorkbookTabRef): FileSqlTab => ({
   columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
 });
 
-/** The tabs, columns and description of a file's database: on a file of
- *  many tabs, the overview (./file-sql-overview.ts). */
-async function describe(row: FileDataRow, abs: string, step: Step): Promise<FileSqlAnswer> {
-  const overview = fileSqlOverview(abs);
-  if (overview) {
-    step?.setOutput({ file_id: row.id, tabs: overview.tabs.length, listed: overview.listed.count });
+/** The tabs, columns and description of a file's database. With
+ *  `overview` (an agent's call), a file of many tabs counts its listed tabs
+ *  and a file with Links tabs says how to follow them
+ *  (./file-sql-overview.ts); without it (the Data view), every tab, as
+ *  before. */
+async function describe(
+  row: FileDataRow,
+  abs: string,
+  step: Step,
+  overview: boolean,
+): Promise<FileSqlAnswer> {
+  const more = overview ? fileSqlOverview(abs) : null;
+  if (more) {
+    step?.setOutput({
+      file_id: row.id,
+      tabs: more.tabs.length,
+      ...(more.listed ? { listed: more.listed.count } : {}),
+    });
     return {
       kind: 'describe',
       output: {
         file_id: row.id,
         title: row.title,
-        ...(overview.description !== undefined ? { description: overview.description } : {}),
-        tabs: overview.tabs.map(tabOut),
-        listed: overview.listed,
-        ...(overview.links ? { links: overview.links } : {}),
+        ...(more.description !== undefined ? { description: more.description } : {}),
+        tabs: more.tabs.map(tabOut),
+        ...(more.listed ? { listed: more.listed } : {}),
+        ...(more.links ? { links: more.links } : {}),
         hint: DESCRIBE_HINT,
       },
     };
@@ -341,7 +353,14 @@ export async function readableFileDb(
 export async function fileSqlAnswer(
   ownerId: string,
   ask: { fileId: string; sql: string; cap: number | undefined },
-  opts: { tableHint: boolean; step?: Step },
+  opts: {
+    tableHint: boolean;
+    step?: Step;
+    /** With no `sql`: the overview of a file of many tabs and the link
+     *  help (an agent's call: the tool, file_processing). Left out: every
+     *  tab, as before (the Data view, whose tab list a person picks from). */
+    overview?: boolean;
+  },
   again = true,
 ): Promise<FileSqlAnswer> {
   const got = await readableFileDb(ownerId, ask.fileId, opts.tableHint);
@@ -354,7 +373,7 @@ export async function fileSqlAnswer(
   try {
     return ask.sql.trim()
       ? await query(row, abs, ask.sql, ask.cap, opts.step)
-      : await describe(row, abs, opts.step);
+      : await describe(row, abs, opts.step, opts.overview === true);
   } catch (err) {
     if (await fileDbSqlitePath(row.id, fileSha256Of(row))) {
       return { kind: 'bad-sql', message: readError(err, abs) };
@@ -479,7 +498,7 @@ export const file_sql: BuiltinToolDef = {
     const got = await fileSqlAnswer(
       ctx.ownerId,
       { fileId, sql: str(input.sql), cap },
-      { tableHint: mayBePointedAtTable(ctx), step: ctx.step },
+      { tableHint: mayBePointedAtTable(ctx), step: ctx.step, overview: true },
     );
     return 'output' in got ? { ok: true, output: got.output } : fail(got.message);
   },

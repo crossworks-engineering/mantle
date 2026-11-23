@@ -1,16 +1,17 @@
 /**
- * `file_sql` with no `sql` on a file of many tabs: an overview, not every
- * tab (docs/file-ingestion.md, "File databases"). One rule: past
- * FILE_SQL_TABS_MAX tabs, the tabs that the file's index tab names (the `listedIn` of the shape
- * pages-v1: `Tables`, column `Tab`, a book's table tabs) are counted, not
- * described. The answer says how many, where they are listed, and how to
- * read one. Every other tab is described as before. A file with no such
- * index, or with few tabs, gets null here and answers as before.
- *
- * With the tabs `Links` and `Link nodes` (the Transformer `links`,
- * docs/pipelines.md, "Links"), the overview also says how to follow them:
- * the kinds with their counts, the coverage lines (what the links cover and
- * what could not be read), and a few statements with real ids of this file.
+ * `file_sql` with no `sql`: two parts beside the tabs (docs/file-ingestion.md,
+ * "File databases"), each with its own one rule.
+ *  - `listed`: past FILE_SQL_TABS_MAX tabs, the tabs that the file's index
+ *    tab names (the `listedIn` of the shape pages-v1: `Tables`, column `Tab`,
+ *    a book's table tabs) are counted, not described. The answer says how
+ *    many, where they are listed, and how to read one.
+ *  - `links`: whenever the file has the tabs `Links` and `Link nodes` with
+ *    their columns (the Transformer `links`, docs/pipelines.md, "Links"),
+ *    how to follow them: the kinds with their counts, the coverage lines
+ *    (what the links cover and what could not be read), and a few statements
+ *    with real ids of this file.
+ * Every other tab is described as before. A file with neither part gets
+ * null here and answers as before.
  *
  * One open of the file: a file of thousands of tabs pays its schema once
  * (about 0.6 s at 2,441 tabs). Every statement here is fixed and bounded.
@@ -40,7 +41,7 @@ const NODES_COLUMNS = ['id', 'kind', 'label', 'page', 'text'];
 export type FileSqlOverview = {
   tabs: WorkbookTabRef[];
   description?: string;
-  listed: FileDatabaseListed;
+  listed?: FileDatabaseListed;
   links?: FileDatabaseLinks;
 };
 
@@ -52,38 +53,59 @@ const count = (n: number) => n.toLocaleString('en-US');
 export function fileSqlOverview(abs: string): FileSqlOverview | null {
   return withTabScanner(abs, (scan) => {
     const names = scan.names();
-    if (names.length <= FILE_SQL_TABS_MAX) return null;
-    const index = SHAPES['pages-v1'].listedIn!;
-    const indexColumns = scan.columnsOf(index.tab) ?? [];
-    if (!indexColumns.includes(index.column)) return null;
-    // The index's columns of the shape that the file has: Tab, Title, Pages.
-    const shown = (SHAPES['pages-v1'].tabs.find((t) => t.name === index.tab)?.columns ?? []).filter(
-      (c) => indexColumns.includes(c),
-    );
-    const all = new Set(names);
-    const listed = new Set<string>();
-    // The example: the first listed row, and a word of the first title.
-    let first: Record<string, unknown> | undefined;
-    let word: string | undefined;
-    scan.rows(index.tab, shown, { maxRows: importMaxRows(), cellMaxChars: 1_024 }, (r) => {
-      const tab = r[index.column];
-      if (typeof tab !== 'string' || tab === index.tab || !all.has(tab)) return true;
-      listed.add(tab);
-      first ??= r;
-      word ??= /[A-Za-z]{3,}/.exec(typeof r.Title === 'string' ? r.Title : '')?.[0];
-      return true;
-    });
-    if (listed.size === 0 || !first) return null;
-    const tabs = scan.describe(new Set(names.filter((n) => !listed.has(n))));
+    const listed = names.length > FILE_SQL_TABS_MAX ? listedTabsOf(scan, names) : null;
+    const links =
+      hasColumns(scan, LINKS, LINKS_COLUMNS) && hasColumns(scan, LINK_NODES, NODES_COLUMNS);
+    if (!listed && !links) return null;
+    const tabs = scan.describe(new Set(names.filter((n) => !listed?.names.has(n))));
     const description = scan.meta('description');
-    const links = linkHelpOf(scan, tabs);
+    const help = links ? linkHelpOf(scan, tabs) : undefined;
     return {
       tabs,
       ...(description !== undefined ? { description } : {}),
-      listed: listedOf(scan, listed.size, index, shown, { first, word }),
-      ...(links ? { links } : {}),
+      ...(listed ? { listed: listedOf(scan, listed) } : {}),
+      ...(help ? { links: help } : {}),
     };
   });
+}
+
+/** Whether the file has this tab with these columns. */
+const hasColumns = (scan: TabScanner, tab: string, columns: readonly string[]) => {
+  const have = scan.columnsOf(tab);
+  return have !== null && columns.every((c) => have.includes(c));
+};
+
+type Listed = {
+  names: Set<string>;
+  index: { tab: string; column: string };
+  /** The index's columns of the shape that the file has: Tab, Title, Pages. */
+  shown: string[];
+  /** The example: the first listed row, and a word of the first title. */
+  first: Record<string, unknown>;
+  word: string | undefined;
+};
+
+/** The tabs the index tab lists, or null: no index, or it lists none. */
+function listedTabsOf(scan: TabScanner, names: readonly string[]): Listed | null {
+  const index = SHAPES['pages-v1'].listedIn!;
+  const indexColumns = scan.columnsOf(index.tab) ?? [];
+  if (!indexColumns.includes(index.column)) return null;
+  const shown = (SHAPES['pages-v1'].tabs.find((t) => t.name === index.tab)?.columns ?? []).filter(
+    (c) => indexColumns.includes(c),
+  );
+  const all = new Set(names);
+  const listed = new Set<string>();
+  let first: Record<string, unknown> | undefined;
+  let word: string | undefined;
+  scan.rows(index.tab, shown, { maxRows: importMaxRows(), cellMaxChars: 1_024 }, (r) => {
+    const tab = r[index.column];
+    if (typeof tab !== 'string' || tab === index.tab || !all.has(tab)) return true;
+    listed.add(tab);
+    first ??= r;
+    word ??= /[A-Za-z]{3,}/.exec(typeof r.Title === 'string' ? r.Title : '')?.[0];
+    return true;
+  });
+  return listed.size > 0 && first ? { names: listed, index, shown, first, word } : null;
 }
 
 /** The view of a tab, by its name. */
@@ -94,13 +116,10 @@ const viewOf = (scan: TabScanner, name: string): string | undefined => {
 
 /** What the answer says of the tabs it counts, with an example: the first
  *  listed row, and a word of the first title. */
-function listedOf(
-  scan: TabScanner,
-  n: number,
-  index: { tab: string; column: string },
-  shown: readonly string[],
-  example: { first: Record<string, unknown>; word: string | undefined },
-): FileDatabaseListed {
+function listedOf(scan: TabScanner, listed: Listed): FileDatabaseListed {
+  const { index, shown } = listed;
+  const n = listed.names.size;
+  const example = { first: listed.first, word: listed.word };
   const pages = example.first.Pages;
   const where = [
     ...(shown.includes('Title') && example.word
