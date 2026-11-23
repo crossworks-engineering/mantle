@@ -56,13 +56,11 @@ import {
   pagesWithRows,
   pdfFrameKindOf,
   withPageKinds,
-  withSketchKept,
   writeFileDbNone,
   type FileDbNoneWord,
   type PdfPageKind,
   type PipelineManifest,
   type PipelineStamp,
-  type SketchKept,
   type ShapeId,
   type ShapeTab,
 } from '@mantle/files';
@@ -965,14 +963,10 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
         since: FileStamp | null;
         reroute: boolean;
         pageKinds: readonly PdfPageKind[];
-        sketch: SketchKept | null;
       }
     | undefined;
   if (!args.parsed && pipelines.routerFor(ext)) {
-    // A file with an older paid sketch read is read again only by a
-    // person's run of one PDF (`pdfPages`, the page mark; M4), which keeps
-    // the old rows (withSketchKept below).
-    const state = await pdfReadAgainOf(names, { sketch: args.pdfPages !== undefined });
+    const state = await pdfReadAgainOf(names);
     if (state.skip) return { status: 'skipped', reason: state.skip };
     again = state;
   }
@@ -988,7 +982,7 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
   const pdfNodeVision = again ? await pdfNodeVisionOf(fileId) : false;
   // A read here takes the box's options of the reader.
   const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext, pipelines);
-  const read =
+  const parsed =
     args.parsed ??
     (await parseFileSheets(bytes, ext, {
       pipelines,
@@ -998,12 +992,6 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
       ...(args.pdfPages ? { pdfPages: args.pdfPages } : {}),
       count: { ownerId, fileId },
     }));
-  // The older sketch read of these bytes is kept over the read (M4): its
-  // paid rows, and the File tab's word that it ran.
-  const parsed =
-    again?.sketch && read.kind === 'sheets'
-      ? { ...read, sheets: withSketchKept(read.sheets, again.sketch) }
-      : read;
   // The read is done: whatever this build does with it, the windows its
   // run kept go (./window-stage.ts). A throw below leaves them, for the
   // build tried again.

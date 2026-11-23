@@ -427,20 +427,6 @@ shadow the route of the file does not change.
   when the read is poorer (`pdfReadPoorer`) or the database changed, and
   every Reader and Agent row stays. A write so refused keeps the paid
   answers in the answer cache, so the next run takes them free.
-- **A file with an older paid vision read (M4, Jason 2026-11-23).** Every
-  read again skips a file whose File tab says `Vision read` (the sketch
-  read), but this run: a person's run of one PDF, where page asks are on
-  (the page decider is given), reads it again with the page asks and the
-  routing of M4 (`pdfReadAgainOf` with `sketch`). The old paid rows (the
-  `Texts`, `Tags` and `Lines` rows of `Source` `ocr`) are kept by one rule
-  (`withSketchKept`): back into the read's tab of the same name (a drawing
-  read), else into a tab of their own (`Sketch read`, `Sketch tags`,
-  `Sketch lines`: a book). The new File tab still says `Vision read`, so no
-  sketch read and no whole-page vision read of these bytes is paid again,
-  and a reindex keeps the file's text. In a book the kept words come after
-  each page's text in the passages (`filePagesOf`). Two checks: the
-  person's page mark lets the file through; a stored vision read is
-  carried.
 - **`Kind from`.** `decider` (live: a used answer, at or over the floor;
   `Kind` is then its kind, over the Reader's own), `rules: shadow` (in
   shadow, every answer: only recorded), `rules: low confidence` (live: an
@@ -519,6 +505,12 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   (`Method` `vision`); on any other page (a kept picture, a drawing page of
   a book) the Agent's text comes after the Reader's (`filePagesOf`), so the
   file's text and passages keep both.
+- **An older paid vision read (Jason 2026-11-23).** A PDF whose File tab
+  says `Vision read` (the sketch read) is skipped by every read again, a
+  person's run of one file too (`pdfReadAgainOf`, `sketch`), so its paid
+  read stays as it is. To give it page types and the M4 lanes, a person
+  uploads it again (same name, same folder): the old version goes to file
+  history with its paid read, and the new bytes get the page asks.
 - **Limits.** Room is read once a window, so files read at the same time
   can pass the day cap by up to 25 asks each (the cap paces, it does not
   lock). Each page ask is one trace step (`decide_pdf_kind`): a 1,000-page

@@ -26,9 +26,6 @@ function stored(file: {
   visionRead?: boolean;
   /** The tab Pages: one row a page, as the page types leave it. */
   pages?: (string | number | null)[][];
-  /** The tab Texts: [page, line, text, source] a row (a sketch read's rows
-   *  say `ocr`). */
-  texts?: [number, number, string, string][];
 }) {
   const sqlite = path.join(dir, `${randomUUID()}.sqlite`);
   const names = [
@@ -76,28 +73,10 @@ function stored(file: {
         },
       ]
     : [];
-  const textsSheet = file.texts
-    ? [
-        {
-          name: 'Texts',
-          columns: [
-            { name: 'Page', type: 'number' as const },
-            { name: 'Line', type: 'number' as const },
-            { name: 'Text', type: 'text' as const },
-            { name: 'Source', type: 'text' as const },
-          ],
-          rows: file.texts,
-        },
-      ]
-    : [];
-  writeFileDatabaseDoc(
-    sqlite,
-    ensureWorkbookDoc({ tabs: tabsOfSheets([sheet, ...pagesSheet, ...textsSheet]) }),
-    {
-      fileId: randomUUID(),
-      ownerId: randomUUID(),
-    },
-  );
+  writeFileDatabaseDoc(sqlite, ensureWorkbookDoc({ tabs: tabsOfSheets([sheet, ...pagesSheet]) }), {
+    fileId: randomUUID(),
+    ownerId: randomUUID(),
+  });
   return { sqlite, none: path.join(dir, `${randomUUID()}.none`) };
 }
 
@@ -123,33 +102,6 @@ describe('a read again of a PDF', () => {
     expect(
       await pdfReadAgainOf(stored({ kind: 'scan', rulesVersion: 1, visionRead: true })),
     ).toEqual({ skip: 'sketch' });
-  });
-
-  it("a person's run of one PDF (M4) reads a sketch read again and keeps its paid rows", async () => {
-    const names = stored({
-      kind: 'scan',
-      rulesVersion: 1,
-      visionRead: true,
-      texts: [
-        [1, 1, 'P-101', 'ocr'],
-        [1, 2, 'GENERAL NOTES', 'pdf'],
-        [2, 1, 'LINE 6"-P-1001', 'ocr'],
-      ],
-    });
-    // Every other read again: skipped, as before.
-    expect(await pdfReadAgainOf(names)).toEqual({ skip: 'sketch' });
-    const again = await pdfReadAgainOf(names, { sketch: true });
-    expect(again).toMatchObject({ skip: null, reroute: true });
-    if (again.skip !== null) throw new Error('skipped');
-    // The paid rows only (Source ocr), by column name.
-    const texts = again.sketch!.tabs.find((t) => t.name === 'Texts')!;
-    expect(texts.rows).toEqual([
-      { Page: 1, Line: 1, Text: 'P-101', Source: 'ocr' },
-      { Page: 2, Line: 1, Text: 'LINE 6"-P-1001', Source: 'ocr' },
-    ]);
-    // A database with no sketch read keeps none.
-    const plain = await pdfReadAgainOf(stored({ kind: 'scan', rulesVersion: 1 }), { sketch: true });
-    expect(plain).toMatchObject({ skip: null, sketch: null });
   });
 
   it('a read again takes the stored page types back (M3), with no ask', async () => {

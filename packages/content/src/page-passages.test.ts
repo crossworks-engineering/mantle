@@ -75,20 +75,6 @@ function database(reader: typeof BOOK | typeof PLAIN, withAgent: boolean): strin
               ['page-3', 'A flow diagram: feed drum to column', 'm', 'h3'],
             ],
           },
-          // An older sketch read kept over a read again (M4).
-          {
-            name: 'Sketch read',
-            columns: [
-              { name: 'Page', type: 'number' as const },
-              { name: 'Line', type: 'number' as const },
-              { name: 'Text', type: 'text' as const },
-            ],
-            rows: [
-              [3, 2, 'XV-101'],
-              [3, 1, 'HAND'],
-              [3, 1, 'NOTE'],
-            ],
-          },
         ]
       : []),
   ];
@@ -112,13 +98,13 @@ describe('filePagesOf', () => {
     expect(got!.pages).toEqual([
       // A page with its own text layer (M4: a kept picture, a drawing page
       // of a book): the Reader's text stays, the Agent's after it.
-      { page: 3, text: 'Introduction\n\nA flow diagram: feed drum to column\n\nHAND NOTE\nXV-101' },
+      { page: 3, text: 'Introduction\n\nA flow diagram: feed drum to column' },
       { page: 7, text: 'A drawing of a gate valve, flanged ends' },
       { page: 412, text: 'SPEC A2 REV 3 corrosion allowance 3 mm' },
     ]);
     expect(got!.read).toEqual({ read: 450, total: 500 });
     expect(pagesText(got!.pages)).toBe(
-      '## Page 3\nIntroduction\n\nA flow diagram: feed drum to column\n\nHAND NOTE\nXV-101\n\n## Page 7\nA drawing of a gate valve, flanged ends\n\n## Page 412\nSPEC A2 REV 3 corrosion allowance 3 mm',
+      '## Page 3\nIntroduction\n\nA flow diagram: feed drum to column\n\n## Page 7\nA drawing of a gate valve, flanged ends\n\n## Page 412\nSPEC A2 REV 3 corrosion allowance 3 mm',
     );
   });
 
