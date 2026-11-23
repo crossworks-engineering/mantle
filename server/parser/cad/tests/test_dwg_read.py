@@ -157,6 +157,13 @@ class BuildTests(unittest.TestCase):
         # The DWG handle is kept.
         self.assertEqual(next(iter(doc.modelspace())).dxf.handle, "100")
 
+    def test_handles_at_the_top_of_64_bits_are_kept_and_ezdxf_takes_handles_past_them(self):
+        top = 0x8000_0000_0000_0101  # at or above 2^63, as some drawings have
+        doc, notes = dwg_read.build_document(fake([line(top - 1), line(top)]))
+        self.assertEqual(sorted(e.dxf.handle for e in doc.modelspace()), ["8000000000000100", "8000000000000101"])
+        self.assertEqual((notes["handles_kept"], notes["handles_new"]), (2, 0))
+        self.assertGreater(int(doc.entitydb.handles.next(), 16), top)
+
     def test_attributes_sit_on_their_insert_hidden_or_not(self):
         doc, notes = dwg_read.build_document(
             fake(

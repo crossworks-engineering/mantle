@@ -34,7 +34,7 @@ ARG EZDGN_COMMIT=93cfb3f0e706ec2ef5a54b481d35da3432d1c672
 # The DWG reader's source: our ezdwg fork at this commit (the ezdwg-build
 # stage says what it is, and the way back to an official release), carried
 # on the parser image as the label `mantle.ezdwg.commit`.
-ARG EZDWG_COMMIT=1f7e43eda006fb6dbb06b67e37adb9ed5c677ec4
+ARG EZDWG_COMMIT=04b7504a3c77fc3e4e05c2edd5cb98983fd511d0
 # ezdxf's source: our ezdxf fork at this commit (the ezdxf-build stage says
 # what it is, and the way back to an official release), carried on the parser
 # image as the label `mantle.ezdxf.commit`. CI's CAD tests read this line.
@@ -141,24 +141,26 @@ COPY . .
 # ── 1a⅞. ezdwg-build: the DWG reader's wheel, from our fork ────────────────
 # THE ONE PLACE OF THE DWG READER'S SOURCE. This is our fork of ezdwg (MIT,
 # clean room, Rust core), branch feat/all-reader-fixes, at this commit:
-# upstream's 0.19.2 reader plus the attributes it dropped, R2004 class names,
-# WIPEOUT, MULTILEADER and the saved picture of an entity, offered upstream
-# and not yet released there. The wheel still calls itself ezdwg 0.19.2; the
+# upstream's release 0.21.3 (which holds our earlier reader fixes) plus one
+# fix, offered upstream and not yet released there: the R2004 and R2007
+# object maps read handle deltas of up to 64 bits (a drawing with handles
+# above 2^35 was refused whole). The wheel calls itself ezdwg 0.21.3; the
 # commit (EZDWG_COMMIT, at the top of this file) is on the parser image as
 # the label `mantle.ezdwg.commit`. The archive is pinned by the full commit id
 # and its checksum. Built here, in maturin's official image (Rust toolchain
-# plus manylinux Pythons for amd64 and arm64), because PyPI has no arm64
-# wheel and the parser stage has no compiler. The way back to an official
-# release, once it holds these functions: build that release's sdist here
-# (pinned by its checksum) or pin its wheel in the /opt/cad pip install, and
-# remove EZDWG_COMMIT and the label. No Python change: dwg_read.py's one check
-# (`reads_dwg`) refuses every DWG on an ezdwg without them, and the parser's
-# health says `ezdwg_reader missing`.
+# plus manylinux Pythons for amd64 and arm64), because the fix is not in a
+# release yet and the parser stage has no compiler. The way back to an
+# official release, once one holds the fix: pin its wheel in the /opt/cad pip
+# install (PyPI has amd64 and arm64 wheels), and remove this stage, its COPY
+# in parser-base, EZDWG_COMMIT and the label. No Python
+# change: dwg_read.py's one check (`reads_dwg`) refuses every DWG on an ezdwg
+# without the full reader, and the parser's health says `ezdwg_reader
+# missing`.
 # maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
 # a moved tag cannot change the build.
 FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdwg-build
 ARG EZDWG_COMMIT
-ADD --checksum=sha256:b8ae011cd9b2cf16e7e6cad210d0bc0983abf9b064ed638871b0286098abd639 \
+ADD --checksum=sha256:b877ca67e243a0795ca33a20ed80148b5c43508d95fac12c59afa2fd27d3bede \
   https://github.com/crossworks-engineering/ezdwg/archive/${EZDWG_COMMIT}.tar.gz /tmp/ezdwg-src.tar.gz
 RUN mkdir /tmp/ezdwg \
   && tar -xzf /tmp/ezdwg-src.tar.gz -C /tmp/ezdwg --strip-components=1

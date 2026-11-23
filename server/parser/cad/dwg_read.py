@@ -232,9 +232,11 @@ class _Build:
         except Exception as err:
             raise DwgRefused(f"the object list could not be read ({type(err).__name__})") from None
         # ezdxf takes its own handles past the highest DWG handle, so an
-        # entity can keep its own.
+        # entity can keep its own. A DWG handle is 64 bits, and some drawings
+        # use the top of that range; the seed moves for any top handle that
+        # leaves ezdxf 2^32 handles before the 64-bit end.
         top = max((int(r[0]) for r in self.inventory_rows), default=0)
-        if 0 < top < 0xFFFFFFFFFF:
+        if 0 < top < 0xFFFFFFFF00000000:
             doc.entitydb.handles.reset("%X" % (top + 1))
         try:
             if d.insunits is not None:

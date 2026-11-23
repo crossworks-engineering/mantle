@@ -372,21 +372,24 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
 **The ezdwg in the parser image.** The image holds our fork's build of ezdwg
 (MIT, clean room: `github.com/crossworks-engineering/ezdwg`, branch
 `feat/all-reader-fixes`, the commit in `EZDWG_COMMIT` at the top of the
-`Dockerfile`): upstream's 0.19.2 reader plus the attributes it dropped, R2004
-class names, WIPEOUT, MULTILEADER and the saved picture of an entity,
-offered upstream and not yet released there. The `ezdwg-build` stage builds
+`Dockerfile`): upstream's release 0.21.3, which holds our earlier reader
+fixes (the attributes it dropped, R2004 class names, WIPEOUT, MULTILEADER
+and the saved picture of an entity), plus one fix offered upstream and not
+yet released there: the R2004 and R2007 object maps read handle deltas of up
+to 64 bits, so a drawing with handles above 2^35 is no longer refused whole
+("the object list could not be read"). The `ezdwg-build` stage builds
 its abi3 wheel from the fork's archive, pinned by the full commit id and a
-checksum, with `--locked`. The wheel still calls itself ezdwg 0.19.2, so
-`/healthz` says `ezdwg 0.19.2`; the commit is the image's label
+checksum, with `--locked`. The wheel calls itself ezdwg 0.21.3, so
+`/healthz` says `ezdwg 0.21.3`; the commit is the image's label
 `mantle.ezdwg.commit`, and `/healthz` says `ezdwg_reader ok`. Its licence
 (MIT) is in the wheel's `dist-info/licenses` in `/opt/cad`. ONE rule says
 the reader is there (`dwg_read.py`'s `reads_dwg`: `ezdwg.raw` has
 `decode_entity_proxy_graphics`): with an ezdwg without it, every DWG is
 refused and `/healthz` says `ezdwg_reader missing`. The way back to an
-official release, once upstream ships these functions: build that release
-(its sdist, pinned by checksum) in the stage or pin its wheel in the
-`/opt/cad` install, and remove `EZDWG_COMMIT` and the label. No Python
-change. CI tests the DWG builder on made-up reader rows with the official
+official release, once upstream ships the fix: pin its wheel in the
+`/opt/cad` install (PyPI has amd64 and arm64 wheels), and remove the stage,
+its COPY in `parser-base`, `EZDWG_COMMIT` and the label. No Python change.
+CI tests the DWG builder on made-up reader rows with the official
 ezdwg 0.19.2 (the self-hosted runner has no Rust to build the fork), and
 that the official one is refused; the cases that read the public sample
 (`server/parser/cad/tests/data/sample_AC1032.dwg`, ACadSharp's, MIT) run on
