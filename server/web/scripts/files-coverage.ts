@@ -3,9 +3,10 @@
  *
  * How fully each file type is read on this box (the file ingestion
  * program's coverage check, lib/integrity/file-coverage.ts). Read only:
- * one SELECT in a READ ONLY transaction and a listing of the file database
- * folder. It prints file types and counts, never a file name or any text,
- * so its output may leave a client box.
+ * one SELECT in a READ ONLY transaction, a listing of the file database
+ * folder and the one-word first line of the `.none` names of its files.
+ * It prints file types and counts, never a file name or any text, so its
+ * output may leave a client box.
  *
  * Columns: files; the read states (indexed, partial, failed, skipped,
  * pending, name only); db: files with a file database of those read, where

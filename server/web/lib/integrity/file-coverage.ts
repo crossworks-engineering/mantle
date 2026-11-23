@@ -1,8 +1,9 @@
 /**
  * File coverage: how fully each file type is read, per box, in numbers only
  * (the file ingestion program, its coverage check). Read only, like every
- * check of the corpus audit: one SELECT in a READ ONLY transaction, and a
- * listing of the file database folder. It writes nothing and names no file:
+ * check of the corpus audit: one SELECT in a READ ONLY transaction, a
+ * listing of the file database folder, and the one-word first line of the
+ * `.none` names of its files. It writes nothing and names no file:
  * a row is a file type and its counts.
  *
  * A file is "not full" when one of these is true:
@@ -86,9 +87,12 @@ export const POPULAR_EXTS: ReadonlySet<string> = new Set([
   'zip',
 ]);
 
-/** Types not on the popular list that the check still names (the plan's
- *  gap types), so they show as themselves, not as `(other)`. */
+/** The types no route reads today that the check still names, so they show
+ *  as themselves, not as `(other)`: the popular ones, and the plan's gap
+ *  types. A type some route reads is named by that. */
 const NAMED_TYPES: ReadonlySet<string> = new Set([
+  'eml',
+  'msg',
   'tsv',
   'log',
   'sql',
@@ -118,14 +122,16 @@ const NAMED_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /** The cuts of a reader that read only the first part to save work (the
- *  plan, section 10: "shortcuts"), and the pages of a scan left unread.
- *  Every other cut that makes a file partial is a safety bound (a size, a
- *  cost or a model's limit: `text_store`, `legacy_cells`, `pictures`,
- *  `vision_answer`) or a digest's budget whose rows are all in the file's
- *  database (`cad_labels`, `cad_blocks`, `layer_list`), counted in `cuts`
- *  only. By the cut's reason (the key before a `:`). */
+ *  plan, section 10: "shortcuts"), and pages left unread (a scan's pages,
+ *  a book's pages still waiting for their read). Every cut not on this list
+ *  is taken as a safety bound (a size, a cost or a model's limit, such as
+ *  `text_store`, `legacy_cells`, `pictures`, `vision_answer`) or a digest's
+ *  budget whose rows are all in the file's database (`cad_labels`,
+ *  `cad_blocks`, `layer_list`): counted in `cuts` only. By the cut's reason
+ *  (the key before a `:`). */
 export const SHORTCUT_CUT_REASONS: ReadonlySet<string> = new Set([
   'ocr_pages',
+  'page_pictures',
   'sheet_rows',
   'sheet_columns',
   'sheet_text',
@@ -358,27 +364,18 @@ async function databaseNames(
 }
 
 /**
- * The type the check names for a file. Its extension, when it is a type
- * this brain knows (popular, named, read by some route, or with a known
- * media type); else `(other)`, as everything after a file name's last dot
- * is its extension, and "Letter to J.Smith" must not print "smith". A file
- * with no extension is named by its media type when that is a known type's
- * (an email attachment titled "Scan" with type application/pdf is a
- * `pdf`), else `(none)`.
+ * The type the check names for a file: its extension, or with none the
+ * subtype of its media type (an email attachment titled "Scan" with type
+ * application/pdf is a `pdf`). Named only when this brain knows it (on a
+ * list, or read by some route); else `(other)`, or `(none)` with no
+ * extension. Everything after a file name's last dot is its extension, and
+ * "Letter to J.Smith" must not print "smith".
  */
 export function typeOfName(name: string, mime: string, dbExts: ReadonlySet<string>): string {
   const ext = extOf(name);
-  if (!ext) {
-    const base = mime.split(';')[0]!.trim().toLowerCase();
-    const sub = base.split('/')[1] ?? '';
-    return sub && mimeForExt(sub).split(';')[0] === base ? sub : '(none)';
-  }
-  const known =
-    POPULAR_EXTS.has(ext) ||
-    NAMED_TYPES.has(ext) ||
-    routeOfExt(ext, dbExts) !== 'none' ||
-    mimeForExt(ext) !== 'application/octet-stream';
-  return known ? ext : '(other)';
+  const type = ext || (mime.split(';')[0]!.trim().toLowerCase().split('/')[1] ?? '');
+  if (type && (NAMED_TYPES.has(type) || routeOfExt(type, dbExts) !== 'none')) return type;
+  return ext ? '(other)' : '(none)';
 }
 
 /** One line of a row, numbers only. */

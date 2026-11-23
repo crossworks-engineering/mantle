@@ -399,7 +399,9 @@ What the brain did with a file, derived live (nothing new is stored):
   popular types, the five with the most files not full) and
   `pnpm -C server/web files:coverage [--json]` (every type, with skip
   reasons and cuts by reason). Read only: one SELECT in a READ ONLY
-  transaction and the listing of the database folder. It prints types and
+  transaction, the listing of the database folder, and the one-word first
+  line of the `.none` names of its files (a word of `unreadable` is no
+  database). It prints types and
   counts, never a file name or text, so its numbers may leave a client box.
 
 ### 8d. Reindex and stale indexes

@@ -20,6 +20,7 @@ describe('typeOfName', () => {
     expect(typeOfName('Report.PDF', '', none)).toBe('pdf');
     expect(typeOfName('drawing.dwg', '', none)).toBe('dwg');
     expect(typeOfName('server.log', '', none)).toBe('log');
+    expect(typeOfName('mail.EML', '', none)).toBe('eml');
     expect(typeOfName('README', '', none)).toBe('(none)');
     expect(typeOfName('notes.budget for the client', '', none)).toBe('(other)');
     expect(typeOfName('Letter to J.Smith', '', none)).toBe('(other)');
@@ -34,6 +35,8 @@ describe('typeOfName', () => {
     expect(typeOfName('Scan', 'application/pdf', none)).toBe('pdf');
     expect(typeOfName('Photo', 'image/jpeg', none)).toBe('jpeg');
     expect(typeOfName('Voice Message', 'application/x-made-up', none)).toBe('(none)');
+    expect(typeOfName('Invoice', 'application/octet-stream', none)).toBe('(none)');
+    expect(typeOfName('Note', '', none)).toBe('(none)');
   });
 });
 
