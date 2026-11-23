@@ -288,9 +288,7 @@ describe('markup read whole as a stream', () => {
     const { withReadCutSink: sink } = await import('./read-cut-sink');
     const row = '<p>filler text here</p>\n';
     const html = `<html><body>${row.repeat(Math.ceil((40 * 1024 * 1024) / row.length))}<p>THE-END</p></body></html>`;
-    const { value, cuts } = await sink(async () =>
-      parseMarkupBytes(Buffer.from(html), 'html'),
-    );
+    const { value, cuts } = await sink(async () => parseMarkupBytes(Buffer.from(html), 'html'));
     expect(value.endsWith('THE-END')).toBe(true);
     expect(cuts).toEqual({});
   }, 60_000);
@@ -302,9 +300,7 @@ describe('markup read whole as a stream', () => {
     const limit = 32 * 1024 * 1024;
     // Two windows of text, about 40 MB: the cap falls in the second.
     const html = `<p>${'w'.repeat(limit - 16)}</p><p>${'z'.repeat(8 * 1024 * 1024)}</p>`;
-    const { value, cuts } = await sink(async () =>
-      parseMarkupBytes(Buffer.from(html), 'html'),
-    );
+    const { value, cuts } = await sink(async () => parseMarkupBytes(Buffer.from(html), 'html'));
     expect(Buffer.byteLength(value)).toBeLessThanOrEqual(limit);
     expect(cuts.markup_bytes).toMatchObject({ what: 'bytes', total: html.length, limit });
   }, 60_000);
@@ -315,9 +311,7 @@ describe('markup read whole as a stream', () => {
     const { withReadCutSink: sink } = await import('./read-cut-sink');
     const item = '<item><name>n</name></item>';
     const xml = `<?xml version="1.0"?><root>${item.repeat(Math.ceil((40 * 1024 * 1024) / item.length))}<last>THE-END</last></root>`;
-    const { value, cuts } = await sink(async () =>
-      parseMarkupBytes(Buffer.from(xml), 'xml'),
-    );
+    const { value, cuts } = await sink(async () => parseMarkupBytes(Buffer.from(xml), 'xml'));
     expect(value.endsWith('THE-END')).toBe(true);
     expect(value.split('\n')[0]).toBe('n');
     expect(cuts).toEqual({});
