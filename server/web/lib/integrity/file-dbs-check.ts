@@ -72,10 +72,14 @@ const NONE_NOTES: Record<FileDbNoneWord, string> = {
     'the parser refused it for good, or twice on the same bytes. `dwg-reindex --again --apply` asks again.',
 };
 
-export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]> {
+export async function fileDatabaseChecks(
+  ownerId: string,
+  given?: Awaited<ReturnType<typeof listFileDbFolder>>,
+): Promise<AuditCheck[]> {
   // The folder before the rows, so a row is never older than a name it is
-  // judged against.
-  const folder = await listFileDbFolder();
+  // judged against. `given`: the audit lists it once for this and the
+  // coverage line.
+  const folder = given ?? (await listFileDbFolder());
   const nameIds = [...new Set(folder.names.map((n) => n.fileId))].filter((id) => isUuid(id));
   const { rows, flagged, liveIds, appRows, toolRows } = await readOnlyTransaction(async (tx) => {
     // The box's pipelines, read in the same read-only transaction.

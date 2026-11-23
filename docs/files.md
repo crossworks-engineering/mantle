@@ -383,6 +383,24 @@ What the brain did with a file, derived live (nothing new is stored):
   counted). `mentions` is null outside an Admin scope (entity edges are
   read there only). A key limited to some areas sees the items of those
   areas only, and an app no Table (`derivedReachSql`).
+- **Coverage** (the whole box, by file type): how fully each type is
+  read, in numbers only (`server/web/lib/integrity/file-coverage.ts`). Per
+  type: the files in each read state, the files with a file database where
+  the type's Reader makes one, the files with a shortcut cut, and the files
+  not read in full. A file is not read in full when its read failed, it was
+  skipped for a reason other than an empty body, no reader takes its type
+  (the default text; an archive is read as what it is, by design, so it is
+  no shortfall), it holds a shortcut cut (a reader that read only the
+  first part: `SHORTCUT_CUT_REASONS`; a safety cut such as `text_store` is
+  counted but is no shortfall), or its type's Reader makes a database and
+  its bytes have none (not a PDF, not a type a Reader takes only some files
+  of). A file not read yet or indexed by name is counted, never "not full".
+  Two ways in, one function: the corpus audit's line `file_coverage` (the
+  popular types, the five with the most files not full) and
+  `pnpm -C server/web files:coverage [--json]` (every type, with skip
+  reasons and cuts by reason). Read only: one SELECT in a READ ONLY
+  transaction and the listing of the database folder. It prints types and
+  counts, never a file name or text, so its numbers may leave a client box.
 
 ### 8d. Reindex and stale indexes
 

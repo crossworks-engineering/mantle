@@ -8,7 +8,8 @@
  * A file is "not full" when one of these is true:
  *  - its read failed, or it was skipped for a reason other than an empty
  *    body (`no_parser`, `no_vision_text`, ...);
- *  - no reader takes its type (the default text: name, type and size);
+ *  - no reader takes its type (the default text: name, type and size; an
+ *    archive is read as what it is, by design, so it is no shortfall);
  *  - it holds a shortcut cut: a reader that read only the first part to save
  *    work (SHORTCUT_CUT_REASONS). A safety cut (a size or a cost bound) is
  *    counted in `cuts` but is not a shortfall;
@@ -27,6 +28,7 @@ import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { nodes, readOnlyTransaction } from '@mantle/db';
 import {
   EXPORT_REQUIRED_EXTS,
+  EXTRACTABLE_ARCHIVE_EXTS,
   extOf,
   extractionOf,
   fileSha256Of,
@@ -35,9 +37,15 @@ import {
   MEDIA_EXTS,
   mimeForExt,
   parserRouteForExt,
+  readFileDbNone,
+  SEALED_ARCHIVE_EXTS,
   SOME_FILES_EXTS,
 } from '@mantle/files';
+import { cutMakesPartial, readCutReason } from '@mantle/files/read-cut';
 import type { AuditCheck } from '@mantle/client-types/types/integrity';
+
+/** The folder of file databases, as listFileDbFolder gives it. */
+export type FileDbFolder = Awaited<ReturnType<typeof listFileDbFolder>>;
 
 /** The types the coverage check scores (the plan's popular list). Others
  *  are counted and listed, not scored. */
@@ -78,11 +86,46 @@ export const POPULAR_EXTS: ReadonlySet<string> = new Set([
   'zip',
 ]);
 
+/** Types not on the popular list that the check still names (the plan's
+ *  gap types), so they show as themselves, not as `(other)`. */
+const NAMED_TYPES: ReadonlySet<string> = new Set([
+  'tsv',
+  'log',
+  'sql',
+  'srt',
+  'vtt',
+  'ipynb',
+  'svg',
+  'usfm',
+  'usx',
+  'osis',
+  'fb2',
+  'mbox',
+  'accdb',
+  'mdb',
+  'mpp',
+  'ifc',
+  'stp',
+  'step',
+  'stl',
+  'mobi',
+  'azw',
+  'azw3',
+  'djvu',
+  'cbz',
+  'cbr',
+  'bmp',
+]);
+
 /** The cuts of a reader that read only the first part to save work (the
- *  plan, section 10: "shortcuts"). Every other cut that makes a file
- *  partial is a safety bound, counted in `cuts` only. By the cut's reason
- *  (the key before a `:`). */
+ *  plan, section 10: "shortcuts"), and the pages of a scan left unread.
+ *  Every other cut that makes a file partial is a safety bound (a size, a
+ *  cost or a model's limit: `text_store`, `legacy_cells`, `pictures`,
+ *  `vision_answer`) or a digest's budget whose rows are all in the file's
+ *  database (`cad_labels`, `cad_blocks`, `layer_list`), counted in `cuts`
+ *  only. By the cut's reason (the key before a `:`). */
 export const SHORTCUT_CUT_REASONS: ReadonlySet<string> = new Set([
+  'ocr_pages',
   'sheet_rows',
   'sheet_columns',
   'sheet_text',
@@ -103,13 +146,17 @@ export const SHORTCUT_CUT_REASONS: ReadonlySet<string> = new Set([
 const EMPTY_SKIPS: ReadonlySet<string> = new Set(['body_too_short']);
 
 /** How a type is read today. `none`: no reader, the default text. */
-export type CoverageRoute = 'text' | 'parser' | 'pipeline' | 'vision' | 'media' | 'export' | 'none';
+export type CoverageRoute =
+  'text' | 'parser' | 'pipeline' | 'archive' | 'vision' | 'media' | 'export' | 'none';
 
 export function routeOfExt(ext: string, dbExts: ReadonlySet<string>): CoverageRoute {
   const route = parserRouteForExt(ext);
   if (route === 'utf8') return 'text';
   if (route !== 'none') return 'parser';
   if (dbExts.has(ext)) return 'pipeline';
+  // An archive is read as what it is, by design (docs/files.md "Archives"):
+  // its name, type and entry names; a person extracts its contents.
+  if (EXTRACTABLE_ARCHIVE_EXTS.includes(ext) || SEALED_ARCHIVE_EXTS.includes(ext)) return 'archive';
   if (MEDIA_EXTS.has(ext)) return 'media';
   if (EXPORT_REQUIRED_EXTS.has(ext)) return 'export';
   if (isVisionImage(ext, mimeForExt(ext))) return 'vision';
@@ -195,7 +242,11 @@ export function coverageOf(
         break;
       case 'partial': {
         row.partial += 1;
-        const reasons = new Set((ex.cuts ?? []).map((c) => c.key.split(':')[0]!));
+        // The cuts that make it partial (a detail, such as small pictures
+        // the size gate skipped, does not).
+        const reasons = new Set(
+          (ex.cuts ?? []).filter((c) => cutMakesPartial(c.key)).map((c) => readCutReason(c.key)),
+        );
         for (const r of reasons) {
           bump(row.cuts, r);
           if (SHORTCUT_CUT_REASONS.has(r)) short = true;
@@ -237,37 +288,34 @@ export function coverageOf(
   return [...byExt.values()].sort((a, b) => b.files - a.files || a.ext.localeCompare(b.ext));
 }
 
-/** The keys of `data` the check reads: the read state's own (extractionOf,
- *  readCutsOfFile) and the checksum. Never the text. */
-const DATA_KEYS = [
-  'filename',
-  'sha256',
-  'indexing_applied',
-  'extract_skipped',
-  'extract_parked',
-  'extract_completed_at',
-  'read_cut',
-  'ocr',
-  'images',
-] as const;
+/** The keys of `data` the check reads, written out in the SQL: the read
+ *  state's own (extractionOf, readCutsOfFile), the checksum, and the name
+ *  and type of the file. Never its text. */
+const slimData = () => sql<Record<string, unknown>>`jsonb_strip_nulls(jsonb_build_object(
+  'filename', ${nodes.data}->'filename',
+  'mimeType', ${nodes.data}->'mimeType',
+  'sha256', ${nodes.data}->'sha256',
+  'indexing_applied', ${nodes.data}->'indexing_applied',
+  'extract_skipped', ${nodes.data}->'extract_skipped',
+  'extract_parked', ${nodes.data}->'extract_parked',
+  'extract_completed_at', ${nodes.data}->'extract_completed_at',
+  'read_cut', ${nodes.data}->'read_cut',
+  'ocr', ${nodes.data}->'ocr',
+  'images', ${nodes.data}->'images'))`;
 
-/** Every live file of the brain, with the keys the check reads, and the
- *  file database names: one read-only transaction, then the folder. */
-export async function fileCoverage(ownerId: string): Promise<CoverageRow[]> {
-  // The folder before the rows, so a row is never older than a name it is
-  // judged against (as the file database lines do).
-  const folder = await listFileDbFolder();
-  const named = new Set(folder.names.map((n) => `${n.fileId}.${n.sha16}`));
-  // The keys are this file's constants, written into the SQL as literals (a
-  // bound parameter after `->` is ambiguous between a key and an index).
-  const slim = sql<Record<string, unknown>>`jsonb_strip_nulls(jsonb_build_object(${sql.join(
-    DATA_KEYS.map((k) => sql`${sql.raw(`'${k}'`)}, ${nodes.data}->${sql.raw(`'${k}'`)}`),
-    sql`, `,
-  )}))`;
+/**
+ * Every live file of the brain, with the keys the check reads, and the file
+ * database names: one read-only transaction, then the words of the `.none`
+ * names of those files. `folder`: the listing the audit made once for its
+ * file database lines too; made here when not given. Made before the rows,
+ * so a row is never older than a name it is judged against.
+ */
+export async function fileCoverage(ownerId: string, given?: FileDbFolder): Promise<CoverageRow[]> {
+  const folder = given ?? (await listFileDbFolder());
   const { rows, dbExts } = await readOnlyTransaction(async (tx) => {
     const box = await boxPipelines(ownerId, tx);
     const rows = await tx
-      .select({ id: nodes.id, title: nodes.title, data: slim })
+      .select({ id: nodes.id, title: nodes.title, data: slimData() })
       .from(nodes)
       .where(
         and(
@@ -281,10 +329,56 @@ export async function fileCoverage(ownerId: string): Promise<CoverageRow[]> {
   });
   const files = rows.map((r) => {
     const data = (r.data ?? {}) as Record<string, unknown>;
-    const name = typeof data.filename === 'string' ? data.filename : r.title;
-    return { id: r.id, ext: extOf(name ?? '') || '(none)', data };
+    const name = typeof data.filename === 'string' ? data.filename : (r.title ?? '');
+    const mime = typeof data.mimeType === 'string' ? data.mimeType : '';
+    return { id: r.id, ext: typeOfName(name, mime, dbExts), data };
   });
-  return coverageOf(files, dbExts, named);
+  return coverageOf(files, dbExts, await databaseNames(folder, files));
+}
+
+/** The names (`id.sha16`) of the files that have a database. A `.none`
+ *  name is a word, not a database: `no-rows` (read, nothing in it) and
+ *  `too-large` (said by its own cut) count as one, `unreadable` (the parser
+ *  refused it for good) does not. Its word is read for these files only. */
+async function databaseNames(
+  folder: FileDbFolder,
+  files: readonly CoverageFile[],
+): Promise<Set<string>> {
+  const named = new Set(folder.names.map((n) => `${n.fileId}.${n.sha16}`));
+  const words = new Set(
+    folder.names.filter((n) => n.name.endsWith('.none')).map((n) => `${n.fileId}.${n.sha16}`),
+  );
+  for (const f of files) {
+    const sha = fileSha256Of(f);
+    if (typeof sha !== 'string') continue;
+    const key = `${f.id}.${sha.slice(0, 16)}`;
+    if (words.has(key) && (await readFileDbNone(f.id, sha)) === 'unreadable') named.delete(key);
+  }
+  return named;
+}
+
+/**
+ * The type the check names for a file. Its extension, when it is a type
+ * this brain knows (popular, named, read by some route, or with a known
+ * media type); else `(other)`, as everything after a file name's last dot
+ * is its extension, and "Letter to J.Smith" must not print "smith". A file
+ * with no extension is named by its media type when that is a known type's
+ * (an email attachment titled "Scan" with type application/pdf is a
+ * `pdf`), else `(none)`.
+ */
+export function typeOfName(name: string, mime: string, dbExts: ReadonlySet<string>): string {
+  const ext = extOf(name);
+  if (!ext) {
+    const base = mime.split(';')[0]!.trim().toLowerCase();
+    const sub = base.split('/')[1] ?? '';
+    return sub && mimeForExt(sub).split(';')[0] === base ? sub : '(none)';
+  }
+  const known =
+    POPULAR_EXTS.has(ext) ||
+    NAMED_TYPES.has(ext) ||
+    routeOfExt(ext, dbExts) !== 'none' ||
+    mimeForExt(ext) !== 'application/octet-stream';
+  return known ? ext : '(other)';
 }
 
 /** One line of a row, numbers only. */
@@ -308,7 +402,7 @@ export function coverageCheck(rows: readonly CoverageRow[]): AuditCheck {
     key: 'file_coverage',
     label: 'Files of popular types not read in full',
     severity: 'medium',
-    note: 'A file of a popular type whose read failed, was skipped (an empty file is not counted), has no reader, holds a shortcut cut (a reader that read only the first part), or has no file database where its Reader makes one. Numbers by type only. Every type, with its states and cuts: `pnpm -C server/web files:coverage`.',
+    note: 'A file of a popular type whose read failed, was skipped (an empty file is not counted), has no reader, holds a shortcut cut (a reader that read only the first part), or has no file database where its Reader makes one. A Reader that is off in the workspace of a file leaves it with no database on purpose: `pipeline_list` shows where. Numbers by type only. Every type, with its states and cuts: `pnpm -C server/web files:coverage`.',
     count,
     capped: false,
     ok: count === 0,
@@ -318,6 +412,9 @@ export function coverageCheck(rows: readonly CoverageRow[]): AuditCheck {
   };
 }
 
-export async function fileCoverageChecks(ownerId: string): Promise<AuditCheck[]> {
-  return [coverageCheck(await fileCoverage(ownerId))];
+export async function fileCoverageChecks(
+  ownerId: string,
+  folder?: FileDbFolder,
+): Promise<AuditCheck[]> {
+  return [coverageCheck(await fileCoverage(ownerId, folder))];
 }

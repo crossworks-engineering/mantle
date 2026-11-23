@@ -10,8 +10,32 @@ import {
   coverageOf,
   dbExpected,
   routeOfExt,
+  typeOfName,
   type CoverageFile,
 } from './file-coverage';
+
+describe('typeOfName', () => {
+  const none = new Set<string>();
+  it('names a known type, never the words of a file name', () => {
+    expect(typeOfName('Report.PDF', '', none)).toBe('pdf');
+    expect(typeOfName('drawing.dwg', '', none)).toBe('dwg');
+    expect(typeOfName('server.log', '', none)).toBe('log');
+    expect(typeOfName('README', '', none)).toBe('(none)');
+    expect(typeOfName('notes.budget for the client', '', none)).toBe('(other)');
+    expect(typeOfName('Letter to J.Smith', '', none)).toBe('(other)');
+    expect(typeOfName('Offer v2.Final', '', none)).toBe('(other)');
+  });
+
+  it('names a type a Reader of the box takes', () => {
+    expect(typeOfName('model.qqq', '', new Set(['qqq']))).toBe('qqq');
+  });
+
+  it('names a file with no extension by its media type', () => {
+    expect(typeOfName('Scan', 'application/pdf', none)).toBe('pdf');
+    expect(typeOfName('Photo', 'image/jpeg', none)).toBe('jpeg');
+    expect(typeOfName('Voice Message', 'application/x-made-up', none)).toBe('(none)');
+  });
+});
 
 const SHA = 'a'.repeat(64);
 const DB_EXTS = new Set(['xlsx', 'xls', 'csv', 'pdf', 'dwg', 'xml', 'tif']);
@@ -92,6 +116,24 @@ describe('coverageOf', () => {
     void noDb;
   });
 
+  it('counts the unread pages of a scan as a shortfall', () => {
+    const scan = file('pdf', { ...done, ocr: { pages_read: 3, pages_total: 5 } });
+    const [row] = coverageOf([scan], DB_EXTS, new Set());
+    expect(row).toMatchObject({ partial: 1, shortcut: 1, notFull: 1, cuts: { ocr_pages: 1 } });
+  });
+
+  it("leaves the detail cuts out of a partial file's cuts", () => {
+    const doc = file('docx', {
+      ...done,
+      read_cut: {
+        text_store: { what: 'characters', read: 1, total: 2, limit: 1 },
+        pictures_small: { what: 'pictures', read: 0, total: 4 },
+      },
+    });
+    const [row] = coverageOf([doc], DB_EXTS, new Set());
+    expect(row!.cuts).toEqual({ text_store: 1 });
+  });
+
   it('counts a safety cut, but not as a shortfall', () => {
     const big = file('docx', {
       ...done,
@@ -128,7 +170,7 @@ describe('coverageOf', () => {
       read_cut: { archive: { what: 'entries', read: 0, total: 3 } },
     });
     const [row] = coverageOf([zip], DB_EXTS, new Set());
-    expect(row).toMatchObject({ indexed: 1, partial: 0, notFull: 0 });
+    expect(row).toMatchObject({ route: 'archive', indexed: 1, partial: 0, notFull: 0 });
   });
 
   it('sorts by file count', () => {

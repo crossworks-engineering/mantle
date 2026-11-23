@@ -106,10 +106,12 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
       // The file database lines (file-dbs-check.ts), after that transaction.
       'file_db_missing',
       'no_auto_tables_line',
+      // The coverage line (file-coverage.ts), after them.
+      'file_coverage',
     ]) {
       expect(keys).toContain(key);
     }
-    expect(keys.at(-1)).toBe('no_auto_tables_line');
+    expect(keys.at(-1)).toBe('file_coverage');
     expect(report.totalViolations).toBe(report.checks.reduce((s, c) => s + c.count, 0));
   }, 120_000);
 

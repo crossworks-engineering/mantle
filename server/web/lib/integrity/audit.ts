@@ -28,6 +28,7 @@ import {
 import { sql, type SQL } from 'drizzle-orm';
 
 import { abandonedTraceSql } from '../journey';
+import { listFileDbFolder } from '@mantle/files';
 import { fileCoverageChecks } from './file-coverage';
 import { fileDatabaseChecks } from './file-dbs-check';
 import { rowsOf } from './sql-util';
@@ -508,9 +509,11 @@ const CHECKS: CheckDef[] = [
 export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
   const checks = await readOnlyTransaction((tx) => runChecks(tx, ownerId));
   // After it: this one reads a disk as well, with its SQL in its own transaction.
-  checks.push(...(await fileDatabaseChecks(ownerId)));
+  // The folder of file databases is listed once, for both of these.
+  const folder = await listFileDbFolder();
+  checks.push(...(await fileDatabaseChecks(ownerId, folder)));
   // The file types not read in full (the coverage check), the same way.
-  checks.push(...(await fileCoverageChecks(ownerId)));
+  checks.push(...(await fileCoverageChecks(ownerId, folder)));
   return {
     generatedAt: new Date().toISOString(),
     checks,

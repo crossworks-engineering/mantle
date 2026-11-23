@@ -63,6 +63,8 @@ export {
   ARCHIVE_EXTRACT_MAX_FILES,
   ARCHIVE_LIMITS,
   archiveKindOfHead,
+  EXTRACTABLE_ARCHIVE_EXTS,
+  SEALED_ARCHIVE_EXTS,
   type ArchiveKind,
   type ArchiveLimits,
   type EntryRefusal,
