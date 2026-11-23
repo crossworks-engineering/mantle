@@ -109,9 +109,11 @@ const TEMP_UNIT = new RegExp(UNIT, 'gi');
 const TEMP_UNIT_AFTER = new RegExp(`^[ \\t]*${UNIT}`, 'i');
 /** An older sheet's limits, in the head block of each of its pages: a line
  *  of `Temperature Range -20 /650` and nothing more (a unit may follow). The
- *  groups are those of TEMPS. */
+ *  groups are those of TEMPS; the label may be absent. Each optional part
+ *  carries its own spaces, so no two runs of spaces stand side by side (a
+ *  line of many spaces stays fast). */
 const RANGE = new RegExp(
-  String.raw`^[ \t]*TEMP(?:ERATURE)?\.?[ \t]*RANGE([ \t]*(?:\([^)\n]*\))?)[ \t]*:?[ \t]*(-?[ \t]?\d+)[ \t]*(°[ \t]*[FC])?[ \t]*(?:\/|TO)[ \t]*(-?[ \t]?\d+)(?=[ \t]*(?:${UNIT})?[ \t]*$)`,
+  String.raw`^[ \t]*TEMP(?:ERATURE)?\.?[ \t]*RANGE[ \t]*(?:(\([^)\n]*\))[ \t]*)?(?::[ \t]*)?((?:-[ \t]?)?\d+)[ \t]*(?:(°[ \t]*[FC])[ \t]*)?(?:\/|TO)[ \t]*((?:-[ \t]?)?\d+)(?=[ \t]*(?:${UNIT}[ \t]*)?$)`,
   'gim',
 );
 
@@ -230,7 +232,7 @@ const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
 function tempOf(t: string, m: RegExpExecArray): string {
   const units = new Set(
     [
-      ...[...m[1]!.matchAll(TEMP_UNIT)].map((u) => u[1]),
+      ...[...(m[1] ?? '').matchAll(TEMP_UNIT)].map((u) => u[1]),
       m[3]?.slice(-1),
       TEMP_UNIT_AFTER.exec(t.slice(m.index + m[0].length))?.[1],
     ]
