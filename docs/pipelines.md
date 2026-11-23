@@ -427,6 +427,17 @@ shadow the route of the file does not change.
   when the read is poorer (`pdfReadPoorer`) or the database changed, and
   every Reader and Agent row stays. A write so refused keeps the paid
   answers in the answer cache, so the next run takes them free.
+- **A file with an older paid vision read (M4, Jason 2026-11-23).** Every
+  read again skips a file whose File tab says `Vision read` (the sketch
+  read), but this run: a person's run of one PDF reads it again with the
+  page asks and the routing of M4 (`pdfReadAgainOf` with `sketch`). The
+  old paid vision words (the `Texts` rows of `Source` `ocr`) are kept in
+  the tab `Sketch read`, with the columns of `Texts`, and the new File tab
+  still says `Vision read` (`withSketchKept`), so no sketch read and no
+  whole-page vision read of these bytes is paid again, and a reindex keeps
+  the file's text. In a book the kept words come after each page's text in
+  the passages (`filePagesOf`). Two checks: the person's page mark lets the
+  file through; a stored vision read is carried.
 - **`Kind from`.** `decider` (live: a used answer, at or over the floor;
   `Kind` is then its kind, over the Reader's own), `rules: shadow` (in
   shadow, every answer: only recorded), `rules: low confidence` (live: an

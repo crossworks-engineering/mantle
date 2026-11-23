@@ -7,7 +7,9 @@
  * Agent's text of a page stands over the Reader's on a page the Reader left
  * to it (`Method` `vision`). On any other page (M4: a page whose picture is
  * kept, its type unsure, or a drawing page of a book) the Reader's text
- * layer stays, and the Agent's text comes after it: no text is lost.
+ * layer stays, and the Agent's text comes after it: no text is lost. The
+ * words of an older sketch read kept over a read again (SKETCH_KEPT_TAB)
+ * come after a page's text too.
  *
  * The file's passages are built from these pages, one section `Page N` a
  * page (server/api/src/agent/extract/index-writes.ts), with no length cap,
@@ -23,6 +25,7 @@ import {
   PAGE_TEXT_COLUMN,
   PAGES_TAB,
   PIPELINE_STAMP_KEYS,
+  SKETCH_KEPT_TAB,
   fileDbPaths,
   stampOfMeta,
 } from '@mantle/files';
@@ -108,6 +111,12 @@ export async function filePagesOf(
     const own = (byPage.get(page) ?? '').trim();
     byPage.set(page, leftToVision.has(page) || own === '' ? text : `${own}\n\n${text}`);
   }
+  // An older sketch read kept over a read again (M4): its words after the
+  // page's text, never over it.
+  for (const [page, text] of sketchPagesAt(names.sqlite)) {
+    const own = (byPage.get(page) ?? '').trim();
+    byPage.set(page, own === '' ? text : `${own}\n\n${text}`);
+  }
   const pages = [...byPage.entries()]
     .filter(([, text]) => text.trim() !== '')
     .sort((a, b) => a[0] - b[0])
@@ -118,6 +127,39 @@ export async function filePagesOf(
     pages,
     ...(total !== null ? { read: { read: Math.min(read ?? 0, total), total } } : {}),
   };
+}
+
+/** The text of each page of a kept sketch read (SKETCH_KEPT_TAB), its
+ *  words by line. None when the tab is not there. */
+function sketchPagesAt(sqlite: string): Map<number, string> {
+  const lines = new Map<number, Map<number, string[]>>();
+  try {
+    scanTabColumns(
+      sqlite,
+      SKETCH_KEPT_TAB,
+      [PAGE_COLUMN, 'Line', PAGE_TEXT_COLUMN],
+      { maxRows: PAGES_MAX, cellMaxChars: PAGE_TEXT_MAX_CHARS },
+      (row) => {
+        const page = pageOf(row[PAGE_COLUMN]);
+        const text = textOf(row[PAGE_TEXT_COLUMN]).trim();
+        if (page === null || text === '') return true;
+        const line = Number(row.Line);
+        const byLine = lines.get(page) ?? new Map<number, string[]>();
+        const at = Number.isFinite(line) ? line : 0;
+        byLine.set(at, [...(byLine.get(at) ?? []), text]);
+        lines.set(page, byLine);
+        return true;
+      },
+    );
+  } catch {
+    // No such tab: no sketch read was kept.
+  }
+  const out = new Map<number, string>();
+  for (const [page, byLine] of lines) {
+    const ordered = [...byLine.entries()].sort((a, b) => a[0] - b[0]);
+    out.set(page, ordered.map(([, words]) => words.join(' ')).join('\n'));
+  }
+  return out;
 }
 
 /** The text of each page an Agent that says `produces.pages` read, from the

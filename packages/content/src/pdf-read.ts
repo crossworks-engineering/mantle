@@ -27,6 +27,8 @@ import {
   PAGE_KIND_FROM,
   PDF_KIND_RULES_VERSION,
   PDF_PAGE_WINDOW,
+  SKETCH_KEPT_COLUMNS,
+  SKETCH_KEPT_TAB,
   pageKindsOfRows,
   pdfFileTabOf,
   pdfKindAskOf,
@@ -36,6 +38,7 @@ import {
   type PdfPageAsk,
   type PdfPageKind,
   type PipelineManifest,
+  type SketchKept,
 } from '@mantle/files';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -94,7 +97,9 @@ export type FileStamp = { ino: number; size: number; mtimeMs: number };
  * CLOSED: what cannot be read is a skip, never "nothing stored".
  *
  * - A database with a sketch read: `sketch` (a read with no model would
- *   lose it).
+ *   lose it), but for a person's run of one PDF (`opts.sketch`, M4): it
+ *   reads the file again and keeps the old paid rows (`sketch`,
+ *   storedSketchOf; withSketchKept of @mantle/files).
  * - No database and the word `no-rows`: `not-drawing`. For a PDF that word
  *   is the decider's "document" of an older read (a drawing read always has
  *   its File tab, so it never ends in no rows; and the decider's "document"
@@ -110,7 +115,10 @@ export type FileStamp = { ino: number; size: number; mtimeMs: number };
  *   ask). The stored answer, a shadow or weak one too, stays in the File
  *   tab (readRouted, ./file-database.ts).
  */
-export async function pdfReadAgainOf(names: { sqlite: string; none: string }): Promise<
+export async function pdfReadAgainOf(
+  names: { sqlite: string; none: string },
+  opts: { sketch?: boolean } = {},
+): Promise<
   | { skip: 'sketch' | 'not-drawing' | 'kept' }
   | {
       skip: null;
@@ -120,6 +128,8 @@ export async function pdfReadAgainOf(names: { sqlite: string; none: string }): P
       /** The page types of the tab Pages (the router's part 2), put in
        *  again with no ask. */
       pageKinds: PdfPageKind[];
+      /** The older sketch read to keep (`sketch`, M4), or null. */
+      sketch: SketchKept | null;
     }
 > {
   try {
@@ -130,12 +140,21 @@ export async function pdfReadAgainOf(names: { sqlite: string; none: string }): P
         throw err;
       });
       if (fileDbWordOf(word) === 'no-rows') return { skip: 'not-drawing' };
-      return { skip: null, stored: null, since: null, reroute: false, pageKinds: [] };
+      return {
+        skip: null,
+        stored: null,
+        since: null,
+        reroute: false,
+        pageKinds: [],
+        sketch: null,
+      };
     }
     const r = await runTableSql(names.sqlite, 'SELECT * FROM "File"', { cap: 1 });
     const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
     if (!stored) return { skip: 'kept' };
-    if (stored.visionRead) return { skip: 'sketch' };
+    // A sketch read is kept as it is, but for a person's run of one PDF
+    // (`sketch`, M4: the page mark): that read keeps its paid rows instead.
+    if (stored.visionRead && !opts.sketch) return { skip: 'sketch' };
     return {
       skip: null,
       stored,
@@ -144,10 +163,32 @@ export async function pdfReadAgainOf(names: { sqlite: string; none: string }): P
       // In the same fail-closed read: a tab that cannot be read keeps the
       // database, so a read again never loses a paid page answer.
       pageKinds: storedPageKindsOf(names.sqlite),
+      sketch: stored.visionRead ? storedSketchOf(names.sqlite) : null,
     };
   } catch {
     return { skip: 'kept' };
   }
+}
+
+/** The older sketch read of the database at `abs` (M4): its paid vision
+ *  words (the `Texts` rows of `Source` `ocr`, and the rows of the tab
+ *  SKETCH_KEPT_TAB of an earlier read again) and its vision model. Throws
+ *  what the read throws: the caller fails closed. */
+export function storedSketchOf(abs: string): SketchKept {
+  const names = SKETCH_KEPT_COLUMNS.map((c) => c.name);
+  const [texts, kept, file] = readTabColumns(abs, [
+    { tab: 'Texts', columns: names },
+    { tab: SKETCH_KEPT_TAB, columns: names },
+    { tab: 'File', columns: ['Vision model'] },
+  ]);
+  const rows = [...(kept ?? []), ...(texts ?? []).filter((r) => r.Source === 'ocr')].map((r) =>
+    names.map((n) => {
+      const v = r[n];
+      return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? v : null;
+    }),
+  );
+  const model = file?.[0]?.['Vision model'];
+  return { rows, model: typeof model === 'string' ? model : null };
 }
 
 /** The page types stored in the tab Pages of the database at `abs` (none

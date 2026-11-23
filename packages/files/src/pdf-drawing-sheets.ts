@@ -491,6 +491,77 @@ export function pdfKindNote(kind: string): string | null {
  *  vision read wrote the file's text, and no row here holds it), or null. */
 export const VISION_TEXT = { sketch: 'sketch read', nodeOnly: 'node text only' } as const;
 
+/**
+ * The tab a read again keeps an older sketch read in (M4, Jason
+ * 2026-11-23): a person's run of one PDF with a sketch read reads it again
+ * (pdfReadAgainOf with `sketch`), and the paid vision words of the old
+ * database (the `Texts` rows of `Source` `ocr`, and this tab of an earlier
+ * such run) are kept here, with the columns of `Texts`. Never thrown away.
+ */
+export const SKETCH_KEPT_TAB = 'Sketch read';
+
+/** The columns of the kept sketch read: those of `Texts`. */
+export const SKETCH_KEPT_COLUMNS: readonly {
+  name: string;
+  type: 'number' | 'text' | 'checkbox';
+}[] = [
+  { name: 'Page', type: 'number' },
+  { name: 'Line', type: 'number' },
+  { name: 'Text', type: 'text' },
+  ...BOX_COLUMNS(),
+  { name: 'Angle', type: 'number' },
+  { name: 'Size mm', type: 'number' },
+  { name: 'Hidden', type: 'checkbox' },
+  { name: 'Spaced', type: 'checkbox' },
+  { name: 'Region', type: 'text' },
+  { name: 'Source', type: 'text' },
+  { name: 'Confidence', type: 'number' },
+];
+
+/** An older sketch read to keep over a read again: its rows (by
+ *  SKETCH_KEPT_COLUMNS) and its vision model. */
+export type SketchKept = { rows: ParsedSheet['rows']; model: string | null };
+
+/**
+ * A read again's sheets with an older sketch read kept (pure; M4): the tab
+ * SKETCH_KEPT_TAB with its rows, and the File tab still saying the vision
+ * read ran (`Vision read`, `Vision text` `sketch read`, `Vision model`), so
+ * no sketch read or whole-page vision read of these bytes is paid again
+ * (pdfReadAgainOf, pdfTextKeptOf). A column the File tab lacks is added.
+ */
+export function withSketchKept(sheets: readonly ParsedSheet[], kept: SketchKept): ParsedSheet[] {
+  const out: ParsedSheet[] = sheets
+    .filter((s) => s.name !== SKETCH_KEPT_TAB)
+    .map((s) => {
+      if (s.name !== 'File') return s;
+      const columns = [...s.columns];
+      const at = (name: string, type: 'checkbox' | 'text') => {
+        let i = columns.findIndex((c) => c.name === name);
+        if (i < 0) {
+          columns.push({ name, type });
+          i = columns.length - 1;
+        }
+        return i;
+      };
+      const read = at('Vision read', 'checkbox');
+      const text = at('Vision text', 'text');
+      const model = at('Vision model', 'text');
+      const rows = s.rows.map((r) => {
+        const row = [...r];
+        while (row.length < columns.length) row.push(null);
+        row[read] = true;
+        row[text] = VISION_TEXT.sketch;
+        row[model] = kept.model;
+        return row;
+      });
+      return { ...s, columns, rows };
+    });
+  if (kept.rows.length > 0) {
+    out.push({ name: SKETCH_KEPT_TAB, columns: [...SKETCH_KEPT_COLUMNS], rows: kept.rows });
+  }
+  return out;
+}
+
 export function pdfDrawingSheets(
   drawing: PdfDrawing,
   decision: PdfKindDecision | null,
