@@ -429,15 +429,18 @@ shadow the route of the file does not change.
   answers in the answer cache, so the next run takes them free.
 - **A file with an older paid vision read (M4, Jason 2026-11-23).** Every
   read again skips a file whose File tab says `Vision read` (the sketch
-  read), but this run: a person's run of one PDF reads it again with the
-  page asks and the routing of M4 (`pdfReadAgainOf` with `sketch`). The
-  old paid vision words (the `Texts` rows of `Source` `ocr`) are kept in
-  the tab `Sketch read`, with the columns of `Texts`, and the new File tab
-  still says `Vision read` (`withSketchKept`), so no sketch read and no
-  whole-page vision read of these bytes is paid again, and a reindex keeps
-  the file's text. In a book the kept words come after each page's text in
-  the passages (`filePagesOf`). Two checks: the person's page mark lets the
-  file through; a stored vision read is carried.
+  read), but this run: a person's run of one PDF, where page asks are on
+  (the page decider is given), reads it again with the page asks and the
+  routing of M4 (`pdfReadAgainOf` with `sketch`). The old paid rows (the
+  `Texts`, `Tags` and `Lines` rows of `Source` `ocr`) are kept by one rule
+  (`withSketchKept`): back into the read's tab of the same name (a drawing
+  read), else into a tab of their own (`Sketch read`, `Sketch tags`,
+  `Sketch lines`: a book). The new File tab still says `Vision read`, so no
+  sketch read and no whole-page vision read of these bytes is paid again,
+  and a reindex keeps the file's text. In a book the kept words come after
+  each page's text in the passages (`filePagesOf`). Two checks: the
+  person's page mark lets the file through; a stored vision read is
+  carried.
 - **`Kind from`.** `decider` (live: a used answer, at or over the floor;
   `Kind` is then its kind, over the Reader's own), `rules: shadow` (in
   shadow, every answer: only recorded), `rules: low confidence` (live: an

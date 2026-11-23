@@ -27,8 +27,7 @@ import {
   PAGE_KIND_FROM,
   PDF_KIND_RULES_VERSION,
   PDF_PAGE_WINDOW,
-  SKETCH_KEPT_COLUMNS,
-  SKETCH_KEPT_TAB,
+  SKETCH_KEPT_TABS,
   pageKindsOfRows,
   pdfFileTabOf,
   pdfKindAskOf,
@@ -42,7 +41,7 @@ import {
 } from '@mantle/files';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { readTabColumns, runTableSql } from '@mantle/tabledb';
+import { readTabColumns, runTableSql, withTabScanner } from '@mantle/tabledb';
 import { askCapOf } from './pipeline-agent';
 import {
   agentStep,
@@ -170,25 +169,36 @@ export async function pdfReadAgainOf(
   }
 }
 
-/** The older sketch read of the database at `abs` (M4): its paid vision
- *  words (the `Texts` rows of `Source` `ocr`, and the rows of the tab
- *  SKETCH_KEPT_TAB of an earlier read again) and its vision model. Throws
- *  what the read throws: the caller fails closed. */
+/** The older sketch read of the database at `abs` (M4): its paid rows (the
+ *  `Texts`, `Tags` and `Lines` rows of `Source` `ocr`, and every row of the
+ *  tabs an earlier read again kept them in, SKETCH_KEPT_TABS) and its vision
+ *  model. Throws what the read throws: the caller fails closed. */
 export function storedSketchOf(abs: string): SketchKept {
-  const names = SKETCH_KEPT_COLUMNS.map((c) => c.name);
-  const [texts, kept, file] = readTabColumns(abs, [
-    { tab: 'Texts', columns: names },
-    { tab: SKETCH_KEPT_TAB, columns: names },
-    { tab: 'File', columns: ['Vision model'] },
-  ]);
-  const rows = [...(kept ?? []), ...(texts ?? []).filter((r) => r.Source === 'ocr')].map((r) =>
-    names.map((n) => {
-      const v = r[n];
-      return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? v : null;
-    }),
-  );
-  const model = file?.[0]?.['Vision model'];
-  return { rows, model: typeof model === 'string' ? model : null };
+  const cell = (v: unknown) =>
+    typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? v : null;
+  return withTabScanner(abs, (scan) => {
+    const rowsOf = (tab: string, keep: (r: Record<string, unknown>) => boolean) => {
+      const columns = scan.columnsOf(tab);
+      const out: Record<string, string | number | boolean | null>[] = [];
+      if (!columns) return out;
+      scan.rows(tab, columns, { maxRows: Number.MAX_SAFE_INTEGER, cellMaxChars: 1e9 }, (r) => {
+        if (keep(r)) out.push(Object.fromEntries(columns.map((c) => [c, cell(r[c])])));
+        return true;
+      });
+      return out;
+    };
+    const tabs = (Object.keys(SKETCH_KEPT_TABS) as (keyof typeof SKETCH_KEPT_TABS)[]).map(
+      (name) => ({
+        name,
+        rows: [
+          ...rowsOf(SKETCH_KEPT_TABS[name], () => true),
+          ...rowsOf(name, (r) => r.Source === 'ocr'),
+        ],
+      }),
+    );
+    const model = rowsOf('File', () => true)[0]?.['Vision model'];
+    return { tabs, model: typeof model === 'string' ? model : null };
+  });
 }
 
 /** The page types stored in the tab Pages of the database at `abs` (none

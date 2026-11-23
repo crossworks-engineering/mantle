@@ -1,24 +1,20 @@
 /**
  * An older sketch read kept over a read again (./pdf-drawing-sheets.ts
  * withSketchKept; M4, Jason 2026-11-23): a person's run of one PDF reads a
- * file with a paid vision read again, and its paid rows and the File tab's
- * word that it ran are kept, so nothing is thrown away and nothing is paid
- * again.
+ * file with a paid vision read again, and its paid rows (words, tags, line
+ * numbers) and the File tab's word that it ran are kept, so nothing is
+ * thrown away and nothing is paid again. One rule: each tab's rows go back
+ * into the read's tab of that name, else into a tab of their own.
  */
 import { describe, expect, it } from 'vitest';
 import {
-  SKETCH_KEPT_COLUMNS,
-  SKETCH_KEPT_TAB,
+  SKETCH_KEPT_TABS,
   VISION_TEXT,
   pdfFileTabOf,
   withSketchKept,
+  type SketchKept,
 } from './pdf-drawing-sheets';
 import type { ParsedSheet } from './sheet-to-grid';
-
-const row = (page: number, text: string) =>
-  SKETCH_KEPT_COLUMNS.map((c) =>
-    c.name === 'Page' ? page : c.name === 'Text' ? text : c.name === 'Source' ? 'ocr' : null,
-  );
 
 /** The book reader's File tab: no vision columns. */
 const file: ParsedSheet = {
@@ -32,12 +28,27 @@ const file: ParsedSheet = {
   rows: [['book', 'book', 5, 1478]],
 };
 
+const kept: SketchKept = {
+  tabs: [
+    { name: 'Texts', rows: [{ Page: 1, Line: 1, Text: 'P-101', Source: 'ocr' }] },
+    { name: 'Tags', rows: [{ Page: 1, Tag: 'P-101', Source: 'ocr' }] },
+    { name: 'Lines', rows: [] },
+  ],
+  model: 'vision-m',
+};
+
 describe('withSketchKept', () => {
-  it('keeps the paid rows in their own tab, and the File tab says the vision read ran', () => {
-    const out = withSketchKept([file], { rows: [row(1, 'P-101')], model: 'vision-m' });
-    const kept = out.find((s) => s.name === SKETCH_KEPT_TAB)!;
-    expect(kept.rows).toEqual([row(1, 'P-101')]);
-    expect(kept.columns.map((c) => c.name)).toEqual(SKETCH_KEPT_COLUMNS.map((c) => c.name));
+  it('a book (no such tabs): the rows in tabs of their own; the File tab says the vision read ran', () => {
+    const out = withSketchKept([file], kept);
+    expect(out.map((s) => s.name)).toEqual(['File', SKETCH_KEPT_TABS.Texts, SKETCH_KEPT_TABS.Tags]);
+    const texts = out.find((s) => s.name === SKETCH_KEPT_TABS.Texts)!;
+    expect(texts.columns).toEqual([
+      { name: 'Page', type: 'number' },
+      { name: 'Line', type: 'number' },
+      { name: 'Text', type: 'text' },
+      { name: 'Source', type: 'text' },
+    ]);
+    expect(texts.rows).toEqual([[1, 1, 'P-101', 'ocr']]);
     const tab = out.find((s) => s.name === 'File')!;
     const stored = pdfFileTabOf(
       tab.columns.map((c) => c.name),
@@ -51,9 +62,38 @@ describe('withSketchKept', () => {
     expect(tab.rows[0]!.slice(0, 4)).toEqual(['book', 'book', 5, 1478]);
   });
 
-  it("a read's own tab of that name gives way; no rows, no tab, the word stays", () => {
-    const own: ParsedSheet = { name: SKETCH_KEPT_TAB, columns: [], rows: [['x']] };
-    const out = withSketchKept([file, own], { rows: [], model: null });
+  it("a drawing read: the rows go back into its own Texts and Tags, by column name, after the read's", () => {
+    const texts: ParsedSheet = {
+      name: 'Texts',
+      columns: [
+        { name: 'Page', type: 'number' },
+        { name: 'Text', type: 'text' },
+        { name: 'Source', type: 'text' },
+        { name: 'Line', type: 'number' },
+      ],
+      rows: [[1, 'NOTES', 'pdf', 1]],
+    };
+    const tags: ParsedSheet = {
+      name: 'Tags',
+      columns: [
+        { name: 'Page', type: 'number' },
+        { name: 'Tag', type: 'text' },
+        { name: 'Source', type: 'text' },
+      ],
+      rows: [],
+    };
+    const out = withSketchKept([file, texts, tags], kept);
+    expect(out.map((s) => s.name)).toEqual(['File', 'Texts', 'Tags']);
+    expect(out[1]!.rows).toEqual([
+      [1, 'NOTES', 'pdf', 1],
+      [1, 'P-101', 'ocr', 1],
+    ]);
+    expect(out[2]!.rows).toEqual([[1, 'P-101', 'ocr']]);
+  });
+
+  it("a read's own tab of a kept name gives way; no rows, no tab, the word stays", () => {
+    const own: ParsedSheet = { name: SKETCH_KEPT_TABS.Texts, columns: [], rows: [['x']] };
+    const out = withSketchKept([file, own], { tabs: [], model: null });
     expect(out.map((s) => s.name)).toEqual(['File']);
     const tab = out[0]!;
     expect(tab.rows[0]![tab.columns.findIndex((c) => c.name === 'Vision read')]).toBe(true);

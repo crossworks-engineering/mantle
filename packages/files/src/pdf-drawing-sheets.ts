@@ -492,46 +492,54 @@ export function pdfKindNote(kind: string): string | null {
 export const VISION_TEXT = { sketch: 'sketch read', nodeOnly: 'node text only' } as const;
 
 /**
- * The tab a read again keeps an older sketch read in (M4, Jason
- * 2026-11-23): a person's run of one PDF with a sketch read reads it again
- * (pdfReadAgainOf with `sketch`), and the paid vision words of the old
- * database (the `Texts` rows of `Source` `ocr`, and this tab of an earlier
- * such run) are kept here, with the columns of `Texts`. Never thrown away.
+ * The tabs of a sketch read's paid rows (./pdf-sketch.ts: its words, and the
+ * tags and line numbers read from them, with `Source` `ocr`), and the tab
+ * each is kept in by a read again whose read has no tab of that name (a
+ * book: M4, Jason 2026-11-23). A person's run of one PDF with a sketch read
+ * reads it again (pdfReadAgainOf with `sketch`), and these rows are never
+ * thrown away.
  */
-export const SKETCH_KEPT_TAB = 'Sketch read';
+export const SKETCH_KEPT_TABS = {
+  Texts: 'Sketch read',
+  Tags: 'Sketch tags',
+  Lines: 'Sketch lines',
+} as const;
 
-/** The columns of the kept sketch read: those of `Texts`. */
-export const SKETCH_KEPT_COLUMNS: readonly {
-  name: string;
-  type: 'number' | 'text' | 'checkbox';
-}[] = [
-  { name: 'Page', type: 'number' },
-  { name: 'Line', type: 'number' },
-  { name: 'Text', type: 'text' },
-  ...BOX_COLUMNS(),
-  { name: 'Angle', type: 'number' },
-  { name: 'Size mm', type: 'number' },
-  { name: 'Hidden', type: 'checkbox' },
-  { name: 'Spaced', type: 'checkbox' },
-  { name: 'Region', type: 'text' },
-  { name: 'Source', type: 'text' },
-  { name: 'Confidence', type: 'number' },
-];
+/** The tab of the kept sketch words of a book (filePagesOf reads it). */
+export const SKETCH_KEPT_TAB = SKETCH_KEPT_TABS.Texts;
 
-/** An older sketch read to keep over a read again: its rows (by
- *  SKETCH_KEPT_COLUMNS) and its vision model. */
-export type SketchKept = { rows: ParsedSheet['rows']; model: string | null };
+/** A cell of a kept row. */
+type KeptCell = string | number | boolean | null;
+
+/** An older sketch read to keep over a read again: for each tab of
+ *  SKETCH_KEPT_TABS its paid rows, by column name, and the vision model. */
+export type SketchKept = {
+  tabs: { name: keyof typeof SKETCH_KEPT_TABS; rows: Record<string, KeptCell>[] }[];
+  model: string | null;
+};
+
+/** The type of a kept column, by its values. */
+function keptTypeOf(rows: readonly Record<string, KeptCell>[], name: string) {
+  const values = rows.map((r) => r[name]).filter((v) => v !== null && v !== undefined);
+  if (values.length > 0 && values.every((v) => typeof v === 'number')) return 'number' as const;
+  if (values.length > 0 && values.every((v) => typeof v === 'boolean')) return 'checkbox' as const;
+  return 'text' as const;
+}
 
 /**
- * A read again's sheets with an older sketch read kept (pure; M4): the tab
- * SKETCH_KEPT_TAB with its rows, and the File tab still saying the vision
- * read ran (`Vision read`, `Vision text` `sketch read`, `Vision model`), so
- * no sketch read or whole-page vision read of these bytes is paid again
- * (pdfReadAgainOf, pdfTextKeptOf). A column the File tab lacks is added.
+ * A read again's sheets with an older sketch read kept (pure; M4). One rule:
+ * each tab's paid rows go back into the read's tab of the same name, by
+ * column name (a drawing read: so its tags and line numbers stay where every
+ * reader of the database looks), or, where the read has no such tab (a
+ * book), into the tab SKETCH_KEPT_TABS names. The File tab still says the
+ * vision read ran (`Vision read`, `Vision text` `sketch read`, `Vision
+ * model`), so no sketch read or whole-page vision read of these bytes is
+ * paid again (pdfReadAgainOf, pdfTextKeptOf); a column it lacks is added.
  */
 export function withSketchKept(sheets: readonly ParsedSheet[], kept: SketchKept): ParsedSheet[] {
+  const own = new Set<string>(Object.values(SKETCH_KEPT_TABS));
   const out: ParsedSheet[] = sheets
-    .filter((s) => s.name !== SKETCH_KEPT_TAB)
+    .filter((s) => !own.has(s.name))
     .map((s) => {
       if (s.name !== 'File') return s;
       const columns = [...s.columns];
@@ -556,8 +564,21 @@ export function withSketchKept(sheets: readonly ParsedSheet[], kept: SketchKept)
       });
       return { ...s, columns, rows };
     });
-  if (kept.rows.length > 0) {
-    out.push({ name: SKETCH_KEPT_TAB, columns: [...SKETCH_KEPT_COLUMNS], rows: kept.rows });
+  for (const { name, rows } of kept.tabs) {
+    if (rows.length === 0) continue;
+    const i = out.findIndex((s) => s.name === name);
+    if (i >= 0) {
+      const tab = out[i]!;
+      const added = rows.map((r) => tab.columns.map((c) => r[c.name] ?? null));
+      out[i] = { ...tab, rows: [...tab.rows, ...added] };
+      continue;
+    }
+    const names = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+    out.push({
+      name: SKETCH_KEPT_TABS[name],
+      columns: names.map((n) => ({ name: n, type: keptTypeOf(rows, n) })),
+      rows: rows.map((r) => names.map((n) => r[n] ?? null)),
+    });
   }
   return out;
 }

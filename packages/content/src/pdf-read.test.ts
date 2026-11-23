@@ -141,10 +141,11 @@ describe('a read again of a PDF', () => {
     const again = await pdfReadAgainOf(names, { sketch: true });
     expect(again).toMatchObject({ skip: null, reroute: true });
     if (again.skip !== null) throw new Error('skipped');
-    // The paid words only (Source ocr), with the columns of Texts.
-    expect(again.sketch!.rows.map((r) => [r[0], r[1], r[2], r[12]])).toEqual([
-      [1, 1, 'P-101', 'ocr'],
-      [2, 1, 'LINE 6"-P-1001', 'ocr'],
+    // The paid rows only (Source ocr), by column name.
+    const texts = again.sketch!.tabs.find((t) => t.name === 'Texts')!;
+    expect(texts.rows).toEqual([
+      { Page: 1, Line: 1, Text: 'P-101', Source: 'ocr' },
+      { Page: 2, Line: 1, Text: 'LINE 6"-P-1001', Source: 'ocr' },
     ]);
     // A database with no sketch read keeps none.
     const plain = await pdfReadAgainOf(stored({ kind: 'scan', rulesVersion: 1 }), { sketch: true });
