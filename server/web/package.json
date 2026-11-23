@@ -134,7 +134,7 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "bcryptjs": "^3.0.3",
     "busboy": "1.6.0",
-    "chokidar": "^5.0.0",
+    "chokidar": "^6.0.0",
     "drizzle-orm": "^0.45.4",
     "esbuild": "^0.28.2",
     "hast-util-to-html": "^9.0.5",
