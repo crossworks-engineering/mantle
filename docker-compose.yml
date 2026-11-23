@@ -285,9 +285,9 @@ x-app-env: &app-env
   # Most paid asks of all Agent pipelines in 24 hours (docs/configuration.md).
   # Unset = 20,000; 0 = no Agent may ask.
   MANTLE_PIPELINE_ASKS_PER_DAY: ${MANTLE_PIPELINE_ASKS_PER_DAY:-}
-  # Largest delimited text made into a file's database or a Table on upload,
-  # in MB: a file the sheet reader reads as text, whatever its name. Past it
-  # the file records too-large, with no parser job and no Table.
+  # Most cell text a file database read keeps, in MB (CSV and workbooks):
+  # past it the rows are counted, not kept, the cut is said on the file, and
+  # no Table is made of the file. The parser gets the same value.
   MANTLE_FILE_DB_CSV_MAX_MB: ${MANTLE_FILE_DB_CSV_MAX_MB:-}
   # Workspaces arch A9 (docs/runtime-role.md): 1 = the app's pools log in as
   # mantle_runtime (not a superuser, not a table owner; its password derived
@@ -714,6 +714,10 @@ services:
       PARSER_QUEUE_MAX: ${PARSER_QUEUE_MAX:-}
       PARSER_MAX_UPLOAD_MB: ${PARSER_MAX_UPLOAD_MB:-}
       MANTLE_PIPELINES_DIR: /pipelines
+      # The read limits of a file database (the sheet step keeps the first
+      # rows up to them): the same values as the brain's.
+      MANTLE_FILE_DB_CSV_MAX_MB: ${MANTLE_FILE_DB_CSV_MAX_MB:-}
+      TABLE_IMPORT_MAX_ROWS: ${TABLE_IMPORT_MAX_ROWS:-}
     # A wedged service (its event loop stuck, or the job slot held past
     # every deadline: /healthz 503) fails this probe and autoheal restarts
     # it; a crashed one, or one that exited after a dirty job, restarts on

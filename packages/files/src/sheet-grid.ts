@@ -51,14 +51,13 @@ export async function readSpreadsheetGrid(
 }
 
 /**
- * Rows read per sheet for a grid import. Deliberately far above anything a
- * person reviews as a table: the real ceiling for this path is the
- * uncompressed-XML pre-flight in ./sheet-read.ts (~80k rows at the current
- * limit), which fails LOUDLY, and above that the import layer's own
- * TABLE_IMPORT_MAX_ROWS. This cap only exists so `worksheetToRows` has a
- * number; it should never be the thing that bites.
+ * Rows read per sheet for a grid import: Excel's own row limit, so it never
+ * cuts (a sheet of 1,048,576 tiny rows fits under the size check). The real
+ * ceilings are the pre-flight in ./sheet-read.ts, which fails LOUDLY for an
+ * import, the row keeper of a file database read, and the import layer's own
+ * TABLE_IMPORT_MAX_ROWS.
  */
-const GRID_MAX_ROWS_PER_SHEET = 1_000_000;
+const GRID_MAX_ROWS_PER_SHEET = 1_048_576;
 /** Columns read per sheet. Excel's own hard ceiling is 16,384 (XFD). */
 const GRID_MAX_COLS_PER_SHEET = 16_384;
 
@@ -94,14 +93,20 @@ export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<P
     // a stream and keeps its head (the ingest program). An import (no
     // `keep`) still refuses it whole: a partial import would be a lie.
     if (!keep || !(err instanceof SpreadsheetTooLargeError)) throw err;
-    const sheets = new Map<string, unknown[][]>();
-    await streamWorkbookRows(buf, (name, cells) => {
-      let rows = sheets.get(name);
-      if (!rows) sheets.set(name, (rows = []));
-      if (keep.take(cells)) rows.push(cells.slice(0, GRID_MAX_COLS_PER_SHEET));
-      return true; // read on: the rows past the cut are counted
+    // By sheet number: two sheets can share a name the reader gives.
+    const sheets = new Map<number, { name: string; rows: unknown[][] }>();
+    await streamWorkbookRows(buf, (name, cells, sheetNo) => {
+      let sheet = sheets.get(sheetNo);
+      if (!sheet) sheets.set(sheetNo, (sheet = { name, rows: [] }));
+      if (!keep.take(cells)) {
+        // The stream stops at the cut: the rows past it are not counted.
+        keep.atLeast = true;
+        return false;
+      }
+      sheet.rows.push(cells.slice(0, GRID_MAX_COLS_PER_SHEET));
+      return true;
     });
-    return [...sheets].flatMap(([name, rows]) => parseSheet(name, rows));
+    return [...sheets.values()].flatMap((s) => parseSheet(s.name, s.rows));
   }
   const out: ParsedSheet[] = [];
   for (const ws of wb.worksheets) {

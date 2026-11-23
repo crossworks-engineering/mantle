@@ -690,11 +690,12 @@ uploaded while it was set gets no Table until its next extract.
 
 - Disk: the databases add about what the Tables of these files take, until a person
   deletes the old Tables.
-- A workbook past 32 MB of sheet XML (about 75,000 rows by 10 columns) gets
-  `too-large`, and `file_sql` says to save it as CSV. Delimited text past
-  `MANTLE_FILE_DB_CSV_MAX_MB`, whatever its name (a CSV named `.xlsx` too; no
-  Table is made of it either), and any file past `TABLE_IMPORT_MAX_ROWS` rows,
-  get `too-large` too.
+- A long file is read in part, never refused whole: the database keeps the
+  first rows up to `TABLE_IMPORT_MAX_ROWS` rows and `MANTLE_FILE_DB_CSV_MAX_MB`
+  of cell text, and the cut is said on the file (`database_rows`,
+  `database_size`). A workbook past 32 MB of sheet XML is read as a stream,
+  which stops at the cut (its rows past it are "at least"). No Table is made
+  of a cut read.
 - A private file (indexing: metadata) gets no database, no Table and no picture. A
   file that turns private loses its paid image answers, even when someone who cannot
   read it set the folder's flag. Crops and pictures already made stay until a person

@@ -253,17 +253,19 @@ async function readAndWrite(a: {
   // "Read in part"). The Reader says its own cut (the package `sheet`: the
   // import ceiling or the read budget); a read past the import ceiling is
   // cut by the write (writeRowsOrWord) and said here.
-  let cut = false;
+  const readerCut = parsed.kind === 'sheets' && Object.keys(parsed.readCuts ?? {}).length > 0;
+  const rows =
+    parsed.kind === 'sheets'
+      ? parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0)
+      : 0;
+  const max = importMaxRows();
+  // Whether the read is cut, for the Table below too (a database built
+  // before keeps no Table from being made of a cut read).
+  const cut = readerCut || rows > max;
   if (wantDb && parsed.kind === 'sheets') {
-    if (parsed.readCuts) {
-      noteReadCuts(parsed.readCuts);
-      cut = Object.keys(parsed.readCuts).length > 0;
-    }
-    const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
-    const max = importMaxRows();
-    if (rows > max) {
+    if (readerCut) noteReadCuts(parsed.readCuts);
+    else if (rows > max) {
       noteReadCut('database_rows', { what: 'rows', read: max, total: rows, limit: max });
-      cut = true;
     }
   }
 

@@ -33,7 +33,12 @@
  * nothing and asks no model.
  */
 import { pdfPageUseOf } from '@mantle/decisions';
-import { afterSheetsOf, agentInputOf, parseFileSheets } from '@mantle/content/file-database';
+import {
+  afterSheetsOf,
+  agentInputOf,
+  headOfSheets,
+  parseFileSheets,
+} from '@mantle/content/file-database';
 import { AgentAskError, checkAsks } from '@mantle/content/pipeline-agent';
 import { agentStep, stepFileOf } from '@mantle/content/pipeline-runner';
 import {
@@ -335,9 +340,13 @@ async function testWith(
   }
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') return result('not_mine');
   if (parsed.kind === 'none') return result('failed', { word: parsed.word });
+  // A long read keeps its first rows, as the real build does (headOfSheets).
   const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
-  if (rows > importMaxRows()) return result('failed', { word: 'too-large' });
-  const { tabs, warnings } = tabsOf(parsed.sheets);
+  const max = importMaxRows();
+  const { tabs, warnings } = tabsOf(rows > max ? headOfSheets(parsed.sheets, max) : parsed.sheets);
+  const cut = Object.values(parsed.readCuts ?? {})[0];
+  if (cut) warnings.push(`The database keeps ${cut.read} of ${cut.total} rows; the cut is said on the file.`);
+  else if (rows > max) warnings.push(`The database keeps the first ${max} of ${rows} rows.`);
   // A Reader whose text is the file's (readerGivesText): the length of the
   // text its run gave. With no tabs that text is its whole result.
   const textLength = readerGivesText(p, ext) ? (parsed.readerText ?? 0) : undefined;

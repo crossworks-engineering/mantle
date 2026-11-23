@@ -155,9 +155,12 @@ export async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
  * `files`, and a DEFLATE entry keeps its compressed bytes (no inflate). The
  * styles are read, so a date cell is a Date, as `load()` gives it.
  *
- * `visit` takes each row's cells (column 1 first, trailing blanks dropped)
- * and its sheet's name; it returns `false` to stop the read (the rest of the
- * file is not inflated).
+ * `visit` takes each row's cells (column 1 first, trailing blanks dropped),
+ * its sheet's name and its sheet's number (1 first, in the zip's order);
+ * it returns `false` to stop the read (the rest of the file is not
+ * inflated). The answer is the workbook's sheet count. A reader stops at its
+ * cut: reading on only to count the rest of a sheet of millions of rows
+ * would pass the step's time limit.
  *
  * What the stream gives that the whole reader does not (the golden files,
  * sheet-read-stream.test.ts): a merged cell's value in its first cell only,
@@ -166,23 +169,29 @@ export async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
  */
 export async function streamWorkbookRows(
   buf: Buffer,
-  visit: (sheet: string, cells: RawCell[]) => boolean,
-): Promise<void> {
+  visit: (sheet: string, cells: RawCell[], sheetNo: number) => boolean,
+): Promise<{ sheets: number }> {
   const zip = await JSZip.loadAsync(buf);
-  const first = [
+  const ordered = new JSZip();
+  const files = ordered.files as Record<string, JSZip.JSZipObject>;
+  for (const name of [
     'xl/workbook.xml',
     'xl/_rels/workbook.xml.rels',
     'xl/sharedStrings.xml',
     'xl/styles.xml',
-  ];
-  const ordered = new JSZip();
-  const files = ordered.files as Record<string, JSZip.JSZipObject>;
-  for (const name of first) if (zip.files[name]) files[name] = zip.files[name]!;
+  ]) {
+    if (zip.files[name]) files[name] = zip.files[name]!;
+    // With no shared strings the reader keeps every sheet in a temp file
+    // until the end (the parser's /tmp is memory): an empty table instead.
+    else if (name === 'xl/sharedStrings.xml') ordered.file(name, EMPTY_SHARED_STRINGS);
+  }
   for (const [name, entry] of Object.entries(zip.files)) if (!(name in files)) files[name] = entry;
-  // JSZip's stream is not a node stream.Readable (the reader's test of its
-  // input), so it goes through a PassThrough.
+  // The sizes go in each local header (streamFiles off): the reader then
+  // never looks for an entry's end in its compressed bytes. JSZip's stream
+  // is not a node stream.Readable (the reader's test of its input), so it
+  // goes through a PassThrough.
   const input = ordered
-    .generateNodeStream({ type: 'nodebuffer', streamFiles: true, compression: 'DEFLATE' })
+    .generateNodeStream({ type: 'nodebuffer', streamFiles: false, compression: 'DEFLATE' })
     .pipe(new PassThrough());
   const reader = new ExcelJS.stream.xlsx.WorkbookReader(input, {
     sharedStrings: 'cache',
@@ -191,8 +200,12 @@ export async function streamWorkbookRows(
     worksheets: 'emit',
     entries: 'ignore',
   });
+  const sheetsOf = () =>
+    (reader as unknown as { model?: { sheets?: unknown[] } }).model?.sheets?.length ?? 0;
+  let sheetNo = 0;
   for await (const ws of reader) {
-    const name = (ws as unknown as { name?: string }).name ?? '';
+    sheetNo += 1;
+    const name = (ws as unknown as { name?: string }).name ?? `Sheet${sheetNo}`;
     for await (const row of ws as unknown as AsyncIterable<ExcelJS.Row>) {
       const values = row.values as ExcelJS.CellValue[];
       const cells: RawCell[] = [];
@@ -204,13 +217,19 @@ export async function streamWorkbookRows(
       }
       while (cells.length > 0 && cells[cells.length - 1] === null) cells.pop();
       if (cells.length === 0) continue;
-      if (!visit(name, cells)) {
-        input.pause();
-        return;
+      if (!visit(name, cells, sheetNo)) {
+        input.destroy();
+        return { sheets: Math.max(sheetsOf(), sheetNo) };
       }
     }
   }
+  return { sheets: Math.max(sheetsOf(), sheetNo) };
 }
+
+/** A shared strings part with no strings. */
+const EMPTY_SHARED_STRINGS =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="0" uniqueCount="0"/>';
 
 /** A cell reduced to a plain JS value — what both consumers actually want. */
 export type RawCell = string | number | boolean | Date | null;

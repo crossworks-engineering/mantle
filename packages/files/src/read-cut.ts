@@ -139,11 +139,13 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   sheet_columns: (c) =>
     `${ofTotal(c)} columns are in its text (at most ${limitText(c, 'columns', '256 columns')} a sheet). The other columns are not in search.`,
   sheet_text: (c) =>
-    `${ofTotal(c)} sheets are in its text (a ${limitText(c, 'character', '1,000,000-character')} limit for a workbook). The other sheets are not in search.`,
+    c.limit === undefined && c.total !== undefined
+      ? `${ofTotal(c)} sheets are in its text: the read of a large workbook stops in its first long sheet. The other sheets are not in search.`
+      : `${ofTotal(c)} sheets are in its text (a ${limitText(c, 'character', '1,000,000-character')} limit for a workbook). The other sheets are not in search.`,
   legacy_cells: (c) =>
     `${ofTotal(c)} sheets were read: the others are past the ${limitText(c, 'cell', '1,000,000-cell')} limit of a legacy spreadsheet. Save it as .xlsx and upload it to read them.`,
   markup_bytes: (c) =>
-    `Only ${ofTotal(c)} bytes were read: their text reached the ${limitText(c, 'character', '32 MB')} limit of an HTML or XML read. The rest is not in search.`,
+    `Only ${ofTotal(c)} bytes were read: their text reached the ${limitText(c, 'byte', '32 MB')} limit of an HTML or XML read. The rest is not in search.`,
   // A cut of 0 rows read is a file of before the ingest program,
   // when such a file got no database at all.
   database_size: (c) =>

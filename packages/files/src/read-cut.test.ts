@@ -219,6 +219,18 @@ describe('the sentences of the newer cuts', () => {
     ).toBe(
       '10 of 40 rows are in its database: the rest are past the 33,554,432 byte read limit of a file database, so file_sql has no rows past them. Its text is read as usual.',
     );
+    expect(readCutHint('sheet_text', { what: 'sheets', read: 1, total: 5 })).toBe(
+      '1 of 5 sheets are in its text: the read of a large workbook stops in its first long sheet. The other sheets are not in search.',
+    );
+    expect(
+      readCutHint('database_size', {
+        what: 'rows',
+        read: 10,
+        total: 11,
+        atLeast: true,
+        limit: 33_554_432,
+      }),
+    ).toMatch(/^10 of at least 11 rows are in its database/);
     expect(readCutHint('description', { what: 'characters', read: 0, total: 9000 })).toBe(
       'Its description (9,000 characters) was left out: the feed was too large to send with it.',
     );

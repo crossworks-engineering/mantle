@@ -225,10 +225,8 @@ const DELIMITED_SLICE_BYTES = 4 * 1024 * 1024;
 
 /** The cut a {@link RowKeeper} says on the file (./read-cut.ts, docs/files.md
  *  "Read in part"): the rows kept of all the rows, and the limit that cut. */
-export type RowCut = {
-  database_rows?: { what: 'rows'; read: number; total: number; limit: number };
-  database_size?: { what: 'rows'; read: number; total: number; limit: number };
-};
+type RowCutValue = { what: 'rows'; read: number; total: number; limit: number; atLeast?: true };
+export type RowCut = { database_rows?: RowCutValue; database_size?: RowCutValue };
 
 /**
  * The rows a file database read keeps (the package `sheet`'s step; the
@@ -240,14 +238,18 @@ export type RowCut = {
  *
  * Two limits, one stop: the rows are the import ceiling
  * (TABLE_IMPORT_MAX_ROWS), the bytes the parser's memory and answer and the
- * brain's one write (MANTLE_FILE_DB_CSV_MAX_MB). A cell counts its text plus
- * 3 (its quotes and comma in the answer), so a sheet of tiny cells stays
- * under the answer cap too.
+ * brain's one write (MANTLE_FILE_DB_CSV_MAX_MB). The bytes are the answer's
+ * (see `take`), so a sheet of tiny cells or wide padding stays under the
+ * answer cap too.
  */
 export class RowKeeper {
   kept = 0;
   total = 0;
+  /** Set by a reader that stops at the cut (a workbook stream): `total` is
+   *  then the rows seen, at least. */
+  atLeast = false;
   private bytes = 0;
+  private width = 0;
   private stopped: 'rows' | 'bytes' | null = null;
   constructor(
     readonly maxRows: number,
@@ -262,8 +264,14 @@ export class RowKeeper {
       this.stopped = 'rows';
       return false;
     }
-    let size = 0;
-    for (const c of cells) size += (c === null || c === undefined ? 0 : String(c).length) + 3;
+    // The answer's bytes: each cell's UTF-8 plus 3 (quotes and comma), a
+    // blank 5 (`null,`), and a short row padded to the widest row so far,
+    // as the grid pads it.
+    this.width = Math.max(this.width, cells.length);
+    let size = (this.width - cells.length) * 5;
+    for (const c of cells) {
+      size += (c === null || c === undefined ? 2 : Buffer.byteLength(String(c))) + 3;
+    }
     if (this.bytes + size > this.maxBytes) {
       this.stopped = 'bytes';
       return false;
@@ -276,7 +284,12 @@ export class RowKeeper {
   /** The cut, or null when every row was kept. */
   cut(): RowCut | null {
     if (!this.stopped) return null;
-    const value = { what: 'rows' as const, read: this.kept, total: this.total };
+    const value = {
+      what: 'rows' as const,
+      read: this.kept,
+      total: this.total,
+      ...(this.atLeast ? { atLeast: true as const } : {}),
+    };
     return this.stopped === 'rows'
       ? { database_rows: { ...value, limit: this.maxRows } }
       : { database_size: { ...value, limit: this.maxBytes } };

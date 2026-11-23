@@ -90,34 +90,51 @@ function rowsToCsv(rows: RawCell[][]): string {
 }
 
 /** One sheet's rows for the text: the first MAX_ROWS_PER_SHEET rows of at
- *  most MAX_COLS_PER_SHEET columns, and the sheet's real row and column
- *  counts. */
-type SheetRows = { name: string; rows: RawCell[][]; rowsTotal: number; colsTotal: number };
+ *  most MAX_COLS_PER_SHEET columns, and the sheet's row and column counts
+ *  (`atLeast`: the read stopped in this sheet, it has at least that many). */
+type SheetRows = {
+  name: string;
+  rows: RawCell[][];
+  rowsTotal: number;
+  colsTotal: number;
+  atLeast?: true;
+};
 
-/** The sheets of a workbook for its text. One past the size check of
- *  ./sheet-read.ts is read as a stream (the ingest program): every row is
- *  counted, the first ones are kept, and nothing is refused whole. */
-async function sheetsOf(buf: Buffer): Promise<SheetRows[]> {
+/** The sheets of a workbook for its text, and how many sheets it has. One
+ *  past the size check of ./sheet-read.ts is read as a stream: its first
+ *  rows are kept, and the read stops at the first sheet past the row cap
+ *  (reading on through millions of rows would pass the job's time limit).
+ *  The cut says so; nothing is refused whole. */
+async function sheetsOf(buf: Buffer): Promise<{ sheets: SheetRows[]; total: number }> {
   try {
     const wb = await loadWorkbook(buf);
-    return wb.worksheets.map((ws) => {
+    const sheets = wb.worksheets.map((ws) => {
       const s = worksheetToRows(ws, { maxRows: MAX_ROWS_PER_SHEET, maxCols: MAX_COLS_PER_SHEET });
       return { name: ws.name, rows: s.rows, rowsTotal: s.rowsTotal, colsTotal: s.colsTotal };
     });
+    return { sheets, total: sheets.length };
   } catch (err) {
     if (!(err instanceof SpreadsheetTooLargeError)) throw err;
   }
   const sheets: SheetRows[] = [];
-  let cur: SheetRows | undefined;
-  await streamWorkbookRows(buf, (name, cells) => {
-    if (!cur || cur.name !== name)
-      sheets.push((cur = { name, rows: [], rowsTotal: 0, colsTotal: 0 }));
+  const bySheet = new Map<number, SheetRows>();
+  const { sheets: total } = await streamWorkbookRows(buf, (name, cells, sheetNo) => {
+    let cur = bySheet.get(sheetNo);
+    if (!cur) {
+      cur = { name, rows: [], rowsTotal: 0, colsTotal: 0 };
+      bySheet.set(sheetNo, cur);
+      sheets.push(cur);
+    }
     cur.rowsTotal += 1;
     cur.colsTotal = Math.max(cur.colsTotal, cells.length);
-    if (cur.rows.length < MAX_ROWS_PER_SHEET) cur.rows.push(cells.slice(0, MAX_COLS_PER_SHEET));
-    return true;
+    if (cur.rows.length < MAX_ROWS_PER_SHEET) {
+      cur.rows.push(cells.slice(0, MAX_COLS_PER_SHEET));
+      return true;
+    }
+    cur.atLeast = true;
+    return false;
   });
-  return sheets;
+  return { sheets, total };
 }
 
 /**
@@ -128,7 +145,7 @@ async function sheetsOf(buf: Buffer): Promise<SheetRows[]> {
  * same caps and the same cuts said, never refused whole.
  */
 export async function parseXlsx(buf: Buffer): Promise<string> {
-  const sheets = await sheetsOf(buf);
+  const { sheets, total: sheetsTotal } = await sheetsOf(buf);
 
   const parts: string[] = [];
   let total = 0;
@@ -163,8 +180,14 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
     parts.push(`# Sheet: ${sheet.name}\n${csv}`);
     total += csv.length;
   }
+  const atLeast = sheets.some((s) => s.atLeast);
   if (rows.total > 0) {
-    noteReadCut('sheet_rows', { what: 'rows', ...rows, limit: MAX_ROWS_PER_SHEET });
+    noteReadCut('sheet_rows', {
+      what: 'rows',
+      ...rows,
+      ...(atLeast ? { atLeast: true as const } : {}),
+      limit: MAX_ROWS_PER_SHEET,
+    });
   }
   if (cols.total > 0) {
     noteReadCut('sheet_columns', { what: 'columns', ...cols, limit: MAX_COLS_PER_SHEET });
@@ -173,9 +196,13 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
     noteReadCut('sheet_text', {
       what: 'sheets',
       read: sheetsRead,
-      total: sheets.length,
+      total: sheetsTotal,
       limit: MAX_TEXT_CHARS,
     });
+  } else if (sheets.length < sheetsTotal) {
+    // A stream read that stopped in a long sheet: the sheets after it are
+    // not read (no limit: the sentence says why).
+    noteReadCut('sheet_text', { what: 'sheets', read: sheets.length, total: sheetsTotal });
   }
 
   let out = parts.join('\n\n').trim();

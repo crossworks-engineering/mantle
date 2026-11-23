@@ -144,6 +144,30 @@ describe('streamWorkbookRows', () => {
     expect((await streamRows(buf)).M![0]).toEqual(['head']);
   });
 
+  it('reads a workbook with no shared strings part, and says its sheet count', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('N').addRow([1, 2]);
+    wb.addWorksheet('Empty');
+    const zip = await JSZip.loadAsync(Buffer.from(await wb.xlsx.writeBuffer()));
+    zip.remove('xl/sharedStrings.xml');
+    const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const seen: RawCell[][] = [];
+    const { sheets } = await streamWorkbookRows(buf, (_n, cells) => (seen.push(cells), true));
+    expect(seen).toEqual([[1, 2]]);
+    expect(sheets).toBe(2);
+  });
+
+  it('a row of wide padding and multi-byte text counts its answer bytes', () => {
+    const keep = new RowKeeper(100, 1e9);
+    keep.take(['a', 'b', 'c']); // width 3
+    keep.take(['é']); // 2 bytes + 3, and 2 blanks of 5
+    expect(keep.cut()).toBeNull();
+    const tight = new RowKeeper(100, 12 + 15);
+    expect(tight.take(['a', 'b', 'c'])).toBe(true); // 12
+    expect(tight.take(['é'])).toBe(true); // 5 + 10 = 15: 27
+    expect(tight.take(['x'])).toBe(false); // 4 + 10 more
+  });
+
   it('stops when the visit says so', async () => {
     let seen = 0;
     await streamWorkbookRows(await workbook(500), () => ++seen < 10);
@@ -167,16 +191,20 @@ async function pastTheSizeCheck() {
 }
 
 describe('a workbook past the size check', () => {
-  it('its text is read as a stream: the same text and the same cut', async () => {
+  it('its text is read as a stream to the first long sheet, and says both cuts', async () => {
     const buf = await workbook(6200);
     const whole = await withReadCutSink(async () => (await import('./xlsx')).parseXlsx(buf));
     await pastTheSizeCheck();
     // The modules again, after the mock: the sink of the fresh xlsx.ts.
     const sink = (await import('./read-cut-sink')).withReadCutSink;
     const streamed = await sink(async () => (await import('./xlsx')).parseXlsx(buf));
-    expect(streamed.value).toBe(whole.value);
+    // The same first sheet; the read stops in it, so the second is not read.
+    const big = whole.value.slice(0, whole.value.indexOf('# Sheet: Small')).trim();
+    expect(streamed.value.startsWith(big)).toBe(true);
+    expect(streamed.value).not.toContain('# Sheet: Small');
     expect(streamed.cuts).toEqual({
-      sheet_rows: { what: 'rows', read: 5000, total: 6200, limit: 5000 },
+      sheet_rows: { what: 'rows', read: 5000, total: 5001, atLeast: true, limit: 5000 },
+      sheet_text: { what: 'sheets', read: 1, total: 2 },
     });
   });
 
@@ -189,8 +217,9 @@ describe('a workbook past the size check', () => {
     const sheets = await parseSheetToGrid(buf, keep);
     expect(sheets.map((s) => [s.name, s.rows.length])).toEqual([['Big', 99]]);
     expect(sheets[0]!.rows[0]).toEqual(['v1-0', 'v1-1']);
+    // The stream stops at the cut: the rows past it are not counted.
     expect(keep.cut()).toEqual({
-      database_rows: { what: 'rows', read: 100, total: 301, limit: 100 },
+      database_rows: { what: 'rows', read: 100, total: 101, atLeast: true, limit: 100 },
     });
     await expect(parseSheetToGrid(buf)).rejects.toThrow(/too large to read/);
   });

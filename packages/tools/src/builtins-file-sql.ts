@@ -66,14 +66,14 @@ function noneReason(word: FileDbNoneWord, ext: string): string {
   const cap = importMaxRows().toLocaleString('en-US');
   const words: Record<ReturnType<typeof kindOf>, Record<FileDbNoneWord, string>> = {
     workbook: {
-      'too-large': `This workbook is too large to read: past 32 MB of sheet XML, or past ${cap} rows. Under ${cap} rows, save it as CSV and upload that. Past them, split it into smaller files.`,
+      'too-large': `This workbook was too large to read when it was uploaded (past 32 MB of sheet XML, or past ${cap} rows). Read it again: its first rows now go in, and the cut is said on the file.`,
       'no-rows':
         'This workbook has no rows to read: no sheet has both a header and data. Read its text with file_read.',
       unreadable:
         'This workbook could not be read: it may be encrypted or damaged. Save an open copy and upload that.',
     },
     csv: {
-      'too-large': `This CSV is too large to read: past the size limit, or past ${cap} rows. Split it into smaller files and upload those.`,
+      'too-large': `This CSV was too large to read when it was uploaded (past the size limit, or past ${cap} rows). Read it again: its first rows now go in, and the cut is said on the file.`,
       'no-rows':
         'This CSV has no rows to read: it needs both a header and data. Read its text with file_read.',
       unreadable:

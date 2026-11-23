@@ -240,15 +240,15 @@ type MarkupRead = { text: string; bytes: number };
 
 /** XML windows to text through one streaming parser, or null when the
  *  bytes are no well-formed XML (the HTML scanner reads them then). */
-function xmlRead(windows: Iterable<Window>, maxChars: number): MarkupRead | null {
+function xmlRead(windows: Iterable<Window>, maxBytes: number): MarkupRead | null {
   const lines: string[] = [];
-  let chars = 0;
+  let out = 0;
   let current = '';
   const end = () => {
     const line = current.replace(/\s+/g, ' ').trim();
     if (line) {
       lines.push(line);
-      chars += line.length + 1;
+      out += Buffer.byteLength(line) + 1;
     }
     current = '';
   };
@@ -266,42 +266,51 @@ function xmlRead(windows: Iterable<Window>, maxChars: number): MarkupRead | null
     for (const [text, at] of windows) {
       parser.write(text);
       bytes = at;
-      if (chars >= maxChars) break;
+      if (out >= maxBytes) break;
     }
-    if (chars < maxChars) parser.close();
+    if (out < maxBytes) parser.close();
   } catch {
     return null;
   }
   end();
-  return { text: lines.join('\n'), bytes };
+  const text = lines.join('\n');
+  return { text: headBytes(text, maxBytes), bytes };
 }
 
 /** HTML windows to text, a window at a time. */
-function htmlRead(windows: Iterable<Window>, maxChars: number): MarkupRead {
+function htmlRead(windows: Iterable<Window>, maxBytes: number): MarkupRead {
   const parts: string[] = [];
-  let chars = 0;
   let bytes = 0;
+  let read = 0;
   for (const [text, at] of windows) {
     const part = htmlToText(text);
-    if (part) {
-      parts.push(part);
-      chars += part.length + 1;
-    }
-    bytes = at;
-    if (chars >= maxChars) break;
+    read = at;
+    if (!part) continue;
+    const kept = headBytes(part, maxBytes - bytes);
+    parts.push(kept);
+    bytes += Buffer.byteLength(kept) + 1;
+    if (kept.length < part.length || bytes >= maxBytes) break;
   }
-  return { text: parts.join('\n'), bytes };
+  return { text: parts.join('\n'), bytes: read };
+}
+
+/** The head of a text in at most `max` UTF-8 bytes (a character cut in two
+ *  at the end is dropped). */
+function headBytes(text: string, max: number): string {
+  if (max <= 0) return '';
+  if (Buffer.byteLength(text) <= max) return text;
+  return Buffer.from(text).subarray(0, max).toString('utf8').replace(/\uFFFD$/, '');
 }
 
 /** A markup file is read in windows of this many bytes (a window is one
  *  string in the parse job, never the whole file: uploads go to 512 MB). */
 const MARKUP_WINDOW_BYTES = 32 * 1024 * 1024;
 
-/** The text a markup read keeps: it goes back in the parser's answer
- *  (96 MB), so the read stops past it and the cut is said on the file
- *  (read_cut `markup_bytes`: the bytes read of all). Tags are most of a
- *  page, so this is far more text than any document holds. */
-const MAX_MARKUP_TEXT_CHARS = 32 * 1024 * 1024;
+/** The text a markup read keeps, in UTF-8 bytes: it goes back in the
+ *  parser's answer (96 MB), so the read stops at it and the cut is said on
+ *  the file (read_cut `markup_bytes`: the bytes read of all). Tags are most
+ *  of a page, so this is far more text than any document holds. */
+const MAX_MARKUP_TEXT_BYTES = 32 * 1024 * 1024;
 
 /** The windows of a markup file. Each ends just before a `<` (between
  *  tags, and never inside a UTF-8 character, as `<` is one byte), or at the
@@ -324,8 +333,8 @@ function* windowsOf(bytes: Buffer): Generator<Window> {
  *  program); only the text cap stops it, and that cut is said on the file. */
 export function parseMarkupBytes(bytes: Buffer, ext: string): string {
   const read =
-    (ext === 'xml' ? xmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_CHARS) : null) ??
-    htmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_CHARS);
+    (ext === 'xml' ? xmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_BYTES) : null) ??
+    htmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_BYTES);
   // The rest is not read: said on the file (./read-cut.ts). A read that
   // stopped early ends before the file (a file of a BOM alone reads 0).
   if (read.bytes > 0 && read.bytes < bytes.length) {
@@ -333,7 +342,7 @@ export function parseMarkupBytes(bytes: Buffer, ext: string): string {
       what: 'bytes',
       read: read.bytes,
       total: bytes.length,
-      limit: MAX_MARKUP_TEXT_CHARS,
+      limit: MAX_MARKUP_TEXT_BYTES,
     });
   }
   return read.text;
