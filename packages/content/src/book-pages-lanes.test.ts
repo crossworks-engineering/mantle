@@ -7,9 +7,11 @@
  * - A book: a drawing-lane page is not the office Agent's (no Scan reader),
  *   it is the drawing Agent's.
  * - A drawing file: an office-lane page with no text layer is the office
- *   Agent's, for the Scan reader; the drawing Agent reads the rest.
- * - A page of a live read under 0.75 is the office Agent's too (its picture
- *   is kept), a typed page too; a shadow answer never is.
+ *   Agent's, for the Scan reader; the drawing Agent reads every other page
+ *   (an office page with a text layer too: its identifiers stay).
+ * - On a live box a page under 0.75 is the office Agent's too (its picture
+ *   is kept), a typed page too; never on a shadow box, whose older rows may
+ *   say `rules: low confidence` too (the audit of M4).
  */
 import { describe, expect, it } from 'vitest';
 import { pageLanesOf, type LaneRow } from './book-pages';
@@ -62,7 +64,7 @@ describe('pageLanesOf', () => {
         sheet(4, 'scan', used('isometric')),
         sheet(5, 'scan'),
       ]),
-    ).toEqual({ office: [1, 2], scan: [1, 2], drawing: [4, 5] });
+    ).toEqual({ office: [1, 2], scan: [1, 2], drawing: [3, 4, 5] });
   });
 
   it('a page of a live read under 0.75 keeps its picture: the office Agent reads it, a typed page too', () => {
@@ -72,10 +74,12 @@ describe('pageLanesOf', () => {
       book(3, 'text', null, { 'Kind from': 'rules: shadow', 'Decider confidence': 0.5 }),
       book(4, 'text', null, used('document', 0.75)),
     ];
-    expect(pageLanesOf(rows).office).toEqual([1, 2]);
-    expect(pageLanesOf(rows).scan).toEqual([]);
+    expect(pageLanesOf(rows, true).office).toEqual([1, 2]);
+    expect(pageLanesOf(rows, true).scan).toEqual([]);
+    // Shadow (the default): no picture is kept.
+    expect(pageLanesOf(rows).office).toEqual([]);
     // In a drawing file too, a drawing page with a low answer.
-    expect(pageLanesOf([sheet(1, 'vector_text', used('pfd', 0.65))])).toEqual({
+    expect(pageLanesOf([sheet(1, 'vector_text', used('pfd', 0.65))], true)).toEqual({
       office: [1],
       scan: [],
       drawing: null,

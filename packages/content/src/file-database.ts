@@ -304,7 +304,9 @@ async function readRouted(
   // over every page (or the stored pages, on a read again), as they name
   // the Reader (pdfFrameKindOf). Shadow: after the Reader's run, over its
   // tab Pages, and the route does not change. With no `pdfPages` (a read
-  // again): the stored ones, with no ask.
+  // again): the stored ones, with no ask; their used answers (`decider`,
+  // only a live read writes it) name the frame again, so a read again keeps
+  // a live read's frame, a reroute by newer rules too.
   const before = decide?.live
     ? pageKindsAt(
         await pdfPageKindsOver(
@@ -318,7 +320,14 @@ async function readRouted(
         decide,
       )
     : null;
-  const parsed = await readRoutedSheets(router, bytes, ext, options, opts, before);
+  const parsed = await readRoutedSheets(
+    router,
+    bytes,
+    ext,
+    options,
+    opts,
+    before ?? (decide ? null : stored),
+  );
   if (parsed.kind !== 'sheets') return parsed;
   const kinds =
     before ??
@@ -347,7 +356,8 @@ async function readRoutedSheets(
   ext: string,
   options: Readonly<Record<string, unknown>>,
   opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'pdfNodeVision' | 'count' | 'pipelines'>,
-  /** The page types of a live read (M4): they name the frame. */
+  /** The page types that name the frame (M4): a live read's, or the
+   *  stored ones of a read again with no ask. */
   pageKinds: readonly PdfPageKind[] | null = null,
 ): Promise<ParsedFile> {
   const stored = opts.pdfStored;
@@ -1084,7 +1094,8 @@ async function queueAgentRuns(
  *  by the File tab of the new read. A read with no File tab to tell by is
  *  poorer: the stored one stands. So is a read past the import cap, whose
  *  write would be the word `too-large` (writeRowsOrWord). A read whose File
- *  tab names another Kind (a new frame) is not. */
+ *  tab names another Kind (a new frame) is poorer only with more pages not
+ *  read whole. */
 function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: StoredPdf): boolean {
   if (rowsOf(parsed) > importMaxRows()) return true;
   const tab = parsed.sheets.find((s) => s.name === 'File');
@@ -1095,8 +1106,11 @@ function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: Sto
       )
     : null;
   // A read of another Kind (a new frame, M4: the lanes of the pages named
-  // another Reader) is not poorer: it stands.
-  return !now || (now.kind === stored.kind && pdfReadPoorer(now, stored));
+  // another Reader) is poorer only with more pages not read whole.
+  if (!now) return true;
+  return now.kind === stored.kind
+    ? pdfReadPoorer(now, stored)
+    : now.notReadWhole > stored.notReadWhole;
 }
 
 export type FilePatch =
@@ -1204,6 +1218,9 @@ export async function agentInputOf(
   pipelines: BoxPipelines,
   sqlite: string,
   agent: Pick<PipelineManifest, 'produces'>,
+  /** The box routes by page types (`uses.pdf_kind.mode: 'live'`): a page
+   *  whose type is unsure keeps its picture (pageLanesOf). */
+  pageLive = false,
 ): Promise<{
   kind?: string;
   state: {
@@ -1223,7 +1240,7 @@ export async function agentInputOf(
   // other Agent of a PDF (pdf-sheet-read): the drawing-lane pages, when the
   // lanes name them (none named: from page 1, as before).
   const office = kind !== undefined && agent.produces.pages === true;
-  const visionPages = office ? await bookVisionPagesOf(sqlite) : undefined;
+  const visionPages = office ? await bookVisionPagesOf(sqlite, pageLive) : undefined;
   const scanPages = visionPages?.length ? await bookScanPagesOf(sqlite) : [];
   const drawingPages = kind !== undefined && !office ? await drawingLanePagesOf(sqlite) : null;
   return {
@@ -1302,6 +1319,9 @@ export async function runAgentOnFile(args: {
    *  that reads the pages a book reader marked (pdf-page-read) saves each
    *  page's picture with the text it read (./book-page-pictures.ts). */
   pagePictures?: BookPagePictures;
+  /** The box routes by page types (M4, live): a page whose type is unsure
+   *  is read too, and its picture kept (agentInputOf). */
+  pageLive?: boolean;
 }): Promise<FileAgentRun> {
   const { fileId, ownerId, sha256, bytes } = args;
   const pipelines = args.pipelines ?? (await boxPipelines(ownerId));
@@ -1325,7 +1345,14 @@ export async function runAgentOnFile(args: {
   // runs no parser job on a file of another kind, nor on a book with no page
   // left to vision (M3).
   if (pipeline.match.kind) {
-    const input = await agentInputOf(ownerId, ext, pipelines, names.sqlite, pipeline);
+    const input = await agentInputOf(
+      ownerId,
+      ext,
+      pipelines,
+      names.sqlite,
+      pipeline,
+      args.pageLive === true,
+    );
     if (input.kind === undefined || !pipeline.match.kind.includes(input.kind)) {
       return { status: 'skipped', reason: 'no-match' };
     }
@@ -1339,8 +1366,8 @@ export async function runAgentOnFile(args: {
     return runAgentWindowed({ ...args, pipeline, pipelines, ext, sqlite: names.sqlite, state });
   }
   // A PDF past the size pdfjs opens is read in page windows only (a book's
-  // drawing pages, M4): an Agent with no windows runs no job on it.
-  if (ext === 'pdf' && bytes.length > PDF_MAX_BYTES) {
+  // drawing pages, M4): a built-in Agent with no windows runs no job on it.
+  if (ext === 'pdf' && pipeline.source !== 'own' && bytes.length > PDF_MAX_BYTES) {
     return { status: 'skipped', reason: 'no-match' };
   }
   const step = await agentStep(
@@ -1348,7 +1375,7 @@ export async function runAgentOnFile(args: {
     bytes,
     stepFileOf(bytes, ext),
     state.options,
-    await agentInputOf(ownerId, ext, pipelines, names.sqlite, pipeline),
+    await agentInputOf(ownerId, ext, pipelines, names.sqlite, pipeline, args.pageLive === true),
   );
   if (step.status === 'not_mine') return { status: 'skipped', reason: 'no-match' };
   const asks = checkAsks(pipeline, step.asks, step.pictures);
@@ -1438,6 +1465,7 @@ async function runAgentWindowed(args: {
   state: PipelineState;
   ask: AgentAskFn;
   pagePictures?: BookPagePictures;
+  pageLive?: boolean;
 }): Promise<FileAgentRun> {
   const { fileId, ownerId, bytes, pipeline, ext, sqlite, state } = args;
   const sha256 = args.sha256 as string;
@@ -1451,7 +1479,14 @@ async function runAgentWindowed(args: {
   };
   const stored = storedOf(tab);
   const storedList = listTab ? storedOf(listTab) : [];
-  const input = await agentInputOf(ownerId, ext, args.pipelines, sqlite, args.pipeline);
+  const input = await agentInputOf(
+    ownerId,
+    ext,
+    args.pipelines,
+    sqlite,
+    args.pipeline,
+    args.pageLive === true,
+  );
   // A book's page pictures (G1, ./book-page-pictures.ts): a marked page
   // done already (its picture of these bytes and its text row) is neither
   // drawn nor asked again. The step gets every marked page (its option

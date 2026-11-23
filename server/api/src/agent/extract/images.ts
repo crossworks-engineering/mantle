@@ -57,6 +57,7 @@ import {
   type PdfPicturesRead,
 } from '@mantle/content/pdf-picture-windows';
 import { loadFileBytes } from './file-bytes';
+import { pdfPageLiveOf } from './pdf-kind';
 import { stepInOwnTrace } from './trace';
 
 /** Picture formats that came with the parser service (anydoc's e-book assets,
@@ -295,7 +296,10 @@ export async function maybeExtractEmbeddedImages(
   // a book is kept, a figure on a vision page too. A picture whose cover is
   // not known counts as none: kept.
   if (book) {
-    const vision = await bookVisionPageSetOf({ id: node.id, sha256: data.sha256 });
+    const vision = await bookVisionPageSetOf(
+      { id: node.id, sha256: data.sha256 },
+      await pdfPageLiveOf(ownerId),
+    );
     if (vision.size > 0) {
       result.images = withoutVisionPageScans(result.images, vision);
       result.images.forEach((img, i) => (img.ordinal = i + 1));
@@ -1086,8 +1090,12 @@ export async function stampBookPagePictures(
   fileId: string,
   sha: string,
 ): Promise<PicturesPart> {
-  const marked = await bookVisionPageSetOf({ id: fileId, sha256: sha });
-  const found = Math.max(marked.size, await bookVisionPageCountOf({ id: fileId, sha256: sha }));
+  const live = await pdfPageLiveOf(ownerId);
+  const marked = await bookVisionPageSetOf({ id: fileId, sha256: sha }, live);
+  const found = Math.max(
+    marked.size,
+    await bookVisionPageCountOf({ id: fileId, sha256: sha }, live),
+  );
   const saved = marked.size > 0 ? await savedPagePicturesOf(ownerId, fileId, sha) : new Set();
   const counts = { kept: [...marked].filter((n) => saved.has(n)).length, found };
   await stampPicturePart(fileId, ownerId, sha, 'pages', counts);

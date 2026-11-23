@@ -99,7 +99,12 @@ vi.mock('@mantle/tracing', async (orig) => ({
 const spend = vi.hoisted(() => () => {
   throw new Error('a run on demand asked a model');
 });
-vi.mock('./pdf-kind', () => ({ askPdfKind: vi.fn(spend), pdfPageDeciderOf: vi.fn(spend) }));
+// The box's page mode is read (no model): shadow.
+vi.mock('./pdf-kind', () => ({
+  askPdfKind: vi.fn(spend),
+  pdfPageDeciderOf: vi.fn(spend),
+  pdfPageLiveOf: vi.fn(async () => false),
+}));
 vi.mock('./pdf-sketch', () => ({ sketchIngestPdfNode: vi.fn(spend) }));
 vi.mock('../extractor.js', () => ({ extractNode: vi.fn(spend) }));
 vi.mock('@mantle/db', async (orig) => ({

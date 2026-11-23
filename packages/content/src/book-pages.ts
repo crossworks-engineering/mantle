@@ -53,9 +53,9 @@ export type PageLanes = {
   office: number[];
   /** Of those, the pages the Scan reader reads (cut as a one-page PDF). */
   scan: number[];
-  /** The drawing Agent's (pdf-sheet-read): the drawing-lane pages, or null
-   *  for a drawing file with no office-lane page (it reads from page 1, as
-   *  before M4). */
+  /** The drawing Agent's (pdf-sheet-read): a book's drawing-lane pages; a
+   *  drawing file's pages but the Scan reader's, or null when the Scan
+   *  reader reads none of them (it reads from page 1, as before M4). */
   drawing: number[] | null;
 };
 
@@ -70,20 +70,25 @@ export type PageLanes = {
  *   (`Method` `vision`; the Scan reader those of `Why` `scan`) that are of
  *   the office lane; in a drawing file, its office-lane pages with no text
  *   layer (Class `scan`, `raster_with_text`), for the Scan reader.
- * - It also reads a page whose picture is kept (Jason, 2026-11-23): an
- *   answer of a live read under PDF_PAGE_PICTURE_BELOW (`decider`, or
- *   `rules: low confidence`, which only a live read gives), a page with a
- *   text layer too: vision reads it and its picture is saved with that text.
- * - The drawing Agent reads the drawing-lane pages.
+ * - On a live box (`live`: the box's `uses.pdf_kind.mode`, which its
+ *   caller reads) it also reads a page whose picture is kept (Jason,
+ *   2026-11-23): an answer under PDF_PAGE_PICTURE_BELOW (`decider`, or
+ *   `rules: low confidence`), a page with a text layer too: vision reads it
+ *   and its picture is saved with that text. Never in shadow: a row of an
+ *   older shadow read may say `rules: low confidence` too.
+ * - The drawing Agent reads, in a book, its drawing-lane pages; in a drawing
+ *   file, every page but those the Scan reader reads (an office page with a
+ *   text layer keeps its sheet read, so no identifier of it is lost).
  */
-export function pageLanesOf(rows: readonly LaneRow[]): PageLanes {
+export function pageLanesOf(rows: readonly LaneRow[], live = false): PageLanes {
   // A book's tab Pages says how each page was read (`Method`, the book
   // reader's); a drawing reader's has no such column.
   const book = rows.some((r) => typeof r.Method === 'string');
   const office: number[] = [];
   const scan: number[] = [];
   const drawing: number[] = [];
-  let officeLane = false;
+  /** A drawing file's pages but those the Scan reader reads. */
+  const notScanned: number[] = [];
   for (const r of [...rows].sort((a, b) => Number(a[PAGE_COLUMN]) - Number(b[PAGE_COLUMN]))) {
     const page = Number(r[PAGE_COLUMN]);
     if (!Number.isInteger(page) || page < 1) continue;
@@ -94,6 +99,7 @@ export function pageLanesOf(rows: readonly LaneRow[]): PageLanes {
       (book ? 'office' : 'drawing');
     const conf = r['Decider confidence'];
     const keep =
+      live &&
       (used || from === PAGE_KIND_FROM.low) &&
       typeof conf === 'number' &&
       conf < PDF_PAGE_PICTURE_BELOW;
@@ -104,26 +110,27 @@ export function pageLanesOf(rows: readonly LaneRow[]): PageLanes {
     if (marked || keep) office.push(page);
     if (scanned) scan.push(page);
     if (lane === 'drawing') drawing.push(page);
-    else if (!book) officeLane = true;
+    if (!scanned) notScanned.push(page);
   }
-  return { office, scan, drawing: book || officeLane ? drawing : null };
+  if (book) return { office, scan, drawing };
+  return { office, scan, drawing: scan.length > 0 ? notScanned : null };
 }
 
 /** The lanes of the PDF database at `sqlite` (pageLanesOf of its tab
  *  Pages). Read only, with no model and no parser job: the database is the
  *  record. Throws what the read throws. */
-function lanesAt(sqlite: string): PageLanes {
+function lanesAt(sqlite: string, live = false): PageLanes {
   const [rows] = readTabColumns(sqlite, [{ tab: PAGES_TAB, columns: LANE_COLUMNS }]);
-  return pageLanesOf(rows ?? []);
+  return pageLanesOf(rows ?? [], live);
 }
 
 /** The pages the office Agent (pdf-page-read) reads, in order, at most
  *  PIPELINE_ASK_PAGE_MAX of them (pageLanesOf; a count: a page past 10,000
  *  of a longer book is one like any); [] when the database has no `Pages`
  *  tab or it cannot be read. */
-export async function bookVisionPagesOf(sqlite: string): Promise<number[]> {
+export async function bookVisionPagesOf(sqlite: string, live = false): Promise<number[]> {
   try {
-    return lanesAt(sqlite).office.slice(0, PIPELINE_ASK_PAGE_MAX);
+    return lanesAt(sqlite, live).office.slice(0, PIPELINE_ASK_PAGE_MAX);
   } catch {
     return [];
   }
@@ -133,14 +140,17 @@ export async function bookVisionPagesOf(sqlite: string): Promise<number[]> {
  *  PIPELINE_ASK_PAGE_MAX marked pages counts those past it too: they are not
  *  read, and its count says so). 0 when the database has no such tab or it
  *  cannot be read. */
-export async function bookVisionPageCountOf(file: {
-  id: string;
-  sha256: unknown;
-}): Promise<number> {
+export async function bookVisionPageCountOf(
+  file: {
+    id: string;
+    sha256: unknown;
+  },
+  live = false,
+): Promise<number> {
   const paths = fileDbPaths(file.id, file.sha256);
   if (!paths) return 0;
   try {
-    return lanesAt(paths.sqlite).office.length;
+    return lanesAt(paths.sqlite, live).office.length;
   } catch {
     return 0;
   }
@@ -165,12 +175,15 @@ export async function drawingLanePagesOf(sqlite: string): Promise<number[] | nul
  * counted against. Empty when the database has no such tab or cannot be
  * read.
  */
-export async function bookVisionPageSetOf(file: {
-  id: string;
-  sha256: unknown;
-}): Promise<Set<number>> {
+export async function bookVisionPageSetOf(
+  file: {
+    id: string;
+    sha256: unknown;
+  },
+  live = false,
+): Promise<Set<number>> {
   const paths = fileDbPaths(file.id, file.sha256);
-  return new Set(paths ? await bookVisionPagesOf(paths.sqlite) : []);
+  return new Set(paths ? await bookVisionPagesOf(paths.sqlite, live) : []);
 }
 
 /** The free evidence of a scanned page, from the tab `Pages`: its text lines

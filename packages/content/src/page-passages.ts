@@ -4,7 +4,10 @@
  * `Pages` (one row a page: `Page`, the page of the ORIGINAL file, and
  * `Text`), and where an Agent that says `produces.pages` wrote the text of
  * the pages it read by vision (asks keyed `page-<N>`, field `Text`). An
- * Agent's text of a page stands over the Reader's.
+ * Agent's text of a page stands over the Reader's on a page the Reader left
+ * to it (`Method` `vision`). On any other page (M4: a page whose picture is
+ * kept, its type unsure, or a drawing page of a book) the Reader's text
+ * layer stays, and the Agent's text comes after it: no text is lost.
  *
  * The file's passages are built from these pages, one section `Page N` a
  * page (server/api/src/agent/extract/index-writes.ts), with no length cap,
@@ -24,6 +27,7 @@ import {
   stampOfMeta,
 } from '@mantle/files';
 import { readDocMeta, scanTabColumns } from '@mantle/tabledb';
+import { VISION_METHOD } from './book-pages';
 import { boxPipelines, type BoxPipelines } from './pipeline-registry';
 
 /** One page of a file's text. */
@@ -80,15 +84,18 @@ export async function filePagesOf(
   const reader = pipelines.byId(stamp.pipeline_id);
   if (!reader || reader.produces.pages !== true) return null;
   const byPage = new Map<number, string>();
+  /** The pages the Reader left to vision: an Agent's text stands over its. */
+  const leftToVision = new Set<number>();
   try {
     scanTabColumns(
       names.sqlite,
       PAGES_TAB,
-      [PAGE_COLUMN, PAGE_TEXT_COLUMN],
+      [PAGE_COLUMN, PAGE_TEXT_COLUMN, 'Method'],
       { maxRows: PAGES_MAX, cellMaxChars: PAGE_TEXT_MAX_CHARS },
       (row) => {
         const page = pageOf(row[PAGE_COLUMN]);
         if (page !== null) byPage.set(page, textOf(row[PAGE_TEXT_COLUMN]));
+        if (page !== null && row.Method === VISION_METHOD) leftToVision.add(page);
         return true;
       },
     );
@@ -96,8 +103,11 @@ export async function filePagesOf(
     return null;
   }
   // Each Agent that says `produces.pages`: its text of a page over the
-  // Reader's.
-  for (const [page, text] of agentPagesAt(names.sqlite, pipelines)) byPage.set(page, text);
+  // Reader's where the Reader left the page to vision, else after it.
+  for (const [page, text] of agentPagesAt(names.sqlite, pipelines)) {
+    const own = (byPage.get(page) ?? '').trim();
+    byPage.set(page, leftToVision.has(page) || own === '' ? text : `${own}\n\n${text}`);
+  }
   const pages = [...byPage.entries()]
     .filter(([, text]) => text.trim() !== '')
     .sort((a, b) => a[0] - b[0])

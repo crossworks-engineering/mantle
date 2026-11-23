@@ -429,17 +429,19 @@ describe('the PDF router in a real read', () => {
     const rows = await pagesOf('unsure-vector.pdf', 'unsure');
     const ids = inProcess();
     const pdfPages = noAsks(true);
+    // Stored as a book; its pages' answers say drawing: the drawing lane,
+    // as unsure (the frame picks the lane, not a kind of its own).
     const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
       pipelines,
       count,
       pdfPages,
-      pdfStored: { kind: 'unsure', decision: null, pageKinds: typed(rows, 'pfd') },
+      pdfStored: { kind: 'book', decision: null, pageKinds: typed(rows, 'pfd') },
     });
     expect(pdfPages.ask).not.toHaveBeenCalled();
     expect(ids).toEqual(['drawing-pdf']);
     if (parsed.kind !== 'sheets') throw new Error('no sheets');
     const file = parsed.sheets.find((s) => s.name === 'File')!;
-    expect(file.rows[0]![file.columns.findIndex((c) => c.name === 'Kind')]).toBe('pfd');
+    expect(file.rows[0]![file.columns.findIndex((c) => c.name === 'Kind')]).toBe('unsure');
     const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
     const at = (name: string) => pages.columns.findIndex((c) => c.name === name);
     expect(pages.rows[0]![at('Kind from')]).toBe('decider');
@@ -463,20 +465,50 @@ describe('the PDF router in a real read', () => {
     expect(pages.rows[0]![at('Kind from')]).toBe('rules: low confidence');
   });
 
+  /** The box's pipelines, with each Reader the read picks seen. */
+  function seenReaders() {
+    const seen: (string | undefined)[] = [];
+    const spy = {
+      ...pipelines,
+      readerFor: (ext: string, kind?: string) => {
+        const r = pipelines.readerFor(ext, kind);
+        if (kind !== undefined) seen.push(r?.id);
+        return r;
+      },
+    } as typeof pipelines;
+    return { spy, seen };
+  }
+
   it('live: office pages name the book, read by the book reader', async () => {
     const rows = await pagesOf('unsure-vector.pdf', 'unsure');
-    const ids = inProcess();
-    await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
-      pipelines,
+    inProcess();
+    const { spy, seen } = seenReaders();
+    const got = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines: spy,
       count,
       pdfPages: noAsks(true),
       pdfStored: { kind: 'unsure', decision: null, pageKinds: typed(rows, 'table') },
+    }).catch((e: unknown) => e);
+    expect(seen).toEqual(['pdf-pages']);
+    // The book reader's first job cuts its first page window, which the
+    // in-process parser of this test does not do.
+    expect(got).toMatchObject({ name: 'ParserError', code: 'unavailable' });
+  });
+
+  it("a read again with no asker keeps a live read's book frame, a reroute by newer rules too", async () => {
+    const rows = await pagesOf('unsure-vector.pdf', 'unsure');
+    const ids = inProcess();
+    const { spy, seen } = seenReaders();
+    const kept = typed(rows, 'table').map((k) => ({ ...k, kind: 'table', from: 'decider' }));
+    await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines: spy,
+      count,
+      pdfStored: { kind: 'book', decision: null, reroute: true, pageKinds: kept },
     }).catch(() => null);
-    // The book reader reads in page windows: its first job cuts window 1
-    // (no pipeline id); the drawing reader never runs.
-    expect(ids.length).toBeGreaterThan(0);
-    expect(ids).not.toContain('drawing-pdf');
-    expect(bodies[0]).toBe('pdf');
+    // The rules of now run (no ask) and name it unsure; the stored used
+    // answers name the book again.
+    expect(ids[0]).toBe('pdf-router');
+    expect(seen).toEqual(['pdf-pages']);
   });
 
   it('shadow: the same answers change nothing, and say rules: shadow', async () => {

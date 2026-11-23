@@ -241,19 +241,19 @@ describe('pdfFrameKindOf: the frame of a file (Q4, M4)', () => {
     const ks = [
       ...live([answered(1, 'document', 0.9)]),
       rulesOnly(2, 'scan', PAGE_KIND_FROM.dayCap),
-      rulesOnly(3, 'scan', PAGE_KIND_FROM.cap),
-      rulesOnly(4, 'pid', PAGE_KIND_FROM.cap),
+      rulesOnly(3, 'pid', PAGE_KIND_FROM.cap),
     ];
-    expect(pdfFrameKindOf(ks, 'book')).toBe('scan');
-    // A tie of drawing kinds takes the first of PDF_PAGE_ROUTES.drawing.
-    expect(pdfFrameKindOf(ks.slice(0, 2).concat(ks.slice(3)), 'book')).toBe('pid');
+    expect(pdfFrameKindOf(ks, 'book')).toBe('unsure');
   });
 
-  it('drawing wins: a drawing kind stays, else the commonest drawing kind of the votes', () => {
+  it('drawing wins: a drawing kind stays, else unsure (the frame picks the lane, never a kind of its own)', () => {
     const ks = live([answered(1, 'pfd', 0.9), answered(2, 'pfd', 0.9), answered(3, 'pid', 0.9)]);
     expect(pdfFrameKindOf(ks, 'pid')).toBe('pid');
-    expect(pdfFrameKindOf(ks, 'unsure')).toBe('pfd');
-    expect(pdfFrameKindOf(ks, 'book')).toBe('pfd');
+    expect(pdfFrameKindOf(ks, 'scan')).toBe('scan');
+    // A raster set the rules left unsure keeps the readers of unsure.
+    expect(pdfFrameKindOf(ks, 'unsure')).toBe('unsure');
+    expect(pdfFrameKindOf(ks, 'book')).toBe('unsure');
+    expect(pdfFrameKindOf(ks, 'table')).toBe('unsure');
   });
 
   it('the routes of a kind', () => {

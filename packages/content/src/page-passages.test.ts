@@ -72,6 +72,7 @@ function database(reader: typeof BOOK | typeof PLAIN, withAgent: boolean): strin
             rows: [
               ['page-7', 'A drawing of a gate valve, flanged ends', 'm', 'h1'],
               ['page-x', 'not a page key', 'm', 'h2'],
+              ['page-3', 'A flow diagram: feed drum to column', 'm', 'h3'],
             ],
           },
         ]
@@ -95,13 +96,15 @@ describe('filePagesOf', () => {
     const id = database(BOOK, true);
     const got = await filePagesOf({ id, ownerId: 'o', sha256: SHA });
     expect(got!.pages).toEqual([
-      { page: 3, text: 'Introduction' },
+      // A page with its own text layer (M4: a kept picture, a drawing page
+      // of a book): the Reader's text stays, the Agent's after it.
+      { page: 3, text: 'Introduction\n\nA flow diagram: feed drum to column' },
       { page: 7, text: 'A drawing of a gate valve, flanged ends' },
       { page: 412, text: 'SPEC A2 REV 3 corrosion allowance 3 mm' },
     ]);
     expect(got!.read).toEqual({ read: 450, total: 500 });
     expect(pagesText(got!.pages)).toBe(
-      '## Page 3\nIntroduction\n\n## Page 7\nA drawing of a gate valve, flanged ends\n\n## Page 412\nSPEC A2 REV 3 corrosion allowance 3 mm',
+      '## Page 3\nIntroduction\n\nA flow diagram: feed drum to column\n\n## Page 7\nA drawing of a gate valve, flanged ends\n\n## Page 412\nSPEC A2 REV 3 corrosion allowance 3 mm',
     );
   });
 

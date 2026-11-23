@@ -461,7 +461,8 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   so it asks only the pages that have a row in the tab `Pages`; a window
   with no such page is not cut. A live read asks before the Reader, over
   every page (or the stored pages, on a person's run): a page with no row
-  after the Reader keeps its answer in the answer cache only.
+  after the Reader, or a read that fails after its asks, keeps its answer
+  in the answer cache only, and a try again takes it free.
 - **Live (M4).** On a box whose `uses.pdf_kind.mode` is `live` (the
   operator's, box by box; the manifest ships `shadow`) the page asks come
   before the Reader, and the lanes of the pages name it
@@ -469,12 +470,15 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   their `Kind` (a used answer's, else the rules kind: document, table,
   datasheet office; the drawing options and `scan` drawing; `unsure`,
   `none` and blank pages no vote). Office wins or ties: the book. Drawing
-  wins: the kind stays when it is a drawing kind, else the commonest drawing
-  kind. With no used answer the kind is as named before. Only a read with
-  the page decider (an upload, a person's run of one PDF) can change a
-  file's lane; a read again keeps its stored kind. A read again whose File
-  tab names another Kind (a new frame) is not poorer, and stands
-  (`poorerThan`).
+  wins: the kind stays when it is a drawing kind, else `unsure`; a drawing
+  kind is never the frame's own pick, so a raster set the rules left
+  `unsure` keeps the readers of `unsure`. With no used answer the kind is
+  as named before. Only a read with the page decider (an upload, a person's run of one PDF) asks or works out
+  which answers are used; a read again with no ask names the frame again by
+  the stored used answers (`decider` rows), so it keeps a live read's frame,
+  a reroute by newer rules too. A read again whose File
+  tab names another Kind (a new frame) is poorer only with more pages not
+  read whole (`poorerThan`).
 - **The Agents by lane (M4).** The lane of a page is the route of its used
   answer, else its file's lane (a book: office; else drawing), so with no
   used answer every Agent reads as before (`pageLanesOf`,
@@ -482,16 +486,20 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   1.3.0) reads the office-lane pages that need a paid read: a book's marked
   pages but those of the drawing lane, and a drawing's office pages with no
   text layer (Class `scan`, `raster_with_text`, for the Scan reader). PDF
-  sheet read (`pdf-sheet-read`, 1.2.0) reads the drawing-lane pages the
-  core names (`state.drawingPages`), the first 10, a book's drawing pages
-  too; a file with no page of an Agent's lane runs no job for it, nor a
+  sheet read (`pdf-sheet-read`, 1.2.0) reads the pages the core names
+  (`state.drawingPages`), the first 10: a book's drawing-lane pages, and in
+  a drawing file every page but those the Scan reader reads; a file with no page of an Agent's lane runs no job for it, nor a
   PDF past the size pdfjs opens for an Agent with no windows.
 - **Pictures kept (M4, Jason 2026-11-23).** A graph, a chart, a sketch
   chart or a cover page stays in the office lane, and its picture is kept
-  so an LLM can look at it at question time: on a live read, a page whose
+  so an LLM can look at it at question time: on a live box, a page whose
   route sum is under `PDF_PAGE_PICTURE_BELOW` (0.75), a typed page too, is
   read by PDF page read with vision and its picture is saved with that
-  text, as a scanned book page.
+  text, as a scanned book page. Its text layer stays: an Agent's page text
+  stands over the Reader's only on a page the Reader left to vision
+  (`Method` `vision`); on any other page (a kept picture, a drawing page of
+  a book) the Agent's text comes after the Reader's (`filePagesOf`), so the
+  file's text and passages keep both.
 - **Limits.** Room is read once a window, so files read at the same time
   can pass the day cap by up to 25 asks each (the cap paces, it does not
   lock). Each page ask is one trace step (`decide_pdf_kind`): a 1,000-page

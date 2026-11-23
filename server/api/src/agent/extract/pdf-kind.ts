@@ -50,6 +50,14 @@ export async function askPdfKind(
   return decidePdfKind(ownerId, state);
 }
 
+/** Whether this box routes by page types (M4: `uses.pdf_kind.pages: true`
+ *  and `mode: 'live'`, pdfPageUseOf). A read that fails is shadow: no page
+ *  is read for its kept picture. For the PDF Agents' pages and the picture
+ *  pass (agentInputOf, bookVisionPageSetOf). */
+export async function pdfPageLiveOf(ownerId: string): Promise<boolean> {
+  return (await pdfPageUseOf(ownerId).catch(() => null))?.live === true;
+}
+
 /** Page asks in a row with no answer that stop the asks of a file (the
  *  breaker's own number: with one DecideBatch a file, the breaker hears the
  *  file once, at its end). */

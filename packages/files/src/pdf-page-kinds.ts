@@ -318,34 +318,28 @@ export function pageKindsAt(
   });
 }
 
-/** The drawing kinds a frame may name, in the order a tie takes. */
-const FRAME_DRAWING_KINDS: readonly string[] = [...PDF_PAGE_ROUTES.drawing, 'scan'];
-
 /**
  * The kind of a file by the lanes of its pages (Jason, Q4, 2026-11-21; M4):
  * the route of most pages with ink, a tie to the book. A page votes by the
  * route of its `Kind` (a used answer's, else its rules kind: pageRouteOfKind);
  * a blank page and a page with no route do not vote. With no used answer
  * (`decider`) on any page the kind is `kind`, as named before. Office wins:
- * `book`. Drawing wins: `kind` when it is a drawing kind, else the
- * commonest drawing kind of the votes. Pure, one count.
+ * `book`. Drawing wins: `kind` when it is a drawing kind, else `unsure`.
+ * The frame picks the lane, never a drawing kind of its own: a kind names
+ * the readers of a file (`unsure` is read by the drawing reader, the sketch
+ * read and the PDF sheet read; a `pid` by its text layer alone), so a raster
+ * drawing the rules left unsure keeps every reader it had. Pure, one count.
  */
 export function pdfFrameKindOf(kinds: readonly PdfPageKind[], kind: string): string {
   if (!kinds.some((k) => k.from === PAGE_KIND_FROM.decider)) return kind;
   let office = 0;
-  const drawing = new Map<string, number>();
+  let drawing = 0;
   for (const k of kinds) {
     if (k.from === PAGE_KIND_FROM.blank) continue;
     const route = pageRouteOfKind(k.kind);
     if (route === 'office') office += 1;
-    else if (route === 'drawing') drawing.set(k.kind!, (drawing.get(k.kind!) ?? 0) + 1);
+    else if (route === 'drawing') drawing += 1;
   }
-  const drawn = [...drawing.values()].reduce((n, v) => n + v, 0);
-  if (office >= drawn) return 'book';
-  if (FRAME_DRAWING_KINDS.includes(kind)) return kind;
-  let best = FRAME_DRAWING_KINDS[0]!;
-  for (const k of FRAME_DRAWING_KINDS) {
-    if ((drawing.get(k) ?? 0) > (drawing.get(best) ?? 0)) best = k;
-  }
-  return best;
+  if (office >= drawing) return 'book';
+  return pageRouteOfKind(kind) === 'drawing' ? kind : 'unsure';
 }

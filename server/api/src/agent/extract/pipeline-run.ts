@@ -84,7 +84,7 @@ import { writeAgentText } from './agent-text.js';
 import { bookPagePicturesFor } from './images.js';
 import { writeRetrievalChunks } from './index-writes.js';
 import { pipelineAskOf } from './pipeline-ask.js';
-import { pdfPageDeciderOf } from './pdf-kind.js';
+import { pdfPageDeciderOf, pdfPageLiveOf } from './pdf-kind.js';
 import { DAY_CAP_STOP, providerWaitOfStop } from '@mantle/content/pipeline-agent';
 import { pipelineAsksDayCap, pipelineAsksFreeAt } from '@mantle/content/pipeline-asks';
 import type { ProviderWaitReason } from '@mantle/std';
@@ -186,6 +186,11 @@ async function runOnce(
       // book page it read, with that text, in this run.
       ...(pipeline.produces.pages === true && typeof sha256 === 'string'
         ? { pagePictures: bookPagePicturesFor(ownerId, nodeId, sha256) }
+        : {}),
+      // M4: on a live box a page whose type is unsure is read too, and its
+      // picture kept.
+      ...(pipeline.produces.pages === true && (await pdfPageLiveOf(ownerId))
+        ? { pageLive: true }
         : {}),
     });
     if (out.status !== 'asked') return out;
