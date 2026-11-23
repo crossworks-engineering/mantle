@@ -107,6 +107,13 @@ const UNIT = String.raw`(?:° ?|\bDEG\.? )([FC])(?![A-Z])`;
 const TEMP_UNIT = new RegExp(UNIT, 'gi');
 /** A unit right after the high limit. */
 const TEMP_UNIT_AFTER = new RegExp(`^[ \\t]*${UNIT}`, 'i');
+/** An older sheet's limits, in the head block of each of its pages: a line
+ *  of `Temperature Range -20 /650` and nothing more (a unit may follow). The
+ *  groups are those of TEMPS. */
+const RANGE = new RegExp(
+  String.raw`^[ \t]*TEMP(?:ERATURE)?\.?[ \t]*RANGE([ \t]*(?:\([^)\n]*\))?)[ \t]*:?[ \t]*(-?[ \t]?\d+)[ \t]*(°[ \t]*[FC])?[ \t]*(?:\/|TO)[ \t]*(-?[ \t]?\d+)(?=[ \t]*(?:${UNIT})?[ \t]*$)`,
+  'gim',
+);
 
 /** A line is boilerplate when it is on this share of the pages with text
  *  (a sheet's frame: the company, the place). */
@@ -217,6 +224,28 @@ type Facts = {
 
 const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
 
+/** The limits of a TEMPS or RANGE match, with the unit the line states: in
+ *  the label, beside the low limit, or right after the high limit. None
+ *  when it states none, or two. */
+function tempOf(t: string, m: RegExpExecArray): string {
+  const units = new Set(
+    [
+      ...[...m[1]!.matchAll(TEMP_UNIT)].map((u) => u[1]),
+      m[3]?.slice(-1),
+      TEMP_UNIT_AFTER.exec(t.slice(m.index + m[0].length))?.[1],
+    ]
+      .filter((u) => u !== undefined)
+      .map((u) => u.toUpperCase()),
+  );
+  const unit = units.size === 1 ? ` °${[...units][0]}` : '';
+  return `${m[2]!.replace(/\s/g, '')}/${m[4]!.replace(/\s/g, '')}${unit}`;
+}
+
+/** The limits each `Temperature Range` line of a page states. */
+export function rangesOf(p: LinkPage): string[] {
+  return [...p.text.matchAll(RANGE)].map((m) => tempOf(p.text, m));
+}
+
 /** The facts of a class's cover page. */
 export function coverFacts(p: LinkPage, boilerplate: readonly string[]): Facts {
   const t = p.text;
@@ -233,21 +262,7 @@ export function coverFacts(p: LinkPage, boilerplate: readonly string[]): Facts {
     f.material = clean(mat).toUpperCase();
   }
   m = TEMPS.exec(t);
-  if (m) {
-    // The unit the line states: in the label, beside the low limit, or
-    // right after the high limit. None when it states none, or two.
-    const units = new Set(
-      [
-        ...[...m[1]!.matchAll(TEMP_UNIT)].map((u) => u[1]),
-        m[3]?.slice(-1),
-        TEMP_UNIT_AFTER.exec(t.slice(m.index + m[0].length))?.[1],
-      ]
-        .filter((u) => u !== undefined)
-        .map((u) => u.toUpperCase()),
-    );
-    const unit = units.size === 1 ? ` °${[...units][0]}` : '';
-    f.temp = `${m[2]!.replace(/\s/g, '')}/${m[4]!.replace(/\s/g, '')}${unit}`;
-  }
+  if (m) f.temp = tempOf(t, m);
   m = SERVICE.exec(t);
   if (m) {
     const strip = (line: string) => {
@@ -335,9 +350,12 @@ function build(input: LinkInput, set: LinkSet): void {
   }
 
   // The facts of each class: each fact from the first of its pages (no
-  // addendum) that states it, in page order (the cover, as a rule).
+  // addendum) that states it, in page order (the cover, as a rule). A class
+  // with no limits line takes its limits from its Range lines, when they all
+  // state one and the same.
   const boilerplate = boilerplateOf(input.pages);
   const factsOf = new Map<string, { facts: Facts; pages: Partial<Record<keyof Facts, number>> }>();
+  const ranges = new Map<string, Set<string>>();
   for (const p of input.pages) {
     const c = classes.get(p.page);
     if (!c || addendum.has(p.page) || p.text === '') continue;
@@ -348,9 +366,14 @@ function build(input: LinkInput, set: LinkSet): void {
       entry.facts[k] = v;
       entry.pages[k] = p.page;
     }
+    const seen = ranges.get(c.code) ?? new Set<string>();
+    ranges.set(c.code, seen);
+    for (const r of rangesOf(p)) seen.add(r);
   }
   const count = { rating: 0, material: 0, service: 0, temp: 0, unit: 0 };
   for (const [code, { facts: f, pages }] of factsOf) {
+    const range = ranges.get(code)!;
+    if (f.temp === undefined && range.size === 1) f.temp = [...range][0]!;
     if (Object.keys(f).length === 0) continue;
     set.setText(classId(code), JSON.stringify(f));
     if (f.rating) {
@@ -421,7 +444,7 @@ function build(input: LinkInput, set: LinkSet): void {
   coverage(
     set,
     'pack:piping-spec:covers',
-    `Class facts of ${codes.size} classes: a rating for ${count.rating}, a base material for ${count.material}, a service for ${count.service}, temperature limits for ${count.temp} (${count.unit} with the unit their line states). A class with none read has no facts.`,
+    `Class facts of ${codes.size} classes: a rating for ${count.rating}, a base material for ${count.material}, a service for ${count.service}, temperature limits for ${count.temp} (from a limits or range line; ${count.unit} with the unit their line states). A class with none read has no facts.`,
   );
   if (addendum.size > 0) {
     coverage(

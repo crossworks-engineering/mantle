@@ -9,7 +9,7 @@ import { AFTER_CELL_MAX_CHARS, SHAPES } from '../../shapes';
 import { bodyCutLine } from '../../tabs-body';
 import type { StepJob } from '../../contract';
 import type { ParsedSheet } from '../../../sheet-to-grid';
-import { bodyOf, specSheets, TEMP_LINES } from './fixture';
+import { bodyOf, RANGE_PAGES, specSheets, TEMP_LINES } from './fixture';
 import {
   buildLinks,
   codesOfCell,
@@ -419,7 +419,7 @@ describe('coverage: what the links are and what was not read', () => {
       /^3 classes on 7 pages; 2 pages with text have no class/,
     );
     expect(cov('pack:piping-spec:covers')).toMatch(
-      /, temperature limits for 2 \(2 with the unit their line states\)\./,
+      /, temperature limits for 2 \(from a limits or range line; 2 with the unit their line states\)\./,
     );
   });
 
@@ -583,6 +583,33 @@ describe('the small rules', () => {
       material: '321 STAINLESS STEEL',
     });
     expect(coverFacts(page('FLG WN TAP PAIR 600#RFSF 321SS'), []).material).toBeUndefined();
+  });
+
+  it('a class with no limits line takes its one Range; two ranges, a table row or a damaged line give none', () => {
+    const pages: ParsedSheet = {
+      name: 'Pages',
+      columns: [
+        { name: 'Page', type: 'number' },
+        { name: 'Text', type: 'text' },
+      ],
+      rows: Object.entries(RANGE_PAGES).map(([n, text]) => [Number(n), text]),
+    };
+    const out = nodesOf(built([pages]).sheets);
+    const temp = (code: string) => {
+      const text = out.get(`class:${code}`)?.[4];
+      return text ? (JSON.parse(String(text)) as { temp?: string }).temp : undefined;
+    };
+    expect(['R1A', 'R2B', 'R3C', 'R4D', 'R5E', 'R6F'].map(temp)).toEqual([
+      '-20/650',
+      undefined,
+      '-20/400 °F',
+      undefined,
+      '-29/343 °C',
+      undefined,
+    ]);
+    expect(String(out.get('coverage:pack:piping-spec:covers')?.[2])).toMatch(
+      /temperature limits for 3 \(from a limits or range line; 2 with the unit their line states\)/,
+    );
   });
 
   it('coverFacts: the temperature limits keep the unit their line states, once, never a guess', () => {

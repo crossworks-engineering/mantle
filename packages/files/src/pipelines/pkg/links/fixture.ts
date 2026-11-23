@@ -225,3 +225,18 @@ export const TEMP_LINES: readonly [line: string, temp: string][] = [
   ['TEMPERATURE LIMITS (DEG C): 0 / 120', '0/120 °C'],
   ['TEMPERATURE LIMITS (DEG. C): -10 / 90', '-10/90 °C'],
 ];
+
+/** Made-up pages of older sheets with a `Temperature Range` line in the head
+ *  block of each page, by page: R1A states one range on two pages, R2B two
+ *  ranges, R3C a limits line and a range, R4D a table row with two ranges,
+ *  R5E a range with a unit, R6F a range with a damaged minus. */
+export const RANGE_PAGES: Record<number, string> = {
+  1: 'PIPING SPECIFICATION NO: R1A\nCARBON STEEL 150 #RFSF\nTemperature Range -20 /650',
+  2: 'PIPING SPECIFICATION NO: R1A\nCARBON STEEL 150 #RFSF\nTemperature Range -20/ 650',
+  3: 'PIPING SPECIFICATION NO: R2B\nTemperature Range -20 /650',
+  4: 'PIPING SPECIFICATION NO: R2B\nTemperature Range -20 /800',
+  5: 'PIPING SPECIFICATION NO: R3C\nTEMPERATURE LIMITS (°F): -20 / 400\nTemperature Range 0 /300',
+  6: 'PIPING SPECIFICATION NO: R4D\nTemperature Range -20/100 101/400',
+  7: 'PIPING SPECIFICATION NO: R5E\nTEMPERATURE RANGE (°C): -29 / 343',
+  8: 'PIPING SPECIFICATION NO: R6F\nTemperature Range ·20 /650',
+};
