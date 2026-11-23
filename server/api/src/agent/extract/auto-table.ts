@@ -29,8 +29,7 @@ import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-regist
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
-import { noteReadCut } from '@mantle/files/read-cut-sink';
-import { readsAsDelimited } from '@mantle/files/sheet-to-grid';
+import { noteReadCut, noteReadCuts } from '@mantle/files/read-cut-sink';
 import { importMaxRows } from '@mantle/tabledb';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 import { askPdfKind, pdfPageDeciderOf } from './pdf-kind';
@@ -249,28 +248,22 @@ async function readAndWrite(a: {
     return; // the Table alone: leave it as a plain file, as ever
   }
   const readMs = Date.now() - readStart;
-  // A file whose database is refused for its size gets no rows in file_sql:
-  // said on the file (docs/files.md, "Read in part"), not only in its db
-  // state. A delimited text past its byte limit (parseFileSheets' own
-  // test), and sheets past the import's row ceiling (buildFileDatabase's).
-  const csvMax = envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024;
-  if (
-    parsed.kind === 'none' &&
-    parsed.word === 'too-large' &&
-    loaded.bytes.length > csvMax &&
-    readsAsDelimited(loaded.bytes, fileExt)
-  ) {
-    noteReadCut('database_size', {
-      what: 'bytes',
-      read: 0,
-      total: loaded.bytes.length,
-      limit: csvMax,
-    });
-  }
+  // A long sheet is read in part (ingest program A2 and C3): the database
+  // keeps the first rows, and the cut is said on the file (docs/files.md,
+  // "Read in part"). The Reader says its own cut (the package `sheet`: the
+  // import ceiling or the read budget); a read past the import ceiling is
+  // cut by the write (writeRowsOrWord) and said here.
+  let cut = false;
   if (wantDb && parsed.kind === 'sheets') {
+    if (parsed.readCuts) {
+      noteReadCuts(parsed.readCuts);
+      cut = Object.keys(parsed.readCuts).length > 0;
+    }
     const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
-    if (rows > importMaxRows()) {
-      noteReadCut('database_rows', { what: 'rows', read: 0, total: rows, limit: importMaxRows() });
+    const max = importMaxRows();
+    if (rows > max) {
+      noteReadCut('database_rows', { what: 'rows', read: max, total: rows, limit: max });
+      cut = true;
     }
   }
 
@@ -297,7 +290,9 @@ async function readAndWrite(a: {
       log('extractor').error(`file database failed for ${node.id}: ${errorMessage(err)}`);
     }
   }
-  if (!wantTable || parsed.kind !== 'sheets' || parsed.sheets.length === 0) return;
+  // A Table is made of a whole read only: a cut one would be a partial
+  // import (TABLE_IMPORT_MAX_ROWS: never a silent partial import).
+  if (!wantTable || cut || parsed.kind !== 'sheets' || parsed.sheets.length === 0) return;
   // The caller read the indexing before this parse, which can be long. A file
   // that turned private since gets no Table, as it gets no database. A row gone
   // since is the part's own refusal, below.

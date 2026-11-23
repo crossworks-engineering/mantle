@@ -53,11 +53,14 @@
  * an unguarded `load()` could ask for tens of gigabytes.
  *
  * So we pre-flight: read the zip's central directory, sum the uncompressed
- * size of the worksheet parts, and refuse in-process parsing past a ceiling.
- * The refusal is a {@link DocumentTooLargeError}: the parser service answers
- * `too_large` for both the text read (./xlsx.ts) and the grid read, because a
- * partial grid import would be a lie. It is a cheap early answer; the parser
- * container's memory limit is what stops a workbook this check misses.
+ * size of the worksheet parts, and refuse in-process parsing past a ceiling
+ * ({@link SpreadsheetTooLargeError}). Past it, the text read (./xlsx.ts) and
+ * a file database read (./sheet-grid.ts with a row keeper) read the
+ * workbook as a stream instead ({@link streamWorkbookRows}, ingest program
+ * A2): in part where their caps stop, never refused whole. A by-hand import
+ * still refuses it (`too_large`): a partial import would be a lie. The
+ * whole-workbook reader stays under the ceiling, as it fills merged cells
+ * and the stream does not (sheet-read-stream.test.ts).
  */
 
 import ExcelJS from 'exceljs';
@@ -135,6 +138,67 @@ export async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
   // exceljs's types want an ArrayBuffer-ish; a Node Buffer works at runtime.
   await wb.xlsx.load(buf as unknown as ArrayBuffer);
   return wb;
+}
+
+/**
+ * The rows of every sheet of an OOXML workbook, read as a stream (exceljs's
+ * `stream.xlsx.WorkbookReader`), one row at a time: a workbook past
+ * {@link MAX_SHEET_XML_BYTES} is read this way, in part where its reader
+ * stops (ingest program A2), never refused whole. Memory holds the shared
+ * strings and the row in hand, not the sheet.
+ *
+ * The stream reader needs `xl/workbook.xml` before the sheets (see the
+ * module note), and many producers write it last. So the zip is given to it
+ * in a fixed order: the workbook, its rels, the shared strings and the
+ * styles first, then the rest. JSZip writes the entries in the order of its
+ * `files`, and a DEFLATE entry keeps its compressed bytes (no inflate). The
+ * styles are read, so a date cell is a Date, as `load()` gives it.
+ *
+ * `visit` takes each row's cells (column 1 first, trailing blanks dropped)
+ * and its sheet's name; it returns `false` to stop the read (the rest of the
+ * file is not inflated).
+ */
+export async function streamWorkbookRows(
+  buf: Buffer,
+  visit: (sheet: string, cells: RawCell[]) => boolean,
+): Promise<void> {
+  const zip = await JSZip.loadAsync(buf);
+  const first = [
+    'xl/workbook.xml',
+    'xl/_rels/workbook.xml.rels',
+    'xl/sharedStrings.xml',
+    'xl/styles.xml',
+  ];
+  const ordered = new JSZip();
+  const files = ordered.files as Record<string, JSZip.JSZipObject>;
+  for (const name of first) if (zip.files[name]) files[name] = zip.files[name]!;
+  for (const [name, entry] of Object.entries(zip.files)) if (!(name in files)) files[name] = entry;
+  const input = ordered.generateNodeStream({
+    type: 'nodebuffer',
+    streamFiles: true,
+    compression: 'DEFLATE',
+  });
+  const reader = new ExcelJS.stream.xlsx.WorkbookReader(input, {
+    sharedStrings: 'cache',
+    styles: 'cache',
+    hyperlinks: 'ignore',
+    worksheets: 'emit',
+    entries: 'ignore',
+  });
+  for await (const ws of reader) {
+    const name = (ws as unknown as { name?: string }).name ?? '';
+    for await (const row of ws as unknown as AsyncIterable<ExcelJS.Row>) {
+      const values = row.values as ExcelJS.CellValue[];
+      const cells: RawCell[] = [];
+      for (let c = 1; c < values.length; c++) cells.push(rawCellValue(values[c] ?? null));
+      while (cells.length > 0 && cells[cells.length - 1] === null) cells.pop();
+      if (cells.length === 0) continue;
+      if (!visit(name, cells)) {
+        input.pause();
+        return;
+      }
+    }
+  }
 }
 
 /** A cell reduced to a plain JS value — what both consumers actually want. */

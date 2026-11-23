@@ -16,10 +16,10 @@
  *   word `unreadable` on the first read (the end-to-end case in
  *   ./pipeline-runner.test.ts). Before, the CSV's word came from
  *   DelimitedReadError in this process; now it comes from the job.
- * - over-cap.csv: its word `too-large` is the core's early cap
- *   (parseFileSheets), not the step's, and it costs no parser job, for every
- *   caller. Its old golden for a read with a Table wanted went on purpose: a
- *   Table wanted no longer lifts the cap.
+ * - over-cap.csv: it was refused whole (`too-large`, the core's early cap).
+ *   Now the step reads it in part (ingest program A2 and C3): the first rows
+ *   to the read budget or the import ceiling, and the cut in its write. So
+ *   it has no golden file: its case says the head and the cut.
  * - macro.xlsm: `.xlsm` is not in the reader's match list, so no upload
  *   reaches the reader with it, before or after. Its golden file is the old
  *   adapter's code on its bytes, and the step is given the extension `xlsm`.
@@ -129,15 +129,34 @@ describe('sheet: the step gives what the old path gave', () => {
     });
   }
 
-  it('over-cap.csv: too-large by the core with no parser call', async () => {
+  it('over-cap.csv past the read budget: the head of the file, and the cut (A2, C3)', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '0.25');
-    const fetch = vi.fn(async () => Response.json({}));
-    vi.stubGlobal('fetch', fetch);
-    expect(golden('over-cap.csv')).toEqual({ kind: 'none', word: 'too-large' });
-    expect(await parseFileSheets(fixture('over-cap.csv'), 'csv', { pipelines })).toEqual(
-      golden('over-cap.csv'),
-    );
-    expect(fetch).not.toHaveBeenCalled();
+    const parsed = await readInProcess('over-cap.csv');
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    const cut = parsed.readCuts?.database_size;
+    expect(cut).toMatchObject({ what: 'rows', total: 15_996, limit: 262_144 });
+    expect(cut!.read).toBeGreaterThan(1_000);
+    expect(cut!.read).toBeLessThan(15_996);
+    // The header is one of the rows kept; the rows are the first ones.
+    expect(parsed.sheets[0]!.rows).toHaveLength(cut!.read - 1);
+    expect(parsed.sheets[0]!.rows[0]).toEqual(['T-1', 'Area 1', 13.5]);
+    expect(parsed.sheets[0]!.columns.map((c) => c.name)).toEqual(['Tag', 'Area', 'Reading']);
+  });
+
+  it('over-cap.csv past the import ceiling: the first rows to it, and the cut', async () => {
+    vi.stubEnv('TABLE_IMPORT_MAX_ROWS', '100');
+    const parsed = await readInProcess('over-cap.csv');
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    expect(parsed.readCuts).toEqual({
+      database_rows: { what: 'rows', read: 100, total: 15_996, limit: 100 },
+    });
+    expect(parsed.sheets[0]!.rows).toHaveLength(99);
+  });
+
+  it('a file within both says no cut', async () => {
+    const parsed = await readInProcess('over-cap.csv');
+    expect(parsed).toMatchObject({ kind: 'sheets' });
+    expect((parsed as { readCuts?: unknown }).readCuts).toBeUndefined();
   });
 
   it('the stamp is the same: the id and the version did not move', async () => {

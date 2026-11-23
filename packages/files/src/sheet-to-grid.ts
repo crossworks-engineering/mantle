@@ -187,26 +187,123 @@ function markdownTableToAoa(text: string): string[][] {
  * `normalize` below do the typing for every source alike, so a CSV column and
  * a workbook column are judged by the same rules.
  */
-function readDelimited(text: string, delimiter: string): Promise<string[][]> {
+function readDelimited(
+  source: string | Buffer,
+  delimiter: string,
+  keep?: RowKeeper,
+): Promise<string[][]> {
   return new Promise((resolve, reject) => {
     const rows: string[][] = [];
-    parseCsvString({ delimiter, headers: false, ignoreEmpty: true, discardUnmappedColumns: false })
-      .on('data', (row: string[]) => rows.push(row))
+    const csv = parseCsvString({
+      delimiter,
+      headers: false,
+      ignoreEmpty: true,
+      discardUnmappedColumns: false,
+    })
+      .on('data', (row: string[]) => {
+        if (!keep || keep.take(row)) rows.push(row);
+      })
       .on('error', reject)
-      .on('end', () => resolve(rows))
-      .end(text);
+      .on('end', () => resolve(rows));
+    if (typeof source === 'string') {
+      csv.end(source);
+      return;
+    }
+    // Bytes go in slices, so the text is decoded a slice at a time (a file
+    // of hundreds of MB is never one string). A slice is a view of the
+    // buffer, not a copy.
+    for (let at = 0; at < source.length; at += DELIMITED_SLICE_BYTES) {
+      csv.write(source.subarray(at, at + DELIMITED_SLICE_BYTES));
+    }
+    csv.end();
   });
 }
 
-/** CSV/TSV text → grid, delimiter sniffed from the first line. */
-export async function parseDelimited(text: string): Promise<ParsedSheet[]> {
-  const t = text.trim();
-  if (!t) return [];
+/** The bytes of delimited text given to the CSV reader at a time. */
+const DELIMITED_SLICE_BYTES = 4 * 1024 * 1024;
+
+/** The cut a {@link RowKeeper} says on the file (./read-cut.ts, docs/files.md
+ *  "Read in part"): the rows kept of all the rows, and the limit that cut. */
+export type RowCut = {
+  database_rows?: { what: 'rows'; read: number; total: number; limit: number };
+  database_size?: { what: 'rows'; read: number; total: number; limit: number };
+};
+
+/**
+ * The rows a file database read keeps (the package `sheet`'s step; ingest
+ * program A2 and C3): the first rows of the file, in order, up to `maxRows`
+ * rows and about `maxBytes` bytes of cell text over all its sheets. A row
+ * past either is counted, not kept, and every later row too, so the kept
+ * rows are always the head of the file. The cut is said on the file
+ * ({@link RowKeeper.cut}); nothing is refused whole.
+ *
+ * Two limits, one stop: the rows are the import ceiling
+ * (TABLE_IMPORT_MAX_ROWS), the bytes the parser's memory and answer and the
+ * brain's one write (MANTLE_FILE_DB_CSV_MAX_MB). A cell counts its text plus
+ * 3 (its quotes and comma in the answer), so a sheet of tiny cells stays
+ * under the answer cap too.
+ */
+export class RowKeeper {
+  kept = 0;
+  total = 0;
+  private bytes = 0;
+  private stopped: 'rows' | 'bytes' | null = null;
+  constructor(
+    readonly maxRows: number,
+    readonly maxBytes: number,
+  ) {}
+
+  /** Whether to keep this row. Every row is counted. */
+  take(cells: readonly unknown[]): boolean {
+    this.total += 1;
+    if (this.stopped) return false;
+    if (this.kept >= this.maxRows) {
+      this.stopped = 'rows';
+      return false;
+    }
+    let size = 0;
+    for (const c of cells) size += (c === null || c === undefined ? 0 : String(c).length) + 3;
+    if (this.bytes + size > this.maxBytes) {
+      this.stopped = 'bytes';
+      return false;
+    }
+    this.kept += 1;
+    this.bytes += size;
+    return true;
+  }
+
+  /** The cut, or null when every row was kept. */
+  cut(): RowCut | null {
+    if (!this.stopped) return null;
+    const value = { what: 'rows' as const, read: this.kept, total: this.total };
+    return this.stopped === 'rows'
+      ? { database_rows: { ...value, limit: this.maxRows } }
+      : { database_size: { ...value, limit: this.maxBytes } };
+  }
+}
+
+/** CSV/TSV text → grid, delimiter sniffed from the first line. Bytes are
+ *  read as a stream, and a {@link RowKeeper} keeps the head of a long file. */
+export async function parseDelimited(
+  source: string | Buffer,
+  keep?: RowKeeper,
+): Promise<ParsedSheet[]> {
+  // A string is trimmed (which drops a BOM too); bytes lose a UTF-8 BOM,
+  // and blank lines are skipped by the reader (ignoreEmpty).
+  const t =
+    typeof source === 'string'
+      ? source.trim()
+      : source.length >= 3 && source[0] === 0xef && source[1] === 0xbb && source[2] === 0xbf
+        ? source.subarray(3)
+        : source;
+  if (t.length === 0) return [];
   // Sniff on the FIRST line only: a tab anywhere later in a comma-separated
   // file (inside a quoted note, say) must not flip the whole parse.
-  const firstLine = t.slice(0, t.indexOf('\n') === -1 ? t.length : t.indexOf('\n'));
+  const head = typeof t === 'string' ? t : t.toString('utf-8', 0, Math.min(t.length, 65_536));
+  const nl = head.indexOf('\n');
+  const firstLine = nl === -1 ? head : head.slice(0, nl);
   const delimiter = firstLine.includes('\t') ? '\t' : ',';
-  return parseSheet('Sheet1', await readDelimited(t, delimiter));
+  return parseSheet('Sheet1', await readDelimited(t, delimiter, keep));
 }
 
 /**

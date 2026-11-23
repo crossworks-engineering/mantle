@@ -22,15 +22,22 @@
  * phantom cells, and two prod uploads hung ingest past the 10-minute watchdog
  * that way. exceljs reads only the rows and cells that exist, so that hazard
  * is gone by construction. The row/column/character caps below survive as
- * OUTPUT bounds — they cap what we hand the chunker and the embedder. The
- * memory bound that replaced `sheetRows` is the pre-flight in ./sheet-read.ts.
+ * OUTPUT bounds — they cap what we hand the chunker and the embedder. Past
+ * the pre-flight in ./sheet-read.ts the workbook is read as a stream, so
+ * memory holds the kept rows, not the sheet.
  *
  * Separate entry point (`@mantle/files/xlsx`) so the spreadsheet engine is
  * only loaded when a spreadsheet actually shows up.
  */
 
 import { noteReadCut } from './read-cut-sink';
-import { loadWorkbook, worksheetToRows, type RawCell } from './sheet-read';
+import {
+  loadWorkbook,
+  SpreadsheetTooLargeError,
+  streamWorkbookRows,
+  worksheetToRows,
+  type RawCell,
+} from './sheet-read';
 
 /** Rows rendered per sheet. Generous for recall + summary. */
 const MAX_ROWS_PER_SHEET = 5_000;
@@ -82,36 +89,57 @@ function rowsToCsv(rows: RawCell[][]): string {
   return lines.join('\n');
 }
 
+/** One sheet's rows for the text: the first MAX_ROWS_PER_SHEET rows of at
+ *  most MAX_COLS_PER_SHEET columns, and the sheet's real row and column
+ *  counts. */
+type SheetRows = { name: string; rows: RawCell[][]; rowsTotal: number; colsTotal: number };
+
+/** The sheets of a workbook for its text. One past the size check of
+ *  ./sheet-read.ts is read as a stream (ingest program A2): every row is
+ *  counted, the first ones are kept, and nothing is refused whole. */
+async function sheetsOf(buf: Buffer): Promise<SheetRows[]> {
+  try {
+    const wb = await loadWorkbook(buf);
+    return wb.worksheets.map((ws) => {
+      const s = worksheetToRows(ws, { maxRows: MAX_ROWS_PER_SHEET, maxCols: MAX_COLS_PER_SHEET });
+      return { name: ws.name, rows: s.rows, rowsTotal: s.rowsTotal, colsTotal: s.colsTotal };
+    });
+  } catch (err) {
+    if (!(err instanceof SpreadsheetTooLargeError)) throw err;
+  }
+  const sheets: SheetRows[] = [];
+  let cur: SheetRows | undefined;
+  await streamWorkbookRows(buf, (name, cells) => {
+    if (!cur || cur.name !== name) sheets.push((cur = { name, rows: [], rowsTotal: 0, colsTotal: 0 }));
+    cur.rowsTotal += 1;
+    cur.colsTotal = Math.max(cur.colsTotal, cells.length);
+    if (cur.rows.length < MAX_ROWS_PER_SHEET) cur.rows.push(cells.slice(0, MAX_COLS_PER_SHEET));
+    return true;
+  });
+  return sheets;
+}
+
 /**
  * Flatten a workbook to `# Sheet: <name>` + CSV blocks.
  *
  * Returns `''` when there is nothing tabular to index. A workbook past the
- * size ceiling throws `SpreadsheetTooLargeError` (./sheet-read.ts), which the
- * parser answers as `too_large`.
+ * size ceiling of ./sheet-read.ts is read as a stream (sheetsOf), with the
+ * same caps and the same cuts said, never refused whole.
  */
 export async function parseXlsx(buf: Buffer): Promise<string> {
-  const wb = await loadWorkbook(buf);
+  const sheets = await sheetsOf(buf);
 
   const parts: string[] = [];
   let total = 0;
   let truncated = false;
-  // What the text leaves out, said on the file (./read-cut.ts): the rows and
-  // columns past the caps of a sheet, and the sheets past the text budget.
   const rows = { read: 0, total: 0 };
   const cols = { read: 0, total: 0 };
-  // The sheets before the one the text limit cut (empty ones too, as the
-  // total counts every sheet), once a cut happened.
   let sheetsRead = -1;
 
-  for (const [i, ws] of wb.worksheets.entries()) {
-    // Hidden sheets are usually lookup tables and scratch space the author
-    // chose not to show; index them anyway — recall wants the content, and a
-    // hidden sheet is not a private one.
-    const sheet = worksheetToRows(ws, {
-      maxRows: MAX_ROWS_PER_SHEET,
-      maxCols: MAX_COLS_PER_SHEET,
-    });
-    if (sheet.truncated) truncated = true;
+  for (const [i, sheet] of sheets.entries()) {
+    if (sheet.rowsTotal > sheet.rows.length || sheet.colsTotal > MAX_COLS_PER_SHEET) {
+      truncated = true;
+    }
     if (sheet.rowsTotal > sheet.rows.length) {
       rows.read += sheet.rows.length;
       rows.total += sheet.rowsTotal;
@@ -125,13 +153,13 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
 
     if (total + csv.length > MAX_TEXT_CHARS) {
       const room = MAX_TEXT_CHARS - total;
-      if (room > 0) parts.push(`# Sheet: ${ws.name}\n${csv.slice(0, room)}`);
+      if (room > 0) parts.push(`# Sheet: ${sheet.name}\n${csv.slice(0, room)}`);
       truncated = true;
       // This sheet in part, and every sheet after it not read at all.
       sheetsRead = i;
       break; // stop before rendering any further sheets
     }
-    parts.push(`# Sheet: ${ws.name}\n${csv}`);
+    parts.push(`# Sheet: ${sheet.name}\n${csv}`);
     total += csv.length;
   }
   if (rows.total > 0) {
@@ -144,7 +172,7 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
     noteReadCut('sheet_text', {
       what: 'sheets',
       read: sheetsRead,
-      total: wb.worksheets.length,
+      total: sheets.length,
       limit: MAX_TEXT_CHARS,
     });
   }

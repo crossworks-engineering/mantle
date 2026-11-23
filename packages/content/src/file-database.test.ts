@@ -72,15 +72,34 @@ describe('a CSV, read by the package sheet', () => {
     });
   });
 
-  it('past the cap: too-large with no read and no parser job', async () => {
+  it('past the read budget: one job, never refused whole (A2, C3); the Reader keeps the head', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
     const calls = stubParser(ranSheets([SHEET]));
     const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 0x61)]);
     expect(await parseFileSheets(big, 'csv', { pipelines })).toEqual({
-      kind: 'none',
-      word: 'too-large',
+      kind: 'sheets',
+      sheets: [SHEET],
     });
-    expect(calls).not.toHaveBeenCalled();
+    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
+  });
+
+  it("the Reader's cut comes back with its sheets, to be said on the file", async () => {
+    const cut = { database_size: { what: 'rows', read: 1, total: 9, limit: 1048576 } };
+    stubParser(() =>
+      Response.json({
+        ok: true,
+        result: {
+          status: 'ok',
+          calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: [SHEET], readCuts: cut } }],
+        },
+        pictures: [],
+      }),
+    );
+    expect(await parseFileSheets(bytes(), 'csv', { pipelines })).toEqual({
+      kind: 'sheets',
+      sheets: [SHEET],
+      readCuts: cut,
+    });
   });
 });
 
@@ -94,22 +113,19 @@ describe('a workbook, read by the package sheet', () => {
     expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 
-  // The cap on delimited text is by what the reader does with the bytes,
-  // not by the name (readsAsDelimited): text named .xlsx is held, a real
-  // workbook is not.
   const MB = 1024 * 1024;
-  it('text named .xlsx past the cap: too-large with no parser job', async () => {
+  it('text named .xlsx past the read budget: one job too (the Reader reads it as text)', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
     const calls = stubParser(ranSheets([SHEET]));
     const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(MB + 1, 0x61)]);
     expect(await parseFileSheets(big, 'xlsx', { pipelines })).toEqual({
-      kind: 'none',
-      word: 'too-large',
+      kind: 'sheets',
+      sheets: [SHEET],
     });
-    expect(calls).not.toHaveBeenCalled();
+    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 
-  it('a workbook (zip bytes) past the cap is not held by it: one job', async () => {
+  it('a workbook (zip bytes) past the read budget: one job', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
     const calls = stubParser(ranSheets([SHEET]));
     const big = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(MB + 1)]);
@@ -120,7 +136,7 @@ describe('a workbook, read by the package sheet', () => {
     expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 
-  it('text named .xls past the cap is not held by it: the reader converts it, as text never', async () => {
+  it('text named .xls past the read budget: the reader converts it, as text never', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
     const calls = stubParser(failing('failed', 422));
     const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(MB + 1, 0x61)]);

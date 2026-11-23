@@ -660,18 +660,18 @@ describe('sheet through a real parser job (the move MV3)', () => {
     }
   }, 180_000);
 
-  it('a CSV over the early cap costs no job', async () => {
-    const saved = process.env.MANTLE_FILE_DB_CSV_MAX_MB;
-    process.env.MANTLE_FILE_DB_CSV_MAX_MB = '0.25';
-    try {
-      const bytes = fixture('over-cap.csv');
-      const capped = await jobsOf(() => parseFileSheets(bytes, 'csv', { pipelines }));
-      expect(capped.jobs).toEqual([]);
-      expect(capped.out).toEqual(golden('over-cap.csv'));
-    } finally {
-      if (saved === undefined) delete process.env.MANTLE_FILE_DB_CSV_MAX_MB;
-      else process.env.MANTLE_FILE_DB_CSV_MAX_MB = saved;
-    }
+  // The old early cap is gone (ingest program A2 and C3): a long CSV costs
+  // its one job like any other. The parser here runs with the box's budget,
+  // so the file is whole; the cut itself is pinned in process
+  // (pipeline-golden-sheet.test.ts).
+  it('a CSV past the old early cap is read by its one job', async () => {
+    const bytes = fixture('over-cap.csv');
+    const read = await jobsOf(() => parseFileSheets(bytes, 'csv', { pipelines }));
+    expect(read.jobs).toEqual(['/pipeline/run']);
+    expect(read.out).toMatchObject({ kind: 'sheets' });
+    if (read.out.kind !== 'sheets') throw new Error('no sheets');
+    expect(read.out.sheets[0]!.rows).toHaveLength(15_995);
+    expect(read.out.readCuts).toBeUndefined();
   }, 60_000);
 
   it('an xlsm (no upload reaches the reader with it) reads the same through the job', async () => {

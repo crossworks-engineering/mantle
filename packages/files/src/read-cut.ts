@@ -143,11 +143,17 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   legacy_cells: (c) =>
     `${ofTotal(c)} sheets were read: the others are past the ${limitText(c, 'cell', '1,000,000-cell')} limit of a legacy spreadsheet. Save it as .xlsx and upload it to read them.`,
   markup_bytes: (c) =>
-    `Only ${ofTotal(c)} bytes were read (a ${limitText(c, 'byte', '32 MB')} limit for HTML and XML). The rest is not in search.`,
+    `Only ${ofTotal(c)} bytes were read: their text reached the ${limitText(c, 'character', '32 MB')} limit of an HTML or XML read. The rest is not in search.`,
+  // A cut of 0 rows read is a file of before ingest program A2 and C3,
+  // when such a file got no database at all.
   database_size: (c) =>
-    `No database was built: the file is ${n(c.total ?? 0)} bytes, past the ${limitText(c, 'byte', '32 MB')} limit, so file_sql has no rows of it. Its text is read as usual.`,
+    c.what === 'rows'
+      ? `${ofTotal(c)} rows are in its database: the rest are past the ${limitText(c, 'byte', '32 MB')} read limit of a file database, so file_sql has no rows past them. Its text is read as usual.`
+      : `No database was built: the file is ${n(c.total ?? 0)} bytes, past the ${limitText(c, 'byte', '32 MB')} limit, so file_sql has no rows of it. Its text is read as usual.`,
   database_rows: (c) =>
-    `No database was built: its sheets hold ${n(c.total ?? 0)} rows, past the ${limitText(c, 'row', 'import')} limit, so file_sql has no rows of it. Its text is read as usual.`,
+    c.read > 0
+      ? `${ofTotal(c)} rows are in its database (the ${limitText(c, 'row', 'import')} limit), so file_sql has no rows past them. Its text is read as usual.`
+      : `No database was built: its sheets hold ${n(c.total ?? 0)} rows, past the ${limitText(c, 'row', 'import')} limit, so file_sql has no rows of it. Its text is read as usual.`,
   cad_texts: (c) =>
     `${ofTotal(c)} texts of the drawing were read (a ${limitText(c, 'text', '20,000-text')} limit). The others are not in search.`,
   cad_text_length: (c) =>

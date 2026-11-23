@@ -2109,21 +2109,26 @@ did. With the parser busy or down, the extract of a CSV waits and retries
 (the client's busy waits, then the extract's own retries) and can end in the
 dead letter queue, where before a CSV made no parser call. A run on demand
 and a Test on a CSV can answer `busy`.
-The early cap on delimited text stays in the core (`parseFileSheets`,
-`MANTLE_FILE_DB_CSV_MAX_MB`): text past it earns `too-large` with no job,
-for every caller, and the upload makes no Table of it. The cap is by what
-the bytes are, not by the name. The test is the engine's own,
-`readsAsDelimited` (`packages/files/src/sheet-to-grid.ts`), which the step's
-read takes too: bytes that are no workbook (no zip and no OLE2 magic),
-under any name of the reader but `.xls`. So a CSV named `.xlsx` is held as
-a `.csv` is. A real workbook is not held by it; it keeps its own limits.
-Text named `.xls` is not either: the reader converts an `.xls` whatever its
-bytes, text fails that conversion at once, and the word is `unreadable`.
-A Table wanted lifted the cap until the MV3 audit, and the cap went by the
-name until the audit after it: the grid came back as the job's answer
-(96 MB cap), and a 55 MB CSV took about 2 GB in the parser job. `.xlsm` is
-not in the reader's match list, before or after. The golden files of the
-old path (`pkg/sheet/golden/`) hold the rows and the stamp.
+A long file is read in part, never refused whole (ingest program A2 and
+C3, 2026-11-23). The early cap on delimited text in the core is gone. The
+step keeps the first rows of the file, in order, up to the import ceiling
+(`TABLE_IMPORT_MAX_ROWS`, 2,000,000) and the read budget
+(`MANTLE_FILE_DB_CSV_MAX_MB` of cell text, a cell counting its text plus 3
+for its quotes and comma in the answer), with one keeper (`RowKeeper`,
+`packages/files/src/sheet-to-grid.ts`). The rows past the stop are counted,
+not kept, and the write says the cut (`readCuts`: `database_rows` or
+`database_size`, the rows kept of all the rows); the extract says it on the
+file and makes no Table of a cut read. A CSV is read as a stream, in 4 MB
+slices of its bytes. A workbook past the size check of `sheet-read.ts`
+(32 MB of sheet XML) is read with exceljs's stream reader, the zip given to
+it with the workbook part first (`streamWorkbookRows`); under it the
+whole-workbook reader stays, as it fills merged cells and the stream does
+not. A by-hand import gives no keeper: it reads whole or refuses, as before.
+The budget is for the parser job's memory and answer (96 MB) and the
+brain's one write: a 55 MB CSV took about 2 GB in the parser job when the
+whole grid was kept. `.xlsm` is not in the reader's match list. The golden
+files of the old path (`pkg/sheet/golden/`) hold the rows and the stamp;
+`over-cap.csv` has no golden file now, its case says the head and the cut.
 
 ## The PDF set as packages
 
@@ -2189,7 +2194,7 @@ parse, as before (a file with a database or a word is not taken; with
    it failed or gave a word (a failure, `too-large`, `no-rows`), or it is
    poorer than the stored one (`pdfReadPoorer`, the rule of the sketch read:
    another rules kind, or more pages not read whole; and rows past the
-   import cap, whose write would be `too-large`). Then nothing is written,
+   import cap, whose write keeps only the first rows). Then nothing is written,
    no word either, and the answer is `skipped` with the word `kept`.
 
 Why any `no-rows` of a PDF is kept: a drawing read always has its File tab,

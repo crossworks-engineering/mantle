@@ -24,7 +24,6 @@ import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
-import { envNum } from '@mantle/config';
 import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
   PAGE_ASK_KEY_PREFIX,
@@ -58,6 +57,7 @@ import {
   withPageKinds,
   writeFileDbNone,
   type FileDbNoneWord,
+  type FileTabsWriteInput,
   type PdfPageKind,
   type PipelineManifest,
   type PipelineStamp,
@@ -66,7 +66,6 @@ import {
 } from '@mantle/files';
 import {
   DelimitedReadError,
-  readsAsDelimited,
   type ParsedSheet,
 } from '@mantle/files/sheet-to-grid';
 import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
@@ -155,6 +154,10 @@ export type ParsedFile =
       /** A Reader that read the file in page windows: the pages read and
        *  the pages of the file, kept in the database's `_meta`. */
       pages?: { read: number; total: number };
+      /** What the Reader's read left out (its write's `readCuts`): a long
+       *  sheet read in part (the package `sheet`, ingest program A2 and C3).
+       *  The extract says them on the file (auto-table.ts). */
+      readCuts?: FileTabsWriteInput['readCuts'];
       /** The Reader that made these sheets when it is not the reader of the
        *  extension (a Reader that claims the router's kind and stands over
        *  the core's PDF read): the stamp names it, so the text pass and a
@@ -507,6 +510,7 @@ export function parsedFileOfRun(
     ...(w?.description ? { description: w.description } : {}),
     ...(w?.sourceSha256 ? { sourceSha256: w.sourceSha256 } : {}),
     ...(w?.ftsSkipColumns ? { ftsSkipColumns: w.ftsSkipColumns } : {}),
+    ...(w?.readCuts ? { readCuts: w.readCuts } : {}),
   };
 }
 
@@ -515,13 +519,9 @@ export function parsedFileOfRun(
  * document comes back as its word; any other failure throws, and the caller
  * decides (the extract retries).
  *
- * Delimited text past its cap earns its word here, with no read and no
- * parser job, for every caller: a file the package `sheet` reads whose bytes
- * it will read as delimited text (readsAsDelimited, the reader's own test),
- * whatever the file's name, so a CSV named `.xlsx` is held too. A real
- * workbook keeps its own limits. The cap stays in the core though the read
- * is the package's, and no Table is made of such a file either. An XML that
- * is no plan earns its answer here too, with no job, for every caller.
+ * A long CSV or workbook is read in part by the package `sheet`, never
+ * refused here (ingest program A2 and C3): its write says the cut. An XML
+ * that is no plan earns its answer here, with no job, for every caller.
  */
 type ParseOpts = {
   /** The pipelines of the box (boxPipelines): the reader and the router of
@@ -554,13 +554,6 @@ export async function parseFileSheets(
   ext: string,
   opts: ParseOpts,
 ): Promise<ParsedFile> {
-  if (
-    opts.pipelines.readerFor(ext)?.id === 'sheet' &&
-    readsAsDelimited(bytes, ext) &&
-    bytes.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024
-  ) {
-    return { kind: 'none', word: 'too-large' };
-  }
   // An XML: the plan check on the bytes in hand, before any job (the old
   // adapter's first lines; docs/pipelines.md, "The built-ins"). Both
   // sniffs read the first 8 KB only. A root that is not Project is no plan
@@ -692,6 +685,28 @@ function rowsOf(parsed: Extract<ParsedFile, { kind: 'sheets' }>): number {
   return parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
 }
 
+/** The head of a read past the import ceiling: its sheets in order, and the
+ *  rows of each while the ceiling lasts (ingest program C3: the first rows
+ *  are kept, never no database). The extract says the cut on the file
+ *  (auto-table.ts, `database_rows`). */
+export function headOfSheets<T extends { columns: readonly unknown[]; rows: readonly unknown[] }>(
+  sheets: readonly T[],
+  max: number,
+): T[] {
+  let left = max;
+  const out: T[] = [];
+  for (const s of sheets) {
+    if (s.columns.length === 0) {
+      out.push(s);
+      continue;
+    }
+    if (left <= 0) break;
+    out.push(s.rows.length > left ? { ...s, rows: s.rows.slice(0, left) } : s);
+    left -= Math.min(left, s.rows.length);
+  }
+  return out;
+}
+
 /** The rows, or the word for why there are none. The database carries the
  *  stamp of the pipeline that read it. A word has none, but for a file whose
  *  Reader gave its text and no tabs (`readerText`): its word `no-rows`
@@ -727,10 +742,11 @@ async function writeRowsOrWord(
   if (parsed.kind === 'none') return word(parsed.word);
   // The stamp and the count name the Reader that made the sheets.
   if (parsed.readBy) file = { ...file, pipeline: parsed.readBy };
-  // The cap before the conversion: past it the word costs no copy of the rows.
-  const rows = rowsOf(parsed);
-  if (rows > importMaxRows()) return word('too-large', true);
-  const tabs = tabsOfSheets(parsed.sheets);
+  // Past the import ceiling, the first rows are written (C3); the cut is
+  // said on the file by the extract (auto-table.ts).
+  const max = importMaxRows();
+  const sheets = rowsOf(parsed) > max ? headOfSheets(parsed.sheets, max) : parsed.sheets;
+  const tabs = tabsOfSheets(sheets);
   if (tabs.length === 0) {
     if (!parsed.readerText || !file.pipeline) return word('no-rows', true);
     const built = await word(
@@ -1093,7 +1109,7 @@ async function queueAgentRuns(
 /** Whether a PDF's new read is poorer than its stored one (pdfReadPoorer),
  *  by the File tab of the new read. A read with no File tab to tell by is
  *  poorer: the stored one stands. So is a read past the import cap, whose
- *  write would be the word `too-large` (writeRowsOrWord). A read whose File
+ *  write keeps only its first rows (writeRowsOrWord). A read whose File
  *  tab names another Kind (a new frame) is poorer only with more pages not
  *  read whole. */
 function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: StoredPdf): boolean {

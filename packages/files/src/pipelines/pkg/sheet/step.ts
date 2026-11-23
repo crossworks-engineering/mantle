@@ -11,14 +11,29 @@
  * delimited text (parseDelimited), whatever their extension, as the old path
  * did. A file the engine cannot read throws, and the job fails with its word.
  *
- * The early cap on delimited text stays in the core (parseFileSheets), so
- * text past it costs no job, whatever its name. The core takes the engine's
- * own test of what it reads as text (readsAsDelimited), so the two agree.
+ * A long file is read in part, never refused whole (ingest program A2 and
+ * C3): the database keeps the first rows up to the import ceiling
+ * (TABLE_IMPORT_MAX_ROWS) and the read budget (MANTLE_FILE_DB_CSV_MAX_MB of
+ * cell text), the rest is counted, and the write says the cut (`readCuts`,
+ * docs/files.md "Read in part"). A CSV is read as a stream, and a workbook
+ * past the size check of ./sheet-read.ts too.
  */
+import { envNum } from '@mantle/config';
 import { FILE_TABS_WRITE, type PipelineStep } from '../../contract';
 import { readSpreadsheetGrid } from '../../../sheet-grid';
+import { RowKeeper } from '../../../sheet-to-grid';
 
 export const step: PipelineStep = async (req, job) => {
-  const tabs = await readSpreadsheetGrid(await job.bytes(), req.file?.ext ?? '');
-  return { status: 'ok', calls: [{ call: 'tool', tool: FILE_TABS_WRITE, input: { tabs } }] };
+  const keep = new RowKeeper(
+    envNum('TABLE_IMPORT_MAX_ROWS'),
+    envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024,
+  );
+  const tabs = await readSpreadsheetGrid(await job.bytes(), req.file?.ext ?? '', keep);
+  const readCuts = keep.cut();
+  return {
+    status: 'ok',
+    calls: [
+      { call: 'tool', tool: FILE_TABS_WRITE, input: { tabs, ...(readCuts ? { readCuts } : {}) } },
+    ],
+  };
 };

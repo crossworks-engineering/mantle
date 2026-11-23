@@ -203,6 +203,22 @@ describe('the sentences of the newer cuts', () => {
     ).toBe(
       'No database was built: its sheets hold 2,500,000 rows, past the 2,000,000 row limit, so file_sql has no rows of it. Its text is read as usual.',
     );
+    // Read in part since ingest program A2 and C3: the first rows go in.
+    expect(
+      readCutHint('database_rows', {
+        what: 'rows',
+        read: 2_000_000,
+        total: 2_500_000,
+        limit: 2_000_000,
+      }),
+    ).toBe(
+      '2,000,000 of 2,500,000 rows are in its database (the 2,000,000 row limit), so file_sql has no rows past them. Its text is read as usual.',
+    );
+    expect(
+      readCutHint('database_size', { what: 'rows', read: 10, total: 40, limit: 33_554_432 }),
+    ).toBe(
+      '10 of 40 rows are in its database: the rest are past the 33,554,432 byte read limit of a file database, so file_sql has no rows past them. Its text is read as usual.',
+    );
     expect(readCutHint('description', { what: 'characters', read: 0, total: 9000 })).toBe(
       'Its description (9,000 characters) was left out: the feed was too large to send with it.',
     );

@@ -21,6 +21,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
+import { withReadCutSink } from '@mantle/files/read-cut-sink';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -576,30 +577,33 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(await wordOf(empty.id)).toBe('no-rows');
     });
 
-    it('past TABLE_IMPORT_MAX_ROWS writes too-large', async () => {
-      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+    // Read in part, never refused whole (ingest program A2 and C3): the
+    // database keeps the first rows, the cut is said on the file, and no
+    // Table is made of a cut read.
+    it('past TABLE_IMPORT_MAX_ROWS the first rows go in, and the cut is said', async () => {
       vi.stubEnv('TABLE_IMPORT_MAX_ROWS', '1');
       const file = await upload(unique('xlsx'), 'workbook rows');
-      await pass(file.id);
-      expect(await wordOf(file.id)).toBe('too-large');
+      const { cuts } = await withReadCutSink(() => pass(file.id));
+      expect(await wordOf(file.id)).toBeNull();
+      expect(namesOf(file.id)).toEqual([sqliteName(await shaOf(file.id))]);
+      expect(cuts.database_rows).toEqual({ what: 'rows', read: 1, total: 2, limit: 1 });
+      expect(await tablesOf(file.id)).toEqual([]);
     });
 
-    it('a CSV past the cap, auto Tables off: the word too-large', async () => {
-      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+    it("a CSV past the read budget: its head goes in, the Reader's cut is said, no Table", async () => {
       vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
-      const bytes = Buffer.concat([Buffer.from('tag\n"x\n'), Buffer.alloc(1024 * 1024 + 1, 97)]);
+      const bytes = Buffer.from('tag\n' + 'x\n'.repeat(600_000));
       const file = await upload(unique('csv'), bytes);
-      await pass(file.id);
-      expect(await wordOf(file.id)).toBe('too-large');
-    });
-
-    it('a CSV past the cap: no parser job, the word too-large, and no Table', async () => {
-      vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
-      const bytes = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 97)]);
-      const file = await upload(unique('csv'), bytes);
-      await pass(file.id);
-      expect(parserCalls).toEqual([]);
-      expect(await wordOf(file.id)).toBe('too-large');
+      const { cuts } = await withReadCutSink(() => pass(file.id));
+      expect(await wordOf(file.id)).toBeNull();
+      expect(namesOf(file.id)).toEqual([sqliteName(await shaOf(file.id))]);
+      // The header takes 6 bytes of the budget, each row of one character 4.
+      expect(cuts.database_size).toEqual({
+        what: 'rows',
+        read: 262_143,
+        total: 600_001,
+        limit: 1_048_576,
+      });
       expect(await tablesOf(file.id)).toEqual([]);
     });
 

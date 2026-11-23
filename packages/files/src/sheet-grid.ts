@@ -16,6 +16,7 @@ import {
   parseSheet,
   readsAsDelimited,
   type ParsedSheet,
+  type RowKeeper,
 } from './sheet-to-grid';
 
 /**
@@ -42,7 +43,7 @@ export async function readSpreadsheetGrid(buf: Buffer, ext: string): Promise<Par
       `could not convert legacy .${ext} workbook: the file is not a readable spreadsheet`,
     );
   }
-  return parseSheetToGrid(converted.xlsx);
+  return parseSheetToGrid(converted.xlsx, keep);
 }
 
 /**
@@ -66,35 +67,49 @@ const GRID_MAX_COLS_PER_SHEET = 16_384;
  * them apart. Returns an empty array if nothing tabular is found.
  *
  * **Throws** rather than degrading: an unreadable workbook (encrypted,
- * corrupt) or one past the in-process size ceiling raises, because a partial
- * or empty grid import would silently look like a successful one. Both call
- * sites already surface the message to the user.
+ * corrupt) or, for an import, one past the in-process size ceiling raises,
+ * because a partial or empty grid import would silently look like a
+ * successful one. A file database read gives a `keep` (RowKeeper): it reads
+ * such a workbook as a stream and keeps its head, and the keeper says the
+ * cut (ingest program A2 and C3).
  */
-export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
+export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<ParsedSheet[]> {
   if (bytesLookLikeLegacyBiff(buf)) {
     throw new Error(
       'legacy .xls/.xlsb workbook: convert it with convertLegacySheetToXlsx before importing',
     );
   }
-  // No workbook by its bytes (a zip or an OLE2 file, `looksLikeWorkbook`):
-  // delimited text. An OLE2 file was refused above, so what is left is a zip.
-  if (!looksLikeWorkbook(buf)) return parseDelimited(buf.toString('utf-8'));
-  const { loadWorkbook, worksheetToRows } = await import('./sheet-read');
-  const wb = await loadWorkbook(buf);
+  if (!looksLikeWorkbook(buf)) return parseDelimited(buf, keep);
+  const { loadWorkbook, worksheetToRows, streamWorkbookRows, SpreadsheetTooLargeError } =
+    await import('./sheet-read');
+  let wb;
+  try {
+    wb = await loadWorkbook(buf);
+  } catch (err) {
+    // A file database read (`keep`) reads a workbook past the size check as
+    // a stream and keeps its head (ingest program A2). An import (no
+    // `keep`) still refuses it whole: a partial import would be a lie.
+    if (!keep || !(err instanceof SpreadsheetTooLargeError)) throw err;
+    const sheets = new Map<string, unknown[][]>();
+    await streamWorkbookRows(buf, (name, cells) => {
+      let rows = sheets.get(name);
+      if (!rows) sheets.set(name, (rows = []));
+      if (keep.take(cells)) rows.push(cells.slice(0, GRID_MAX_COLS_PER_SHEET));
+      return true; // read on: the rows past the cut are counted
+    });
+    return [...sheets].flatMap(([name, rows]) => parseSheet(name, rows));
+  }
   const out: ParsedSheet[] = [];
   for (const ws of wb.worksheets) {
     const { rows } = worksheetToRows(ws, {
       maxRows: GRID_MAX_ROWS_PER_SHEET,
       maxCols: GRID_MAX_COLS_PER_SHEET,
     });
-    out.push(...parseSheet(ws.name, rows as unknown[][]));
+    out.push(...parseSheet(ws.name, keep ? rows.filter((r) => keep.take(r)) : (rows as unknown[][])));
   }
   return out;
 }
 
-/** OLE2 compound-file magic (`D0 CF 11 E0 A1 B1 1A E1`): a legacy `.xls` or
- *  `.xlsb`. Detected explicitly so such bytes raise a message that names the
- *  fix, instead of being read as UTF-8 and yielding a grid of mojibake. */
 function bytesLookLikeLegacyBiff(buf: Buffer): boolean {
   return (
     buf.length >= 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1

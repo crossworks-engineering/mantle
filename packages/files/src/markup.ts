@@ -229,11 +229,27 @@ export function htmlToText(html: string): string {
 
 /** Readable text from an XML document: each element's own text, one per line. */
 export function xmlToText(xml: string): string {
+  return xmlRead([[xml, xml.length]], Infinity)?.text ?? htmlToText(xml);
+}
+
+/** A window of a markup file: its text and the byte where it ends. */
+type Window = [text: string, end: number];
+
+/** A read of markup: its text, and the bytes it read before the text cap. */
+type MarkupRead = { text: string; bytes: number };
+
+/** XML windows to text through one streaming parser, or null when the
+ *  bytes are no well-formed XML (the HTML scanner reads them then). */
+function xmlRead(windows: Iterable<Window>, maxChars: number): MarkupRead | null {
   const lines: string[] = [];
+  let chars = 0;
   let current = '';
   const end = () => {
     const line = current.replace(/\s+/g, ' ').trim();
-    if (line) lines.push(line);
+    if (line) {
+      lines.push(line);
+      chars += line.length + 1;
+    }
     current = '';
   };
   const parser = new SaxesParser();
@@ -245,34 +261,80 @@ export function xmlToText(xml: string): string {
   });
   parser.on('opentag', end);
   parser.on('closetag', end);
+  let bytes = 0;
   try {
-    parser.write(xml).close();
+    for (const [text, at] of windows) {
+      parser.write(text);
+      bytes = at;
+      if (chars >= maxChars) break;
+    }
+    if (chars < maxChars) parser.close();
   } catch {
-    return htmlToText(xml);
+    return null;
   }
   end();
-  return lines.join('\n');
+  return { text: lines.join('\n'), bytes };
 }
 
-/** Only this much of a markup file is read. Tags are most of a page, so 32 MB
- *  of markup is far more text than any document holds, and the cap keeps a
- *  huge export (uploads go to 512 MB) from holding the whole file as a
- *  string in the parse job. A cut is said on the file (read_cut). */
-const MAX_MARKUP_BYTES = 32 * 1024 * 1024;
+/** HTML windows to text, a window at a time. */
+function htmlRead(windows: Iterable<Window>, maxChars: number): MarkupRead {
+  const parts: string[] = [];
+  let chars = 0;
+  let bytes = 0;
+  for (const [text, at] of windows) {
+    const part = htmlToText(text);
+    if (part) {
+      parts.push(part);
+      chars += part.length + 1;
+    }
+    bytes = at;
+    if (chars >= maxChars) break;
+  }
+  return { text: parts.join('\n'), bytes };
+}
+
+/** A markup file is read in windows of this many bytes (a window is one
+ *  string in the parse job, never the whole file: uploads go to 512 MB). */
+const MARKUP_WINDOW_BYTES = 32 * 1024 * 1024;
+
+/** The text a markup read keeps: it goes back in the parser's answer
+ *  (96 MB), so the read stops past it and the cut is said on the file
+ *  (read_cut `markup_bytes`: the bytes read of all). Tags are most of a
+ *  page, so this is far more text than any document holds. */
+const MAX_MARKUP_TEXT_CHARS = 32 * 1024 * 1024;
+
+/** The windows of a markup file. Each ends just before a `<` (between
+ *  tags, and never inside a UTF-8 character, as `<` is one byte), or at the
+ *  end of the file. A UTF-8 BOM is dropped. */
+function* windowsOf(bytes: Buffer): Generator<Window> {
+  let at = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+  while (at < bytes.length) {
+    let end = Math.min(bytes.length, at + MARKUP_WINDOW_BYTES);
+    if (end < bytes.length) {
+      const lt = bytes.lastIndexOf(0x3c, end - 1);
+      if (lt > at) end = lt;
+    }
+    yield [bytes.toString('utf8', at, end), end];
+    at = end;
+  }
+}
 
 /** File-ingest entry: `.xml` takes the XML reader, everything else the HTML
- *  scanner. A UTF-8 BOM is dropped first. */
+ *  scanner. The whole file is read, as a stream of windows (ingest program
+ *  C3); only the text cap stops it, and that cut is said on the file. */
 export function parseMarkupBytes(bytes: Buffer, ext: string): string {
-  const head = bytes.length > MAX_MARKUP_BYTES ? bytes.subarray(0, MAX_MARKUP_BYTES) : bytes;
-  // The rest is not read: said on the file (./read-cut.ts).
-  if (head.length < bytes.length) {
+  const read =
+    (ext === 'xml' ? xmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_CHARS) : null) ??
+    htmlRead(windowsOf(bytes), MAX_MARKUP_TEXT_CHARS);
+  // The rest is not read: said on the file (./read-cut.ts). A read that
+  // stopped early ends before the file (a file of a BOM alone reads 0).
+  if (read.bytes > 0 && read.bytes < bytes.length) {
     noteReadCut('markup_bytes', {
       what: 'bytes',
-      read: head.length,
+      read: read.bytes,
       total: bytes.length,
-      limit: MAX_MARKUP_BYTES,
+      limit: MAX_MARKUP_TEXT_CHARS,
     });
   }
-  const source = head.toString('utf8').replace(/^\uFEFF/, '');
-  return ext === 'xml' ? xmlToText(source) : htmlToText(source);
+  return read.text;
 }
