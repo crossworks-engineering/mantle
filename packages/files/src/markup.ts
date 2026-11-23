@@ -304,7 +304,10 @@ function htmlRead(windows: Iterable<Window>, maxBytes: number): MarkupRead {
 function headBytes(text: string, max: number): string {
   if (max <= 0) return '';
   if (Buffer.byteLength(text) <= max) return text;
-  return Buffer.from(text).subarray(0, max).toString('utf8').replace(/\uFFFD$/, '');
+  return Buffer.from(text)
+    .subarray(0, max)
+    .toString('utf8')
+    .replace(/\uFFFD$/, '');
 }
 
 /** A markup file is read in windows of this many bytes (a window is one
