@@ -64,10 +64,7 @@ import {
   type ShapeId,
   type ShapeTab,
 } from '@mantle/files';
-import {
-  DelimitedReadError,
-  type ParsedSheet,
-} from '@mantle/files/sheet-to-grid';
+import { DelimitedReadError, type ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
 import { sniffCad } from '@mantle/files/cad-sniff';
 import { isCadExt } from '@mantle/files/slug';

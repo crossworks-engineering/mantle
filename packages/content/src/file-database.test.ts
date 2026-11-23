@@ -90,7 +90,9 @@ describe('a CSV, read by the package sheet', () => {
         ok: true,
         result: {
           status: 'ok',
-          calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: [SHEET], readCuts: cut } }],
+          calls: [
+            { call: 'tool', tool: 'file_tabs_write', input: { tabs: [SHEET], readCuts: cut } },
+          ],
         },
         pictures: [],
       }),

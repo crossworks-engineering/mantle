@@ -281,9 +281,9 @@ The cuts said today, each with its key:
 | `text_store`                                                                                                             | the stored text past 1,000,000 characters (file_read reads it; search passages cover all)                                                                                                               |
 | `sheet_rows`, `sheet_columns`, `sheet_text`                                                                              | a workbook's text: 5,000 rows and 256 columns a sheet, 1,000,000 characters a workbook (`xlsx.ts`)                                                                                                      |
 | `legacy_cells`                                                                                                           | `.xls`/`.xlsb` sheets past 1,000,000 cells (`read-document.ts`)                                                                                                                                         |
-| `database_size`                                                                                                          | a file database read past `MANTLE_FILE_DB_CSV_MAX_MB` of cell text: the first rows go in, the rest are counted (the `sheet` Reader)                                                                                                                        |
-| `database_rows`                                                                                                          | sheets past `TABLE_IMPORT_MAX_ROWS`: the first rows go in (the `sheet` Reader, `writeRowsOrWord`); a cut read makes no Table                                                                                                                                      |
-| `markup_bytes`                                                                                                           | HTML and XML whose text passes 32 M characters (`markup.ts`; the bytes are read in 32 MB windows)                                                                                                                                                                   |
+| `database_size`                                                                                                          | a file database read past `MANTLE_FILE_DB_CSV_MAX_MB` of cell text: the first rows go in, the rest are counted (the `sheet` Reader)                                                                     |
+| `database_rows`                                                                                                          | sheets past `TABLE_IMPORT_MAX_ROWS`: the first rows go in (the `sheet` Reader, `writeRowsOrWord`); a cut read makes no Table                                                                            |
+| `markup_bytes`                                                                                                           | HTML and XML whose text passes 32 M characters (`markup.ts`; the bytes are read in 32 MB windows)                                                                                                       |
 | `cad_texts`, `cad_text_length`, `cad_layers`, `cad_blocks_cap`, `cad_geometry`, `cad_labels`, `cad_blocks`, `layer_list` | DWG/DXF/DGN: the CAD tier's 20,000 texts, 512 characters a text (and a DGN's attribute values), 1,000 layers, 20,000 blocks, the geometry lists' budgets, and the digest's budgets                      |
 | `dwf_sheets`, `dwf_scan`, `dwf_labels`, `layer_list`                                                                     | DWF: 64 sheets, a stream past 16 MB or past a sheet's layer or label cap, the digest's label and layer budgets                                                                                          |
 | `agent_text:<id>`                                                                                                        | an Agent's text past 64,000 characters (`agent-text.ts`; file_sql reads every row)                                                                                                                      |
@@ -588,22 +588,22 @@ MCP client acting for them; no trigger, timer or sweep starts one:
 
 Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 
-| Tool              | Purpose                                                          |
-| ----------------- | ---------------------------------------------------------------- |
-| `folder_list`     | Children of a folder, or the whole tree                          |
-| `folder_create`   | Create folder + on-disk dir, optional description                |
-| `folder_describe` | Set/clear folder description                                     |
-| `folder_delete`   | Delete an empty folder (root cannot be deleted)                  |
-| `file_list`       | Files in a folder                                                |
-| `file_upload`     | Create/overwrite a file (`content_text` or `content_base64`)     |
-| `file_get`        | File metadata only                                               |
-| `file_processing` | What the brain did with a file, and the items made from it (§8c) |
-| `file_reindex`    | Read files again through the whole pipeline (§8d)                |
-| `file_stale_list` | The files that need attention: stale, failed, partial (§8d)      |
+| Tool                   | Purpose                                                             |
+| ---------------------- | ------------------------------------------------------------------- |
+| `folder_list`          | Children of a folder, or the whole tree                             |
+| `folder_create`        | Create folder + on-disk dir, optional description                   |
+| `folder_describe`      | Set/clear folder description                                        |
+| `folder_delete`        | Delete an empty folder (root cannot be deleted)                     |
+| `file_list`            | Files in a folder                                                   |
+| `file_upload`          | Create/overwrite a file (`content_text` or `content_base64`)        |
+| `file_get`             | File metadata only                                                  |
+| `file_processing`      | What the brain did with a file, and the items made from it (§8c)    |
+| `file_reindex`         | Read files again through the whole pipeline (§8d)                   |
+| `file_stale_list`      | The files that need attention: stale, failed, partial (§8d)         |
 | `file_extract_archive` | An archive's contents into a new folder beside it, on request (§8e) |
-| `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)        |
-| `file_delete`     | Delete a file (both DB row and disk)                             |
-| `screenshots`     | The area screenshots it reads: a list, or one with its image     |
+| `file_read`            | File metadata + bytes (utf-8 for text, base64 for binary)           |
+| `file_delete`          | Delete a file (both DB row and disk)                                |
+| `screenshots`          | The area screenshots it reads: a list, or one with its image        |
 
 Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.

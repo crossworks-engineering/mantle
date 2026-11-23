@@ -10,12 +10,7 @@ import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withReadCutSink } from './read-cut-sink';
-import {
-  loadWorkbook,
-  streamWorkbookRows,
-  worksheetToRows,
-  type RawCell,
-} from './sheet-read';
+import { loadWorkbook, streamWorkbookRows, worksheetToRows, type RawCell } from './sheet-read';
 import { parseDelimited, RowKeeper } from './sheet-to-grid';
 
 const FIXTURES = path.join(

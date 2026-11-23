@@ -110,7 +110,8 @@ async function sheetsOf(buf: Buffer): Promise<SheetRows[]> {
   const sheets: SheetRows[] = [];
   let cur: SheetRows | undefined;
   await streamWorkbookRows(buf, (name, cells) => {
-    if (!cur || cur.name !== name) sheets.push((cur = { name, rows: [], rowsTotal: 0, colsTotal: 0 }));
+    if (!cur || cur.name !== name)
+      sheets.push((cur = { name, rows: [], rowsTotal: 0, colsTotal: 0 }));
     cur.rowsTotal += 1;
     cur.colsTotal = Math.max(cur.colsTotal, cells.length);
     if (cur.rows.length < MAX_ROWS_PER_SHEET) cur.rows.push(cells.slice(0, MAX_COLS_PER_SHEET));
