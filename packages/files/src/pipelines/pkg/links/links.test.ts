@@ -9,7 +9,7 @@ import { AFTER_CELL_MAX_CHARS, SHAPES } from '../../shapes';
 import { bodyCutLine } from '../../tabs-body';
 import type { StepJob } from '../../contract';
 import type { ParsedSheet } from '../../../sheet-to-grid';
-import { bodyOf, specSheets } from './fixture';
+import { bodyOf, specSheets, TEMP_LINES } from './fixture';
 import {
   buildLinks,
   codesOfCell,
@@ -385,12 +385,12 @@ describe('the piping specification pack', () => {
       rating: '300',
       face: 'RF',
       material: 'CARBON STEEL',
-      temp: '-20/400',
+      temp: '-20/400 °F',
       service: 'CAUSTIC',
     });
     expect(JSON.parse(String(nodes.get('class:Q3X')?.[4]))).toMatchObject({
       service: 'STEAM',
-      temp: '0/750',
+      temp: '0/750 °F',
     });
   });
 
@@ -417,6 +417,9 @@ describe('coverage: what the links are and what was not read', () => {
     expect(nodes.get('coverage:pages-no-text')?.[4]).toBe('9');
     expect(cov('pack:piping-spec:classes')).toMatch(
       /^3 classes on 7 pages; 2 pages with text have no class/,
+    );
+    expect(cov('pack:piping-spec:covers')).toMatch(
+      /, temperature limits for 2 \(2 with the unit their line states\)\./,
     );
   });
 
@@ -580,6 +583,13 @@ describe('the small rules', () => {
       material: '321 STAINLESS STEEL',
     });
     expect(coverFacts(page('FLG WN TAP PAIR 600#RFSF 321SS'), []).material).toBeUndefined();
+  });
+
+  it('coverFacts: the temperature limits keep the unit their line states, once, never a guess', () => {
+    const page = (text: string) => ({ page: 1, text, from: 'Pages', cut: false });
+    for (const [line, temp] of TEMP_LINES) {
+      expect([line, coverFacts(page(line), []).temp]).toEqual([line, temp]);
+    }
   });
 });
 

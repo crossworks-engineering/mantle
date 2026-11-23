@@ -206,3 +206,22 @@ export function bodyOf(
   }
   return `${lines.join('\n')}\n`;
 }
+
+/** Made-up temperature-limit lines of a cover, each with the `temp` fact it
+ *  gives: the unit only as the line states it, once. */
+export const TEMP_LINES: readonly [line: string, temp: string][] = [
+  ['TEMPERATURE LIMITS (°F): -20 / 400', '-20/400 °F'],
+  ['TEMP LIMITS: -50°F / 600', '-50/600 °F'],
+  ['TEMPERATURE LIMITS: -20 / 650 °F STEAM', '-20/650 °F'],
+  ['TEMPERATURE LIMITS (°C): -29 TO 204', '-29/204 °C'],
+  ['TEMPERATURE LIMITS: -20 / 400', '-20/400'],
+  ['TEMPERATURE LIMITS (°F): -29 / 204 °C', '-29/204'],
+  ['TEMPERATURE LIMITS (F): -20 / 400', '-20/400'],
+  ['TEMPERATURE LIMITS: -20 / 400\n°F DESIGN 650 °C', '-20/400'],
+  ['TEMPERATURE LIMITS (° F): 0 / 300', '0/300 °F'],
+  ['TEMPERATURE LIMITS (° C): 0 / 150', '0/150 °C'],
+  ['TEMP. LIMITS DEG F: -20 TO 500', '-20/500 °F'],
+  ['TEMPERATURE LIMITS (DEG. F): 32 / 450', '32/450 °F'],
+  ['TEMPERATURE LIMITS (DEG C): 0 / 120', '0/120 °C'],
+  ['TEMPERATURE LIMITS (DEG. C): -10 / 90', '-10/90 °C'],
+];
