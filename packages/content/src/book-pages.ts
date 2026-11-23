@@ -36,9 +36,10 @@ const NO_TEXT_CLASSES: readonly string[] = ['scan', 'raster_with_text'];
  *  null). */
 export type LaneRow = Readonly<Record<string, unknown>>;
 
-/** The columns the lanes read. */
+/** The columns the lanes read (`Page` is PAGE_COLUMN; a plain name here,
+ *  so a test that mocks part of @mantle/files can load this module). */
 export const LANE_COLUMNS = [
-  PAGE_COLUMN,
+  'Page',
   'Method',
   'Why',
   'Class',
