@@ -61,7 +61,7 @@ export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promis
   try {
     return await readNodeBodyRaw(node);
   } catch (err) {
-    // A file the parser gave up on (twice, or its sniffed reader's verdict)
+    // A file the parser gave up on (twice, or a reader's verdict)
     // indexes by its title here, as any unreadable file does; the full pass
     // records why (document_unreadable).
     if (isParserError(err) && !err.retryable) return node.title;
@@ -337,7 +337,9 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // file fallback: if no usable cached body, read the bytes (local disk for
   // uploads, OBJECT STORAGE for email attachments — see loadFileBytes) and
   // parse via the shared dispatcher (pdf/docx/xlsx → parser, text → UTF-8).
-  // On any parse failure (encrypted/scanned/corrupt) fall through to the title.
+  // A reader's verdict is thrown (document_unreadable), except a PDF's
+  // first one (encrypted or scanned): it falls through to the title, where
+  // the OCR and password paths start.
   if (node.type === 'file') {
     const loaded = await loadFileBytes(node);
     // A format the core has no text reader for: its own Reader's text, when
@@ -384,24 +386,16 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         // the document, and the caller records document_unreadable with the
         // parser's code. The title is never read as the document: a corrupt
         // .docx was indexed as its own name, and a DWG the CAD converter
-        // could not read got `no_parser` ("a renamed file").
-        // One exception: a first verdict where a recovery path starts from
-        // the title (recoversFromTitle): a PDF goes on to OCR and its
-        // passwords, an own Reader's type to the default text.
-        if (isParserError(err) && !(!err.retryable && !err.terminal && recoversFromTitle(route))) {
+        // could not read got `no_parser` ("a renamed file"). One exception:
+        // a PDF's first verdict goes on from the title to its OCR, encrypted
+        // and password paths.
+        if (isParserError(err) && (err.retryable || err.terminal || route !== 'pdf-parse')) {
           throw err;
         }
       }
     }
   }
   return node.title;
-}
-
-/** The routes whose failed read goes on from the title: a PDF (its OCR,
- *  encrypted and password paths) and an own Reader's type (the default
- *  text). Every other reader's verdict is document_unreadable. */
-function recoversFromTitle(route: string): boolean {
-  return route === 'pdf-parse' || route === 'pipeline';
 }
 
 /** The parser refused these bytes for the second time. */
@@ -718,7 +712,7 @@ export async function loadExtractableBody(
     try {
       rawBody = await readNodeBodyRaw(node);
     } catch (err) {
-      // A verdict on the document (terminal, or a sniffed reader's first
+      // A verdict on the document (terminal, or a reader's first
       // verdict: readNodeBodyRaw throws no other that is not retryable):
       // document_unreadable. A retryable error retries the extract.
       if (!isParserError(err) || err.retryable) throw err;

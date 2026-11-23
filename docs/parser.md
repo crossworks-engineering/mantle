@@ -1154,8 +1154,10 @@ What each caller does with them:
 - **The extractor** (`server/api/src/agent/extract/load-body.ts`): a
   retryable failure fails the extract job, and pg-boss retries it. A
   terminal one records the `document_unreadable` skip
-  (`data.extract_skipped`), so the drain does not pick it up again. `failed`
-  and `unsupported` index the title, as before.
+  (`data.extract_skipped`), so the drain does not pick it up again. `failed`,
+  `unsupported` and `bad_request` are verdicts too: `document_unreadable`
+  with the code, never the title read as the document. A PDF's first verdict
+  is the one exception: it goes on to OCR and its passwords.
 - **Side passes** (pictures, auto-table): only `busy` and `unavailable` fail
   the job; any other failure is logged and the text body is indexed anyway.
   DWG, DXF and DGN are the exception: their workbook, digest and picture come

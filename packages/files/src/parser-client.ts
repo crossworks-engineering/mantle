@@ -28,7 +28,8 @@
  *    process's memory.
  *  - `failed`, `unsupported` and `bad_request` are verdicts on the request:
  *    neither retried nor terminal here; each caller decides (the extractor
- *    indexes the title, a chat turn says the file could not be read).
+ *    records document_unreadable, a PDF going on to OCR first; a chat turn
+ *    says the file could not be read).
  *
  * A small concurrency cap per process (PARSER_CLIENT_CONCURRENCY, default 2)
  * keeps one busy brain process from filling the parser's queue alone. The

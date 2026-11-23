@@ -247,6 +247,41 @@ describe('loadExtractableBody: terminal skips', () => {
       expect(terminal()).toBe('document_unreadable');
     });
 
+    it.each([
+      ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      ['pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+      ['vsdx', 'application/vnd.ms-visio.drawing'],
+      ['odt', 'application/vnd.oasis.opendocument.text'],
+      ['html', 'text/html'],
+      ['dwf', 'model/vnd.dwf'],
+    ])('a reader verdict on a .%s is document_unreadable', async (ext, mime) => {
+      const filename = `quarterly-site-record.${ext}`;
+      h.loadFileBytes.mockResolvedValue({ bytes: Buffer.from('made up'), filename, ext, mime });
+      h.parseDocumentBytes.mockRejectedValueOnce(
+        new ParserError('unsupported', 'not readable', { retryable: false, terminal: false }),
+      );
+      const res = await run(fileNode(filename, mime));
+      expect(res.ok).toBe(false);
+      expect(terminal()).toBe('document_unreadable');
+    });
+
+    it("an own Reader's verdict is document_unreadable too, not the default text", async () => {
+      const { readerPassOf } = await import('@mantle/content/reader-passes');
+      vi.mocked(readerPassOf).mockResolvedValueOnce((async () => ({ status: 'ok' })) as never);
+      h.loadFileBytes.mockResolvedValue({
+        bytes: Buffer.from('ISO-10303-21; made up'),
+        filename: 'plant-model.ifc',
+        ext: 'ifc',
+        mime: 'application/octet-stream',
+      });
+      h.parseDocumentBytes.mockRejectedValueOnce(
+        new ParserError('failed', 'the step failed', { retryable: false, terminal: false }),
+      );
+      const res = await run(fileNode('plant-model.ifc', 'application/octet-stream'));
+      expect(res.ok).toBe(false);
+      expect(terminal()).toBe('document_unreadable');
+    });
+
     it('a PDF reader verdict keeps its own recovery path (OCR from the title)', async () => {
       h.loadFileBytes.mockResolvedValue({
         bytes: Buffer.from('%PDF-1.7 made up'),
