@@ -45,6 +45,10 @@ vi.mock('@mantle/tabledb', () => ({
   importMaxRows: () => 2_000_000,
   runTableSql: h.runTableSql,
   describeWorkbook: h.describeWorkbook,
+  // A file of few tabs: no overview, the answer as before
+  // (file-sql-overview.test.ts has the overview).
+  withTabScanner: (_abs: string, fn: (scan: { names: () => string[] }) => unknown) =>
+    fn({ names: () => [] }),
 }));
 
 import { file_sql } from './builtins-file-sql';

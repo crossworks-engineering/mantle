@@ -584,6 +584,33 @@ same rights and words as `file_sql`:
   200 with `kind: 'none'` and the words why. Both use one function
   (`fileSqlAnswer`, `packages/tools/src/builtins-file-sql.ts`).
 
+**A file of many tabs.** With no `sql`, a file of more than 30 tabs
+(`FILE_SQL_TABS_MAX`, `packages/tools/src/file-sql-overview.ts`) that has
+an index tab (`Tables`, column `Tab`: the `listedIn` of the shape
+`pages-v1`, a book's table tabs) answers with an overview. Each tab that
+`Tables` does not list (`Pages`, `Tables`, `File`, `Links`, `Link nodes`)
+is in `tabs` as before. The tabs that `Tables` lists are counted, not
+described: `listed` gives their count, the tab that lists them, a statement
+that finds one with a title word and a page of the file (`find`), and one
+that shows the columns of one (`columns`). Nothing is cut silently: the
+answer says how many tabs it leaves out and where they are. Any other file
+answers as before. The whole answer is read in one open of the file: a file
+of 2,441 tabs pays its schema once (about 0.6 s). On a real book of 1,000
+pages and 2,441 tabs, the answer went from 912,076 characters in 8 s to
+4,523 characters in 0.54 s. `file_processing` gives the count too
+(`database.tablesListed`).
+
+With the tabs `Links` and `Link nodes` (the Transformer `links`,
+[pipelines.md](pipelines.md), "Links"), the overview has `links`: what the
+two tabs are, each kind of link and of node with its count, the coverage
+lines (what the links cover and what could not be read), at most four
+statements written with ids of this file (nodes by words; what one node
+links to and what links to it; the rows of one node that link to another;
+a row node to its row), and, when the file has material nodes, that a
+material id is the specification number only and a grade is asked with
+LIKE on the row's text. A file of few tabs with links gets no link help: it
+answers as before.
+
 **Many files at once.** `file_sql` with `file_ids` (a list) or `folder` (a
 folder path, and `below: true` for its sub-folders) runs one read-only `sql` on
 each file's database, one file at a time, and gives the rows of all of them in

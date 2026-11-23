@@ -173,6 +173,8 @@ export type {
   DataFileRow,
   DataFileState,
   DataFilesResponse,
+  FileDatabaseLinks,
+  FileDatabaseListed,
   FileDatabaseReadBy,
   FileDatabaseResponse,
   FileDatabaseTab,

@@ -189,6 +189,10 @@ export type FileProcessing = {
     bytes: number | null;
     readBy: FileDatabaseReadBy | null;
     tables?: Array<{ name: string; rows: number }>;
+    /** A file of many tabs: the tabs left out of `tables`, how many, and
+     *  the tab that lists them (file_sql with no `sql` says how to read
+     *  one). */
+    tablesListed?: { count: number; in: string };
   } | null;
   /** An extract job in the queue now, or null. */
   job: FileJob | null;
