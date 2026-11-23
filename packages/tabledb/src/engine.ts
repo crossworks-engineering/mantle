@@ -627,8 +627,19 @@ export function scanTabColumns(
 }
 
 /** A file opened read only for many scans: one open, so a file of
- *  thousands of tabs reads its schema once (withTabScanner). */
+ *  thousands of tabs reads its schema once (withTabScanner; about 0.6 s at
+ *  2,441 tabs, at each open). */
 export type TabScanner = {
+  /** The names of every tab, in the file's order. */
+  names(): string[];
+  /** describeWorkbook of the tabs of these names, in the file's order. */
+  describe(names: ReadonlySet<string>): WorkbookTabRef[];
+  /** One `_meta` value, or undefined. */
+  meta(key: string): string | undefined;
+  /** The rows of one fixed statement of the caller's code, with its
+   *  parameters: never a statement a person or a model wrote (that goes
+   *  through runTableSql). */
+  all(sql: string, ...params: (string | number)[]): Record<string, unknown>[];
   /** The display names of a tab's columns, in their order; null when the
    *  file has no such tab. */
   columnsOf(tab: string): string[] | null;
@@ -651,6 +662,25 @@ export function withTabScanner<T>(absPath: string, fn: (scan: TabScanner) => T):
     `SELECT name, physical FROM _columns WHERE tab_id = ? ORDER BY position`,
   );
   const scanner: TabScanner = {
+    names() {
+      return db
+        .prepare(`SELECT name FROM _tabs ORDER BY position`)
+        .all()
+        .map((t) => String(t.name));
+    },
+    describe(names) {
+      return describeTabsIn(db, names);
+    },
+    meta(key) {
+      const table = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_meta'`)
+        .get();
+      const row = table ? db.prepare(`SELECT v FROM _meta WHERE k = ?`).get(key) : undefined;
+      return row ? String(row.v) : undefined;
+    },
+    all(sql, ...params) {
+      return db.prepare(sql).all(...params) as Record<string, unknown>[];
+    },
     columnsOf(tab) {
       const t = tabOf.get(tab);
       return t ? columnsOf.all(String(t.tab_id)).map((c) => String(c.name)) : null;
@@ -699,7 +729,7 @@ function readColumns(
   db: SqliteDb,
   tabId: string,
 ): { columns: Column[]; physicals: Map<string, string> } {
-  // SELECT * — pre-v2.1 files have no ref_json column; a missing field reads
+  // SELECT *: pre-v2.1 files have no ref_json column. a missing field reads
   // as undefined instead of erroring the whole open.
   const rows = db.prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`).all(tabId);
   const physicals = new Map<string, string>();
@@ -1015,68 +1045,76 @@ export function readDocMeta(
 export function describeWorkbook(absPath: string): WorkbookTabRef[] {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tabs = db
-      .prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position`)
-      .all();
-    const tabNameById = new Map(tabs.map((t) => [String(t.tab_id), String(t.name)]));
-    // col_id → display name across the whole file, for resolving ref edges.
-    const colNameById = new Map(
-      (
-        db.prepare(`SELECT col_id, name FROM _columns`).all() as unknown as {
-          col_id: string;
-          name: string;
-        }[]
-      ).map((c) => [c.col_id, c.name]),
-    );
-    return tabs.map((t) => {
-      const tabId = String(t.tab_id);
-      const physicalTable = String(t.physical_table);
-      // SELECT * — pre-v2.1 files have no ref_json column.
-      const cols = db
-        .prepare(`SELECT * FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
-        .all(String(t.tab_id));
-      const fts = db
-        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
-        .get(`${physicalTable}_fts`);
-      return {
-        tabId,
-        name: String(t.name),
-        viewName: String(t.view_name),
-        physicalTable,
-        ftsTable: fts ? `${physicalTable}_fts` : null,
-        rowCount: Number(db.prepare(`SELECT count(*) AS n FROM ${physicalTable}`).get()?.n ?? 0),
-        aggregates: Object.fromEntries(
-          (
-            db.prepare(`SELECT col_id, kind FROM _aggregates WHERE tab_id = ?`).all(tabId) as {
-              col_id: string;
-              kind: string;
-            }[]
-          ).map((a) => [String(a.col_id), String(a.kind) as AggregateKind]),
-        ),
-        columns: cols.map((c) => {
-          const out: WorkbookColumnRef = {
-            colId: String(c.col_id),
-            name: String(c.name),
-            physical: String(c.physical),
-            type: String(c.type) as ColumnType,
-          };
-          // A linked column is a value edge worth advertising to the
-          // schema/table_sql surface (matching profile.ts). A deleted source
-          // degrades to plain text: the edge simply stops being advertised
-          // (Excel-style).
-          if (c.ref_json != null) {
-            const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
-            const tab = tabNameById.get(ref.tabId);
-            const column = colNameById.get(ref.columnId);
-            if (tab && column) out.refersTo = { tab, column };
-          }
-          return out;
-        }),
-      };
-    });
+    return describeTabsIn(db);
   } finally {
     db.close();
   }
+}
+
+/** describeWorkbook on an open file: every tab, or the tabs of these names,
+ *  in the file's order. */
+function describeTabsIn(db: SqliteDb, names?: ReadonlySet<string>): WorkbookTabRef[] {
+  const tabs = db
+    .prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position`)
+    .all();
+  const tabNameById = new Map(tabs.map((t) => [String(t.tab_id), String(t.name)]));
+  // col_id → display name across the whole file, for resolving ref edges.
+  const colNameById = new Map(
+    (
+      db.prepare(`SELECT col_id, name FROM _columns`).all() as unknown as {
+        col_id: string;
+        name: string;
+      }[]
+    ).map((c) => [c.col_id, c.name]),
+  );
+  // The names of every tab, for its ref edges; the described ones only.
+  const described = names ? tabs.filter((t) => names.has(String(t.name))) : tabs;
+  return described.map((t) => {
+    const tabId = String(t.tab_id);
+    const physicalTable = String(t.physical_table);
+    // SELECT *: pre-v2.1 files have no ref_json column.
+    const cols = db
+      .prepare(`SELECT * FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
+      .all(String(t.tab_id));
+    const fts = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(`${physicalTable}_fts`);
+    return {
+      tabId,
+      name: String(t.name),
+      viewName: String(t.view_name),
+      physicalTable,
+      ftsTable: fts ? `${physicalTable}_fts` : null,
+      rowCount: Number(db.prepare(`SELECT count(*) AS n FROM ${physicalTable}`).get()?.n ?? 0),
+      aggregates: Object.fromEntries(
+        (
+          db.prepare(`SELECT col_id, kind FROM _aggregates WHERE tab_id = ?`).all(tabId) as {
+            col_id: string;
+            kind: string;
+          }[]
+        ).map((a) => [String(a.col_id), String(a.kind) as AggregateKind]),
+      ),
+      columns: cols.map((c) => {
+        const out: WorkbookColumnRef = {
+          colId: String(c.col_id),
+          name: String(c.name),
+          physical: String(c.physical),
+          type: String(c.type) as ColumnType,
+        };
+        // A linked column is a value edge worth advertising to the
+        // schema/table_sql surface (matching profile.ts). A deleted source
+        // degrades to plain text: the edge simply stops being advertised
+        // (Excel-style).
+        if (c.ref_json != null) {
+          const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
+          const tab = tabNameById.get(ref.tabId);
+          const column = colNameById.get(ref.columnId);
+          if (tab && column) out.refersTo = { tab, column };
+        }
+        return out;
+      }),
+    };
+  });
 }
 
 /** Registry-stats read: per-tab row/column counts WITHOUT loading rows. */

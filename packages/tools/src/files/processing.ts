@@ -89,16 +89,25 @@ function pagesOf(ocr: unknown): number | null {
 async function tablesOf(
   ownerId: string,
   fileId: string,
-): Promise<Array<{ name: string; rows: number }> | undefined> {
+): Promise<
+  | {
+      tables: Array<{ name: string; rows: number }>;
+      tablesListed?: { count: number; in: string };
+    }
+  | undefined
+> {
   try {
     const got = await fileSqlAnswer(
       ownerId,
       { fileId, sql: '', cap: undefined },
       { tableHint: false },
     );
-    return got.kind === 'describe'
-      ? got.output.tabs.map((t) => ({ name: t.name, rows: t.row_count }))
-      : undefined;
+    if (got.kind !== 'describe') return undefined;
+    const listed = got.output.listed;
+    return {
+      tables: got.output.tabs.map((t) => ({ name: t.name, rows: t.row_count })),
+      ...(listed ? { tablesListed: { count: listed.count, in: listed.in } } : {}),
+    };
   } catch {
     return undefined;
   }
@@ -165,7 +174,7 @@ export async function fileProcessing(
   // live from its database.
   const dbFiles = ready ? fileDbPaths(row.id, row.sha256) : null;
   const methods =
-    dbFiles && tables?.some((t) => t.name === PAGES_TAB)
+    dbFiles && tables?.tables.some((t) => t.name === PAGES_TAB)
       ? await bookPageMethodsOf(dbFiles.sqlite)
       : null;
   // Unread pages on a brain with no Scan reader: the status says why.
@@ -217,7 +226,7 @@ export async function fileProcessing(
           state: dbState.state,
           bytes: dbState.bytes,
           readBy: stamp ? { pipeline: stamp.pipeline_id, version: stamp.pipeline_version } : null,
-          ...(tables ? { tables } : {}),
+          ...(tables ?? {}),
         }
       : null,
     job: file!.status.job ?? null,

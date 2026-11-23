@@ -20,6 +20,36 @@ export type FileDatabaseTab = {
   columns: { name: string; type: string }[];
 };
 
+/** A file of many tabs (`file_sql` with no `sql`): the tabs that its index
+ *  tab lists are counted, not described in `tabs`. `how` says where they
+ *  are and how to read one. */
+export type FileDatabaseListed = {
+  /** How many tabs are left out of `tabs`. */
+  count: number;
+  /** The tab that lists them, e.g. "Tables". */
+  in: string;
+  how: string;
+  /** A statement that finds a tab in that list, with values of this file. */
+  find?: string;
+  /** A statement that shows the columns of one of them. */
+  columns: string;
+};
+
+/** How to follow the tabs Links and Link nodes, when a file has them
+ *  (docs/pipelines.md, "Links"). */
+export type FileDatabaseLinks = {
+  about: string;
+  /** Each kind of link, with its count. */
+  link_kinds: Record<string, number>;
+  /** Each kind of node, with its count. */
+  node_kinds: Record<string, number>;
+  /** What the links cover, and what could not be read. */
+  coverage: string[];
+  /** Statements that work on this file, with its own ids. */
+  sql: { for: string; sql: string }[];
+  materials?: string;
+};
+
 /** Which pipeline read the file into its database (its id), at which version (its
  *  stamp, docs/pipelines.md). Null for a database built before stamps. */
 export type FileDatabaseReadBy = { pipeline: string; version: string };
@@ -31,6 +61,8 @@ export type FileDatabaseResponse =
       title: string;
       description?: string;
       tabs: FileDatabaseTab[];
+      listed?: FileDatabaseListed;
+      links?: FileDatabaseLinks;
       hint: string;
       readBy: FileDatabaseReadBy | null;
     }

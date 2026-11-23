@@ -36,12 +36,15 @@ import {
   describeWorkbook,
   importMaxRows,
   runTableSql,
+  type WorkbookTabRef,
 } from '@mantle/tabledb';
+import type { FileDatabaseLinks, FileDatabaseListed } from '@mantle/client-types';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { UUID_RE, errorMessage } from '@mantle/std';
 import { FILE_ID_PRE } from './builtins-common';
 import { str } from './coerce';
 import { fileSqlManyAnswer, type ManyScope } from './file-sql-many';
+import { fileSqlOverview } from './file-sql-overview';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 
 const fail = (error: string): ToolHandlerResult => ({ ok: false, error });
@@ -187,6 +190,8 @@ export type FileSqlAnswer =
         title: string;
         description?: string;
         tabs: FileSqlTab[];
+        listed?: FileDatabaseListed;
+        links?: FileDatabaseLinks;
         hint: string;
       };
     }
@@ -206,8 +211,37 @@ export type FileSqlAnswer =
 
 type Step = ToolHandlerContext['step'];
 
-/** The tabs, columns and description of a file's database. */
+const DESCRIBE_HINT =
+  'Query a view with file_sql and `sql`: double-quote names, and double-quote FTS MATCH terms.';
+
+/** One tab, as the answer lists it. */
+const tabOut = (t: WorkbookTabRef): FileSqlTab => ({
+  name: t.name,
+  view: t.viewName,
+  ...(t.ftsTable ? { fts_table: t.ftsTable } : {}),
+  row_count: t.rowCount,
+  columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
+});
+
+/** The tabs, columns and description of a file's database: on a file of
+ *  many tabs, the overview (./file-sql-overview.ts). */
 async function describe(row: FileDataRow, abs: string, step: Step): Promise<FileSqlAnswer> {
+  const overview = fileSqlOverview(abs);
+  if (overview) {
+    step?.setOutput({ file_id: row.id, tabs: overview.tabs.length, listed: overview.listed.count });
+    return {
+      kind: 'describe',
+      output: {
+        file_id: row.id,
+        title: row.title,
+        ...(overview.description !== undefined ? { description: overview.description } : {}),
+        tabs: overview.tabs.map(tabOut),
+        listed: overview.listed,
+        ...(overview.links ? { links: overview.links } : {}),
+        hint: DESCRIBE_HINT,
+      },
+    };
+  }
   const tabs = describeWorkbook(abs);
   const meta = await runTableSql(abs, `SELECT v FROM _meta WHERE k = 'description'`, { cap: 1 });
   const description = meta.rows[0]?.[0];
@@ -218,14 +252,8 @@ async function describe(row: FileDataRow, abs: string, step: Step): Promise<File
       file_id: row.id,
       title: row.title,
       ...(typeof description === 'string' ? { description } : {}),
-      tabs: tabs.map((t) => ({
-        name: t.name,
-        view: t.viewName,
-        ...(t.ftsTable ? { fts_table: t.ftsTable } : {}),
-        row_count: t.rowCount,
-        columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
-      })),
-      hint: 'Query a view with file_sql and `sql`: double-quote names, and double-quote FTS MATCH terms.',
+      tabs: tabs.map(tabOut),
+      hint: DESCRIBE_HINT,
     },
   };
 }
@@ -257,6 +285,11 @@ async function query(
     },
   };
 }
+
+/** The two reads of one file's database, with no rights checks: for the
+ *  tests and a bench, which hold the file. Every caller goes through
+ *  fileSqlAnswer. */
+export { describe as fileSqlDescribe, query as fileSqlQuery };
 
 /** A read error in the caller's words: this tool's name, and no path. */
 function readError(err: unknown, abs: string): string {
@@ -344,7 +377,7 @@ export const file_sql: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Query a file with SQL',
   description:
-    'Run one read-only SELECT against an uploaded file\'s own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Project XML and drawings (tabs Texts, Symbols, Placements, Segments, Shapes) have one, built from the file\'s bytes. **For many files pass `file_ids` or `folder`; never loop or copy:** `sql` runs on each file, rows get `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads all rows as table `results`, e.g. sql `SELECT "Key" FROM "Placements"`, then_sql `SELECT "Key", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names; **always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`; for text use `file_read`.',
+    'Run one read-only SELECT on an uploaded file\'s database and return columns + rows; with no `sql`, its tabs, columns and description. Spreadsheets, CSVs, Project XML, drawings (tabs Texts, Symbols, Placements, Segments, Shapes) and some PDFs have one; a PDF\'s may hold `Links` and `Link nodes`: no `sql` says how to follow them. **For many files pass `file_ids` or `folder`; never loop or copy:** `sql` runs on each file, rows get `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads them as `results`, e.g. `SELECT "Key", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names; **always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`, for text `file_read`.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -1108,7 +1108,10 @@ hold; the cut of the body, with the core's warnings (`coverage:input-cut`);
 whether each pack is on; and for the piping pack, the pages with text
 and no class, and how many classes have each fact. A Transformer cannot set
 the file's description, so the lines are rows:
-`SELECT label FROM "Link nodes" WHERE kind = 'coverage'`.
+`SELECT label FROM "Link nodes" WHERE kind = 'coverage'`. On a file of many
+tabs, `file_sql` with no `sql` gives them, the kinds with their counts and
+a few statements with ids of the file ([file-ingestion.md](file-ingestion.md),
+"File databases", a file of many tabs).
 
 **Known limits.** No link names a page by a reference such as "see page 7":
 in a book of many specifications that number is the page of one class's own
