@@ -18,16 +18,12 @@
  * docs/files.md "Read in part"). A CSV is read as a stream, and a workbook
  * past the size check of ./sheet-read.ts too.
  */
-import { envNum } from '@mantle/config';
 import { FILE_TABS_WRITE, type PipelineStep } from '../../contract';
 import { readSpreadsheetGrid } from '../../../sheet-grid';
-import { RowKeeper } from '../../../sheet-to-grid';
+import { fileDbRowKeeper } from '../../../sheet-to-grid';
 
 export const step: PipelineStep = async (req, job) => {
-  const keep = new RowKeeper(
-    envNum('TABLE_IMPORT_MAX_ROWS'),
-    envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024,
-  );
+  const keep = fileDbRowKeeper();
   const tabs = await readSpreadsheetGrid(await job.bytes(), req.file?.ext ?? '', keep);
   const readCuts = keep.cut();
   return {

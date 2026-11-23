@@ -23,6 +23,7 @@
  * loads when an import actually happens.
  */
 import { parse as parseCsvString } from '@fast-csv/parse';
+import { envNum } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { LEGACY_SHEET_EXTS } from './slug';
 
@@ -280,6 +281,15 @@ export class RowKeeper {
       ? { database_rows: { ...value, limit: this.maxRows } }
       : { database_size: { ...value, limit: this.maxBytes } };
   }
+}
+
+/** The keeper of a file database read (the package `sheet`'s step): the
+ *  import ceiling and the read budget of this box. */
+export function fileDbRowKeeper(): RowKeeper {
+  return new RowKeeper(
+    envNum('TABLE_IMPORT_MAX_ROWS'),
+    envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024,
+  );
 }
 
 /** CSV/TSV text → grid, delimiter sniffed from the first line. Bytes are

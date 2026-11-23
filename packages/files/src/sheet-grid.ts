@@ -29,11 +29,15 @@ import {
  * Throws when a legacy file cannot be converted, so the caller reports a real
  * reason rather than "no tabular data found".
  */
-export async function readSpreadsheetGrid(buf: Buffer, ext: string): Promise<ParsedSheet[]> {
-  // The test the core's early cap uses too (readsAsDelimited), so a cap on
-  // delimited text holds for every name this reads as text.
-  if (readsAsDelimited(buf, ext)) return parseDelimited(buf.toString('utf-8'));
-  if (!LEGACY_SHEET_EXTS.has(ext.toLowerCase())) return parseSheetToGrid(buf);
+export async function readSpreadsheetGrid(
+  buf: Buffer,
+  ext: string,
+  keep?: RowKeeper,
+): Promise<ParsedSheet[]> {
+  // Bytes that are no workbook are delimited text, under any name but a
+  // legacy one (readsAsDelimited), read as a stream.
+  if (readsAsDelimited(buf, ext)) return parseDelimited(buf, keep);
+  if (!LEGACY_SHEET_EXTS.has(ext.toLowerCase())) return parseSheetToGrid(buf, keep);
   // Loaded here, not at the top: delimited text (a CSV job) never needs
   // exceljs, which both of these files load.
   const { convertLegacySheetToXlsx } = await import('./legacy-sheet');

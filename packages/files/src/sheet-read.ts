@@ -63,6 +63,7 @@
  * and the stream does not (sheet-read-stream.test.ts).
  */
 
+import { PassThrough } from 'node:stream';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { DocumentTooLargeError } from './read-limit';
@@ -173,11 +174,11 @@ export async function streamWorkbookRows(
   const files = ordered.files as Record<string, JSZip.JSZipObject>;
   for (const name of first) if (zip.files[name]) files[name] = zip.files[name]!;
   for (const [name, entry] of Object.entries(zip.files)) if (!(name in files)) files[name] = entry;
-  const input = ordered.generateNodeStream({
-    type: 'nodebuffer',
-    streamFiles: true,
-    compression: 'DEFLATE',
-  });
+  // JSZip's stream is not a node stream.Readable (the reader's test of its
+  // input), so it goes through a PassThrough.
+  const input = ordered
+    .generateNodeStream({ type: 'nodebuffer', streamFiles: true, compression: 'DEFLATE' })
+    .pipe(new PassThrough());
   const reader = new ExcelJS.stream.xlsx.WorkbookReader(input, {
     sharedStrings: 'cache',
     styles: 'cache',
