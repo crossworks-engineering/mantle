@@ -64,10 +64,10 @@ afterEach(() => {
 });
 
 describe('streamWorkbookRows', () => {
-  it('gives the cells the whole-workbook reader gives, on every golden workbook, but two kinds', async () => {
-    // The two kinds the stream leaves blank: a formula's cached error
-    // (#DIV/0!) and a formula's empty text. Both sides lose them here, and
-    // typed.xlsx, which has both, is checked for them below.
+  it('gives the cells the whole-workbook reader gives, on every golden workbook, but three kinds', async () => {
+    // The kinds the stream leaves blank: a formula's cached error (#DIV/0!)
+    // and a formula's empty text (both sides lose them here; typed.xlsx has
+    // them), and a merged cell past its first (sheets.xlsx, its Merged).
     const lossy = (sheets: Record<string, RawCell[][]>) =>
       Object.fromEntries(
         Object.entries(sheets).map(([k, rows]) => [
@@ -89,6 +89,13 @@ describe('streamWorkbookRows', () => {
       const whole = await loadRows(buf).catch(() => null);
       if (whole === null) continue; // not a workbook (png bytes), or no readable one
       const streamed = await streamRows(buf);
+      if (name === 'sheets.xlsx') {
+        // Its merged cells: the whole reader fills each, the stream the
+        // first only (the case below).
+        expect(streamed.Merged).not.toEqual(whole.Merged);
+        delete streamed.Merged;
+        delete whole.Merged;
+      }
       if (name === 'typed.xlsx') {
         expect(JSON.stringify(whole)).toContain('"#DIV/0!"');
         expect(JSON.stringify(streamed)).not.toContain('#DIV/0!');
