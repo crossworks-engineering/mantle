@@ -176,6 +176,14 @@ describe('streamWorkbookRows', () => {
     expect(keep.cut()).toMatchObject({ database_size: { read: 10, total: 11 } });
   });
 
+  it('a wide row of a new sheet pads only its own sheet', () => {
+    const keep = new RowKeeper(100, 100);
+    for (let i = 0; i < 10; i++) expect(keep.take(['a'], 1)).toBe(true); // 40
+    // Sheet 2 starts at its own width: 11 cells of 4, no padding of sheet 1.
+    expect(keep.take(Array.from({ length: 11 }, () => 'b'), 2)).toBe(true); // 44: 84
+    expect(keep.cut()).toBeNull();
+  });
+
   it('stops when the visit says so', async () => {
     let seen = 0;
     await streamWorkbookRows(await workbook(500), () => ++seen < 10);
@@ -303,6 +311,8 @@ describe('markup read whole as a stream', () => {
     const { value, cuts } = await sink(async () => parseMarkupBytes(Buffer.from(html), 'html'));
     expect(Buffer.byteLength(value)).toBeLessThanOrEqual(limit);
     expect(cuts.markup_bytes).toMatchObject({ what: 'bytes', total: html.length, limit });
+    // The read stops in the second window: its start is what was read whole.
+    expect((cuts.markup_bytes as { read: number }).read).toBeLessThan(limit);
   }, 60_000);
 
   it('an XML past one window is read through one parser, to its end', async () => {

@@ -276,8 +276,9 @@ function xmlRead(windows: Iterable<Window>, maxBytes: number): MarkupRead | null
     return null;
   }
   end();
-  const capped = out > maxBytes;
-  return { text: headBytes(lines.join('\n'), maxBytes), bytes: capped ? start : bytes, capped };
+  const text = lines.join('\n');
+  const capped = Buffer.byteLength(text) > maxBytes;
+  return { text: headBytes(text, maxBytes), bytes: capped ? start : bytes, capped };
 }
 
 /** HTML windows to text, a window at a time. */

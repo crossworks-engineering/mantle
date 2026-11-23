@@ -115,7 +115,7 @@ export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<P
       maxCols: GRID_MAX_COLS_PER_SHEET,
     });
     out.push(
-      ...parseSheet(ws.name, keep ? rows.filter((r) => keep.take(r)) : (rows as unknown[][])),
+      ...parseSheet(ws.name, keep ? rows.filter((r) => keep.take(r, ws)) : (rows as unknown[][])),
     );
   }
   return out;
