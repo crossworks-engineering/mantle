@@ -158,6 +158,11 @@ export async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
  * `visit` takes each row's cells (column 1 first, trailing blanks dropped)
  * and its sheet's name; it returns `false` to stop the read (the rest of the
  * file is not inflated).
+ *
+ * What the stream gives that the whole reader does not (the golden files,
+ * sheet-read-stream.test.ts): a merged cell's value in its first cell only,
+ * and no value for a formula whose cached result is an error (#DIV/0!) or
+ * an empty text. So the whole reader stays under the size check.
  */
 export async function streamWorkbookRows(
   buf: Buffer,
@@ -191,7 +196,12 @@ export async function streamWorkbookRows(
     for await (const row of ws as unknown as AsyncIterable<ExcelJS.Row>) {
       const values = row.values as ExcelJS.CellValue[];
       const cells: RawCell[] = [];
-      for (let c = 1; c < values.length; c++) cells.push(rawCellValue(values[c] ?? null));
+      for (let c = 1; c < values.length; c++) {
+        const v = rawCellValue(values[c] ?? null);
+        // The stream reader reads a formula's cached error (#DIV/0!) as a
+        // number, NaN: no value, as a blank.
+        cells.push(typeof v === 'number' && Number.isNaN(v) ? null : v);
+      }
       while (cells.length > 0 && cells[cells.length - 1] === null) cells.pop();
       if (cells.length === 0) continue;
       if (!visit(name, cells)) {
