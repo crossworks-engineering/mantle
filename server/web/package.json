@@ -70,6 +70,7 @@
     "ocr:rescan": "bun --env-file=./.env.local scripts/ocr-rescan.ts",
     "blank:scans": "bun --env-file=./.env.local scripts/blank-scans.ts",
     "dwg:reindex": "bun --env-file=./.env.local scripts/dwg-reindex.ts",
+    "files:coverage": "bun --env-file=./.env.local scripts/files-coverage.ts",
     "pipeline:reread": "bun --env-file=./.env.local scripts/pipeline-reread.ts",
     "pipeline:compare": "bun --env-file=./.env.local scripts/pipeline-compare.ts",
     "part:repair": "bun --env-file=./.env.local scripts/part-repair.ts",

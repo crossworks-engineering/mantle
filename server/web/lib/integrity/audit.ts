@@ -28,6 +28,7 @@ import {
 import { sql, type SQL } from 'drizzle-orm';
 
 import { abandonedTraceSql } from '../journey';
+import { fileCoverageChecks } from './file-coverage';
 import { fileDatabaseChecks } from './file-dbs-check';
 import { rowsOf } from './sql-util';
 import type { AuditCheck, AuditReport, AuditSeverity } from '@mantle/client-types/types/integrity';
@@ -508,6 +509,8 @@ export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
   const checks = await readOnlyTransaction((tx) => runChecks(tx, ownerId));
   // After it: this one reads a disk as well, with its SQL in its own transaction.
   checks.push(...(await fileDatabaseChecks(ownerId)));
+  // The file types not read in full (the coverage check), the same way.
+  checks.push(...(await fileCoverageChecks(ownerId)));
   return {
     generatedAt: new Date().toISOString(),
     checks,
