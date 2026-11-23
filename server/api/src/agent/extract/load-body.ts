@@ -41,7 +41,7 @@ import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '
 import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { readerPassOf, readerTextOf, standingReaderText } from '@mantle/content/reader-passes';
 import { withReadCutSink } from '@mantle/files/read-cut-sink';
-import { isHollowFilenameBody } from '../extractor-parse';
+import { isHollowFilenameBody, isSniffedRoute } from '../extractor-parse';
 import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import {
@@ -61,9 +61,10 @@ export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promis
   try {
     return await readNodeBodyRaw(node);
   } catch (err) {
-    // A file the parser gave up on indexes by its title here, as any
-    // unreadable file does; the full pass records why (document_unreadable).
-    if (isParserError(err) && err.terminal) return node.title;
+    // A file the parser gave up on (twice, or its sniffed reader's verdict)
+    // indexes by its title here, as any unreadable file does; the full pass
+    // records why (document_unreadable).
+    if (isParserError(err) && !err.retryable) return node.title;
     throw err;
   }
 }
@@ -385,10 +386,18 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         //  - terminal (the SECOND time for the same bytes): the caller
         //    records the document_unreadable skip.
         // DWG/DXF/DGN behave the same way: their CAD exchange is the parser's.
-        if (isParserError(err) && (err.retryable || err.terminal)) throw err;
+        // - any verdict of a reader that sniffs its own bytes (CAD, DWF, the
+        //   legacy sheets: isSniffedRoute): its bytes passed the sniff, so
+        //   the title would be read as "not this format" (`no_parser`, a
+        //   renamed file); the caller records document_unreadable with the
+        //   parser's code instead.
+        if (isParserError(err) && (err.retryable || err.terminal || isSniffedRoute(route))) {
+          throw err;
+        }
         // The reader refused the document (corrupt, encrypted, not what its
         // name says) or no reader takes it: the step recorded the error; fall
-        // through to the title, as before.
+        // through to the title, as before (a PDF's own recovery paths, OCR
+        // and passwords, start from the title).
       }
     }
   }
@@ -406,7 +415,12 @@ function unreadableHint(code: string): string {
   if (code === 'too_large')
     return 'The document is too large to read (past a size limit of the parser).';
   if (code === 'timeout') return 'Reading the document took longer than the parser allows, twice.';
-  return 'Reading the document ran the parser out of memory (or crashed it), twice.';
+  if (code === 'crashed') {
+    return 'Reading the document ran the parser out of memory (or crashed it), twice.';
+  }
+  // A reader's verdict on the first read (`failed`, `unsupported`): no try
+  // again changes it, so no "twice".
+  return 'The reader could not read the document.';
 }
 
 /**
@@ -702,7 +716,10 @@ export async function loadExtractableBody(
     try {
       rawBody = await readNodeBodyRaw(node);
     } catch (err) {
-      if (!isTerminalParserError(err)) throw err;
+      // A verdict on the document (terminal, or a sniffed reader's first
+      // verdict: readNodeBodyRaw throws no other that is not retryable):
+      // document_unreadable. A retryable error retries the extract.
+      if (!isParserError(err) || err.retryable) throw err;
       return unreadable(err);
     }
   }

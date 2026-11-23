@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   loadFileBytes: vi.fn(),
   tryUnlockPdf: vi.fn(),
   documentWorkerPrefersNative: vi.fn(),
+  parseDocumentBytes: vi.fn(),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -45,6 +46,12 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runtime/agent')>();
   return { ...actual, documentWorkerPrefersNative: h.documentWorkerPrefersNative };
 });
+// The parser's reads: the real one unless a test sets its own answer.
+vi.mock('@mantle/files', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files')>();
+  h.parseDocumentBytes.mockImplementation(actual.parseDocumentBytes);
+  return { ...actual, parseDocumentBytes: h.parseDocumentBytes };
+});
 vi.mock('./file-bytes', () => ({ loadFileBytes: h.loadFileBytes, tryUnlockPdf: h.tryUnlockPdf }));
 vi.mock('./images', () => ({
   ocrIngestPdfNode: h.ocrIngestPdfNode,
@@ -61,7 +68,7 @@ vi.mock('@mantle/content/reader-passes', () => ({
   standingReaderText: vi.fn(async () => null),
 }));
 
-import { defaultFileText } from '@mantle/files';
+import { defaultFileText, ParserError } from '@mantle/files';
 import { loadExtractableBody } from './load-body';
 
 const WORKER = { id: 'w1', slug: 'extractor', params: {}, apiKeyId: null };
@@ -182,6 +189,65 @@ describe('loadExtractableBody: terminal skips', () => {
     expect(res.ok).toBe(false);
     expect(terminal()).toBe('no_parser');
     expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+  });
+
+  describe('a reader that sniffs its own bytes fails on bytes of its format', () => {
+    const dwg = () => {
+      h.loadFileBytes.mockResolvedValue({
+        bytes: Buffer.concat([Buffer.from('AC1032'), Buffer.alloc(200)]),
+        filename: 'site-layout.dwg',
+        ext: 'dwg',
+        mime: 'image/vnd.dwg',
+      });
+      return fileNode('site-layout.dwg', 'image/vnd.dwg');
+    };
+
+    it('records document_unreadable with the code, never a renamed file', async () => {
+      h.parseDocumentBytes.mockRejectedValueOnce(
+        new ParserError('failed', 'ezdwg could not convert the drawing', {
+          retryable: false,
+          terminal: false,
+        }),
+      );
+      const res = await run(dwg());
+      expect(res.ok).toBe(false);
+      expect(terminal()).toBe('document_unreadable');
+      const details = (
+        h.recordTerminalSkip.mock.calls[0]?.[0] as { details: Record<string, unknown> }
+      ).details;
+      expect(details.parser_code).toBe('failed');
+      expect(details.hint).toContain('The reader could not read the document.');
+      expect(details.hint).not.toContain('twice');
+    });
+
+    it('a busy parser still retries the extract', async () => {
+      const busy = new ParserError('busy', 'busy', { retryable: true, terminal: false });
+      h.parseDocumentBytes.mockRejectedValueOnce(busy);
+      await expect(run(dwg())).rejects.toBe(busy);
+      expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+    });
+
+    it('a PDF reader verdict keeps its own recovery path (OCR from the title)', async () => {
+      h.loadFileBytes.mockResolvedValue({
+        bytes: Buffer.from('%PDF-1.7 made up'),
+        filename: 'statement.pdf',
+        ext: 'pdf',
+        mime: 'application/pdf',
+      });
+      h.parseDocumentBytes.mockRejectedValueOnce(
+        new ParserError('failed', 'a password is needed', { retryable: false, terminal: false }),
+      );
+      h.ocrIngestPdfNode.mockResolvedValue({
+        text: null,
+        encrypted: true,
+        bytesMissing: false,
+        rasterizeError: null,
+        ran: true,
+      });
+      await run(fileNode('statement.pdf', 'application/pdf'));
+      expect(h.ocrIngestPdfNode).toHaveBeenCalled();
+      expect(terminal()).not.toBe('document_unreadable');
+    });
   });
 
   it('stamps a body under the minimum terminal', async () => {

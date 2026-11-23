@@ -22,6 +22,7 @@ import {
   isValidFact,
   isValidRelation,
   isHollowFilenameBody,
+  isSniffedRoute,
   parseExtractorOutput,
   parseOccurredAt,
   sanitiseFactEntities,
@@ -486,6 +487,17 @@ describe('parseOccurredAt + episodic occurred_at', () => {
       occurred_at: '2026-05-17',
     } as unknown as ExtractedFact);
     expect(fact.occurredAt).toBeUndefined(); // non-episodic → no event date
+  });
+});
+
+describe('isSniffedRoute', () => {
+  it('names the readers that sniff their own bytes', () => {
+    for (const route of ['dwg', 'dxf', 'dgn', 'dwf', 'legacy-sheet']) {
+      expect(isSniffedRoute(route)).toBe(true);
+    }
+    for (const route of ['pdf-parse', 'mammoth', 'anydoc', 'exceljs', 'none', 'pipeline']) {
+      expect(isSniffedRoute(route)).toBe(false);
+    }
   });
 });
 

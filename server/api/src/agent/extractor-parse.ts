@@ -343,14 +343,23 @@ export function isHollowFilenameBody(opts: {
   // routing wins over claimed mime throughout).
   // The legacy sheets too: a .xls/.xlsb anydoc cannot convert reads as ''
   // (legacy-sheet.ts), and the filename must not index as the workbook.
-  if (
-    opts.parserRoute === 'dwf' ||
-    isCadExt(opts.parserRoute) ||
-    opts.parserRoute === 'legacy-sheet'
-  ) {
+  if (isSniffedRoute(opts.parserRoute)) {
     return opts.rawBody.trim() === opts.title.trim();
   }
   if (opts.parserRoute !== 'none') return false;
   if (opts.mime.startsWith('image/')) return false;
   return opts.rawBody.trim() === opts.title.trim();
+}
+
+/**
+ * The routes whose reader sniffs its own bytes and gives '' for bytes that
+ * are not its format: DWF, DWG, DXF, DGN and the legacy sheets. For these an
+ * empty read means "not this format" (the `no_parser` skip), so a reader
+ * that FAILED on bytes of its format must say so, never fall back to the
+ * title: the extractor records that as `document_unreadable` (failed, with
+ * the parser's code), not as a renamed file. Other routes keep their own
+ * recovery paths (OCR and passwords for a PDF) for a failed read.
+ */
+export function isSniffedRoute(parserRoute: string): boolean {
+  return parserRoute === 'dwf' || isCadExt(parserRoute) || parserRoute === 'legacy-sheet';
 }
