@@ -45,8 +45,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     user.id,
     { fileId: id, sql: body.sql ?? '', cap: body.max_rows },
     // A person may use Tables, so the words may point at an old one. No key
-    // reaches this route: it has no /api/v1 alias.
-    { tableHint: true },
+    // reaches this route: it has no /api/v1 alias. No overview: a person
+    // picks a tab from the list, so it holds every tab.
+    { tableHint: true, overview: false },
   );
   switch (got.kind) {
     case 'describe':

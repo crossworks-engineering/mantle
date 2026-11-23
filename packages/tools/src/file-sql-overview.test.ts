@@ -6,7 +6,9 @@
  *  - many tabs: the overview, the count, the pointer to Tables, no entry
  *    for a listed tab, and every statement of the answer runs through the
  *    read-only runner and gives rows;
- *  - few tabs, or no Tables index: no overview (the answer as before);
+ *  - few tabs with Links tabs: every tab and the link help, no listed part;
+ *  - few tabs and no Links tabs, or no overview asked (the Data view): the
+ *    answer as before;
  *  - no Links tabs: no link help;
  *  - the answer of the fixture stays under a size bound.
  */
@@ -86,8 +88,8 @@ const row = {
   title: 'spec.pdf',
   data: {},
 };
-const describeOf = async (abs: string) => {
-  const got = await fileSqlDescribe(row, abs, undefined);
+const describeOf = async (abs: string, overview = true) => {
+  const got = await fileSqlDescribe(row, abs, undefined, overview);
   if (got.kind !== 'describe') throw new Error(`expected describe, got ${got.kind}`);
   return got.output;
 };
@@ -165,13 +167,28 @@ describe('file_sql with no sql, the overview', () => {
     expect(out).not.toHaveProperty('links');
   });
 
-  it('few tabs: no overview, the answer as before', async () => {
+  it('few tabs with Links tabs: every tab, the link help, no listed part', async () => {
     const abs = await fileDb(sheetsWith(0), true);
-    expect(fileSqlOverview(abs)).toBeNull();
     const out = await describeOf(abs);
     expect(out).not.toHaveProperty('listed');
-    expect(out).not.toHaveProperty('links');
     expect(out.tabs).toHaveLength(specSheets().length + 2);
+    expect(Object.keys(out)).toEqual(['file_id', 'title', 'description', 'tabs', 'links', 'hint']);
+    for (const s of out.links!.sql) expect(await rowsOf(abs, s.sql), s.sql).not.toHaveLength(0);
+  });
+
+  it('few tabs and no Links tabs: no overview, byte for byte the answer as before', async () => {
+    const abs = await fileDb(sheetsWith(0), false);
+    expect(fileSqlOverview(abs)).toBeNull();
+    expect(JSON.stringify(await describeOf(abs))).toBe(
+      JSON.stringify(await describeOf(abs, false)),
+    );
+  });
+
+  it('with no overview (the Data view): every tab of a file of many tabs, as before', async () => {
+    const abs = await fileDb(sheetsWith(extra), true);
+    const out = await describeOf(abs, false);
+    expect(Object.keys(out)).toEqual(['file_id', 'title', 'description', 'tabs', 'hint']);
+    expect(out.tabs).toHaveLength(specSheets().length + extra + 2);
   });
 
   it('many tabs and no Tables index: no overview', async () => {

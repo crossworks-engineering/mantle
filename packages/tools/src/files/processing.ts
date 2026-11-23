@@ -100,7 +100,7 @@ async function tablesOf(
     const got = await fileSqlAnswer(
       ownerId,
       { fileId, sql: '', cap: undefined },
-      { tableHint: false },
+      { tableHint: false, overview: true },
     );
     if (got.kind !== 'describe') return undefined;
     const listed = got.output.listed;

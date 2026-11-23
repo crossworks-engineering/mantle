@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 
 describe('POST /api/files/files/:id/database', () => {
-  it('with no sql asks for the tabs, and answers them with kind describe', async () => {
+  it('with no sql asks for every tab (no overview), and answers them with kind describe', async () => {
     h.answer.mockResolvedValue({
       kind: 'describe',
       output: { file_id: FILE, title: 'v.csv', tabs: [], hint: 'h' },
@@ -67,7 +67,7 @@ describe('POST /api/files/files/:id/database', () => {
     expect(h.answer).toHaveBeenCalledWith(
       OWNER,
       { fileId: FILE, sql: '', cap: undefined },
-      { tableHint: true },
+      { tableHint: true, overview: false },
     );
     expect(h.readBy).toHaveBeenCalledWith(OWNER, FILE);
   });
@@ -99,7 +99,7 @@ describe('POST /api/files/files/:id/database', () => {
     expect(h.answer).toHaveBeenCalledWith(
       OWNER,
       { fileId: FILE, sql: 'SELECT 1 AS a', cap: 5 },
-      { tableHint: true },
+      { tableHint: true, overview: false },
     );
   });
 
@@ -142,6 +142,9 @@ describe('POST /api/files/files/:id/database', () => {
     h.answer.mockResolvedValue({ kind: 'none', message: 'Its rows are in Table x.' });
     const { POST } = await import('./files/[id]/database/route');
     await answered(POST(post({}), ctx));
-    expect(h.answer).toHaveBeenCalledWith(OWNER, expect.anything(), { tableHint: true });
+    expect(h.answer).toHaveBeenCalledWith(OWNER, expect.anything(), {
+      tableHint: true,
+      overview: false,
+    });
   });
 });
