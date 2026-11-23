@@ -589,14 +589,15 @@ same rights and words as `file_sql`:
 (`packages/tools/src/file-sql-overview.ts`). The Data view still gets every
 tab and no part: its route asks `fileSqlAnswer` with `overview: false`.
 
-- `listed`: a file of more than 30 tabs (`FILE_SQL_TABS_MAX`) that has an
-  index tab (`Tables`, column `Tab`: the `listedIn` of the shape `pages-v1`,
-  a book's table tabs) counts the tabs that `Tables` lists instead of
-  describing them. Each tab that `Tables` does not list (`Pages`, `Tables`,
+- `listed`: a file of more than 30 tabs (`FILE_SQL_TABS_MAX`) of the shape
+  `pages-v1` (its needed tab `Pages`) with its index tab (`Tables`, column
+  `Tab`: the shape's `listedIn`, a book's table tabs) counts the tabs that
+  `Tables` lists instead of describing them. Each tab that `Tables` does not list (`Pages`, `Tables`,
   `File`, `Links`, `Link nodes`) is in `tabs` as before. `listed` gives the
   count, the tab that lists them, a statement that finds one with a title
-  word and a page of the file (`find`), and one that shows the columns of
-  one (`columns`). Nothing is cut silently: the answer says how many tabs it
+  word and a page of the file and gives its view (`find`, a join on
+  `_tabs`: a query names a tab by its view, which can differ from its
+  name), and one that shows the columns of one (`columns`). Nothing is cut silently: the answer says how many tabs it
   leaves out and where they are. `file_processing` gives the count too
   (`database.tablesListed`).
 - `links`: any file with the tabs `Links` and `Link nodes` and their columns

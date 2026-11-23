@@ -85,9 +85,12 @@ type Listed = {
   word: string | undefined;
 };
 
-/** The tabs the index tab lists, or null: no index, or it lists none. */
+/** The tabs the index tab lists, or null: not a file of the shape
+ *  pages-v1 (its needed tabs, as Pages), no index, or it lists none. */
 function listedTabsOf(scan: TabScanner, names: readonly string[]): Listed | null {
-  const index = SHAPES['pages-v1'].listedIn!;
+  const shape = SHAPES['pages-v1'];
+  if (!shape.tabs.every((t) => !t.needed || hasColumns(scan, t.name, t.neededColumns))) return null;
+  const index = shape.listedIn!;
   const indexColumns = scan.columnsOf(index.tab) ?? [];
   if (!indexColumns.includes(index.column)) return null;
   const shown = (SHAPES['pages-v1'].tabs.find((t) => t.name === index.tab)?.columns ?? []).filter(
@@ -121,22 +124,26 @@ function listedOf(scan: TabScanner, listed: Listed): FileDatabaseListed {
   const n = listed.names.size;
   const example = { first: listed.first, word: listed.word };
   const pages = example.first.Pages;
+  // A query names a tab by its view, which can differ from its name (a
+  // view name is made unique in the file): `find` gives it from `_tabs`.
   const where = [
     ...(shown.includes('Title') && example.word
-      ? [`"Title" LIKE ${lit(`%${example.word}%`)}`]
+      ? [`t."Title" LIKE ${lit(`%${example.word}%`)}`]
       : []),
     ...(shown.includes('Pages') && typeof pages === 'string' && pages !== ''
-      ? [`"Pages" = ${lit(pages)}`]
+      ? [`t."Pages" = ${lit(pages)}`]
       : []),
   ].join(' OR ');
   const tab = String(example.first[index.column]);
+  const indexView = q(viewOf(scan, index.tab) ?? index.tab);
   return {
     count: n,
     in: index.tab,
-    how: `${count(n)} more tabs are not described here: the tab ${q(index.tab)} lists them, one row each (${shown.map(q).join(', ')}), ${q(index.column)} being the tab's name. Query a tab by that name.`,
-    ...(where
-      ? { find: `SELECT ${shown.map(q).join(', ')} FROM ${q(index.tab)} WHERE ${where}` }
-      : {}),
+    how: `${count(n)} more tabs are not described here: the tab ${q(index.tab)} lists them, one row each (${shown.map(q).join(', ')}), ${q(index.column)} being the tab's name. Query a tab by its view, which can differ from its name: \`find\` gives it (_tabs: name, view_name).`,
+    find:
+      `SELECT ${shown.map((c) => `t.${q(c)}`).join(', ')}, v.view_name AS "View" FROM ${indexView} t ` +
+      `JOIN _tabs v ON v.name = t.${q(index.column)}` +
+      (where ? ` WHERE ${where}` : ' LIMIT 20'),
     columns: `SELECT * FROM ${q(viewOf(scan, tab) ?? tab)} LIMIT 1`,
   };
 }

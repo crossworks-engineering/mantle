@@ -10,6 +10,9 @@
  *  - few tabs and no Links tabs, or no overview asked (the Data view): the
  *    answer as before;
  *  - no Links tabs: no link help;
+ *  - no Pages tab (a workbook with a sheet named Tables): no overview;
+ *  - quotes in names and titles, and a view that is not its tab's name:
+ *    the shown statements run;
  *  - the answer of the fixture stays under a size bound.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -63,6 +66,26 @@ async function linkSheets(sheets: ParsedSheet[]) {
   const input = (out.calls![0] as { input: { tabs: ParsedSheet[]; ftsSkipColumns: string[] } })
     .input;
   return input;
+}
+
+/** A listed tab whose name has both quote characters and a lead underscore,
+ *  so its view (no lead underscore) is not its name; first in Tables, on a
+ *  page of class K2, with a code. */
+const ODD = `_Odd 'quoted' "tab" p2`;
+const ODD_VIEW = `Odd 'quoted' "tab" p2`;
+function oddSheets(): ParsedSheet[] {
+  const sheets = sheetsWith(FILE_SQL_TABS_MAX);
+  sheets.find((s) => s.name === 'Tables')!.rows.unshift([ODD, `It's a "quoted" title`, '2', 1]);
+  sheets.push({
+    name: ODD,
+    columns: [
+      { name: 'Page', type: 'number' },
+      { name: 'ITEM CODE', type: 'text' },
+      { name: 'DESCRIPTION', type: 'text' },
+    ],
+    rows: [[2, 'ZX30003', `BOLT "B" it's`]],
+  });
+  return sheets;
 }
 
 let n = 0;
@@ -189,6 +212,33 @@ describe('file_sql with no sql, the overview', () => {
     const out = await describeOf(abs, false);
     expect(Object.keys(out)).toEqual(['file_id', 'title', 'description', 'tabs', 'hint']);
     expect(out.tabs).toHaveLength(specSheets().length + extra + 2);
+  });
+
+  it('quotes in a tab name and a title, and a view that is not the name: the shown statements run', async () => {
+    const abs = await fileDb(oddSheets(), true);
+    const out = await describeOf(abs);
+    expect(out.listed!.how).toContain('Query a tab by its view');
+    // `find` gives the view of each tab it finds; that view reads.
+    const found = await runTableSql(abs, out.listed!.find);
+    const at = found.columns.indexOf('View');
+    const odd = found.rows.find((r) => r[found.columns.indexOf('Tab')] === ODD);
+    expect(odd?.[at]).toBe(ODD_VIEW);
+    expect(await rowsOf(abs, `SELECT * FROM "${ODD_VIEW.replaceAll('"', '""')}"`)).toHaveLength(1);
+    // The first listed tab is the odd one: its columns statement reads it.
+    expect(out.listed!.columns).toBe(`SELECT * FROM "Odd 'quoted' ""tab"" p2" LIMIT 1`);
+    expect(await rowsOf(abs, out.listed!.columns)).toHaveLength(1);
+    // The link help's row example is the odd tab's row: its view, quoted.
+    const toRow = out.links!.sql[3]!;
+    expect(toRow.for).toContain(`row:${ODD}#1 is row 1 of its tab`);
+    expect(toRow.sql).toBe(
+      `SELECT * FROM "Odd 'quoted' ""tab"" p2" ORDER BY _pos LIMIT 1 OFFSET 0`,
+    );
+    for (const x of out.links!.sql) expect(await rowsOf(abs, x.sql), x.sql).not.toHaveLength(0);
+  });
+
+  it('many tabs and an index tab but no Pages tab (a workbook): no overview', async () => {
+    const sheets = sheetsWith(extra).filter((s) => s.name !== 'Pages');
+    expect(fileSqlOverview(await fileDb(sheets, false))).toBeNull();
   });
 
   it('many tabs and no Tables index: no overview', async () => {

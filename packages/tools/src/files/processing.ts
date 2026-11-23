@@ -83,10 +83,11 @@ function pagesOf(ocr: unknown): number | null {
 }
 
 /** What a pipeline extracted into the file's database: its tabs and their
- *  rows, the Data view's own describe (file_sql with no `sql`: the same
- *  rights). Undefined when it is refused or cannot be read: the rest of the
- *  answer stands. One file only; never a list. */
-async function tablesOf(
+ *  rows, file_sql's own describe (with no `sql`: the same rights). A file of
+ *  many tabs gives the tabs it describes, and `tablesListed` counts the rest
+ *  (its overview). Undefined when it is refused or cannot be read: the rest
+ *  of the answer stands. One file only; never a list. */
+export async function tablesOf(
   ownerId: string,
   fileId: string,
 ): Promise<

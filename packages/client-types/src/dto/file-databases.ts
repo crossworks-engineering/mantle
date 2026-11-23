@@ -29,8 +29,9 @@ export type FileDatabaseListed = {
   /** The tab that lists them, e.g. "Tables". */
   in: string;
   how: string;
-  /** A statement that finds a tab in that list, with values of this file. */
-  find?: string;
+  /** A statement that finds a tab in that list, with values of this file,
+   *  and gives its view: a query names a tab by its view. */
+  find: string;
   /** A statement that shows the columns of one of them. */
   columns: string;
 };
