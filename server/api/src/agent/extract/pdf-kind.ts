@@ -10,18 +10,19 @@
  * text sample the parser cut (about 1,500 characters). Nothing when the use
  * is off. The router's step builds it in the parser; this asks.
  *
- * The page types (pdfPageDeciderOf, plan page c607711a, M3 in shadow): one
- * ask a page with its picture, at the same place and under the same guard,
- * and only on a box whose operator set `uses.pdf_kind.pages: true` on a
- * decider pinned to PDF_PAGE_MODEL.
+ * The page types (pdfPageDeciderOf, plan page c607711a, M3 in shadow, M4
+ * live): one ask a page with its picture, at the same place and under the
+ * same guard, and only on a box whose operator set
+ * `uses.pdf_kind.pages: true`. Routing by them is live only with
+ * `uses.pdf_kind.mode: 'live'` too.
  */
 import {
   DecideBatch,
-  PDF_PAGE_MODEL,
   PDF_PAGE_QUESTIONS,
   decidePdfKind,
   decidePdfPageKind,
-  pdfPageAsksOn,
+  pdfPageUseOf,
+  type PdfPageUse,
 } from '@mantle/decisions';
 import { llmWorkAllowed } from '@mantle/db';
 import { answerKey, bytesKey, keepAnswer, keptAnswer } from '@mantle/db/answer-cache';
@@ -57,7 +58,7 @@ export const PAGE_ASK_FAILURES_STOP = 3;
 /** What the page asks need, in a test stand-ins. */
 export type PdfPageDeciderDeps = {
   allowed(nodeId: string): Promise<boolean>;
-  on(ownerId: string): Promise<boolean>;
+  use(ownerId: string): Promise<PdfPageUse | null>;
   decide: typeof decidePdfPageKind;
   dayCap(): number;
   today(ownerId: string): Promise<number>;
@@ -65,7 +66,7 @@ export type PdfPageDeciderDeps = {
 
 const DEPS: PdfPageDeciderDeps = {
   allowed: (nodeId) => llmWorkAllowed(nodeId),
-  on: (ownerId) => pdfPageAsksOn(ownerId),
+  use: (ownerId) => pdfPageUseOf(ownerId),
   decide: (...a) => decidePdfPageKind(...a),
   dayCap: () => pipelineAsksDayCap(),
   today: (ownerId) => pipelineAsksToday(ownerId),
@@ -75,16 +76,17 @@ const DEPS: PdfPageDeciderDeps = {
  * The page asks of one file (the router's part 2), or null: no page ask for
  * this file. Two checks, here, once a file: the file may have model work
  * (llmWorkAllowed, the guard of askPdfKind), and this box asks page types
- * (pdfPageAsksOn: the operator's `uses.pdf_kind.pages: true` with the use
- * on, and the decider pinned to PDF_PAGE_MODEL). The manifest never ships
- * `pages`, so a client box gets null, and no page picture leaves it
- * (Jason, Q5).
+ * (pdfPageUseOf: the operator's `uses.pdf_kind.pages: true` with the use
+ * on). The manifest never ships `pages`, so a client box gets null, and no
+ * page picture leaves it (Jason, Q5). The decider carries the box's mode
+ * (`live`: `uses.pdf_kind.mode: 'live'`, M4) and its floor, for the read
+ * to route by.
  *
  * Each paid answer is kept in the answer cache, and `kept` reads it back
  * (an extract tried again pays for none twice; the core takes kept answers
- * first, free, with no day-cap room). The key holds the question (its text
- * and options, PDF_PAGE_QUESTIONS), so a new question asks again and a new
- * router version alone does not. A paid ask counts in the box's day cap
+ * first, free, with no day-cap room). The key holds the box's decider model
+ * and the question (its text and options, PDF_PAGE_QUESTIONS), so a new
+ * model or question asks again and a new router version alone does not. A paid ask counts in the box's day cap
  * (`room`) and goes in the file's one DecideBatch. After
  * PAGE_ASK_FAILURES_STOP asks in a row with no answer (any null: a failure,
  * over the limits, no picture part, no choice, no route), or with the
@@ -96,7 +98,9 @@ export async function pdfPageDeciderOf(
   deps: Partial<PdfPageDeciderDeps> = {},
 ): Promise<PdfPageDecide | null> {
   const d = { ...DEPS, ...deps };
-  if (!(await d.allowed(nodeId)) || !(await d.on(ownerId))) return null;
+  if (!(await d.allowed(nodeId))) return null;
+  const use = await d.use(ownerId);
+  if (!use) return null;
   const batch = new DecideBatch();
   let noneInRow = 0;
   // What is asked (the use, the model, the question: its text and its
@@ -105,10 +109,12 @@ export async function pdfPageDeciderOf(
   // router change that is not of the question keeps the kept answers.
   const keyOf = (ask: PdfPageAsk, picture: Buffer) => {
     const { picture: _name, ...fields } = ask;
-    const parts = ['pdf_page', PDF_PAGE_MODEL, PDF_PAGE_QUESTIONS, bytesKey(picture), fields];
+    const parts = ['pdf_page', use.model, PDF_PAGE_QUESTIONS, bytesKey(picture), fields];
     return { key: answerKey('decider', parts), fields };
   };
   return {
+    live: use.live,
+    floor: use.floor,
     // A count that cannot be read is no room: the pages keep their rules
     // (`rules: day cap`), never an ask past the cap.
     room: async () => Math.max(0, d.dayCap() - (await d.today(ownerId).catch(() => Infinity))),

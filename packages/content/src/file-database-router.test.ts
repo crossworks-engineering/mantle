@@ -342,6 +342,8 @@ describe('the PDF router in a real read', () => {
   it('a read again puts the stored page types in again, with no ask (M3)', async () => {
     const ids = inProcess();
     const pdfPages = {
+      live: false,
+      floor: 0.6,
       room: vi.fn(async () => 100),
       kept: vi.fn(async () => null),
       ask: vi.fn(async () => null),
@@ -390,6 +392,111 @@ describe('the PDF router in a real read', () => {
     // Its own Kind stays the drawing reader's, not the stored one.
     expect(pages.rows[0]![at('Kind')]).not.toBe('isometric');
     expect(typeof pages.rows[0]![at('Kind')]).toBe('string');
+  });
+
+  /** A decider that is never asked (every page has its stored answer). */
+  const noAsks = (live: boolean) => ({
+    live,
+    floor: 0.6,
+    room: vi.fn(async () => 100),
+    kept: vi.fn(async () => null),
+    ask: vi.fn(async () => null),
+    settle: vi.fn(),
+  });
+  /** The pages of a file's tab Pages, by a first read. */
+  async function pagesOf(name: string, kind: string) {
+    inProcess();
+    const first = await parseFileSheets(pdf(name), 'pdf', {
+      pipelines,
+      count,
+      pdfStored: { kind, decision: null, pageKinds: [] },
+    });
+    if (first.kind !== 'sheets') throw new Error('no sheets');
+    const tab = first.sheets.find((s) => s.name === 'Pages')!;
+    const at = tab.columns.findIndex((c) => c.name === 'Page');
+    return tab.rows.map((r) => Number(r[at]));
+  }
+  const typed = (pages: number[], deciderKind: string, deciderConfidence = 0.9) =>
+    pages.map((page) => ({
+      page,
+      kind: 'unsure',
+      from: 'rules: shadow',
+      deciderKind,
+      deciderConfidence,
+    }));
+
+  it('live (M4): the stored answers of a shadow week name the frame, with no ask', async () => {
+    const rows = await pagesOf('unsure-vector.pdf', 'unsure');
+    const ids = inProcess();
+    const pdfPages = noAsks(true);
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfPages,
+      pdfStored: { kind: 'unsure', decision: null, pageKinds: typed(rows, 'pfd') },
+    });
+    expect(pdfPages.ask).not.toHaveBeenCalled();
+    expect(ids).toEqual(['drawing-pdf']);
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    const file = parsed.sheets.find((s) => s.name === 'File')!;
+    expect(file.rows[0]![file.columns.findIndex((c) => c.name === 'Kind')]).toBe('pfd');
+    const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
+    const at = (name: string) => pages.columns.findIndex((c) => c.name === name);
+    expect(pages.rows[0]![at('Kind from')]).toBe('decider');
+    expect(pages.rows[0]![at('Kind')]).toBe('pfd');
+  });
+
+  it('live: an answer under the floor is not used; the kind is as named', async () => {
+    const rows = await pagesOf('unsure-vector.pdf', 'unsure');
+    inProcess();
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfPages: noAsks(true),
+      pdfStored: { kind: 'unsure', decision: null, pageKinds: typed(rows, 'pfd', 0.55) },
+    });
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    const file = parsed.sheets.find((s) => s.name === 'File')!;
+    expect(file.rows[0]![file.columns.findIndex((c) => c.name === 'Kind')]).toBe('unsure');
+    const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
+    const at = (name: string) => pages.columns.findIndex((c) => c.name === name);
+    expect(pages.rows[0]![at('Kind from')]).toBe('rules: low confidence');
+  });
+
+  it('live: office pages name the book, read by the book reader', async () => {
+    const rows = await pagesOf('unsure-vector.pdf', 'unsure');
+    const ids = inProcess();
+    await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfPages: noAsks(true),
+      pdfStored: { kind: 'unsure', decision: null, pageKinds: typed(rows, 'table') },
+    }).catch(() => null);
+    // The book reader reads in page windows: its first job cuts window 1
+    // (no pipeline id); the drawing reader never runs.
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids).not.toContain('drawing-pdf');
+    expect(bodies[0]).toBe('pdf');
+  });
+
+  it('shadow: the same answers change nothing, and say rules: shadow', async () => {
+    const rows = await pagesOf('unsure-vector.pdf', 'unsure');
+    const ids = inProcess();
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfPages: noAsks(false),
+      pdfStored: { kind: 'unsure', decision: null, pageKinds: typed(rows, 'table', 0.4) },
+    });
+    expect(ids).toEqual(['drawing-pdf']);
+    if (parsed.kind !== 'sheets') throw new Error('no sheets');
+    const file = parsed.sheets.find((s) => s.name === 'File')!;
+    expect(file.rows[0]![file.columns.findIndex((c) => c.name === 'Kind')]).toBe('unsure');
+    const pages = parsed.sheets.find((s) => s.name === 'Pages')!;
+    const at = (name: string) => pages.columns.findIndex((c) => c.name === name);
+    // In shadow no answer is used, whatever its sum: the reason is shadow.
+    expect(pages.rows[0]![at('Kind from')]).toBe('rules: shadow');
+    expect(pages.rows[0]![at('Kind')]).not.toBe('table');
   });
 
   it('with no page types stored and no asker, the tab Pages is as before M3', async () => {

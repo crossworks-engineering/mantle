@@ -14,12 +14,13 @@
  * One call a file: the caller asks only while the file has no database, and
  * the answer is stored in that database (File tab).
  *
- * The page types (decidePdfPageKind, below; plan page c607711a, M3): the
- * same use asks the type of one page, with its picture, where a box's
- * decider is pinned to PDF_PAGE_MODEL.
+ * The page types (decidePdfPageKind, below; plan page c607711a, M3 and
+ * M4): the same use asks the type of one page, with its picture, where the
+ * box's operator set `uses.pdf_kind.pages: true` (pdfPageUseOf).
  */
 import type { DecisionQuestion } from '@mantle/voice';
 import { decide, resolveDecider, resolveUse, type DecideBatch } from './decide';
+import { PDF_PAGE_ROUTES } from '@mantle/files/pdf-page-kinds';
 import { decisionPictureOf, type DecisionPicturePart, type ShrinkFn } from './picture';
 
 /** The options, each with what it is and what it is not. */
@@ -109,22 +110,9 @@ export async function decidePdfKind(
 
 // ─── One page (the router's page types, plan page c607711a, M3) ─────────────
 
-/**
- * The decider model the page ask is pinned to (the M2 bench, 2026-11-21:
- * both `typesafe/jev-1.14` and the alias `~typesafe/jev-latest` were served
- * by `typesafe/jev-1.14-20261014`; pin the one measured). The second check
- * of pdfPageAsksOn: a box asks page types only when its decider worker's
- * model is this one. The first check is the operator's own key
- * `uses.pdf_kind.pages: true`.
- */
-export const PDF_PAGE_MODEL = 'typesafe/jev-1.14';
-
-/** The options of a page by route (the M2 bench): `office` is read by the
- *  book reader, `drawing` by the drawing reader. */
-export const PDF_PAGE_ROUTES = {
-  office: ['document', 'table', 'datasheet'],
-  drawing: ['pid', 'pfd', 'isometric', 'equipment_drawing', 'other_drawing'],
-} as const satisfies Record<string, readonly PdfKindOption[]>;
+/** The options of a page by route (the M2 bench), kept in @mantle/files
+ *  beside the frame rule (pdfFrameKindOf). */
+export { PDF_PAGE_ROUTES };
 
 /** The question of one page: the same 8 options, about "this page" (the
  *  text the M2 bench asked). */
@@ -171,7 +159,9 @@ export function pdfPageStateOf(
  *  route; `confidence`: the summed chance of that route (the M2 bench's
  *  rule: a page is typed by its route, office or drawing, and the floor is
  *  on the route's sum, not on one option's). `sure`: at or over the use's
- *  floor. In M3 no answer is used: the route does not change. */
+ *  floor at the time of the ask. Whether an answer is used is worked out at
+ *  each read (M4): the box live and the stored sum at or over the floor
+ *  of then, so an answer of a shadow week counts once the box is live. */
 export type PdfPageAnswer = {
   kind: PdfKindOption;
   confidence: number;
@@ -210,20 +200,34 @@ export function pageRouteOf(
   return { kind, confidence: Math.min(1, Math.max(office, drawing)) };
 }
 
+/** How this box uses page types (pdfPageUseOf): the decider's model (the
+ *  answer cache key holds it), whether page routing is live, and the floor
+ *  a page answer's route sum must reach to be used. */
+export type PdfPageUse = { model: string; live: boolean; floor: number };
+
 /**
- * Whether this box asks page types (where a page picture may go; Jason, Q5,
- * 2026-11-21: only dev and the bench until pdf_kind is live). Two checks:
- * the operator's key `uses.pdf_kind.pages: true` with the use on, and the
- * decider pinned to PDF_PAGE_MODEL. The system manifest never ships
- * `pages` (adoptWorkerParams keeps an operator's value and adds none), so a
- * roll, a seed or a person who picks jev-1.14 for another use sends no
- * page picture. The caller adds the file's own guard (llmWorkAllowed).
+ * How this box uses page types, or null: it asks none (where a page
+ * picture may go; Jason, Q5, 2026-11-21). Page asks are on when the
+ * operator set `uses.pdf_kind.pages: true` and the use is on: the one gate
+ * (M4 dropped the model pin; a decider with no pictures skips every ask,
+ * `no_pictures`). The system manifest never ships `pages`
+ * (adoptWorkerParams keeps an operator's value and adds none), so a roll
+ * or a seed sends no page picture. Routing by the answers is live only
+ * with `uses.pdf_kind.mode: 'live'` too (plan page c607711a, M4), again
+ * the operator's, box by box: the manifest ships `shadow`. The caller adds
+ * the file's own guard (llmWorkAllowed).
  */
-export async function pdfPageAsksOn(ownerId: string): Promise<boolean> {
+export async function pdfPageUseOf(ownerId: string): Promise<PdfPageUse | null> {
   const r = await resolveDecider(ownerId);
-  if (!r) return false;
-  const pages = r.params?.uses?.pdf_kind?.pages === true;
-  return pages && resolveUse(r.params, 'pdf_kind').enabled && r.worker.model === PDF_PAGE_MODEL;
+  if (!r || r.params?.uses?.pdf_kind?.pages !== true) return null;
+  const use = resolveUse(r.params, 'pdf_kind');
+  if (!use.enabled) return null;
+  return { model: r.worker.model, live: use.mode === 'live', floor: use.deferBelow };
+}
+
+/** Whether this box asks page types (pdfPageUseOf is not null). */
+export async function pdfPageAsksOn(ownerId: string): Promise<boolean> {
+  return (await pdfPageUseOf(ownerId)) !== null;
 }
 
 /**

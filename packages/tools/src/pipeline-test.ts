@@ -262,7 +262,7 @@ async function testWith(
     if (!loaded) return result('failed', { word: 'unreadable' });
     try {
       // The kind and the Reader's options, as a real run gives them.
-      const from = await agentInputOf(ownerId, ext, pipelines, sqlite);
+      const from = await agentInputOf(ownerId, ext, pipelines, sqlite, p);
       // The one step, in one parser job. No ask is sent, so nothing is paid.
       const step = await withParserScope({ interactive: true, failures: NO_LEDGER }, () =>
         agentStep(p, loaded.bytes, stepFileOf(loaded.bytes, ext), options, from),

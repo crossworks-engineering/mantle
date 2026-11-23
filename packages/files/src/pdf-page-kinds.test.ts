@@ -1,15 +1,20 @@
 /**
  * The page types kit (./pdf-page-kinds.ts): the one check of what leaves the
  * box for a page ask (only the 8 fields, a copy), the columns the core puts
- * in the tab Pages, and the read back of what a database holds.
+ * in the tab Pages, and the read back of what a database holds. M4: which
+ * answers a read uses (pageKindsAt), the frame of a file (pdfFrameKindOf,
+ * Q4), and a used answer's Kind over the Reader's own.
  */
 import { describe, expect, it } from 'vitest';
 import {
   PAGE_KIND_FROM,
   PAGE_KINDS_NOTE,
   PDF_PAGE_SAMPLE_MAX_CHARS,
+  pageKindsAt,
   pageKindsOfRows,
   pagePictureName,
+  pageRouteOfKind,
+  pdfFrameKindOf,
   pdfPageAskOf,
   withPageKinds,
   type PdfPageKind,
@@ -160,5 +165,134 @@ describe('withPageKinds, the columns of the tab Pages', () => {
       { Page: 4, Kind: null, 'Kind from': null, 'Decider kind': null, 'Decider confidence': null },
     ];
     expect(pageKindsOfRows(rows)).toEqual(kinds);
+  });
+});
+
+/** A page with an answer of `deciderKind` at `conf` (rules kind unsure). */
+const answered = (page: number, deciderKind: string, conf: number): PdfPageKind => ({
+  page,
+  kind: 'unsure',
+  from: PAGE_KIND_FROM.shadow,
+  deciderKind,
+  deciderConfidence: conf,
+});
+const rulesOnly = (page: number, kind: string | null, from: string): PdfPageKind => ({
+  page,
+  kind,
+  from,
+  deciderKind: null,
+  deciderConfidence: null,
+});
+
+describe('pageKindsAt: which answers a read uses (M4)', () => {
+  const at = (live: boolean) => ({ live, floor: 0.6 });
+  it('live: at or over the floor is decider, its Kind the answer; under it, low confidence', () => {
+    const out = pageKindsAt([answered(1, 'pid', 0.6), answered(2, 'table', 0.59)], at(true));
+    expect(out[0]).toMatchObject({ kind: 'pid', from: PAGE_KIND_FROM.decider });
+    expect(out[1]).toMatchObject({ kind: 'unsure', from: PAGE_KIND_FROM.low });
+  });
+
+  it('shadow: no answer is used, whatever its sum, and the word is shadow', () => {
+    const out = pageKindsAt([answered(1, 'pid', 0.99), answered(2, 'table', 0.2)], at(false));
+    expect(out.map((k) => k.from)).toEqual([PAGE_KIND_FROM.shadow, PAGE_KIND_FROM.shadow]);
+    expect(out.map((k) => k.kind)).toEqual(['unsure', 'unsure']);
+  });
+
+  it('a page once decider that is no longer used keeps no rules kind; pages with no answer as they are', () => {
+    const was = { ...answered(1, 'pid', 0.9), kind: 'pid', from: PAGE_KIND_FROM.decider };
+    const blank = rulesOnly(2, 'none', PAGE_KIND_FROM.blank);
+    expect(pageKindsAt([was, blank], at(false))).toEqual([
+      { ...was, kind: null, from: PAGE_KIND_FROM.shadow },
+      blank,
+    ]);
+  });
+});
+
+describe('pdfFrameKindOf: the frame of a file (Q4, M4)', () => {
+  const live = (ks: PdfPageKind[]) => pageKindsAt(ks, { live: true, floor: 0.6 });
+  it('no used answer: the kind as named (shadow, a box with no page asks, all under the floor)', () => {
+    expect(pdfFrameKindOf([], 'pid')).toBe('pid');
+    expect(
+      pdfFrameKindOf(pageKindsAt([answered(1, 'table', 0.9)], { live: false, floor: 0.6 }), 'scan'),
+    ).toBe('scan');
+    expect(pdfFrameKindOf(live([answered(1, 'table', 0.4)]), 'scan')).toBe('scan');
+  });
+
+  it('office pages win: the book (a scanned spec the rules put in the drawing lane)', () => {
+    const ks = live([
+      answered(1, 'document', 0.9),
+      answered(2, 'table', 0.8),
+      answered(3, 'pid', 0.9),
+    ]);
+    expect(pdfFrameKindOf(ks, 'scan')).toBe('book');
+  });
+
+  it('a tie goes to the book; blank pages and pages with no route do not vote', () => {
+    const ks = [
+      ...live([answered(1, 'datasheet', 0.9), answered(2, 'isometric', 0.9)]),
+      rulesOnly(3, 'none', PAGE_KIND_FROM.blank),
+      rulesOnly(4, 'other_drawing', PAGE_KIND_FROM.blank),
+      rulesOnly(5, 'unsure', PAGE_KIND_FROM.cap),
+    ];
+    expect(pdfFrameKindOf(ks, 'unsure')).toBe('book');
+  });
+
+  it('a page with no used answer votes by its rules kind', () => {
+    const ks = [
+      ...live([answered(1, 'document', 0.9)]),
+      rulesOnly(2, 'scan', PAGE_KIND_FROM.dayCap),
+      rulesOnly(3, 'scan', PAGE_KIND_FROM.cap),
+      rulesOnly(4, 'pid', PAGE_KIND_FROM.cap),
+    ];
+    expect(pdfFrameKindOf(ks, 'book')).toBe('scan');
+    // A tie of drawing kinds takes the first of PDF_PAGE_ROUTES.drawing.
+    expect(pdfFrameKindOf(ks.slice(0, 2).concat(ks.slice(3)), 'book')).toBe('pid');
+  });
+
+  it('drawing wins: a drawing kind stays, else the commonest drawing kind of the votes', () => {
+    const ks = live([answered(1, 'pfd', 0.9), answered(2, 'pfd', 0.9), answered(3, 'pid', 0.9)]);
+    expect(pdfFrameKindOf(ks, 'pid')).toBe('pid');
+    expect(pdfFrameKindOf(ks, 'unsure')).toBe('pfd');
+    expect(pdfFrameKindOf(ks, 'book')).toBe('pfd');
+  });
+
+  it('the routes of a kind', () => {
+    expect(['document', 'table', 'datasheet'].map(pageRouteOfKind)).toEqual([
+      'office',
+      'office',
+      'office',
+    ]);
+    expect(
+      ['pid', 'pfd', 'isometric', 'equipment_drawing', 'other_drawing', 'scan'].map(
+        pageRouteOfKind,
+      ),
+    ).toEqual(Array(6).fill('drawing'));
+    expect(['unsure', 'none', 'book', null].map(pageRouteOfKind)).toEqual([null, null, null, null]);
+  });
+});
+
+describe('withPageKinds: a used answer names Kind over the Reader (M4)', () => {
+  it("the drawing reader's own Kind gives way to a used answer, and only to one", () => {
+    const pages: ParsedSheet = {
+      name: 'Pages',
+      columns: [
+        { name: 'Page', type: 'number' },
+        { name: 'Kind', type: 'text' },
+        { name: 'Kind from', type: 'text' },
+      ],
+      rows: [
+        [1, 'scan', 'rules'],
+        [2, 'scan', 'rules'],
+      ],
+    };
+    const ks = pageKindsAt([answered(1, 'table', 0.9), answered(2, 'table', 0.3)], {
+      live: true,
+      floor: 0.6,
+    });
+    const [out] = withPageKinds({ sheets: [pages] }, ks).sheets;
+    expect(out!.rows).toEqual([
+      [1, 'table', 'decider', 'table', 0.9],
+      [2, 'scan', 'rules: low confidence', 'table', 0.3],
+    ]);
   });
 });

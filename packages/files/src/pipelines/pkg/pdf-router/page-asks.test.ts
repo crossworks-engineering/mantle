@@ -5,6 +5,11 @@
  * its page of the ORIGINAL file, with the 8 fields of the page ask (and
  * nothing else), and its picture: a grey JPEG of 1,024 px long side in the
  * job folder. A run that may not ask gives no call.
+ *
+ * The blank test (M4): a page is blank (free, no ask) only when its picture
+ * is white AND no image covers it. A white picture of a scan is an image
+ * that did not draw (a faint scanned isometric on NATREF was called blank),
+ * so it is `not drawn`, never blank. Pictures are drawn with `largeImages`.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -102,5 +107,43 @@ describe('a page window of the router (part 2)', () => {
         [27, expect.any(String), 'not drawn'],
       ],
     });
+  });
+
+  /** A job whose pictures all come back white (`blank`), of a valid size. */
+  const whiteJob = (body: Buffer, seen: Array<Record<string, unknown>> = []) =>
+    inProcessStepJob(body, mkdtempSync(path.join(dir, 'job-')), {
+      pdfPictures: async (windows) => {
+        seen.push(...(windows as unknown as Array<Record<string, unknown>>));
+        return windows.map(() => ({
+          png: Buffer.from('jpeg'),
+          widthPx: 1024,
+          heightPx: 724,
+          scale: 1,
+          widthMm: 420,
+          heightMm: 297,
+          blank: true as const,
+        }));
+      },
+    });
+
+  it('a white picture of a page no image covers is blank: free, no ask', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const out = await step(req(true), whiteJob(pdf('pid.pdf'), seen));
+    expect(out.calls).toEqual([]);
+    expect(out.state).toEqual({
+      pages: [
+        [26, expect.any(String), 'blank'],
+        [27, expect.any(String), 'blank'],
+      ],
+    });
+    // Every page is drawn, with large images (as the Agents draw them).
+    expect(seen).toHaveLength(2);
+    for (const w of seen) expect(w.largeImages).toBe(true);
+  });
+
+  it('a white picture of a scan is an image that did not draw: `not drawn`, never blank', async () => {
+    const out = await step(req(true), whiteJob(pdf('scan.pdf')));
+    expect(out.calls).toEqual([]);
+    expect(out.state).toEqual({ pages: [[26, expect.any(String), 'not drawn']] });
   });
 });

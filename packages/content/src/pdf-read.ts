@@ -247,10 +247,15 @@ export type PdfPageDecision = {
 /**
  * How the caller asks page types of one file (server/api
  * extract/pdf-kind.ts): given only where the file may have model work and
- * page asks are on for this box (the one guard, pdfPageAsksOn), so at an
- * upload's extract alone.
+ * page asks are on for this box (the one guard, pdfPageUseOf), so at an
+ * upload's extract and a person's run of one file (Q2).
  */
 export type PdfPageDecide = {
+  /** The box routes by page types (`uses.pdf_kind.mode: 'live'`, M4): the
+   *  asks come before the Reader and name its frame. */
+  live: boolean;
+  /** The floor a page answer's route sum must reach to be used. */
+  floor: number;
   /** The paid asks the box's day cap leaves now. */
   room(): Promise<number>;
   /** The answer kept for this ask (the answer cache: an extract tried
@@ -269,7 +274,8 @@ export type PdfPageDecide = {
 /** Page asks of one window at once (the M2 bench asked 4 at once). */
 const PAGE_ASKS_AT_ONCE = 4;
 
-/** A page's type from its answer (M3: shadow, the rules' kind stays). */
+/** A page's type from its answer: the rules' kind with the answer beside
+ *  it (pageKindsAt of @mantle/files works out whether it is used). */
 function pageKindOfAnswer(page: number, kind: string, d: PdfPageDecision): PdfPageKind {
   return {
     page,
@@ -318,16 +324,17 @@ function windowPagesOf(state: unknown): [number, string, string | null][] {
  * first and is free: only a real call takes day-cap room and a place in
  * the file's cap. `rows`: the pages that have a row in the Reader's tab
  * Pages; a page with no row is not asked (its answer would stand nowhere),
- * and a window with none is not cut.
+ * and a window with none is not cut. Null: every page (a live read, M4,
+ * asks before the Reader, so there are no rows yet).
  */
 export async function pdfPageKindsOf(
   router: PipelineManifest,
   bytes: Buffer,
   options: Readonly<Record<string, unknown>>,
   decide: PdfPageDecide,
-  rows: ReadonlySet<number>,
+  rows: ReadonlySet<number> | null,
 ): Promise<PdfPageKind[]> {
-  if (rows.size === 0) return [];
+  if (rows && rows.size === 0) return [];
   const file = stepFileOf(bytes, 'pdf');
   const cap = askCapOf(router, 'decider');
   const out = new Map<number, PdfPageKind>();
@@ -343,8 +350,8 @@ export async function pdfPageKindsOf(
       const from = w.part ? w.part.pageFrom : w.from;
       const to = w.part ? w.part.pageTo : w.to;
       readTo = to;
-      let hasRow = false;
-      for (let n = from; n <= to && !hasRow; n++) hasRow = rows.has(n);
+      let hasRow = rows === null;
+      for (let n = from; n <= to && !hasRow; n++) hasRow = rows!.has(n);
       if (!hasRow) continue;
       if (!w.part) {
         for (let n = from; n <= to; n++) rulesOnly(n, null, PAGE_KIND_FROM.notDrawn);
@@ -371,7 +378,7 @@ export async function pdfPageKindsOf(
         const ask = call.worker === 'decider' ? pdfPageAskOf(call.input) : null;
         const picture = ask ? run.pictures.get(ask.picture) : undefined;
         if (!ask || !picture || ask.page < from || ask.page > to || out.has(ask.page)) continue;
-        if (!rows.has(ask.page)) continue;
+        if (rows && !rows.has(ask.page)) continue;
         const kind = kinds.get(ask.page) ?? null;
         if (kind !== null) asks.push({ ask, picture, kind });
       }
@@ -453,19 +460,22 @@ function pageTypeDone(k: PdfPageKind): boolean {
  * answer is never asked again and stands over the new read. A stored rules
  * word is kept where the new read says nothing of its page. So a person's
  * run of one file (Q2, plan page c607711a) types the pages an older read
- * left, and a second run asks nothing. Nothing is written here.
+ * left, and a second run asks nothing. `rows` null: every page (a live
+ * read with nothing stored, M4). Nothing is written here.
  */
 export async function pdfPageKindsOver(
   router: PipelineManifest,
   bytes: Buffer,
   options: Readonly<Record<string, unknown>>,
   decide: PdfPageDecide,
-  rows: ReadonlySet<number>,
+  rows: ReadonlySet<number> | null,
   stored: readonly PdfPageKind[],
 ): Promise<PdfPageKind[]> {
   const out = new Map(stored.map((k) => [k.page, k]));
-  const open = new Set([...rows].filter((n) => !(out.has(n) && pageTypeDone(out.get(n)!))));
-  if (open.size === 0) return [...stored];
+  const open = rows
+    ? new Set([...rows].filter((n) => !(out.has(n) && pageTypeDone(out.get(n)!))))
+    : null;
+  if (open?.size === 0) return [...stored];
   for (const k of await pdfPageKindsOf(router, bytes, options, decide, open)) {
     const was = out.get(k.page);
     if (!was || !pageTypeDone(was)) out.set(k.page, k);

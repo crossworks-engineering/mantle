@@ -360,7 +360,7 @@ describe('the step of pdf-page-read', () => {
 
   it('another kind, or no marked page in the window, asks nothing', async () => {
     const { job, drawn } = jobOf(typedPdf(2));
-    expect(await step(request({ kind: 'scan', state: { visionPages: [1] } }), job)).toEqual({
+    expect(await step(request({ kind: 'document', state: { visionPages: [1] } }), job)).toEqual({
       status: 'not_mine',
     });
     expect(
@@ -374,6 +374,16 @@ describe('the step of pdf-page-read', () => {
       calls: [],
     });
     expect(drawn).toEqual([]);
+  });
+
+  it('reads the office pages the core names in a PDF drawing too (M4)', async () => {
+    const { job, drawn } = jobOf(typedPdf(2));
+    const out = await step(
+      request({ kind: 'scan', pageFrom: 1, pageTo: 2, state: { visionPages: [2] } }),
+      job,
+    );
+    expect(out.status).toBe('ok');
+    expect(drawn).toEqual([[2]]);
   });
 
   it('a blank page is not read; a page that cannot be drawn ends the run failed, asking nothing', async () => {

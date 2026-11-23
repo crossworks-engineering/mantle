@@ -237,7 +237,14 @@ describe('the job of a run on demand', () => {
   });
 
   it("a person's run of one PDF (`pages`) gives the read the page asks, behind the decider's two checks; no other run does (Q2)", async () => {
-    const asks = { room: vi.fn(), kept: vi.fn(), ask: vi.fn(), settle: vi.fn() };
+    const asks = {
+      live: false,
+      floor: 0.6,
+      room: vi.fn(),
+      kept: vi.fn(),
+      ask: vi.fn(),
+      settle: vi.fn(),
+    };
     const asked: string[] = [];
     const pageDecider = vi.fn(async (_o: string, n: string) => {
       asked.push(n);

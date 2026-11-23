@@ -99,6 +99,8 @@ function decider(opts: { room?: number; stopAt?: number; keptTo?: number } = {})
   const argCounts = new Set<number>();
   let settled = 0;
   const d: Decide = {
+    live: false,
+    floor: 0.6,
     room: async () => (opts.room ?? 20_000) - asked.length,
     kept: async (...a) => {
       argCounts.add(a.length);

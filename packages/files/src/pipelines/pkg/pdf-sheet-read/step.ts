@@ -18,6 +18,12 @@
  * The kind is the one stored in the file's database (`request.kind`): a
  * file of any other kind is `not_mine`, one parser job and no call.
  *
+ * The pages (plan page c607711a, M4): the drawing-lane pages the core names
+ * (`state.drawingPages`, by the lanes of the pages), the first `pages` of
+ * them; with none named, from page 1 as before. In a book it reads only
+ * the pages the core names (a book's drawing pages); a book with none is
+ * `not_mine`. The title block corner is of the first page read.
+ *
  * The step writes nothing but its pictures, keeps no state and has no
  * second step: the core makes the paid calls and writes the rows.
  */
@@ -28,6 +34,7 @@ import { titleBlockOf } from '../../../pdf-rows';
 import type { RenderFn } from '../../../pdf-drawing';
 import {
   PIPELINE_ASK_FIELDS_MAX,
+  PIPELINE_PAGE_NUMBER_MAX,
   PIPELINE_PICTURES_MAX_BYTES,
   VISION_WORKER,
   type PipelineAskField,
@@ -36,8 +43,9 @@ import {
 } from '../../contract';
 
 /** The kinds of the PDF router this Agent reads: the drawings with no
- *  useful text layer, and the files the rules left unsure. */
-export const KINDS: readonly string[] = ['scan', 'isometric', 'unsure', 'other_drawing'];
+ *  useful text layer, the files the rules left unsure, and a book's
+ *  drawing pages (M4). */
+export const KINDS: readonly string[] = ['scan', 'isometric', 'unsure', 'other_drawing', 'book'];
 
 /** The page cap of the option `pages`, and the most asks of a file: each
  *  page has three (the whole page and its two halves), page 1 one more
@@ -151,24 +159,40 @@ type Window = [number, number, number, number];
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** The drawing-lane pages the core names (`state.drawingPages`), each a
+ *  whole number from 1, once each, in order; null when none are named. */
+export function drawingPagesOf(state: unknown): number[] | null {
+  if (!isObject(state) || !Array.isArray(state.drawingPages)) return null;
+  const pages = state.drawingPages.filter(
+    (n): n is number => Number.isInteger(n) && n >= 1 && n <= PIPELINE_PAGE_NUMBER_MAX,
+  );
+  return [...new Set(pages)].sort((a, b) => a - b);
+}
+
 export const step: PipelineStep = async (req, job) => {
   const ext = (req.file?.ext ?? '').toLowerCase();
   if (ext !== 'pdf' || req.kind === undefined || !KINDS.includes(req.kind)) {
     return { status: 'not_mine' };
   }
+  const named = drawingPagesOf(req.state);
+  if (req.kind === 'book' && !named?.length) return { status: 'not_mine' };
   const fields = fieldsOf(req.options);
   // The pages there are, up to the cap, and the shape of each on paper
   // (page 1's size places the corner; each page's halves follow its shape):
   // a page that is there and gives no picture is told apart from one past
   // the end. No page is drawn here.
   const shapes = await withPdf(await job.bytes(), {}, async ({ doc }) => {
-    const out: { wide: boolean; widthMm: number; heightMm: number }[] = [];
-    for (let n = 1; n <= Math.min(pagesOf(req.options), doc.numPages); n++) {
+    const out: { n: number; wide: boolean; widthMm: number; heightMm: number }[] = [];
+    const pages = (named ?? Array.from({ length: doc.numPages }, (_, i) => i + 1))
+      .filter((n) => n <= doc.numPages)
+      .slice(0, pagesOf(req.options));
+    for (const n of pages) {
       // A page pdfjs cannot load is taken as an A3 sheet: its drawing
       // fails below, and the run says which page.
       const page = await doc.getPage(n).catch(() => null);
       const shown = page?.getViewport({ scale: 1 }) ?? { width: 1190.55, height: 841.89 };
       out.push({
+        n,
         wide: shown.width >= shown.height,
         widthMm: (shown.width * 25.4) / 72,
         heightMm: (shown.height * 25.4) / 72,
@@ -202,16 +226,16 @@ export const step: PipelineStep = async (req, job) => {
   // its images are decoded one time): each page whole, page 1's corner,
   // then the page's two halves.
   type Ask = { key: string; page: number; list: boolean; order: number };
-  const page1 = shapes[0]!;
+  const first = shapes[0]!;
   const asks: Ask[] = [];
   const windows: ReturnType<typeof picture>[] = [];
-  for (const [i, shape] of shapes.entries()) {
-    const n = i + 1;
+  for (const shape of shapes) {
+    const n = shape.n;
     asks.push({ key: `page-${n}`, page: n, list: true, order: 1 });
     windows.push(picture(n, PAGE_DPI / 72));
-    if (n === 1) {
-      asks.push({ key: 'page-1-title-block', page: 1, list: false, order: 0 });
-      windows.push(picture(1, CORNER_DPI / 72, cornerOf(page1.widthMm, page1.heightMm, box)));
+    if (shape === first) {
+      asks.push({ key: `page-${n}-title-block`, page: n, list: false, order: 0 });
+      windows.push(picture(n, CORNER_DPI / 72, cornerOf(first.widthMm, first.heightMm, box)));
     }
     for (const [h, half] of halvesOf(shape.wide).entries()) {
       asks.push({ key: `page-${n}-half-${h + 1}`, page: n, list: true, order: 2 });
@@ -223,7 +247,7 @@ export const step: PipelineStep = async (req, job) => {
   if (lost >= 0) {
     return failed(
       asks[lost]!.order === 0
-        ? 'The title block of page 1 could not be drawn.'
+        ? `The title block of page ${first.n} could not be drawn.`
         : `Page ${asks[lost]!.page} could not be drawn.`,
     );
   }

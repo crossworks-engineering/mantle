@@ -273,8 +273,29 @@ describe('the step of pdf-sheet-read', () => {
     },
   );
 
-  it('takes the four kinds of its plan', () => {
-    expect(KINDS).toEqual(['scan', 'isometric', 'unsure', 'other_drawing']);
+  it('takes the four kinds of its plan, and a book for its drawing pages (M4)', () => {
+    expect(KINDS).toEqual(['scan', 'isometric', 'unsure', 'other_drawing', 'book']);
+  });
+
+  it('reads the drawing-lane pages the core names (M4); a book with none is not mine', async () => {
+    const { job, drawn } = jobOf(drawingPdf(4));
+    const result = await step({ ...request('book'), state: { drawingPages: [3, 2, 9] } }, job);
+    // The pages there are, in order; the title block of the first read.
+    expect(drawn[0]!.map((w) => w.pageNumber)).toEqual([2, 2, 2, 2, 3, 3, 3]);
+    expect(inputs(result.calls).map((c) => c.key)).toEqual([
+      'page-2-title-block',
+      'page-2',
+      'page-3',
+      'page-2-half-1',
+      'page-2-half-2',
+      'page-3-half-1',
+      'page-3-half-2',
+    ]);
+    const none = jobOf(drawingPdf(1));
+    expect(await step(request('book'), none.job)).toEqual({ status: 'not_mine' });
+    expect(await step({ ...request('book'), state: { drawingPages: [] } }, none.job)).toEqual({
+      status: 'not_mine',
+    });
   });
 
   it('a file that is no PDF is not mine', async () => {

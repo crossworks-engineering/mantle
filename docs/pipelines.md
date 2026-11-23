@@ -381,14 +381,15 @@ decider's) is named again by the router, with no ask, and that run counts
 of the router's `pipeline_state` row, by `countPipelineRun`, as for a
 pipeline. No new column. A failed count is logged and never fails the read.
 
-**Page types (part 2, M3 of plan page c607711a, in shadow).** At an
-upload, after the Reader's run, the core asks the type of every page
+**Page types (part 2, M3 and M4 of plan page c607711a).** At an
+upload, after the Reader's run (before it on a live box, below), the core asks the type of every page
 (`pdfPageKindsOf`, `packages/content/src/pdf-read.ts`): in page windows of
 25 pages (`PDF_PAGE_WINDOW`, cut by qpdf), one parser job of the router's
 step a window. A request with `pageFrom` is such a window: the step reads
-its page facts with no model, draws each page that is not blank as a grey
-JPEG of 1,024 px long side in the parser's pdfjs child, and gives one
-`decider` call a page with the 8 fields of the page ask; its `state` names
+its page facts with no model, draws each page as a grey JPEG of 1,024 px
+long side in the parser's pdfjs child (large images too, as the Agents
+draw them), and gives one `decider` call a page that is not blank with the
+8 fields of the page ask; its `state` names
 each page with its rules kind and why a page has no ask (`blank`, `not
 drawn`). The core checks each ask (`pdfPageAskOf`, the one check of what
 leaves the box), asks 4 at once, and puts the answers in the Reader's tab
@@ -396,14 +397,13 @@ leaves the box), asks 4 at once, and puts the answers in the Reader's tab
 which also adds `PAGE_KINDS_NOTE` to the description, on every path),
 for both Readers: `Kind` (the rules' kind of the page; the drawing reader
 writes its own), `Kind from`, `Decider kind` and `Decider confidence` (the
-summed chance of the answer's route, docs/decisions.md `pdf_kind`). The
-route of the file does not change in M3.
+summed chance of the answer's route, docs/decisions.md `pdf_kind`). In
+shadow the route of the file does not change.
 
 - **Where.** At an upload's extract (the file database pass, where its
   bytes have no database), and at a person's run of one file (below), for a file that may have model work, on a box
   whose decider params hold `uses.pdf_kind.pages: true` (an operator's key
-  that the manifest never ships) and whose decider is pinned to
-  `typesafe/jev-1.14` with `pdf_kind` on (`pdfPageDeciderOf`,
+  that the manifest never ships) with `pdf_kind` on (`pdfPageDeciderOf`,
   `server/api/src/agent/extract/pdf-kind.ts`; docs/decisions.md `pdf_kind`
   has the operator step). A client
   box asks none: no window is cut, no picture drawn, and its rows are as
@@ -427,15 +427,21 @@ route of the file does not change in M3.
   when the read is poorer (`pdfReadPoorer`) or the database changed, and
   every Reader and Agent row stays. A write so refused keeps the paid
   answers in the answer cache, so the next run takes them free.
-- **`Kind from`.** `rules: shadow` (an answer at or over the floor, only
-  recorded), `rules: low confidence` (under the floor), `rules: no answer`
+- **`Kind from`.** `decider` (live: a used answer, at or over the floor;
+  `Kind` is then its kind, over the Reader's own), `rules: shadow` (in
+  shadow, every answer: only recorded), `rules: low confidence` (live: an
+  answer under the floor), `rules: no answer`
   (asked, none came: a failure, the breaker, the use off), `rules: cap`
   (past the file's cap, the router's `needs.workers.decider`), `rules: day
 cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   the page could not be read, drawn or cut, or is under the decider's
-  smallest picture) and `rules: blank` (a blank page or a white picture:
-  free). M4 adds `decider`. A page of a Reader that had no part 2 keeps its
-  own word (the drawing reader's `rules`, `picture`, `other_pages`).
+  smallest picture, or its picture is white though an image covers it: a
+  scan that did not draw) and `rules: blank` (a white picture of a page no
+  image covers: free). Which answers are used is worked out at every read
+  with a decider (`pageKindsAt`), from the stored sum, so an answer of a
+  shadow week is used once the box is live, with no ask. A page of a Reader
+  that had no part 2 keeps its own word (the drawing reader's `rules`,
+  `picture`, `other_pages`).
 - **Caps end in the rules, never in a wait.** Past the file's cap, the day
   cap or a stop, no window more is cut and the pages left keep their rules
   kind, with the word. Nothing asks them again by itself. A window the
@@ -451,9 +457,41 @@ cap` (past the box's day cap of paid asks), `rules: not drawn` (no picture:
   room and a place in the file's cap. The day cap stops the run only after
   a window that turned a page away, so a retry with the day cap full still
   takes every kept answer.
-- **Only pages with a row.** Part 2 runs after the Reader's run, so it
-  asks only the pages that have a row in the tab `Pages`; a window with no
-  such page is not cut. An answer never has nowhere to stand.
+- **Only pages with a row.** In shadow part 2 runs after the Reader's run,
+  so it asks only the pages that have a row in the tab `Pages`; a window
+  with no such page is not cut. A live read asks before the Reader, over
+  every page (or the stored pages, on a person's run): a page with no row
+  after the Reader keeps its answer in the answer cache only.
+- **Live (M4).** On a box whose `uses.pdf_kind.mode` is `live` (the
+  operator's, box by box; the manifest ships `shadow`) the page asks come
+  before the Reader, and the lanes of the pages name it
+  (`pdfFrameKindOf`, Jason's Q4): pages with ink vote by the route of
+  their `Kind` (a used answer's, else the rules kind: document, table,
+  datasheet office; the drawing options and `scan` drawing; `unsure`,
+  `none` and blank pages no vote). Office wins or ties: the book. Drawing
+  wins: the kind stays when it is a drawing kind, else the commonest drawing
+  kind. With no used answer the kind is as named before. Only a read with
+  the page decider (an upload, a person's run of one PDF) can change a
+  file's lane; a read again keeps its stored kind. A read again whose File
+  tab names another Kind (a new frame) is not poorer, and stands
+  (`poorerThan`).
+- **The Agents by lane (M4).** The lane of a page is the route of its used
+  answer, else its file's lane (a book: office; else drawing), so with no
+  used answer every Agent reads as before (`pageLanesOf`,
+  `packages/content/src/book-pages.ts`). PDF page read (`pdf-page-read`,
+  1.3.0) reads the office-lane pages that need a paid read: a book's marked
+  pages but those of the drawing lane, and a drawing's office pages with no
+  text layer (Class `scan`, `raster_with_text`, for the Scan reader). PDF
+  sheet read (`pdf-sheet-read`, 1.2.0) reads the drawing-lane pages the
+  core names (`state.drawingPages`), the first 10, a book's drawing pages
+  too; a file with no page of an Agent's lane runs no job for it, nor a
+  PDF past the size pdfjs opens for an Agent with no windows.
+- **Pictures kept (M4, Jason 2026-11-23).** A graph, a chart, a sketch
+  chart or a cover page stays in the office lane, and its picture is kept
+  so an LLM can look at it at question time: on a live read, a page whose
+  route sum is under `PDF_PAGE_PICTURE_BELOW` (0.75), a typed page too, is
+  read by PDF page read with vision and its picture is saved with that
+  text, as a scanned book page.
 - **Limits.** Room is read once a window, so files read at the same time
   can pass the day cap by up to 25 asks each (the cap paces, it does not
   lock). Each page ask is one trace step (`decide_pdf_kind`): a 1,000-page

@@ -14,8 +14,9 @@
  *    of ONE PDF: `pipeline_run` of a Reader with a `file_id`, the tool or
  *    the Run button, notifyPipelineRun's `pages`) gives the read the page asks
  *    when pdfPageDeciderOf allows them (its two checks: llmWorkAllowed,
- *    and pdfPageAsksOn: `uses.pdf_kind.pages: true` with the use on and
- *    the model pin). The read then asks only the pages with no stored
+ *    and pdfPageUseOf: `uses.pdf_kind.pages: true` with the use on; on a
+ *    live box the answers also name the Reader, M4). The read then asks
+ *    only the pages with no stored
  *    answer, under the file's cap, the box's day cap, the 3-in-a-row stop
  *    and the breaker; a kept answer is free (pdfPageKindsOver). Every cap
  *    ends in the rules, never in a wait. No other job has `pages`:

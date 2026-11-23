@@ -166,8 +166,11 @@ export const BUILTIN_PIPELINES = [
     // 1.3.0 (2026-11-21): page types in shadow (plan page c607711a, M3):
     // part 2, one decider ask a page with its picture, in page windows,
     // where page asks are on (../../pdf-page-kinds.ts). The route does not
-    // change.
-    version: '1.3.0',
+    // change. 1.4.0 (2026-11-23): page types live (M4) where pdf_kind is
+    // live: the lanes of the pages name the file's Reader (pdfFrameKindOf);
+    // a page is blank only when its picture is white and no image covers
+    // it, and every page is drawn with large images.
+    version: '1.4.0',
     match: { ext: ['pdf'] },
     // The eleven kinds of PDF_KINDS (../pdf-kind.ts). The rules name seven
     // (`book` by its own rule, bookOf); the decider may also answer the four
@@ -210,8 +213,9 @@ export const BUILTIN_PIPELINES = [
     // 1.1.3 (2026-11-20): the kind rules of PDF_KIND_RULES_VERSION 5.
     // 1.1.4 (2026-11-21): the tab Pages may hold the page types (Kind from
     // `rules: ...`, Decider kind, Decider confidence), put in by the core
-    // (../../pdf-page-kinds.ts).
-    version: '1.1.4',
+    // (../../pdf-page-kinds.ts). 1.1.5 (2026-11-23): Kind from may say
+    // `decider` (M4, live), and Kind is then the answer's kind.
+    version: '1.1.5',
     // Every kind the router names but `document` and `book`: a document gets
     // no database, and a book is the book reader's (`pdf-pages`). An unsure
     // PDF gets one, as before the router. A new claim changes the pin and
@@ -410,13 +414,16 @@ export const BUILTIN_PIPELINES = [
   // Title block and Sheet list (./pkg/pdf-sheet-read). The Reader
   // `drawing-pdf` makes the file's database; the core gives the step the
   // kind stored in it, and the Reader's options for the title block box.
+  // 1.2.0 (2026-11-23, M4): it reads the drawing-lane pages the core
+  // names (by the page types), a book's drawing pages too; its kinds are
+  // the core's check, so a file of another kind runs no job.
   pkgAgent({
     id: 'pdf-sheet-read',
     name: 'PDF sheet read',
     description:
-      'Reads the title block and the tags, line numbers and sheet numbers of a PDF drawing that is a scan, an isometric, another drawing or unsure, into the tabs Title block and Sheet list. It runs after an upload and on demand, and makes at most 31 asks of a vision model for a file.',
-    version: '1.1.0',
-    match: { ext: ['pdf'] },
+      "Reads the title block and the tags, line numbers and sheet numbers of a PDF drawing (a scan, an isometric, another drawing or unsure) and of a book's drawing pages into the tabs Title block and Sheet list. Runs after an upload and on demand; at most 31 vision asks a file.",
+    version: '1.2.0',
+    match: { ext: ['pdf'], kind: ['scan', 'isometric', 'unsure', 'other_drawing', 'book'] },
     options: {
       more_fields: {
         type: 'words',
@@ -465,8 +472,9 @@ export const BUILTIN_PIPELINES = [
     // picture); the options of OCR are gone. 1.3.1 (2026-11-20): the File
     // tab's Rules version 5. 1.3.2 (2026-11-21): the tab Pages may hold the
     // page types (Kind, Kind from, Decider kind, Decider confidence), put in
-    // by the core (../../pdf-page-kinds.ts).
-    version: '1.3.2',
+    // by the core (../../pdf-page-kinds.ts). 1.3.3 (2026-11-23): Kind from
+    // may say `decider` (M4, live), and Kind is then the answer's kind.
+    version: '1.3.3',
     match: { ext: ['pdf'], kind: ['book'] },
     produces: { text: true, table: false, pages: true },
     // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy
@@ -499,15 +507,32 @@ export const BUILTIN_PIPELINES = [
     id: 'pdf-page-read',
     name: 'PDF page read',
     description:
-      'Reads the scanned pages of a PDF book with the Scan reader (mistral-ocr) and its figures with vision into the tab Page text, and saves each page picture with its text. Runs after an upload and on demand; never a page read before.',
+      "Reads the scanned pages of a PDF book with the Scan reader (mistral-ocr), its figures and its pages of unsure type with vision, into the tab Page text, and saves each page picture with its text; a drawing's office scan pages too. Runs after an upload and on demand.",
     // 1.1.0 (2026-11-19): every marked page by default (option pages
     // 10,000, from 2,000), and only the windows that hold a marked page.
     // 1.2.0 (2026-11-19): a scanned page goes as a one-page PDF too, for the
-    // Scan reader (docs/ai-workers.md).
-    version: '1.2.0',
-    // The kind it reads: no window is cut and no job runs on a PDF of
-    // another kind (runAgentOnFile).
-    match: { ext: ['pdf'], kind: ['book'] },
+    // Scan reader (docs/ai-workers.md). 1.3.0 (2026-11-23, M4): the
+    // office-lane pages of a PDF of any kind (the core names them by the
+    // page types), and a page of a live read under PDF_PAGE_PICTURE_BELOW,
+    // whose picture is kept.
+    version: '1.3.0',
+    // The kinds it reads: no window is cut and no job runs on a PDF of
+    // another kind, nor on one with no page to read (runAgentOnFile).
+    match: {
+      ext: ['pdf'],
+      kind: [
+        'book',
+        'pid',
+        'pfd',
+        'isometric',
+        'equipment_drawing',
+        'datasheet',
+        'table',
+        'scan',
+        'other_drawing',
+        'unsure',
+      ],
+    },
     options: {
       pages: {
         type: 'number',

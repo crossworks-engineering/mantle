@@ -39,9 +39,10 @@
  * Part 2, the page types (../../../pdf-page-kinds.ts; plan page c607711a,
  * M3 in shadow): a request with `pageFrom` is one page window of the file
  * (the core cuts it, 25 pages), in a run that may ask. The step reads the
- * window's page facts with no model, draws each page that is not blank as
- * a grey JPEG of 1,024 px long side in the parser's pdfjs child, and gives
- * one `decider` call a page, keyed `page-<N>` with N the page of the
+ * window's page facts with no model, draws each page as a grey JPEG of
+ * 1,024 px long side in the parser's pdfjs child, and gives one `decider`
+ * call a page that is not blank (a white picture of a page no image
+ * covers), keyed `page-<N>` with N the page of the
  * original file: the 8 fields of PdfPageAsk. Its `state` names every page
  * of the window with its rules kind and, for a page with no ask, why
  * (`blank`, `not drawn`). It writes nothing and names no kind: the core
@@ -70,6 +71,7 @@ import {
 import {
   BOOK_MIN_PAGES,
   BOOK_SAMPLE_PAGES,
+  IMAGE_PAGE_COVER,
   bookOf,
   bookUnsureOf,
   officePaperOf,
@@ -114,13 +116,12 @@ async function pageAsks(req: PipelineStepRequest, job: StepJob): Promise<Pipelin
     PDF_PAGE_SAMPLE_MAX_CHARS,
   );
   const pages: WindowPage[] = [];
-  // A page the rules call blank is free (type blank), as on the bench; so
-  // is a page the reader could not read (no class): it keeps its rules kind.
+  // Every page the reader read is drawn, a page the rules call blank too: a
+  // faint drawing reads as blank by its counts (M4). A page the reader could
+  // not read (no class) keeps its rules kind, with no ask.
   const want = drawing.pages.filter((p) => {
-    const n = from + p.page - 1;
-    if (p.class === 'blank' && p.kind !== 'unsure') pages.push([n, p.kind, 'blank']);
-    else if (!p.class) pages.push([n, p.kind, 'not drawn']);
-    else return true;
+    if (p.class) return true;
+    pages.push([from + p.page - 1, p.kind, 'not drawn']);
     return false;
   });
   const drawn =
@@ -132,6 +133,10 @@ async function pageAsks(req: PipelineStepRequest, job: StepJob): Promise<Pipelin
             scale: 40,
             maxSide: PDF_PAGE_PICTURE.maxSide,
             grayJpeg: PDF_PAGE_PICTURE.quality,
+            // A large scanned sheet draws, as the two Agents draw it: past
+            // the open's usual cap pdfjs drops the image, and the page
+            // comes back white.
+            largeImages: true,
           })),
           job.deadline,
         )
@@ -141,14 +146,19 @@ async function pageAsks(req: PipelineStepRequest, job: StepJob): Promise<Pipelin
   for (const [i, p] of want.entries()) {
     const n = from + p.page - 1;
     const pic = drawn[i];
-    if (pic?.blank) {
+    // Blank, free, with no ask: a white picture of a page no image covers.
+    // A white picture of a page an image covers is an image that did not
+    // draw (a faint scan, NATREF 2026-11-23), never a blank page.
+    if (pic?.blank && p.imageCover < IMAGE_PAGE_COVER) {
       pages.push([n, p.kind, 'blank']);
       continue;
     }
-    // No picture, one under the decider's smallest size, or past the
-    // window's answer budget: no ask, the rules kind stays.
+    // No picture, a white one of a page an image covers, one under the
+    // decider's smallest size, or past the window's answer budget: no ask,
+    // the rules kind stays (`not drawn`).
     if (
       !pic ||
+      pic.blank ||
       Math.min(pic.widthPx, pic.heightPx) < PDF_PAGE_PICTURE.minSide ||
       pic.widthPx * pic.heightPx < PDF_PAGE_PICTURE.minPixels ||
       pic.png.length > left

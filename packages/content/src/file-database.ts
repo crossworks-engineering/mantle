@@ -41,6 +41,7 @@ import {
   pdfReadPoorer,
   pipelineStampOf,
   removeWindowStage,
+  PDF_MAX_BYTES,
   PIPELINE_CALLS_MAX,
   PIPELINE_STAMP_KEYS,
   removeFileDbNames,
@@ -51,7 +52,9 @@ import {
   stampOfMeta,
   withAfterEntry,
   withoutAfterEntry,
+  pageKindsAt,
   pagesWithRows,
+  pdfFrameKindOf,
   withPageKinds,
   writeFileDbNone,
   type FileDbNoneWord,
@@ -90,7 +93,12 @@ import {
   type PdfPageDecide,
   type StoredPdf,
 } from './pdf-read';
-import { bookScanEvidenceOf, bookScanPagesOf, bookVisionPagesOf } from './book-pages';
+import {
+  bookScanEvidenceOf,
+  bookScanPagesOf,
+  bookVisionPagesOf,
+  drawingLanePagesOf,
+} from './book-pages';
 import { pagesToRead, windowPagePictures, type BookPagePictures } from './book-page-pictures';
 import {
   AGENT_HASH_COLUMN,
@@ -286,24 +294,47 @@ async function readRouted(
     'pdfKind' | 'pdfPages' | 'pdfStored' | 'pdfNodeVision' | 'count' | 'pipelines'
   >,
 ): Promise<ParsedFile> {
-  const parsed = await readRoutedSheets(router, bytes, ext, options, opts);
-  if (parsed.kind !== 'sheets') return parsed;
-  // The page types (the router's part 2, M3 in shadow), after the Reader's
-  // run, into its tab Pages: those stored, on a read again (no ask). With
-  // `pdfPages` (given only where they may be made: an upload's extract, or
-  // a person's run of one file, Q2), the pages with no stored answer are
-  // asked; a stored answer is never asked again (pdfPageKindsOver).
   const stored = opts.pdfStored?.pageKinds ?? [];
-  const kinds = opts.pdfPages
-    ? await pdfPageKindsOver(
-        router,
-        bytes,
-        options,
-        opts.pdfPages,
-        pagesWithRows(parsed.sheets),
-        stored,
+  const decide = opts.pdfPages;
+  // The page types (the router's part 2). With `pdfPages` (given only where
+  // they may be made: an upload's extract, or a person's run of one file,
+  // Q2), the pages with no stored answer are asked; a stored answer is never
+  // asked again (pdfPageKindsOver), and every answer is worked out for this
+  // box (pageKindsAt: used only when live). Live (M4): before the Reader,
+  // over every page (or the stored pages, on a read again), as they name
+  // the Reader (pdfFrameKindOf). Shadow: after the Reader's run, over its
+  // tab Pages, and the route does not change. With no `pdfPages` (a read
+  // again): the stored ones, with no ask.
+  const before = decide?.live
+    ? pageKindsAt(
+        await pdfPageKindsOver(
+          router,
+          bytes,
+          options,
+          decide,
+          stored.length > 0 ? new Set(stored.map((k) => k.page)) : null,
+          stored,
+        ),
+        decide,
       )
-    : stored;
+    : null;
+  const parsed = await readRoutedSheets(router, bytes, ext, options, opts, before);
+  if (parsed.kind !== 'sheets') return parsed;
+  const kinds =
+    before ??
+    (decide
+      ? pageKindsAt(
+          await pdfPageKindsOver(
+            router,
+            bytes,
+            options,
+            decide,
+            pagesWithRows(parsed.sheets),
+            stored,
+          ),
+          decide,
+        )
+      : stored);
   if (kinds.length === 0) return parsed;
   // The note of the words of Kind from comes with them (withPageKinds).
   return { ...parsed, ...withPageKinds(parsed, kinds) };
@@ -316,6 +347,8 @@ async function readRoutedSheets(
   ext: string,
   options: Readonly<Record<string, unknown>>,
   opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'pdfNodeVision' | 'count' | 'pipelines'>,
+  /** The page types of a live read (M4): they name the frame. */
+  pageKinds: readonly PdfPageKind[] | null = null,
 ): Promise<ParsedFile> {
   const stored = opts.pdfStored;
   // A read again keeps its stored kind; one of older rules is routed again,
@@ -330,7 +363,10 @@ async function readRoutedSheets(
   if (routed && opts.count) {
     await countRun(opts.count.ownerId, router.id, opts.count.fileId);
   }
-  const { kind, decision } = named;
+  const { decision } = named;
+  // The frame (M4, live): the lanes of the pages name the Reader; with no
+  // used page answer the kind as named.
+  const kind = pageKinds ? pdfFrameKindOf(pageKinds, named.kind) : named.kind;
   const reader = opts.pipelines.readerFor(ext, kind);
   if (!reader) return { kind: 'not-drawing' };
   // A Reader whose text stands over the core's PDF read (a book), or one
@@ -1047,7 +1083,8 @@ async function queueAgentRuns(
 /** Whether a PDF's new read is poorer than its stored one (pdfReadPoorer),
  *  by the File tab of the new read. A read with no File tab to tell by is
  *  poorer: the stored one stands. So is a read past the import cap, whose
- *  write would be the word `too-large` (writeRowsOrWord). */
+ *  write would be the word `too-large` (writeRowsOrWord). A read whose File
+ *  tab names another Kind (a new frame) is not. */
 function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: StoredPdf): boolean {
   if (rowsOf(parsed) > importMaxRows()) return true;
   const tab = parsed.sheets.find((s) => s.name === 'File');
@@ -1057,7 +1094,9 @@ function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: Sto
         tab.rows[0],
       )
     : null;
-  return !now || pdfReadPoorer(now, stored);
+  // A read of another Kind (a new frame, M4: the lanes of the pages named
+  // another Reader) is not poorer: it stands.
+  return !now || (now.kind === stored.kind && pdfReadPoorer(now, stored));
 }
 
 export type FilePatch =
@@ -1164,27 +1203,36 @@ export async function agentInputOf(
   ext: string,
   pipelines: BoxPipelines,
   sqlite: string,
+  agent: Pick<PipelineManifest, 'produces'>,
 ): Promise<{
   kind?: string;
   state: {
     readerOptions: Readonly<Record<string, unknown>>;
     visionPages?: number[];
     scanPages?: number[];
+    drawingPages?: number[];
   };
 }> {
   const kind = pipelines.routerFor(ext) ? (await storedPdfOf(sqlite))?.kind : undefined;
   const readerOptions = (await readerOptionsOf(ownerId, ext, pipelines)) ?? {};
-  // A book: the pages its reader marked (pdf-page-read, M3), and of them the
-  // scanned pages, which the Scan reader reads (the step cuts each as a
-  // one-page PDF; docs/ai-workers.md, "The Scan reader").
-  const visionPages = kind === 'book' ? await bookVisionPagesOf(sqlite) : undefined;
+  // The pages of a PDF its Agent reads, by the lanes of the pages (M4,
+  // ./book-pages.ts pageLanesOf). An Agent of page text (pdf-page-read):
+  // the office-lane pages to read (in a book, those its reader marked), and
+  // of them the scanned pages, which the Scan reader reads (the step cuts
+  // each as a one-page PDF; docs/ai-workers.md, "The Scan reader"). Any
+  // other Agent of a PDF (pdf-sheet-read): the drawing-lane pages, when the
+  // lanes name them (none named: from page 1, as before).
+  const office = kind !== undefined && agent.produces.pages === true;
+  const visionPages = office ? await bookVisionPagesOf(sqlite) : undefined;
   const scanPages = visionPages?.length ? await bookScanPagesOf(sqlite) : [];
+  const drawingPages = kind !== undefined && !office ? await drawingLanePagesOf(sqlite) : null;
   return {
     ...(kind !== undefined ? { kind } : {}),
     state: {
       readerOptions,
       ...(visionPages ? { visionPages } : {}),
       ...(scanPages.length > 0 ? { scanPages } : {}),
+      ...(drawingPages ? { drawingPages } : {}),
     },
   };
 }
@@ -1277,23 +1325,30 @@ export async function runAgentOnFile(args: {
   // runs no parser job on a file of another kind, nor on a book with no page
   // left to vision (M3).
   if (pipeline.match.kind) {
-    const input = await agentInputOf(ownerId, ext, pipelines, names.sqlite);
+    const input = await agentInputOf(ownerId, ext, pipelines, names.sqlite, pipeline);
     if (input.kind === undefined || !pipeline.match.kind.includes(input.kind)) {
       return { status: 'skipped', reason: 'no-match' };
     }
+    // No page of its lane to read (M4): no job.
     if (input.state.visionPages?.length === 0) return { status: 'skipped', reason: 'no-match' };
+    if (input.state.drawingPages?.length === 0) return { status: 'skipped', reason: 'no-match' };
   }
 
   const state = await pipelineStateOf(ownerId, pipeline);
   if (readsInWindows(pipeline, ext)) {
     return runAgentWindowed({ ...args, pipeline, pipelines, ext, sqlite: names.sqlite, state });
   }
+  // A PDF past the size pdfjs opens is read in page windows only (a book's
+  // drawing pages, M4): an Agent with no windows runs no job on it.
+  if (ext === 'pdf' && bytes.length > PDF_MAX_BYTES) {
+    return { status: 'skipped', reason: 'no-match' };
+  }
   const step = await agentStep(
     pipeline,
     bytes,
     stepFileOf(bytes, ext),
     state.options,
-    await agentInputOf(ownerId, ext, pipelines, names.sqlite),
+    await agentInputOf(ownerId, ext, pipelines, names.sqlite, pipeline),
   );
   if (step.status === 'not_mine') return { status: 'skipped', reason: 'no-match' };
   const asks = checkAsks(pipeline, step.asks, step.pictures);
@@ -1396,7 +1451,7 @@ async function runAgentWindowed(args: {
   };
   const stored = storedOf(tab);
   const storedList = listTab ? storedOf(listTab) : [];
-  const input = await agentInputOf(ownerId, ext, args.pipelines, sqlite);
+  const input = await agentInputOf(ownerId, ext, args.pipelines, sqlite, args.pipeline);
   // A book's page pictures (G1, ./book-page-pictures.ts): a marked page
   // done already (its picture of these bytes and its text row) is neither
   // drawn nor asked again. The step gets every marked page (its option
@@ -1508,12 +1563,14 @@ async function runAgentWindowed(args: {
       });
       const checked = step.status === 'ok' ? checkAsks(windowView, step.asks, step.pictures) : [];
       // A page the step sent as a one-page PDF gets the free evidence of
-      // the Scan reader's check, from the book reader's tab Pages.
+      // the Scan reader's check, from the book reader's tab Pages; an
+      // office page of a PDF drawing (M4) has none to give (no line count).
       const scanned = checked.filter((a) => a.pdf && a.page !== null).map((a) => a.page!);
       const evidence = scanned.length > 0 ? await bookScanEvidenceOf(sqlite, scanned) : null;
       const asks = evidence
         ? checked.map((a) => {
-            const e = a.pdf && a.page !== null ? evidence.get(a.page) : undefined;
+            const e =
+              a.pdf && a.page !== null ? (evidence.get(a.page) ?? { lines: null }) : undefined;
             return e ? { ...a, scan: e } : a;
           })
         : checked;

@@ -52,7 +52,9 @@ import {
   effectiveOptions,
   extractionOf,
   fileDbsDir,
+  pageKindsAt,
   parserImages,
+  pdfFrameKindOf,
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { picturesByWindows, picturesLeftOutOf } from './pdf-picture-windows';
@@ -347,9 +349,11 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
     LONG,
   );
   /** A stand-in decider: every page a table, sure; `room` the day cap. */
-  function standIn(room = 20_000) {
+  function standIn(room = 20_000, live = false) {
     const asked: { page: number; side: number; jpeg: boolean }[] = [];
     const d: PdfPageDecide = {
+      live,
+      floor: 0.6,
       room: async () => room - asked.length,
       kept: async () => null,
       ask: async (ask, picture) => {
@@ -423,6 +427,13 @@ describe.skipIf(!DIR)('large PDFs through page windows (the parser image)', () =
       );
       expect(tk.length).toBe(7);
       expect(typed.asked.length).toBe(7);
+      // Live (M4): the asks come before the Reader, over every page (no
+      // rows yet); every answer used, the frame is the book.
+      const live = standIn(20_000, true);
+      const before = pageKindsAt(await pdfPageKindsOf(ROUTER, bytes, {}, live.d, null), live.d);
+      expect(live.asked.length).toBe(asked.length);
+      expect(before.filter((k) => k.from === PAGE_KIND_FROM.decider).length).toBe(asked.length);
+      expect(pdfFrameKindOf(before, 'scan')).toBe('book');
     },
     LONG,
   );

@@ -9,7 +9,10 @@
  *
  * The pages to read come from the core as `state.visionPages` (the Reader's
  * tab Pages, read by bookVisionPagesOf in packages/content/src/
- * book-pages.ts), so a page the Reader read well is never asked. The step
+ * book-pages.ts), so a page the Reader read well is never asked. Since M4
+ * (plan page c607711a) they are the office-lane pages, in a book or in a
+ * PDF drawing (its office pages with no text layer, for the Scan reader),
+ * and a page whose type is unsure, whose picture is kept. The step
  * reads them in the page window the core gives (`pageFrom`, `pageTo`) and
  * asks only the first `pages` of the file's marked pages (the option), but
  * those in `state.donePages`: a page whose picture and text are saved
@@ -47,8 +50,24 @@ import {
   type PipelineStep,
 } from '../../contract';
 
-/** The kind of the PDF router this Agent reads. */
+/** The kind of the PDF router this Agent reads first: a book. */
 export const KIND = 'book';
+
+/** Every kind it reads (M4): a book, and a PDF drawing of any kind, whose
+ *  office-lane pages the core names by the page types. Not a `document`
+ *  (no database). */
+export const KINDS: readonly string[] = [
+  KIND,
+  'pid',
+  'pfd',
+  'isometric',
+  'equipment_drawing',
+  'datasheet',
+  'table',
+  'scan',
+  'other_drawing',
+  'unsure',
+];
 
 /** The one field of every ask: the text of the page. */
 export const FIELDS: readonly PipelineAskField[] = [
@@ -107,7 +126,9 @@ type Picture = NonNullable<Awaited<ReturnType<RenderFn>>[number]>;
 
 export const step: PipelineStep = async (req, job) => {
   const ext = (req.file?.ext ?? '').toLowerCase();
-  if (ext !== 'pdf' || req.kind !== KIND) return { status: 'not_mine' };
+  if (ext !== 'pdf' || req.kind === undefined || !KINDS.includes(req.kind)) {
+    return { status: 'not_mine' };
+  }
   const failed = (why: string) => ({ status: 'failed' as const, warnings: [why] });
   // The file's first marked pages, up to the option, but those done; of
   // them, this window's. The option counts every marked page of the file,

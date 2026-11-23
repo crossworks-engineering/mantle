@@ -1,9 +1,11 @@
 /**
- * Page types of a PDF (plan page c607711a, milestone M3: in shadow). The
+ * Page types of a PDF (plan page c607711a, milestones M3 and M4). The
  * router's part 2 (docs/pipelines.md, "The router", "Page types") draws a
  * picture of each page in page windows and asks the decider, one ask a page,
- * what type of page it is. In M3 the answer is only recorded: the route of
- * the file does not change. Pure: no I/O here.
+ * what type of page it is. In shadow the answer is only recorded; on a box
+ * whose `pdf_kind` is live (M4) a used answer names the page's lane, and the
+ * lanes of the pages name the file's frame ({@link pdfFrameKindOf}): the
+ * Reader that reads it. Pure: no I/O here.
  *
  * - What leaves the box for one page: the 8 fields of {@link PdfPageAsk},
  *   checked in the core by {@link pdfPageAskOf}, the one check. The picture
@@ -91,13 +93,15 @@ export function pdfPageAskOf(v: unknown): PdfPageAsk | null {
 }
 
 /** What named a page's `Kind` (the column `Kind from`): the decider, or the
- *  rules with why the decider's answer is not the kind. M3 is shadow: no
- *  page is `decider` yet. */
+ *  rules with why the decider's answer is not the kind. `decider` only on a
+ *  box whose `pdf_kind` is live (M4, pageKindsAt). */
 export const PAGE_KIND_FROM = {
+  /** A used answer (live, at or over the floor): `Kind` is its kind. */
   decider: 'decider',
-  /** An answer, recorded only (M3, or the use in shadow). */
+  /** An answer, recorded only: the use in shadow. */
   shadow: 'rules: shadow',
-  /** An answer whose route's summed chance is under the use's floor. */
+  /** On a live box: an answer whose route's summed chance is under the
+   *  use's floor (pageKindsAt; the page asks give it at the ask too). */
   low: 'rules: low confidence',
   /** Asked, no answer: the call failed, the breaker was open, or the use
    *  went off. */
@@ -143,9 +147,10 @@ const PAGES = 'Pages';
  *  PAGE_KIND_FROM in place of the Reader's own (`rules`, `picture`,
  *  `other_pages`, which the drawing reader's description explains). */
 export const PAGE_KINDS_NOTE =
-  'Kind from of a row in Pages may say rules: and what the page ask gave (shadow, low' +
-  " confidence, no answer, cap, day cap, not drawn, blank) in place of the reader's own word;" +
-  ' the answer is in Decider kind and Decider confidence, and Kind is not changed.';
+  "Kind from of a row in Pages may say decider (the page ask's answer is the page's Kind and" +
+  ' its lane) or rules: and why the answer is not used (shadow, low confidence, no answer, cap,' +
+  " day cap, not drawn, blank) in place of the reader's own word; the answer is in Decider" +
+  ' kind and Decider confidence.';
 
 /** The pages that have a row in the tab `Pages` (its column `Page`): the
  *  pages whose type has a place to stand. No tab, no pages. */
@@ -168,9 +173,10 @@ export type PageKindsRead = { sheets: readonly ParsedSheet[]; description?: stri
 
 /**
  * The read with the page types in the tab `Pages`, by its column `Page`:
- * a column of PAGE_KIND_COLUMNS the tab lacks is added; `Kind` is set only
- * where the Reader left it empty (the drawing reader names its own page
- * kinds); the other three are set. A page with no row keeps no type (its
+ * a column of PAGE_KIND_COLUMNS the tab lacks is added; `Kind` is set where
+ * the Reader left it empty (the drawing reader names its own page kinds),
+ * and for a used answer (`decider`) over the Reader's own; the other three
+ * are set. A page with no row keeps no type (its
  * window was not read). The description gets PAGE_KINDS_NOTE here, the one
  * place, so every path that puts page types back (an upload, a read again,
  * the sketch read) says what the words of `Kind from` are. No page types:
@@ -213,7 +219,10 @@ function sheetsWithPageKinds(
       while (out.length < columns.length) out.push(null);
       const k = byPage.get(Number(row[pageAt]));
       if (!k) return out;
-      if (out[kindAt] === null || out[kindAt] === undefined) out[kindAt] = k.kind;
+      // A used answer names the page's Kind over the Reader's own (M4).
+      if (k.from === PAGE_KIND_FROM.decider || out[kindAt] === null || out[kindAt] === undefined) {
+        out[kindAt] = k.kind;
+      }
       out[fromAt] = k.from;
       out[deciderAt] = k.deciderKind;
       out[confAt] = k.deciderConfidence;
@@ -247,4 +256,96 @@ export function pageKindsOfRows(rows: readonly Record<string, unknown>[]): PdfPa
     });
   }
   return out.sort((a, b) => a.page - b.page);
+}
+
+// ─── Lanes and the frame (M4: routing by page types, live) ──────────────────
+
+/** The options of a page by route (the M2 bench): `office` is read by the
+ *  book reader, `drawing` by the drawing reader. */
+export const PDF_PAGE_ROUTES = {
+  office: ['document', 'table', 'datasheet'],
+  drawing: ['pid', 'pfd', 'isometric', 'equipment_drawing', 'other_drawing'],
+} as const;
+
+export type PdfPageRoute = keyof typeof PDF_PAGE_ROUTES;
+
+/** Under this route sum a page's picture is kept (Jason, 2026-11-23): a
+ *  graph, a chart, a sketch chart or a cover page is typed office with a low
+ *  sum, and an LLM looks at its picture at question time. On a live box the
+ *  PDF page read reads such a page and saves its picture with its text. */
+export const PDF_PAGE_PICTURE_BELOW = 0.75;
+
+/** The route of a page kind: an option of PDF_PAGE_ROUTES, or a rules kind
+ *  (`scan`, a raster sheet larger than A3, is a drawing). Null: no route
+ *  (`unsure`, `none`, `book`, null). */
+export function pageRouteOfKind(kind: string | null): PdfPageRoute | null {
+  if (kind === null) return null;
+  if ((PDF_PAGE_ROUTES.office as readonly string[]).includes(kind)) return 'office';
+  if (kind === 'scan' || (PDF_PAGE_ROUTES.drawing as readonly string[]).includes(kind)) {
+    return 'drawing';
+  }
+  return null;
+}
+
+/**
+ * The page types as this read uses them (pure; M4): a page with an answer
+ * is `decider` when the box is live and the answer's route sum is at or
+ * over the floor (its `Kind` is then the answer's kind); on a live box an
+ * answer under the floor is `rules: low confidence`; in shadow every answer
+ * is `rules: shadow` (shadow is why none is used, whatever its sum, so
+ * `rules: low confidence` is a live read's word alone). Worked out
+ * at every read with a decider, from the stored sum, so an answer of a
+ * shadow week is used once the box is live, with no ask. A page once
+ * `decider` whose answer is no longer used has no rules kind kept: `Kind`
+ * is the Reader's own again (withPageKinds). Pages with no answer as they
+ * are.
+ */
+export function pageKindsAt(
+  kinds: readonly PdfPageKind[],
+  at: { live: boolean; floor: number },
+): PdfPageKind[] {
+  return kinds.map((k) => {
+    const conf = k.deciderConfidence;
+    if (k.deciderKind === null || conf === null) return k;
+    if (at.live && conf >= at.floor) {
+      return { ...k, kind: k.deciderKind, from: PAGE_KIND_FROM.decider };
+    }
+    return {
+      ...k,
+      kind: k.from === PAGE_KIND_FROM.decider ? null : k.kind,
+      from: at.live ? PAGE_KIND_FROM.low : PAGE_KIND_FROM.shadow,
+    };
+  });
+}
+
+/** The drawing kinds a frame may name, in the order a tie takes. */
+const FRAME_DRAWING_KINDS: readonly string[] = [...PDF_PAGE_ROUTES.drawing, 'scan'];
+
+/**
+ * The kind of a file by the lanes of its pages (Jason, Q4, 2026-11-21; M4):
+ * the route of most pages with ink, a tie to the book. A page votes by the
+ * route of its `Kind` (a used answer's, else its rules kind: pageRouteOfKind);
+ * a blank page and a page with no route do not vote. With no used answer
+ * (`decider`) on any page the kind is `kind`, as named before. Office wins:
+ * `book`. Drawing wins: `kind` when it is a drawing kind, else the
+ * commonest drawing kind of the votes. Pure, one count.
+ */
+export function pdfFrameKindOf(kinds: readonly PdfPageKind[], kind: string): string {
+  if (!kinds.some((k) => k.from === PAGE_KIND_FROM.decider)) return kind;
+  let office = 0;
+  const drawing = new Map<string, number>();
+  for (const k of kinds) {
+    if (k.from === PAGE_KIND_FROM.blank) continue;
+    const route = pageRouteOfKind(k.kind);
+    if (route === 'office') office += 1;
+    else if (route === 'drawing') drawing.set(k.kind!, (drawing.get(k.kind!) ?? 0) + 1);
+  }
+  const drawn = [...drawing.values()].reduce((n, v) => n + v, 0);
+  if (office >= drawn) return 'book';
+  if (FRAME_DRAWING_KINDS.includes(kind)) return kind;
+  let best = FRAME_DRAWING_KINDS[0]!;
+  for (const k of FRAME_DRAWING_KINDS) {
+    if ((drawing.get(k) ?? 0) > (drawing.get(best) ?? 0)) best = k;
+  }
+  return best;
 }

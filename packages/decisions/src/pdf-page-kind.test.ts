@@ -4,11 +4,12 @@
  * are stood in; resolveUse is the real one.
  *
  * - The Q5 guard (Jason, 2026-11-21: in shadow, page pictures leave only dev
- *   and the bench): a box whose decider runs the shipped
- *   `~typesafe/jev-latest`, as every client box does, with `pdf_kind` on in
- *   shadow, asks nothing and sends no picture. Nor does a box pinned to
- *   PDF_PAGE_MODEL with no `uses.pdf_kind.pages: true` (the operator's key,
- *   never shipped). Only both asks.
+ *   and the bench): a box with `pdf_kind` on but no `uses.pdf_kind.pages:
+ *   true` (the operator's key, never shipped), as every client box, asks
+ *   nothing and sends no picture. Since M4 there is no model pin: the key
+ *   with the use on is the gate, whatever the decider's model.
+ * - pdfPageUseOf: the model, whether page routing is live (`mode: 'live'`),
+ *   and the floor.
  * - The floor is on the summed chance of the route, not on one option's.
  * - The state is the bench's: its 8 fields in its order, the picture as an
  *   image_url part.
@@ -38,8 +39,11 @@ vi.mock('./decide', async (orig) => {
 });
 
 const { USE_TIMEOUT_FLOOR_MS } = await import('./decide');
-const { PDF_PAGE_INSTRUCTIONS, PDF_PAGE_MODEL, decidePdfPageKind, pageRouteOf, pdfPageAsksOn } =
+const { PDF_PAGE_INSTRUCTIONS, decidePdfPageKind, pageRouteOf, pdfPageAsksOn, pdfPageUseOf } =
   await import('./pdf-kind');
+
+/** The model the M2 bench measured (no pin in the code since M4). */
+const PDF_PAGE_MODEL = 'typesafe/jev-1.14';
 
 /** A JPEG header of `w` x `h` (enough for sniffImage). */
 function jpeg(w: number, hgt: number): Buffer {
@@ -97,14 +101,6 @@ beforeEach(() => {
 });
 
 describe('the Q5 guard: where a page picture may go', () => {
-  it('a client box (the shipped ~typesafe/jev-latest, pdf_kind on in shadow) asks nothing', async () => {
-    h.worker = { model: '~typesafe/jev-latest', params: ON };
-    h.outcome = outcome('table', { table: 0.9 });
-    expect(await pdfPageAsksOn('o')).toBe(false);
-    expect(await decidePdfPageKind('o', ASK, PICTURE)).toBeNull();
-    expect(h.calls).toHaveLength(0);
-  });
-
   it('a client box with jev-1.14 but no `pages` key asks nothing (the manifest never ships it)', async () => {
     h.worker = {
       model: PDF_PAGE_MODEL,
@@ -133,13 +129,47 @@ describe('the Q5 guard: where a page picture may go', () => {
     expect(h.calls).toHaveLength(0);
   });
 
-  it('a decider pinned to typesafe/jev-1.14 with pdf_kind on and `pages: true` asks, one call a page', async () => {
-    expect(PDF_PAGE_MODEL).toBe('typesafe/jev-1.14');
-    h.worker = { model: PDF_PAGE_MODEL, params: ON };
-    h.outcome = outcome('table', { table: 0.5, datasheet: 0.4, pid: 0.1 });
-    expect(await pdfPageAsksOn('o')).toBe(true);
-    expect(await decidePdfPageKind('o', ASK, PICTURE)).not.toBeNull();
-    expect(h.calls).toHaveLength(1);
+  it('any decider model with pdf_kind on and `pages: true` asks, one call a page (no pin, M4)', async () => {
+    for (const model of [PDF_PAGE_MODEL, '~typesafe/jev-latest']) {
+      h.calls.length = 0;
+      h.worker = { model, params: ON };
+      h.outcome = outcome('table', { table: 0.5, datasheet: 0.4, pid: 0.1 });
+      expect(await pdfPageAsksOn('o')).toBe(true);
+      expect(await decidePdfPageKind('o', ASK, PICTURE)).not.toBeNull();
+      expect(h.calls).toHaveLength(1);
+    }
+  });
+});
+
+describe('pdfPageUseOf: the model, live, the floor', () => {
+  it('null where page asks are off', async () => {
+    expect(await pdfPageUseOf('o')).toBeNull();
+    h.worker = {
+      model: PDF_PAGE_MODEL,
+      params: { uses: { pdf_kind: { enabled: true, mode: 'live' } } },
+    };
+    expect(await pdfPageUseOf('o')).toBeNull();
+    h.worker = {
+      model: PDF_PAGE_MODEL,
+      params: { uses: { pdf_kind: { enabled: false, mode: 'live', pages: true } } },
+    };
+    expect(await pdfPageUseOf('o')).toBeNull();
+  });
+
+  it("shadow by default, live only with the mode live; the floor is the use's", async () => {
+    h.worker = { model: '~typesafe/jev-latest', params: ON };
+    expect(await pdfPageUseOf('o')).toEqual({
+      model: '~typesafe/jev-latest',
+      live: false,
+      floor: 0.6,
+    });
+    h.worker = {
+      model: PDF_PAGE_MODEL,
+      params: {
+        uses: { pdf_kind: { enabled: true, mode: 'live', pages: true, min_confidence: 0.7 } },
+      },
+    };
+    expect(await pdfPageUseOf('o')).toEqual({ model: PDF_PAGE_MODEL, live: true, floor: 0.7 });
   });
 });
 

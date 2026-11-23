@@ -341,7 +341,10 @@ describe('the roles', () => {
 
   it('the book Agent: one tab, text by page, vision one ask a page, in the book windows', () => {
     const agent = AGENTS.find((p) => p.id === 'pdf-page-read')! as PipelineManifest;
-    expect(agent.match).toEqual({ ext: ['pdf'], kind: ['book'] });
+    // A book, and since 1.3.0 (M4) every kind the drawing reader claims:
+    // the office-lane pages of a PDF drawing.
+    const drawing = BUILTIN_PIPELINES.find((p) => p.id === 'drawing-pdf')!;
+    expect(agent.match).toEqual({ ext: ['pdf'], kind: ['book', ...drawing.match.kind!] });
     expect(agent.produces).toEqual({ tabs: ['Page text'], pages: true });
     expect(agent.needs).toEqual({
       weight: 'heavy',
@@ -361,7 +364,11 @@ describe('the roles', () => {
 
   it('the PDF Agent: two tabs, the vision worker 31 times at most, two options', () => {
     const agent = AGENTS.find((p) => p.id === 'pdf-sheet-read')! as PipelineManifest;
-    expect(agent.match).toEqual({ ext: ['pdf'] });
+    // Its kinds are the core's check (1.2.0, M4): a book's drawing pages too.
+    expect(agent.match).toEqual({
+      ext: ['pdf'],
+      kind: ['scan', 'isometric', 'unsure', 'other_drawing', 'book'],
+    });
     expect(agent.produces).toEqual({ tabs: ['Title block', 'Sheet list'] });
     expect(agent.needs).toEqual({ weight: 'heavy', timeMs: 240_000, workers: { vision: 31 } });
     expect(asksMaxOf(agent)).toBe(31);
@@ -370,7 +377,7 @@ describe('the roles', () => {
     // and its two halves), page 1 one more (its title block corner).
     const pages = agent.options!.pages!;
     expect(pages.type === 'number' && 3 * pages.max + 1).toBe(31);
-    expect(agent.version).toBe('1.1.0');
+    expect(agent.version).toBe('1.2.0');
   });
 
   it('the first Agent: the title block of a raster or plot isometric, two vision asks at most', () => {
@@ -424,8 +431,9 @@ describe('the PDF router', () => {
       named.filter((k) => k !== 'document' && k !== 'book').sort(),
     );
     // 1.1.1: the File tab's Rules version 3 (the kind `book`); 1.1.2: rules 4;
-    // 1.1.3: rules 5; 1.1.4: the page types in Pages (M3).
-    expect(reader.version).toBe('1.1.4');
+    // 1.1.3: rules 5; 1.1.4: the page types in Pages (M3); 1.1.5: Kind
+    // from `decider` (M4).
+    expect(reader.version).toBe('1.1.5');
   });
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {

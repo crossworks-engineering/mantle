@@ -6,7 +6,9 @@
  *    gives no asker, so no picture is drawn or sent (the Q5 guard);
  *  - a paid answer is kept in the answer cache, and `kept` reads it back
  *    with no call (an extract tried again pays for no page twice); the key
- *    holds the question (its text and options), not the router's version;
+ *    holds the box's decider model and the question (its text and options),
+ *    not the router's version;
+ *  - it carries the box's mode (live) and floor, for the read (M4);
  *  - the room of the day cap;
  *  - 3 nulls in a row (a failure or any other no answer), or the breaker
  *    open, say `stop`.
@@ -40,6 +42,7 @@ const ASK = {
   tag_like_tokens: 40,
   text_sample: 'P&ID UNIT 100',
 };
+const USE = { model: 'typesafe/jev-1.14', live: false, floor: 0.6 };
 const ANSWER = { kind: 'pid', confidence: 0.97, sure: true, model: 'm', mode: 'shadow' as const };
 
 /** The stand-ins: the guards, a decider that answers or fails, the cap. */
@@ -47,7 +50,7 @@ function deps(over: Partial<Deps> & { answer?: 'ok' | 'fail' | 'skip' | 'none' }
   const calls: unknown[] = [];
   const d: Partial<Deps> = {
     allowed: async () => true,
-    on: async () => true,
+    use: async () => USE,
     dayCap: () => 100,
     today: async () => 40,
     decide: (async (_o: string, fields: unknown, _p: Buffer, batch?: any) => {
@@ -69,8 +72,30 @@ beforeEach(() => {
 describe('the page asks of a file', () => {
   it('no model work for the file, or page asks off on this box: no asker at all', async () => {
     expect(await pdfPageDeciderOf('o', 'n', deps({ allowed: async () => false }).d)).toBeNull();
-    expect(await pdfPageDeciderOf('o', 'n', deps({ on: async () => false }).d)).toBeNull();
+    expect(await pdfPageDeciderOf('o', 'n', deps({ use: async () => null }).d)).toBeNull();
     expect(await pdfPageDeciderOf('o', 'n', deps().d)).not.toBeNull();
+  });
+
+  it("carries the box's mode and floor (M4)", async () => {
+    expect(await pdfPageDeciderOf('o', 'n', deps().d)).toMatchObject({ live: false, floor: 0.6 });
+    const live = await pdfPageDeciderOf(
+      'o',
+      'n',
+      deps({ use: async () => ({ ...USE, live: true, floor: 0.7 }) }).d,
+    );
+    expect(live).toMatchObject({ live: true, floor: 0.7 });
+  });
+
+  it("the key holds the box's decider model: another model asks again", async () => {
+    const asker = await pdfPageDeciderOf('o', 'n', deps().d);
+    await asker!.ask(ASK, Buffer.from('pixels'));
+    expect(await asker!.kept(ASK, Buffer.from('pixels'))).toEqual(ANSWER);
+    const other = await pdfPageDeciderOf(
+      'o',
+      'n',
+      deps({ use: async () => ({ ...USE, model: '~typesafe/jev-latest' }) }).d,
+    );
+    expect(await other!.kept(ASK, Buffer.from('pixels'))).toBeNull();
   });
 
   it('the room is the day cap less the asks of the last 24 hours', async () => {

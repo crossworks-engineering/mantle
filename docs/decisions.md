@@ -640,21 +640,31 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   document, table, datasheet; drawing = the five drawing options; the M2
   bench, route right on 99.3% of 545 pages against 95.2% with the floor on
   one option): `confidence` is that sum, and the floor (`defer_below`) is on
-  it. In M3 no page answer is used: the route of the file does not change.
-  The answers stand in the Reader's tab `Pages` (docs/pipelines.md, "Page
-  types").
-  - **Where it runs.** Two checks (`pdfPageAsksOn`): the decider's params
-    hold `uses.pdf_kind.pages: true` with the use on, and the decider
-    worker's model is `typesafe/jev-1.14` (`PDF_PAGE_MODEL`, the model the
-    bench measured). The file must also be one that may have model work.
-    The system manifest never ships `pages`, and an adopt keeps an
-    operator's value and adds none, so a roll, a seed or a person who picks
-    jev-1.14 for another use sends no page picture (Jason, 2026-11-21: in
-    shadow, page pictures leave only dev and the bench).
-  - **Operator step on dev and the bench.** Set the decider worker's model
-    to `typesafe/jev-1.14`, and add `"pages": true` to `uses.pdf_kind` in
-    its params (`"pdf_kind": { "enabled": true, "mode": "shadow", "pages":
-true }`). Remove the key to stop the page asks.
+  it. In shadow no page answer is used: the route of the file does not
+  change. Live (M4), an answer at or over the floor names its page's lane,
+  and the lanes name the file's Reader. The answers stand in the Reader's
+  tab `Pages` (docs/pipelines.md, "Page types").
+  - **Where it runs.** One gate (`pdfPageUseOf`): the decider's params
+    hold `uses.pdf_kind.pages: true` with the use on. The file must also be
+    one that may have model work. M4 dropped the model pin: any decider
+    model asks, a model with no pictures skips each ask (`no_pictures`) and
+    the file's asks stop. The answer cache key holds the box's decider
+    model. The system manifest never ships `pages`, and an adopt keeps an
+    operator's value and adds none, so a roll or a seed sends no page
+    picture (Jason, 2026-11-21: in shadow, page pictures leave only dev and
+    the bench).
+  - **Live (M4).** Routing by the page answers is live only with
+    `uses.pdf_kind.mode: 'live'` too. The manifest ships `shadow`; the
+    operator sets `live` box by box. The same mode makes the file's one ask
+    of part 1 used (as it was before M4).
+  - **Operator step.** Shadow (dev and the bench): add `"pages": true` to
+    `uses.pdf_kind` in the decider worker's params (`"pdf_kind": {
+"enabled": true, "mode": "shadow", "pages": true }`); the bench measured
+    `typesafe/jev-1.14`. Live on one box: the same with `"mode": "live"`
+    (`"pdf_kind": { "enabled": true, "mode": "live", "pages": true }`). Back
+    to `shadow` to stop routing; remove `pages` to stop the page asks. A
+    file keeps the kind its last read named until it is read with the page
+    decider again (a new upload, or a person's run of the file).
   - **Timeout.** The use's floor is 5 s (`USE_TIMEOUT_FLOOR_MS.pdf_kind`), as
     for `scan_read_check`: a picture call runs in TypeSafe's long-context
     mode. It holds for the file's one ask too.
