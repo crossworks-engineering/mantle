@@ -191,7 +191,7 @@ describe('loadExtractableBody: terminal skips', () => {
     expect(h.recordSkippedTrace).not.toHaveBeenCalled();
   });
 
-  describe('a reader that sniffs its own bytes fails on bytes of its format', () => {
+  describe('a reader fails on bytes of its format', () => {
     const dwg = () => {
       h.loadFileBytes.mockResolvedValue({
         bytes: Buffer.concat([Buffer.from('AC1032'), Buffer.alloc(200)]),
@@ -225,6 +225,26 @@ describe('loadExtractableBody: terminal skips', () => {
       h.parseDocumentBytes.mockRejectedValueOnce(busy);
       await expect(run(dwg())).rejects.toBe(busy);
       expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+    });
+
+    it('a corrupt .docx is document_unreadable, not indexed as its own name', async () => {
+      h.loadFileBytes.mockResolvedValue({
+        bytes: Buffer.from('PK made up'),
+        filename: 'site-inspection-report.docx',
+        ext: 'docx',
+        mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      h.parseDocumentBytes.mockRejectedValueOnce(
+        new ParserError('failed', 'the document is damaged', { retryable: false, terminal: false }),
+      );
+      const res = await run(
+        fileNode(
+          'site-inspection-report.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ),
+      );
+      expect(res.ok).toBe(false);
+      expect(terminal()).toBe('document_unreadable');
     });
 
     it('a PDF reader verdict keeps its own recovery path (OCR from the title)', async () => {

@@ -86,7 +86,7 @@ const READ_FAILURES: ReadonlySet<string> = new Set([
 
 const HINTS: Readonly<Record<string, string>> = {
   document_unreadable:
-    'The parser could not read this file (too large, too slow, or out of memory, twice). Its content is not in search; only its name is.',
+    'The parser could not read this file. Its content is not in search; only its name is.',
   pdf_too_large:
     'The PDF is too large to read for OCR. Its content is not in search; only its name is.',
   encrypted_pdf:

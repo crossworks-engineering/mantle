@@ -277,11 +277,13 @@ reason: 'facts_deferred', why, deferred, processed, at }` until the last
   no reader takes is not a skip: it gets the default text (a `default_text`
   step: name, type, size, archive entry names; docs/parser.md, "A file no
   reader takes") and is indexed. Older traces carry `no_parser` for those
-  types too. A reader of these types (CAD, DWF, the legacy sheets:
-  `isSniffedRoute`) that FAILS on bytes of its format is no renamed file:
-  its parser verdict is `document_unreadable` (failed, with `parser_code`),
-  never `no_parser`. Before that rule, a DWG the CAD converter could not
-  read (parser code `failed`) fell back to its title and got `no_parser`.
+  types too. A reader that FAILS on bytes of its format is no renamed file:
+  every parser verdict is `document_unreadable` (failed, with
+  `parser_code`), never `no_parser` and never the title read as the
+  document. A PDF is the one exception, as its OCR and password paths start
+  from the title. Before that rule, a DWG the CAD converter could not read
+  (parser code `failed`) got `no_parser`, and a corrupt .docx was indexed
+  as its own name.
 - `pdf_unreadable`, rasterizing the PDF for OCR THREW. This is a fault in the
   PDF pipeline, not a verdict on the document — the file may be perfectly
   good — so it is deliberately not `no_text_layer`, whose hint would send you

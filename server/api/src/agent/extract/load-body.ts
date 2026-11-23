@@ -41,7 +41,7 @@ import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '
 import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { readerPassOf, readerTextOf, standingReaderText } from '@mantle/content/reader-passes';
 import { withReadCutSink } from '@mantle/files/read-cut-sink';
-import { isHollowFilenameBody, isSniffedRoute } from '../extractor-parse';
+import { isHollowFilenameBody } from '../extractor-parse';
 import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import {
@@ -378,30 +378,30 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         );
         if (text.trim().length > 0) return cleanText(text);
       } catch (err) {
-        // The parser's verdicts that are not about the document's content:
-        //  - retryable (the parser busy or restarting, or the FIRST time these
-        //    bytes were too large, timed out or crashed it): the extract fails
-        //    and pg-boss retries it; indexing the title now would be a false
-        //    success;
-        //  - terminal (the SECOND time for the same bytes): the caller
-        //    records the document_unreadable skip.
-        // DWG/DXF/DGN behave the same way: their CAD exchange is the parser's.
-        // - any verdict of a reader that sniffs its own bytes (CAD, DWF, the
-        //   legacy sheets: isSniffedRoute): its bytes passed the sniff, so
-        //   the title would be read as "not this format" (`no_parser`, a
-        //   renamed file); the caller records document_unreadable with the
-        //   parser's code instead.
-        if (isParserError(err) && (err.retryable || err.terminal || isSniffedRoute(route))) {
+        // Every parser error is thrown: a retryable one (the parser busy or
+        // restarting, or the FIRST time these bytes were too large, timed
+        // out or crashed it) retries the extract; any other is a verdict on
+        // the document, and the caller records document_unreadable with the
+        // parser's code. The title is never read as the document: a corrupt
+        // .docx was indexed as its own name, and a DWG the CAD converter
+        // could not read got `no_parser` ("a renamed file").
+        // One exception: a first verdict where a recovery path starts from
+        // the title (recoversFromTitle): a PDF goes on to OCR and its
+        // passwords, an own Reader's type to the default text.
+        if (isParserError(err) && !(!err.retryable && !err.terminal && recoversFromTitle(route))) {
           throw err;
         }
-        // The reader refused the document (corrupt, encrypted, not what its
-        // name says) or no reader takes it: the step recorded the error; fall
-        // through to the title, as before (a PDF's own recovery paths, OCR
-        // and passwords, start from the title).
       }
     }
   }
   return node.title;
+}
+
+/** The routes whose failed read goes on from the title: a PDF (its OCR,
+ *  encrypted and password paths) and an own Reader's type (the default
+ *  text). Every other reader's verdict is document_unreadable. */
+function recoversFromTitle(route: string): boolean {
+  return route === 'pdf-parse' || route === 'pipeline';
 }
 
 /** The parser refused these bytes for the second time. */
@@ -481,8 +481,10 @@ export async function loadExtractableBody(
   // brain, nothing ever contradicts them, and the failure is discovered only
   // when an answer is quietly wrong. An honest terminal skip that names the
   // export is the whole point.
-  // The parser refused these bytes twice (parser-client.ts): terminal, so the
-  // drain does not re-queue the node until it changes.
+  // A verdict on the document (parser-client.ts): the parser refused these
+  // bytes twice, or a reader refused them at the first read (`failed`,
+  // `unsupported`). Terminal, so the drain does not re-queue the node until
+  // it changes.
   const unreadable = async (err: ParserError): Promise<{ ok: false }> => {
     await recordTerminalSkip(
       {
@@ -1042,7 +1044,7 @@ export async function loadExtractableBody(
           // CAD routes land here only on a SNIFF MISS (the bytes are not that
           // format — a renamed DWFx, a mislabelled file); "no parser reads
           // .dwg" would be false, and a parser failure never reaches this
-          // guard (it throws upstream as a real, retryable extract error).
+          // guard (readNodeBodyRaw throws it: retried, or document_unreadable).
           hint: isDrawingExt(fileExt)
             ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
             : `The .${fileExt} workbook could not be converted for reading (an unusual or damaged legacy file). Nothing to index beyond the filename: re-save it as .xlsx and re-upload.`,
