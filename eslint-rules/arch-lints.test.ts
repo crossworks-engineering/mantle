@@ -583,7 +583,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // Key status on the fleet (+3 with a caller): GET (+HEAD)
     // /api/fleet/keys and POST /api/fleet/keys/test (owner, the settings
     // area).
-    expect(rows.filter((r) => r.caller).length).toBe(911);
+    // Search languages (+3 with a caller): GET (+HEAD) and PUT
+    // /api/settings/search-languages (owner, the settings area).
+    expect(rows.filter((r) => r.caller).length).toBe(914);
     // 894 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
