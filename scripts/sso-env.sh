@@ -45,7 +45,7 @@
 # screen works again; a real hash in .env is left as it is.
 # --scim-auto-link is left as it is unless given.
 # --dry-run prints, per line, "same" or "changes" (never a value) and stops.
-# --no-up writes the lines and skips `docker compose up -d`.
+# --no-up writes the lines and skips the apply (the app services' `docker compose up -d --no-deps`).
 #
 # What it does on the box, in order:
 #   1. prints, per line, same or changes, and whether .env holds a client secret
@@ -53,11 +53,14 @@
 #   2. copies .env to backups/env/.env-<UTC time>-sso (owner and mode kept);
 #   3. writes only the lines that change, keeping .env's owner and mode
 #      (the updater's own env_rewrite and persist_env, sent from this checkout);
-#   4. runs `docker compose up -d` in the stack (web, api and the workers are
-#      recreated; running turns are cut), waits for web to be healthy, and
-#      checks that web runs with the mode, issuer and client id it wrote.
+#   4. recreates only the app services that run (web, api and the workers, with
+#      `docker compose up -d --no-deps`; running turns are cut), waits for web
+#      to be healthy, and checks that web runs with the mode, issuer and client
+#      id it wrote. Postgres, the object store, the parser, Caddy and the other
+#      infra containers are never touched: a plain `up -d` on a box whose
+#      compose file is newer than those containers would recreate them.
 # A failed step stops the script. To undo: copy the backup over .env and run
-# `docker compose up -d` in the stack.
+# the script again, or the same `up -d --no-deps` of the app services.
 #
 # Test hook: SSO_ENV_LOCAL=1 runs the box side with a local `sh` (needs
 # --stack and --no-up). scripts/test-deploy-scripts.sh uses it.
@@ -197,11 +200,15 @@ VARS="STACK=$(q "$STACK") MODE=$(q "$MODE") ISSUER=$(q "$ISSUER") CLIENT=$(q "$C
 OUT=$(printf '%s\n%s\n%s\n' "$VARS" "$FUNCS" "$BODY" | rsh 'sh -s') || { echo "$OUT"; die "the box side failed: .env is as it was, or see the backup line above"; }
 echo "$OUT"
 case "$OUT" in *"dry run"* | *"nothing to change"*) exit 0 ;; esac
-[ "$UP" = 1 ] || { echo "--no-up: run 'docker compose up -d' in $STACK to apply"; exit 0; }
+[ "$UP" = 1 ] || { echo "--no-up: in $STACK, run 'docker compose up -d --no-deps' with the running web, api and worker_* services to apply"; exit 0; }
 
-# ── 4: recreate and check ────────────────────────────────────────────────────
-echo "▶ docker compose up -d (web, api and the workers are recreated)"
-rsh "cd $(q "$STACK") && out=\$(docker compose up -d 2>&1); rc=\$?; printf '%s\n' \"\$out\" | tail -n 3; exit \$rc" || die "docker compose up -d failed: restore the backup and run it again"
+# ── 4: recreate the app services only, and check ─────────────────────────────
+# Never a plain `up -d`: it would also recreate Postgres, the object store, the
+# parser and the other infra containers on a box whose compose file is newer
+# than they are. Only the running web, api and worker_* services read the lines.
+APP_RE='^(web|api|worker_[a-z0-9_]+)$'
+echo "▶ docker compose up -d --no-deps (the running web, api and worker services are recreated)"
+rsh "cd $(q "$STACK") && svcs=\$(docker compose ps --services --status running | grep -E '$APP_RE' | tr '\n' ' ') && [ -n \"\$svcs\" ] && out=\$(docker compose up -d --no-deps \$svcs 2>&1); rc=\$?; printf '%s\n' \"\$out\" | tail -n 3; exit \$rc" || die "docker compose up -d --no-deps of the app services failed: restore the backup and run it again"
 health=""
 for _ in $(seq 1 36); do
   health=$(rsh "docker inspect -f '{{.State.Health.Status}}' mantle_web" 2>/dev/null || true)

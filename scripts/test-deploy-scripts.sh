@@ -3171,6 +3171,9 @@ printf 'MANTLE_SCIM_TOKEN_HASH=%s\n' "$(printf 'a%.0s' $(seq 1 64))" >> "$SS/.en
 check "sso-env: --scim on keeps a real hash" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --scim on | grep -q 'nothing to change' && grep -q '^MANTLE_SCIM_TOKEN_HASH=aaaa' '$SS/.env'"
 check "sso-env: --mode cc removes only the mode line" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --mode cc > /dev/null && ! grep -q '^MANTLE_OIDC_MODE=' '$SS/.env' && grep -qx 'MANTLE_OIDC_CLIENT_ID=$SG2' '$SS/.env' && grep -qx 'KEEP_ME=1' '$SS/.env'"
 check "sso-env: --mode cc again changes nothing" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --mode cc | grep -qx 'nothing to change'"
+# The apply step must never be a plain `up -d`: on a box whose compose file is
+# newer than its infra containers, that recreates Postgres and the object store.
+check "sso-env: the apply recreates only the app services (--no-deps)" sh -c "grep -qF 'docker compose up -d --no-deps' '$ROOT/scripts/sso-env.sh' && ! grep -F 'docker compose up -d' '$ROOT/scripts/sso-env.sh' | grep -vqF -- '--no-deps'"
 check "sso-env: --mode cc takes no --tenant" sh -c "! SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --mode cc --tenant $SG1 --client $SG2 2> /dev/null"
 check "sso-env: no option at all is refused" sh -c "! SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' 2> /dev/null"
 

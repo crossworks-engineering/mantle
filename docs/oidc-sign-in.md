@@ -166,6 +166,13 @@ needs `setup` again, and company sign-in is off for everybody while it is open.
 Each `docker compose up -d` after a change recreates web, api and every worker,
 so a window means two full app restarts, and running turns are cut.
 
+> **Warning.** After a `.env` change by hand, recreate only the app services:
+> `docker compose up -d --no-deps $(docker compose ps --services --status running | grep -E '^(web|api|worker_[a-z0-9_]+)$')`.
+> A plain `docker compose up -d` on a box whose compose file is newer than its
+> infra containers also recreates Postgres, the object store and the parser.
+> The data stays (it is on the box's disk), but the brain stops for a while.
+> `scripts/sso-env.sh` does the safe form.
+
 1. Make the new secret in Entra first. Entra can hold two at once.
 2. Enable the setup login and give it a new password.
 3. Set `setup`, run `docker compose up -d`, and sign in with that login.
