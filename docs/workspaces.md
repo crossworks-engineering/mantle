@@ -262,7 +262,9 @@ every workspace it is granted to, each with a Write switch.
   still reached by the grant functions of an Admin user of that
   workspace (docs/agent-ui.md, "Shares and grants of per-login items").
   A home move still needs a Moderator of T.
-- **Over MCP** (2026-11-24). `access_grant_add` adds a workspace to an
+- **Over MCP** (2026-11-24). `access_get` reads an item's grants as the
+  caller's own panel shows them (no workspace, home or folder name the
+  caller could not see there). `access_grant_add` adds a workspace to an
   item (read, or with `write: true`; on a workspace the item is in, it
   switches Write on). `access_grant_remove` takes a workspace away (a
   folder's row becomes "Removed here"), or with `keep_read: true` only
@@ -271,31 +273,40 @@ every workspace it is granted to, each with a Write switch.
   the table above, the folder confirm, the home row, the kinds of the
   Admin workspace only, an archived or unseen workspace (not found). The
   refusal starts with the panel's code and words. The same
-  `workspace_events` rows are written, with the login as their actor, and
-  the gate's call audit names the call. A workspace is named by its id or
-  its exact name. A grant row that follows its folder changes on the
-  folder (the panel's "Change here" and "Restore" stay in the panel).
-  Who may call them:
+  `workspace_events` rows are written, with the login as their actor and
+  where the change came from in their subject (`via`: `mcp-oauth`,
+  `mcp-key`, `mcp-peer`, `mcp-stdio`, `pending`, `turn`; the screen's rows
+  have none). A workspace is named by its id or its exact name. A grant
+  row that follows its folder changes on the folder (the panel's "Change
+  here" and "Restore" stay in the panel). Who may call the two writes:
 
-  | Caller                                        | Add, Write on                       | Write off, remove                                       |
-  | --------------------------------------------- | ----------------------------------- | ------------------------------------------------------- |
-  | A login's own MCP client (OAuth)              | yes, at once, with its own rights   | yes, with its own rights                                |
-  | An API key or a linked brain (as its login)   | only when it names the tool (risky) | only when it names the tool (risky)                     |
-  | An assistant's turn, a run, a delegated child | waits in Pending for a person       | yes, as any edit (a person grants the tool group first) |
-  | A team app (any app another workspace holds)  | never                               | never                                                   |
+  | Caller                                                                            | Add, Write on                                         | Write off, remove                         |
+  | --------------------------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------- |
+  | A login's own MCP client (OAuth, stdio)                                           | at once, with its own rights                          | with its own rights                       |
+  | An API key or a linked brain (as its login)                                       | only when it names the tool (risky); no folder change | the same                                  |
+  | An assistant's chat turn, or its delegated child, that holds the tool (below)     | waits in Pending for a person; no folder change       | with its login's rights; no folder change |
+  | A team app (any app another workspace holds)                                      | never                                                 | never                                     |
+  | An app only Admin holds, run by an Admin user                                     | asks the runner's confirm in the app                  | with the runner's rights                  |
+  | A recipe step, or an item of a runner queue                                       | never                                                 | never                                     |
+  | A call with no login (the Control Center's admin channel, a heartbeat of its own) | refused                                               | refused                                   |
 
-| An app only Admin holds, run by an Admin user | asks the runner's confirm in the app | yes, with the runner's rights |
-| A recipe step or a run item | never | never |
-| A call with no login (the Control Center's admin channel) | refused | refused |
+  A turn holds the tools only through a tool group granted to its agent.
+  The shipped `access` group holds them; it is Admin only (so only a turn
+  whose scope holds the Admin workspace gets it) and attached to no agent,
+  so an assistant has them only when a person attaches the group. A group
+  a person makes system-wide with them reaches other workspaces' turns too.
 
-Widening who reads an item is what an injected instruction would ask
-an assistant to do, so `access_grant_add` is confirm-gated: an in-brain
-turn's call waits under Pending until a person approves it (then it runs
-as the login that asked). A person's own MCP client is that person's
-agent and acts at once (the owner's rule: what a person may do by hand,
-their agent may do). A key or a linked brain never confirms a folder's
-change (its `confirm` is stripped). The `access` tool group holds the
-tools, is Admin only and is attached to no agent.
+  Widening who reads an item is what an injected instruction would ask an
+  assistant to do, so `access_grant_add` is confirm-gated: an in-brain
+  turn's call waits under Pending until a person approves it, and then
+  runs in the scope it was asked in, as the login that asked, once. A
+  person's own MCP client is that person's agent and acts at once (the
+  owner's rule: what a person may do by hand, their agent may do). A
+  folder's `confirm` counts only on a person's own MCP connection: a key's
+  and a peer's is stripped, and an in-brain call's (approved or not) is
+  ignored, since an approval shows the call, not how many items the folder
+  holds. A folder's change an assistant asks for is the person's own, in
+  the panel, which shows the count.
 
 - A Recall map is narrower than the table: deleting it, confirming a
   prompt on it and reordering its cards stay with the Admin users, whoever

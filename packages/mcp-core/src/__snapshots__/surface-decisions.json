@@ -7,10 +7,10 @@
   "keySharedContent": false,
   "keyEmailList": false,
   "adminKindCreate": false,
-  "adminOnly": true,
+  "adminOnly": false,
   "gate": {
    "effect": "read",
-   "scope": "admin",
+   "scope": "any",
    "spends": "none",
    "creates": false,
    "keyArea": null,

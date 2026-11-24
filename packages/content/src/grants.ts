@@ -75,8 +75,11 @@ import { defineDomainError, publicErrorMessage, UUID_RE } from '@mantle/std';
 
 /** Who changes grants: the acting login and the brain (its anchor). The
  *  web tier's WsCaller is one; an MCP tool builds it from its turn or
- *  request scope (grantCallerOf). */
-export type WsCaller = { loginId: string; anchorId: string };
+ *  request scope (grantCallerOf). `via`: where a change came from when it
+ *  is not the screen (a tool's entry: `mcp-oauth`, `pending`, `turn`, ...),
+ *  written into each workspace_events row's subject, as 0391 writes one;
+ *  the screen's rows carry none. */
+export type WsCaller = { loginId: string; anchorId: string; via?: string };
 
 // ── Errors and the route wrapper ─────────────────────────────────────────────
 
@@ -399,17 +402,21 @@ async function subtreeCount(q: Exec, ctx: Ctx, item: Item): Promise<number> {
   return (await grantCounts(q, ctx, item)).total;
 }
 
+/** A change's workspace_events row: the caller its actor, and where the
+ *  change came from (`via`) when it is not the screen. */
 async function event(
   q: Exec,
+  ctx: Ctx,
   ws: string,
-  actor: string,
   action: string,
   subject: Record<string, unknown>,
 ): Promise<void> {
+  const via = ctx.caller.via;
+  const row = via ? { ...subject, via } : subject;
   // A definer (0279): a write-role caller holds no right on workspace_events.
   await q.execute(
-    sql`select mantle_workspace_event(${ws}::uuid, ${actor}::uuid, ${action},
-                                      ${JSON.stringify(subject)}::jsonb)`,
+    sql`select mantle_workspace_event(${ws}::uuid, ${ctx.caller.loginId}::uuid, ${action},
+                                      ${JSON.stringify(row)}::jsonb)`,
   );
 }
 
@@ -854,7 +861,7 @@ export async function addGrant(
     async (tx, ctx, item, _grants, t) => {
       const write = body.write === true;
       await grantChange(tx, 'add', item.id, t.wsId, write, ctx.caller.loginId);
-      await event(tx, t.wsId, ctx.caller.loginId, 'grant.add', { node: item.id, write });
+      await event(tx, ctx, t.wsId, 'grant.add', { node: item.id, write });
     },
   );
 }
@@ -914,7 +921,7 @@ export async function patchGrant(
     async (tx, ctx, item, _grants, row) => {
       if (row.write === body.write) return;
       await grantChange(tx, 'write', item.id, row.ws, body.write, ctx.caller.loginId);
-      await event(tx, row.ws, ctx.caller.loginId, 'grant.write', {
+      await event(tx, ctx, row.ws, 'grant.write', {
         node: item.id,
         write: body.write,
       });
@@ -956,7 +963,7 @@ export async function removeGrant(
       // Logged first, while the row is there: an event in a workspace
       // outside the caller's scope needs that workspace's grant row on the
       // item (mantle_workspace_event).
-      await event(tx, row.ws, ctx.caller.loginId, 'grant.remove', {
+      await event(tx, ctx, row.ws, 'grant.remove', {
         node: item.id,
         excluded: exclude,
         ...(row.via ? { folder: row.via } : {}),
@@ -1003,7 +1010,7 @@ export async function restoreGrant(
     async (tx, ctx, item, _grants, row) => {
       // The delete re-derives the item from its folder (0241 propagation).
       await grantChange(tx, 'restore', item.id, row.ws, false, ctx.caller.loginId);
-      await event(tx, row.ws, ctx.caller.loginId, 'grant.restore', { node: item.id });
+      await event(tx, ctx, row.ws, 'grant.restore', { node: item.id });
     },
   );
 }
@@ -1039,7 +1046,7 @@ export async function handGrant(
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
     async (tx, ctx, item, _grants, row) => {
       await grantChange(tx, 'hand', item.id, row.ws, row.write, ctx.caller.loginId);
-      await event(tx, row.ws, ctx.caller.loginId, 'grant.hand', {
+      await event(tx, ctx, row.ws, 'grant.hand', {
         node: item.id,
         folder: row.via,
       });
@@ -1114,7 +1121,7 @@ export async function grantEmbeds(
                 continue;
               }
               await grantChange(tx, 'add', embed.id, ws, false, ctx.caller.loginId);
-              await event(tx, ws, ctx.caller.loginId, 'grant.add', {
+              await event(tx, ctx, ws, 'grant.add', {
                 node: embed.id,
                 write: false,
                 embedOf: host.id,
@@ -1819,14 +1826,14 @@ async function moveHome(
                                           ${ctx.caller.loginId}::uuid)`,
       );
       const viaFolder = target && !target.excluded ? target.via : null;
-      await event(tx, to, ctx.caller.loginId, 'grant.move', {
+      await event(tx, ctx, to, 'grant.move', {
         node: item.id,
         from,
         to,
         ...(viaFolder ? { viaFolder } : {}),
         ...contentsOf,
       });
-      await event(tx, from, ctx.caller.loginId, 'grant.move', {
+      await event(tx, ctx, from, 'grant.move', {
         node: item.id,
         from,
         to,

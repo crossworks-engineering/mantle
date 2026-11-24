@@ -50,7 +50,6 @@ type Surface = ToolHandlerContext['surface'];
 /** Every builtin that runs only for the owner. Adding a flag means adding it
  *  here; dropping one fails the first test. */
 const EXPECTED_OWNER_ONLY = [
-  'access_get',
   'access_set',
   // The app write tools (client tier audit I8).
   'app_build',
@@ -258,15 +257,15 @@ describe('a recipe runs its steps for the recipe caller', () => {
   let original: BuiltinToolDef;
   beforeEach(() => {
     spy.mockClear();
-    original = getBuiltin('access_get')!;
+    original = getBuiltin('access_set')!;
     registerBuiltin({ ...original, handler: spy });
-    h.resolveTool.mockResolvedValue(row('access_get'));
+    h.resolveTool.mockResolvedValue(row('access_set'));
   });
   afterEach(() => registerBuiltin(original));
 
   const recipe = {
     slug: 'r',
-    handler: { kind: 'recipe', steps: [{ tool: 'access_get', input: {} }] },
+    handler: { kind: 'recipe', steps: [{ tool: 'access_set', input: {} }] },
   } as unknown as Tool;
 
   it.each(OWNER)('an owner (%s) recipe runs an owner-only step', async (_n, s) => {
