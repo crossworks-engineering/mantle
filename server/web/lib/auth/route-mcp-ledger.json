@@ -260,6 +260,10 @@
       "planned": "control_default_model_get",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
     },
+    "GET /api/fleet/keys": {
+      "planned": "control_key_status",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; the tool gives every line but its print (the print is for a person matching a key)"
+    },
     "GET /api/fleet/matrix": {
       "planned": "control_fleet_matrix",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
@@ -827,6 +831,10 @@
     "POST /api/fleet/keys": {
       "planned": "control_key_set",
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "POST /api/fleet/keys/test": {
+      "planned": "control_key_test",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; the tool answers the lines without their prints"
     },
     "POST /api/fleet/models": {
       "planned": "control_agent_model_set",

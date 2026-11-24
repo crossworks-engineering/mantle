@@ -25,6 +25,11 @@
  * locked to that key (`sealed`, which only the asking web process can
  * open) and when the invite ends, or a reason. The code is never in plain
  * text here, in the row or in a log.
+ *
+ * A key test call (kind `keys`; the box's key-status.ts) goes the same way
+ * as its own fixed case, `keyTest`, with no args: the box tests the provider
+ * keys it holds and answers its key lines, held here to their shape
+ * (run.ts KeyLines: a print to its pattern, never a key).
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
@@ -41,6 +46,7 @@ import {
 import { UUID_RE } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { CallFailed, callBox } from './run';
+import { KeyLines } from './key-lines';
 
 /** A tool's answer (the box holds its output to 64,000 characters) and a
  *  tools list (a few hundred schemas) both fit well inside this. */
@@ -136,6 +142,23 @@ const InviteReply = z
       .optional(),
   })
   .strict();
+
+/** The box's answer to keyTest: its fresh key lines, or a reason. */
+const KeyTestReply = z.union([
+  z.object({ ok: z.literal(true), keys: KeyLines }).strict(),
+  z.object({ ok: z.literal(false), reason: Reason }).strict(),
+]);
+
+/** One key test call, sent: the box's fresh key lines, or its reason. */
+async function sendKeyTestCall(
+  key: KeyObject,
+  box: ControlBoxRow,
+): Promise<Parameters<typeof saveControlToolAnswer>[2]> {
+  const r = KeyTestReply.safeParse(await callBox(key, box.url, 'keyTest'));
+  if (!r.success) throw new CallFailed('bad-reply');
+  if (!r.data.ok) return { ok: false, reason: r.data.reason };
+  return { ok: true, reason: null, output: { keys: r.data.keys } };
+}
 
 /** One invite call, sent: the locked code and its end, or a reason. */
 async function sendInviteCall(
@@ -239,6 +262,8 @@ export async function sendToolCalls(
         answer = await sendSsoCall(key, box, c, sent);
       } else if (c.kind === 'invite') {
         answer = await sendInviteCall(key, box, c);
+      } else if (c.kind === 'keys') {
+        answer = await sendKeyTestCall(key, box);
       } else if (c.kind === 'tools') {
         const r = ToolsReply.safeParse(
           await callBox(key, box.url, 'tools', {}, { maxBytes: TOOL_REPLY_CAP_BYTES, long: true }),

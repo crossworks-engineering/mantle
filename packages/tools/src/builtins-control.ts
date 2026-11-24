@@ -13,6 +13,11 @@
 import { env, feature } from '@mantle/config';
 import { seal } from '@mantle/crypto';
 import {
+  askControlKeyTests,
+  keptKeyBox,
+  keyTestBoxes,
+  listControlKeys,
+  selfKeyBox,
   addControlBox,
   checkKeyInput,
   checkModelChanges,
@@ -37,6 +42,8 @@ import {
   removeControlBox,
 } from '@mantle/db/control-center';
 import { authUsers, db, eq } from '@mantle/db';
+import { keyLines, testKeyLines } from '@mantle/api-keys';
+import type { FleetKeyBox } from '@mantle/client-types';
 import { isUuid, publicErrorText } from '@mantle/std';
 import { withHostIps } from '@mantle/std/host-ips';
 import { readFleetDefaultModel, setFleetDefaultModel } from './fleet-default-model';
@@ -567,6 +574,82 @@ const control_fleet_matrix: BuiltinToolDef = {
     }),
 };
 
+/** A key status box for an agent: every line without its print (the print
+ *  is for a person matching a key with the provider's dashboard, on the
+ *  Fleet screen: GET /api/fleet/keys). */
+const noPrints = (b: FleetKeyBox) => ({
+  ...b,
+  keys: b.keys ? b.keys.map(({ print: _print, ...l }) => l) : null,
+});
+
+const KEY_STATE_TEXT =
+  '`state` per line: `works` (the last test passed, after the key was set), `failed`, `stale` (set again since its last test), `not-tested`, `no-test` (the service has no test). `keysReason` when a box has no lines: `old-box` (a release behind), `scope` (the box refuses the CC), `no-facts`.';
+
+const control_key_status: BuiltinToolDef = {
+  slug: 'control_key_status',
+  policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
+  name: 'Read key status on the fleet',
+  description: `Per box, this box first (\`id: self\`), one line for each provider key it holds: the service, when it was set (\`setAt\`), its last test (\`test\`: ok and when) and ${KEY_STATE_TEXT} A linked box's lines are from its last facts read (\`at\`, every 5 minutes); \`lastSet\` is the last key set from here. Never a key, nor its print (the Fleet screen shows the print to a person). To test now use \`control_key_test\`; to set a key, \`control_key_set\`.`,
+  inputSchema: { type: 'object', properties: {} },
+  handler: (_input, ctx) =>
+    onCc('control_key_status', async () => {
+      const [self, rows] = await Promise.all([keyLines(ctx.ownerId), listControlKeys()]);
+      return {
+        ok: true,
+        output: { boxes: [selfKeyBox(self), ...rows.map(keptKeyBox)].map(noPrints) },
+      };
+    }),
+};
+
+const control_key_test: BuiltinToolDef = {
+  slug: 'control_key_test',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    matrix: { none: "names no item: a key test call on the Control Center's box rows" },
+    clientSourced: CS.always('each box sends its provider keys to their providers to test them'),
+  },
+  name: 'Test the provider keys on the fleet',
+  description: `Ask this box and every linked box (or the boxes \`boxIds\` names, \`self\` for this box) to test the provider keys they hold now, at no cost (each provider's model list). Waits up to 25 seconds; answers each box's fresh lines (as \`control_key_status\`, never a key nor its print) and \`tested\`: \`ok\`, or a reason (\`scope\`, \`bad-call\`: a box a release behind, \`unreachable\`, \`busy\`, \`pending\`: read \`control_key_status\` again a little later). A failed test changes nothing on a box.`,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      boxIds: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 500,
+        description:
+          'Box ids from control_box_list, or self (optional: this box and every linked box).',
+      },
+    },
+  },
+  handler: (input, ctx) =>
+    onCc('control_key_test', async () => {
+      if (input.boxIds !== undefined && !Array.isArray(input.boxIds)) {
+        return {
+          ok: false,
+          error: 'boxIds must be a list of box ids from control_box_list, or self.',
+        };
+      }
+      const asked = Array.isArray(input.boxIds) ? input.boxIds : undefined;
+      const withSelf = !asked || asked.includes('self');
+      const linked = asked?.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase());
+      const who = {
+        loginId: actingLoginId(ctx.surface) ?? null,
+        email: by(ctx),
+        via: 'mcp' as const,
+      };
+      const [self, tests] = await Promise.all([
+        withSelf ? testKeyLines(who, ctx.ownerId) : null,
+        linked && linked.length === 0 ? [] : askControlKeyTests(linked, by(ctx)),
+      ]);
+      const boxes = await keyTestBoxes(self, tests);
+      return { ok: true, output: { boxes: boxes.map(noPrints) } };
+    }),
+};
+
 const control_default_model_get: BuiltinToolDef = {
   slug: 'control_default_model_get',
   policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
@@ -712,6 +795,8 @@ export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_ban_list,
   control_ban_lift,
   control_key_set,
+  control_key_status,
+  control_key_test,
   control_agent_model_set,
   control_fleet_settings_set,
   control_broadcast,

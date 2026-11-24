@@ -14,7 +14,7 @@ import {
 import { open, seal } from '@mantle/crypto';
 import { InputError } from '@mantle/std';
 import { type ProviderCredential } from '@mantle/voice-client';
-import { checkedWorkspaceId, maskPlaintext } from './shape';
+import { checkedWorkspaceId, keyPrint, maskPlaintext } from './shape';
 
 export type { ProviderCredential };
 
@@ -53,7 +53,7 @@ export type ApiKeySummary = {
   updatedAt: Date;
 };
 
-export { fieldsAad, maskPlaintext, valueAad } from './shape';
+export { fieldsAad, keyPrint, maskPlaintext, valueAad } from './shape';
 
 /** List rows for a user. Reads the precomputed `masked` column instead
  *  of decrypting every row — keeps every plaintext out of process
@@ -347,6 +347,52 @@ export async function defaultKeyRow(
   return row ?? null;
 }
 
+/** One provider key as the Control Center's key status shows it: never
+ *  the key. */
+export type ProviderKeyPrint = {
+  id: string;
+  service: string;
+  /** When the vault last wrote the row (updated_at): a new value, or an
+   *  edit of its tags or label. */
+  setAt: Date;
+  /** keyPrint of the opened key, or null. */
+  print: string | null;
+};
+
+/**
+ * The key each service an owner holds uses when nothing pins one (the
+ * unpinned pick, findProviderKeyId's order), for the services `onList`
+ * keeps, each with its print (keyPrint). Tokens only. The key is opened in
+ * memory here (openKeyRow), its print taken and the plaintext dropped; no
+ * `last_used` bump (a status read is no use). On `db`, as defaultKeyRow: a
+ * management read of the Control Center's key status (server/web
+ * lib/control/key-status.ts), from its signed call or a CC Admin's request.
+ */
+export async function providerKeyPrints(
+  userId: string,
+  onList: (service: string) => boolean,
+): Promise<ProviderKeyPrint[]> {
+  const rows = await db
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.userId, userId), openable()))
+    .orderBy(...PICK_ORDER());
+  const out: ProviderKeyPrint[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.service) || !onList(row.service)) continue;
+    seen.add(row.service);
+    let print: string | null = null;
+    try {
+      print = keyPrint(openKeyRow(row).apiKey);
+    } catch {
+      // A row that does not open (another master key) has no print.
+    }
+    out.push({ id: row.id, service: row.service, setAt: row.updatedAt, print });
+  }
+  return out.sort((a, b) => a.service.localeCompare(b.service));
+}
+
 /** Delete a key by id, for the internal writers (a connector's sealed
  *  OAuth state). An owner's client deletes through the vault gateway
  *  (vault.ts deleteVaultKey: its gate and its audit row). */
@@ -400,4 +446,5 @@ export async function workerRoute(
 
 export * from './services';
 export * from './vault';
+export { isFleetKeyService, keyLines, testKeyLines } from './key-status';
 export { canProbeService, probeApiKey, type TestApiKeyResult } from './probe';

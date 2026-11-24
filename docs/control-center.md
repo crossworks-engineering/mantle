@@ -117,10 +117,10 @@ The box makes two checks, and no third:
    own origin (from `MANTLE_PUBLIC_URL`, never a request header) over the
    raw bytes. Only then is the JSON read. A refusal answers a reason code
    only: `time`, `sig`, `size`, `bad-call`. A box with no lines answers 404.
-2. **The fixed switch.** Twelve cases: `hello`, `logins`, `facts`,
-   `disable`, `enable`, `archive`, `key`, `agentModel`, `poolEntry`,
-   `updateNotice`, `workerGroup`, `workerModel` (and `submissions` and
-   `broadcast`, below).
+2. **The fixed switch.** Thirteen cases: `hello`, `logins`, `facts`,
+   `disable`, `enable`, `archive`, `key`, `keyTest`, `agentModel`,
+   `poolEntry`, `updateNotice`, `workerGroup`, `workerModel` (and
+   `submissions` and `broadcast`, below).
    They are not tools. No agent, MCP client or API key on the box reaches them. Two more
    cases, `tool` and `tools`, are the admin channel (below), four
    more, `sso_status`, `sso_set`, `sso_test` and `sso_mode`, are its company sign-in
@@ -289,6 +289,96 @@ every linked box, or on the boxes they pick: the Fleet screen, or
 - The box row keeps the last answer (`keyResult`: service, ok or the reason,
   who, when), shown on the Fleet screen and in `control_box_list`. A box that
   failed is sent the key again by a new request.
+- After `failed`, the old key put back is tested again, so key status (below)
+  shows the old key's own result. Its set time is then the time it was put
+  back.
+
+## Key status on the fleet
+
+Owner request (2026-11-24): the CC shows which box keys were updated and
+that they work. For each box, the CC's own box first, one line for each
+provider key the box holds from its own fixed list (the `key` case's list),
+whoever set it (the CC, or a person on the box's Keys screen):
+
+- **the service**, for example `openrouter`;
+- **set**: when the box's vault last wrote that key (its row's
+  `updated_at`: a new value, or an edit of its tags or label);
+- **the last test**: ok or not, and when. It is the vault's own test row
+  (`vault.key.test` in the box's audit log: the key id, ok, when), written
+  by every test: the Keys screen's Test, `api_key_test`, a key set from the
+  CC, and Test now. Nothing new is stored;
+- **the print**: the key's first 12 and last 4 characters with the middle
+  left out (`sk-or-v1-abc…wxyz`), to match it with the provider's own
+  dashboard.
+
+The key for a service is the one the box uses when nothing pins one (the
+key labelled `default`, else the oldest). Tokens only: a password, a login
+or an SSH key is never listed.
+
+What a line means (`state`, worked out at the CC): `works` (the last test
+passed, after the key was set), `failed` (it did not: the provider refused
+the key or could not be reached), `stale` (set again after its last test),
+`not-tested`, `no-test` (the service has no test, for example `firecrawl`).
+
+**The print.** The box computes it in the web process from the opened key,
+in memory (`keyPrint`, `@mantle/api-keys`), and only the print leaves the
+box. Never more than a quarter of the key: a key under 64 characters shows
+less of its head, one under 24 its last 4 only, one under 16 nothing. A
+shown part with a character outside `[A-Za-z0-9_-]` gives no print. Never
+the key, never a hash of it. A status read does not count as a use
+(`last_used` stays).
+
+**How it reaches the CC.** The key lines ride in `facts` (its `keys` part),
+so the CC keeps the last good answer per box with its time, as for the
+matrix, read every 5 minutes. The CC holds each line to a pattern: the
+service a slug, the times ISO, the print at most 12 of `[A-Za-z0-9_-]`, the
+mark `…` and 4 more; a line that does not fit is dropped, a print that does
+not fit is `null`. The matrix (`GET /api/fleet/matrix`,
+`control_fleet_matrix`) leaves the key part out.
+
+**Test now.** A person at the CC asks one box, some, or all to test the keys
+they hold. One more fixed case, `keyTest` (no args), queued as a call of the
+admin channel's queue (`control_boxes.tool_job`, kind `keys`, nothing
+sealed), sent in the box's run, asked for at once. The box tests each key
+whose service has a test, at once, through the vault's own test (its gate,
+its audit row), and answers its fresh lines. A failed test changes nothing
+on the box. No timer calls a provider: a test runs when a key is set and
+when a person asks. The CC's own box is tested in process, as the person.
+
+**Scope.** `MANTLE_CONTROL_CENTER_SCOPE=none` refuses `keyTest` (`scope`) and
+leaves the lines out of `facts` (`keys: null`). The default scope, `admin`,
+allows both (the keys area is in it). On the CC's own box the scope line does
+not apply, as for Fleet sign-in.
+
+**At the CC.** CC Admins with the settings area, a person:
+
+- `GET /api/fleet/keys`: `{ boxes }`, the CC's own box first (`id: 'self'`),
+  each with `keys` (the lines and their `state`), `at` (the read's time),
+  `reason` (why the last read failed: the old lines stay), `lastSet` (the
+  last key set from the CC: `keyResult`), and `keysReason` when a box has no
+  lines: `old-box` (a release behind), `scope`, `no-facts`.
+- `POST /api/fleet/keys/test { boxIds? }` (box ids and `self`; left out, all):
+  waits up to 25 seconds, then answers each box's fresh lines and `tested`
+  (`ok`, or `scope`, `bad-call` from a box a release behind, `unreachable`,
+  `busy` when 10 calls already wait, `pending` when the box did not answer
+  in time: its lines show in the GET after its run).
+
+Over MCP: `control_key_status` and `control_key_test` give the same, every
+line without its print. The print is for a person matching a key with the
+provider's dashboard; an agent reads the state, as the vault shows an agent
+only its short mask.
+
+A key set from the CC (`POST /api/fleet/keys`) needs no extra step: the
+same run sends the key, the box tests it, and the facts read after it
+carries the new set time, the fresh test and the new print.
+
+**Roll order.** The CC first. A CC before this release holds the facts reply
+to its exact top level, so a box rolled ahead reads there as `bad-reply` and
+its matrix line keeps its old facts until the CC rolls. From this release the
+CC drops a part of the facts reply it does not know, as it does for an agent
+or worker field, so a later part does not repeat this. A box a release behind
+sends no key part (`old-box`) and answers `keyTest` with `bad-call`. No
+migration.
 
 ## The fleet matrix
 
@@ -318,10 +408,15 @@ control service asks `facts`. The box answers, read only:
   old facts until the CC rolls. From this release the CC drops an agent or
   worker field it does not know, so a later field does not repeat this;
 - `counts`: workspaces and apps;
-- `backup`: the last backup's time, outcome and last success.
+- `backup`: the last backup's time, outcome and last success;
+- `keys`: one line per provider key the box holds, with a short print of
+  the key (see "Key status on the fleet").
 
-Never a display name, a prompt, a key, an email or any user data. The CC
-holds the reply to its shape (anything else is `bad-reply`) and every
+Never a key: a short print of each provider key, held to a strict pattern,
+and nothing more of it (owner's request, 2026-11-24, for key status). Never
+a display name, a prompt, an email or any user data. The CC
+holds the reply to its shape (anything else is `bad-reply`; a part it does
+not know is dropped) and every
 string to a pattern (a short id, a model id, a time): a value that does
 not fit is kept as `''`, so a box's free text never reaches the matrix nor
 a model that reads it. A model id is letters, digits and `._:/@+-`, up to
@@ -855,6 +950,8 @@ answers 404 and no `control_*` tool exists.
 | `POST /api/fleet/bans`          | `control_ban` (with `preview: true` first)                   |
 | `POST /api/fleet/bans/:id/lift` | `control_ban_lift`                                           |
 | `POST /api/fleet/keys`          | `control_key_set`                                            |
+| `GET /api/fleet/keys`           | `control_key_status` (no prints)                             |
+| `POST /api/fleet/keys/test`     | `control_key_test` (no prints)                               |
 | `GET /api/fleet/matrix`         | `control_fleet_matrix`                                       |
 | `POST /api/fleet/models`        | `control_agent_model_set`                                    |
 | `POST /api/fleet/settings`      | `control_fleet_settings_set`                                 |

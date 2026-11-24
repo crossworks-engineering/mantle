@@ -53,6 +53,8 @@ const SLUGS = [
   'control_fleet_matrix',
   'control_fleet_settings_set',
   'control_key_set',
+  'control_key_status',
+  'control_key_test',
   'control_public_key',
   'control_tool_call',
   'control_tool_list',
@@ -125,7 +127,7 @@ describe('the registry', () => {
     expect(loaded).toBe(false);
   });
 
-  it('on a Control Center registers the sixteen', async () => {
+  it('on a Control Center registers the eighteen', async () => {
     vi.resetModules();
     vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
     const reg = await import('./registry');
@@ -155,6 +157,7 @@ describe('the registry', () => {
       'control_default_model_set',
       'control_fleet_settings_set',
       'control_key_set',
+      'control_key_test',
       'control_tool_call',
       'control_tool_list',
     ];
@@ -203,6 +206,8 @@ describe('the registry', () => {
       control_fleet_matrix: ['boxId'],
       control_fleet_settings_set: ['boxIds', 'changes'],
       control_key_set: ['boxIds', 'service', 'value'],
+      control_key_status: [],
+      control_key_test: ['boxIds'],
       control_public_key: [],
       control_tool_call: ['args', 'boxIds', 'callIds', 'name'],
       control_tool_list: ['boxId'],

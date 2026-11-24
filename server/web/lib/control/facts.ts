@@ -15,6 +15,11 @@
  * kind alone. Never a name, a prompt, a key, a login's email or any user
  * data. The CC holds each string to a pattern of its own (run.ts), so a
  * box's free text never reaches it either way.
+ *
+ * `keys` (key status on the fleet, @mantle/api-keys key-status.ts): one line per provider key
+ * the box holds, with a short print of the key (its head and its last 4,
+ * held to a strict pattern), never the key nor a hash of it. Null while
+ * the box's scope line refuses the CC (MANTLE_CONTROL_CENTER_SCOPE=none).
  */
 import { loadBackupStatus } from '@mantle/content';
 import { agents, aiWorkers, apps, asc, db, getDefaultWorker, sql, workspaces } from '@mantle/db';
@@ -24,6 +29,8 @@ import { log } from '@mantle/tracing';
 import { oidcSettings } from '@/lib/oidc/settings';
 import { MANIFEST_AGENTS } from '@/lib/system-manifest/manifest';
 import { endpointPrint } from './endpoint';
+import { controlScopeLine } from './env';
+import { keyLines } from '@mantle/api-keys';
 
 /** The agent slugs the system ships: the only slugs a facts answer names. */
 const SHIPPED = new Set(MANIFEST_AGENTS.map((a) => a.slug));
@@ -33,7 +40,7 @@ const SHIPPED = new Set(MANIFEST_AGENTS.map((a) => a.slug));
  *  slow probe never hides the rest; a failed read of the agents, workers or
  *  counts fails the call (the CC records its code). */
 export async function collectFacts(ownerId: string): Promise<ControlFacts> {
-  const [status, agentRows, workerRows, counts, backup] = await Promise.all([
+  const [status, agentRows, workerRows, counts, backup, keys] = await Promise.all([
     readStatus(ownerId),
     db
       .select({
@@ -67,6 +74,7 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
       })
       .from(sql`(select 1) as one`),
     loadBackupStatus(ownerId).catch(() => null),
+    controlScopeLine().scope === null ? null : keyLines(ownerId),
   ]);
   // The worker that runs each kind: the runtime's own pick (getDefaultWorker).
   const runs = new Set<string>();
@@ -94,6 +102,7 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
     backup: backup
       ? { lastRunAt: backup.lastRunAt, ok: backup.ok, lastSuccessAt: backup.lastSuccessAt ?? null }
       : null,
+    keys,
   };
 }
 

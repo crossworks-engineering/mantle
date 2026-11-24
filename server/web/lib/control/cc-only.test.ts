@@ -97,6 +97,7 @@ describe('off a Control Center', () => {
     const boxes = await import('../../app/api/fleet/boxes/route');
     const box = await import('../../app/api/fleet/boxes/[id]/route');
     const keys = await import('../../app/api/fleet/keys/route');
+    const keyTest = await import('../../app/api/fleet/keys/test/route');
     const matrix = await import('../../app/api/fleet/matrix/route');
     const models = await import('../../app/api/fleet/models/route');
     const settings = await import('../../app/api/fleet/settings/route');
@@ -106,6 +107,8 @@ describe('off a Control Center', () => {
     for (const r of [
       await fleet.GET(),
       await keys.POST(req('/api/fleet/keys', 'POST')),
+      await keys.GET(),
+      await keyTest.POST(req('/api/fleet/keys/test', 'POST')),
       await models.POST(req('/api/fleet/models', 'POST')),
       await settings.POST(req('/api/fleet/settings', 'POST')),
       await tool.POST(req('/api/fleet/tool', 'POST')),
@@ -151,7 +154,7 @@ const REPO = join(WEB, '../..');
 /** The CC-only modules, by their path in the repo (no extension). */
 const CC_ONLY = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls|invite-keys)$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|key-lines|collect|tool-calls|invite-keys)$/,
   /^packages\/db\/src\/control-center$/,
   /^packages\/tools\/src\/builtins-control(-tools)?$/,
 ];
@@ -169,7 +172,7 @@ function target(file: string, spec: string): string | null {
  *  hand: they may import it at top level. */
 const CC_FILES = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls|invite-keys)\.ts$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|key-lines|collect|tool-calls|invite-keys)\.ts$/,
   /^packages\/tools\/src\/builtins-control(-tools)?\.ts$/,
   /^server\/web\/scripts\/scim-token\.ts$/,
 ];

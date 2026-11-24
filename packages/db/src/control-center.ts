@@ -25,6 +25,12 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { isUuid } from '@mantle/std';
+import type {
+  ControlKeyLine,
+  FleetKeyBox,
+  FleetKeyLine,
+  FleetKeyState,
+} from '@mantle/client-types';
 import { db } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import {
@@ -264,7 +270,9 @@ export type MatrixRow = Pick<
   'id' | 'url' | 'label' | 'lastOkAt' | 'lastReason' | 'facts' | 'factsReason'
 >;
 
-/** The fleet matrix: every box, or the one `boxId` names. */
+/** The fleet matrix: every box, or the one `boxId` names. Its facts leave
+ *  out the key lines: only listControlKeys reads them (key prints are for
+ *  the key status view, and for a person). */
 export async function listControlMatrix(boxId?: string): Promise<MatrixRow[]> {
   return db
     .select({
@@ -273,7 +281,7 @@ export async function listControlMatrix(boxId?: string): Promise<MatrixRow[]> {
       label: controlBoxes.label,
       lastOkAt: controlBoxes.lastOkAt,
       lastReason: controlBoxes.lastReason,
-      facts: controlBoxes.facts,
+      facts: sql<ControlFacts | null>`${controlBoxes.facts} - 'keys'`,
       factsReason: controlBoxes.factsReason,
     })
     .from(controlBoxes)
@@ -295,6 +303,199 @@ export async function saveControlFacts(
       )
       .where(eq(controlBoxes.id, boxId)),
   );
+}
+
+// --- key status (docs/control-center.md, "Key status on the fleet") ---------
+
+/** One box's key lines as the CC keeps them: from its last good facts, with
+ *  the time of that read and why a later read failed. `keys` undefined: the
+ *  facts hold no key part (a box a release behind, or no facts yet); null:
+ *  the box refuses the CC (its scope line). */
+export type ControlKeysRow = {
+  id: string;
+  url: string;
+  label: string | null;
+  at: string | null;
+  reason: string | null;
+  hasFacts: boolean;
+  keys: ControlKeyLine[] | null | undefined;
+  keyResult: ControlKeyResult | null;
+};
+
+/** The key lines of every linked box, or of the boxes `boxIds` names. */
+export async function listControlKeys(boxIds?: readonly string[]): Promise<ControlKeysRow[]> {
+  const rows = await db
+    .select({
+      id: controlBoxes.id,
+      url: controlBoxes.url,
+      label: controlBoxes.label,
+      at: sql<string | null>`${controlBoxes.facts}->>'at'`,
+      // JSON null (the box refused) is not SQL null; an absent part is.
+      hasKeys: sql<boolean>`(${controlBoxes.facts}->'keys') is not null`,
+      keys: sql<ControlKeyLine[] | null>`${controlBoxes.facts}->'keys'`,
+      factsReason: controlBoxes.factsReason,
+      lastReason: controlBoxes.lastReason,
+      keyResult: controlBoxes.keyResult,
+    })
+    .from(controlBoxes)
+    .where(boxIds ? inArray(controlBoxes.id, [...boxIds]) : undefined)
+    .orderBy(asc(controlBoxes.url));
+  return rows.map((r) => ({
+    id: r.id,
+    url: r.url,
+    label: r.label,
+    at: r.at,
+    reason: r.factsReason ?? r.lastReason,
+    hasFacts: r.at !== null,
+    keys: r.hasKeys ? (r.keys ?? null) : undefined,
+    keyResult: r.keyResult,
+  }));
+}
+
+/** The box id of the CC's own box in the key status view. */
+export const CONTROL_SELF = 'self';
+
+/** What a line means (FleetKeyState): the last test counts only when it ran
+ *  after the key was set. */
+export function keyState(l: ControlKeyLine): FleetKeyState {
+  if (!l.testable) return 'no-test';
+  if (!l.test) return 'not-tested';
+  if (Date.parse(l.test.at) < Date.parse(l.setAt)) return 'stale';
+  return l.test.ok ? 'works' : 'failed';
+}
+
+const withState = (lines: readonly ControlKeyLine[]): FleetKeyLine[] =>
+  lines.map((l) => ({ ...l, state: keyState(l) }));
+
+/** A linked box's key status view: its kept lines, or why it has none. */
+export function keptKeyBox(row: ControlKeysRow): FleetKeyBox {
+  const keysReason: FleetKeyBox['keysReason'] = !row.hasFacts
+    ? 'no-facts'
+    : row.keys === undefined
+      ? 'old-box'
+      : row.keys === null
+        ? 'scope'
+        : null;
+  return {
+    id: row.id,
+    url: row.url,
+    label: row.label,
+    at: row.at,
+    reason: row.reason,
+    keys: Array.isArray(row.keys) ? withState(row.keys) : null,
+    keysReason,
+    lastSet: row.keyResult,
+  };
+}
+
+/** A box's view with the lines its key test just answered (`lines`, read
+ *  now: the CC's own box, or a box's keyTest answer). */
+export function freshKeyBox(
+  box: Omit<FleetKeyBox, 'keys'>,
+  lines: readonly ControlKeyLine[],
+): FleetKeyBox {
+  return {
+    ...box,
+    at: new Date().toISOString(),
+    reason: null,
+    keys: withState(lines),
+    keysReason: null,
+  };
+}
+
+/** The CC's own box: its lines read in process (keyLines). */
+export function selfKeyBox(lines: readonly ControlKeyLine[]): FleetKeyBox {
+  return freshKeyBox(
+    {
+      id: CONTROL_SELF,
+      url: null,
+      label: null,
+      at: null,
+      reason: null,
+      keysReason: null,
+      lastSet: null,
+    },
+    lines,
+  );
+}
+
+/** One box's answer to a key test: its fresh lines, or a reason code
+ *  (`scope`, `bad-call` from a box a release behind, `unreachable`, ...),
+ *  or `pending` (no answer within the wait). */
+export type ControlKeyTest = {
+  boxId: string;
+  ok: boolean;
+  reason: string | null;
+  keys?: ControlKeyLine[];
+};
+
+/**
+ * Asks every linked box (or the boxes `boxIds` names) to test the provider
+ * keys it holds: one `keys` call each on the admin channel's queue (no
+ * args, nothing sealed), and a run asked for at once. Waits up to `waitMs`
+ * for the answers. A box that already holds CONTROL_MAX_WAITING_TOOLS calls
+ * is not asked (`busy`). The call ids stay here: each answer is read once,
+ * by this wait.
+ */
+export async function askControlKeyTests(
+  boxIds: readonly string[] | undefined,
+  by: string,
+  waitMs = CONTROL_TOOL_ANSWER_WAIT_MS,
+): Promise<ControlKeyTest[]> {
+  const ids = boxIds
+    ? [...new Set(boxIds.map((id) => id.toLowerCase()))]
+    : (await db.select({ id: controlBoxes.id }).from(controlBoxes)).map((r) => r.id);
+  if (ids.length === 0) return [];
+  const queued = await queueControlToolCalls(ids, { kind: 'keys' }, by);
+  const byCall = new Map(queued.map((q) => [q.callId, q.boxId]));
+  const { answers } = await waitControlAnswers([...byCall.keys()], waitMs);
+  const out = new Map<string, ControlKeyTest>();
+  for (const a of answers) {
+    const keys = (a.output as { keys?: ControlKeyLine[] } | undefined)?.keys;
+    out.set(a.boxId, {
+      boxId: a.boxId,
+      ok: a.ok === true,
+      reason: a.ok ? null : (a.reason ?? 'refused'),
+      ...(a.ok && keys ? { keys } : {}),
+    });
+  }
+  const asked = new Set(queued.map((q) => q.boxId));
+  const known = new Set(
+    (
+      await db
+        .select({ id: controlBoxes.id })
+        .from(controlBoxes)
+        .where(inArray(controlBoxes.id, ids))
+    ).map((r) => r.id),
+  );
+  return [...known].map(
+    (boxId) =>
+      out.get(boxId) ?? { boxId, ok: false, reason: asked.has(boxId) ? 'pending' : 'busy' },
+  );
+}
+
+/** The answer to a key test: the CC's own box first (its lines tested in
+ *  process, or null when it was not asked), then each linked box asked,
+ *  with its fresh lines when it answered, else its kept lines, and
+ *  `tested` (`ok` or the reason). */
+export async function keyTestBoxes(
+  self: readonly ControlKeyLine[] | null,
+  tests: readonly ControlKeyTest[],
+): Promise<(FleetKeyBox & { tested: string })[]> {
+  const rows = tests.length ? await listControlKeys(tests.map((t) => t.boxId)) : [];
+  const kept = new Map(rows.map((r) => [r.id, keptKeyBox(r)]));
+  const out: (FleetKeyBox & { tested: string })[] = [];
+  if (self) out.push({ ...selfKeyBox(self), tested: 'ok' });
+  for (const t of tests) {
+    const box = kept.get(t.boxId);
+    if (!box) continue;
+    out.push(
+      t.ok && t.keys
+        ? { ...freshKeyBox(box, t.keys), tested: 'ok' }
+        : { ...box, tested: t.reason ?? 'refused' },
+    );
+  }
+  return out;
 }
 
 // --- provider keys (phase 2) --------------------------------------------------
@@ -1040,7 +1241,8 @@ export async function queueControlToolCalls(
         name: ControlSsoCase;
         seal?: (boxId: string, callId: string) => string;
       }
-    | { kind: 'invite'; seal: (boxId: string, callId: string) => string },
+    | { kind: 'invite'; seal: (boxId: string, callId: string) => string }
+    | { kind: 'keys' },
   by: string,
 ): Promise<{ boxId: string; callId: string }[]> {
   const at = new Date().toISOString();
@@ -1051,14 +1253,16 @@ export async function queueControlToolCalls(
     const made: ControlToolCall =
       call.kind === 'tools'
         ? { id, kind: 'tools', name: null, sealed: null, by, at }
-        : {
-            id,
-            kind: call.kind,
-            name: call.kind === 'invite' ? 'invite' : call.name,
-            sealed: call.seal ? call.seal(boxId, id) : null,
-            by,
-            at,
-          };
+        : call.kind === 'keys'
+          ? { id, kind: 'keys', name: 'keyTest', sealed: null, by, at }
+          : {
+              id,
+              kind: call.kind,
+              name: call.kind === 'invite' ? 'invite' : call.name,
+              sealed: call.seal ? call.seal(boxId, id) : null,
+              by,
+              at,
+            };
     return { calls: [...calls, made], out: { boxId, callId: id }, run: true };
   });
 }
