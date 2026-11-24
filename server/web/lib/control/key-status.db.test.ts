@@ -488,4 +488,50 @@ describe.skipIf(!URL_)('key status on the fleet', () => {
       delete process.env.MANTLE_IS_CONTROL_CENTER;
     }
   });
+
+  it('a key replaced through onboarding moves the set time, and an older good test no longer counts', async () => {
+    const line = async () =>
+      lineOf((await asBox(() => signed({ op: 'facts' })))[1].keys, 'openrouter');
+    const { keyState } = await import('@mantle/db/control-center');
+    // A good key, tested: it works.
+    await putKey('openrouter', good, { at: '2026-11-01T08:00:00.000Z' });
+    await asBox(() => signed({ op: 'keyTest' }));
+    const before = await line();
+    expect(keyState(before as never)).toBe('works');
+    // The wizard's Save (POST /api/onboarding, saveKey) replaces the value
+    // past the vault's gate: the vault's own records still come.
+    const replaced = fakeKey(['sk', 'or', 'v1', ''].join('-'), 'q8NOPE');
+    const [status, saved] = await fleet('/api/onboarding', 'POST', {
+      action: 'saveKey',
+      service: 'openrouter',
+      plaintext: replaced,
+    });
+    expect(status).toBe(200);
+    expect(saved).toMatchObject({ saved: true, test: { ok: false } });
+    const after = await line();
+    expect(Date.parse(String(after.setAt))).toBeGreaterThan(Date.parse(String(before.setAt)));
+    expect(after.print).toBe('sk-or-v1-qqq…NOPE');
+    expect(keyState(after as never)).toBe('failed');
+    // The same key set and the test, as the vault's own rows.
+    const rows = await sql<Row[]>`select action, detail from audit_log
+      where action in ('vault.key.set', 'vault.key.test')
+        and detail->>'keyId' = ${String(
+          (
+            await sql<Row[]>`select id from api_keys
+            where user_id = ${anchor} and service = 'openrouter'`
+          )[0]!.id,
+        )}
+      order by created_at`;
+    // The earlier keyTest's row, then the wizard's set and its test.
+    expect(rows.slice(-2).map((r) => r.action)).toEqual(['vault.key.set', 'vault.key.test']);
+    expect(rows.at(-2)!.detail).toMatchObject({ changed: ['value'], op: 'replace' });
+    // A good key saved the same way works, with its test after its set time.
+    const [, again] = await fleet('/api/onboarding', 'POST', {
+      action: 'saveKey',
+      service: 'openrouter',
+      plaintext: good,
+    });
+    expect(again).toMatchObject({ saved: true, test: { ok: true } });
+    expect(keyState((await line()) as never)).toBe('works');
+  });
 });

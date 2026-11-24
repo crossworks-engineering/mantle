@@ -29,6 +29,8 @@ import { providerKeyPrints } from './index';
 import { KNOWN_KEY_SERVICES } from './services';
 import { canProbeService } from './probe';
 import { testVaultKey, type VaultActor } from './vault';
+import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 
 /** Whether `service` is on this box's own fixed list: an AI provider, or a
  *  key service the box knows (the Keys screen's rows). The fleet key set
@@ -87,7 +89,20 @@ export async function keyLines(ownerId: string): Promise<ControlKeyLine[]> {
  * old results. A provider that refuses or cannot be reached is no throw:
  * it is that key's failed test.
  */
-export async function testKeyLines(who: VaultActor, ownerId: string): Promise<ControlKeyLine[]> {
+export function testKeyLines(who: VaultActor, ownerId: string): Promise<ControlKeyLine[]> {
+  // One test of an owner's keys at a time in this process: an ask while one
+  // runs joins it (the Test now route, control_key_test, a box's keyTest), so
+  // repeated asks never send a provider more than one probe per key at once.
+  const running = testsRunning.get(ownerId);
+  if (running) return running;
+  const run = runTests(who, ownerId).finally(() => testsRunning.delete(ownerId));
+  testsRunning.set(ownerId, run);
+  return run;
+}
+
+const testsRunning = new Map<string, Promise<ControlKeyLine[]>>();
+
+async function runTests(who: VaultActor, ownerId: string): Promise<ControlKeyLine[]> {
   const rows = await providerKeyPrints(ownerId, isFleetKeyService);
   await Promise.all(
     rows
@@ -100,11 +115,18 @@ export async function testKeyLines(who: VaultActor, ownerId: string): Promise<Co
 /** The Control Center's own box, for a person or an agent at it: its lines
  *  only for a caller who holds the vault's own area, `keys` (as the Keys
  *  screen), else `keys-area` and no key is opened. With `who`, its keys are
- *  tested first. */
+ *  tested first (a test already running joins). A read or a test that fails
+ *  answers `error` for this box alone (logged), so the other boxes' answers
+ *  still go. */
 export async function ownKeyLines(
   ownerId: string,
   who?: VaultActor,
-): Promise<{ ok: true; keys: ControlKeyLine[] } | { ok: false; reason: 'keys-area' }> {
+): Promise<{ ok: true; keys: ControlKeyLine[] } | { ok: false; reason: 'keys-area' | 'error' }> {
   if (!(await callerHasAreaBound('keys'))) return { ok: false, reason: 'keys-area' };
-  return { ok: true, keys: who ? await testKeyLines(who, ownerId) : await keyLines(ownerId) };
+  try {
+    return { ok: true, keys: who ? await testKeyLines(who, ownerId) : await keyLines(ownerId) };
+  } catch (err) {
+    log('control').warn("the Control Center's own key status failed:", errorMessage(err));
+    return { ok: false, reason: 'error' };
+  }
 }

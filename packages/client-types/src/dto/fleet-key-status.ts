@@ -49,7 +49,8 @@ export type FleetKeyLine = ControlKeyLine & { state: FleetKeyState };
  *  - `old-box`: the box is a release behind (no key status yet);
  *  - `scope`: the box refuses the CC (MANTLE_CONTROL_CENTER_SCOPE=none);
  *  - `no-facts`: the box has not answered a facts read yet;
- *  - `error`: the box could not read its keys (its other facts still came);
+ *  - `error`: the box could not read its keys (its other facts still came),
+ *    or, on `self`, its read or test failed;
  *  - `bad-reply`: the CC refused the shape of the box's key part;
  *  - `keys-area` (`self` only): the person lacks the Admin `keys` area, which
  *    the CC's own keys need, as on its Keys screen.
@@ -86,8 +87,9 @@ export type FleetKeyStatus = { boxes: FleetKeyBox[] };
  *  `bad-call` from a box a release behind, `unreachable`, `http-500` when
  *  a test could not run there, `busy` when 10 calls already wait, `pending`
  *  when the box did not answer within the wait: read GET /api/fleet/keys
- *  again a little later; `keys-area` on `self` for a person without the
- *  `keys` area). */
+ *  again a little later; on `self`, `keys-area` for a person without the
+ *  `keys` area, and `error` when its test failed: the other boxes' answers
+ *  still come). */
 export type FleetKeyTestAnswer = {
   boxes: (FleetKeyBox & { tested: 'ok' | string })[];
 };

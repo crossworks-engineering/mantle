@@ -303,9 +303,12 @@ whoever set it (the CC, or a person on the box's Keys screen):
 - **the service**, for example `openrouter`;
 - **set**: when the box's vault last wrote that key's value: its own audit
   row of the last add or new value (`vault.key.set` naming `value`). An edit
-  of the key's label, tags, target, approval or tailnet moves nothing. A key
-  no vault write names (put there by onboarding, which writes no audit row)
-  shows when its row was made;
+  of the key's label, tags, target, approval or tailnet moves nothing.
+  Onboarding (the web wizard and the terminal one) sets a key past the
+  vault's gate, but writes the vault's same set and test rows, so its new
+  value moves the set time too, and an older test no longer counts. A key
+  that no record names (one set before this release) shows when its row was
+  made;
 - **the last test**: ok or not, and when. It is the vault's own test row
   (`vault.key.test` in the box's audit log: the key id, ok, when), written
   by every test: the Keys screen's Test, `api_key_test`, a key set from the
@@ -370,7 +373,10 @@ an old answer nobody read is replaced, so repeated asks never fill the
 box's queue of 10 (its tools, sign-in and invites). The route has its own
 rate limit too, `fleetKeyTest` (20 in 10 minutes per login); the MCP tool is
 held by the one-test-per-box rule (a tool takes no route limit). The CC's
-own box is tested in process, as the person.
+own box is tested in process, as the person; a test of it while one runs
+joins that one (the route and `control_key_test` alike), and a test or read
+of it that fails answers `error` for that line alone, never a failed answer
+for every box.
 
 **Scope.** `MANTLE_CONTROL_CENTER_SCOPE=none` refuses `keyTest` (`scope`) and
 leaves the lines out of `facts` (`keys: null`). The default scope, `admin`,
@@ -391,14 +397,15 @@ opened or tested.
   `reason` (why the last read failed: the old lines stay), `lastSet` (the
   last key set from the CC: `keyResult`), and `keysReason` when a box has no
   lines: `old-box` (a release behind), `scope`, `no-facts`, `error` (the box
-  could not read them), `bad-reply` (the CC refused their shape), and
-  `keys-area` on the CC's own line.
+  could not read them; on the CC's own line, its read failed), `bad-reply`
+  (the CC refused their shape), and `keys-area` on the CC's own line.
 - `POST /api/fleet/keys/test { boxIds? }` (box ids and `self`; left out, all):
   waits up to 25 seconds, then answers each box's fresh lines and `tested`
   (`ok`, or `scope`, `bad-call` from a box a release behind, `unreachable`,
   `http-500` when a test could not run there, `busy` when 10 calls already
   wait, `pending` when the box did not answer in time: its lines show in the
-  GET after its run, and `keys-area` on the CC's own line).
+  GET after its run, and on the CC's own line `keys-area`, or `error` when
+  its test failed).
 
 Over MCP: `control_key_status` and `control_key_test` give the same, every
 line without its print. The print is for a person matching a key with the
