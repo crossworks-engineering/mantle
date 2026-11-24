@@ -9,7 +9,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import type { BoxStatus } from '@mantle/client-types';
+import type { BoxStatus, ControlKeyLine } from '@mantle/client-types';
 
 /**
  * Control Center phase 1, the fleet user ban (migration 0364,
@@ -137,8 +137,11 @@ export type ControlToolCall = {
    *  sso_test or sso_mode (0372), sent as its own fixed case, never a tool.
    *  `invite`: the box makes a member invite (its own fixed case, `name`
    *  invite); its answer's `output` holds the code locked to a one-time key
-   *  only the asking web process holds, never the code itself. */
-  kind: 'tool' | 'tools' | 'sso' | 'invite';
+   *  only the asking web process holds, never the code itself.
+   *  `keys`: the box tests the provider keys it holds (its own fixed case,
+   *  `name` keyTest, no args); its answer's `output` is the fresh key
+   *  lines (prints, never a key). */
+  kind: 'tool' | 'tools' | 'sso' | 'invite' | 'keys';
   name: string | null;
   sealed: string | null;
   by: string;
@@ -254,7 +257,16 @@ export type ControlFacts = {
   }[];
   counts: { workspaces: number; apps: number };
   backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
+  /** Key status (docs/control-center.md, "Key status on the fleet"): one
+   *  line per provider key the box holds, with its print. Null: the box
+   *  refuses the CC (MANTLE_CONTROL_CENTER_SCOPE=none). Absent: a box a
+   *  release behind. Never a key. Not in the matrix (listControlMatrix
+   *  leaves it out): only listControlKeys reads it. */
+  keys?: ControlKeyLine[] | null;
 };
+
+/** The most key lines one facts answer carries. */
+export const CONTROL_MAX_KEY_LINES = 100;
 
 /** One login of a box, as the box's `logins` answer gives it. */
 export type ControlLogin = {

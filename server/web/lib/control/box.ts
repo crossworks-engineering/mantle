@@ -6,13 +6,14 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of twenty-one cases: hello, logins, facts, disable,
+ *  2. A fixed switch of twenty-two cases: hello, logins, facts, disable,
  *     enable, archive, key, agentModel, poolEntry, updateNotice,
  *     workerGroup, workerModel, submissions, broadcast, the admin channel's tool
  *     and tools (tool-channel.ts), its company sign-in cases sso_status,
- *     sso_set, sso_test and sso_mode (sso-channel.ts), and invite (a member
- *     invite, invite-channel.ts), these seven held by the box's own scope
- *     line. They are not tools: no agent, MCP client or API key on the box
+ *     sso_set, sso_test and sso_mode (sso-channel.ts), invite (a member
+ *     invite, invite-channel.ts) and keyTest (key status, @mantle/api-keys),
+ *     these eight held by the box's own scope line (and the key lines of
+ *     facts too). They are not tools: no agent, MCP client or API key on the box
  *     reaches them.
  *
  * disable, enable and archive run the users area's own change
@@ -44,21 +45,25 @@
  * service the box knows), through the vault's own gateway as a key set on
  * the Keys screen: sealed, audited there, then tested. It answers ok or
  * not only: never the key, never the provider's text.
+ *
+ * keyTest (key status on the fleet, @mantle/api-keys key-status.ts) tests
+ * the provider keys the box holds and answers its key lines: service, set
+ * time, last test and a print, never a key.
  */
 import { z } from 'zod';
 import {
-  KNOWN_KEY_SERVICES,
   canProbeService,
   deleteVaultKey,
   getApiKeyById,
   defaultKeyRow,
+  isFleetKeyService,
+  testKeyLines,
   setVaultKey,
   testVaultKey,
   type VaultActor,
 } from '@mantle/api-keys';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
-import { getProvider } from '@mantle/voice';
 import {
   authUsers,
   controlDisables,
@@ -89,6 +94,7 @@ import { TOOL_CALLS, listToolsForCenter, runToolCall, toolAuditDetail } from './
 import { SSO_CALLS, runSsoCall, ssoAuditMore } from './sso-channel';
 import { INVITE_CALLS, inviteAuditDetail, runInviteCall } from './invite-channel';
 import { collectFacts } from './facts';
+import { controlScopeLine } from './env';
 import { BROADCAST_CALL, receiveBroadcast } from './broadcast-box';
 import {
   SUBMISSIONS_PER_LIST,
@@ -117,6 +123,7 @@ const Call = z.discriminatedUnion('op', [
   z.object({ op: z.literal('disable'), args: Ids }).strict(),
   z.object({ op: z.literal('enable'), args: Ids }).strict(),
   z.object({ op: z.literal('archive'), args: Ids }).strict(),
+  z.object({ op: z.literal('keyTest'), args: z.object({}).strict().optional() }).strict(),
   z
     .object({
       op: z.literal('key'),
@@ -214,6 +221,9 @@ export async function handleControlCall(req: Request): Promise<Response> {
   // submissions writes its own record: the task's block (collectedAt, reply).
   // A tool call's row names the tool and a hash of its args (tool-channel.ts).
   if (parsed.op === 'tool') audit(req, 'tool', null, toolAuditDetail(parsed, answer as never));
+  // A key test's row: ok or the reason, and how many lines; never a print
+  // (each key's own test row is the vault's, vault.key.test).
+  else if (parsed.op === 'keyTest') audit(req, 'keyTest', keyTestAuditResult(answer as never));
   // An invite's row: who at the CC, the email and the answer, never the
   // locked code (invite-channel.ts).
   else if (parsed.op === 'invite') {
@@ -242,6 +252,8 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
       return archiveLogins(actor, unique(call.args.loginIds));
     case 'key':
       return setProviderKey(actor, call.args.service, call.args.value);
+    case 'keyTest':
+      return keyTestCase(actor);
     case 'agentModel':
       return setAgentModel(
         actor.id,
@@ -346,10 +358,20 @@ function audit(req: Request, op: Op, answer: unknown, more: Record<string, unkno
 
 // --- key ---------------------------------------------------------------------
 
-/** Whether `service` is on this box's own fixed list: an AI provider, or a
- *  key service the box knows (the Keys screen's rows). */
-export function isFleetKeyService(service: string): boolean {
-  return getProvider(service) !== null || KNOWN_KEY_SERVICES.some((k) => k.service === service);
+/** What keyTest answers: the fresh key lines, or `scope` (the box's own
+ *  line, MANTLE_CONTROL_CENTER_SCOPE=none, refuses the CC here, as on the
+ *  admin channel). */
+type KeyTestAnswer =
+  { ok: true; keys: Awaited<ReturnType<typeof testKeyLines>> } | { ok: false; reason: 'scope' };
+
+async function keyTestCase(actor: SessionUser): Promise<KeyTestAnswer> {
+  if (controlScopeLine().scope === null) return { ok: false, reason: 'scope' };
+  const who: VaultActor = { loginId: actor.id, email: CONTROL_ACTOR, via: 'web' };
+  return { ok: true, keys: await testKeyLines(who, actor.id) };
+}
+
+function keyTestAuditResult(a: KeyTestAnswer): Record<string, unknown> {
+  return a.ok ? { ok: true, keys: a.keys.length } : { ok: false, reason: a.reason };
 }
 
 /** What a key call answers: the service, and ok, or one fixed reason. */
@@ -395,7 +417,12 @@ async function setProviderKey(
   if (tested?.ok === true) return { service, ok: true };
   try {
     if (before !== null) {
-      if (before !== value) await setVaultKey(who, actor.id, { ref, value: before });
+      if (before !== value) {
+        await setVaultKey(who, actor.id, { ref, value: before });
+        // The key put back is tested again, so its key status line shows
+        // its own result, not the refused key's.
+        await testVaultKey(who, actor.id, ref).catch(() => null);
+      }
     } else {
       await deleteVaultKey(who, actor.id, { id: made });
     }

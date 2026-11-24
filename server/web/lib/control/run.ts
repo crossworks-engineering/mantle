@@ -15,7 +15,9 @@
  *   6. a broadcast the box has not taken (sendBroadcasts), each one call,
  *      marked on the CC once the box takes it; a failure keeps it for the
  *      next run, with its code shown;
- *   7. facts (phase 3, the fleet matrix): numbers, settings and model ids.
+ *   7. facts (phase 3, the fleet matrix): numbers, settings and model ids,
+ *      and the box's key lines (key status: a print of each key, never a
+ *      key).
  * 5 to 7 come after the ban part, and only to a box that answered it.
  * Submissions sent to IT have their own sweep and timer (collect.ts), so
  * they never hold back a run.
@@ -61,6 +63,7 @@ import {
   type ControlWriteAnswer,
 } from '@mantle/db';
 import { shapeBoxStatus } from '@mantle/tools/box-status';
+import { KeyLines } from './key-lines';
 import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';
 import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
@@ -131,7 +134,11 @@ export async function callBox(
         headers: { 'content-type': 'application/json', ...signCall(key, origin, body) },
       },
       {
-        timeoutMs: op === 'key' || big ? NET_TIMEOUTS.controlKeyCall : NET_TIMEOUTS.controlCall,
+        // A key set and a key test call providers: the longer wait.
+        timeoutMs:
+          op === 'key' || op === 'keyTest' || big
+            ? NET_TIMEOUTS.controlKeyCall
+            : NET_TIMEOUTS.controlCall,
         maxBytes: big?.maxBytes ?? REPLY_CAP_BYTES,
         redirect: 'error',
         allowLan: true,
@@ -232,7 +239,8 @@ const ModelId = z
 /** An endpoint print that does not fit is dropped: a copy then is not
  *  offered (the client needs both prints). */
 const Endpoint = z.string().transform((v) => (CONTROL_ENDPOINT.test(v) ? v : undefined));
-const Stamp = held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/);
+const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+const Stamp = held(STAMP_RE);
 /** At most CONTROL_FACTS_MAX_ROWS kept: a box with more is cut, not refused. */
 const rows = <T extends z.ZodTypeAny>(row: T) =>
   z.array(row).transform((a) => a.slice(0, CONTROL_FACTS_MAX_ROWS));
@@ -281,8 +289,13 @@ const FactsReply = z
       .object({ lastRunAt: Stamp, ok: z.boolean(), lastSuccessAt: Stamp.nullable() })
       .strict()
       .nullable(),
+    // Key status: absent from a box a release behind, null when the box's
+    // scope line refuses the CC.
+    keys: KeyLines.nullable().optional(),
   })
-  .strict();
+  // A part a later box adds is dropped, not a bad reply (each part kept is
+  // held to its own shape), so a box rolled ahead of its CC reads fine.
+  .strip();
 
 /** The box's facts, read once (the matrix). Never throws: the facts, or
  *  the reason code, are saved. */

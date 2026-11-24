@@ -38,6 +38,7 @@ export * from './dto/box-status';
 export * from './dto/model-check';
 export * from './dto/update-notice';
 export * from './dto/fleet-default-model';
+export * from './dto/fleet-key-status';
 export * from './dto/present-checks';
 export * from './task-files';
 export * from './task-submissions';
