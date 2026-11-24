@@ -83,6 +83,8 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
   // One the provider answers with another error: the Test says unclear (as
   // Entra does for a good secret with Assignment required on Yes).
   const FUZZY = `fuzzy-${SECRET_WORD}`;
+  // One the provider answers with an outage (503): unreachable, never unclear.
+  const OUTAGE = `outage-${SECRET_WORD}`;
   let anchor = '';
   const admin2 = randomUUID();
   const member = randomUUID();
@@ -201,6 +203,9 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
         }
         if (body.includes(encodeURIComponent(FUZZY))) {
           return send(400, { error: 'unauthorized_client' });
+        }
+        if (body.includes(encodeURIComponent(OUTAGE))) {
+          return send(503, { error: 'temporarily_unavailable' });
         }
         return send(401, { error: 'invalid_client' });
       });
@@ -432,6 +437,13 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
       ok: false,
       reason: 'test',
       output: { test: 'secret-refused' },
+    });
+    expect(await opened()).toBe(GOOD);
+    // An outage at the provider: unreachable, and the confirm cannot pass it.
+    expect(await set({ secret: OUTAGE, acceptUnclear: true })).toMatchObject({
+      ok: false,
+      reason: 'test',
+      output: { test: 'unreachable' },
     });
     expect(await opened()).toBe(GOOD);
     // A good secret: saved with or without the confirm, never marked unclear.

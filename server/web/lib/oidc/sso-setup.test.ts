@@ -140,8 +140,8 @@ describe('the Test', () => {
     ['401-plain', 'secret-refused'],
     ['invalid_client', 'secret-refused'],
     ['400', 'unclear'],
-    ['500', 'unclear'],
-    ['302', 'unclear'],
+    ['500', 'unreachable'],
+    ['302', 'unreachable'],
   ] as const)('a token answer of %s reads %s, and calls nothing else', async (token, want) => {
     h.token = token;
     expect(await ssoSetupTest()).toBe(want);
@@ -229,7 +229,24 @@ describe('how a failure reads', () => {
     expect(tokenFailure({ cause: { status: 401 } })).toBe('secret-refused');
     expect(tokenFailure({ status: 400, error: 'invalid_client' })).toBe('secret-refused');
     expect(tokenFailure({ status: 400, error: 'invalid_scope' })).toBe('unclear');
-    expect(tokenFailure({ cause: { status: 503 } })).toBe('unclear');
+    // A 429 or a 5xx is no usable answer: never unclear, so the person's
+    // confirm (acceptUnclear) cannot save a secret nobody judged.
+    for (const status of [429, 500, 502, 503, 504]) {
+      expect(tokenFailure({ status }), String(status)).toBe('unreachable');
+      expect(tokenFailure({ cause: { status } }), String(status)).toBe('unreachable');
+      expect(tokenFailure({ status, error: 'invalid_request' }), String(status)).toBe(
+        'unreachable',
+      );
+    }
+    expect(tokenFailure({ status: 400, error: 'temporarily_unavailable' })).toBe('unreachable');
+    expect(tokenFailure({ error: 'server_error' })).toBe('unreachable');
+    // A refused client wins over a 5xx.
+    expect(tokenFailure({ status: 503, error: 'invalid_client' })).toBe('secret-refused');
+    // Another 4xx answer: unclear.
+    expect(tokenFailure({ status: 400, error: 'unauthorized_client' })).toBe('unclear');
+    expect(tokenFailure({ status: 403 })).toBe('unclear');
+    expect(tokenFailure({ status: 302 })).toBe('unreachable');
+    expect(tokenFailure({ error: 'invalid_grant' })).toBe('unclear');
   });
 
   it('the issuer check keeps a real sign-in rule: one trailing slash is no difference', () => {

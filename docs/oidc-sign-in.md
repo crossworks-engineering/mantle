@@ -43,23 +43,28 @@ The sign-in screen shows the label to anyone, before anyone signs in
 pattern at the CC and again at the box, and a value that does not fit is
 refused (400), never stored. The rule, on the value put in Unicode NFC and
 trimmed (the stored value is that one): 1 to 60 characters, counted in code
-points after NFC. Each is a letter (any script), a digit, a combining mark
-right after a letter, a digit or another mark (an accent, a Devanagari or
-Tamil vowel sign, an Arabic vowel mark), a space, or one of
-`. , - ' ’ & ( ) +`; at least one is a letter or a digit. So an accent
-typed as two parts (`e` and U+0301, as a macOS file name holds it) is taken
-and stored as one. Refused: line breaks, control characters, format
-characters (right-to-left marks and overrides, zero-width characters), a
-no-break space or any space but U+0020, emoji, markup, any other mark, and
-a combining mark with no letter or digit before it. The curly apostrophe
-(U+2019) is taken: phones and macOS type it for `'` in a name. As a regular
-expression (`SSO_LABEL_RE` with `ssoLabelValue`,
+points after NFC. Each is a letter (any script), a digit, up to 4 combining
+marks right after a letter or a digit (an accent, a Devanagari or Tamil vowel
+sign, an Arabic or Hebrew vowel mark, a Thai tone mark: these stack 1 to 3), a
+space, or one of `. , - ' ’ & ( ) +`; at least one is a letter or a digit. So
+an accent typed as two parts (`e` and U+0301, as a macOS file name holds it)
+is taken and stored as one. Refused: line breaks, control characters, format
+characters (right-to-left marks and overrides, zero-width characters), the
+characters that show nothing (the combining grapheme joiner U+034F, the
+variation selectors U+FE00 to U+FE0F, U+E0100 to U+E01EF and U+180B to
+U+180F, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0), a no-break
+space or any space but U+0020, emoji, markup, any other mark, a combining
+mark with no letter or digit before it, and a fifth mark on one letter. The
+curly apostrophe (U+2019) is taken: phones and macOS type it for `'` in a
+name. As a regular expression (`SSO_LABEL_RE` with `ssoLabelValue`,
 `packages/client-types/src/sso-label.ts`, the one function the box route, the
 box's signed case, the CC route and the CC's ask all call):
 
 ```text
-^(?=.{1,60}$)(?=.*[\p{L}\p{N}])(?:[\p{L}\p{N}]\p{M}*|[ .,'’&()+-])+$   (flag u, on the NFC value)
+^(?=.{1,60}$)(?!.*(?:\u034F|\u115F|\u1160|\u3164|\uFFA0|[\u180B-\u180F]|[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]))(?=.*[\p{L}\p{N}])(?:[\p{L}\p{N}]\p{M}{0,4}|[ .,'\u2019&()+-])+$
 ```
+
+Flag `u`, on the NFC value.
 
 The database holds the same length (`char_length` 1 to 60, code points).
 
@@ -157,16 +162,16 @@ empties who set the values on the screen.
    screen shows no SCIM step and its route answers 404 (SCIM runs on the CC
    only, [control-center.md](control-center.md)).
 
-| Test code           | Means                                                                        |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `ok`                | The provider gave a token: the client id and secret work                     |
-| `secret-refused`    | The provider refused the client. Check the secret and the client id          |
-| `unclear`           | The provider answered with another error. It did not say the secret is wrong |
-| `unreachable`       | No usable discovery document, or no answer from the token endpoint           |
-| `issuer-mismatch`   | The document names another issuer. A real sign-in would fail                 |
-| `env-missing`       | The issuer, the client id or the public URL is not in `.env`                 |
-| `no-secret`         | No secret in `.env` or from the screen                                       |
-| `secret-unreadable` | The stored secret cannot be opened: a read failed, or the master key changed |
+| Test code           | Means                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ok`                | The provider gave a token: the client id and secret work                                                                                                |
+| `secret-refused`    | The provider refused the client. Check the secret and the client id                                                                                     |
+| `unclear`           | A 4xx answer from the provider that does not say the client was refused                                                                                 |
+| `unreachable`       | No usable discovery document, or no usable answer from the token endpoint (none, a redirect, a 429, a 5xx, `server_error` or `temporarily_unavailable`) |
+| `issuer-mismatch`   | The document names another issuer. A real sign-in would fail                                                                                            |
+| `env-missing`       | The issuer, the client id or the public URL is not in `.env`                                                                                            |
+| `no-secret`         | No secret in `.env` or from the screen                                                                                                                  |
+| `secret-unreadable` | The stored secret cannot be opened: a read failed, or the master key changed                                                                            |
 
 A pass does not prove a sign-in. The redirect URI and the assignment of people
 show only at a real sign-in, after the lock.
@@ -369,9 +374,13 @@ and the box's audit row say so; the CC's own row (`fleet.sso_set`) names
 the confirm (`acceptUnclear: true`; for `self` the result too). Every other code stays refused, the flag or not:
 `secret-refused` (the provider said the client or the secret is wrong:
 `invalid_client` or a 401), `unreachable`, `issuer-mismatch`, `env-missing`,
-`no-secret`, `secret-unreadable`. `unclear` means the provider answered with
-another error and did not say the secret is wrong; Entra with **Assignment
-required?** on Yes answers so for a good secret, always. The stake, if the
+`no-secret`, `secret-unreadable`. `unclear` is a 4xx answer from the provider
+that does not say the client was refused; Entra with **Assignment
+required?** on Yes answers so for a good secret, always. An outage (a 429, a
+5xx, a redirect, `server_error`, `temporarily_unavailable`) reads `unreachable`, which the
+flag cannot pass, so a secret nobody judged is never saved. The risk left: a
+provider that reports a wrong secret with a 4xx other than `invalid_client`
+or 401 reads `unclear`, which is why a person must confirm. The stake, if the
 secret is in fact wrong: in `optional` company sign-in fails and passwords
 keep working; in `required` company sign-in fails for everybody until a good
 secret is saved, and only the original account (and honoured outside marks)

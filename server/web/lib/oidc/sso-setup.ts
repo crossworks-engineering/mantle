@@ -146,15 +146,28 @@ export function discoveryFailure(err: unknown): SsoSetupTestOutcome {
     : 'unreachable';
 }
 
-/** What a failure of the token call means. An error with a status or the
- *  provider's error word: the provider answered. Anything else: it did not.
- *  Not keyed on the error's type: a network failure may differ between Node
- *  and Bun. */
+/** The provider's own words for "no answer now" (RFC 6749): not a
+ *  judgment of the client. */
+const PROVIDER_DOWN_WORDS = new Set(['server_error', 'temporarily_unavailable']);
+
+/** What a failure of the token call means. `invalid_client` or a 401: the
+ *  provider refused the client (`secret-refused`). A 429, a 5xx, a redirect
+ *  or its words for being down: no usable answer (`unreachable`), so a
+ *  person's confirm (acceptUnclear) never saves a secret nobody judged. Any
+ *  other 4xx, or an error word with no status: `unclear`, the provider
+ *  answered and did not say the client was refused. No status and no word: it did not answer. Not
+ *  keyed on the error's type: a network failure may differ between Node and
+ *  Bun. */
 export function tokenFailure(err: unknown): SsoSetupTestOutcome {
   const e = err as { status?: unknown; error?: unknown; cause?: { status?: unknown } } | null;
   const status = e?.status ?? e?.cause?.status;
   if (e?.error === 'invalid_client' || status === 401) return 'secret-refused';
-  return typeof status === 'number' || typeof e?.error === 'string' ? 'unclear' : 'unreachable';
+  if (typeof e?.error === 'string' && PROVIDER_DOWN_WORDS.has(e.error)) return 'unreachable';
+  // Only a 4xx is an answer about the client; a 429, a 5xx or a redirect is not.
+  if (typeof status === 'number') {
+    return status >= 400 && status < 500 && status !== 429 ? 'unclear' : 'unreachable';
+  }
+  return typeof e?.error === 'string' ? 'unclear' : 'unreachable';
 }
 
 /** The issuer in the provider's document is the one the .env names (a real
