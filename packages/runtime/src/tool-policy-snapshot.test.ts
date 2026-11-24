@@ -298,6 +298,8 @@ const LISTS: Record<string, readonly string[]> = {
   ],
   LOWERING_TOOL_SLUGS: ['access_set', 'email_page', 'node_share', 'page_share'],
   RECIPE_FORBIDDEN_SLUGS: [
+    'access_grant_add',
+    'access_grant_remove',
     'agent_grant_tool_group',
     'agent_list',
     'agent_set_thinking_effort',
@@ -361,6 +363,8 @@ const LISTS: Record<string, readonly string[]> = {
     'web_fetch',
   ],
   MEMBER_APP_REFUSED_SLUGS: [
+    'access_grant_add',
+    'access_grant_remove',
     'circuit_verify',
     'extract_from_image',
     'model_call',
@@ -373,6 +377,8 @@ const LISTS: Record<string, readonly string[]> = {
     'translate',
   ],
   BANNED_ITEM_TOOLS: [
+    'access_grant_add',
+    'access_grant_remove',
     'circuit_verify',
     'invoke_agent',
     'run_append',

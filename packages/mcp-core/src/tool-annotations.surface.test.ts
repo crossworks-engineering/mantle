@@ -161,6 +161,8 @@ describe('MCP tool hints on the surface', () => {
 
   it('pins the idempotent writes', () => {
     expect(names((r) => !r.hints?.readOnlyHint && r.hints?.idempotentHint)).toEqual([
+      'access_grant_add',
+      'access_grant_remove',
       'agent_set_thinking_effort',
       'api_docs_set',
       'api_key_import',

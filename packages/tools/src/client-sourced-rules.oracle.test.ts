@@ -123,6 +123,8 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   page_share: lowering,
   email_page: lowering,
   node_unshare: free('takes a link away'),
+  access_grant_add: always('it widens who reads an item'),
+  access_grant_remove: onNodes('node_id'),
   page_unshare: free('takes a link away'),
 
   // ── Agents, tool groups, tools, persona ──────────────────────────────────

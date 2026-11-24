@@ -79,6 +79,9 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   },
   // Recoverable: undoes a share, a draft edit, or a pool entry.
   node_unshare: { reason: 'revokes a link; the gated half is node_share' },
+  access_grant_remove: {
+    reason: 'narrows who reads an item, as any edit; the gated half is access_grant_add',
+  },
   page_unshare: { reason: 'revokes a link; the gated half is page_share' },
   page_block_delete: { reason: 'writes to DRAFT; page_discard_draft reverts it' },
   model_pool_remove: { reason: 'pool entry; model_pool_set restores it' },
@@ -138,6 +141,7 @@ const CONFIRM_WITHOUT_DESTRUCTIVE_SLUG: Record<string, string> = {
   telegram_send: 'message leaves the brain',
   node_share: 'publishes brain content outward',
   page_share: 'publishes brain content outward',
+  access_grant_add: 'widens who reads an item: what an injected instruction would ask for',
   // Replaces an app's live data; a snapshot of what it replaces is taken
   // first, so it is undoable, but the owner should still say yes.
   app_snapshot_restore: "replaces the app's live data or code (undo snapshot first)",

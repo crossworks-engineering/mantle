@@ -231,6 +231,24 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
     entry('file_id', 'edit', lib('startArchiveExtract, before any write or notify')),
   ],
   ['access_set', entry('node_id', 'manage', 'it writes nothing (the levels went)')],
+  // The Grant Access panel's own functions (@mantle/content grants.ts),
+  // which ask their rules first; then the grant definer (0279) again.
+  [
+    'access_grant_add',
+    entry(
+      'node_id',
+      'manage',
+      "the grants panel's rules, then mantle_grant_change (0279): manage of the item, and a Moderator of the workspace",
+    ),
+  ],
+  [
+    'access_grant_remove',
+    entry(
+      'node_id',
+      'read',
+      "the grants panel's rules, then mantle_grant_change (0279): manage of the item, or a Moderator of the workspace",
+    ),
+  ],
   [
     'node_unshare',
     entry('id', 'edit', "the handler's own rule (closeLink), and link_close (0280)"),
@@ -379,8 +397,8 @@ describe('the writes the database checks (the pre-check removal)', () => {
     // acts that are a person's (person-only-acts.ts); the two task file writes;
     // the two submission acts; drawing_redraw; pipeline_run; the two file
     // history acts (restore, delete a version); file_reindex;
-    // file_extract_archive.
-    expect(DATABASE_CHECKED.size).toBe(117);
+    // file_extract_archive; the two grant tools.
+    expect(DATABASE_CHECKED.size).toBe(119);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

@@ -32,7 +32,7 @@
       "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
     },
     "DELETE /api/formulas/:id": "formula_delete",
-    "DELETE /api/grants/:nodeId/:wsId": { "planned": "grant_remove" },
+    "DELETE /api/grants/:nodeId/:wsId": "access_grant_remove",
     "DELETE /api/heartbeats/:id": { "planned": "heartbeat_delete" },
     "DELETE /api/journal/:id": "journal_delete",
     "DELETE /api/keys/:id": "api_key_delete",
@@ -559,7 +559,7 @@
     },
     "PATCH /api/formulas/:id": "formula_update",
     "PATCH /api/gateway-services/:slug": "gateway_service_set",
-    "PATCH /api/grants/:nodeId/:wsId": { "planned": "grant_set" },
+    "PATCH /api/grants/:nodeId/:wsId": ["access_grant_add", "access_grant_remove"],
     "PATCH /api/heartbeats/:id": { "planned": "heartbeat_update" },
     "PATCH /api/journal/:id": "journal_update",
     "PATCH /api/keys/:id": {
@@ -856,7 +856,7 @@
     "POST /api/formulas/seed": { "none": "Small extras with no agent job" },
     "POST /api/gateway-services": "gateway_service_set",
     "POST /api/gateway/calls": { "none": "outside: the service gateway calls this" },
-    "POST /api/grants/:nodeId": { "planned": "grant_set" },
+    "POST /api/grants/:nodeId": "access_grant_add",
     "POST /api/grants/:nodeId/:wsId/hand": { "planned": "grant_set" },
     "POST /api/grants/:nodeId/:wsId/restore": { "planned": "grant_restore" },
     "POST /api/grants/:nodeId/embeds": { "planned": "grant_set" },

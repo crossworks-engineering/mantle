@@ -125,6 +125,16 @@ it never runs its paid step, the `passage_scoring` decider (W7b fix round
 search returns the plain ranking. A workspace assistant's turn keeps its
 own rules (the member turn ledger).
 
+## Grants (2026-11-24)
+
+`access_grant_add` and `access_grant_remove` change one item's grants as
+the login, by the Grant Access panel's own functions and rules; `access_get`
+reads them (Admin). `access_set` is retired and says which tool to use.
+The widening one is confirm-gated (an in-brain turn's call waits in
+Pending); on this surface it acts at once. Both are risky for a key and a
+peer: one calls them only when it names them. The table of callers:
+[workspaces.md](./workspaces.md), "Items and grants".
+
 ## Where a create lands (W7b)
 
 A create tool (`MCP_CREATE_TOOL_SLUGS` in

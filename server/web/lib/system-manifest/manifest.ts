@@ -1536,8 +1536,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'access',
     name: 'Access levels',
     description:
-      "The owner's access levers: read who reads a brain item (its grants: the workspaces that read it; changed in its Grant Access panel), and read or set the level of an agent or tool group (admin > team > client > public). Owner-side only (refused on team surfaces). ⚠ ATTACHED TO NO AGENT: the owner uses it through MCP / the API.",
-    toolSlugs: ['access_get', 'access_set'],
+      "Who reads a brain item, and its grants changed by the Grant Access panel's rules: read them (access_get, owner-side), share an item with a workspace or switch Write on (access_grant_add: an agent's call waits in Pending for a person), take it from a workspace or switch Write off (access_grant_remove). access_set is retired. ⚠ ATTACHED TO NO AGENT: people use it through MCP / the API.",
+    toolSlugs: ['access_get', 'access_set', 'access_grant_add', 'access_grant_remove'],
   },
   {
     slug: 'runs',

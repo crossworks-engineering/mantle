@@ -28,6 +28,8 @@ const REFUSED = [
   'my_items_list',
   'read_result',
   'search_chunks',
+  'access_grant_add',
+  'access_grant_remove',
   'summarize_text',
   'translate',
   'extract_from_image',
