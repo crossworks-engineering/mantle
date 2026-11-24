@@ -275,10 +275,11 @@ every workspace it is granted to, each with a Write switch.
   refusal starts with the panel's code and words. The same
   `workspace_events` rows are written, with the login as their actor and
   where the change came from in their subject (`via`: `mcp-oauth`,
-  `mcp-key`, `mcp-peer`, `mcp-stdio`, `pending`, `turn`; the screen's rows
-  have none). A workspace is named by its id or its exact name. A grant
-  row that follows its folder changes on the folder (the panel's "Change
-  here" and "Restore" stay in the panel). Who may call the two writes:
+  `mcp-key`, `mcp-peer`, `mcp-stdio`, `pending`, `turn`, `run`,
+  `owner-web`, `app`; the screen's rows have none). A workspace is named
+  by its id or its exact name. A grant row that follows its folder
+  changes on the folder (the panel's "Change here" and "Restore" stay in
+  the panel). Who may call the two writes:
 
   | Caller                                                                            | Add, Write on                                                           | Write off, remove                                                 |
   | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -286,7 +287,7 @@ every workspace it is granted to, each with a Write switch.
   | An API key or a linked brain (as its login)                                       | only when it names the tool (risky); no folder change                   | the same                                                          |
   | An assistant's chat turn, or its delegated child, that holds the tool (below)     | waits in Pending for a person; its own workspace only; no folder change | with its login's rights; its own workspace only; no folder change |
   | A team app (any app another workspace holds)                                      | never                                                                   | never                                                             |
-  | An app only Admin holds, run by an Admin user                                     | asks the runner's confirm in the app                                    | with the runner's rights                                          |
+  | An app only Admin holds, run by an Admin user                                     | asks the runner's confirm in the app; no folder change                  | with the runner's rights; no folder change                        |
   | A recipe step, or an item of a runner queue                                       | never                                                                   | never                                                             |
   | A call with no login (the Control Center's admin channel, a heartbeat of its own) | refused                                                                 | refused                                                           |
 

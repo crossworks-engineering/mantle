@@ -167,6 +167,12 @@ const NEGATIVES: readonly { role: GuideRole; placement: GuidePlacement; create?:
   { role: 'writeGrant', placement: 'folder', create: true },
 ];
 
+/** "Remove a grant from T: Moderator of its home, or Moderator of T": the
+ *  read grant's member is a Moderator of R and may take R's grant away, so
+ *  it is no negative of a removal. A user of W with Write on (a Moderator
+ *  of T only) is: it reads the item and may not. */
+const GRANT_REMOVE_NEGATIVES: typeof NEGATIVES = [{ role: 'writeGrant', placement: 'root' }];
+
 /** The oracle's answer for a candidate, as a login on MCP: the one the
  *  pick filters with (the not-applicable reasons do not depend on the way
  *  in for the actions a tool declares). */
@@ -316,7 +322,9 @@ function cellsOf(
   // that is not a read.
   if (t.effect === 'write' || !READS.includes(m.action)) {
     const kind = its[0]!;
-    for (const n of NEGATIVES) {
+    const negatives =
+      m.action === 'grantRemove' ? [...NEGATIVES, ...GRANT_REMOVE_NEGATIVES] : NEGATIVES;
+    for (const n of negatives) {
       if ((m.action === 'create') !== (n.create === true)) continue;
       const want = loginAnswer(n.role, kind, n.placement, m.action, manage);
       if ('na' in want || ('allow' in want && want.allow)) continue;

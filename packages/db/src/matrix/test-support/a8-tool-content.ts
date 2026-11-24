@@ -906,6 +906,14 @@ export const A8_TOOL_CONTENT: Readonly<
       };
     },
   },
+  // The grant changes name their workspace as the panel's routes' cells do:
+  // add T; take R away (in folder F its grant of R comes from the folder,
+  // and the removal is "Removed here").
+  access_grant_add: { needs: 'the workspace T', seed: async (s) => ({ workspace: s.fx.ws.T }) },
+  access_grant_remove: {
+    needs: 'the workspace R',
+    seed: async (s) => ({ workspace: s.fx.ws.R }),
+  },
   page_move: {
     needs: 'a folder homed in T',
     seed: async (s) => ({ folder_id: (await a8MoveTarget(s.sql, s.fx, 'page')).id }),

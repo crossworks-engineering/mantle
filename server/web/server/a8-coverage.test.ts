@@ -212,7 +212,6 @@ const A8_EXEMPT_ROUTES: readonly string[] = [
  *  new one is named here with the final audit's review line in the pins'
  *  _notes, and a8Exempt rises with it. */
 const A8_EXEMPT_TOOLS: readonly string[] = [
-  'access_get',
   'access_set',
   'agent_grant_tool_group',
   'agent_set_thinking_effort',
