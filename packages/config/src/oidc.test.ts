@@ -9,6 +9,9 @@ import {
   oidcModeStepUp,
   oidcNames,
   oidcRequiredProblem,
+  oidcLabelInEnv,
+  oidcLabelInUse,
+  oidcRowDecides,
   oidcRowNeeded,
   oidcSettingsFor,
   setOidcRow,
@@ -204,22 +207,27 @@ describe('the row names (0371): a .env line wins, value by value', () => {
     });
   });
 
-  it('the boot reads the row only with the mode word on or setup and a .env name missing', () => {
+  it('the boot reads the row unless the .env says off; the row decides a value only with a name missing', () => {
     vi.stubEnv('MANTLE_OIDC_ISSUER', '');
     vi.stubEnv('MANTLE_OIDC_CLIENT_ID', '');
     vi.stubEnv('MANTLE_OIDC_MODE', 'off');
     expect(oidcRowNeeded()).toBe(false);
+    expect(oidcRowDecides()).toBe(false);
     for (const mode of ['setup', 'optional', 'required']) {
       vi.stubEnv('MANTLE_OIDC_MODE', mode);
       expect(oidcRowNeeded(), mode).toBe(true);
+      expect(oidcRowDecides(), mode).toBe(true);
     }
     vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid/r');
-    expect(oidcRowNeeded()).toBe(true);
+    expect(oidcRowDecides()).toBe(true);
     vi.stubEnv('MANTLE_OIDC_CLIENT_ID', 'mantle');
-    expect(oidcRowNeeded()).toBe(false);
+    // Both names in the .env: read for the label only.
+    expect(oidcRowNeeded()).toBe(true);
+    expect(oidcRowDecides()).toBe(false);
     // No .env mode line: the row holds the mode, so it is read.
     vi.stubEnv('MANTLE_OIDC_MODE', '');
     expect(oidcRowNeeded()).toBe(true);
+    expect(oidcRowDecides()).toBe(true);
   });
 
   it('setup still reads off in every gate, whatever the row holds', () => {
@@ -299,5 +307,52 @@ describe('the mode from the setup row (0372)', () => {
     expect(oidcRequiredProblem()).toMatch(/must use https/);
     vi.stubEnv('MANTLE_PUBLIC_URL', '');
     expect(oidcRequiredProblem()).toMatch(/MANTLE_PUBLIC_URL must be set/);
+  });
+});
+
+describe('the button label (0399): the .env line, else the row, else the default', () => {
+  afterEach(() => {
+    setOidcRow({});
+    vi.unstubAllEnvs();
+  });
+
+  it('a .env line wins; else the row; else Single sign-on, each with its source', () => {
+    vi.stubEnv('MANTLE_OIDC_LABEL', '');
+    expect(oidcLabelInUse()).toEqual({ label: 'Single sign-on', labelFrom: 'none' });
+    setOidcRow({ label: 'Microsoft' });
+    expect(oidcLabelInUse()).toEqual({ label: 'Microsoft', labelFrom: 'row' });
+    expect(oidcLabelInEnv()).toBe(false);
+    vi.stubEnv('MANTLE_OIDC_LABEL', '  Company account  ');
+    expect(oidcLabelInEnv()).toBe(true);
+    expect(oidcLabelInUse()).toEqual({ label: 'Company account', labelFrom: 'env' });
+  });
+
+  it('the settings carry the label in use, picked up at the next row read', () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'optional');
+    vi.stubEnv('MANTLE_OIDC_LABEL', '');
+    vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid/r');
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', 'mantle');
+    vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
+    const label = () => {
+      const s = readOidcSettings().settings;
+      return s.mode === 'off' ? null : s.label;
+    };
+    expect(label()).toBe('Single sign-on');
+    // As a re-read does: the label in the row is used at once.
+    setOidcRow({ label: 'Microsoft' });
+    expect(label()).toBe('Microsoft');
+    setOidcRow({ label: null });
+    expect(label()).toBe('Single sign-on');
+  });
+
+  it('a row label that does not fit the pattern (written by hand) is none', () => {
+    vi.stubEnv('MANTLE_OIDC_LABEL', '');
+    for (const bad of ['<script>', 'a\nb', 'x'.repeat(61), '   ']) {
+      setOidcRow({ label: bad });
+      expect(oidcLabelInUse(), JSON.stringify(bad)).toEqual({
+        label: 'Single sign-on',
+        labelFrom: 'none',
+      });
+    }
   });
 });

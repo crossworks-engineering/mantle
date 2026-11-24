@@ -31,6 +31,7 @@ import type {
   FleetKeyLine,
   FleetKeyState,
 } from '@mantle/client-types';
+import { SSO_LABEL_MAX, ssoLabelValue } from '@mantle/client-types/sso-label';
 import { db } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import {
@@ -1601,20 +1602,30 @@ export async function saveControlSsoView(
 }
 
 /** The values of one save, trimmed, the GUIDs lower case: at least one,
- *  each of its shape. The route checks them before its audit row, and the
- *  ask again before it seals them. */
+ *  each of its shape. The label is held to the screens' pattern
+ *  (@mantle/client-types sso-label.ts); '' clears it. The route checks them
+ *  before its audit row, and the ask again before it seals them; the box
+ *  holds the label to the same pattern again. */
 export function checkSsoSet(ask: {
   tenant?: string;
   clientId?: string;
   secret?: string;
-}): Checked<{ tenant?: string; clientId?: string; secret?: string }> {
+  label?: string;
+}): Checked<{ tenant?: string; clientId?: string; secret?: string; label?: string }> {
   const args = {
     ...(ask.tenant !== undefined ? { tenant: ask.tenant.trim().toLowerCase() } : {}),
     ...(ask.clientId !== undefined ? { clientId: ask.clientId.trim().toLowerCase() } : {}),
     ...(ask.secret !== undefined ? { secret: ask.secret.trim() } : {}),
+    ...(ask.label !== undefined ? { label: ask.label.trim() } : {}),
   };
   if (Object.keys(args).length === 0) {
-    return { ok: false, error: 'Give a tenant ID, a client ID or a client secret.' };
+    return { ok: false, error: 'Give a tenant ID, a client ID, a client secret or a label.' };
+  }
+  if (args.label !== undefined && ssoLabelValue(args.label) === false) {
+    return {
+      ok: false,
+      error: `The label is 1 to ${SSO_LABEL_MAX} characters: letters, digits, spaces and . , - ' & ( ) + only.`,
+    };
   }
   if (
     (args.tenant !== undefined && !isUuid(args.tenant)) ||
@@ -1634,7 +1645,14 @@ export function checkSsoSet(ask: {
 /** One ask of the Company sign-in page. */
 export type ControlSsoAsk =
   | { do: 'status' | 'test'; boxIds: readonly string[] }
-  | { do: 'set'; boxId: string; tenant?: string; clientId?: string; secret?: string }
+  | {
+      do: 'set';
+      boxId: string;
+      tenant?: string;
+      clientId?: string;
+      secret?: string;
+      label?: string;
+    }
   | { do: 'mode'; boxId: string; mode: string }
   | { do: 'answers'; callIds: readonly string[] };
 

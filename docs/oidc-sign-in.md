@@ -11,7 +11,8 @@ Code: `server/web/lib/oidc/` (settings, provider, cookies, rules, store,
 flow, handoff, exchange, fresh), the routes under
 `server/web/app/api/auth/oidc/` and `server/web/app/api/users/oidc/`,
 migrations `packages/db/migrations/0349_oidc_signin.sql`,
-`0350_oidc_handoff_codes.sql` and `0361_sso_setup.sql`. A provider guide:
+`0350_oidc_handoff_codes.sql`, `0361_sso_setup.sql` and `0399_sso_label.sql`.
+A provider guide:
 [oidc-entra.md](oidc-entra.md).
 
 ## Settings
@@ -22,9 +23,41 @@ migrations `packages/db/migrations/0349_oidc_signin.sql`,
 | `MANTLE_OIDC_ISSUER`        |                  | The provider's issuer URL. The provider is read from `<issuer>/.well-known/openid-configuration`. `https` only; plain `http` only to a loopback host (a test provider).                                                                                                                                      |
 | `MANTLE_OIDC_CLIENT_ID`     |                  | The client id registered with the provider.                                                                                                                                                                                                                                                                  |
 | `MANTLE_OIDC_CLIENT_SECRET` |                  | Its secret. Empty: the one the setup screen stored, or a public client (PKCE only).                                                                                                                                                                                                                          |
-| `MANTLE_OIDC_LABEL`         | `Single sign-on` | The button's word: "Sign in with {label}". One line, at most 60 characters.                                                                                                                                                                                                                                  |
+| `MANTLE_OIDC_LABEL`         | `Single sign-on` | The button's word: "Sign in with {label}". One line, at most 60 characters. Empty: the label the setup screen or a Control Center set ([The label](#the-label)), else the default.                                                                                                                           |
 | `MANTLE_OIDC_SESSION_HOURS` | `12`             | The life of a session made by company sign-in, 1 to 168 hours. Password sessions keep their one year.                                                                                                                                                                                                        |
 | `MANTLE_OIDC_OUTSIDE`       | `on`             | Whether an admin's outside mark keeps a login's password in required mode (people outside the company, decision D3). Off: marks are refused and keep nothing.                                                                                                                                                |
+
+### The label
+
+The button's word can be set on the screens, not only in `.env` (0399): on
+the box's setup screen (Admin > Company sign-in) and from a Control Center
+(Fleet > Company sign-in), with the person's own password, in any mode but
+off. It is not a secret and not an issuer, so it needs no window with
+sign-in off. `MANTLE_OIDC_LABEL` in `.env` wins (the save answers
+`env-wins`); else the row's label; else `Single sign-on`. The status names
+the label in use and its source (`label`, `labelFrom`: `env`, `row` or
+`none`). An empty label clears the row's, so the default applies again.
+
+The sign-in screen shows the label to anyone, before anyone signs in
+(`GET /api/auth/oidc/config`), so a label set on a screen is held to one
+pattern at the CC and again at the box, and a value that does not fit is
+refused (400), never stored. The rule, after the value is trimmed: 1 to 60
+characters, each a letter (any script), a digit, a space or one of
+`. , - ' & ( ) +`, with at least one letter or digit. So no line break, no
+control character, no markup, no other mark. As a regular expression
+(`SSO_LABEL_RE`, `packages/client-types/src/sso-label.ts`):
+
+```text
+^(?=.*[\p{L}\p{N}])[\p{L}\p{N} .,'&()+-]{1,60}$   (flag u)
+```
+
+A `.env` label is the owner's own line: one line, at most 60 characters, not
+held to the pattern (a CC shows one that does not fit as empty). Every
+process that reads the settings picks a new label up at its next read of
+the setup row (at once in the process that saved it, the others within 60
+seconds, [Without a restart](#from-the-control-center)), with no restart.
+The audit row names the label (it is public): `auth.sso_setup_label_set` on
+the box screen, `fleet.sso_set` at a CC with `fields` and `label`.
 
 Register `MANTLE_PUBLIC_URL/api/auth/oidc/callback` as the redirect URI.
 `MANTLE_PUBLIC_URL` must be set. A mode that is on with the issuer, the
@@ -44,11 +77,12 @@ A client's IT team knows Microsoft, not `.env`. With the screen, the owner
 sets three lines and never handles the client secret. The Microsoft admin
 enters it at Admin > Company sign-in, where it is sealed and never shown.
 
-| Value                                                             | Where              | Who                                          |
-| ----------------------------------------------------------------- | ------------------ | -------------------------------------------- |
-| `MANTLE_OIDC_MODE`, `MANTLE_OIDC_ISSUER`, `MANTLE_OIDC_CLIENT_ID` | `.env`             | The owner. These are not secrets             |
-| The client secret                                                 | The screen, sealed | The Microsoft admin                          |
-| The SCIM token                                                    | The screen         | The Microsoft admin copies it to Entra, once |
+| Value                                                             | Where                 | Who                                                |
+| ----------------------------------------------------------------- | --------------------- | -------------------------------------------------- |
+| `MANTLE_OIDC_MODE`, `MANTLE_OIDC_ISSUER`, `MANTLE_OIDC_CLIENT_ID` | `.env`                | The owner. These are not secrets                   |
+| The client secret                                                 | The screen, sealed    | The Microsoft admin                                |
+| The button's label                                                | The screen, or `.env` | The Microsoft admin, any mode but off; `.env` wins |
+| The SCIM token                                                    | The screen            | The Microsoft admin copies it to Entra, once       |
 
 | The mode word | The screen        | Company sign-in     | SCIM from the row           |
 | ------------- | ----------------- | ------------------- | --------------------------- |
@@ -100,7 +134,12 @@ empties who set the values on the screen.
 2. Press Test. It reads the provider's document, checks its issuer, and asks a
    token with the client id and secret. One code comes back, never the
    provider's text.
-3. On a Control Center only: make the SCIM token, and type your password.
+3. Set the button's label, for example `Microsoft`, and type your password
+   ([The label](#the-label)). This one works in `optional` and `required`
+   too, so it needs no window. With `MANTLE_OIDC_LABEL` in `.env`, the save
+   answers `env-wins`. A save with the secret and the label together applies
+   both or neither.
+4. On a Control Center only: make the SCIM token, and type your password.
    The token shows once, and works at once ([scim.md](scim.md)). Any value in
    `MANTLE_SCIM_TOKEN_HASH`, `off` too, holds this back. On any other box the
    screen shows no SCIM step and its route answers 404 (SCIM runs on the CC
@@ -136,8 +175,8 @@ not stop a stolen session: the users area can reset its own password with no
 old password. Making an API key has the same gap. The original account gets a
 push for each change when it has a paired device, and nothing otherwise. The
 lasting record is the audit log (`auth.sso_setup_secret_set`,
-`auth.sso_setup_scim_token_made`), the who-and-when on the screen, and a boot
-line.
+`auth.sso_setup_label_set`, `auth.sso_setup_scim_token_made`), the
+who-and-when on the screen, and a boot line.
 
 **Keep a window short.** `setup` acts as `off` does:
 
@@ -194,7 +233,10 @@ in a restore must be entered again.
 
 **Rollback.** An older image does not know `setup`: web and api stop at boot on
 it. Set the mode to `off` and run `docker compose up -d` before pinning one.
-An older image reads the tenant and the client ID from `.env` only: on a box
+An older image reads the label from `MANTLE_OIDC_LABEL` only: a label set on a
+screen shows as the default after the pin, unless the `.env` has the line
+(the revert of 0399 clears the row's label). An
+older image reads the tenant and the client ID from `.env` only: on a box
 whose values came from the Control Center, write them and the mode into
 `.env` first, in one command (`scripts/sso-env.sh <box> --tenant ..
 --client .. --mode optional`; without `--mode` it writes `setup`, which an
@@ -211,12 +253,12 @@ answers 404. To keep sign-in there, get a new secret from the admin and put it i
 
 Routes (the users area only; an API key gets 401; no MCP tool):
 
-| Route                                  | Answers                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------------ |
-| `GET /api/users/sso-setup`             | Mode off: `{ mode: 'off' }`, no read. Else the status, never a value     |
-| `PUT /api/users/sso-setup`             | `setup` only. `{ secret, password }`. 409 `env-wins`, 403 `setup-closed` |
-| `POST /api/users/sso-setup/test`       | `setup` only. `{ outcome }`                                              |
-| `POST /api/users/sso-setup/scim-token` | `setup` only. `{ password }`. The token, once. 409 `env-wins`            |
+| Route                                  | Answers                                                                                                                                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/users/sso-setup`             | Mode off: `{ mode: 'off' }`, no read. Else the status, never a value of the secret; it names `label` and `labelFrom`                                                                                          |
+| `PUT /api/users/sso-setup`             | `{ secret?, label?, password }`, one or both. The secret in `setup` only, the label in any mode but off. 409 `env-wins`, 403 `setup-closed` (off, or a secret outside `setup`), 400 a label that does not fit |
+| `POST /api/users/sso-setup/test`       | `setup` only. `{ outcome }`                                                                                                                                                                                   |
+| `POST /api/users/sso-setup/scim-token` | `setup` only. `{ password }`. The token, once. 409 `env-wins`                                                                                                                                                 |
 
 ### From the Control Center
 
@@ -231,6 +273,7 @@ it is pasted once at the CC and sealed with the box's own master key.
 | `MANTLE_OIDC_MODE`   | `.env` line, else the setup row from the CC | A CC Admin raises it one step; the owner's `.env` lowers |
 | Tenant ID, client ID | `.env`, or the setup row from the CC        | A CC Admin, only while the mode is `setup`               |
 | The client secret    | `.env`, or the setup row, sealed            | A CC Admin, any mode but off                             |
+| The button's label   | `.env`, or the setup row                    | A CC Admin, any mode but off ([The label](#the-label))   |
 
 1. At the CC, the CC Admin raises the box to `setup` ("Open setup"), with
    their own CC password. A fresh box needs no command at the box at all.
@@ -241,7 +284,10 @@ it is pasted once at the CC and sealed with the box's own master key.
 3. After a Test answers `ok`, the CC Admin raises the box to `optional`
    ("Turn on"). The tenant and client ID are locked from then on: the CC
    cannot go back to `setup`.
-4. Later, when it is well tested, the CC Admin may raise the box to
+4. Any time after setup opens, the CC Admin may set the button's label (for
+   example `Microsoft`) with their own CC password, in any mode but off. A box
+   a release behind refuses a save with a label whole (`bad-call`).
+5. Later, when it is well tested, the CC Admin may raise the box to
    `required` ("Make required"). The page first shows a warning to confirm:
    what required does, the linked and active numbers, and the way back.
 
@@ -274,8 +320,11 @@ the owner, with the warning and the `.env` way back.
 
 **Without a restart.** Each process that reads the settings (web, the agent
 runtime and every worker) reads the setup row at boot, and again every 60
-seconds while the `.env` has no mode line: one small select, no new
-connection. Web applies a raise at once. A process that has not read it yet
+seconds unless the `.env` says `MANTLE_OIDC_MODE=off`: one small select, no
+new connection. With a `.env` mode line the row's mode is not used (the
+`.env` wins), but the row's label and a name the `.env` lacks are. A boot
+read for the label alone (the `.env` holds the mode and both names) that
+fails logs and goes on. Web applies a raise at once. A process that has not read it yet
 reads the lower mode. When web reads a new mode it runs the boot step for it
 (see "Modes"), the same code as a boot: a raise into `required` ends the
 sessions the rule refuses, once. A read that fails keeps the last mode. A
@@ -284,8 +333,9 @@ says it, or has no mode line) stops, and the container restarts. A process
 that reads `required` and cannot work in it stops, as at boot.
 
 **Where each value comes from.** A `.env` line wins over the row, value by
-value, the mode included, and the status names the source of each (`env`,
-`row` or `none`; the mode's as `modeFrom`). A required
+value, the mode and the label included, and the status names the source of
+each (`env`, `row` or `none`; the mode's as `modeFrom`, the label's as
+`labelFrom`). A required
 box whose settings would read as off after that read stops at boot, as a
 missing `.env` line stopped it before. A changed tenant or client ID clears a
 stored secret the same save does not replace: a secret is never sent to

@@ -94,6 +94,12 @@ same page in any mode; on a live box it is saved only when its Test passes.
 The CC's own box is the first entry on that page, so it needs no command
 either: the same steps, the same rules, and its way down is its own `.env`.
 
+**The button says Microsoft.** Set the label to `Microsoft` on the same page
+(or on the box's own Admin > Company sign-in screen), with your password, in
+any mode but off: the sign-in screen then says "Sign in with Microsoft",
+with no `.env` edit and no restart. A `MANTLE_OIDC_LABEL` line in the box
+`.env` wins over it ([oidc-sign-in.md](oidc-sign-in.md), "The label").
+
 With the secret in the `.env`:
 
 ```bash
@@ -104,6 +110,9 @@ MANTLE_OIDC_CLIENT_SECRET=<the secret value>
 MANTLE_OIDC_LABEL=Microsoft
 MANTLE_OIDC_SESSION_HOURS=12
 ```
+
+The label line is optional: without it, the label set on a screen applies,
+else `Single sign-on`.
 
 Use the tenant id, never `common` or `organizations`: the ID token's issuer
 must equal `MANTLE_OIDC_ISSUER`. Run `docker compose up -d` after a change: a

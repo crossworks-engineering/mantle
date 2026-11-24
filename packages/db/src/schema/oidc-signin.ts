@@ -100,6 +100,8 @@ export const ssoSetup = pgTable('sso_setup', {
   issuer: text('issuer'),
   clientId: text('client_id'),
   mode: text('mode').$type<'setup' | 'optional' | 'required'>(),
+  /** The sign-in button's label (0399), held to the screens' pattern. */
+  label: text('label'),
 });
 
 /** What a one-time code is for (migration 0350). */

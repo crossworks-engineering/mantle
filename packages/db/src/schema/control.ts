@@ -178,6 +178,11 @@ export type ControlSsoStatus = {
   issuerFrom: ControlSsoSource;
   clientId: string;
   clientIdFrom: ControlSsoSource;
+  /** The sign-in button's label in use and where it comes from (0399).
+   *  Absent from a box a release behind, and sent only to a CC that asks
+   *  for it (`withLabel`): an older CC refuses fields it does not know. */
+  label?: string;
+  labelFrom?: ControlSsoSource;
   secret: ControlSsoSource;
   secretSetAt: string | null;
   /** The redirect URI to register; '' with no usable MANTLE_PUBLIC_URL. */

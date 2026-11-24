@@ -9,10 +9,12 @@
  *  - `sso_status`: where each value comes from (the box .env, or the setup
  *    row), never a value of the secret, and two numbers (linked and active
  *    logins).
- *  - `sso_set { nonce, by, tenant?, clientId?, secret? }`: stages the Entra
- *    tenant and the client id while the mode word is setup, and the client
- *    secret in any mode but off (in an on mode only when the Test with it
- *    answers ok). The nonce is the call's id, taken once (tool-channel.ts
+ *  - `sso_set { nonce, by, tenant?, clientId?, secret?, label? }`: stages
+ *    the Entra tenant and the client id while the mode word is setup, the
+ *    client secret in any mode but off (in an on mode only when the Test with
+ *    it answers ok), and the button's label in any mode but off (0399; ''
+ *    clears it). A box a release behind refuses a label as `bad-call`, the
+ *    whole save, so nothing half applies. The nonce is the call's id, taken once (tool-channel.ts
  *    takeNonce). `by` is the CC person, for the audit row.
  *  - `sso_test`: one Test with the saved values (lib/oidc/sso-setup.ts).
  *  - `sso_mode { nonce, by, mode }`: raises the mode one step (off, setup,
@@ -20,6 +22,12 @@
  *    MANTLE_OIDC_MODE line (sso-setup.ts ssoModeFromCenter: the two checks).
  *    The .env line is the only way down. The answer names the mode before
  *    (`from`), and the audit row `by`, the mode asked and the one before.
+ *
+ * `withLabel: true` (any case): the status in the answer names the label
+ * and its source. Only a CC that knows those fields asks for them, since an
+ * older CC refuses an answer with fields it does not know; a box a release
+ * behind refuses the flag (`bad-call`), and the CC asks once more without it
+ * (tool-calls.ts).
  *
  * The box's scope line rules all four: MANTLE_CONTROL_CENTER_SCOPE=none
  * refuses them (`scope`), with no read. A Control Center's own box runs the
@@ -29,6 +37,7 @@
 import { z } from 'zod';
 import { oidcModeWord } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
+import { SSO_LABEL_MAX, ssoLabelValue } from '@mantle/client-types/sso-label';
 import type { SsoSetupTestOutcome } from '@mantle/client-types';
 import type { ControlSsoStatus } from '@mantle/db';
 import { notifySsoSetupChange } from '@/lib/oidc/notify';
@@ -46,9 +55,17 @@ import { controlScope, takeNonce } from './tool-channel';
 /** The longest client secret (the setup screen's own cap). */
 export const SSO_SECRET_MAX = 1024;
 
+/** Asks for the label in the answer's status (0399). */
+const WithLabel = z.literal(true).optional();
+
 /** The four cases, as box.ts's switch takes them. */
 export const SSO_CALLS = [
-  z.object({ op: z.literal('sso_status'), args: z.object({}).strict().optional() }).strict(),
+  z
+    .object({
+      op: z.literal('sso_status'),
+      args: z.object({ withLabel: WithLabel }).strict().optional(),
+    })
+    .strict(),
   z
     .object({
       op: z.literal('sso_set'),
@@ -59,14 +76,30 @@ export const SSO_CALLS = [
           tenant: z.string().regex(UUID_RE).optional(),
           clientId: z.string().regex(UUID_RE).optional(),
           secret: z.string().trim().min(1).max(SSO_SECRET_MAX).optional(),
+          // '' clears it. Else the pattern (@mantle/client-types sso-label.ts).
+          label: z
+            .string()
+            .max(SSO_LABEL_MAX * 4)
+            .refine((v) => ssoLabelValue(v) !== false)
+            .optional(),
+          withLabel: WithLabel,
         })
         .strict()
         .refine(
-          (a) => a.tenant !== undefined || a.clientId !== undefined || a.secret !== undefined,
+          (a) =>
+            a.tenant !== undefined ||
+            a.clientId !== undefined ||
+            a.secret !== undefined ||
+            a.label !== undefined,
         ),
     })
     .strict(),
-  z.object({ op: z.literal('sso_test'), args: z.object({}).strict().optional() }).strict(),
+  z
+    .object({
+      op: z.literal('sso_test'),
+      args: z.object({ withLabel: WithLabel }).strict().optional(),
+    })
+    .strict(),
   z
     .object({
       op: z.literal('sso_mode'),
@@ -75,6 +108,7 @@ export const SSO_CALLS = [
           nonce: z.string().uuid(),
           by: z.string().max(200),
           mode: z.enum(['setup', 'optional', 'required']),
+          withLabel: WithLabel,
         })
         .strict(),
     })
@@ -104,8 +138,9 @@ export async function runSsoCall(call: SsoCall): Promise<SsoAnswer> {
     const nonce = takeNonce(call.args.nonce);
     if (nonce !== 'ok') return { ok: false, reason: nonce };
   }
+  const withLabel = call.args?.withLabel === true;
   if (call.op === 'sso_set') {
-    const { tenant, clientId, secret } = call.args;
+    const { tenant, clientId, secret, label } = call.args;
     return runSsoCase(
       {
         op: 'sso_set',
@@ -113,13 +148,17 @@ export async function runSsoCall(call: SsoCall): Promise<SsoAnswer> {
           ...(tenant !== undefined ? { tenant } : {}),
           ...(clientId !== undefined ? { clientId } : {}),
           ...(secret !== undefined ? { secret } : {}),
+          ...(label !== undefined ? { label } : {}),
         },
       },
       'center',
+      withLabel,
     );
   }
-  if (call.op === 'sso_mode') return runSsoCase({ op: 'sso_mode', mode: call.args.mode }, 'center');
-  return runSsoCase({ op: call.op }, 'center');
+  if (call.op === 'sso_mode') {
+    return runSsoCase({ op: 'sso_mode', mode: call.args.mode }, 'center', withLabel);
+  }
+  return runSsoCase({ op: call.op }, 'center', withLabel);
 }
 
 /** One sign-in case with its values, past the channel's own checks. */
@@ -136,35 +175,46 @@ export type SsoCase =
  * at this box, so no scope line and no nonce). Every rule is in the
  * functions it calls (lib/oidc/sso-setup.ts). `via` picks only the notice
  * to the original account: `self` names the .env mode line, since the
- * scope line does not stop a person at the box.
+ * scope line does not stop a person at the box. `withLabel`: the status
+ * names the label (always for `self`, the CC's own box, same code).
  */
-export async function runSsoCase(c: SsoCase, via: 'center' | 'self'): Promise<SsoAnswer> {
-  if (c.op === 'sso_status') return { ok: true, status: await ssoCenterStatus() };
+export async function runSsoCase(
+  c: SsoCase,
+  via: 'center' | 'self',
+  withLabel = via === 'self',
+): Promise<SsoAnswer> {
+  const status = () => ssoCenterStatus(withLabel);
+  if (c.op === 'sso_status') return { ok: true, status: await status() };
   if (c.op === 'sso_test') {
     if (oidcModeWord() === 'off') {
-      return { ok: false, reason: 'mode', status: await ssoCenterStatus() };
+      return { ok: false, reason: 'mode', status: await status() };
     }
-    return { ok: true, test: await ssoSetupTest(), status: await ssoCenterStatus() };
+    return { ok: true, test: await ssoSetupTest(), status: await status() };
   }
   if (c.op === 'sso_mode') {
     const r = await ssoModeFromCenter(c.mode);
     if (r.ok) void notifySsoSetupChange(via === 'self' ? 'self-mode' : 'center-mode');
-    return { ...r, status: await ssoCenterStatus() };
+    return { ...r, status: await status() };
   }
   const r: SsoSetAnswer = await ssoSetFromCenter(c.staged);
   // Not awaited: a slow push must not hold the answer.
   if (r.ok) void notifySsoSetupChange(via === 'self' ? 'self' : 'center');
-  return { ...r, status: await ssoCenterStatus() };
+  return { ...r, status: await status() };
 }
 
 /** What a sign-in case's audit row names beyond the answer: who at the CC,
- *  and which fields a save carried. Never a value of the secret. */
+ *  which fields a save carried, and a new label. Never a value of the
+ *  secret. */
 export function ssoAuditMore(call: SsoCall): Record<string, unknown> {
   // The mode before is the answer's `from`, in the row's result.
   if (call.op === 'sso_mode') return { by: call.args.by, mode: call.args.mode };
   if (call.op !== 'sso_set') return {};
   return {
     by: call.args.by,
-    fields: (['tenant', 'clientId', 'secret'] as const).filter((f) => call.args[f] !== undefined),
+    fields: (['tenant', 'clientId', 'secret', 'label'] as const).filter(
+      (f) => call.args[f] !== undefined,
+    ),
+    // The label is public (the sign-in screen shows it): the row names it.
+    ...(call.args.label !== undefined ? { label: call.args.label.trim() } : {}),
   };
 }

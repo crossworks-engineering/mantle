@@ -44,6 +44,7 @@ import {
   type ControlSsoCase,
 } from '@mantle/db/control-center';
 import { UUID_RE } from '@mantle/std';
+import { SSO_LABEL_RE } from '@mantle/client-types/sso-label';
 import { log } from '@mantle/tracing';
 import { CallFailed, callBox } from './run';
 import { KeyLines } from './key-lines';
@@ -101,6 +102,10 @@ const SsoStatus = z
     issuerFrom: Source,
     clientId: held(/^[!-~]{1,200}$/),
     clientIdFrom: Source,
+    // Absent from a box a release behind (0399). A .env label that does not
+    // fit the screens' pattern shows as ''.
+    label: held(SSO_LABEL_RE).optional(),
+    labelFrom: Source.optional(),
     secret: Source,
     secretSetAt: held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/).nullable(),
     redirectUri: held(/^https?:\/\/[!-~]{1,390}$/),
@@ -210,7 +215,17 @@ async function sendSsoCall(
     else sent.to = typeof staged.mode === 'string' ? staged.mode : '';
     args = { nonce: c.id, by: c.by.slice(0, 200), ...staged };
   }
-  const r = SsoReply.safeParse(await callBox(key, box.url, name, args));
+  let reply: unknown;
+  try {
+    reply = await callBox(key, box.url, name, { ...args, withLabel: true });
+  } catch (err) {
+    // A box a release behind (0399) refuses the label flag as bad-call,
+    // before it takes the nonce: ask once more without it. Not for a save
+    // that carries a label: that save cannot apply there, so none of it does.
+    if (!(err instanceof CallFailed) || err.code !== 'bad-call' || 'label' in args) throw err;
+    reply = await callBox(key, box.url, name, args);
+  }
+  const r = SsoReply.safeParse(reply);
   if (!r.success) throw new CallFailed('bad-reply');
   return { ok: r.data.ok, reason: r.data.ok ? null : (r.data.reason ?? 'refused'), output: r.data };
 }

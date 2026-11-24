@@ -48,11 +48,13 @@ export type AuditEntry = {
     | 'auth.oidc_offer_dismissed'
     | 'auth.oidc_sessions_ended'
     // The setup screen (docs/oidc-sign-in.md): the client secret set, a SCIM
-    // token made. Who and which field, never a value.
+    // token made. Who and which field, never a value. The button label set:
+    // the label itself (public: the sign-in screen shows it).
     | 'auth.sso_setup_secret_set'
+    | 'auth.sso_setup_label_set'
     // A Control Center person staged a box's company sign-in values
-    // (POST /api/fleet/sso): the box, the fields and a hash of the tenant
-    // and client id, never the secret.
+    // (POST /api/fleet/sso): the box, the fields, a hash of the tenant and
+    // client id, and a new label (public), never the secret.
     | 'fleet.sso_set'
     // A Control Center person asked a box to raise its company sign-in mode
     // one step (POST /api/fleet/sso, do: 'mode'): the box and the mode asked.

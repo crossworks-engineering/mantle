@@ -5,9 +5,11 @@
  * secret or an issuer decides who signs in). Body, one of:
  *  - `{ do: 'list' }`: every linked box with its last sign-in view;
  *  - `{ do: 'status' | 'test', boxIds }`: ask 1 to 50 boxes;
- *  - `{ do: 'set', boxId, tenant?, clientId?, secret?, password }`: stage
- *    one box's values; the person types their own password (the setup
- *    screen's fresh check, ssoSetupPasswordRefusal);
+ *  - `{ do: 'set', boxId, tenant?, clientId?, secret?, label?, password }`:
+ *    stage one box's values; the person types their own password (the setup
+ *    screen's fresh check, ssoSetupPasswordRefusal). `label` is the sign-in
+ *    button's word, held to @mantle/client-types SSO_LABEL_RE here and again
+ *    at the box; '' clears it;
  *  - `{ do: 'mode', boxId, mode, password }`: raise one box's sign-in mode
  *    one step (setup, optional, required; never down, the box holds the
  *    rule); the person types their own password, as for a save;
@@ -16,9 +18,9 @@
  * Each ask is queued as a call of the control service (sso_set's args
  * sealed with the CC's master key until the service takes them), sent in
  * the box's own fixed case, and answered within 25 seconds or handed back
- * as pending ids. The audit row of a save names the box, the fields and a
- * hash of the tenant and client id, never the secret; a raise's names the
- * box and the mode asked. Not a CC: 404, with no CC code loaded.
+ * as pending ids. The audit row of a save names the box, the fields, a hash
+ * of the tenant and client id, and a new label (public), never the secret; a
+ * raise's names the box and the mode asked. Not a CC: 404, with no CC code loaded.
  *
  * "This box" (the Control Center itself): `boxIds: ['self']` for status and
  * test, `boxId: 'self'` for set and mode. The route runs the box's own case
@@ -68,6 +70,7 @@ const Body = z.discriminatedUnion('do', [
       tenant: z.string().max(64).optional(),
       clientId: z.string().max(64).optional(),
       secret: z.string().max(1024).optional(),
+      label: z.string().max(240).optional(),
       password: z.string().min(1).max(1024),
     })
     .strict(),
@@ -106,6 +109,8 @@ export async function POST(req: Request) {
           ...(body.tenant?.trim() ? { tenant: body.tenant } : {}),
           ...(body.clientId?.trim() ? { clientId: body.clientId } : {}),
           ...(body.secret?.trim() ? { secret: body.secret } : {}),
+          // '' is a value here: it clears the label.
+          ...(body.label !== undefined ? { label: body.label } : {}),
         }
       : body.do === 'mode'
         ? { do: 'mode' as const, boxId: body.boxId, mode: body.mode }
@@ -124,16 +129,22 @@ export async function POST(req: Request) {
   // tenant and client id. The hash leaves the secret out (a hash of it would
   // confirm a guess).
   let setDetail: Record<string, unknown> | null = null;
-  let staged: { tenant?: string; clientId?: string; secret?: string } | null = null;
+  let staged: Staged | null = null;
   if (ask.do === 'set') {
     const checked = checkSsoSet(ask);
     if (!checked.ok) throw new InputError(checked.error);
     staged = checked.value;
-    const { secret, ...names } = checked.value;
+    const { secret, label, ...names } = checked.value;
     setDetail = {
       boxId: ask.boxId,
-      fields: [...Object.keys(names), ...(secret !== undefined ? ['secret'] : [])],
+      fields: [
+        ...Object.keys(names),
+        ...(secret !== undefined ? ['secret'] : []),
+        ...(label !== undefined ? ['label'] : []),
+      ],
       namesSha256: createHash('sha256').update(JSON.stringify(names)).digest('hex'),
+      // The label is public (the sign-in screen shows it): the row names it.
+      ...(label !== undefined ? { label } : {}),
     };
   }
   if (ask.do !== 'answers' && isSelf(ask)) {
@@ -155,6 +166,8 @@ export async function POST(req: Request) {
   return NextResponse.json(r.value);
 }
 
+type Staged = { tenant?: string; clientId?: string; secret?: string; label?: string };
+
 type SelfAsk =
   | { do: 'status' | 'test'; boxIds: readonly string[] }
   | { do: 'set'; boxId: string }
@@ -173,7 +186,7 @@ function isSelf(ask: SelfAsk): boolean {
  */
 async function runSelf(
   ask: SelfAsk,
-  staged: { tenant?: string; clientId?: string; secret?: string } | null,
+  staged: Staged | null,
   by: string,
   audited: (result: Record<string, unknown>) => void,
 ) {

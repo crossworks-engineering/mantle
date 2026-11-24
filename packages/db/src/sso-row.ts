@@ -1,23 +1,24 @@
 /**
  * The read of company sign-in's setup row (docs/oidc-sign-in.md): the issuer
- * and the client id a Control Center staged in sso_setup (0371), and the mode
- * it raised (0372). Each process that reads the sign-in settings (web, the
- * agent runtime and every worker: a Telegram chat's check) awaits bootOidcRow
- * once before it serves, and re-reads the row every 60 seconds while the .env
- * has no mode line (watchOidcRow), so the settings read (@mantle/config
- * readOidcSettings) stays synchronous. One small select, no new connection.
+ * and the client id a Control Center staged in sso_setup (0371), the mode it
+ * raised (0372), and the button's label (0399). Each process that reads the
+ * sign-in settings (web, the agent runtime and every worker: a Telegram chat's
+ * check) awaits bootOidcRow once before it serves, and re-reads the row every
+ * 60 seconds unless the .env says off (watchOidcRow), so the settings read
+ * (@mantle/config readOidcSettings) stays synchronous. One small select, no
+ * new connection.
  *
  * Two checks at boot:
- *  1. No read unless it is needed (oidcRowNeeded): the .env mode line is off,
- *     or it is on and the .env holds both names (a .env line wins), so a box
- *     set up by hand reads nothing.
+ *  1. No read unless it is needed (oidcRowNeeded): a .env mode line of off
+ *     reads nothing. A read for the label alone (the .env holds the mode and
+ *     both names, oidcRowDecides false) that fails logs and goes on.
  *  2. Required must be able to work after the read (oidcRequiredProblem): a
  *     required box whose settings read as off would let every password in,
  *     so the boot stops, as assertEnvShape stops one with a .env line
  *     missing.
  * A read that fails after the retries stops the boot when the mode may be
- * required: the .env says required, or the .env has no mode line (the row
- * may say required). Fail closed. With a .env line of setup or optional it
+ * required and the row decides a value: the .env has no mode line (the row
+ * may say required), or the .env says required and lacks a name. Fail closed. With a .env line of setup or optional it
  * logs and goes on (optional reading off keeps passwords, as a half-set box
  * always did).
  *
@@ -30,6 +31,7 @@ import {
   oidcModeInEnv,
   oidcModeWord,
   oidcRequiredProblem,
+  oidcRowDecides,
   oidcRowNeeded,
   setOidcRow,
   type OidcModeWord,
@@ -43,17 +45,22 @@ import { ssoSetup } from './schema/oidc-signin';
 const BOOT_ATTEMPTS = 6;
 const BOOT_RETRY_MS = 10_000;
 
-/** How often a process re-reads the row while the .env has no mode line. */
+/** How often a process re-reads the row (unless the .env says off). */
 export const OIDC_ROW_REREAD_MS = 60_000;
 
-/** Read the row's names and mode into this process's settings (when
+/** Read the row's names, label and mode into this process's settings (when
  *  needed). */
 export async function loadOidcRow(): Promise<void> {
   if (!oidcRowNeeded()) return;
   const [row] = await runAsSystem('boot:oidc-row', () =>
     onFullSystemRoute('oidc-link', async () =>
       db
-        .select({ issuer: ssoSetup.issuer, clientId: ssoSetup.clientId, mode: ssoSetup.mode })
+        .select({
+          issuer: ssoSetup.issuer,
+          clientId: ssoSetup.clientId,
+          label: ssoSetup.label,
+          mode: ssoSetup.mode,
+        })
         .from(ssoSetup)
         .limit(1),
     ),
@@ -76,8 +83,10 @@ export async function bootOidcRow(
   warn: (text: string) => void,
   delayMs = BOOT_RETRY_MS,
 ): Promise<void> {
-  // The .env says required, or the row may (no .env mode line).
-  const mayBeRequired = !oidcModeInEnv() || oidcModeWord() === 'required';
+  // The row may say required (no .env mode line), or the .env says required
+  // and the row holds a name it needs. A read for the label alone stops
+  // nothing.
+  const mayBeRequired = !oidcModeInEnv() || (oidcModeWord() === 'required' && oidcRowDecides());
   try {
     await withRetry(() => loadOidcRow(), {
       retries: BOOT_ATTEMPTS - 1,
@@ -99,14 +108,13 @@ export async function bootOidcRow(
 /**
  * One re-read: the mode word before and after. A failed read keeps the last
  * one (logged). Throws when the word is required and required cannot work
- * (check 2, no read: the process stops). No read while the .env has a mode
- * line.
+ * (check 2, no read: the process stops). No read while the .env says off.
  */
 export async function rereadOidcRow(
   warn: (text: string) => void,
 ): Promise<{ before: OidcModeWord; after: OidcModeWord }> {
   const before = oidcModeWord();
-  if (oidcModeInEnv()) return { before, after: before };
+  if (!oidcRowNeeded()) return { before, after: before };
   try {
     await loadOidcRow();
   } catch (err) {
@@ -118,8 +126,9 @@ export async function rereadOidcRow(
 }
 
 /**
- * Re-read the row every 60 seconds while the .env has no mode line (none
- * with one: the .env rules, and the row is never read). `tick` is the
+ * Re-read the row every 60 seconds unless the .env says off (then the row is
+ * never read). With a .env mode line only the names it lacks and the label
+ * can change: the .env mode wins. `tick` is the
  * process's re-read: rereadOidcRow, or web's, which runs the boot step's
  * work on a change. `stop` ends the process when a re-read into required
  * finds it cannot work. Returns the stop of the timer.
@@ -129,7 +138,7 @@ export function watchOidcRow(
   stop: (err: unknown) => void,
   everyMs = OIDC_ROW_REREAD_MS,
 ): () => void {
-  if (oidcModeInEnv()) return () => {};
+  if (!oidcRowNeeded()) return () => {};
   let busy = false;
   const timer = setInterval(() => {
     if (busy) return;

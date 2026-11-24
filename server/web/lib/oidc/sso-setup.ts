@@ -3,8 +3,9 @@
  * its routes answer. The mode stays in the box .env, and so does the lock
  * (MANTLE_OIDC_MODE). The issuer and the client id are .env lines, or values
  * a Control Center staged in the setup row (ssoSetFromCenter; a .env line
- * wins). The screen takes only the client secret, sealed and never shown,
- * and makes the SCIM token, shown once with its hash kept.
+ * wins). The screen takes the client secret, sealed and never shown, and
+ * the button's label (0399, any mode but off; MANTLE_OIDC_LABEL wins), and
+ * makes the SCIM token, shown once with its hash kept.
  *
  * The Control Center's four sign-in cases (control/sso-channel.ts) answer
  * ssoCenterStatus, ssoSetupTest, ssoSetFromCenter and ssoModeFromCenter (the
@@ -22,13 +23,16 @@ import {
   oidcModeInEnv,
   oidcModeStepUp,
   oidcModeWord,
+  oidcLabelInEnv,
+  oidcLabelInUse,
   oidcNames,
   oidcRequiredProblem,
   oidcSettingsFor,
 } from '@mantle/config';
 import type { SsoSetupStatusDTO, SsoSetupTestOutcome } from '@mantle/client-types';
+import { ssoLabelValue } from '@mantle/client-types/sso-label';
 import { seal } from '@mantle/crypto';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, InputError } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { loadOidcRow, SSO_SECRET_AAD, type ControlSsoStatus } from '@mantle/db';
 import { isControlCenter } from '@/lib/control/env';
@@ -86,6 +90,7 @@ export async function ssoSetupStatus(): Promise<SsoSetupStatusDTO> {
     clientId,
     issuerFrom,
     clientIdFrom,
+    ...oidcLabelInUse(),
     redirectUri: redirectUri(),
     scimUrl: scim.url,
     envMissing: missingNames(issuer, clientId, publicUrl),
@@ -200,9 +205,12 @@ export async function ssoSetupTest(secretToTry?: string): Promise<SsoSetupTestOu
 /**
  * The status a Control Center sees (control/sso-channel.ts sso_status):
  * where each value comes from, never a value of the secret, and two numbers.
- * With the mode word off: the mode alone, with no read.
+ * With the mode word off: the mode alone, with no read. `withLabel`: the
+ * label and its source too (0399), only for a CC that asked for them (an
+ * older CC refuses an answer with fields it does not know) and for a CC's
+ * own box.
  */
-export async function ssoCenterStatus(): Promise<ControlSsoStatus> {
+export async function ssoCenterStatus(withLabel: boolean): Promise<ControlSsoStatus> {
   const mode = oidcModeWord();
   const blank: ControlSsoStatus = {
     mode,
@@ -230,6 +238,7 @@ export async function ssoCenterStatus(): Promise<ControlSsoStatus> {
     issuerFrom: n.issuerFrom,
     clientId: n.clientId,
     clientIdFrom: n.clientIdFrom,
+    ...(withLabel ? oidcLabelInUse() : {}),
     secret: envSecretSet() ? 'env' : row?.secretEnc ? 'row' : 'none',
     secretSetAt: envSecretSet() ? null : (row?.secretSetAt?.toISOString() ?? null),
     redirectUri: redirectUri(),
@@ -240,8 +249,9 @@ export async function ssoCenterStatus(): Promise<ControlSsoStatus> {
 }
 
 /** What a Control Center may stage: an Entra tenant and client id (GUIDs,
- *  lower case) and the client secret. */
-export type SsoStaged = { tenant?: string; clientId?: string; secret?: string };
+ *  lower case), the client secret, and the button's label (held to the
+ *  pattern, @mantle/client-types sso-label.ts; '' clears it). */
+export type SsoStaged = { tenant?: string; clientId?: string; secret?: string; label?: string };
 
 /** The answer of a save from the Control Center. `mode`: the mode word is
  *  off, or names were sent while it is not setup. `env-wins`: the box .env
@@ -258,13 +268,14 @@ export type SsoSetAnswer = {
 /**
  * A save from the Control Center (sso_set). Two checks:
  *  1. The lock: the tenant and the client id only while the mode word is
- *     setup (sign-in off), the secret in any mode but off; a value the box
- *     .env holds is refused (it wins).
+ *     setup (sign-in off), the secret and the label in any mode but off; a
+ *     value the box .env holds is refused (it wins).
  *  2. In optional or required the new secret is saved only when the Test with
  *     it answers ok, so a wrong paste never breaks sign-in.
- * The secret is sealed with this box's master key; the row's names are read
+ * A save that cannot apply every value it carries applies none. The secret
+ * is sealed with this box's master key; the row's names and label are read
  * again here, so this process's status and Test see them at once (the other
- * processes read them at their next boot, which the go-live restart is).
+ * processes within 60 seconds, sso-row.ts watchOidcRow).
  */
 export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
   // The lock reads the mode the row holds now, when the row holds it (no
@@ -272,13 +283,18 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
   if (!oidcModeInEnv()) await loadOidcRow();
   const mode = oidcModeWord();
   const names = a.tenant !== undefined || a.clientId !== undefined;
+  // The channel and the route hold it to the pattern first: this is the
+  // last word, not a second rule.
+  const label = a.label === undefined ? undefined : ssoLabelValue(a.label);
+  if (label === false) throw new InputError('The label does not fit the pattern.');
   if (mode === 'off' || (names && mode !== 'setup')) return { ok: false, reason: 'mode' };
   const envHas = (name: 'MANTLE_OIDC_ISSUER' | 'MANTLE_OIDC_CLIENT_ID') =>
     (env(name) ?? '').trim() !== '';
   if (
     (a.tenant !== undefined && envHas('MANTLE_OIDC_ISSUER')) ||
     (a.clientId !== undefined && envHas('MANTLE_OIDC_CLIENT_ID')) ||
-    (a.secret !== undefined && envSecretSet())
+    (a.secret !== undefined && envSecretSet()) ||
+    (label !== undefined && oidcLabelInEnv())
   ) {
     return { ok: false, reason: 'env-wins' };
   }
@@ -291,13 +307,14 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
     ...(a.tenant !== undefined ? { issuer: entraIssuer(a.tenant) } : {}),
     ...(a.clientId !== undefined ? { clientId: a.clientId.toLowerCase() } : {}),
     ...(a.secret !== undefined ? { secretEnc: seal(a.secret, SSO_SECRET_AAD).ciphertext } : {}),
+    ...(label !== undefined ? { label } : {}),
   });
   // A failed re-read does not undo the save: the status shows the row at the
   // next read, and the next boot reads it.
-  if (names) {
+  if (names || label !== undefined) {
     await loadOidcRow().catch((err) =>
       log('auth').warn(
-        `company sign-in: the staged names could not be read back: ${errorMessage(err)}`,
+        `company sign-in: the staged values could not be read back: ${errorMessage(err)}`,
       ),
     );
   }

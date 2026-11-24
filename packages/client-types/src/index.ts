@@ -26,6 +26,7 @@
 
 export * from './dto/agent-graph';
 export * from './dto/auth';
+export * from './sso-label';
 export * from './dto/agents';
 export * from './dto/comms';
 export * from './dto/heartbeats';

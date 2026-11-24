@@ -322,7 +322,8 @@ async function controlCaller(): Promise<SessionUser | null> {
  *  change itself (no write case but sso_set carries a secret, and its row
  *  names the fields only). */
 function auditMore(call: z.infer<typeof Call>): Record<string, unknown> {
-  // Who at the CC, and the fields a sign-in save carried: never their values.
+  // Who at the CC, and the fields a sign-in save carried: never their values
+  // (but a new label: public, the sign-in screen shows it).
   if (call.op === 'sso_set' || call.op === 'sso_test' || call.op === 'sso_mode') {
     return ssoAuditMore(call);
   }

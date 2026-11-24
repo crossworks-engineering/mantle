@@ -13,6 +13,8 @@
  *  - the SCIM token: asked the same way, shown once, its hash kept, works at
  *    once at /scim/v2, keeps working after the lock, and a new one replaces it;
  *  - the .env wins over both;
+ *  - the button's label: any mode but off, the password step, the pattern,
+ *    '' clears it, the .env wins, the sign-in screen shows it at once;
  *  - the lock: optional and required are read-only;
  *  - a return from setup to required records nothing;
  *  - the row at a bare read and a write through oidcWrite, on the runtime role
@@ -427,6 +429,82 @@ describe.skipIf(!URL_)('the setup screen through the app', () => {
     expect(await json(put)).toMatchObject({ code: 'setup-closed' });
     const [after] = await rows();
     expect(after).toEqual(before);
+  });
+
+  it('the label: any mode but off, with the password, held to the pattern, the .env wins', async () => {
+    const putLabel = (label: string, c = cookie, extra: Row = {}) =>
+      call('/api/users/sso-setup', {
+        method: 'PUT',
+        cookie: c,
+        body: { label, password: PASSWORD, ...extra },
+      });
+    const labelRow = async () => (await rows())[0]?.label ?? null;
+    const config = await import('@mantle/config');
+    // Off: closed, nothing written.
+    process.env.MANTLE_OIDC_MODE = 'off';
+    expect((await putLabel('Microsoft')).status).toBe(403);
+    expect(await labelRow()).toBeNull();
+    // Optional: saved with the password, shown at once on the sign-in screen.
+    process.env.MANTLE_OIDC_MODE = 'optional';
+    expect((await putLabel('Microsoft', cookie, { password: 'not the password' })).status).toBe(
+      403,
+    );
+    expect(await labelRow()).toBeNull();
+    const ok = await putLabel('  Microsoft  ');
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await json(ok)).toMatchObject({ label: 'Microsoft', labelFrom: 'row' });
+    expect(await labelRow()).toBe('Microsoft');
+    expect(await json(await call('/api/auth/oidc/config'))).toEqual({
+      mode: 'optional',
+      label: 'Microsoft',
+    });
+    const [audit] = await auditOf('auth.sso_setup_label_set');
+    expect(audit!.detail).toMatchObject({ field: 'label', label: 'Microsoft' });
+    // A secret in the same save outside setup: refused, and the label stays.
+    const both = await putLabel('Other Co', cookie, { secret: 'a-locked-secret' });
+    expect(both.status).toBe(403);
+    expect(await labelRow()).toBe('Microsoft');
+    // The pattern: refused, never stored.
+    for (const bad of ['<b>Microsoft</b>', 'Micro\nsoft', 'x'.repeat(61), 'Okta: sign in', '...']) {
+      const res = await putLabel(bad);
+      expect(res.status, bad).toBe(400);
+    }
+    expect(await labelRow()).toBe('Microsoft');
+    // The .env wins: 409, and the status names it.
+    process.env.MANTLE_OIDC_LABEL = 'Company account';
+    try {
+      const env = await putLabel('Okta');
+      expect(env.status).toBe(409);
+      expect(await json(env)).toMatchObject({ code: 'env-wins' });
+      expect(await json(await call('/api/users/sso-setup', { cookie }))).toMatchObject({
+        label: 'Company account',
+        labelFrom: 'env',
+      });
+    } finally {
+      delete process.env.MANTLE_OIDC_LABEL;
+    }
+    expect(await labelRow()).toBe('Microsoft');
+    // Required: the original account sets it (its password session acts).
+    process.env.MANTLE_OIDC_MODE = 'optional';
+    await sql`update auth.users set password_hash = ${bcrypt.hashSync(PASSWORD, 4)}
+               where is_owner = true`;
+    const [owner] = await sql<Row[]>`select email from auth.users where is_owner = true`;
+    const login = await call('/api/auth/login', {
+      method: 'POST',
+      body: { email: owner!.email, password: PASSWORD },
+    });
+    const ownerCookie = login.headers
+      .getSetCookie()
+      .find((x) => x.startsWith('mantle_session='))
+      ?.split(';')[0];
+    process.env.MANTLE_OIDC_MODE = 'required';
+    expect((await putLabel('Société Générale', ownerCookie)).status).toBe(200);
+    expect(await labelRow()).toBe('Société Générale');
+    // '' clears it: the default again.
+    expect((await putLabel('', ownerCookie)).status).toBe(200);
+    expect(await labelRow()).toBeNull();
+    expect(config.oidcLabelInUse()).toEqual({ label: 'Single sign-on', labelFrom: 'none' });
+    process.env.MANTLE_OIDC_MODE = 'setup';
   });
 
   it('setup records no mode, so a return to required is no switch', async () => {

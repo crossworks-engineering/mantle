@@ -11,6 +11,7 @@
  *  - one step only: no skip, no same step;
  *  - the tenant and the client ID only in setup;
  *  - on a live box a new secret is saved only when its Test passes;
+ *  - the button label in optional and required, the pattern, env-wins, '';
  *  - the full run off, setup, set, test, optional, required as a CC Admin;
  *    the raise into required ends the sessions the rule refuses, once;
  *  - the scope line does not apply: the person is at this box;
@@ -51,6 +52,7 @@ const ENV_KEYS = [
   'MANTLE_OIDC_ISSUER',
   'MANTLE_OIDC_CLIENT_ID',
   'MANTLE_OIDC_CLIENT_SECRET',
+  'MANTLE_OIDC_LABEL',
   'MANTLE_DETACHED_DEV',
 ];
 
@@ -399,6 +401,44 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
     expect(await opened()).toBe(GOOD);
   });
 
+  it('the label on a live box: set, held to the pattern, the .env wins, audited with its text', async () => {
+    expect(await status()).toMatchObject({ label: 'Single sign-on', labelFrom: 'none' });
+    const saved = await set({ label: 'Microsoft' });
+    expect(saved).toMatchObject({
+      ok: true,
+      output: { status: { mode: 'optional', label: 'Microsoft', labelFrom: 'row' } },
+    });
+    expect((await row())?.label).toBe('Microsoft');
+    expect(config.oidcLabelInUse()).toEqual({ label: 'Microsoft', labelFrom: 'row' });
+    // The pattern, at the route: a 400, nothing stored.
+    for (const bad of ['<i>x</i>', 'a\nb', 'x'.repeat(61)]) {
+      const res = await sso({ do: 'set', boxId: 'self', label: bad, password: PASSWORD });
+      expect(res.status, bad).toBe(400);
+    }
+    expect((await row())?.label).toBe('Microsoft');
+    // A label with a name outside setup: refused whole, the label unchanged.
+    expect(await set({ label: 'Other', tenant: TENANT })).toMatchObject({
+      ok: false,
+      reason: 'mode',
+    });
+    expect((await row())?.label).toBe('Microsoft');
+    env({ MANTLE_OIDC_LABEL: 'Company account' });
+    expect(await set({ label: 'Okta' })).toMatchObject({ ok: false, reason: 'env-wins' });
+    expect(await status()).toMatchObject({ label: 'Company account', labelFrom: 'env' });
+    env({ MANTLE_OIDC_LABEL: undefined });
+    const sets = await auditRows('fleet.sso_set', 1);
+    expect(sets).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          boxId: 'self',
+          fields: ['label'],
+          label: 'Microsoft',
+          result: { ok: true, reason: null },
+        }),
+      }),
+    );
+  });
+
   it('optional to required ends the sessions the rule refuses, once; the original account stays', async () => {
     const before = await epochs();
     expect(await raise('required')).toMatchObject({ ok: true, output: { from: 'optional' } });
@@ -414,6 +454,14 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
     expect(await raise('required')).toMatchObject({ ok: false, reason: 'mode' });
     expect(await status()).toMatchObject({ mode: 'required', modeFrom: 'row' });
     expect(await epochs()).toEqual(after);
+    // The label in required too; '' clears it.
+    expect(await set({ label: 'Entra ID' })).toMatchObject({ ok: true });
+    expect((await row())?.label).toBe('Entra ID');
+    expect(await set({ label: '' })).toMatchObject({
+      ok: true,
+      output: { status: { label: 'Single sign-on', labelFrom: 'none' } },
+    });
+    expect((await row())?.label).toBeNull();
   });
 
   it('no value of the secret in any answer, audit row, row text or log line', async () => {

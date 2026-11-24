@@ -1,6 +1,7 @@
 /**
  * The 60-second re-read of company sign-in's setup row (sso-row.ts
- * watchOidcRow): none while the .env has a mode line; a tick every period,
+ * watchOidcRow): none while the .env says off; with any other .env mode line
+ * a tick too (the label and a missing name may change: 0399); a tick every period,
  * never two at once; a tick that throws (a raise into required that cannot
  * work here) calls the process's stop.
  */
@@ -13,7 +14,7 @@ describe('watchOidcRow', () => {
     vi.unstubAllEnvs();
   });
 
-  it('a .env mode line: no timer, the row is never read', async () => {
+  it('a .env mode line of off: no timer, the row is never read', async () => {
     vi.useFakeTimers();
     vi.stubEnv('MANTLE_OIDC_MODE', 'off');
     const tick = vi.fn(async () => {});
@@ -21,6 +22,18 @@ describe('watchOidcRow', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(tick).not.toHaveBeenCalled();
     stop();
+  });
+
+  it('a .env mode line that is not off: a tick each period, for the label', async () => {
+    vi.useFakeTimers();
+    for (const mode of ['setup', 'optional', 'required']) {
+      vi.stubEnv('MANTLE_OIDC_MODE', mode);
+      const tick = vi.fn(async () => {});
+      const stop = watchOidcRow(tick, () => {}, 1000);
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(tick, mode).toHaveBeenCalledTimes(2);
+      stop();
+    }
   });
 
   it('no .env mode line: a tick each period, one at a time; a failed tick stops the process', async () => {

@@ -75,6 +75,13 @@ export type SsoSetupStatusDTO =
       scimUrl: string;
       /** The names of the box .env lines that are missing. */
       envMissing: string[];
+      /** The sign-in button's label in use ("Sign in with {label}"), and
+       *  where it comes from: MANTLE_OIDC_LABEL in the box .env (it wins),
+       *  the setup row (set on this screen or from a Control Center), or
+       *  neither (the default, "Single sign-on"). A box before them sends
+       *  neither. */
+      label?: string;
+      labelFrom?: 'env' | 'row' | 'none';
       /** Where the client secret comes from. */
       secret: 'env' | 'row' | 'none';
       /** Where the SCIM token's hash comes from. `env-off`: the .env holds a
@@ -97,9 +104,20 @@ export type SsoSetupTestOutcome =
   | 'no-secret'
   | 'secret-unreadable';
 
+/**
+ * PUT /api/users/sso-setup: one save of the setup screen, at least one of the
+ * two values, and the person's own password. `secret`: only while the mode
+ * word is `setup`. `label`: in any mode but off, held to SSO_LABEL_RE
+ * (sso-label.ts); `''` clears it, so the default applies again. A save that
+ * cannot apply every value it carries applies none.
+ */
+export type SsoSetupBody = { secret?: string; label?: string; password: string };
+
 /** A refusal of the setup screen's writes. `setup-closed` 403: the mode word
- *  is not `setup`. `env-wins` 409: the box .env holds this value. `password`
- *  403: the password step failed. A write may also answer the password hold's
+ *  is off, or a secret was sent while it is not `setup`. `env-wins` 409: the
+ *  box .env holds this value (MANTLE_OIDC_CLIENT_SECRET, MANTLE_OIDC_LABEL).
+ *  `password` 403: the password step failed. A label that does not fit the
+ *  pattern is the one 400. A write may also answer the password hold's
  *  403 (`password_change_required`, its words in `message`) and the one 429. */
 export type SsoSetupRefusal = { error: string; code: 'setup-closed' | 'env-wins' | 'password' };
 

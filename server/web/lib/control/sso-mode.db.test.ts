@@ -15,7 +15,7 @@
  *    it is raised the sessions the rule refuses end once; a later re-read
  *    ends nothing more;
  *  - the 60-second re-read: another process picks up the new mode; with a
- *    .env mode line it never reads the row; into required that cannot work
+ *    .env mode line it keeps the .env mode; into required that cannot work
  *    it throws (the process stops); a failed read keeps the last mode;
  *  - the boot read stops when the row cannot be read and the mode may be
  *    required;
@@ -293,17 +293,20 @@ describe.skipIf(!URL_)('the one-way raise of the sign-in mode from the Control C
     expect(String(ccRow!.j)).not.toContain(SECRET);
   });
 
-  it('another process re-reads the row: it reads the new mode; with a .env line it never reads it', async () => {
+  it('another process re-reads the row: it reads the new mode; with a .env line it keeps the .env mode', async () => {
     // As a worker would: the row says optional; drop this process's copy.
     config.setOidcRow({});
     expect(config.oidcModeWord()).toBe('off');
     expect(await m.rereadOidcRow(() => {})).toEqual({ before: 'off', after: 'optional' });
-    // A .env line: the row is never read.
+    // A .env line: the row's mode is not used (the row is read for the
+    // label, 0399, and a missing name).
     env({ MANTLE_OIDC_MODE: 'setup' });
     await sql`update sso_setup set mode = 'required'`;
     expect(await m.rereadOidcRow(() => {})).toEqual({ before: 'setup', after: 'setup' });
     await sql`update sso_setup set mode = 'optional'`;
     env({ MANTLE_OIDC_MODE: undefined });
+    // The line gone: the row's mode rules again at the next read.
+    expect((await m.rereadOidcRow(() => {})).after).toBe('optional');
     // A failed read keeps the last mode (logged).
     const warn = vi.fn();
     await sql`alter table sso_setup rename column mode to mode_gone`;
@@ -375,7 +378,8 @@ describe.skipIf(!URL_)('the one-way raise of the sign-in mode from the Control C
     await sql`alter table sso_setup rename column mode to mode_gone`;
     try {
       await expect(m.bootOidcRow(() => {}, 1)).rejects.toThrow();
-      // A .env line of optional with its names: no read, the boot goes on.
+      // A .env line of optional with its names: a read for the label alone,
+      // which fails and is logged, and the boot goes on.
       env({
         MANTLE_OIDC_MODE: 'optional',
         MANTLE_OIDC_ISSUER: ISSUER,

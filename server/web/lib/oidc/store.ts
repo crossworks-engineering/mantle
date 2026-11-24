@@ -444,9 +444,20 @@ export async function ssoSetupRow(): Promise<typeof ssoSetup.$inferSelect | null
   });
 }
 
-/** Store the sealed client secret, with who set it. */
-export async function saveSsoSecret(secretEnc: Buffer, actorId: string): Promise<void> {
-  const set = { secretEnc, secretSetBy: actorId, secretSetAt: sql`now()` };
+/** Store what the setup screen saved, in one write: the sealed client
+ *  secret with who set it, and the button's label (0399; null clears it),
+ *  each when given. */
+export async function saveSsoSecret(
+  v: { secretEnc?: Buffer; label?: string | null },
+  actorId: string,
+): Promise<void> {
+  const set = {
+    ...(v.secretEnc
+      ? { secretEnc: v.secretEnc, secretSetBy: actorId, secretSetAt: sql`now()` }
+      : {}),
+    ...(v.label !== undefined ? { label: v.label } : {}),
+  };
+  if (Object.keys(set).length === 0) return;
   await oidcWrite(() =>
     db
       .insert(ssoSetup)
@@ -457,16 +468,18 @@ export async function saveSsoSecret(secretEnc: Buffer, actorId: string): Promise
 
 /**
  * Store what a Control Center staged (0371): the issuer, the client id, the
- * sealed secret, each when given. A change of the issuer or the client id
- * clears the stored secret unless the same save brings one: a secret is never
- * sent to another issuer or with another client (a new app has its own
- * secret). A secret from the CC has no setter login on this box (null).
+ * sealed secret, and the button's label (0399; null clears it), each when
+ * given. A change of the issuer or the client id clears the stored secret
+ * unless the same save brings one: a secret is never sent to another issuer
+ * or with another client (a new app has its own secret). A label changes
+ * nothing else. A secret from the CC has no setter login on this box (null).
  * Answers whether a stored secret was cleared.
  */
 export async function saveSsoStaged(v: {
   issuer?: string;
   clientId?: string;
   secretEnc?: Buffer;
+  label?: string | null;
 }): Promise<{ secretCleared: boolean }> {
   return oidcWrite(() =>
     db.transaction(async (tx) => {
@@ -478,6 +491,7 @@ export async function saveSsoStaged(v: {
       const set = {
         ...(v.issuer !== undefined ? { issuer: v.issuer } : {}),
         ...(v.clientId !== undefined ? { clientId: v.clientId } : {}),
+        ...(v.label !== undefined ? { label: v.label } : {}),
         ...(v.secretEnc
           ? { secretEnc: v.secretEnc, secretSetBy: null, secretSetAt: sql`now()` }
           : cleared

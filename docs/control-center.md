@@ -902,22 +902,35 @@ refuses all four (`scope`); a box owner who does not want central sign-in
 setup says so there.
 
 - `sso_status`: the mode word, the tenant, issuer and client ID with where
-  each comes from (`env` or `row`), where the secret comes from and when it
+  each comes from (`env` or `row`), the button's label and where it comes
+  from (`label`, `labelFrom`, 0399), where the secret comes from and when it
   was set (never its value), the redirect URI to register, and two numbers:
   active logins linked to the issuer, and all active logins.
-- `sso_set { nonce, by, tenant?, clientId?, secret? }`: the tenant and the
-  client ID are GUIDs; the issuer is built from the tenant
+- `withLabel: true` (in the args of any of the four): the status in the
+  answer names the label. Without it the status has the shape it had before
+  0399, so a CC a release behind (which refuses a field it does not know)
+  still reads a newer box. A newer CC always sends it; a box a release
+  behind refuses it (`bad-call`, before the nonce is taken), and the CC asks
+  once more without it, except for a save that carries a label.
+- `sso_set { nonce, by, tenant?, clientId?, secret?, label? }`: the tenant
+  and the client ID are GUIDs; the issuer is built from the tenant
   (`https://login.microsoftonline.com/<tenant>/v2.0`; another cloud or
-  provider stays a `.env` line). Two checks: (1) the tenant and the client
-  ID only while the mode word is `setup`, the secret in any mode but off,
-  and a value the box `.env` holds is refused (`env-wins`); (2) in
+  provider stays a `.env` line). The label is the sign-in button's word,
+  held to one pattern at the CC and again at the box (1 to 60 characters,
+  letters, digits, spaces and `. , - ' & ( ) +`; '' clears it;
+  [oidc-sign-in.md](oidc-sign-in.md), "The label"). Two checks: (1) the
+  tenant and the client ID only while the mode word is `setup`, the secret
+  and the label in any mode but off, and a value the box `.env` holds is
+  refused (`env-wins`); (2) in
   `optional` or `required` a new secret is saved only when the Test with it
   answers `ok` (else `test`, with the code), so a wrong paste never breaks
   sign-in. A changed tenant or client ID clears a stored secret the same
   save does not replace (`secretCleared`): a secret is never sent to another
-  issuer or with another app (so save the three together). The nonce is
-  the call id, as `tool`'s. The audit row names `by`, the fields and the
-  answer, never a value of the secret.
+  issuer or with another app (so save the three together). A save that
+  cannot apply every value it carries applies none: a box a release behind
+  refuses a label (`bad-call`), so none of that save applies there. The
+  nonce is the call id, as `tool`'s. The audit row names `by`, the fields,
+  a new label (it is public) and the answer, never a value of the secret.
 - `sso_test`: one Test with the saved values (the setup screen's own).
 - `sso_mode { nonce, by, mode }`: raise the mode to `setup`, `optional` or
   `required`. Two checks: (1) the box `.env` has no mode line, else
@@ -936,8 +949,8 @@ check. The call travels as
 a job of the control service, as `tool` does (`control_boxes.tool_job`, the
 args sealed with the CC master key and dropped as the service takes them).
 The CC's own audit row (`fleet.sso_set`, written before the call is
-queued) keeps the box, the fields and a hash of the tenant and client ID,
-never the secret; a raise's (`fleet.sso_mode`) the box and the mode asked.
+queued) keeps the box, the fields, a hash of the tenant and client ID and a
+new label, never the secret; a raise's (`fleet.sso_mode`) the box and the mode asked.
 Each answer is kept as the box's sign-in view
 (`control_boxes.sso_view`, migration 0371): the status, the last Test code,
 the last save and the last raise, never a value of the secret. The box screen (Admin >
@@ -959,7 +972,8 @@ run, with the result. The way down is this box's `.env`
 1. The CC first: migration 0370, the route, the tools and the control
    service. A box a release behind answers `bad-call` (for the sign-in
    cases too: migrations 0371 and 0372, and for `invite`, which needs no
-   migration). A box whose `.env` holds a
+   migration; for a save with a label, 0399, while a status, a Test or a
+   raise is asked again without the label flag). A box whose `.env` holds a
    `MANTLE_OIDC_MODE` line keeps it: remove it with
    `scripts/sso-env.sh <box> --mode cc` to hand the mode to the CC.
 2. Each box rolls. **A linked box gets `admin` reach at once, with no

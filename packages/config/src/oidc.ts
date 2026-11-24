@@ -19,7 +19,9 @@
  * at boot and again every 60 seconds while the .env has no mode line
  * (@mantle/db loadOidcRow, which calls setOidcRow), so the read here stays
  * synchronous. A .env line wins over the row, value by value, the mode
- * included. A mode that is on but cannot work (no issuer, no client id, no
+ * included. The button's label too (0399: set on the setup screen or from a
+ * Control Center; MANTLE_OIDC_LABEL wins), read with the row unless the .env
+ * says off. A mode that is on but cannot work (no issuer, no client id, no
  * MANTLE_PUBLIC_URL for the redirect) is off too: a half-set box keeps its
  * passwords, never strands a login. server/web lib/oidc/settings.ts logs
  * that once.
@@ -35,6 +37,7 @@ import {
   type OidcModeWord,
 } from './index';
 import { envNum } from './numbers';
+import { ssoLabelValue } from '@mantle/client-types/sso-label';
 
 /** The label a site shows on its button when it sets none. */
 export const DEFAULT_OIDC_LABEL = 'Single sign-on';
@@ -69,21 +72,28 @@ export type OidcSettings = Readonly<{ mode: 'off' }> | OidcOn;
 
 const OFF: OidcSettings = Object.freeze({ mode: 'off' });
 
-/** The issuer and client id of the setup row, as this process read them at
- *  boot (blank: none). */
-let rowNames: Readonly<{ issuer: string; clientId: string }> = { issuer: '', clientId: '' };
+/** The issuer, client id and label of the setup row, as this process last
+ *  read them (blank: none). */
+let rowNames: Readonly<{ issuer: string; clientId: string; label: string }> = {
+  issuer: '',
+  clientId: '',
+  label: '',
+};
 
-/** Set what this process uses of the setup row: its names, and its mode
- *  (used only while the .env has no mode line). At boot, at each re-read,
- *  and by the web process again when a Control Center stages new names. */
+/** Set what this process uses of the setup row: its names, its label, and
+ *  its mode (used only while the .env has no mode line). At boot, at each
+ *  re-read, and by the web process again after a save. A row label that does
+ *  not fit the pattern (written by hand) is none. */
 export function setOidcRow(row: {
   issuer?: string | null;
   clientId?: string | null;
+  label?: string | null;
   mode?: string | null;
 }): void {
   rowNames = Object.freeze({
     issuer: (row.issuer ?? '').trim(),
     clientId: (row.clientId ?? '').trim(),
+    label: ssoLabelValue(row.label ?? '') || '',
   });
   setOidcRowMode(row.mode);
 }
@@ -117,10 +127,18 @@ export function oidcModeFrom(): OidcNameSource {
   return oidcModeWord() === 'off' ? 'none' : 'row';
 }
 
-/** Whether a process must read the setup row: the .env has no mode line (the
- *  row holds the mode), or the mode word is on or setup and the .env lacks
- *  the issuer or the client id. */
+/** Whether a process reads the setup row, at boot and every 60 seconds:
+ *  unless the .env says off (sign-in off by the owner's hand: no read). The
+ *  row may hold the mode, a name or the label. */
 export function oidcRowNeeded(): boolean {
+  return !oidcModeInEnv() || oidcModeWord() !== 'off';
+}
+
+/** Whether the row may decide the mode or a name, not only the label: the
+ *  .env has no mode line, or the mode word is on or setup and the .env lacks
+ *  the issuer or the client id. A boot whose row read fails stops only then
+ *  (@mantle/db bootOidcRow): a read for the label alone never stops one. */
+export function oidcRowDecides(): boolean {
   if (!oidcModeInEnv()) return true;
   if (oidcModeWord() === 'off') return false;
   return (
@@ -156,11 +174,31 @@ export function oidcRequiredProblem(): string | null {
 /** The label from MANTLE_OIDC_LABEL: trimmed, one line, at most 60
  *  characters; the default when blank. */
 export function oidcLabel(raw: string | undefined): string {
-  const v = (raw ?? '')
+  return envLabel(raw) || DEFAULT_OIDC_LABEL;
+}
+
+/** MANTLE_OIDC_LABEL as a .env line: trimmed, one line, at most 60
+ *  characters; '' when blank. The owner's own line, so not held to the
+ *  screens' pattern. */
+function envLabel(raw: string | undefined): string {
+  return (raw ?? '')
     .replace(/[\r\n\t]+/g, ' ')
     .trim()
     .slice(0, 60);
-  return v || DEFAULT_OIDC_LABEL;
+}
+
+/** Whether the box .env holds a label: it then wins over the row. */
+export function oidcLabelInEnv(): boolean {
+  return envLabel(env('MANTLE_OIDC_LABEL')) !== '';
+}
+
+/** The button's label in use and its source: the .env line, else the setup
+ *  row's, else the default (`none`). */
+export function oidcLabelInUse(): { label: string; labelFrom: OidcNameSource } {
+  const e = envLabel(env('MANTLE_OIDC_LABEL'));
+  if (e) return { label: e, labelFrom: 'env' };
+  if (rowNames.label) return { label: rowNames.label, labelFrom: 'row' };
+  return { label: DEFAULT_OIDC_LABEL, labelFrom: 'none' };
 }
 
 /**
@@ -221,7 +259,7 @@ export function oidcSettingsFor(mode: OidcMode): {
       issuer,
       clientId,
       clientSecret: secret === '' ? null : secret,
-      label: oidcLabel(env('MANTLE_OIDC_LABEL')),
+      label: oidcLabelInUse().label,
       sessionSeconds: envNum('MANTLE_OIDC_SESSION_HOURS') * 3600,
       redirectUri,
       outsideAllowed: envFlag('MANTLE_OIDC_OUTSIDE', true),
