@@ -164,11 +164,6 @@ function grantArgs(
   return { nodeId, workspace, confirm: input.confirm === true && grantConfirmCounts(ctx) };
 }
 
-/** The matrix line of a grant change, as the grants routes declare it. */
-const GRANT_MATRIX = {
-  none: "a grant change: its rule asks two workspaces (the item's home and the grant's), no one right of the item; the grants panel's definers decide it",
-} as const;
-
 const GRANT_SCHEMA_BASE = {
   node_id: {
     type: 'string',
@@ -189,9 +184,9 @@ const GRANT_SCHEMA_BASE = {
 export const access_get: BuiltinToolDef = {
   slug: 'access_get',
   policy: {
-    matrix: {
-      none: "the Grant Access panel's read (getGrants, the code GET /api/grants/:nodeId calls): what the caller's own panel shows",
-    },
+    // The A8 read cells on a note, as the panel's own GET is read: the
+    // grants only where the caller reads the item.
+    matrix: { action: 'read', param: 'node_id', kinds: ['note'] },
     effect: 'read',
     spends: 'none',
     scope: 'any',
@@ -273,7 +268,9 @@ export const access_set: BuiltinToolDef = {
 export const access_grant_add: BuiltinToolDef = {
   slug: 'access_grant_add',
   policy: {
-    matrix: GRANT_MATRIX,
+    // The A8 cells of "Add a grant to workspace T" (Moderator of its home
+    // and of T), on a note, as the panel's POST route's cells.
+    matrix: { action: 'grantAdd', param: 'node_id', kinds: ['note'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -331,7 +328,9 @@ export const access_grant_add: BuiltinToolDef = {
 export const access_grant_remove: BuiltinToolDef = {
   slug: 'access_grant_remove',
   policy: {
-    matrix: GRANT_MATRIX,
+    // The A8 cells of "Remove a grant from T" (Moderator of its home, or of
+    // T), on a note, as the panel's DELETE route's cells.
+    matrix: { action: 'grantRemove', param: 'node_id', kinds: ['note'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

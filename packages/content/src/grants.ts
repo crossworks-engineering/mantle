@@ -155,16 +155,15 @@ function idsOf(v: unknown): string[] {
 
 // ── The caller ───────────────────────────────────────────────────────────────
 
-type Mine = { id: string; name: string; isAdmin: boolean; moderator: boolean };
+type Mine = { id: string; name: string; moderator: boolean };
 
 type Ctx = {
   caller: WsCaller;
   /** The caller's live workspaces. */
   mine: Map<string, Mine>;
-  /** An Admin user with the 'users' area: sees every workspace's name. */
+  /** An Admin user with the 'users' area: sees every workspace's name
+   *  (the area rule, mantle_login_areas: no flag read here). */
   seesAll: boolean;
-  /** A user of the Admin workspace. */
-  adminUser: boolean;
 };
 
 async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
@@ -176,25 +175,21 @@ async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
   );
   if (!a?.id)
     throw new GrantError(409, 'not_migrated', 'Workspaces are not set up on this brain yet.');
-  const list = await rows<{ id: string; name: string; is_admin: boolean; moderator: boolean }>(
+  const list = await rows<{ id: string; name: string; moderator: boolean }>(
     q,
-    sql`select w.id, w.name, w.is_admin, u.moderator
+    sql`select w.id, w.name, u.moderator
           from workspaces w
           join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
          where w.owner_id = ${caller.anchorId} and ${liveWorkspaceSql('w')}`,
   );
   const mine = new Map<string, Mine>(
-    list.map((w) => [
-      w.id,
-      { id: w.id, name: w.name, isAdmin: w.is_admin, moderator: w.moderator },
-    ]),
+    list.map((w) => [w.id, { id: w.id, name: w.name, moderator: w.moderator }]),
   );
   const areas = await loginAreas(caller.loginId);
   return {
     caller,
     mine,
     seesAll: areas.includes('users'),
-    adminUser: list.some((w) => w.is_admin),
   };
 }
 
