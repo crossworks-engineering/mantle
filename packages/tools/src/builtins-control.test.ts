@@ -8,10 +8,51 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const removed: string[] = [];
+/** Key status: a line with a print, on the CC's own box and a linked one. */
+const keysWith = vi.hoisted(() => ({
+  line: {
+    service: 'openrouter',
+    setAt: '2026-11-20T10:00:00.000Z',
+    print: 'ab-xxxxxxxxx…WXYZ',
+    testable: true,
+    test: { ok: true, at: '2026-11-20T10:00:01.000Z' },
+  },
+  // The caller holds the keys area (the CC's own box shows its lines).
+  keysArea: true,
+  tested: [] as unknown[],
+}));
+vi.mock('@mantle/api-keys', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/api-keys')>()),
+  ownKeyLines: vi.fn(async (_owner: string, who?: unknown) => {
+    if (who) keysWith.tested.push(who);
+    return keysWith.keysArea
+      ? { ok: true, keys: [keysWith.line] }
+      : { ok: false, reason: 'keys-area' };
+  }),
+}));
 vi.mock('@mantle/db/control-center', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db/control-center')>();
+  const kept = {
+    id: 'b1',
+    url: 'https://box.example.com',
+    label: 'Box one',
+    at: '2026-11-20T10:00:00.000Z',
+    reason: null,
+    hasFacts: true,
+    keys: [keysWith.line],
+    keysReason: null,
+    keyResult: null,
+  };
   return {
     ...actual,
+    listControlKeys: vi.fn(async () => [kept]),
+    askControlKeyTests: vi.fn(async () => [
+      { boxId: 'b1', ok: true, reason: null, keys: [keysWith.line] },
+    ]),
+    keyTestBoxes: vi.fn(async (self: Parameters<typeof actual.selfKeyBox>[0] | null) => [
+      ...(self ? [{ ...actual.selfKeyBox(self), tested: self.ok ? 'ok' : self.reason }] : []),
+      { ...actual.freshKeyBox(actual.keptKeyBox(kept), [keysWith.line]), tested: 'ok' },
+    ]),
     removeControlBox: vi.fn(async (id: string) => {
       removed.push(id);
       return true;
@@ -93,6 +134,43 @@ describe('control_box_list', () => {
         ],
       },
     });
+  });
+});
+
+describe('control_key_status and control_key_test', () => {
+  afterEach(() => {
+    keysWith.keysArea = true;
+    keysWith.tested.length = 0;
+  });
+
+  it('answer every line without its print, this box first', async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+    for (const slug of ['control_key_status', 'control_key_test']) {
+      const r = await tool(slug).handler({}, ctx);
+      expect(r.ok, slug).toBe(true);
+      const text = JSON.stringify(r);
+      expect(text, slug).not.toContain('…');
+      expect(text, slug).not.toContain('"print"');
+      const boxes = (r as { output: { boxes: { id: string; keys: object[] }[] } }).output.boxes;
+      expect(
+        boxes.map((b) => b.id),
+        slug,
+      ).toEqual(['self', 'b1']);
+      expect(boxes[1]!.keys[0], slug).toMatchObject({ service: 'openrouter', state: 'works' });
+    }
+    // The test ran as the acting caller, over MCP.
+    expect(keysWith.tested).toEqual([expect.objectContaining({ via: 'mcp' })]);
+  });
+
+  it("this box without the keys area: no lines, keys-area, never a test 'ok'", async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+    keysWith.keysArea = false;
+    const read = await tool('control_key_status').handler({}, ctx);
+    const self = (read as { output: { boxes: Record<string, unknown>[] } }).output.boxes[0]!;
+    expect(self).toMatchObject({ id: 'self', keys: null, keysReason: 'keys-area' });
+    const test = await tool('control_key_test').handler({ boxIds: ['self'] }, ctx);
+    const tested = (test as { output: { boxes: Record<string, unknown>[] } }).output.boxes[0]!;
+    expect(tested).toMatchObject({ id: 'self', keys: null, tested: 'keys-area' });
   });
 });
 

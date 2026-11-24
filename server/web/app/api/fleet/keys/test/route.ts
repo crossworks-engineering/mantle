@@ -9,7 +9,10 @@
  * lines and `tested` (`ok`, or a reason: scope, bad-call from a box a
  * release behind, unreachable, busy, pending). A box still pending shows
  * its fresh lines in GET /api/fleet/keys once its run is done. A failed
- * test changes nothing on a box. Not a CC: 404, with no CC code loaded.
+ * test changes nothing on a box. The CC's own box is tested only for a
+ * person with the vault's own area, keys (else `keys-area`). Its own rate
+ * limit, fleetKeyTest; a box runs one key test at a time. Not a CC: 404,
+ * with no CC code loaded.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -26,6 +29,7 @@ export const policy = routePolicy({
     item: {
       none: "tests the provider keys on the Control Center's boxes: the Admin step checks it",
     },
+    limits: { rateLimit: ['fleetKeyTest'] },
   },
 });
 
@@ -43,7 +47,7 @@ export async function POST(req: Request) {
   const user = ownerCaller();
   const off = ccOff();
   if (off) return off;
-  const [cc, { testKeyLines }] = await Promise.all([
+  const [cc, { ownKeyLines }] = await Promise.all([
     import('@mantle/db/control-center'),
     import('@mantle/api-keys'),
   ]);
@@ -54,7 +58,7 @@ export async function POST(req: Request) {
   const [self, tests] = await Promise.all([
     // The CC's own box in process: its keys tested as this person, through
     // the vault's own test (its gate, its audit row).
-    withSelf ? testKeyLines({ loginId: user.actor.id, email: by, via: 'web' }, user.id) : null,
+    withSelf ? ownKeyLines(user.id, { loginId: user.actor.id, email: by, via: 'web' }) : null,
     linked && linked.length === 0 ? [] : cc.askControlKeyTests(linked, by),
   ]);
   const boxes: FleetKeyTestAnswer['boxes'] = await cc.keyTestBoxes(self, tests);

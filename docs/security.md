@@ -31,7 +31,12 @@
   fenced as untrusted; see [`mcp-connectors.md`](./mcp-connectors.md)), HTTP calls of any **OpenAPI
   connector you explicitly connect** (compiled http tools calling the one
   base URL you set; see [`openapi-connectors.md`](./openapi-connectors.md)),
-  and update checks (version metadata only). That's the list.
+  and update checks (version metadata only). On a box linked to a
+  Control Center, what that CC reads of it too: numbers, settings, model
+  ids, and a short print of each provider key (its head and its last 4,
+  never the key; the CC keeps the prints in its own database, see
+  [`control-center.md`](./control-center.md), "Key status on the fleet").
+  That's the list.
 - **Workspaces inside the brain, brains between boundaries.** An item is
   read only through a grant to a workspace, and Postgres row level security
   enforces it: every login, and every workspace assistant, runs on a

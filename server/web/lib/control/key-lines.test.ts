@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@mantle/db/control-center', () => ({}));
 vi.mock('@mantle/tools/box-status', () => ({ shapeBoxStatus: (s: unknown) => s }));
 
-const { KeyLines } = await import('./key-lines');
+const { KeyLines, keyPart } = await import('./key-lines');
 
 const AT = '2026-11-20T10:00:00.000Z';
 const line = (over: Record<string, unknown> = {}) => ({
@@ -47,6 +47,8 @@ describe('KeyLines', () => {
         line({ service: 'Open Router' }),
         line({ service: 'x'.repeat(70) }),
         line({ setAt: 'yesterday' }),
+        // Fits the pattern, but is on no list here: a box's free text.
+        line({ service: 'call-me-at-home' }),
         line({ service: 'mapbox' }),
       ]).map((l) => l.service),
     ).toEqual(['mapbox']);
@@ -65,5 +67,20 @@ describe('KeyLines', () => {
 
   it('keeps at most 100 lines', () => {
     expect(KeyLines.parse(Array.from({ length: 150 }, () => line()))).toHaveLength(100);
+  });
+});
+
+describe('keyPart', () => {
+  it('absent stays absent; null keeps the reason; a bad part costs the key part only', () => {
+    expect(keyPart(undefined, undefined)).toEqual({});
+    expect(keyPart(null, 'scope')).toEqual({ keys: null, keysReason: 'scope' });
+    expect(keyPart(null, 'error')).toEqual({ keys: null, keysReason: 'error' });
+    expect(keyPart(null, 'anything else')).toEqual({ keys: null, keysReason: 'error' });
+    expect(keyPart([line({ testable: 'yes' })], undefined)).toEqual({
+      keys: null,
+      keysReason: 'bad-reply',
+    });
+    expect(keyPart('lines', undefined)).toEqual({ keys: null, keysReason: 'bad-reply' });
+    expect(keyPart([line()], undefined)).toEqual({ keys: [line()] });
   });
 });

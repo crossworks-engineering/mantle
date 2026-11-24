@@ -301,8 +301,11 @@ provider key the box holds from its own fixed list (the `key` case's list),
 whoever set it (the CC, or a person on the box's Keys screen):
 
 - **the service**, for example `openrouter`;
-- **set**: when the box's vault last wrote that key (its row's
-  `updated_at`: a new value, or an edit of its tags or label);
+- **set**: when the box's vault last wrote that key's value: its own audit
+  row of the last add or new value (`vault.key.set` naming `value`). An edit
+  of the key's label, tags, target, approval or tailnet moves nothing. A key
+  no vault write names (put there by onboarding, which writes no audit row)
+  shows when its row was made;
 - **the last test**: ok or not, and when. It is the vault's own test row
   (`vault.key.test` in the box's audit log: the key id, ok, when), written
   by every test: the Keys screen's Test, `api_key_test`, a key set from the
@@ -323,18 +326,35 @@ the key or could not be reached), `stale` (set again after its last test),
 **The print.** The box computes it in the web process from the opened key,
 in memory (`keyPrint`, `@mantle/api-keys`), and only the print leaves the
 box. Never more than a quarter of the key: a key under 64 characters shows
-less of its head, one under 24 its last 4 only, one under 16 nothing. A
-shown part with a character outside `[A-Za-z0-9_-]` gives no print. Never
-the key, never a hash of it. A status read does not count as a use
-(`last_used` stays).
+less of its head, and a key under 32 characters gives no print at all, on
+every service (a short value may be one a person typed, a passphrase on a
+`custom` or `local` route, where a quarter helps a guess). A shown part with
+a character outside `[A-Za-z0-9_-]` gives no print. Never the key, never a
+hash of it. A status read does not count as a use (`last_used` stays).
+
+**Where prints are kept.** On the CC, in two places only: each linked box's
+`control_boxes.facts` (its last good read, replaced at the next one, gone
+with the box row), and a Test now answer in `control_boxes.tool_job` until
+it is read, 10 minutes at most. So a copy or a backup of the CC's database
+holds the prints of every linked box's provider keys (the key each service
+uses). The narrow system role reads `control_boxes` (the Fleet screen's
+read, `access-matrix.ts`), with the key part in it. To keep the prints from
+that role, the clean way is a column of their own that the narrow role may
+not read, read at the full-route spot `control-center`; it is not built.
+On a box nothing new is stored: the print is made at each read.
 
 **How it reaches the CC.** The key lines ride in `facts` (its `keys` part),
 so the CC keeps the last good answer per box with its time, as for the
 matrix, read every 5 minutes. The CC holds each line to a pattern: the
-service a slug, the times ISO, the print at most 12 of `[A-Za-z0-9_-]`, the
-mark `…` and 4 more; a line that does not fit is dropped, a print that does
-not fit is `null`. The matrix (`GET /api/fleet/matrix`,
-`control_fleet_matrix`) leaves the key part out.
+service a slug on the CC's own fixed list (any other service is a box's
+free text, so the line is dropped), the times ISO, the print at most 12 of
+`[A-Za-z0-9_-]`, the mark `…` and 4 more; a line that does not fit is
+dropped, a print that does not fit is `null`. A key part that does not hold
+to its shape costs that part only (`keysReason: 'bad-reply'`): the status,
+agents, workers and backup are kept. A box that cannot read its keys sends
+the rest of its facts, with `keys: null` and `keysReason: 'error'`. The
+matrix (`GET /api/fleet/matrix`, `control_fleet_matrix`) leaves the key
+part out.
 
 **Test now.** A person at the CC asks one box, some, or all to test the keys
 they hold. One more fixed case, `keyTest` (no args), queued as a call of the
@@ -342,13 +362,27 @@ admin channel's queue (`control_boxes.tool_job`, kind `keys`, nothing
 sealed), sent in the box's run, asked for at once. The box tests each key
 whose service has a test, at once, through the vault's own test (its gate,
 its audit row), and answers its fresh lines. A failed test changes nothing
-on the box. No timer calls a provider: a test runs when a key is set and
-when a person asks. The CC's own box is tested in process, as the person.
+on the box; a test that cannot run there (the vault's gate, the database)
+fails the call (`http-500`), never `ok` with old results. No timer calls a
+provider: a test runs when a key is set and when a person asks. A box runs
+one key test at a time: a second ask while one is on its way joins it, and
+an old answer nobody read is replaced, so repeated asks never fill the
+box's queue of 10 (its tools, sign-in and invites). The route has its own
+rate limit too, `fleetKeyTest` (20 in 10 minutes per login); the MCP tool is
+held by the one-test-per-box rule (a tool takes no route limit). The CC's
+own box is tested in process, as the person.
 
 **Scope.** `MANTLE_CONTROL_CENTER_SCOPE=none` refuses `keyTest` (`scope`) and
 leaves the lines out of `facts` (`keys: null`). The default scope, `admin`,
 allows both (the keys area is in it). On the CC's own box the scope line does
 not apply, as for Fleet sign-in.
+
+**Who.** The fleet part needs the settings area, as the fleet key set
+(`POST /api/fleet/keys`) does: a person who may set a key on every box may
+see each box's key status. The CC's own box needs the vault's own area,
+`keys`, too, as its Keys screen does: without it the CC's own line has no
+keys (`keysReason: 'keys-area'`, `tested: 'keys-area'`), and no key there is
+opened or tested.
 
 **At the CC.** CC Admins with the settings area, a person:
 
@@ -356,17 +390,22 @@ not apply, as for Fleet sign-in.
   each with `keys` (the lines and their `state`), `at` (the read's time),
   `reason` (why the last read failed: the old lines stay), `lastSet` (the
   last key set from the CC: `keyResult`), and `keysReason` when a box has no
-  lines: `old-box` (a release behind), `scope`, `no-facts`.
+  lines: `old-box` (a release behind), `scope`, `no-facts`, `error` (the box
+  could not read them), `bad-reply` (the CC refused their shape), and
+  `keys-area` on the CC's own line.
 - `POST /api/fleet/keys/test { boxIds? }` (box ids and `self`; left out, all):
   waits up to 25 seconds, then answers each box's fresh lines and `tested`
   (`ok`, or `scope`, `bad-call` from a box a release behind, `unreachable`,
-  `busy` when 10 calls already wait, `pending` when the box did not answer
-  in time: its lines show in the GET after its run).
+  `http-500` when a test could not run there, `busy` when 10 calls already
+  wait, `pending` when the box did not answer in time: its lines show in the
+  GET after its run, and `keys-area` on the CC's own line).
 
 Over MCP: `control_key_status` and `control_key_test` give the same, every
 line without its print. The print is for a person matching a key with the
 provider's dashboard; an agent reads the state, as the vault shows an agent
-only its short mask.
+only its short mask. The screen keeps it so: the print stays out of what an
+agent reads of the Fleet keys screen (a screenshot for an assistant, a tool
+that reads the screen).
 
 A key set from the CC (`POST /api/fleet/keys`) needs no extra step: the
 same run sends the key, the box tests it, and the facts read after it

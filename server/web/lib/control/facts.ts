@@ -16,10 +16,12 @@
  * data. The CC holds each string to a pattern of its own (run.ts), so a
  * box's free text never reaches it either way.
  *
- * `keys` (key status on the fleet, @mantle/api-keys key-status.ts): one line per provider key
- * the box holds, with a short print of the key (its head and its last 4,
- * held to a strict pattern), never the key nor a hash of it. Null while
- * the box's scope line refuses the CC (MANTLE_CONTROL_CENTER_SCOPE=none).
+ * `keys` (key status on the fleet, @mantle/api-keys key-status.ts): one
+ * line per provider key the box holds, with a short print of the key (its
+ * head and its last 4, held to a strict pattern), never the key nor a hash
+ * of it. Null with `keysReason`: `scope` while the box's scope line refuses
+ * the CC (MANTLE_CONTROL_CENTER_SCOPE=none), `error` when the read failed
+ * (logged here; the rest of the facts still go).
  */
 import { loadBackupStatus } from '@mantle/content';
 import { agents, aiWorkers, apps, asc, db, getDefaultWorker, sql, workspaces } from '@mantle/db';
@@ -74,7 +76,7 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
       })
       .from(sql`(select 1) as one`),
     loadBackupStatus(ownerId).catch(() => null),
-    controlScopeLine().scope === null ? null : keyLines(ownerId),
+    readKeys(ownerId),
   ]);
   // The worker that runs each kind: the runtime's own pick (getDefaultWorker).
   const runs = new Set<string>();
@@ -102,8 +104,20 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
     backup: backup
       ? { lastRunAt: backup.lastRunAt, ok: backup.ok, lastSuccessAt: backup.lastSuccessAt ?? null }
       : null,
-    keys,
+    ...keys,
   };
+}
+
+/** The key part: the lines, or null and why. A failed read costs the key
+ *  part only. */
+async function readKeys(ownerId: string): Promise<Pick<ControlFacts, 'keys' | 'keysReason'>> {
+  if (controlScopeLine().scope === null) return { keys: null, keysReason: 'scope' };
+  try {
+    return { keys: await keyLines(ownerId) };
+  } catch (err) {
+    log('control').warn('facts: no key lines:', errorMessage(err));
+    return { keys: null, keysReason: 'error' };
+  }
 }
 
 /** box_status's numbers (lazily loaded: the collectors live in the web

@@ -170,6 +170,11 @@ export const RATE_LIMITS = {
   // The Control Center's Fleet users invite: an invite (with the password
   // step) or an answer read, each waits up to 25 seconds.
   fleetInvite: perLogin('fleet:invite', 60, 10 * MIN),
+  // The Control Center's key status Test now: each ask tests every key on
+  // the boxes it names (a provider call each) and waits up to 25 seconds.
+  // control_key_test is held by the box's one key test at a time
+  // (queueControlToolCalls), as this route is too.
+  fleetKeyTest: perLogin('fleet:key-test', 20, 10 * MIN),
   /** Connect and enrol are once-per-install steps: one bucket for both,
    *  the admin and the member routes alike. */
   pushEnrol: perLogin('push-enrol', 10),

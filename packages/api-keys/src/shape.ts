@@ -46,16 +46,17 @@ const PRINT_CHARS = /^[A-Za-z0-9_-]*$/;
  * dashboard: its first 12 and last 4 characters with the middle left out
  * (`sk-or-v1-abc…wxyz`), or null. Never more than a quarter of the key: a
  * key under 64 characters shows less of its head (floor(length / 4) less
- * the 4 of its tail), one under 24 its last 4 only, one under 16 nothing.
- * A shown part with a character outside [A-Za-z0-9_-] gives null, so the
- * print always fits the Control Center's pattern. Computed in memory from
- * the opened key; the key itself goes no further.
+ * the 4 of its tail), and a key under 32 characters gives no print at all,
+ * whatever its service: a short value may be one a person typed (a
+ * passphrase on a `custom` or `local` route), where a quarter helps a
+ * guess. A shown part with a character outside [A-Za-z0-9_-] gives null, so
+ * the print always fits the Control Center's pattern. Computed in memory
+ * from the opened key; the key itself goes no further.
  */
 export function keyPrint(plaintext: string): string | null {
   const n = plaintext.length;
-  if (n < 16) return null;
-  const head = n < 24 ? 0 : Math.min(12, Math.floor(n / 4) - 4);
-  const shownHead = plaintext.slice(0, head);
+  if (n < 32) return null;
+  const shownHead = plaintext.slice(0, Math.min(12, Math.floor(n / 4) - 4));
   const shownTail = plaintext.slice(-4);
   if (!PRINT_CHARS.test(shownHead) || !PRINT_CHARS.test(shownTail)) return null;
   return `${shownHead}…${shownTail}`;
