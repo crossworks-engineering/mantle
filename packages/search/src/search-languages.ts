@@ -44,46 +44,39 @@ function canonicalCode(code: string): string {
 }
 
 /**
- * Postgres's text search configs by language code (Postgres 18). A
- * translation's own stop words ("de", "la", "die", "van") are no stop words
- * to the `english` rules, and a brain with few documents in that language
- * would count them rare: its words go through its language's stop list
- * before the lookup (keyword-query.ts). So only a language with one is a
- * search language.
+ * The languages Postgres ships a stop list for (its `*.stop` files), by
+ * code, with their text search config. A translation's own stop words
+ * ("de", "la", "der") are no stop words to the `english` rules, and a brain
+ * with few documents in that language would count them rare: its words go
+ * through its language's stop list before the lookup (keyword-query.ts).
+ * So only a language with a stop list is a search language. A config with
+ * no stop list (catalan, romanian, greek and more) is not enough;
+ * search-languages.db.test.ts holds that each one here has stop words.
  */
 const STOP_WORD_CONFIGS: Readonly<Record<string, string>> = {
-  ar: 'arabic',
-  ca: 'catalan',
   da: 'danish',
   de: 'german',
-  el: 'greek',
   en: 'english',
   es: 'spanish',
-  et: 'estonian',
-  eu: 'basque',
   fi: 'finnish',
   fr: 'french',
-  ga: 'irish',
-  hi: 'hindi',
   hu: 'hungarian',
-  hy: 'armenian',
-  id: 'indonesian',
   it: 'italian',
-  lt: 'lithuanian',
   nb: 'norwegian',
   ne: 'nepali',
   nl: 'dutch',
   nn: 'norwegian',
   no: 'norwegian',
   pt: 'portuguese',
-  ro: 'romanian',
   ru: 'russian',
-  sr: 'serbian',
   sv: 'swedish',
-  ta: 'tamil',
   tr: 'turkish',
-  yi: 'yiddish',
 };
+
+/** Every config in the list (for the DB test). */
+export const STOP_WORD_CONFIG_NAMES: readonly string[] = [
+  ...new Set(Object.values(STOP_WORD_CONFIGS)),
+];
 
 /** The stop-list config for a language code (`pt-BR` → portuguese), or
  *  null when Postgres has none (pure). */
@@ -135,11 +128,17 @@ export function parseSearchLanguages(
   return { ok: true, languages: out };
 }
 
-/** The stored value as a clean list (pure): anything not a valid list
- *  reads as empty, so a bad hand write turns the feature off, never on. */
+/** The stored value as a clean list (pure): the codes that pass, the rest
+ *  dropped, so a bad hand write (or a code no longer one) turns that code
+ *  off, never on, and leaves the others. */
 export function normalizeSearchLanguages(raw: unknown): string[] {
-  const parsed = parseSearchLanguages(raw);
-  return parsed.ok ? parsed.languages : [];
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const code of raw) {
+    const one = parseSearchLanguages([code]);
+    if (one.ok && one.languages[0] && !out.includes(one.languages[0])) out.push(one.languages[0]);
+  }
+  return out.slice(0, SEARCH_LANGUAGES_MAX);
 }
 
 /**

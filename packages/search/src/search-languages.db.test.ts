@@ -307,6 +307,22 @@ describe.skipIf(!URL)('search languages on a mixed English and Spanish corpus', 
     }
   }, 60_000);
 
+  it('every search language has a stop list in Postgres (not only a config)', async () => {
+    const { STOP_WORD_CONFIG_NAMES } = await import('./search-languages');
+    const missing = await su<{ cfg: string }[]>`
+      select c.cfg from unnest(${STOP_WORD_CONFIG_NAMES as string[]}::text[]) as c(cfg)
+       where not exists (
+         select 1 from pg_ts_dict d
+          where d.dictname = c.cfg || '_stem' and d.dictinitoption like '%stopwords%')`;
+    expect(missing.map((r) => r.cfg)).toEqual([]);
+    // And a function word of each test language really drops.
+    const [es] = await su<{ kept: string }[]>`
+      select coalesce(string_agg(token, ' '), '') as kept
+        from ts_debug('spanish'::regconfig, 'la válvula de la bomba')
+       where lexemes is not null and cardinality(lexemes) > 0`;
+    expect(es!.kept).toBe('válvula bomba');
+  });
+
   it('a translation slower than the budget never makes the search slower than the budget', async () => {
     await setLanguages(['es']);
     translateDelayMs = 5000;

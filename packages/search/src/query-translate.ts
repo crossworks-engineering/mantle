@@ -245,7 +245,9 @@ export async function translateQuery(
     let route: Promise<{ route: TranslateRoute } | { why: string }> | null = null;
     const answers = await Promise.all(
       languages.map(async (lang) => {
+        let asked = false;
         const p = cachedCall(keyOf(lang), async () => {
+          asked = true;
           route ??= routeOf(ownerId);
           const r = await route;
           if ('why' in r) throw new Error(r.why);
@@ -253,7 +255,12 @@ export async function translateQuery(
         });
         const got = await until(p, deadline);
         if ('text' in got) {
-          if (!got.text) missed.push(`${lang}: no translation in the answer`);
+          // Said once, when the model was asked: a kept empty answer is quiet.
+          if (!got.text && asked) {
+            missed.push(
+              `${lang}: no translation in the answer (a refusal, or cut at its length limit)`,
+            );
+          }
           return got.text;
         }
         missed.push(`${lang}: ${'timeout' in got ? 'past the time budget' : got.error}`);

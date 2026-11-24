@@ -104,6 +104,8 @@ describe('translateQuery', () => {
     expect(warns[0]).toContain('no translation');
     await translateQuery('o', 'valve', ['es']);
     expect(calls).toHaveLength(1);
+    // The kept empty answer is quiet.
+    expect(warns).toHaveLength(1);
   });
 
   it('an answer equal to the query adds nothing', async () => {

@@ -523,10 +523,13 @@ the access rules) is unchanged.
 
 - **The setting:** the brain's profile row, key `searchLanguages`
   ([`search-languages.ts`](../packages/search/src/search-languages.ts)), at
-  most 3 codes, each a language Postgres has a stop list for (31 codes:
-  Spanish, French, German, Portuguese, Dutch, Italian, Russian and more; a
-  region such as `pt-BR` is fine). A language without one is refused: its
-  function words would read as rare words on a mostly English brain. Set on the AI workers screen under the Translator,
+  most 3 codes, each a language Postgres ships a stop list for (17 codes:
+  Danish, Dutch, English, Finnish, French, German, Hungarian, Italian,
+  Nepali, Norwegian, Portuguese, Russian, Spanish, Swedish, Turkish; a
+  region such as `pt-BR` is fine). Any other is refused: without a stop
+  list its function words would read as rare words on a mostly English
+  brain. A config alone is not enough (Catalan, Romanian, Greek have one
+  with no stop words); the DB test holds that each listed one has them. Set on the AI workers screen under the Translator,
   `PUT /api/settings/search-languages` (the Settings area), or the MCP
   tool `search_languages`.
 - **The translation:** the Translator worker's model (a brain without one:

@@ -7,9 +7,9 @@ import {
 
 describe('parseSearchLanguages', () => {
   it('takes codes, in their usual case, once each', () => {
-    expect(parseSearchLanguages(['es', ' ES ', 'pt-br', 'sr-latn'])).toEqual({
+    expect(parseSearchLanguages(['es', ' ES ', 'pt-br', 'nb'])).toEqual({
       ok: true,
-      languages: ['es', 'pt-BR', 'sr-Latn'],
+      languages: ['es', 'pt-BR', 'nb'],
     });
     expect(parseSearchLanguages(['es-419'])).toEqual({ ok: true, languages: ['es-419'] });
   });
@@ -28,7 +28,9 @@ describe('parseSearchLanguages', () => {
     // Shaped like a code, but no language; or a language with no stop list.
     expect(parseSearchLanguages(['zz']).ok).toBe(false);
     expect(parseSearchLanguages(['af']).ok).toBe(false);
-    expect(parseSearchLanguages(['ca', 'et']).ok).toBe(true);
+    // A config with no stop list is not enough.
+    expect(parseSearchLanguages(['ca']).ok).toBe(false);
+    expect(parseSearchLanguages(['ro']).ok).toBe(false);
     expect(parseSearchLanguages(['en']).ok).toBe(true);
   });
 
@@ -42,7 +44,7 @@ describe('normalizeSearchLanguages', () => {
   it('a bad stored value reads as empty (off, never on)', () => {
     expect(normalizeSearchLanguages(null)).toEqual([]);
     expect(normalizeSearchLanguages('es')).toEqual([]);
-    expect(normalizeSearchLanguages(['es', 'not a code'])).toEqual([]);
+    expect(normalizeSearchLanguages(['es', 'not a code', 'ca', 'fr'])).toEqual(['es', 'fr']);
     expect(normalizeSearchLanguages(['es'])).toEqual(['es']);
   });
 });
