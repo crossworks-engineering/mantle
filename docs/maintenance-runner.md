@@ -299,6 +299,23 @@ default) prints two counts, to clear and left; `--apply` clears them in one
 UPDATE and prints how many. Free, short, manual only; on a box
 `docker exec mantle_web pnpm maintain name-versions-clear [--apply]`.
 
+## Scanned drawings read in part (`scan-pages-stamp`)
+
+`pnpm maintain scan-pages-stamp` marks the PDF files whose sketch read left
+scan pages not read (docs/file-ingestion.md, 3b). Until 2026-11-24 that read
+took at most 10 pages of a file and said no cut, so such a file counts as
+read in full in `files:coverage` though its database states the pages past
+the cap. A dry run (the default) counts the PDF files with no `scan_pages`
+cut, those whose database for their current bytes holds a sketch read, and
+those of them read in part (the File tab: `Scan pages not read`, or on an
+older database `Scan pages past the cap`); a File tab that cannot be read now
+is counted, never stamped. `--apply` puts the read cut `scan_pages` (read of
+total) on each, keeping the node's other cuts and its `updated_at`, so the
+file is `partial` and nothing queues a read. A person then reads the rest
+with a read again (`file_reindex`). Free (no model, no queue), manual only,
+counts only; on a box `docker exec mantle_web pnpm maintain scan-pages-stamp
+[--apply]`. A second run finds none.
+
 ## Long runs on a box (`scripts/box-maintain.sh`)
 
 A task that runs for more than a few minutes on a box (`chunk-windows

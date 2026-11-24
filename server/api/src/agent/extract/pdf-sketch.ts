@@ -24,9 +24,12 @@
  * Cost. It runs inside an admitted extract only, after the extract's cost
  * guard (`llmWorkAllowed`), for at most SKETCH_MAX_PAGES (500) pages of a
  * file and 4 pictures a page, each call within the box's spend caps (a day
- * cap is a wait). No picture is asked after the read's share of the job's
- * time (SKETCH_TIME_SHARE of the box's extract time budget): the pages left
- * are stated (`time`), never asked by anything that starts by itself.
+ * cap is a wait). No page is started after the read's share of the job's
+ * time (SKETCH_TIME_SHARE of the box's extract time budget, counted from
+ * the read's start): the pages left are stated (`time`), never asked by
+ * anything that starts by itself. So the job keeps inside its budget in the
+ * normal case; one that runs past it is tried again by the queue, and the
+ * try again pays for no picture read (the answer cache).
  *
  * When it runs. One time for a file and its bytes: the database's `File`
  * tab holds `Vision read`, and a database that has it is not read again,
@@ -103,6 +106,19 @@ const SKETCH_TOKENS_A_PIECE = 40;
 async function sketchTimeMs(ownerId: string): Promise<number> {
   const cfg = await resolveEmbeddingConfig(ownerId).catch(() => null);
   return resolveExtractionTimeBudget(cfg?.extractionTimeBudgetMinutes) * 60_000 * SKETCH_TIME_SHARE;
+}
+
+/**
+ * Whether the database of the node's bytes holds a sketch read (`Vision
+ * read`). The extract's one check before a whole-page read: a file whose
+ * read is its sketch read never gets one on top of it (or in its place,
+ * when its read again cannot run now). False when no File tab can be read.
+ */
+export async function sketchReadStored(node: typeof nodes.$inferSelect): Promise<boolean> {
+  const sha = (node.data as Record<string, unknown> | null)?.sha256;
+  if (!isFileSha256(sha)) return false;
+  const abs = await fileDbSqlitePath(node.id, sha);
+  return abs !== null && (await storedPdfOf(abs))?.visionRead === true;
 }
 
 /**
@@ -309,7 +325,8 @@ export async function sketchIngestPdfNode(
               continue;
             }
             for (const page of pieces) {
-              if (!run.stopped && Date.now() >= until) {
+              // A page the parser could not cut keeps its own status.
+              if (!run.stopped && page.status === 'ok' && Date.now() >= until) {
                 read.push(sketchPageNone(page.page, 'time'));
                 continue;
               }

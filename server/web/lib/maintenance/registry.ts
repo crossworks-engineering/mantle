@@ -454,6 +454,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Manual only. Free and short: run the dry run first, read the count, then --apply. A second run finds none.',
   },
   {
+    slug: 'scan-pages-stamp',
+    title: 'Mark scanned drawings read in part by their sketch read',
+    description:
+      'Until 2026-11-24 the sketch read of a scanned drawing PDF read at most 10 pages of a file and said no cut, so the file counts as read in full though its database states the pages past the cap. Dry run (default) counts the PDF files with no scan_pages cut whose database for their current bytes holds a sketch read that left scan pages not read (the File tab: Scan pages not read, or on an older database Scan pages past the cap). --apply puts the read cut scan_pages (read of total) on each, so the file is partial and files:coverage counts it as not read in full; the write keeps updated_at, so nothing queues a read. A person then reads the rest with a read again (file_reindex). A file whose File tab cannot be read now is counted, never stamped. Prints counts only.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'io',
+    schedulable: false,
+    script: 'scripts/scan-pages-stamp.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Manual only. Free: no model, no queue; it reads the File tab of each PDF database. Run the dry run first, read the count, then --apply. A second run finds none.',
+  },
+  {
     slug: 'dwg-reindex',
     title: "Build table-type files' read-only databases",
     description:

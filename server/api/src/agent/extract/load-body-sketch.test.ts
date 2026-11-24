@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   documentWorkerPrefersNative: vi.fn(),
   parseDocumentBytes: vi.fn(),
   sketchIngestPdfNode: vi.fn(),
+  sketchReadStored: vi.fn(async () => false),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -58,7 +59,10 @@ vi.mock('./images', () => ({
   visionIngestImageNode: vi.fn(),
 }));
 
-vi.mock('./pdf-sketch', () => ({ sketchIngestPdfNode: h.sketchIngestPdfNode }));
+vi.mock('./pdf-sketch', () => ({
+  sketchIngestPdfNode: h.sketchIngestPdfNode,
+  sketchReadStored: h.sketchReadStored,
+}));
 
 import { loadExtractableBody } from './load-body';
 
@@ -97,6 +101,7 @@ beforeEach(async () => {
   h.tryUnlockPdf.mockResolvedValue(null);
   h.documentWorkerPrefersNative.mockResolvedValue(false);
   h.sketchIngestPdfNode.mockResolvedValue(null);
+  h.sketchReadStored.mockResolvedValue(false);
   const { db } = await import('@mantle/db');
   vi.mocked(db.update).mockReturnValue({
     set: (v: unknown) => {
@@ -152,5 +157,14 @@ describe('loadExtractableBody: the sketch read of a scanned drawing', () => {
     expect(call?.disposition).toBe('no_text_layer');
     // Terminal, as any blank scan: the node is stamped, not queued again.
     expect(sets).toHaveLength(1);
+  });
+
+  it('a read again whose sketch read cannot run now fails the job: no whole-page read in its place', async () => {
+    // The database holds a sketch read that left pages; the read again
+    // dropped the text, and the sketch read gave null (no vision worker now).
+    h.sketchReadStored.mockResolvedValue(true);
+    await expect(run()).rejects.toThrow(/scan read of this drawing could not run now/);
+    expect(h.ocrIngestPdfNode).not.toHaveBeenCalled();
+    expect(sets).toHaveLength(0);
   });
 });

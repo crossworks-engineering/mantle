@@ -446,6 +446,9 @@ export function pdfFileTabOf(
    *  a database of before that column: `Scan pages past the cap`). 0 with
    *  no read. */
   scanPagesNotRead: number;
+  /** Scan pages the sketch read read whole (`Scan pages read`); 0 with no
+   *  read. */
+  scanPagesRead: number;
   notReadWhole: number;
 } | null {
   const cell = (name: string) => row[columns.indexOf(name)];
@@ -465,6 +468,7 @@ export function pdfFileTabOf(
           ? cell('Scan pages not read')
           : cell('Scan pages past the cap'),
       ) || 0,
+    scanPagesRead: Number(cell('Scan pages read')) || 0,
     notReadWhole: Number(cell('Pages not read whole') ?? 0),
     decision:
       typeof answer === 'string' && answer
@@ -766,7 +770,8 @@ export function pdfDrawingSheets(
                 ` File says how many and why (Scan pages` +
                 ` not read why), Pages says which (Vision status: time, the read's time ran out;` +
                 ` not_read, a call before it did not run; past_page_cap; no_picture, refused,` +
-                ` over_budget, the page could not be cut). A read again of the file reads them.`
+                ` over_budget, the page could not be cut). A read again of the file reads those` +
+                ` its time or a failed call left.`
               : '') +
             ` A word of it has` +
             ` the box of the piece it was read in, not its own, its Line is the number of that` +

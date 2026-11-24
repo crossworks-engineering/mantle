@@ -128,7 +128,7 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   // A scanned drawing's sketch read (server/api extract/pdf-sketch.ts):
   // scan pages it did not read whole.
   scan_pages: (c) =>
-    `Only ${ofTotal(c)} scan pages were read by the vision model. The others are not in search: the Pages tab of the file's database says which and why (Vision status). Read the file again to read them; a page read before is not paid again.`,
+    `Only ${ofTotal(c)} scan pages were read by the vision model. The others are not in search: the Pages tab of the file's database says which and why (Vision status). Read the file again to read the pages its time or a failed call left (pages past the per-file cap stay unread); the answers kept from the read before are used again.`,
   // Pictures the PDF reader left out (`data.images`, folded in here).
   pictures: (c) =>
     `${ofTotal(c)} pictures kept. The others are not in search: a raised picture cap and a new read fetch those the cap left out.`,

@@ -449,6 +449,7 @@ describe('the rows of a read', () => {
         decision,
         visionRead: vision,
         scanPagesNotRead: 0,
+        scanPagesRead: 0,
         notReadWhole: 0,
       });
     }
