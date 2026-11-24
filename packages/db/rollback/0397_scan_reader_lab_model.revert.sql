@@ -1,0 +1,16 @@
+-- Rollback of 0397_scan_reader_lab_model: what an operator MAY run before
+-- pinning the image one release back (plan v3.2 rule 2, a one-image
+-- rollback). Not a migration: nothing runs it on its own.
+--
+-- Optional, and it leaves the data as it is: the older image runs the Scan
+-- reader on openai/gpt-6-luna as well (a model id is data to it), and moving
+-- the rows back would send page text to third-party hosts again. This only
+-- takes 0397 off the ledger, so the next roll forward applies it again (a
+-- no-op on rows it moved already).
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0397_scan_reader_lab_model.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792340180000;

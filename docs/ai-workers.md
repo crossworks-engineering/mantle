@@ -708,18 +708,26 @@ pages go on, and the run is not marked done, so the next run reads it.
 
 **The worker.** `MANIFEST_WORKERS` entry `scan_reader`, name "Scan reader",
 provider `openrouter`, model `SCAN_READER_MODEL`
-(`meta-llama/llama-3.1-8b-instruct`) in
-`server/web/lib/system-manifest/manifest.ts`. The model is only the text
-model the parsed page is handed to: it answers 16 tokens, which are not
-used; the page's text is the parser's own. It is text-only, so the parser
-forwards no picture. `required: true`: it reaches existing brains on
+(`openai/gpt-6-luna`) in
+`server/web/lib/system-manifest/manifest.ts`. The model is only the chat
+model the parser's text rides on: it answers 16 tokens, which are not
+used; the page's text is the parser's own. It is a closed lab model, so
+the page text goes only to its maker or to Azure, AWS or Google Cloud,
+never to a third-party host of an open-weight model (`manifest.test.ts`
+holds every shipped default to that rule). The parser forwards the page
+text only, not the picture (checked live 2026-11-24: about 330 input
+tokens on a light page, 1,260 on a dense one). Until v0.712 the model was
+`meta-llama/llama-3.1-8b-instruct`, which third-party hosts serve;
+migration 0397 moves a worker still on that id to the new one (a model
+picked by hand is kept). `required: true`: it reaches existing brains on
 upgrade (the reconcile's required pass), for a brain with an OpenRouter key.
 Its model pool is `scan_reader`; its provider eligibility the vision
 capability. The worker test reads a one-page PDF (the document test).
 
 **Cost on existing brains** (for the release notes). Every scanned page of a
 book now costs the parser's $2.00 per 1,000 pages ($2.20 in the US region)
-plus about $0.03 of the text model. Before, Tesseract read most scanned
+plus about $0.04 to $0.17 of the chat model (a light to a dense page).
+Before, Tesseract read most scanned
 pages for nothing and vision (about $3.94 per 1,000) read the ones it read
 badly: a book of good scans costs more now, a book of poor scans about half.
 A figure page costs the parser and one vision call. With the decider on,

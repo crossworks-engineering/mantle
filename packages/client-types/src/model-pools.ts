@@ -100,7 +100,7 @@ export const MODEL_POOLS: readonly ModelPoolDef[] = [
     id: 'scan_reader',
     label: 'Scan reader',
     description:
-      'Reads the text of every scanned page of a PDF book through the mistral-ocr PDF parser, at about half the vision price. This is the cheap text model the parsed page is handed to (its short answer is not used); text-only, so no picture is forwarded.',
+      'Reads the text of every scanned page of a PDF book through the mistral-ocr PDF parser, at about half the vision price. This is the chat model the parsed page text rides on (its short answer is not used); the parser forwards the page text only, not the picture.',
     group: 'workers',
     modality: TEXT_OUT,
   },

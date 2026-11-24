@@ -845,3 +845,84 @@ describe('the manifest stays data (A5 step 6d fix round 1)', () => {
     }
   });
 });
+
+describe('every shipped default model is a closed lab model', () => {
+  /** A default must be served only by its maker or by Azure, AWS or Google
+   *  Cloud. A closed model of these makers is (OpenRouter lists only those
+   *  hosts for it); an open-weight model is not: any third-party host may
+   *  serve it, and that host then sees the client's text. */
+  const CLOSED_LABS = ['anthropic', 'openai', 'google', 'x-ai', 'perplexity', 'typesafe'];
+  const OPEN_WEIGHT = [
+    'meta-llama/',
+    'openai/gpt-oss',
+    'google/gemma',
+    'mistralai/',
+    'deepseek/',
+    'qwen/',
+    'z-ai/',
+    'minimax/',
+    'moonshotai/',
+    'liquid/',
+  ];
+  /** Reported 2026-11-24, not changed: the Translator's fallback and high
+   *  models (params) are Mistral open-weight models, served today only by
+   *  Mistral itself. They wait for the owner's word; take each off this
+   *  list in the change that moves it. Never add to it. */
+  const REPORTED = ['mistralai/mistral-small-2603', 'mistralai/mistral-medium-3-5'];
+
+  /** Each default: where it ships, its route's provider, its model id. */
+  const defaults: { where: string; provider: string; model: string }[] = [
+    ...MANIFEST_AGENTS.filter((a) => a.model !== WORKER_MODEL_INHERIT).map((a) => ({
+      where: `agent ${a.slug}`,
+      provider: 'openrouter',
+      model: a.model,
+    })),
+    ...MANIFEST_WORKERS.flatMap((w) => [
+      { where: `worker ${w.kind}`, provider: w.provider, model: w.model },
+      ...(w.altModel
+        ? [{ where: `worker ${w.kind} alt`, provider: w.altProvider ?? '', model: w.altModel }]
+        : []),
+      ...Object.entries(w.params ?? {})
+        .filter(([k, v]) => k.endsWith('_model') && typeof v === 'string')
+        .map(([k, v]) => ({
+          where: `worker ${w.kind} ${k}`,
+          provider: w.provider,
+          model: v as string,
+        })),
+    ]),
+  ];
+
+  /** The maker: the id's vendor part on a router, the provider on a direct
+   *  route (xAI's own ids carry no vendor). */
+  const makerOf = (d: { provider: string; model: string }): string => {
+    const id = d.model.replace(/^~/, '');
+    if (id.includes('/')) return id.split('/')[0]!;
+    return d.provider === 'xai' ? 'x-ai' : d.provider;
+  };
+
+  it('finds the defaults it checks, the Scan reader among them', () => {
+    expect(defaults.some((d) => d.where === 'worker scan_reader')).toBe(true);
+    expect(defaults.length).toBeGreaterThan(20);
+  });
+
+  it('each one is made by a closed lab, not an open-weight family, never a :free variant', () => {
+    const why =
+      'a default must be served only by its maker or by Azure, AWS or Google Cloud; ' +
+      'an open-weight model or a :free variant may be served by any third-party host';
+    for (const d of defaults) {
+      if (REPORTED.includes(d.model)) continue;
+      const id = d.model.replace(/^~/, '');
+      expect(CLOSED_LABS, `${d.where} ships ${d.model}: ${why}`).toContain(makerOf(d));
+      expect(
+        OPEN_WEIGHT.some((p) => id.startsWith(p)),
+        `${d.where} ships ${d.model}: ${why}`,
+      ).toBe(false);
+      expect(id.endsWith(':free'), `${d.where} ships ${d.model}: ${why}`).toBe(false);
+    }
+  });
+
+  it('the reported list only names defaults that still ship', () => {
+    const shipped = new Set(defaults.map((d) => d.model));
+    for (const m of REPORTED) expect(shipped.has(m), `${m} no longer ships: drop it`).toBe(true);
+  });
+});

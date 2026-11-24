@@ -1115,23 +1115,23 @@
   {
     "pool": "scan_reader",
     "position": 0,
-    "name": "Meta: Llama 3.1 8B Instruct",
-    "vendor": "Meta",
+    "name": "OpenAI: GPT-6 Luna",
+    "vendor": "OpenAI",
     "routes": [
       {
         "provider": "openrouter",
-        "model": "meta-llama/llama-3.1-8b-instruct"
+        "model": "openai/gpt-6-luna"
       }
     ],
     "pricing": {
-      "inputPerM": 0.02,
-      "outputPerM": 0.04,
+      "inputPerM": 0.1,
+      "outputPerM": 0.5,
       "currency": "USD",
-      "capturedAt": "2026-11-19T09:00:00.000Z",
+      "capturedAt": "2026-11-24T09:00:00.000Z",
       "source": "openrouter"
     },
     "rating": 5,
-    "note": "the shipped default: the text model behind the mistral-ocr PDF parser (params.engine), which bills $2 per 1,000 pages; it answers 16 tokens, the text is the parser's"
+    "note": "the shipped default: the chat model behind the mistral-ocr PDF parser (params.engine), which bills $2 per 1,000 pages; it answers 16 tokens, the text is the parser's; a closed lab model, served only by OpenAI, Azure or Amazon Bedrock"
   },
   {
     "pool": "image_gen",

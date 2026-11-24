@@ -2773,6 +2773,13 @@
       "when": 1792340120000,
       "tag": "0396_graph_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 397,
+      "version": "7",
+      "when": 1792340180000,
+      "tag": "0397_scan_reader_lab_model",
+      "breakpoints": true
     }
   ]
 }

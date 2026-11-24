@@ -1564,15 +1564,22 @@ export const FACT_WORKER_MODEL = 'openai/gpt-6-luna';
  *  worker, and the Reader specialist. */
 export const READ_WORKER_MODEL = 'google/gemini-3.8-flash';
 
-/** The Scan reader's model: the text model a page parsed by its engine
+/** The Scan reader's model: the chat model a page parsed by its engine
  *  (OpenRouter's `mistral-ocr`, fixed in @mantle/runtime SCAN_READER_ENGINE:
- *  $2 per 1,000 pages, $2.20 in the US region) is handed to. Its 16-token
- *  answer is not used; it is billed for the page's text as input, about
- *  $0.00003 a page.
- *  The cheapest text-only model the live catalog had that answers reliably;
- *  text-only, so the parser forwards no picture. Checked against the live
- *  OpenRouter catalog 2026-11-19 ($0.02/M in, $0.04/M out). */
-export const SCAN_READER_MODEL = 'meta-llama/llama-3.1-8b-instruct';
+ *  $2 per 1,000 pages, $2.20 in the US region) rides on. The parser's text
+ *  is the model's input; its 16-token answer is not used.
+ *  A closed lab model, so the page text goes only to its maker or to Azure,
+ *  AWS or Google Cloud, never to a third-party host of an open-weight model
+ *  (manifest.test.ts holds every default to that rule). OpenRouter endpoints
+ *  checked 2026-11-24: OpenAI, Azure, Amazon Bedrock; no expiry date. Also
+ *  the fact workers' model, so a box runs one model fewer.
+ *  Live check 2026-11-24 (a made-up scanned page, a picture only): the
+ *  parsed text is the same, byte for byte, as with the earlier carrier; the
+ *  input is the page text only (about 330 tokens a light page, 1,260 a dense
+ *  one: no picture is forwarded); reasoning is on and max_tokens 16 ends in
+ *  `length`, which the read ignores. Billed beside the $0.002 parser fee:
+ *  about $0.00004 a light page, $0.00017 a dense one. */
+export const SCAN_READER_MODEL = 'openai/gpt-6-luna';
 
 // ── Agents ───────────────────────────────────────────────────────────────────
 
