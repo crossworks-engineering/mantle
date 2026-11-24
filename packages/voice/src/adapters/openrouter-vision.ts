@@ -30,6 +30,7 @@ import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openrouter';
 import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
+import { log } from '@mantle/tracing';
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 
@@ -65,6 +66,12 @@ export function fileAnnotationText(annotations: unknown): string {
   return parts.join('\n');
 }
 
+/** OpenRouter's list fee of its `mistral-ocr` PDF parser: $2 per 1,000
+ *  pages ($2.20 in the US region). The cost of a call whose model refused
+ *  after the parse: the parser is billed all the same, and the error
+ *  reports no cost. The one place this fee is written. */
+export const MISTRAL_OCR_PAGE_USD = 0.002;
+
 /** The parsed text an OpenRouter error body carries for a file the parser
  *  read before the model failed (`error.metadata.file_annotations`). */
 function errorAnnotationText(body: string | undefined): string {
@@ -74,6 +81,17 @@ function errorAnnotationText(body: string | undefined): string {
     return fileAnnotationText(parsed.error?.metadata?.file_annotations).trim();
   } catch {
     return '';
+  }
+}
+
+/** The provider's error code in an OpenRouter error body (`error.code`), or
+ *  `none`; never any other part of the body. */
+function errorCodeOf(body: string | undefined): string {
+  try {
+    const code = (JSON.parse(body ?? '') as { error?: { code?: unknown } }).error?.code;
+    return typeof code === 'string' || typeof code === 'number' ? String(code) : 'none';
+  } catch {
+    return 'none';
   }
 }
 
@@ -342,11 +360,23 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       // error carries the parsed text (`error.metadata.file_annotations`),
       // and the parser's fee is billed all the same. The text is all the
       // read needs, so it is the answer (finish `error`); with none, the
-      // error stands. The fee is not in the error: no billed cost is
-      // reported.
-      const text = err instanceof ProviderHttpError ? errorAnnotationText(err.body) : '';
+      // error stands. The error reports no cost: the engine's list fee
+      // stands for it (mistral-ocr; none known for another engine).
+      if (!(err instanceof ProviderHttpError)) throw err;
+      const text = errorAnnotationText(err.body);
       if (!text) throw err;
-      return { text, model: opts.model, finishReason: 'error' };
+      // One line, so a carrier that refuses every page is seen: the status
+      // and the provider's error code only, never the page or its name.
+      log('openrouter-vision').warn(
+        `${opts.model} refused after the PDF parse ` +
+          `(status ${err.status}, code ${errorCodeOf(err.body)}); the parsed text is the read`,
+      );
+      return {
+        text,
+        model: opts.model,
+        finishReason: 'error',
+        ...(opts.engine === 'mistral-ocr' ? { reportedCostUsd: MISTRAL_OCR_PAGE_USD } : {}),
+      };
     }
     return {
       text: fileAnnotationText(r.annotations).trim(),

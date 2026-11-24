@@ -206,6 +206,7 @@ export {
   type ProviderCredential,
 } from './types';
 export { credentialOf } from '@mantle/voice-client/provider-credential';
+export { MISTRAL_OCR_PAGE_USD } from './openrouter-vision';
 
 // Tailnet proxy dispatch — exposed so callers/UI can check whether a tailnet
 // proxy is configured. `tailnetFetch` is consumed internally by the `local`

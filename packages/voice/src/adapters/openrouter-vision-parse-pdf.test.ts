@@ -4,8 +4,12 @@
  * 16-token cap, and the page's text from the file annotation, not from the
  * model's answer; the billed cost from `usage.cost`. A made-up provider.
  */
-import { afterEach, describe, expect, it } from 'vitest';
-import { fileAnnotationText, openrouterVisionAdapter } from './openrouter-vision';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  fileAnnotationText,
+  MISTRAL_OCR_PAGE_USD,
+  openrouterVisionAdapter,
+} from './openrouter-vision';
 import { recordingVision } from './spend';
 
 const realFetch = globalThis.fetch;
@@ -110,12 +114,21 @@ describe('openrouter vision: parsePdf', () => {
         },
       },
     });
-    const opts = { apiKey: 'k', engine: 'mistral-ocr', model: 'm' };
+    const opts = { apiKey: 'k', engine: 'mistral-ocr', model: 'm', filename: 'secret-name.pdf' };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // The parser's list fee is the cost: the error reports none.
     expect(await openrouterVisionAdapter.parsePdf!(pdf, opts)).toEqual({
       text: 'PAGE 9',
       model: 'm',
       finishReason: 'error',
+      reportedCostUsd: MISTRAL_OCR_PAGE_USD,
     });
+    // One warn line: the status and the error code, never the page or its name.
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = String(warn.mock.calls[0]![0]);
+    expect(line).toMatch(/status 400, code 400/);
+    expect(line).not.toMatch(/PAGE 9|secret-name/);
+    warn.mockRestore();
     // No parsed text in the error: the error stands (the read fails).
     reply({ error: { message: 'Bad request.', code: 400 } });
     await expect(openrouterVisionAdapter.parsePdf!(pdf, opts)).rejects.toThrow(/400/);

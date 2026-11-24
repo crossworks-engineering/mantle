@@ -3,9 +3,9 @@
  * reader route still on the old shipped default moves to the lab model, a
  * model picked by hand is kept, the backup route moves on its own, another
  * kind is never touched; the pool's template row moves, a row edited by
- * hand is kept, and where the new row is there already the old one goes;
- * a second run changes nothing. Everything runs inside ONE transaction
- * that is rolled back.
+ * hand (its note, or only its name) is kept, and where the new row is
+ * there already the old one goes; a second run changes nothing. Everything
+ * runs inside ONE transaction that is rolled back.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/db/src/scan-reader-lab-model-migration.db.test.ts
  */
@@ -55,13 +55,7 @@ describe.skipIf(!URL)('migration scan_reader_lab_model', () => {
   let admin: Sql;
 
   beforeAll(() => {
-    const su = superuserClient(URL!);
-    // As the app's drizzle pool sent them: a json or jsonb parameter goes as
-    // the text it is (`${JSON.stringify(v)}::jsonb`), not a JSON string of it.
-    const serializers = (su.options as unknown as { serializers: Record<string, unknown> })
-      .serializers;
-    serializers['114'] = serializers['3802'] = (v: unknown) => v;
-    admin = su as unknown as Sql;
+    admin = superuserClient(URL!) as unknown as Sql;
   });
   afterAll(async () => {
     await (admin as unknown as { end: () => Promise<void> }).end();
@@ -71,17 +65,24 @@ describe.skipIf(!URL)('migration scan_reader_lab_model', () => {
     await inRollback(admin, async (tx) => {
       const OLD_ROUTES = JSON.stringify([{ provider: 'openrouter', model: OLD }]);
       const SHIPPED = 'the shipped default: the text model behind the mistral-ocr PDF parser';
-      const owners = { plain: randomUUID(), edited: randomUUID(), both: randomUUID() };
+      const owners = {
+        plain: randomUUID(),
+        edited: randomUUID(),
+        renamed: randomUUID(),
+        both: randomUUID(),
+      };
       for (const id of Object.values(owners)) {
         await tx`insert into auth.users (id, email, password_hash, role)
                  values (${id}, ${`${id.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
       }
       const add = async (owner: string, name: string, routes: string, note: string) => {
         await tx`insert into curated_models (owner_id, pool, position, name, vendor, routes, note)
-                 values (${owner}, 'scan_reader', 0, ${name}, 'Meta', ${routes}::jsonb, ${note})`;
+                 values (${owner}, 'scan_reader', 0, ${name}, 'Meta', ${routes}::text::jsonb, ${note})`;
       };
       await add(owners.plain, 'Meta: Llama 3.1 8B Instruct', OLD_ROUTES, SHIPPED);
       await add(owners.edited, 'Meta: Llama 3.1 8B Instruct', OLD_ROUTES, 'my own pick');
+      // Renamed by hand, routes and note left alone: kept.
+      await add(owners.renamed, 'Llama, our cheap one', OLD_ROUTES, SHIPPED);
       await add(owners.both, 'Meta: Llama 3.1 8B Instruct', OLD_ROUTES, SHIPPED);
       await add(
         owners.both,
@@ -109,6 +110,14 @@ describe.skipIf(!URL)('migration scan_reader_lab_model', () => {
           vendor: 'Meta',
           routes: [{ provider: 'openrouter', model: OLD }],
           note: 'my own pick',
+        },
+      ]);
+      expect(await rows(owners.renamed)).toEqual([
+        {
+          name: 'Llama, our cheap one',
+          vendor: 'Meta',
+          routes: [{ provider: 'openrouter', model: OLD }],
+          note: SHIPPED,
         },
       ]);
       expect(await rows(owners.both)).toEqual([

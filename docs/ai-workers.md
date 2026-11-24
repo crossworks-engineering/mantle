@@ -719,8 +719,11 @@ parser also hands it the pictures it cut out of the page (at most 8; a
 text-only model gets none), to the same hosts; OpenRouter has no option to
 keep them back. A model that refuses after the parse still gives the page:
 `parsePdf` takes the parsed text from the error
-(`error.metadata.file_annotations`; the parser's fee is billed all the
-same). Until v0.712 the model was
+(`error.metadata.file_annotations`), logs one warn line (the status and the
+provider's error code only), and records the parser's fee, which is billed
+all the same. The error reports no cost, so the figure recorded is the list
+fee (`MISTRAL_OCR_PAGE_USD`, $0.002 a page; $0.0022 in the US region), not
+a reported one. Until v0.712 the model was
 `meta-llama/llama-3.1-8b-instruct`, which third-party hosts serve;
 migration 0397 moves a worker still on that id to the new one, and the
 Scan reader pool's template row with it (a model or a row picked or edited
