@@ -1,6 +1,6 @@
 /**
  * The grants panel's database rule as a second line (A8 fix round 1,
- * finding 8). The panel (server/web/lib/grants.ts) decides each change in
+ * finding 8). The panel (@mantle/content grants.ts) decides each change in
  * TypeScript first (mayManage, isMod), then makes it through the definers
  * (mantle_grant_change, mantle_grant_move_home: 0279) under the item's heads
  * (withHeads, so withSystemTx). Here the TypeScript decision is made wrong

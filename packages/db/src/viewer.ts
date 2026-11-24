@@ -899,7 +899,7 @@ export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTx
  *    no, or rows its scope reads.
  *  - `page-refold`: after a grant change, the derived text of every page
  *    the change reaches is folded again, pages the caller may not read or
- *    edit included (lib/grants.ts): nothing goes back to the
+ *    edit included (@mantle/content grants.ts): nothing goes back to the
  *    caller.
  *  - `admin-area`: a tool of an Admin area (@mantle/tools admin-gate.ts:
  *    the brain's settings, assistants, connectors, keys) in the Admin

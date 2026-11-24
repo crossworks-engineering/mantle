@@ -5,7 +5,7 @@
  *  - Open or close a link: a user who may edit the item (a Moderator of its
  *    home workspace, or a user of a workspace whose grant has Write on); an
  *    app: home Moderators only. The same rule as the Grant Access panel's
- *    `mayLink` (server/web/lib/grants.ts).
+ *    `mayLink` (grants.ts).
  *  - Add an item to a served list: the item is named or embedded by the
  *    link's item (a page's, note's, task's or event's text, a drawing's
  *    images, and the images of a drawing the item embeds) or, for a folder
