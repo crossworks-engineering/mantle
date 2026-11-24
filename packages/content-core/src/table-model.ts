@@ -209,15 +209,25 @@ export function tableDocFromGrid(input: GridInput): TableDoc {
     name: c.name?.trim() || 'Column',
     type: COLUMN_TYPES.includes(c.type as ColumnType) ? (c.type as ColumnType) : 'text',
   }));
-  const rows: Row[] = input.rows.map((values) => {
-    const cells: Record<string, CellValue> = {};
-    columns.forEach((col, i) => {
-      const v = coerceCell(values[i] ?? null, storageType(col));
-      if (v !== null) cells[col.id] = v;
-    });
-    return { id: randomUUID(), cells };
-  });
+  const rows: Row[] = input.rows.map((values) => rowFromGrid(columns, values));
   return { columns, rows, aggregates: {}, views: [] };
+}
+
+/** One grid row as a table row, as tableDocFromGrid makes it: a stable id
+ *  (a random UUID unless the caller gives one), each cell coerced to its
+ *  column's type. A file database's rows read as
+ *  they come take this one at a time (packages/content file-database.ts). */
+export function rowFromGrid(
+  columns: readonly Column[],
+  values: readonly (string | number | boolean | null)[],
+  id: string = randomUUID(),
+): Row {
+  const cells: Record<string, CellValue> = {};
+  columns.forEach((col, i) => {
+    const v = coerceCell(values[i] ?? null, storageType(col));
+    if (v !== null) cells[col.id] = v;
+  });
+  return { id, cells };
 }
 
 /** Coerce an unknown/partial value into a well-formed TableDoc. Tolerant of

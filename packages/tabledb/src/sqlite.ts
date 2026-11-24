@@ -46,6 +46,12 @@ export type OpenOptions = {
   /** Default TRUE: reads/edits must never create. Only create/import/migration
    *  pass false (and they build into a temp path + rename anyway). */
   mustExist?: boolean;
+  /** A build file nobody else opens (a bulk write, writeDocFileSliced): no
+   *  journal and no fsync while it fills, and a page cache of 64 MB (the
+   *  default is 2 MB). Never WAL: there is no -wal to checkpoint at its end,
+   *  which for a write of a GB would be one long synchronous step. A throw
+   *  removes the file, so nothing needs a rollback. */
+  bulk?: boolean;
 };
 
 export function openTableFile(file: string, opts: OpenOptions = {}): SqliteDb {
@@ -56,6 +62,11 @@ export function openTableFile(file: string, opts: OpenOptions = {}): SqliteDb {
   const db = readOnly ? new Db(file, { readOnly: true }) : new Db(file);
   if (readOnly) {
     db.exec('PRAGMA busy_timeout = 5000');
+  } else if (opts.bulk) {
+    db.exec('PRAGMA journal_mode = OFF');
+    db.exec('PRAGMA synchronous = OFF');
+    db.exec('PRAGMA cache_size = -65536');
+    db.exec('PRAGMA foreign_keys = ON');
   } else {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA busy_timeout = 5000');

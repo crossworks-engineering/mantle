@@ -42,6 +42,8 @@ import {
   openTableFile,
   patchDocFile,
   writeDocFile,
+  writeDocFileSliced,
+  type SlicedTabDoc,
 } from '@mantle/tabledb/write';
 import {
   resolveStoragePath,
@@ -239,25 +241,42 @@ export function stageDoc(rel: string, doc: DocArg, meta: MetaArg): { abs: string
  * its text index, and left in DELETE journal mode as nobody writes it again. No
  * row points at it and no flip follows: the file's id and sha256 are its name.
  */
-export function writeFileDatabaseDoc(
+export function writeFileDatabaseDoc(abs: string, doc: DocArg, meta: FileDatabaseMeta): WriteRes {
+  return writeDocFile(abs, doc, fileDatabaseWriteMeta(meta));
+}
+
+/**
+ * {@link writeFileDatabaseDoc} of a build (packages/content's
+ * writeRowsOrWord), in slices with turns of the event loop between them, a
+ * tab's rows in memory or read as they come (a long read's spilled rows),
+ * so the write never stalls the worker (tabledb writeDocFileSliced).
+ */
+export function writeFileDatabaseSliced(
   abs: string,
-  doc: DocArg,
-  meta: {
-    fileId: string;
-    ownerId: string;
-    description?: string;
-    ftsSkipColumns?: readonly string[];
-    /** Which pipeline wrote it: four more `_meta` keys. */
-    stamp?: PipelineStamp;
-    /** A conditional write: refused (ConflictError) when the file is not
-     *  the one the caller read (null: there was none). */
-    since?: { ino: number; size: number; mtimeMs: number } | null;
-    /** A Reader that read the file in page windows: the pages its windows
-     *  read and the pages of the file, as `_meta` `pages_read` and
-     *  `pages_total` (docs/pipelines.md, "Page windows"). */
-    pages?: { read: number; total: number };
-  },
-): WriteRes {
+  doc: { tabs: SlicedTabDoc[] },
+  meta: FileDatabaseMeta,
+): Promise<WriteRes> {
+  return writeDocFileSliced(abs, doc, fileDatabaseWriteMeta(meta));
+}
+
+/** What a file database's write is told. */
+type FileDatabaseMeta = {
+  fileId: string;
+  ownerId: string;
+  description?: string;
+  ftsSkipColumns?: readonly string[];
+  /** Which pipeline wrote it: four more `_meta` keys. */
+  stamp?: PipelineStamp;
+  /** A conditional write: refused (ConflictError) when the file is not
+   *  the one the caller read (null: there was none). */
+  since?: { ino: number; size: number; mtimeMs: number } | null;
+  /** A Reader that read the file in page windows: the pages its windows
+   *  read and the pages of the file, as `_meta` `pages_read` and
+   *  `pages_total` (docs/pipelines.md, "Page windows"). */
+  pages?: { read: number; total: number };
+};
+
+function fileDatabaseWriteMeta(meta: FileDatabaseMeta): MetaArg {
   const extraMeta: Record<string, string> = {
     ...(meta.description ? { description: meta.description } : {}),
     ...meta.stamp,
@@ -265,7 +284,7 @@ export function writeFileDatabaseDoc(
       ? { pages_read: String(meta.pages.read), pages_total: String(meta.pages.total) }
       : {}),
   };
-  return writeDocFile(abs, doc, {
+  return {
     nodeId: meta.fileId,
     ownerId: meta.ownerId,
     fts: true,
@@ -273,7 +292,7 @@ export function writeFileDatabaseDoc(
     ...(meta.ftsSkipColumns ? { ftsSkipColumns: meta.ftsSkipColumns } : {}),
     ...(Object.keys(extraMeta).length > 0 ? { extraMeta } : {}),
     ...(meta.since !== undefined ? { since: meta.since } : {}),
-  });
+  };
 }
 
 /**

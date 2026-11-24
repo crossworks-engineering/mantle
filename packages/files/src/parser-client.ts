@@ -45,11 +45,14 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
+import { mkdir, open, rm } from 'node:fs/promises';
+import path from 'node:path';
 import { env, envNum } from '@mantle/config';
 import { errorMessage, timeoutSignal, withRetry } from '@mantle/std';
 import {
   META_HEADER,
   OPTS_LENGTH_HEADER,
+  ROWS_LENGTH_HEADER,
   PARSER_ANSWER_MAX_BYTES,
   PARSER_COUNTED_CODES,
   PARSER_DEFAULT_PORT,
@@ -324,7 +327,78 @@ async function readCapped(res: Response, maxBytes: number): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-type Answer = { body: Buffer; headers: Headers };
+/** `rows`: the file the answer's spilled rows were written to (a
+ *  `pipelineRun` with a rows file, readWithRows). */
+type Answer = { body: Buffer; headers: Headers; rows?: string };
+
+/**
+ * An answer whose JSON is followed by a step's spilled rows
+ * (ROWS_LENGTH_HEADER): the JSON into memory, under the cap, and the rows
+ * straight to the file `rowsTo`, a chunk at a time, so the rows are never
+ * held. A short or long body is `crashed`, as in readCapped. On any throw
+ * the file is removed.
+ */
+async function readWithRows(
+  res: Response,
+  maxJsonBytes: number,
+  rowsBytes: number,
+  rowsTo: string,
+): Promise<Answer> {
+  const declared = Number(res.headers.get('content-length') ?? NaN);
+  const jsonBytes = declared - rowsBytes;
+  const short = () =>
+    new ParserError('crashed', 'the parser sent another length than it declared', {
+      retryable: false,
+      terminal: false,
+    });
+  if (
+    !Number.isFinite(declared) ||
+    !Number.isInteger(rowsBytes) ||
+    rowsBytes < 0 ||
+    jsonBytes < 0
+  ) {
+    await res.body?.cancel().catch(() => {});
+    throw short();
+  }
+  if (jsonBytes > maxJsonBytes) {
+    await res.body?.cancel().catch(() => {});
+    throw new AnswerTooLarge('too_large', `the parser's answer was past ${maxJsonBytes} bytes`, {
+      retryable: false,
+      terminal: false,
+    });
+  }
+  const json = Buffer.allocUnsafe(jsonBytes);
+  const reader = res.body?.getReader();
+  await mkdir(path.dirname(rowsTo), { recursive: true });
+  const file = await open(rowsTo, 'w');
+  let at = 0;
+  try {
+    for (;;) {
+      const r = reader ? await reader.read() : { done: true as const, value: undefined };
+      if (r.done) break;
+      let chunk = Buffer.from(r.value.buffer, r.value.byteOffset, r.value.byteLength);
+      if (at + chunk.length > declared) throw short();
+      if (at < jsonBytes) {
+        const head = chunk.subarray(0, jsonBytes - at);
+        json.set(head, at);
+        at += head.length;
+        chunk = chunk.subarray(head.length);
+      }
+      if (chunk.length > 0) {
+        await file.write(chunk);
+        at += chunk.length;
+      }
+    }
+    if (at !== declared) throw short();
+    await file.close();
+    return { body: json, headers: res.headers, rows: rowsTo };
+  } catch (err) {
+    await reader?.cancel().catch(() => {});
+    await file.close().catch(() => {});
+    await rm(rowsTo, { force: true }).catch(() => {});
+    throw err;
+  }
+}
 
 /** Busy answers are retried this many times, after these waits. */
 const BUSY_WAITS_MS = [2_000, 5_000, 10_000];
@@ -342,6 +416,7 @@ async function attempt(
   maxAnswerBytes: number,
   interactive: boolean,
   waitMs: number,
+  rowsTo?: string,
 ): Promise<Attempt> {
   const cfg = config();
   try {
@@ -358,6 +433,18 @@ async function attempt(
       signal: timeoutSignal(waitMs),
     } as RequestInit);
     if (res.ok) {
+      const rows = res.headers.get(ROWS_LENGTH_HEADER);
+      if (rows !== null) {
+        // Rows only for a caller that gave them a file (parserPipelineRun).
+        if (!rowsTo) {
+          await res.body?.cancel().catch(() => {});
+          throw new ParserError('failed', 'the parser sent spilled rows that were not asked for', {
+            retryable: false,
+            terminal: false,
+          });
+        }
+        return { ok: true, answer: await readWithRows(res, maxAnswerBytes, Number(rows), rowsTo) };
+      }
       return {
         ok: true,
         answer: { body: await readCapped(res, maxAnswerBytes), headers: res.headers },
@@ -399,6 +486,7 @@ async function exchange(
   maxAnswerBytes: number,
   keyPart?: string,
   keySha?: string,
+  rowsTo?: string,
 ): Promise<Answer> {
   const current = scope.getStore();
   const ledger = current?.failures ?? memoryLedger;
@@ -424,11 +512,14 @@ async function exchange(
   let result: Attempt;
   try {
     const waitMs = parserClientTimeoutMs(job, interactive);
-    result = await withRetry(() => attempt(job, bytes, head, maxAnswerBytes, interactive, waitMs), {
-      retries: busyWaits.length,
-      isFailure: (r) => !r.ok && r.code === 'busy',
-      delayMs: (retry) => busyWaits[retry - 1] ?? null,
-    });
+    result = await withRetry(
+      () => attempt(job, bytes, head, maxAnswerBytes, interactive, waitMs, rowsTo),
+      {
+        retries: busyWaits.length,
+        isFailure: (r) => !r.ok && r.code === 'busy',
+        delayMs: (retry) => busyWaits[retry - 1] ?? null,
+      },
+    );
   } finally {
     if (capped) release();
   }
@@ -646,6 +737,9 @@ export async function parserGrid(bytes: Buffer, ext: string): Promise<ParserGrid
 export type ParserPipelineStep = {
   result: import('./pipelines/contract').PipelineStepResult;
   pictures: ReadonlyMap<string, Buffer>;
+  /** The file the step's spilled rows were written to (`rowsTo`), when
+   *  its write names some. The caller removes it. */
+  rows?: string;
 };
 
 /**
@@ -658,6 +752,10 @@ export type ParserPipelineStep = {
  * Reader's job on the router's page facts, a new body on every read, counts
  * on its file as the job on the file's bytes does. A result that fails the
  * check is `failed`. Throws a ParserError.
+ *
+ * `rowsTo`: with `request.spill`, the file a step's spilled rows are
+ * written to (the write's `spilled`; the caller removes it). A run without
+ * it takes no rows file.
  */
 export async function parserPipelineRun(
   body: Buffer,
@@ -666,6 +764,7 @@ export async function parserPipelineRun(
     draft?: string;
   },
   request: import('./pipelines/contract').PipelineStepRequest,
+  rowsTo?: string,
 ): Promise<ParserPipelineStep> {
   const { id, version } = pipeline;
   // An own pipeline is read from the parser's mount by its id and version,
@@ -677,18 +776,29 @@ export async function parserPipelineRun(
       : pipeline.source === 'own'
         ? { id, version, request }
         : { id, request };
-  const answer = jsonOf(
-    await exchange(
-      'pipelineRun',
-      body,
-      named,
-      PARSER_ANSWER_MAX_BYTES,
-      // A window counts on its own (its first page), so one bad window
-      // never makes the next one terminal.
-      request.pageFrom !== undefined ? `${id}@${version}#p${request.pageFrom}` : `${id}@${version}`,
-      request.file?.sha256,
-    ),
+  const sent = await exchange(
+    'pipelineRun',
+    body,
+    named,
+    PARSER_ANSWER_MAX_BYTES,
+    // A window counts on its own (its first page), so one bad window
+    // never makes the next one terminal.
+    request.pageFrom !== undefined ? `${id}@${version}#p${request.pageFrom}` : `${id}@${version}`,
+    request.file?.sha256,
+    request.spill === true ? rowsTo : undefined,
   );
+  try {
+    return await pipelineStepOf(sent);
+  } catch (err) {
+    if (sent.rows) await rm(sent.rows, { force: true }).catch(() => {});
+    throw err;
+  }
+}
+
+/** The checked step of a `pipelineRun` answer, its pictures, and the file
+ *  of its spilled rows only for a write that names them. */
+async function pipelineStepOf(sent: Answer): Promise<ParserPipelineStep> {
+  const answer = jsonOf(sent);
   const { checkStepResult } = await import('./pipelines/step-check');
   const checked = checkStepResult(answer.result);
   if (!checked.ok) {
@@ -705,7 +815,15 @@ export async function parserPipelineRun(
       pictures.set(o.file, Buffer.from(o.bytes_base64, 'base64'));
     }
   }
-  return { result: checked.result, pictures };
+  const { writeSpills } = await import('./pipelines/contract');
+  const spills = writeSpills(checked.result.calls);
+  if (spills !== (sent.rows !== undefined)) {
+    throw new ParserError('failed', "the step's spilled rows and its write do not match", {
+      retryable: false,
+      terminal: false,
+    });
+  }
+  return { result: checked.result, pictures, ...(sent.rows ? { rows: sent.rows } : {}) };
 }
 
 // ── PDF ─────────────────────────────────────────────────────────────────────

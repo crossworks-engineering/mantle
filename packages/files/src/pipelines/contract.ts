@@ -8,6 +8,7 @@
  */
 import type { DwfRenderFn } from '../dwf-images';
 import type { EyeFn, RenderFn } from '../pdf-drawing';
+import type { SpilledTab } from '../sheet-spill';
 import type { ParsedSheet } from '../sheet-to-grid';
 import type { ExtractWeight } from '../slug';
 
@@ -281,7 +282,30 @@ export type PipelineStepRequest = {
   pageFrom?: number;
   pageTo?: number;
   pagesTotal?: number;
+  /** The core takes the rows of a long read from a file of the job's
+   *  folder (PIPELINE_ROWS_FILE, the write's `spilled`): a read of a
+   *  file's database only (packages/content/src/file-database.ts). Left
+   *  out: every row is in the write, and a long read keeps what memory
+   *  takes (the package `sheet`: MANTLE_FILE_DB_CSV_MAX_MB). */
+  spill?: boolean;
 };
+
+/** The file of a write's spilled rows, in the job's folder (the write's
+ *  `spilled`, ../sheet-spill.ts): its bytes follow the answer's JSON. */
+export const PIPELINE_ROWS_FILE = 'out.rows';
+
+/** Whether a step's calls hold a write that names spilled rows: the one
+ *  test of the job, the answer and the client. */
+export function writeSpills(
+  calls: readonly { call: string; tool?: string; input?: unknown }[] | undefined,
+): boolean {
+  return (calls ?? []).some(
+    (c) =>
+      c.call === 'tool' &&
+      c.tool === FILE_TABS_WRITE &&
+      (c.input as { spilled?: unknown } | undefined)?.spilled !== undefined,
+  );
+}
 
 /** The input of the one write call. In a windowed run (`needs.window`)
  *  each window's write is merged into one, in page order: a tab of a name
@@ -311,6 +335,12 @@ export type FileTabsWriteInput = {
   readCuts?: Readonly<
     Record<string, { what: string; read: number; total?: number; limit?: number }>
   >;
+  /** The tabs whose rows are in the rows file (PIPELINE_ROWS_FILE), not in
+   *  their `rows` (which is empty), with `request.spill` only: each by its
+   *  index in `tabs`, its rows in the file, and `keep`, the place of each
+   *  of its columns in the raw rows of the file (../sheet-spill.ts has the
+   *  file's lines; the core types each cell by its column, gridRowOfLine). */
+  spilled?: readonly SpilledTab[];
 };
 
 /** One picture `job.sheetPictures` cuts: a file name in the job's folder

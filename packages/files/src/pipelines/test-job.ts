@@ -16,9 +16,11 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { errorMessage } from '@mantle/std';
-import { OPTS_LENGTH_HEADER, PARSER_ROUTES } from '../parser-wire';
+import { OPTS_LENGTH_HEADER, PARSER_ROUTES, ROWS_LENGTH_HEADER } from '../parser-wire';
 import {
   PICTURE_WORKERS,
+  PIPELINE_ROWS_FILE,
+  writeSpills,
   VISION_WORKER,
   type PipelineStepRequest,
   type PipelineStepResult,
@@ -109,6 +111,23 @@ function picturesOf(
   return out;
 }
 
+/** The answer of a step as the job sends it (server/parser/src/answer.ts):
+ *  the JSON, then the rows file when the write names spilled rows, with
+ *  their length in ROWS_LENGTH_HEADER. */
+function answerOf(result: PipelineStepResult, dir: string): Response {
+  const json = Buffer.from(JSON.stringify({ ok: true, result, pictures: picturesOf(dir, result) }));
+  const spilled = writeSpills(result.calls);
+  const rowsAt = path.join(dir, PIPELINE_ROWS_FILE);
+  const rows = spilled && existsSync(rowsAt) ? readFileSync(rowsAt) : null;
+  return new Response(rows ? Buffer.concat([json, rows]) : json, {
+    headers: {
+      'content-type': 'application/json',
+      'content-length': String(json.length + (rows?.length ?? 0)),
+      ...(rows ? { [ROWS_LENGTH_HEADER]: String(rows.length) } : {}),
+    },
+  });
+}
+
 /** The answer of the parser job `pipelineRun` to one request (the `init` a
  *  faked fetch gets), from the real step run in this process. */
 export async function pipelineRunAnswer(
@@ -128,7 +147,7 @@ export async function pipelineRunAnswer(
   try {
     const { step } = await load();
     const result = await step(opts.request, inProcessStepJob(all.subarray(n), dir, helpers));
-    return Response.json({ ok: true, result, pictures: picturesOf(dir, result) });
+    return answerOf(result, dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -171,7 +190,7 @@ export function inProcessPipelineFetch(
         opts.request,
         inProcessStepJob(all.subarray(headLength), dir, helpers),
       );
-      return Response.json({ ok: true, result, pictures: picturesOf(dir, result) });
+      return answerOf(result, dir);
     } catch (err) {
       // A fake helper may throw the job's typed failure (a `code`).
       const code = (err as { code?: unknown } | null)?.code;

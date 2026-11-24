@@ -19,6 +19,7 @@ export const PIPELINE_KIT_FILES: readonly string[] = [
   'sheet-read.ts',
   'sheet-grid.ts',
   'sheet-to-grid.ts',
+  'sheet-spill.ts',
   'legacy-sheet.ts',
   // The PDF page reader.
   'pdf-open.ts',

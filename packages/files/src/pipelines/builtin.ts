@@ -133,9 +133,11 @@ export const BUILTIN_PIPELINES = [
     version: '1.0.0',
     match: { ext: ['xlsx', 'xls', 'csv'] },
     produces: {},
-    // The deadline the old grid job had (PARSER_JOB_TIMEOUT_MS.grid). A CSV,
-    // read in the brain's process before the move, gets the same.
-    needs: { weight: 'light', timeMs: 120_000 },
+    // The job's whole time (PARSER_JOB_TIMEOUT_MS.pipelineRun): a file
+    // database read keeps every row of a long workbook (the rows spill to a
+    // file), about 100 s at 1.3 GB of sheet XML on the bench. A read that
+    // reaches the deadline keeps the rows it read, with the cut said.
+    needs: { weight: 'light', timeMs: 240_000 },
   }),
   pkg({
     id: 'plan-mspdi',

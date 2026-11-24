@@ -56,36 +56,40 @@ function isBlank(v: unknown): boolean {
   return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
 }
 
-/** Decide a column's type from every raw cell value, as a value that does not
- *  fit its column's type is lost when it is stored (normalize). It stops at
- *  the first value that rules out every type, so a text column costs little. */
-function inferType(values: unknown[]): InferredColumnType {
-  let seen = false;
-  let allNumber = true;
-  let allBool = true;
-  let allDate = true;
-  let anyTime = false;
-  for (const v of values) {
-    if (isBlank(v)) continue;
-    seen = true;
+/** A column's type, decided as its raw cells come in (GridFold): a value
+ *  that does not fit its column's type is lost when it is stored
+ *  (normalize). It stops looking at the first value that rules out every
+ *  type, so a text column costs little. */
+class TypeFold {
+  private seen = false;
+  private allNumber = true;
+  private allBool = true;
+  private allDate = true;
+  private anyTime = false;
+  private done = false;
+  add(v: unknown): void {
+    if (this.done || isBlank(v)) return;
+    this.seen = true;
     const isNum =
       typeof v === 'number' ||
       (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.replace(/[, ]/g, ''))));
     const isBool = typeof v === 'boolean';
     const isDate = v instanceof Date && !Number.isNaN(v.getTime());
-    if (!isNum) allNumber = false;
-    if (!isBool) allBool = false;
-    if (!isDate) allDate = false;
+    if (!isNum) this.allNumber = false;
+    if (!isBool) this.allBool = false;
+    if (!isDate) this.allDate = false;
     // Use UTC: a pure date serial deserialises to UTC midnight regardless of
     // the host timezone, so a local-time check would misread it as a datetime.
-    if (isDate && (v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0)) anyTime = true;
-    if (!allNumber && !allBool && !allDate) break;
+    if (isDate && (v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0)) this.anyTime = true;
+    if (!this.allNumber && !this.allBool && !this.allDate) this.done = true;
   }
-  if (!seen) return 'text';
-  if (allBool) return 'checkbox';
-  if (allDate) return anyTime ? 'datetime' : 'date';
-  if (allNumber) return 'number';
-  return 'text';
+  type(): InferredColumnType {
+    if (!this.seen) return 'text';
+    if (this.allBool) return 'checkbox';
+    if (this.allDate) return this.anyTime ? 'datetime' : 'date';
+    if (this.allNumber) return 'number';
+    return 'text';
+  }
 }
 
 /** Normalise a raw cell into the storage value for its inferred type. */
@@ -103,39 +107,111 @@ function normalize(v: unknown, type: InferredColumnType): string | number | bool
   return String(v);
 }
 
+/** The columns of a sheet read as a fold (GridFold.shape): each column's
+ *  name and type, and `keep`, the place of each in the raw rows. */
+export type GridShape = { columns: ParsedColumn[]; keep: number[] };
+
+/**
+ * One sheet's rows to its typed grid, a row at a time: the rule of
+ * parseSheet, which reads through this, and of a file database read that
+ * writes its rows to a file as they come (./sheet-spill.ts), so a sheet of
+ * millions of rows is never held. A fully empty row is dropped; the first
+ * row that is not is the header. A column is kept when its header or a body
+ * cell is not blank (a stray formatted cell out at column 16k would
+ * otherwise give thousands of empty `Column N`s), in source order, a
+ * placeholder name by its ORIGINAL index. A column's type is decided from
+ * every body cell (TypeFold).
+ */
+export class GridFold {
+  private header: readonly unknown[] | null = null;
+  private width = 0;
+  private filled: boolean[] = [];
+  private types: TypeFold[] = [];
+  /** The body rows folded in. */
+  rows = 0;
+
+  /** What this raw row would be: `blank` (dropped), `header` (the first
+   *  row that is not blank) or `body`. Nothing is folded in. */
+  kindOf(cells: readonly unknown[]): 'blank' | 'header' | 'body' {
+    if (!cells.some((c) => !isBlank(c))) return 'blank';
+    return this.header ? 'body' : 'header';
+  }
+
+  /** Fold in one raw row (its kind, as {@link kindOf} says). */
+  add(cells: readonly unknown[]): 'blank' | 'header' | 'body' {
+    if (!cells.some((c) => !isBlank(c))) return 'blank';
+    this.width = Math.max(this.width, cells.length);
+    if (!this.header) {
+      this.header = cells;
+      return 'header';
+    }
+    this.rows += 1;
+    for (let i = 0; i < cells.length; i++) {
+      const v = cells[i];
+      if (isBlank(v)) continue;
+      this.filled[i] = true;
+      (this.types[i] ??= new TypeFold()).add(v);
+    }
+    return 'body';
+  }
+
+  /** The columns, or null for a sheet with nothing tabular. */
+  shape(): GridShape | null {
+    const header = this.header;
+    if (!header) return null;
+    const keep: number[] = [];
+    for (let i = 0; i < this.width; i++) {
+      if (!isBlank(header[i]) || this.filled[i]) keep.push(i);
+    }
+    if (keep.length === 0) return null;
+    return {
+      keep,
+      columns: keep.map((i) => ({
+        name: isBlank(header[i]) ? `Column ${i + 1}` : String(header[i]).trim(),
+        type: this.types[i]?.type() ?? 'text',
+      })),
+    };
+  }
+}
+
+/** One raw body row as the grid holds it: the kept cells, each typed. */
+export function gridRowOf(
+  shape: GridShape,
+  cells: readonly unknown[],
+): (string | number | boolean | null)[] {
+  return shape.keep.map((i, k) => normalize(cells[i], shape.columns[k]!.type));
+}
+
+/** {@link gridRowOf} of a row read back from a file of rows (JSON Lines,
+ *  ./sheet-spill.ts), where a Date was written as its ISO text: in a date
+ *  or datetime column every cell was a Date (TypeFold), so its text is one
+ *  again, and the row is typed exactly as the row in hand would be. In any
+ *  other column a Date is its ISO text either way (normalize). */
+export function gridRowOfLine(
+  shape: GridShape,
+  cells: readonly unknown[],
+): (string | number | boolean | null)[] {
+  return shape.keep.map((i, k) => {
+    const type = shape.columns[k]!.type;
+    const v = cells[i];
+    return normalize(
+      (type === 'date' || type === 'datetime') && typeof v === 'string' && !isBlank(v)
+        ? new Date(v)
+        : v,
+      type,
+    );
+  });
+}
+
 /** One sheet's rows (array of arrays, header first) → typed grids. Shared by
  *  the delimited-text read here and the workbook read (./sheet-grid.ts). */
 export function parseSheet(name: string, rowsAoA: unknown[][]): ParsedSheet[] {
-  // Drop fully-empty rows; the first non-empty row is the header.
-  const nonEmpty = rowsAoA.filter((r) => r.some((c) => !isBlank(c)));
-  if (nonEmpty.length === 0) return [];
-
-  const headerRow = nonEmpty[0]!;
-  const width = nonEmpty.reduce((w, r) => Math.max(w, r.length), headerRow.length);
-  const bodyRaw = nonEmpty.slice(1);
-
-  // Keep only columns that carry signal: a non-blank header OR at least one
-  // non-blank body cell. A single stray formatted cell out at column 16k would
-  // otherwise set `width` and balloon the grid with thousands of empty
-  // `Column N`s (real cause of degenerate checklist imports). Columns are kept
-  // in source order; placeholder names use the ORIGINAL index so they still map
-  // to where they sat in the sheet.
-  const keep: number[] = [];
-  for (let i = 0; i < width; i++) {
-    const headerBlank = isBlank(headerRow[i]);
-    const bodyBlank = bodyRaw.every((r) => isBlank(r[i]));
-    if (!headerBlank || !bodyBlank) keep.push(i);
-  }
-  if (keep.length === 0) return [];
-
-  const columns: ParsedColumn[] = keep.map((i) => ({
-    name: isBlank(headerRow[i]) ? `Column ${i + 1}` : String(headerRow[i]).trim(),
-    type: inferType(bodyRaw.map((r) => r[i])),
-  }));
-
-  const allRows = bodyRaw.map((r) => keep.map((i, k) => normalize(r[i], columns[k]!.type)));
-
-  return [{ name, columns, rows: allRows }];
+  const fold = new GridFold();
+  const body: unknown[][] = [];
+  for (const r of rowsAoA) if (fold.add(r) === 'body') body.push(r);
+  const shape = fold.shape();
+  if (!shape) return [];
+  return [{ name, columns: shape.columns, rows: body.map((r) => gridRowOf(shape, r)) }];
 }
 
 // ── Pasted tabular TEXT → grid ───────────────────────────────────────────────
@@ -184,17 +260,17 @@ function markdownTableToAoa(text: string): string[][] {
  * inside quotes. SheetJS used to cover this; fast-csv is the maintained,
  * purpose-built replacement.
  *
- * Values come back as strings — no coercion here on purpose. `inferType` /
+ * Values come back as strings — no coercion here on purpose. `TypeFold` /
  * `normalize` below do the typing for every source alike, so a CSV column and
  * a workbook column are judged by the same rules.
  */
 function readDelimited(
   source: string | Buffer,
   delimiter: string,
-  keep?: RowKeeper,
-): Promise<string[][]> {
+  onRow: (row: string[]) => boolean | void,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const rows: string[][] = [];
+    let stopped = false;
     const csv = parseCsvString({
       delimiter,
       headers: false,
@@ -202,10 +278,16 @@ function readDelimited(
       discardUnmappedColumns: false,
     })
       .on('data', (row: string[]) => {
-        if (!keep || keep.take(row)) rows.push(row);
+        if (stopped || onRow(row) !== false) return;
+        // The reader asked to stop: the rest of the text is not read.
+        stopped = true;
+        csv.destroy();
+        resolve();
       })
-      .on('error', reject)
-      .on('end', () => resolve(rows));
+      .on('error', (err) => {
+        if (!stopped) reject(err);
+      })
+      .on('end', () => resolve());
     if (typeof source === 'string') {
       csv.end(source);
       return;
@@ -226,7 +308,12 @@ const DELIMITED_SLICE_BYTES = 4 * 1024 * 1024;
 /** The cut a {@link RowKeeper} says on the file (./read-cut.ts, docs/files.md
  *  "Read in part"): the rows kept of all the rows, and the limit that cut. */
 type RowCutValue = { what: 'rows'; read: number; total: number; limit: number; atLeast?: true };
-export type RowCut = { database_rows?: RowCutValue; database_size?: RowCutValue };
+export type RowCut = {
+  database_rows?: RowCutValue;
+  database_size?: RowCutValue;
+  /** The read stopped at the step's deadline (./sheet-spill.ts): no limit. */
+  database_time?: Omit<RowCutValue, 'limit'>;
+};
 
 /**
  * The rows a file database read keeps (the package `sheet`'s step; the
@@ -321,7 +408,7 @@ export function fileDbRowKeeper(): RowKeeper {
  *  drawing's label counts), or null. */
 export function databaseCutOf(cuts: Readonly<Record<string, unknown>> | undefined): RowCut | null {
   const out: RowCut = {};
-  for (const key of ['database_rows', 'database_size'] as const) {
+  for (const key of ['database_rows', 'database_size', 'database_time'] as const) {
     if (cuts?.[key]) out[key] = cuts[key] as RowCutValue;
   }
   return Object.keys(out).length > 0 ? out : null;
@@ -333,6 +420,21 @@ export async function parseDelimited(
   source: string | Buffer,
   keep?: RowKeeper,
 ): Promise<ParsedSheet[]> {
+  const rows: string[][] = [];
+  await eachDelimitedRow(source, (row) => {
+    if (!keep || keep.take(row)) rows.push(row);
+  });
+  return rows.length > 0 ? parseSheet('Sheet1', rows) : [];
+}
+
+/** Each row of delimited text, as the CSV reader gives it (strings), read
+ *  as a stream: the one read of parseDelimited and of a file database read
+ *  that writes its rows to a file (./sheet-grid.ts). `onRow` returns false
+ *  to stop the read. */
+export async function eachDelimitedRow(
+  source: string | Buffer,
+  onRow: (row: string[]) => boolean | void,
+): Promise<void> {
   // A string is trimmed (which drops a BOM too); bytes lose a UTF-8 BOM,
   // and blank lines are skipped by the reader (ignoreEmpty).
   const t =
@@ -341,14 +443,13 @@ export async function parseDelimited(
       : source.length >= 3 && source[0] === 0xef && source[1] === 0xbb && source[2] === 0xbf
         ? source.subarray(3)
         : source;
-  if (t.length === 0) return [];
+  if (t.length === 0) return;
   // Sniff on the FIRST line only: a tab anywhere later in a comma-separated
   // file (inside a quoted note, say) must not flip the whole parse.
   const head = typeof t === 'string' ? t : t.toString('utf-8', 0, Math.min(t.length, 65_536));
   const nl = head.indexOf('\n');
   const firstLine = nl === -1 ? head : head.slice(0, nl);
-  const delimiter = firstLine.includes('\t') ? '\t' : ',';
-  return parseSheet('Sheet1', await readDelimited(t, delimiter, keep));
+  await readDelimited(t, firstLine.includes('\t') ? '\t' : ',', onRow);
 }
 
 /**

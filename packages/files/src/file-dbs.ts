@@ -95,6 +95,29 @@ export function fileDbPaths(
   return { sqlite: `${base}.sqlite`, none: `${base}.none` };
 }
 
+/**
+ * A new file for the spilled rows of one read of `fileId`'s database (a
+ * long sheet, ./sheet-spill.ts), beside the databases: on the same disk as
+ * the build it fills, and named as a build (`.build-`), so a write that
+ * died leaves residue the orphans sweep takes past its hour, as a build's.
+ * The caller removes it after the write. Null when the id is not one.
+ */
+export function fileDbRowsPath(fileId: string): string | null {
+  if (!SAFE_ID.test(fileId)) return null;
+  return path.join(fileDbsDir(), `${fileId}.rows.build-${process.pid}-${randomUUID().slice(0, 8)}`);
+}
+
+/** Remove a rows file of fileDbRowsPath, if it is there. Never throws: a
+ *  file that cannot be removed is residue the orphans sweep takes, and is
+ *  logged, so the read and its write go on. */
+export async function removeFileDbRows(abs: string): Promise<void> {
+  try {
+    await fs.rm(abs, { force: true });
+  } catch (err) {
+    log('file-dbs').warn(`a rows file stays for the sweep: ${errorMessage(err)}`);
+  }
+}
+
 async function exists(abs: string): Promise<boolean> {
   try {
     await fs.access(abs);

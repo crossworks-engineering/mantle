@@ -40,6 +40,7 @@ import {
   isSpreadsheetTitle,
 } from '@mantle/content';
 import { filePagesOf, pageHeading } from '@mantle/content/page-passages';
+import { fileDbSqlitePath } from '@mantle/files';
 import { AGENT_TEXT_HEADING, agentTextNow } from './agent-text';
 import { EntityMention } from './entities';
 import { errorMessage } from '@mantle/std';
@@ -343,7 +344,10 @@ export async function writeRetrievalChunks(
       const pieces = clampPieces(
         tableProfilePieces ??
           (gridProfile
-            ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
+            ? chunkSpreadsheetProfile(rawBody, {
+                fileTitle: node.title,
+                ...(await databaseRowsOf(node)),
+              })
             : [...body, ...(agentText ? chunkDocText(`${AGENT_TEXT_HEADING}\n${agentText}`) : [])]),
       );
       if (pieces.length === 0) {
@@ -429,4 +433,24 @@ export async function writeRetrievalChunks(
       h.setOutput({ chunks: pieces.length, windows: windows.length });
     },
   );
+}
+
+/** The rows of each tab of a file's database, by tab name, for its grid
+ *  profile (chunkSpreadsheetProfile): a long sheet's text is read in part,
+ *  its database keeps every row, so its memory says how many there are.
+ *  Nothing when the file has no database or it cannot be read. */
+async function databaseRowsOf(
+  node: typeof nodes.$inferSelect,
+): Promise<{ databaseRows?: ReadonlyMap<string, number> }> {
+  if (node.type !== 'file') return {};
+  try {
+    const abs = await fileDbSqlitePath(
+      node.id,
+      (node.data as Record<string, unknown> | null)?.sha256,
+    );
+    if (!abs) return {};
+    return { databaseRows: new Map(describeWorkbook(abs).map((t) => [t.name, t.rowCount])) };
+  } catch {
+    return {};
+  }
 }

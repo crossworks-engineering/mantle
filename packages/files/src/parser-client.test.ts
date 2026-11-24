@@ -17,6 +17,9 @@
  *    legitimate time for the job.
  */
 import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -56,7 +59,8 @@ type Reply =
   | { code: ParserErrorCode; final?: boolean }
   | { text: string; cuts?: Record<string, unknown> }
   | { status: number }
-  | { health: Record<string, unknown> };
+  | { health: Record<string, unknown> }
+  | { raw: { body: Buffer; headers: Record<string, string> } };
 let reply: Reply = { text: '' };
 const hits: string[] = [];
 /** The options each request carried, as sent. */
@@ -79,7 +83,9 @@ beforeAll(async () => {
       auths.push(req.headers.authorization ?? '');
       priorities.push(String(req.headers['x-parser-priority'] ?? ''));
       if (req.url === '/images' && holdImages) await holdImages;
-      if ('health' in reply) {
+      if ('raw' in reply) {
+        res.writeHead(200, reply.raw.headers).end(reply.raw.body);
+      } else if ('health' in reply) {
         res
           .writeHead(200, { 'content-type': 'application/json' })
           .end(JSON.stringify({ ok: true, versions: {}, running: 0, queued: 0, ...reply.health }));
@@ -506,5 +512,80 @@ describe('the title block box on the wire (parserPdfDrawing)', () => {
       '{"title_block_width_mm":250}',
       '{"title_block_width_mm":250,"title_block_height_mm":90}',
     ]);
+  });
+});
+
+describe('a pipelineRun answer with spilled rows (ROWS_LENGTH_HEADER)', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'parser-client-rows-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const request = { api: PIPELINE_API, step: 1, options: {}, spill: true };
+  const step = (spilled: boolean) => ({
+    ok: true,
+    result: {
+      status: 'ok',
+      calls: [
+        {
+          call: 'tool',
+          tool: 'file_tabs_write',
+          input: {
+            tabs: [{ name: 'S', columns: [{ name: 'A', type: 'text' }], rows: [] }],
+            ...(spilled ? { spilled: [{ tab: 0, rows: 2, keep: [0] }] } : {}),
+          },
+        },
+      ],
+    },
+    pictures: [],
+  });
+  const answer = (json: unknown, rows: string, declared?: number) => {
+    const head = Buffer.from(JSON.stringify(json));
+    const body = Buffer.concat([head, Buffer.from(rows)]);
+    reply = {
+      raw: {
+        body,
+        headers: {
+          'content-type': 'application/json',
+          'content-length': String(body.length),
+          'x-parser-rows-length': String(declared ?? Buffer.byteLength(rows)),
+        },
+      },
+    };
+  };
+  const rowsText = '{"tab":0}\n["a"]\n["b"]\n';
+
+  it('the JSON to memory, the rows to the file the caller named', async () => {
+    answer(step(true), rowsText);
+    const to = path.join(dir, 'a.rows');
+    const out = await parserPipelineRun(doc(), { id: 'sheet', version: '1.0.0' }, request, to);
+    expect(out.rows).toBe(to);
+    expect(readFileSync(to, 'utf8')).toBe(rowsText);
+    expect(out.result.status).toBe('ok');
+  });
+
+  it('rows nobody asked for: failed, and no file', async () => {
+    answer(step(true), rowsText);
+    const err = await failure(
+      parserPipelineRun(doc(), { id: 'sheet', version: '1.0.0' }, { ...request, spill: false }),
+    );
+    expect(err.code).toBe('failed');
+  });
+
+  it('a write that names no spilled rows, with rows sent: failed, and the file removed', async () => {
+    answer(step(false), rowsText);
+    const to = path.join(dir, 'b.rows');
+    const err = await failure(
+      parserPipelineRun(doc(), { id: 'sheet', version: '1.0.0' }, request, to),
+    );
+    expect(err.code).toBe('failed');
+    expect(existsSync(to)).toBe(false);
+  });
+
+  it('a rows length past the body: crashed, and the file removed', async () => {
+    answer(step(true), rowsText, 10_000);
+    const to = path.join(dir, 'c.rows');
+    const err = await failure(
+      parserPipelineRun(doc(), { id: 'sheet', version: '1.0.0' }, request, to),
+    );
+    expect(err.code).toBe('crashed');
+    expect(existsSync(to)).toBe(false);
   });
 });

@@ -164,7 +164,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `MANTLE_EXTRACT_SWEEP_MS` | 120000 | above 0 | periodic sweep period, ms |
 | `MANTLE_TABLE_MIGRATE_SWEEP_MS` | 300000 | above 0 | table migration sweep period, ms |
 | `MANTLE_MAX_AUTO_TABLE_TABLES` | 20 | above 0 | most tables one auto-table pass makes |
-| `MANTLE_FILE_DB_CSV_MAX_MB` | 32 | above 0 | most cell text a file database read keeps, MB (the `sheet` Reader: CSV and workbooks): past it the rows are counted, not kept, the cut is said on the file (`database_size`), and the upload makes no Table of the file. The parser gets the same value. Of the by-hand imports, only the import to a new Table (the Tables screen) refuses a .csv past it |
+| `MANTLE_FILE_DB_CSV_MAX_MB` | 32 | above 0 | most cell text a sheet read keeps in memory, MB (the `sheet` Reader: CSV and workbooks). A read for a file's database past it (a CSV past it, a workbook past 32 MB of sheet XML) writes its rows to a file as it reads, and the database keeps every row: the limits are then `TABLE_IMPORT_MAX_ROWS`, the room of the parser's scratch space (`PARSER_TMP_SIZE`) and the step's 240 s, each cut said on the file (`database_rows`, `database_size`, `database_time`). A read in memory (a pipeline test, a compare) past it counts the rest, not kept (`database_size`). The upload makes no Table of such a read. The parser gets the same value. Of the by-hand imports, only the import to a new Table (the Tables screen) refuses a .csv past it |
 | `DWF_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWF sheet render resolution |
 | `DWG_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWG render resolution |
 | `MANTLE_RUNNER_CONCURRENCY` | 8 | whole, above 0 | in-flight runs on RUNNER_QUEUE |

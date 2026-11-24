@@ -104,7 +104,7 @@ export const ENV_NUMBERS = {
   MANTLE_FILE_DB_CSV_MAX_MB: {
     default: 32,
     positive: true,
-    doc: "most cell text a file database read keeps, MB (the `sheet` Reader: CSV and workbooks; a cell counts its text plus 3): past it the rows are counted, not kept, the cut is said on the file (`database_size`), and the upload makes no Table of the file. It bounds the parser job's memory and answer (a 55 MB CSV read whole took about 2 GB) and the synchronous SQLite write in the api. Of the by-hand imports, only the import to a new Table (the Tables screen) refuses a .csv past it; the import into an existing Table and `table_from_file` do not check it (trusted logins, accepted risk)",
+    doc: "most cell text a sheet read keeps in memory, MB (the `sheet` Reader: CSV and workbooks; a cell counts its text plus 3). A read for a file's database past it (a CSV past it, a workbook past 32 MB of sheet XML) writes its rows to a file as it reads, and the database keeps every row, to TABLE_IMPORT_MAX_ROWS, the room of the parser's scratch space and the step's time, each cut said on the file (`database_rows`, `database_size`, `database_time`). A read in memory (a pipeline test, a compare) past it counts the rest, not kept (`database_size`). The upload makes no Table of such a read. It bounds the parser job's memory and answer (a 55 MB CSV read whole took about 2 GB). Of the by-hand imports, only the import to a new Table (the Tables screen) refuses a .csv past it; the import into an existing Table and `table_from_file` do not check it (trusted logins, accepted risk)",
   },
   DWF_RENDER_DPI: {
     default: 300,

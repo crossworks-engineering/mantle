@@ -154,12 +154,14 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   // when such a file got no database at all.
   database_size: (c) =>
     c.what === 'rows'
-      ? `${ofTotal(c)} rows are in its database: the rest are past the ${limitText(c, 'byte', '32 MB')} read limit of a file database, so file_sql has no rows past them. Its text is read as usual.`
+      ? `${ofTotal(c)} rows are in its database: the rest are past the ${limitText(c, 'byte', '32 MB')} a file database read had room for, so file_sql has no rows past them. Its text is read as usual.`
       : `No database was built: the file is ${n(c.total ?? 0)} bytes, past the ${limitText(c, 'byte', '32 MB')} limit, so file_sql has no rows of it. Its text is read as usual.`,
   database_rows: (c) =>
     c.read > 0
       ? `${ofTotal(c)} rows are in its database (the ${limitText(c, 'row', 'import')} limit), so file_sql has no rows past them. Its text is read as usual.`
       : `No database was built: its sheets hold ${n(c.total ?? 0)} rows, past the ${limitText(c, 'row', 'import')} limit, so file_sql has no rows of it. Its text is read as usual.`,
+  database_time: (c) =>
+    `${ofTotal(c)} rows are in its database: the read reached its time limit, so file_sql has no rows past them. A read again on a less busy box may keep more. Its text is read as usual.`,
   cad_texts: (c) =>
     `${ofTotal(c)} texts of the drawing were read (a ${limitText(c, 'text', '20,000-text')} limit). The others are not in search.`,
   cad_text_length: (c) =>

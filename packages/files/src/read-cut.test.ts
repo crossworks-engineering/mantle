@@ -217,7 +217,7 @@ describe('the sentences of the newer cuts', () => {
     expect(
       readCutHint('database_size', { what: 'rows', read: 10, total: 40, limit: 33_554_432 }),
     ).toBe(
-      '10 of 40 rows are in its database: the rest are past the 33,554,432 byte read limit of a file database, so file_sql has no rows past them. Its text is read as usual.',
+      '10 of 40 rows are in its database: the rest are past the 33,554,432 byte a file database read had room for, so file_sql has no rows past them. Its text is read as usual.',
     );
     expect(readCutHint('sheet_text', { what: 'sheets', read: 1, total: 5 })).toBe(
       '1 of 5 sheets are in its text: the read of a large workbook stops in its first long sheet. The other sheets are not in search.',

@@ -68,7 +68,9 @@ import {
 import { extractEmbeddedImages } from '@mantle/files/embedded-images';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
-import { afterSheetsOf, parseFileSheets, tabsOfSheets } from './file-database';
+import { afterSheetsOf, parseFileSheets, tabsOfSheets, writeSheetsAt } from './file-database';
+import { parseDelimited } from '@mantle/files/sheet-to-grid';
+import { scanTabColumns } from '@mantle/tabledb';
 import { afterGoldenOf, goldenOf, writeFixtureDatabase } from './pipeline-golden';
 import {
   AFTER_BODY_MAX_BYTES,
@@ -116,6 +118,9 @@ beforeAll(async () => {
       // The read-only mount of own pipelines (docs/pipelines.md, "Own
       // pipelines"): a folder of this test.
       MANTLE_PIPELINES_DIR: path.join(workdir, 'pipelines'),
+      // The read budget of a sheet in memory, low, so a long CSV here is
+      // made of a few MB (the sheet tests below); the fixtures are under it.
+      MANTLE_FILE_DB_CSV_MAX_MB: '8',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -673,6 +678,51 @@ describe('sheet through a real parser job (the move MV3)', () => {
     expect(read.out.sheets[0]!.rows).toHaveLength(15_995);
     expect(read.out.readCuts).toBeUndefined();
   }, 60_000);
+
+  it('a long CSV read for its database: every row comes as a file, and the write keeps them all', async () => {
+    const N = 300_000;
+    const csv = [
+      'Tag,Reading,When,Note',
+      ...Array.from(
+        { length: N },
+        (_, i) =>
+          `T-${i},${(i * 0.25).toFixed(2)},2026-01-${String((i % 28) + 1).padStart(2, '0')},"note, ${i}"`,
+      ),
+    ].join('\n');
+    const bytes = Buffer.from(csv);
+    expect(bytes.length).toBeGreaterThan(8 * 1024 * 1024);
+    // Without a rows file the read keeps what memory takes, and says so.
+    const inMemory = await parseFileSheets(bytes, 'csv', { pipelines });
+    if (inMemory.kind !== 'sheets') throw new Error('no sheets');
+    expect(inMemory.readCuts?.database_size).toMatchObject({ total: N + 1 });
+    // With one, every row: the rows come as a file, not in the answer.
+    const rowsTo = path.join(workdir, `rows-${randomUUID()}.build-test`);
+    const read = await jobsOf(() => parseFileSheets(bytes, 'csv', { pipelines, rowsTo }));
+    expect(read.jobs).toEqual(['/pipeline/run']);
+    if (read.out.kind !== 'sheets') throw new Error('no sheets');
+    expect(read.out.readCuts).toBeUndefined();
+    expect(read.out.sheets[0]!.rows).toEqual([]);
+    expect(read.out.spill).toMatchObject({ file: rowsTo, tabs: [{ tab: 0, rows: N }] });
+    const abs = path.join(workdir, `spilled-${randomUUID()}.sqlite`);
+    const out = await writeSheetsAt(abs, read.out, { fileId: 'f1', ownerId: 'o1', agentTabs: [] });
+    expect(out).toEqual({ tabs: 1, rows: N });
+    rmSync(rowsTo, { force: true });
+    // The rows as the whole read in this process gives them.
+    const whole = (await parseDelimited(bytes))[0]!;
+    expect(read.out.sheets[0]!.columns).toEqual(whole.columns);
+    const got: unknown[][] = [];
+    scanTabColumns(
+      abs,
+      'Sheet1',
+      ['Tag', 'Reading', 'When', 'Note'],
+      { maxRows: N + 1, cellMaxChars: 1000 },
+      (r) => {
+        got.push([r.Tag, r.Reading, r.When, r.Note]);
+        return true;
+      },
+    );
+    expect(got).toEqual(whole.rows);
+  }, 240_000);
 
   it('an xlsm (no upload reaches the reader with it) reads the same through the job', async () => {
     const bytes = fixture('macro.xlsm');

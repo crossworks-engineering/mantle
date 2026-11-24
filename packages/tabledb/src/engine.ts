@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { copyFileSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
@@ -234,7 +235,7 @@ function createTab(
   tabId: string,
   tabName: string,
   plans: ColumnPlan[],
-  opts: { position?: number; viewName?: string } = {},
+  opts: { position?: number; viewName?: string; deferIndexes?: string[] } = {},
 ): { physicalTable: string; viewName: string } {
   const physicalTable = physicalName('t', tabId);
   const viewName = opts.viewName ?? viewNameForTab(tabName);
@@ -268,7 +269,10 @@ function createTab(
   db.exec(
     `CREATE TABLE ${physicalTable} (_rid TEXT PRIMARY KEY, _pos REAL NOT NULL${colDefs.length ? ', ' + colDefs.join(', ') : ''})`,
   );
-  db.exec(`CREATE INDEX ${physicalTable}_pos ON ${physicalTable}(_pos)`);
+  // The indexes, or for a bulk write (`deferIndexes`) their statements, run
+  // after its rows: an index built once is faster than one kept up row by
+  // row.
+  const indexes = [`CREATE INDEX ${physicalTable}_pos ON ${physicalTable}(_pos)`];
   // Auto-indexes for range-y types (plan §3.2).
   for (const p of stored) {
     if (
@@ -276,9 +280,13 @@ function createTab(
         p.col.type,
       )
     ) {
-      db.exec(`CREATE INDEX ${physicalTable}_${p.physical} ON ${physicalTable}(${p.physical})`);
+      indexes.push(
+        `CREATE INDEX ${physicalTable}_${p.physical} ON ${physicalTable}(${p.physical})`,
+      );
     }
   }
+  if (opts.deferIndexes) opts.deferIndexes.push(...indexes);
+  else for (const sql of indexes) db.exec(sql);
 
   // Display-named SQL view. Formula columns are omitted in P1 (SQL translation
   // is P2 work); table_get will surface the mapping + omissions.
@@ -319,7 +327,11 @@ function insertRows(db: SqliteDb, physicalTable: string, plans: ColumnPlan[], ro
   }
 }
 
-function writeViewsAndAggregates(db: SqliteDb, tabId: string, doc: TableDocLike): void {
+function writeViewsAndAggregates(
+  db: SqliteDb,
+  tabId: string,
+  doc: Pick<TableDocLike, 'views' | 'aggregates'>,
+): void {
   const insView = db.prepare(
     `INSERT INTO _views (view_id, tab_id, name, spec_json, position) VALUES (?, ?, ?, ?, ?)`,
   );
@@ -350,49 +362,14 @@ export function writeDocFile(
 ): WriteResult {
   mkdirSync(path.dirname(destAbs), { recursive: true });
   const tabs = asWorkbookTabs(doc, meta.tabName ?? 'Sheet1');
-  // View names are display-derived and must be unique across the whole file —
-  // they share sqlite's namespace with the physical `t_*` tables and FTS
-  // shadows, so a tab literally named like one suffixes instead of failing
-  // the CREATE VIEW (audit: a tab named "t_t1" aborted the whole write).
-  const reserved = new Set<string>();
-  for (const t of tabs) {
-    const physical = physicalName('t', t.id);
-    reserved.add(physical.toLowerCase());
-    reserved.add(ftsTableName(physical).toLowerCase());
-  }
-  const viewNames = dedupe(tabs.map((t) => viewNameForTab(t.name))).map((name) => {
-    let out = name;
-    let n = 2;
-    while (reserved.has(out.toLowerCase())) out = `${name}_${n++}`;
-    reserved.add(out.toLowerCase());
-    return out;
-  });
-  const build = `${destAbs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
+  const viewNames = viewNamesOf(tabs);
+  const build = buildPathOf(destAbs);
   try {
     const db = openTableFile(build, { mustExist: false });
     try {
       createSchema(db, meta);
       tabs.forEach((tab, i) => {
-        const plans = planColumns(tab.columns);
-        const { physicalTable } = createTab(db, tab.id, tab.name, plans, {
-          position: i,
-          viewName: viewNames[i]!,
-        });
-        if (meta.fts) {
-          // Before the bulk insert: the insert trigger populates the index in
-          // the same pass.
-          const skip = new Set(meta.ftsSkipColumns ?? []);
-          const wanted = new Set(
-            ftsColumns(tab.columns)
-              .filter((c) => !skip.has(c.name))
-              .map((c) => c.id),
-          );
-          createFtsShadow(
-            db,
-            physicalTable,
-            plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical),
-          );
-        }
+        const { physicalTable, plans } = openTab(db, tab, i, viewNames[i]!, meta);
         insertRows(db, physicalTable, plans, tab.rows);
         writeViewsAndAggregates(db, tab.id, tab);
       });
@@ -401,24 +378,9 @@ export function writeDocFile(
     } finally {
       db.close();
     }
-    // Sweep the DESTINATION's sidecars BEFORE the rename: a stale -wal left
-    // beside the old file (checkpoint is advisory — a concurrent reader can
-    // block it) would otherwise be replayed into the NEW file on the next
-    // write open, silently corrupting it. SQLite does not salt-match a WAL
-    // to its database file. Callers hold the registry lock, so no writer
-    // races this window.
-    // The one check of a conditional write, with nothing async from here
-    // to the rename. A refused write touches nothing of the file.
-    if (meta.since !== undefined && !sameFile(destAbs, meta.since)) {
-      throw new ConflictError('tabledb: the database changed since it was read');
-    }
-    rmSync(`${destAbs}-wal`, { force: true });
-    rmSync(`${destAbs}-shm`, { force: true });
-    renameSync(build, destAbs);
+    swapIn(build, destAbs, meta);
   } finally {
-    rmSync(build, { force: true });
-    rmSync(`${build}-wal`, { force: true });
-    rmSync(`${build}-shm`, { force: true });
+    removeBuild(build);
   }
   const tabStats: TabStats[] = tabs.map((t) => ({
     tabId: t.id,
@@ -431,6 +393,224 @@ export function writeDocFile(
     stats: { tabs: tabStats, totalRows: tabStats.reduce((a, t) => a + t.rows, 0) },
     shapeHash: shapeHashOf(doc, meta.tabName ?? 'Sheet1'),
   };
+}
+
+/** A tab of {@link writeDocFileSliced}: its rows in memory, or read as they
+ *  come (a file database's spilled rows, packages/content). */
+export type SlicedTabDoc = Omit<WorkbookTabDoc, 'rows'> & {
+  rows: readonly Row[] | AsyncIterable<Row>;
+};
+
+/** The longest the write holds the event loop at a time, ms: it gives the
+ *  loop a turn (a timer, a heartbeat) between slices. */
+const WRITE_SLICE_MS = 50;
+
+/** One turn of the event loop: timers and I/O run. */
+const loopTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * {@link writeDocFile} of a file database (packages/content's
+ * writeFileDatabaseSliced), in slices: the rows go in a slice of at most
+ * WRITE_SLICE_MS at a time, and the event loop gets a turn between slices
+ * and between the indexes, so a write of millions of rows never stalls the
+ * process (its heartbeat, the other jobs of the worker). A tab's rows may
+ * come as they are read (an async iterable), so they are never held.
+ *
+ * The same file as writeDocFile's, with three differences in how it is
+ * made: the build file has no journal while it fills (nobody else opens
+ * it, and a throw removes it), so there is no -wal to checkpoint at the
+ * end; a tab's indexes are made after its rows; and the shape hash counts
+ * the rows written. The one check of a conditional
+ * write (`since`) is made after the last await, right before the rename.
+ */
+export async function writeDocFileSliced(
+  destAbs: string,
+  doc: { tabs: SlicedTabDoc[] },
+  meta: WriteDocMeta,
+): Promise<WriteResult> {
+  mkdirSync(path.dirname(destAbs), { recursive: true });
+  if (doc.tabs.length === 0) throw new InputError('tabledb: a workbook needs at least one tab');
+  const seen = new Set<string>();
+  const tabs = doc.tabs.map((t, i) => {
+    let id = t.id ?? `t${i + 1}`;
+    while (seen.has(id)) id = `${id}_`;
+    seen.add(id);
+    return { ...t, id };
+  });
+  const viewNames = viewNamesOf(tabs);
+  const build = buildPathOf(destAbs);
+  const counts: number[] = [];
+  try {
+    const db = openTableFile(build, { mustExist: false, bulk: true });
+    try {
+      createSchema(db, meta);
+      for (const [i, tab] of tabs.entries()) {
+        const indexes: string[] = [];
+        const { physicalTable, plans } = openTab(db, tab, i, viewNames[i]!, meta, indexes);
+        counts[i] = await insertRowsSliced(db, physicalTable, plans, tab.rows);
+        for (const sql of indexes) {
+          db.exec(sql);
+          await loopTurn();
+        }
+        writeViewsAndAggregates(db, tab.id, tab);
+      }
+      const mode = (
+        db.prepare(`PRAGMA journal_mode = ${meta.deleteJournal ? 'DELETE' : 'WAL'}`).get() as {
+          journal_mode?: string;
+        } | null
+      )?.journal_mode;
+      if (mode !== (meta.deleteJournal ? 'delete' : 'wal')) {
+        throw new Error(`tabledb: the build file kept the journal mode ${String(mode)}`);
+      }
+    } finally {
+      db.close();
+    }
+    // The build file filled with no fsync: it is made durable once, off the
+    // event loop, before it takes the finished name.
+    const fh = await open(build, 'r');
+    try {
+      await fh.sync();
+    } finally {
+      await fh.close();
+    }
+    swapIn(build, destAbs, meta);
+  } finally {
+    removeBuild(build);
+  }
+  const tabStats: TabStats[] = tabs.map((t, i) => ({
+    tabId: t.id,
+    name: t.name,
+    rows: counts[i] ?? 0,
+    columns: t.columns.length,
+  }));
+  const totalRows = tabStats.reduce((a, t) => a + t.rows, 0);
+  return {
+    sizeBytes: statSync(destAbs).size,
+    stats: { tabs: tabStats, totalRows },
+    shapeHash: hashShape({
+      tabs: tabs.map((t) => t.name),
+      columns: tabs.flatMap((t) => t.columns.map((c): [string, string] => [c.name, c.type])),
+      rows: rowBucket(totalRows),
+    }),
+  };
+}
+
+/** The rows of a tab in one transaction, in slices of at most
+ *  WRITE_SLICE_MS with a turn of the event loop between them. The count
+ *  written. */
+async function insertRowsSliced(
+  db: SqliteDb,
+  physicalTable: string,
+  plans: ColumnPlan[],
+  rows: readonly Row[] | AsyncIterable<Row>,
+): Promise<number> {
+  const stored = plans.filter((p) => p.col.type !== 'formula');
+  const cols = stored.map((p) => p.physical);
+  const ins = db.prepare(
+    `INSERT INTO ${physicalTable} (_rid, _pos${cols.length ? ', ' + cols.join(', ') : ''})
+     VALUES (?, ?${', ?'.repeat(cols.length)})`,
+  );
+  let n = 0;
+  let sliceFrom = performance.now();
+  db.exec('BEGIN');
+  for await (const row of rows) {
+    const values = stored.map((p) => storeCell(row.cells[p.col.id] ?? null, storageType(p.col)));
+    n += 1;
+    ins.run(row.id, n, ...values);
+    // A turn of the loop, inside the one transaction of the tab: the build
+    // file is this write's alone, and one transaction keeps the search
+    // index's pending terms in few, large segments.
+    if ((n & 127) === 0 && performance.now() - sliceFrom > WRITE_SLICE_MS) {
+      await loopTurn();
+      sliceFrom = performance.now();
+    }
+  }
+  db.exec('COMMIT');
+  return n;
+}
+
+/** The build file beside `destAbs` a whole-file write fills. */
+function buildPathOf(destAbs: string): string {
+  return `${destAbs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
+}
+
+/** The build file and its sidecars, gone (after the rename, or a throw). */
+function removeBuild(build: string): void {
+  rmSync(build, { force: true });
+  rmSync(`${build}-wal`, { force: true });
+  rmSync(`${build}-shm`, { force: true });
+}
+
+/** View names are display-derived and must be unique across the whole file:
+ *  they share sqlite's namespace with the physical `t_*` tables and FTS
+ *  shadows, so a tab literally named like one suffixes instead of failing
+ *  the CREATE VIEW (audit: a tab named "t_t1" aborted the whole write). */
+function viewNamesOf(tabs: readonly { id: string; name: string }[]): string[] {
+  const reserved = new Set<string>();
+  for (const t of tabs) {
+    const physical = physicalName('t', t.id);
+    reserved.add(physical.toLowerCase());
+    reserved.add(ftsTableName(physical).toLowerCase());
+  }
+  return dedupe(tabs.map((t) => viewNameForTab(t.name))).map((name) => {
+    let out = name;
+    let n = 2;
+    while (reserved.has(out.toLowerCase())) out = `${name}_${n++}`;
+    reserved.add(out.toLowerCase());
+    return out;
+  });
+}
+
+/** A tab's schema in the build file, with its search shadow when the write
+ *  has one: before the bulk insert, so the insert trigger fills the index
+ *  in the same pass. */
+function openTab(
+  db: SqliteDb,
+  tab: { id: string; name: string; columns: Column[] },
+  position: number,
+  viewName: string,
+  meta: WriteDocMeta,
+  deferIndexes?: string[],
+): { physicalTable: string; plans: ColumnPlan[] } {
+  const plans = planColumns(tab.columns);
+  const { physicalTable } = createTab(db, tab.id, tab.name, plans, {
+    position,
+    viewName,
+    ...(deferIndexes ? { deferIndexes } : {}),
+  });
+  if (meta.fts) {
+    const skip = new Set(meta.ftsSkipColumns ?? []);
+    const wanted = new Set(
+      ftsColumns(tab.columns)
+        .filter((c) => !skip.has(c.name))
+        .map((c) => c.id),
+    );
+    createFtsShadow(
+      db,
+      physicalTable,
+      plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical),
+    );
+  }
+  return { physicalTable, plans };
+}
+
+/**
+ * The end of a whole-file write: the build file renamed over `destAbs`.
+ * Sweep the DESTINATION's sidecars BEFORE the rename: a stale -wal left
+ * beside the old file (checkpoint is advisory — a concurrent reader can
+ * block it) would otherwise be replayed into the NEW file on the next write
+ * open, silently corrupting it. SQLite does not salt-match a WAL to its
+ * database file. Callers hold the registry lock, so no writer races this
+ * window. The one check of a conditional write, with nothing async from
+ * here to the rename. A refused write touches nothing of the file.
+ */
+function swapIn(build: string, destAbs: string, meta: WriteDocMeta): void {
+  if (meta.since !== undefined && !sameFile(destAbs, meta.since)) {
+    throw new ConflictError('tabledb: the database changed since it was read');
+  }
+  rmSync(`${destAbs}-wal`, { force: true });
+  rmSync(`${destAbs}-shm`, { force: true });
+  renameSync(build, destAbs);
 }
 
 /** The `_meta` keys a write sets itself: a patch may not set them. */

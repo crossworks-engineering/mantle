@@ -345,7 +345,7 @@ async function testWith(
   const max = importMaxRows();
   const { tabs, warnings } = tabsOf(rows > max ? headOfSheets(parsed.sheets, max) : parsed.sheets);
   const dbCut = databaseCutOf(parsed.readCuts);
-  const cut = dbCut?.database_rows ?? dbCut?.database_size;
+  const cut = dbCut?.database_rows ?? dbCut?.database_size ?? dbCut?.database_time;
   if (cut) {
     const of = `${cut.atLeast ? 'at least ' : ''}${cut.total}`;
     warnings.push(`The database keeps ${cut.read} of ${of} rows; the cut is said on the file.`);

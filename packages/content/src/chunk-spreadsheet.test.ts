@@ -71,3 +71,44 @@ describe('chunkSpreadsheetProfile', () => {
     expect(chunkSpreadsheetProfile('   \n  ')).toEqual([]);
   });
 });
+
+describe('chunkSpreadsheetProfile with the rows of the file database', () => {
+  it('counts the database rows of a long sheet, whose text is read in part', () => {
+    const text = [
+      '# Sheet: Big',
+      'A | B',
+      ...Array.from({ length: 20 }, (_, i) => `${i} | x`),
+    ].join('\n');
+    const [chunk] = chunkSpreadsheetProfile(text, {
+      sampleRows: 3,
+      databaseRows: new Map([['Big', 1_040_000]]),
+    });
+    expect(chunk!.text).toContain(
+      "[grid profile — 3 of 1,040,000 data rows shown; the file's database holds 1,040,000 rows of this sheet (file_sql)]",
+    );
+  });
+
+  it('a bare CSV (one sheet, named after the file): the first tab of its database', () => {
+    const text = ['A,B', '1,x', '2,y'].join('\n');
+    const [chunk] = chunkSpreadsheetProfile(text, {
+      fileTitle: 'orders.csv',
+      sampleRows: 1,
+      databaseRows: new Map([
+        ['Sheet1', 900_000],
+        ['Agent tab', 3],
+      ]),
+    });
+    expect(chunk!.text).toContain('1 of 900,000 data rows shown');
+  });
+
+  it('of many sheets, one with no database tab of its name: the text rows as before', () => {
+    const text = ['# Sheet: Big', 'A | B', '1 | x', '2 | y', '# Sheet: Two', 'C', '3'].join('\n');
+    const [chunk] = chunkSpreadsheetProfile(text, {
+      sampleRows: 1,
+      databaseRows: new Map([['Other', 9]]),
+    });
+    expect(chunk!.text).toContain(
+      '[grid profile — 1 of 2 data rows shown; the full grid is available via file_read]',
+    );
+  });
+});

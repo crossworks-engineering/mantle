@@ -321,6 +321,47 @@ the file row's id and sha256 give the name. The dot folder keeps it out of the
 watcher. Only web, api, `worker_files` and `worker_maintenance` mount the files
 root.
 
+**A long sheet.** A sheet of millions of rows is kept whole, never held
+whole in memory (the ingest program, 2026-11-24). A read for the database
+(the upload's, a run on demand, a read again) tells the `sheet` Reader it may
+spill (`request.spill`). Past what memory takes (a CSV past
+`MANTLE_FILE_DB_CSV_MAX_MB`, a workbook past 32 MB of sheet XML, which is
+read as a stream), the step folds each row into the column types
+(`GridFold`, the rule `parseSheet` has always had) and writes it as one JSON
+line to a rows file in its job folder (`packages/files/src/sheet-spill.ts`).
+The parser sends that file after the answer's JSON, with its length in a
+header; the brain writes it to a file beside the databases (a `.build-`
+name, so a write that died is swept as residue) and never to its memory.
+The write (`writeSheetsAt`, `packages/content/src/file-database.ts`) reads
+the file a line at a time, types each cell back exactly (a date column's
+text is a date again), and fills the database in slices of 50 ms with a
+turn of the event loop between them, in one transaction a tab, its indexes
+made after its rows (`writeDocFileSliced`, `packages/tabledb`). So the
+worker's heartbeat never stalls. Every build uses the sliced write, a short
+one too. Three limits, each a real bound, each cut said with the first rows
+kept: `TABLE_IMPORT_MAX_ROWS` rows (`database_rows`), the free room of the
+parser's scratch space less 64 MB, a tmpfs counted in its memory
+(`database_size`), and the step's 240 s (`database_time`: a busy box keeps
+what it read in time). A read that does not spill (a pipeline test, a
+compare) keeps what memory takes, as before. The file's memory says the
+database's true size: the grid profile of each sheet counts the rows of its
+database tab, not the rows of its text, which a long workbook's text read
+cuts.
+
+Measured on the bench (Workstation 3, 2026-11-24), a made-up workbook of
+207 MB (two sheets, 1,940,000 rows, 1.27 GB of sheet XML, 1.4 M shared
+strings), each side in its own process:
+
+| Path | Parser job | Brain write |
+| --- | --- | --- |
+| Before (rows in the answer, one synchronous write) | 100 s, peak 3.3 GB (the parser's limit is 3 GB), answer 351 MB (the cap is 96 MB) | past 3.8 GB at 91 s, stopped by hand; the event loop held for the whole write |
+| Now (rows spilled, sliced write) | 142 s, peak 1.5 GB, rows file 378 MB, answer JSON 1 KB | 237 s, peak 298 MB, every row (1,940,000), database 1.75 GB; longest hold of the event loop 1.4 s (the index builds of a 1 M row tab), the heartbeat's limit is 90 s |
+
+In the parser the rows file sits in its tmpfs, counted in its memory: 1.5
+GB of process and 0.6 GB of input and rows, under the 3 GB limit. Most of
+the write's time is the search index (trigram): without it the same write
+takes about a sixth of the time.
+
 **A PDF gets one only when it is data.** Most PDFs are documents, so a PDF is
 read first with no model: the parser gives each page's facts (sheet size, text
 or no text layer, picture cover, line segments, instrument tags and line numbers
@@ -744,12 +785,14 @@ uploaded while it was set gets no Table until its next extract.
 
 - Disk: the databases add about what the Tables of these files take, until a person
   deletes the old Tables.
-- A long file is read in part, never refused whole: the database keeps the
-  first rows up to `TABLE_IMPORT_MAX_ROWS` rows and `MANTLE_FILE_DB_CSV_MAX_MB`
-  of cell text, and the cut is said on the file (`database_rows`,
-  `database_size`). A workbook past 32 MB of sheet XML is read as a stream,
-  which stops at the cut (its rows past it are "at least"). No Table is made
-  of a cut read.
+- A long sheet keeps every row (2026-11-24): a CSV past
+  `MANTLE_FILE_DB_CSV_MAX_MB` or a workbook past 32 MB of sheet XML is read
+  as a stream, its rows go to a file as they are read, and the database is
+  written from that file in slices. See "A long sheet" in section 3b. Its
+  limits are `TABLE_IMPORT_MAX_ROWS` rows, the parser's scratch space and the
+  step's 240 s; each cut is said on the file (`database_rows`,
+  `database_size`, `database_time`), with the first rows kept. No Table is
+  made of a long or a cut read: its rows are in the database only.
 - A private file (indexing: metadata) gets no database, no Table and no picture. A
   file that turns private loses its paid image answers, even when someone who cannot
   read it set the folder's flag. Crops and pictures already made stay until a person

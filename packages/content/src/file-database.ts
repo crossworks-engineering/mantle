@@ -23,7 +23,11 @@
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
-import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
+import {
+  ensureWorkbookDoc,
+  tableDocFromGrid,
+  type WorkbookTab,
+} from '@mantle/content-core/table-model';
 import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
   PAGE_ASK_KEY_PREFIX,
@@ -32,6 +36,8 @@ import {
   effectiveOptions,
   extOf,
   fileDbPaths,
+  fileDbRowsPath,
+  removeFileDbRows,
   isFileSha256,
   isParserError,
   isParserUnavailable,
@@ -126,7 +132,8 @@ import {
   type PipelineRunResult,
 } from './pipeline-runner';
 import { boxPipelines, type BoxPipeline, type BoxPipelines } from './pipeline-registry';
-import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
+import { patchFileDatabaseDoc, writeFileDatabaseSliced } from './table-broker';
+import { SpilledRows } from './spilled-rows';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
  *  that is not a plan at all, which gets no name. */
@@ -160,6 +167,11 @@ export type ParsedFile =
        *  the core's PDF read): the stamp names it, so the text pass and a
        *  status read find it. */
       readBy?: PipelineManifest;
+      /** A long read whose rows went to a file (a read with `rowsTo`, the
+       *  write's `spilled`): the file, and its tabs, whose sheets here have
+       *  no rows. The write reads them from the file (writeRowsOrWord); the
+       *  caller that gave `rowsTo` removes it. */
+      spill?: { file: string; tabs: NonNullable<FileTabsWriteInput['spilled']> };
     }
   | { kind: 'none'; word: FileDbNoneWord }
   | { kind: 'not-plan' }
@@ -253,7 +265,7 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
   const router = opts.pipelines.routerFor(ext);
   const parsed = router
     ? await readRouted(router, bytes, ext, options, opts)
-    : await packagedSheets(pipeline, bytes, ext, options);
+    : await packagedSheets(pipeline, bytes, ext, options, null, opts.rowsTo);
   const hash = optionsHash(pipeline, options);
   // A Reader that claims the kind (readBy) brought the hash of its own options.
   return parsed.kind === 'sheets' && hash && !parsed.readBy
@@ -435,6 +447,7 @@ async function packagedSheets(
   ext: string,
   options: Readonly<Record<string, unknown>>,
   named: { kind: string; state: unknown; body?: Buffer } | null = null,
+  rowsTo?: string,
 ): Promise<ParsedFile> {
   // A Reader whose one run serves the three passes (the database, the text,
   // the pictures): the CAD reader, an own Reader, and a built-in that says
@@ -454,6 +467,7 @@ async function packagedSheets(
   const run = await runPackaged(pipeline, named?.body ?? bytes, stepFileOf(bytes, ext), {
     options,
     ...(named ? { kind: named.kind, state: named.state } : {}),
+    ...(rowsTo !== undefined ? { rowsTo } : {}),
   });
   return parsedFileOfRun(pipeline, run);
 }
@@ -488,7 +502,7 @@ function withRunFacts(
  */
 export function parsedFileOfRun(
   pipeline: Pick<PipelineManifest, 'match'>,
-  run: Pick<PipelineRunResult, 'status' | 'write'>,
+  run: Pick<PipelineRunResult, 'status' | 'write' | 'rows'>,
 ): ParsedFile {
   if (run.status === 'not_mine') {
     return pipeline.match.ext.includes('pdf') ? { kind: 'not-drawing' } : { kind: 'not-plan' };
@@ -508,6 +522,7 @@ export function parsedFileOfRun(
     ...(w?.sourceSha256 ? { sourceSha256: w.sourceSha256 } : {}),
     ...(w?.ftsSkipColumns ? { ftsSkipColumns: w.ftsSkipColumns } : {}),
     ...(w?.readCuts ? { readCuts: w.readCuts } : {}),
+    ...(run.rows && w?.spilled ? { spill: { file: run.rows, tabs: w.spilled } } : {}),
   };
 }
 
@@ -538,6 +553,11 @@ type ParseOpts = {
   /** A PDF whose node holds the text of an older whole-page vision read
    *  (pdfNodeVisionOf): the reader's File tab says `node text only`. */
   pdfNodeVision?: boolean;
+  /** A read for the file's database (fileDbRowsPath): a long read's rows
+   *  go to this file, not to memory (the ParsedFile's `spill`), and every
+   *  row is kept. The caller removes the file after the write. Left out: a
+   *  long read keeps what memory takes (a test, a compare). */
+  rowsTo?: string;
   /** The reader's options (pipelineStateOf). Left out: the defaults. */
   options?: Readonly<Record<string, unknown>>;
   /** A real read (an upload, a run on demand, a re-read): the run of the
@@ -678,8 +698,12 @@ export function tabsOfSheets(sheets: readonly ParsedSheet[]) {
 }
 
 /** The rows of a read's sheets, as the import cap counts them. */
-function rowsOf(parsed: Extract<ParsedFile, { kind: 'sheets' }>): number {
-  return parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
+export function rowsOf(parsed: Extract<ParsedFile, { kind: 'sheets' }>): number {
+  const inMemory = parsed.sheets.reduce(
+    (n, s) => n + (s.columns.length > 0 ? s.rows.length : 0),
+    0,
+  );
+  return inMemory + (parsed.spill?.tabs ?? []).reduce((n, t) => n + t.rows, 0);
 }
 
 /** The head of a read past the import ceiling: its sheets in order, and the
@@ -739,12 +763,14 @@ async function writeRowsOrWord(
   if (parsed.kind === 'none') return word(parsed.word);
   // The stamp and the count name the Reader that made the sheets.
   if (parsed.readBy) file = { ...file, pipeline: parsed.readBy };
-  // Past the import ceiling, the first rows are written; the cut is
-  // said on the file by the extract (auto-table.ts).
-  const max = importMaxRows();
-  const sheets = rowsOf(parsed) > max ? headOfSheets(parsed.sheets, max) : parsed.sheets;
-  const tabs = tabsOfSheets(sheets);
-  if (tabs.length === 0) {
+  const out = await writeSheetsAt(file.sqlite, parsed, {
+    fileId: file.fileId,
+    ownerId: file.ownerId,
+    agentTabs: file.agentTabs ?? [],
+    ...(file.since !== undefined ? { since: file.since } : {}),
+    ...(file.pipeline ? { pipeline: file.pipeline } : {}),
+  });
+  if (!out) {
     if (!parsed.readerText || !file.pipeline) return word('no-rows', true);
     const built = await word(
       'no-rows',
@@ -755,43 +781,109 @@ async function writeRowsOrWord(
     await stampPipelineRead(file.fileId, file.sha256, file.pipeline);
     return built;
   }
-  // The paid rows of the Agents, read before the write puts a new database
-  // in this place. They go into that ONE write, after the Reader's tabs, with
-  // no stamp entry: the file shows as not done for the Agent, and its next
-  // run takes these rows by their hash and pays nothing. The stamp and the
-  // counts below are of the Reader's tabs only.
-  const paid = tabsOfSheets(
-    agentTabsAt(file.sqlite, file.agentTabs ?? [], new Set(tabs.map((t) => t.name))),
-  );
-  const ftsSkipColumns = [
-    ...(parsed.ftsSkipColumns ?? []),
-    // A hash is no word to search for.
-    ...(paid.length > 0 ? [AGENT_HASH_COLUMN] : []),
-  ];
-  writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs: [...tabs, ...paid] }), {
-    fileId: file.fileId,
-    ownerId: file.ownerId,
-    ...(parsed.description ? { description: parsed.description } : {}),
-    ...(ftsSkipColumns.length > 0 ? { ftsSkipColumns } : {}),
-    ...(file.since !== undefined ? { since: file.since } : {}),
-    ...(parsed.pages ? { pages: parsed.pages } : {}),
-    ...(file.pipeline
-      ? {
-          stamp: pipelineStampOf(
-            file.pipeline,
-            tabs.map((t) => ({ name: t.name, columns: t.columns.map((c) => c.name) })),
-            parsed.optionsHash ?? '',
-          ),
-        }
-      : {}),
-  });
   // An older word for these bytes (a rebuild healing it) stops answering.
   await removeFileDbNone(file.fileId, file.sha256);
   if (file.pipeline) {
     await countRun(file.ownerId, file.pipeline.id, file.fileId);
     await stampPipelineRead(file.fileId, file.sha256, file.pipeline);
   }
-  return { status: 'built', tabs: tabs.length, rows: rowsOf({ ...parsed, sheets }) };
+  return { status: 'built', tabs: out.tabs, rows: out.rows };
+}
+
+/**
+ * The write of a read's sheets to the database at `sqlite` (the one write
+ * of writeRowsOrWord, with no row checks, no word and no count): the
+ * Reader's tabs, then the Agents' paid rows kept over it, in slices
+ * (writeFileDatabaseSliced). A sheet's rows are in memory, or for a long
+ * read in its rows file (`parsed.spill`), read as the write takes them. Past
+ * the import ceiling, the first rows are written; the cut is said on the
+ * file by the extract (auto-table.ts). A spilled read keeps to the ceiling
+ * itself (packages/files/src/sheet-spill.ts). A tab with no column or no
+ * row is left out (tabsOfSheets). Null: no tab to write.
+ */
+export async function writeSheetsAt(
+  sqlite: string,
+  parsed: Extract<ParsedFile, { kind: 'sheets' }>,
+  opts: {
+    fileId: string;
+    ownerId: string;
+    /** The tabs of the box's Agents kept over the write (agentTabsAt). */
+    agentTabs: readonly string[];
+    since?: FileStamp | null;
+    pipeline?: PipelineManifest;
+  },
+): Promise<{ tabs: number; rows: number } | null> {
+  const max = importMaxRows();
+  const sheets = rowsOf(parsed) > max ? headOfSheets(parsed.sheets, max) : parsed.sheets;
+  const spilled = new Map((parsed.spill?.tabs ?? []).map((t) => [t.tab, t]));
+  type Planned = {
+    doc: WorkbookTab;
+    spill?: NonNullable<FileTabsWriteInput['spilled']>[number] & {
+      columns: ParsedSheet['columns'];
+    };
+  };
+  const planned = sheets.flatMap((sheet, i): Planned[] => {
+    const name = (sheet.name || `Sheet${i + 1}`).slice(0, 100);
+    const spill = spilled.get(i);
+    if (sheet.columns.length === 0 || (spill ? spill.rows : sheet.rows.length) === 0) return [];
+    if (!spill) return [{ doc: { ...tableDocFromGrid(sheet), name } }];
+    const doc = { ...tableDocFromGrid({ columns: sheet.columns, rows: [] }), name };
+    return [{ doc, spill: { ...spill, columns: sheet.columns } }];
+  });
+  const tabs = planned.map((p) => p.doc);
+  if (tabs.length === 0) return null;
+  // The paid rows of the Agents, read before the write puts a new database
+  // in this place. They go into that ONE write, after the Reader's tabs, with
+  // no stamp entry: the file shows as not done for the Agent, and its next
+  // run takes these rows by their hash and pays nothing. The stamp and the
+  // counts are of the Reader's tabs only.
+  const paid = tabsOfSheets(agentTabsAt(sqlite, opts.agentTabs, new Set(tabs.map((t) => t.name))));
+  const ftsSkipColumns = [
+    ...(parsed.ftsSkipColumns ?? []),
+    // A hash is no word to search for.
+    ...(paid.length > 0 ? [AGENT_HASH_COLUMN] : []),
+  ];
+  // The names and columns as every write takes them (ensureWorkbookDoc),
+  // then each spilled tab's rows from its file.
+  const whole = ensureWorkbookDoc({ tabs: [...tabs, ...paid] }).tabs;
+  const reader = parsed.spill ? new SpilledRows(parsed.spill.file) : null;
+  try {
+    const res = await writeFileDatabaseSliced(
+      sqlite,
+      {
+        tabs: whole.map((t, j) => {
+          const spill = planned[j]?.spill;
+          if (!spill || !reader) return t;
+          const shape = { columns: spill.columns, keep: spill.keep };
+          return { ...t, rows: reader.rowsOf(spill.tab, shape, t.columns, spill.rows) };
+        }),
+      },
+      {
+        fileId: opts.fileId,
+        ownerId: opts.ownerId,
+        ...(parsed.description ? { description: parsed.description } : {}),
+        ...(ftsSkipColumns.length > 0 ? { ftsSkipColumns } : {}),
+        ...(opts.since !== undefined ? { since: opts.since } : {}),
+        ...(parsed.pages ? { pages: parsed.pages } : {}),
+        ...(opts.pipeline
+          ? {
+              stamp: pipelineStampOf(
+                opts.pipeline,
+                tabs.map((t) => ({ name: t.name, columns: t.columns.map((c) => c.name) })),
+                parsed.optionsHash ?? '',
+              ),
+            }
+          : {}),
+      },
+    );
+    return {
+      tabs: tabs.length,
+      // The Reader's rows written (the Agents' paid rows come after them).
+      rows: res.stats.tabs.slice(0, tabs.length).reduce((n, t) => n + t.rows, 0),
+    };
+  } finally {
+    reader?.close();
+  }
 }
 
 /**
@@ -995,22 +1087,30 @@ export async function buildFileDatabase(args: BuildArgs): Promise<FileDbBuild> {
   const pdfNodeVision = again ? await pdfNodeVisionOf(fileId) : false;
   // A read here takes the box's options of the reader.
   const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext, pipelines);
-  const parsed =
-    args.parsed ??
-    (await parseFileSheets(bytes, ext, {
-      pipelines,
-      ...(options ? { options } : {}),
-      ...(pdfStored ? { pdfStored } : {}),
-      ...(pdfNodeVision ? { pdfNodeVision } : {}),
-      ...(args.pdfPages ? { pdfPages: args.pdfPages } : {}),
-      count: { ownerId, fileId },
-    }));
-  // The read is done: whatever this build does with it, the windows its
-  // run kept go (./window-stage.ts). A throw below leaves them, for the
-  // build tried again.
-  const out = await buildFromParsed(args, { names, ext, pipelines, reader, again, parsed });
-  await removeWindowStage(fileId, sha256);
-  return out;
+  // A read here keeps every row of a long sheet: its rows go to a file
+  // beside the databases, removed when the build is done.
+  const rowsTo = args.parsed ? undefined : (fileDbRowsPath(fileId) ?? undefined);
+  try {
+    const parsed =
+      args.parsed ??
+      (await parseFileSheets(bytes, ext, {
+        pipelines,
+        ...(options ? { options } : {}),
+        ...(pdfStored ? { pdfStored } : {}),
+        ...(pdfNodeVision ? { pdfNodeVision } : {}),
+        ...(args.pdfPages ? { pdfPages: args.pdfPages } : {}),
+        ...(rowsTo ? { rowsTo } : {}),
+        count: { ownerId, fileId },
+      }));
+    // The read is done: whatever this build does with it, the windows its
+    // run kept go (./window-stage.ts). A throw below leaves them, for the
+    // build tried again.
+    const out = await buildFromParsed(args, { names, ext, pipelines, reader, again, parsed });
+    await removeWindowStage(fileId, sha256);
+    return out;
+  } finally {
+    if (rowsTo) await removeFileDbRows(rowsTo);
+  }
 }
 
 /** The rest of buildFileDatabase, from the read's result on. */

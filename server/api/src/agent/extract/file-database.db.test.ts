@@ -590,20 +590,21 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(await tablesOf(file.id)).toEqual([]);
     });
 
-    it("a CSV past the read budget: its head goes in, the Reader's cut is said, no Table", async () => {
+    // A long sheet keeps every row (2026-11-24): past the read budget its
+    // rows go to a file, never to memory, and the database has them all.
+    it('a CSV past the read budget: every row goes in, no cut, no rows file left, no Table', async () => {
       vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
       const bytes = Buffer.from('tag\n' + 'x\n'.repeat(600_000));
       const file = await upload(unique('csv'), bytes);
       const { cuts } = await withReadCutSink(() => pass(file.id));
       expect(await wordOf(file.id)).toBeNull();
-      expect(namesOf(file.id)).toEqual([sqliteName(await shaOf(file.id))]);
-      // The header takes 6 bytes of the budget, each row of one character 4.
-      expect(cuts.database_size).toEqual({
-        what: 'rows',
-        read: 262_143,
-        total: 600_001,
-        limit: 1_048_576,
-      });
+      // Only the database: the rows file is gone.
+      const sha = await shaOf(file.id);
+      expect(namesOf(file.id)).toEqual([sqliteName(sha)]);
+      expect(cuts).toEqual({});
+      const { describeWorkbook } = await import('@mantle/tabledb');
+      const abs = path.join(f.fileDbsDir(), `${file.id}.${sqliteName(sha)}`);
+      expect(describeWorkbook(abs).map((t) => [t.name, t.rowCount])).toEqual([['Sheet1', 600_000]]);
       expect(await tablesOf(file.id)).toEqual([]);
     });
 

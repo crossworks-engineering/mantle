@@ -242,6 +242,12 @@ export const MAX_OPTS_BYTES = 512 * 1024;
 /** Response header on the byte routes: the job's JSON metadata,
  *  percent-encoded on one line. */
 export const META_HEADER = 'x-parser-meta';
+/** Response header of a `pipelineRun` whose step spilled its rows (the
+ *  write's `spilled`, ./sheet-spill.ts): the byte length of the rows file,
+ *  which follows the JSON in the body. The JSON is under the answer cap;
+ *  the rows are bounded by the job's scratch space, and the brain writes
+ *  them to a file, never to its memory (./parser-client.ts). */
+export const ROWS_LENGTH_HEADER = 'x-parser-rows-length';
 
 export const PARSER_DEFAULT_PORT = 8095;
 

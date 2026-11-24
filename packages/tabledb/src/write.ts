@@ -4,7 +4,7 @@
  * (packages/content/src/table-broker.ts) imports it; the store-brokers lint
  * pins that. Readers keep the package's root entry.
  */
-export { patchDocFile, writeDocFile } from './engine';
-export type { PatchDocMeta } from './engine';
+export { patchDocFile, writeDocFile, writeDocFileSliced } from './engine';
+export type { PatchDocMeta, SlicedTabDoc } from './engine';
 export { applyOpsToFile, finalizePublishedFile } from './ops';
 export { openTableFile } from './sqlite';

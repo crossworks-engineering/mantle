@@ -2132,6 +2132,13 @@ brain's one write: a 55 MB CSV took about 2 GB in the parser job when the
 whole grid was kept. `.xlsm` is not in the reader's match list. The golden
 files of the old path (`pkg/sheet/golden/`) hold the rows and the stamp;
 `over-cap.csv` has no golden file now, its case says the head and the cut.
+A read for a file's database (`request.spill`, 2026-11-24) keeps every row
+of a long file instead: past the read budget its rows go to the rows file of
+the job (`PIPELINE_ROWS_FILE`, `out.rows`, one JSON line a row), the write
+names those tabs (`spilled`: each tab's index, rows and the place of its
+columns in the raw rows), and the parser sends the file after the JSON
+(`x-parser-rows-length`). Only a run with `spill` may spill; a step that
+spills unasked is refused. See docs/file-ingestion.md, "A long sheet".
 
 ## The PDF set as packages
 

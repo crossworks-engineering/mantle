@@ -149,6 +149,8 @@ export {
   FILE_DB_NONE_WORDS,
   fileDbNameExists,
   fileDbPaths,
+  fileDbRowsPath,
+  removeFileDbRows,
   fileDbSqlitePath,
   fileDbsDir,
   fileDbsWritable,

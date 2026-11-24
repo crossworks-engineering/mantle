@@ -110,7 +110,7 @@ describe('sheet: the step gives what the old path gave', () => {
       });
     }
     expect(readerFor(BUILTIN_PIPELINES, 'xlsm')).toBeNull();
-    expect(SHEET.needs.timeMs).toBe(120_000);
+    expect(SHEET.needs.timeMs).toBe(240_000);
   });
 
   for (const name of FIXTURES.filter((n) => !UNREADABLE.includes(n) && n !== 'over-cap.csv')) {

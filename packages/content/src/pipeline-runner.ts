@@ -20,6 +20,7 @@
  * result with worker calls on the last allowed step is a failure.
  */
 import { createHash } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import {
   AFTER_CELL_MAX_CHARS,
   FILE_TABS_WRITE,
@@ -76,6 +77,9 @@ export type PipelineRunResult = {
   /** A windowed run (`needs.window`): the pages of the file and the windows
    *  that could not be read, each by its pages (both in). */
   windows?: { pagesTotal: number; failed: { from: number; to: number }[] };
+  /** The file of the write's spilled rows (`write.spilled`; a run with
+   *  `rowsTo`). The caller removes it. */
+  rows?: string;
 };
 
 /** The pages of a request of one window (PipelineStepRequest). */
@@ -114,6 +118,9 @@ export async function runPackaged(
     /** One window of a windowed run (runWindowed): its pages, in every
      *  request of the run. */
     window?: WindowPages;
+    /** A read of a file's database: the run may spill a long read's rows
+     *  (`request.spill`), to this file. */
+    rowsTo?: string;
   },
 ): Promise<PipelineRunResult> {
   const max = pipeline.router ? PIPELINE_STEPS_MAX.router : PIPELINE_STEPS_MAX.pipeline;
@@ -140,8 +147,14 @@ export async function runPackaged(
       ...(answers ? { answers } : {}),
       ...(state !== undefined ? { state } : {}),
       ...opts.window,
+      ...(opts.rowsTo !== undefined ? { spill: true } : {}),
     };
-    const { result, pictures } = await parserPipelineRun(body, pipeline, request);
+    const { result, pictures, rows } = await parserPipelineRun(
+      body,
+      pipeline,
+      request,
+      opts.rowsTo,
+    );
     if (result.facts !== undefined) facts = result.facts;
     const calls = result.calls ?? [];
     const workers = calls.filter(
@@ -161,8 +174,11 @@ export async function runPackaged(
         counts: result.counts ?? {},
         ...(facts ? { facts } : {}),
         ...(result.state !== undefined ? { state: result.state } : {}),
+        ...(rows ? { rows } : {}),
       };
     }
+    // A step that asks writes nothing: no rows of it are kept.
+    if (rows) await rm(rows, { force: true }).catch(() => {});
     if (step >= max) {
       throw new PipelineRunError(`${pipeline.id} asked a worker on its last allowed step (${max})`);
     }

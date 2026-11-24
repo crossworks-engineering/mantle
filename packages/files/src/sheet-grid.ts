@@ -9,8 +9,12 @@
  * binaries (.xls / .xlsb) are converted to .xlsx first (./legacy-sheet.ts,
  * anydoc), so there is one reader for every spreadsheet.
  */
+import { envNum } from '@mantle/config';
 import { LEGACY_SHEET_EXTS } from './slug';
+import type { RowsSpill, SpilledTab } from './sheet-spill';
 import {
+  GridFold,
+  eachDelimitedRow,
   looksLikeWorkbook,
   parseDelimited,
   parseSheet,
@@ -18,6 +22,129 @@ import {
   type ParsedSheet,
   type RowKeeper,
 } from './sheet-to-grid';
+
+/**
+ * A file database read that may write its rows to a file (./sheet-spill.ts;
+ * the package `sheet` with `request.spill`). A read past what memory takes
+ * (a CSV past MANTLE_FILE_DB_CSV_MAX_MB, a workbook past the size check of
+ * ./sheet-read.ts, which is read as a stream) opens the rows file with
+ * `open`, writes each kept body row to it, and names its tabs in `spilled`:
+ * those tabs come back with no rows. Any other read is in memory, as
+ * before, and `spill` stays unset.
+ */
+export type SpillTo = { open: () => RowsSpill; spill?: RowsSpill; spilled: SpilledTab[] };
+
+/** Fold one raw row of a sheet whose rows go to the rows file: the header
+ *  starts the sheet's tab in the file (so a sheet with no row that is not
+ *  blank has none), a body row is written while the spill keeps rows, and
+ *  only a kept row is folded into the types. False: the cut is reached. */
+function spillRow(
+  sheet: { fold: GridFold; tab: number | null },
+  cells: readonly unknown[],
+  to: SpillTo & { spill: RowsSpill },
+): boolean {
+  const kind = sheet.fold.kindOf(cells);
+  if (kind === 'blank') return true;
+  if (kind === 'header') {
+    sheet.tab = to.spilled.length;
+    to.spilled.push({ tab: sheet.tab, rows: 0, keep: [] });
+    to.spill.startTab(sheet.tab);
+    sheet.fold.add(cells);
+    return true;
+  }
+  if (!to.spill.take(cells)) return false;
+  sheet.fold.add(cells);
+  to.spilled[sheet.tab!]!.rows += 1;
+  return true;
+}
+
+/** The tabs of the sheets whose rows went to the rows file: each with its
+ *  columns and no rows, in the order of `to.spilled`, whose `keep` is set. */
+function spilledTabs(
+  sheets: readonly { name: string; fold: GridFold; tab: number | null }[],
+  to: SpillTo,
+): ParsedSheet[] {
+  const out: ParsedSheet[] = [];
+  for (const s of sheets) {
+    if (s.tab === null) continue;
+    // A sheet with a header always has a shape: the header has a cell.
+    const shape = s.fold.shape()!;
+    to.spilled[s.tab]!.keep = shape.keep;
+    out.push({ name: s.name, columns: shape.columns, rows: [] });
+  }
+  return out;
+}
+
+/** Delimited text to grids: in memory, as before, but for a read that may
+ *  write its rows to a file (`to`), which is never cut for memory: a CSV
+ *  past the budget, or one whose cells pass it in memory, is read with its
+ *  rows to the file. */
+async function readDelimitedGrid(
+  buf: Buffer,
+  keep: RowKeeper | undefined,
+  to: SpillTo | undefined,
+): Promise<ParsedSheet[]> {
+  if (to && buf.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024) {
+    return spillDelimited(buf, to);
+  }
+  const tabs = await parseDelimited(buf, keep);
+  return to && keep?.cut()?.database_size ? spillDelimited(buf, to) : tabs;
+}
+
+/** A long CSV, its rows to the rows file. The reader counts every row past
+ *  the cut, but stops at the step's deadline ("at least"), so the count
+ *  never costs the job. */
+async function spillDelimited(buf: Buffer, to: SpillTo): Promise<ParsedSheet[]> {
+  const spill = (to.spill = to.open());
+  const sheet = { name: 'Sheet1', fold: new GridFold(), tab: null as number | null };
+  try {
+    await eachDelimitedRow(buf, (row) => {
+      if (spill.full) {
+        if (Date.now() > spill.until) {
+          spill.atLeast = true;
+          return false;
+        }
+        // Past the cut, a body row is counted only.
+        if (sheet.fold.kindOf(row) === 'body') spill.take(row);
+        return true;
+      }
+      spillRow(sheet, row, to as SpillTo & { spill: RowsSpill });
+      return true;
+    });
+  } finally {
+    spill.close();
+  }
+  return spilledTabs([sheet], to);
+}
+
+/** A workbook past the size check, read as a stream, its rows to the rows
+ *  file. The stream stops at the cut: the rows past it are "at least". */
+export async function spillWorkbook(buf: Buffer, to: SpillTo): Promise<ParsedSheet[]> {
+  const { streamWorkbookRows } = await import('./sheet-read');
+  const spill = (to.spill = to.open());
+  // By sheet number: two sheets can share a name the reader gives.
+  const sheets = new Map<number, { name: string; fold: GridFold; tab: number | null }>();
+  try {
+    await streamWorkbookRows(buf, (name, cells, sheetNo) => {
+      let sheet = sheets.get(sheetNo);
+      if (!sheet) sheets.set(sheetNo, (sheet = { name, fold: new GridFold(), tab: null }));
+      if (
+        spillRow(
+          sheet,
+          cells.slice(0, GRID_MAX_COLS_PER_SHEET),
+          to as SpillTo & { spill: RowsSpill },
+        )
+      ) {
+        return true;
+      }
+      spill.atLeast = true;
+      return false;
+    });
+  } finally {
+    spill.close();
+  }
+  return spilledTabs([...sheets.values()], to);
+}
 
 /**
  * The parser's grid read: bytes plus their extension → grids, converting a
@@ -33,11 +160,13 @@ export async function readSpreadsheetGrid(
   buf: Buffer,
   ext: string,
   keep?: RowKeeper,
+  to?: SpillTo,
 ): Promise<ParsedSheet[]> {
   // Bytes that are no workbook are delimited text, under any name but a
-  // legacy one (readsAsDelimited), read as a stream.
-  if (readsAsDelimited(buf, ext)) return parseDelimited(buf, keep);
-  if (!LEGACY_SHEET_EXTS.has(ext.toLowerCase())) return parseSheetToGrid(buf, keep);
+  // legacy one (readsAsDelimited), read as a stream. Past what memory takes,
+  // a read that may (`to`) writes its rows to a file.
+  if (readsAsDelimited(buf, ext)) return readDelimitedGrid(buf, keep, to);
+  if (!LEGACY_SHEET_EXTS.has(ext.toLowerCase())) return parseSheetToGrid(buf, keep, to);
   // Loaded here, not at the top: delimited text (a CSV job) never needs
   // exceljs, which both of these files load.
   const { convertLegacySheetToXlsx } = await import('./legacy-sheet');
@@ -47,7 +176,7 @@ export async function readSpreadsheetGrid(
       `could not convert legacy .${ext} workbook: the file is not a readable spreadsheet`,
     );
   }
-  return parseSheetToGrid(converted.xlsx, keep);
+  return parseSheetToGrid(converted.xlsx, keep, to);
 }
 
 /**
@@ -76,13 +205,17 @@ const GRID_MAX_COLS_PER_SHEET = 16_384;
  * such a workbook as a stream and keeps its head, and the keeper says the
  * cut (the ingest program).
  */
-export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<ParsedSheet[]> {
+export async function parseSheetToGrid(
+  buf: Buffer,
+  keep?: RowKeeper,
+  to?: SpillTo,
+): Promise<ParsedSheet[]> {
   if (bytesLookLikeLegacyBiff(buf)) {
     throw new Error(
       'legacy .xls/.xlsb workbook: convert it with convertLegacySheetToXlsx before importing',
     );
   }
-  if (!looksLikeWorkbook(buf)) return parseDelimited(buf, keep);
+  if (!looksLikeWorkbook(buf)) return readDelimitedGrid(buf, keep, to);
   const { loadWorkbook, worksheetToRows, streamWorkbookRows, SpreadsheetTooLargeError } =
     await import('./sheet-read');
   let wb;
@@ -93,6 +226,8 @@ export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<P
     // a stream and keeps its head (the ingest program). An import (no
     // `keep`) still refuses it whole: a partial import would be a lie.
     if (!keep || !(err instanceof SpreadsheetTooLargeError)) throw err;
+    // A read that may write its rows to a file does, and keeps them all.
+    if (to) return spillWorkbook(buf, to);
     // By sheet number: two sheets can share a name the reader gives.
     const sheets = new Map<number, { name: string; rows: unknown[][] }>();
     await streamWorkbookRows(buf, (name, cells, sheetNo) => {
@@ -118,6 +253,10 @@ export async function parseSheetToGrid(buf: Buffer, keep?: RowKeeper): Promise<P
       ...parseSheet(ws.name, keep ? rows.filter((r) => keep.take(r, ws)) : (rows as unknown[][])),
     );
   }
+  // A read that may write its rows to a file is never cut for memory: a
+  // workbook under the size check whose cells pass the budget (its shared
+  // strings) is read again as a stream, its rows to the file.
+  if (to && keep?.cut()?.database_size) return spillWorkbook(buf, to);
   return out;
 }
 

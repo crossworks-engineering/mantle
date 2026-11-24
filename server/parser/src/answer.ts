@@ -5,9 +5,12 @@
 import { createReadStream, promises as fs } from 'node:fs';
 import type http from 'node:http';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { PIPELINE_ROWS_FILE } from '@mantle/files/pipelines/contract';
 import {
   META_HEADER,
+  ROWS_LENGTH_HEADER,
   PARSER_ANSWER_DEADLINE_MS,
   PARSER_ANSWER_MAX_BYTES,
   type ParserJob,
@@ -59,11 +62,18 @@ export async function sendAnswer(
       { final: true },
     );
   }
+  // A step's spilled rows (pipeline-job.ts keeps the file only for a
+  // write that names them) follow the JSON, with their length in a header.
+  const rows =
+    job === 'pipelineRun'
+      ? await fs.stat(path.join(dir, PIPELINE_ROWS_FILE)).catch(() => null)
+      : null;
   // The client went away (a cut, a closed connection): nobody to answer.
   if (res.destroyed) return;
   const headers: Record<string, string> = {
     'content-type': byteJob ? 'application/octet-stream' : 'application/json',
-    'content-length': String(size),
+    'content-length': String(size + (rows?.size ?? 0)),
+    ...(rows ? { [ROWS_LENGTH_HEADER]: String(rows.size) } : {}),
   };
   if (byteJob) {
     const meta = await fs.readFile(path.join(dir, 'meta.json'), 'utf8').catch(() => '{}');
@@ -76,7 +86,18 @@ export async function sendAnswer(
   // held by an answer nobody reads.
   const cut = setTimeout(() => res.destroy(), PARSER_ANSWER_DEADLINE_MS);
   try {
-    await pipeline(createReadStream(file), res);
+    const rowsFile = path.join(dir, PIPELINE_ROWS_FILE);
+    await pipeline(
+      rows
+        ? Readable.from(
+            (async function* () {
+              yield* createReadStream(file);
+              yield* createReadStream(rowsFile);
+            })(),
+          )
+        : createReadStream(file),
+      res,
+    );
   } catch {
     // The connection closed mid-answer: the client reads a dropped
     // connection; nothing more to send.

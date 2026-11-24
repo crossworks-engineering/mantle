@@ -69,3 +69,39 @@ describe('checkStepResult', () => {
     ).toBe(true);
   });
 });
+
+describe('checkStepResult: spilled tabs', () => {
+  const write = (input: Record<string, unknown>) => ({
+    status: 'ok',
+    calls: [{ call: 'tool', tool: FILE_TABS_WRITE, input }],
+  });
+  const tab = (rows: unknown[][] = []) => ({
+    name: 'S',
+    columns: [
+      { name: 'A', type: 'text' },
+      { name: 'B', type: 'number' },
+    ],
+    rows,
+  });
+  it('takes a spilled tab with no rows of its own and a place for each column', () => {
+    expect(
+      checkStepResult(write({ tabs: [tab()], spilled: [{ tab: 0, rows: 5, keep: [0, 2] }] })).ok,
+    ).toBe(true);
+  });
+  it.each([
+    ['a tab out of range', [{ tab: 1, rows: 1, keep: [0, 1] }], [tab()]],
+    [
+      'a tab twice',
+      [
+        { tab: 0, rows: 1, keep: [0, 1] },
+        { tab: 0, rows: 1, keep: [0, 1] },
+      ],
+      [tab()],
+    ],
+    ['a tab with rows of its own', [{ tab: 0, rows: 1, keep: [0, 1] }], [tab([['a', 1]])]],
+    ['a place short', [{ tab: 0, rows: 1, keep: [0] }], [tab()]],
+    ['a count that is not whole', [{ tab: 0, rows: 1.5, keep: [0, 1] }], [tab()]],
+  ])('refuses %s', (_why, spilled, tabs) => {
+    expect(checkStepResult(write({ tabs, spilled })).ok).toBe(false);
+  });
+});

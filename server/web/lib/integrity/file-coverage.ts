@@ -140,6 +140,7 @@ export const SHORTCUT_CUT_REASONS: ReadonlySet<string> = new Set([
   'sheet_text',
   'database_size',
   'database_rows',
+  'database_time',
   'markup_bytes',
   'agent_text',
   'cad_texts',

@@ -10,6 +10,8 @@ import { createPartOfFile, nodes, readIndexWork } from '@mantle/db';
 import {
   extOf,
   fileDbNameExists,
+  fileDbRowsPath,
+  removeFileDbRows,
   isCadExt,
   isFileSha256,
   isParserError,
@@ -22,6 +24,7 @@ import {
   buildFileDatabase,
   parseFileSheets,
   readFileRowNow,
+  rowsOf,
   tabsOfSheets,
   type ParsedFile,
 } from '@mantle/content/file-database';
@@ -141,9 +144,7 @@ export async function maybeAutoTableSpreadsheet(
   );
 }
 
-/** The read of {@link maybeAutoTableSpreadsheet} and its writes, once a
- *  database or a Table is wanted. Its steps go to the trace in context. */
-async function readAndWrite(a: {
+type ReadArgs = {
   node: typeof nodes.$inferSelect;
   ownerId: string;
   data: Record<string, unknown>;
@@ -152,7 +153,23 @@ async function readAndWrite(a: {
   wantDb: boolean;
   wantTable: boolean;
   pipelines: BoxPipelines;
-}): Promise<void> {
+};
+
+/** The read of {@link maybeAutoTableSpreadsheet} and its writes, once a
+ *  database or a Table is wanted. Its steps go to the trace in context. A
+ *  read for a database keeps every row of a long sheet: its rows go to a
+ *  file beside the databases (fileDbRowsPath), removed when the pass is
+ *  done, whatever happens. */
+async function readAndWrite(a: ReadArgs): Promise<void> {
+  const rowsTo = a.wantDb ? (fileDbRowsPath(a.node.id) ?? undefined) : undefined;
+  try {
+    await readAndWriteWith(a, rowsTo);
+  } finally {
+    if (rowsTo) await removeFileDbRows(rowsTo);
+  }
+}
+
+async function readAndWriteWith(a: ReadArgs, rowsTo: string | undefined): Promise<void> {
   const { node, ownerId, data, fileExt, isPdf, wantDb, wantTable, pipelines } = a;
 
   // The reader's off list (docs/pipelines.md, "Where a pipeline runs"): the
@@ -215,6 +232,7 @@ async function readAndWrite(a: {
       // only here, where `wantDb` says these bytes have no database yet.
       ...(isPdf ? { pdfKind: (state) => askPdfKind(ownerId, node.id, state) } : {}),
       ...(pdfPages ? { pdfPages } : {}),
+      ...(rowsTo ? { rowsTo } : {}),
       // An upload is a real read: the PDF router's run counts.
       count: { ownerId, fileId: node.id },
     });
@@ -257,14 +275,14 @@ async function readAndWrite(a: {
   // The Reader's database cut only: a drawing's write says its label cuts
   // too, which its text pass says on the file itself.
   const readerCut = parsed.kind === 'sheets' ? databaseCutOf(parsed.readCuts) : null;
-  const rows =
-    parsed.kind === 'sheets'
-      ? parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0)
-      : 0;
+  const rows = parsed.kind === 'sheets' ? rowsOf(parsed) : 0;
   const max = importMaxRows();
   // Whether the read is cut, for the Table below too (a database built
-  // before keeps no Table from being made of a cut read).
-  const cut = readerCut !== null || rows > max;
+  // before keeps no Table from being made of a cut read). A read whose rows
+  // went to a file (`spill`: past what memory takes) makes no Table either:
+  // its rows are in the database only.
+  const cut =
+    readerCut !== null || rows > max || (parsed.kind === 'sheets' && parsed.spill !== undefined);
   if (wantDb && parsed.kind === 'sheets') {
     if (readerCut) noteReadCuts(readerCut);
     else if (rows > max) {

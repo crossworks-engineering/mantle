@@ -36,6 +36,8 @@ import { env } from '@mantle/config';
 import {
   FILE_TABS_WRITE,
   PICTURE_WORKERS,
+  PIPELINE_ROWS_FILE,
+  writeSpills,
   VISION_WORKER,
   type PipelineManifest,
   type PipelineStep,
@@ -297,6 +299,18 @@ export async function runPipelineJob(opts: Record<string, unknown>, p: JobPaths)
       'failed',
       (result.warnings ?? []).join(' ').slice(0, 2000) || `${id} failed`,
     );
+  }
+  // Spilled rows (the write's `spilled`) only for a run that takes them,
+  // and the file only for a write that names them: the answer sends the
+  // file whenever it is there (answer.ts).
+  const spilled = writeSpills(result.calls);
+  if (spilled && request.spill !== true) {
+    throw new JobFailure('failed', "the step's result was refused: it spilled rows unasked");
+  }
+  const rowsFile = path.join(p.dir, PIPELINE_ROWS_FILE);
+  if (!spilled) await fs.rm(rowsFile, { force: true });
+  else if (!(await fs.stat(rowsFile).catch(() => null))?.isFile()) {
+    throw new JobFailure('failed', "the step's result was refused: its spilled rows are missing");
   }
   const pictures = await picturesOf(p.dir, result.calls ?? []);
   await fs.writeFile(

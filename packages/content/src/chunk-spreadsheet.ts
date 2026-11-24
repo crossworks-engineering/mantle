@@ -69,7 +69,15 @@ function splitSheets(text: string, fallbackName: string): Sheet[] {
  */
 export function chunkSpreadsheetProfile(
   text: string,
-  opts: { fileTitle?: string; sampleRows?: number; maxChars?: number } = {},
+  opts: {
+    fileTitle?: string;
+    sampleRows?: number;
+    maxChars?: number;
+    /** The rows of each tab of the file's database, by tab name, when it has
+     *  one: a long sheet's text is read in part, its database keeps every
+     *  row (docs/file-ingestion.md 3b), so the note counts the database's. */
+    databaseRows?: ReadonlyMap<string, number>;
+  } = {},
 ): DocChunk[] {
   const sampleRows = Math.max(1, opts.sampleRows ?? PROFILE_SAMPLE_ROWS);
   const maxChars = Math.max(200, opts.maxChars ?? PROFILE_MAX_CHARS);
@@ -78,14 +86,23 @@ export function chunkSpreadsheetProfile(
   return sheets.map((sheet) => {
     const [header, ...rows] = sheet.lines;
     const sample = rows.slice(0, sampleRows);
-    const omitted = rows.length - sample.length;
+    // By the tab's name, or for a bare CSV (one sheet, named after the
+    // file) the first tab of its database, the Reader's.
+    const db = opts.databaseRows;
+    const inDb =
+      db?.get(sheet.name.slice(0, 100)) ??
+      (sheets.length === 1 && db ? [...db.values()][0] : undefined);
+    const total = inDb !== undefined && inDb > rows.length ? inDb : rows.length;
+    const omitted = total - sample.length;
     const parts = [
       `# Sheet: ${sheet.name}`,
       `Columns: ${header ?? ''}`,
       ...sample,
-      omitted > 0
-        ? `[grid profile — ${sample.length} of ${rows.length} data rows shown; the full grid is available via file_read]`
-        : `[grid profile — all ${rows.length} data rows shown]`,
+      inDb !== undefined && omitted > 0
+        ? `[grid profile — ${sample.length} of ${total.toLocaleString('en-US')} data rows shown; the file's database holds ${inDb.toLocaleString('en-US')} rows of this sheet (file_sql)]`
+        : omitted > 0
+          ? `[grid profile — ${sample.length} of ${rows.length} data rows shown; the full grid is available via file_read]`
+          : `[grid profile — all ${rows.length} data rows shown]`,
     ];
     let body = parts.join('\n');
     if (body.length > maxChars) body = `${body.slice(0, maxChars - 1)}…`;

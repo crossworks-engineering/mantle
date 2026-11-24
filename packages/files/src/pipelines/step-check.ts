@@ -74,7 +74,26 @@ function writeProblem(input: unknown): string | null {
     (input.pictures === undefined ||
       (Array.isArray(input.pictures) && input.pictures.every(isPicture))) &&
     (input.readCuts === undefined || isReadCuts(input.readCuts));
-  return ok ? null : 'a field of the write call is not of its type';
+  if (!ok) return 'a field of the write call is not of its type';
+  return input.spilled === undefined || spilledFits(input.spilled, input.tabs)
+    ? null
+    : 'the spilled tabs of the write call do not fit its tabs';
+}
+
+/** The write's spilled tabs (contract.ts `spilled`): each names a tab of
+ *  the write once, one with no rows of its own, with a whole count and a
+ *  place in the raw rows for each of its columns. */
+function spilledFits(spilled: unknown, tabs: readonly unknown[]): boolean {
+  if (!Array.isArray(spilled)) return false;
+  const whole = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0;
+  const seen = new Set<number>();
+  return spilled.every((s) => {
+    if (!isObject(s) || !whole(s.tab) || !whole(s.rows) || !Array.isArray(s.keep)) return false;
+    const tab = tabs[s.tab] as { columns: unknown[]; rows: unknown[] } | undefined;
+    if (!tab || seen.has(s.tab) || tab.rows.length > 0) return false;
+    seen.add(s.tab);
+    return s.keep.length === tab.columns.length && s.keep.every(whole);
+  });
 }
 
 function callProblem(c: unknown): string | null {
