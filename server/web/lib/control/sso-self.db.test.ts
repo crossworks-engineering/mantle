@@ -10,7 +10,8 @@
  *  - a .env mode line wins (env-wins), `off` included, and nothing is written;
  *  - one step only: no skip, no same step;
  *  - the tenant and the client ID only in setup;
- *  - on a live box a new secret is saved only when its Test passes;
+ *  - on a live box a new secret is saved only when its Test passes, or on an
+ *    unclear Test the person confirmed (acceptUnclear); never secret-refused;
  *  - the button label in optional and required, the pattern, env-wins, '';
  *  - the full run off, setup, set, test, optional, required as a CC Admin;
  *    the raise into required ends the sessions the rule refuses, once;
@@ -73,6 +74,9 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
   // The secret the stand-in provider takes, and one it refuses.
   const GOOD = `good-${SECRET_WORD}`;
   const BAD = `bad-${SECRET_WORD}`;
+  // One the provider answers with another error: the Test says unclear (as
+  // Entra does for a good secret with Assignment required on Yes).
+  const FUZZY = `fuzzy-${SECRET_WORD}`;
   let anchor = '';
   const admin2 = randomUUID();
   const member = randomUUID();
@@ -188,6 +192,9 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
       req.on('end', () => {
         if (body.includes(encodeURIComponent(GOOD))) {
           return send(200, { access_token: 'a', token_type: 'bearer' });
+        }
+        if (body.includes(encodeURIComponent(FUZZY))) {
+          return send(400, { error: 'unauthorized_client' });
         }
         return send(401, { error: 'invalid_client' });
       });
@@ -401,6 +408,50 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
     expect(await opened()).toBe(GOOD);
   });
 
+  it('an unclear Test: refused, unless the person confirms; secret-refused stays refused', async () => {
+    // Unclear, no confirm: refused, nothing saved, the old secret still works.
+    expect(await set({ secret: FUZZY })).toMatchObject({
+      ok: false,
+      reason: 'test',
+      output: { reason: 'test', test: 'unclear' },
+    });
+    expect(await opened()).toBe(GOOD);
+    expect(await self({ do: 'test', boxIds: ['self'] })).toMatchObject({
+      output: { test: 'ok' },
+    });
+    // A wrong secret with the confirm: still refused.
+    expect(await set({ secret: BAD, acceptUnclear: true })).toMatchObject({
+      ok: false,
+      reason: 'test',
+      output: { test: 'secret-refused' },
+    });
+    expect(await opened()).toBe(GOOD);
+    // A good secret: saved with or without the confirm, never marked unclear.
+    const good = await set({ secret: GOOD, acceptUnclear: true });
+    expect(good).toMatchObject({ ok: true, output: { test: 'ok' } });
+    expect(good.output.acceptedUnclear).toBeUndefined();
+    // Unclear with the confirm: saved, and the answer says so.
+    expect(await set({ secret: FUZZY, acceptUnclear: true })).toMatchObject({
+      ok: true,
+      output: { test: 'unclear', acceptedUnclear: true },
+    });
+    expect(await opened()).toBe(FUZZY);
+    const sets = await auditRows('fleet.sso_set', 1);
+    expect(sets).toContainEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          boxId: 'self',
+          fields: ['secret'],
+          acceptUnclear: true,
+          result: { ok: true, reason: null, test: 'unclear', acceptedUnclear: true },
+        }),
+      }),
+    );
+    // Back to the good one for the rest of the run.
+    expect(await set({ secret: GOOD })).toMatchObject({ ok: true, output: { test: 'ok' } });
+    expect(await opened()).toBe(GOOD);
+  });
+
   it('the label on a live box: set, held to the pattern, the .env wins, audited with its text', async () => {
     expect(await status()).toMatchObject({ label: 'Single sign-on', labelFrom: 'none' });
     const saved = await set({ label: 'Microsoft' });
@@ -454,6 +505,13 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
     expect(await raise('required')).toMatchObject({ ok: false, reason: 'mode' });
     expect(await status()).toMatchObject({ mode: 'required', modeFrom: 'row' });
     expect(await epochs()).toEqual(after);
+    // Required: an unclear secret is saved only with the confirm too.
+    expect(await set({ secret: FUZZY })).toMatchObject({ ok: false, reason: 'test' });
+    expect(await set({ secret: FUZZY, acceptUnclear: true })).toMatchObject({
+      ok: true,
+      output: { acceptedUnclear: true },
+    });
+    expect(await set({ secret: GOOD })).toMatchObject({ ok: true });
     // The label in required too; '' clears it.
     expect(await set({ label: 'Entra ID' })).toMatchObject({ ok: true });
     expect((await row())?.label).toBe('Entra ID');

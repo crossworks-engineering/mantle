@@ -14,7 +14,9 @@
  *    client secret in any mode but off (in an on mode only when the Test with
  *    it answers ok), and the button's label in any mode but off (0399; ''
  *    clears it). A box a release behind refuses a label as `bad-call`, the
- *    whole save, so nothing half applies. The nonce is the call's id, taken once (tool-channel.ts
+ *    whole save, so nothing half applies. `acceptUnclear: true` saves a new
+ *    secret in an on mode whose Test answers `unclear` (a person confirmed
+ *    it); a box a release behind refuses it the same way (`bad-call`). The nonce is the call's id, taken once (tool-channel.ts
  *    takeNonce). `by` is the CC person, for the audit row.
  *  - `sso_test`: one Test with the saved values (lib/oidc/sso-setup.ts).
  *  - `sso_mode { nonce, by, mode }`: raises the mode one step (off, setup,
@@ -83,6 +85,8 @@ export const SSO_CALLS = [
             .refine((v) => ssoLabelValue(v) !== false)
             .optional(),
           withLabel: WithLabel,
+          // A person's confirm of a secret whose Test answers unclear.
+          acceptUnclear: z.literal(true).optional(),
         })
         .strict()
         .refine(
@@ -127,6 +131,8 @@ export type SsoAnswer = {
   /** sso_mode: the mode word before the raise. */
   from?: string;
   secretCleared?: true;
+  /** sso_set: the secret was saved on an `unclear` Test, as confirmed. */
+  acceptedUnclear?: true;
   status?: ControlSsoStatus;
 };
 
@@ -140,7 +146,7 @@ export async function runSsoCall(call: SsoCall): Promise<SsoAnswer> {
   }
   const withLabel = call.args?.withLabel === true;
   if (call.op === 'sso_set') {
-    const { tenant, clientId, secret, label } = call.args;
+    const { tenant, clientId, secret, label, acceptUnclear } = call.args;
     return runSsoCase(
       {
         op: 'sso_set',
@@ -149,6 +155,7 @@ export async function runSsoCall(call: SsoCall): Promise<SsoAnswer> {
           ...(clientId !== undefined ? { clientId } : {}),
           ...(secret !== undefined ? { secret } : {}),
           ...(label !== undefined ? { label } : {}),
+          ...(acceptUnclear ? { acceptUnclear } : {}),
         },
       },
       'center',
@@ -216,5 +223,8 @@ export function ssoAuditMore(call: SsoCall): Record<string, unknown> {
     ),
     // The label is public (the sign-in screen shows it): the row names it.
     ...(call.args.label !== undefined ? { label: ssoLabelValue(call.args.label) || '' } : {}),
+    // The person's confirm of an unclear Test (the answer says whether it
+    // was needed: acceptedUnclear).
+    ...(call.args.acceptUnclear ? { acceptUnclear: true } : {}),
   };
 }

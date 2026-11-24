@@ -9,7 +9,9 @@
  *    stage one box's values; the person types their own password (the setup
  *    screen's fresh check, ssoSetupPasswordRefusal). `label` is the sign-in
  *    button's word, held to @mantle/client-types SSO_LABEL_RE here and again
- *    at the box; '' clears it;
+ *    at the box; '' clears it. `acceptUnclear: true` with a secret: the
+ *    person confirms a new secret whose Test answers `unclear` (only that
+ *    code: secret-refused and the rest stay refused);
  *  - `{ do: 'mode', boxId, mode, password }`: raise one box's sign-in mode
  *    one step (setup, optional, required; never down, the box holds the
  *    rule); the person types their own password, as for a save;
@@ -71,6 +73,7 @@ const Body = z.discriminatedUnion('do', [
       clientId: z.string().max(64).optional(),
       secret: z.string().max(1024).optional(),
       label: z.string().max(240).optional(),
+      acceptUnclear: z.boolean().optional(),
       password: z.string().min(1).max(1024),
     })
     .strict(),
@@ -111,6 +114,7 @@ export async function POST(req: Request) {
           ...(body.secret?.trim() ? { secret: body.secret } : {}),
           // '' is a value here: it clears the label.
           ...(body.label !== undefined ? { label: body.label } : {}),
+          ...(body.acceptUnclear === true ? { acceptUnclear: true } : {}),
         }
       : body.do === 'mode'
         ? { do: 'mode' as const, boxId: body.boxId, mode: body.mode }
@@ -134,7 +138,7 @@ export async function POST(req: Request) {
     const checked = checkSsoSet(ask);
     if (!checked.ok) throw new InputError(checked.error);
     staged = checked.value;
-    const { secret, label, ...names } = checked.value;
+    const { secret, label, acceptUnclear, ...names } = checked.value;
     setDetail = {
       boxId: ask.boxId,
       fields: [
@@ -145,6 +149,8 @@ export async function POST(req: Request) {
       namesSha256: createHash('sha256').update(JSON.stringify(names)).digest('hex'),
       // The label is public (the sign-in screen shows it): the row names it.
       ...(label !== undefined ? { label } : {}),
+      // The person confirmed a secret whose Test may answer unclear.
+      ...(acceptUnclear ? { acceptUnclear: true } : {}),
     };
   }
   if (ask.do !== 'answers' && isSelf(ask)) {
@@ -166,7 +172,13 @@ export async function POST(req: Request) {
   return NextResponse.json(r.value);
 }
 
-type Staged = { tenant?: string; clientId?: string; secret?: string; label?: string };
+type Staged = {
+  tenant?: string;
+  clientId?: string;
+  secret?: string;
+  label?: string;
+  acceptUnclear?: true;
+};
 
 type SelfAsk =
   | { do: 'status' | 'test'; boxIds: readonly string[] }
@@ -219,6 +231,7 @@ async function runSelf(
     ...(answer.test ? { test: answer.test } : {}),
     ...(answer.from ? { from: answer.from } : {}),
     ...(answer.secretCleared ? { secretCleared: true } : {}),
+    ...(answer.acceptedUnclear ? { acceptedUnclear: true } : {}),
   });
   const at = new Date().toISOString();
   return {

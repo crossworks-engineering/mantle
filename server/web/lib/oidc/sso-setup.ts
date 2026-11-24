@@ -250,17 +250,29 @@ export async function ssoCenterStatus(withLabel: boolean): Promise<ControlSsoSta
 
 /** What a Control Center may stage: an Entra tenant and client id (GUIDs,
  *  lower case), the client secret, and the button's label (held to the
- *  pattern, @mantle/client-types sso-label.ts; '' clears it). */
-export type SsoStaged = { tenant?: string; clientId?: string; secret?: string; label?: string };
+ *  pattern, @mantle/client-types sso-label.ts; '' clears it).
+ *  `acceptUnclear`: a person confirmed a new secret whose Test answers
+ *  `unclear` (not a value: it changes only that one refusal). */
+export type SsoStaged = {
+  tenant?: string;
+  clientId?: string;
+  secret?: string;
+  label?: string;
+  acceptUnclear?: true;
+};
 
 /** The answer of a save from the Control Center. `mode`: the mode word is
  *  off, or names were sent while it is not setup. `env-wins`: the box .env
  *  holds that value. `test`: in an on mode the Test with the new secret did
- *  not answer ok (`test` names its code), and nothing was saved. */
+ *  not answer ok (`test` names its code), and nothing was saved; `unclear`
+ *  may be saved on a second ask with `acceptUnclear`. */
 export type SsoSetAnswer = {
   ok: boolean;
   reason?: 'mode' | 'env-wins' | 'test';
   test?: SsoSetupTestOutcome;
+  /** The secret was saved on a Test that answered `unclear`, as the person
+   *  confirmed (`acceptUnclear`). */
+  acceptedUnclear?: true;
   /** A stored secret was cleared: the tenant or client changed without one. */
   secretCleared?: true;
 };
@@ -271,7 +283,11 @@ export type SsoSetAnswer = {
  *     setup (sign-in off), the secret and the label in any mode but off; a
  *     value the box .env holds is refused (it wins).
  *  2. In optional or required the new secret is saved only when the Test with
- *     it answers ok, so a wrong paste never breaks sign-in.
+ *     it answers ok, so a wrong paste never breaks sign-in. One code more
+ *     when a person confirmed it (`acceptUnclear`): `unclear`, where the
+ *     provider answered with another error and did not say the secret is
+ *     wrong (Entra with Assignment required on Yes answers so for a good
+ *     secret). `secret-refused` and every other code stay refused.
  * A save that cannot apply every value it carries applies none. The secret
  * is sealed with this box's master key; the row's names and label are read
  * again here, so this process's status and Test see them at once (the other
@@ -301,7 +317,9 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
   let test: SsoSetupTestOutcome | undefined;
   if (a.secret !== undefined && mode !== 'setup') {
     test = await ssoSetupTest(a.secret);
-    if (test !== 'ok') return { ok: false, reason: 'test', test };
+    if (test !== 'ok' && !(test === 'unclear' && a.acceptUnclear === true)) {
+      return { ok: false, reason: 'test', test };
+    }
   }
   const r = await saveSsoStaged({
     ...(a.tenant !== undefined ? { issuer: entraIssuer(a.tenant) } : {}),
@@ -322,6 +340,7 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
   return {
     ok: true,
     ...(test ? { test } : {}),
+    ...(test === 'unclear' ? { acceptedUnclear: true } : {}),
     ...(r.secretCleared ? { secretCleared: true } : {}),
   };
 }

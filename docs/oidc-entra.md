@@ -55,10 +55,13 @@ often: if one differs a little, take the nearest match.
 Entra for an app-only token for the sign-in app itself (client credentials,
 scope `<client id>/.default`). Microsoft says that with **Assignment
 required?** on Yes, an app must be assigned to get a token. The sign-in app is
-not assigned to itself, so Entra may refuse it, and the Test then answers
-`unclear` with a good secret. This is not yet tested on a real tenant. If you
-see `unclear`, lock the screen and try a real sign-in before you change
-anything. A wrong secret still reads `secret-refused`.
+not assigned to itself, so Entra refuses it, and the Test then answers
+`unclear` with a good secret: seen on a real tenant (2026-11-24). If you see
+`unclear`, turn sign-in on (the CC page warns first) and try a real sign-in
+before you change anything. A wrong secret still reads `secret-refused`. A
+new secret later, on a live box, is saved after an `unclear` Test only when
+you confirm it on the page ([oidc-sign-in.md](oidc-sign-in.md), "A new secret
+later").
 
 ## In the box .env
 

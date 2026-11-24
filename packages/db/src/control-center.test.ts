@@ -436,6 +436,24 @@ describe('the sign-in view (0371)', () => {
     expect(after.test).toEqual(s.test);
   });
 
+  it('a save on an unclear Test the person confirmed says so in the view', () => {
+    const s = nextSsoView(
+      null,
+      call('sso_set', ['secret']),
+      { ok: true, reason: null, test: 'unclear', acceptedUnclear: true, status },
+      't1',
+    );
+    expect(s.set).toEqual({
+      fields: ['secret'],
+      ok: true,
+      reason: null,
+      by: 'it@example.com',
+      at: 't1',
+      acceptedUnclear: true,
+    });
+    expect(s.test?.code).toBe('unclear');
+  });
+
   it('a raise keeps the mode asked, the mode before and its outcome (0372)', () => {
     const up = nextSsoView(
       null,

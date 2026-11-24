@@ -162,7 +162,11 @@ describe.skipIf(!URL_)('the sign-in label from the Control Center', () => {
         args?: Row;
       };
       sent.push(call);
-      if (behind && call.args && ('withLabel' in call.args || 'label' in call.args)) {
+      if (
+        behind &&
+        call.args &&
+        ('withLabel' in call.args || 'label' in call.args || 'acceptUnclear' in call.args)
+      ) {
         return new Response(JSON.stringify({ error: 'refused', reason: 'bad-call' }), {
           status: 400,
         });
@@ -244,6 +248,33 @@ describe.skipIf(!URL_)('the sign-in label from the Control Center', () => {
     env({ MANTLE_OIDC_MODE: 'optional' });
   });
 
+  it('the unclear confirm: no effect in setup or on any code but unclear; the CC drops it with no secret', async () => {
+    env({ MANTLE_OIDC_MODE: 'setup' });
+    const inSetup = await signed({
+      op: 'sso_set',
+      args: { nonce: randomUUID(), by: 'x', secret: 'staged-in-setup', acceptUnclear: true },
+    });
+    expect(inSetup).toMatchObject({ ok: true });
+    expect(inSetup.test).toBeUndefined();
+    expect(inSetup.acceptedUnclear).toBeUndefined();
+    env({ MANTLE_OIDC_MODE: 'optional' });
+    // In optional the Test answers env-missing here (no issuer): still refused.
+    const missing = await signed({
+      op: 'sso_set',
+      args: { nonce: randomUUID(), by: 'x', secret: 'not-saved', acceptUnclear: true },
+    });
+    expect(missing).toMatchObject({ ok: false, reason: 'test', test: 'env-missing' });
+    // A flag on nothing but a secret is no field at the box: the CC drops it.
+    expect(cc.checkSsoSet({ label: 'Okta', acceptUnclear: true })).toEqual({
+      ok: true,
+      value: { label: 'Okta' },
+    });
+    expect(cc.checkSsoSet({ secret: ' s ', acceptUnclear: true })).toEqual({
+      ok: true,
+      value: { secret: 's', acceptUnclear: true },
+    });
+  });
+
   it('an older CC asks without the flag: the status has no field it does not know', async () => {
     const r = await signed({ op: 'sso_status' });
     expect(Object.keys(r.status as Row).sort()).toEqual(OLD_STATUS_KEYS);
@@ -288,6 +319,14 @@ describe.skipIf(!URL_)('the sign-in label from the Control Center', () => {
       const v = await fromCc({ do: 'set', boxId, label: 'Okta' });
       expect(v).toMatchObject({ reason: 'bad-call', set: { fields: ['label'], ok: false } });
       expect(await rowLabel()).toBe('Microsoft');
+      // A secret with the unclear confirm: refused whole, never sent again
+      // without the confirm.
+      sent.length = 0;
+      const before = (await sql<Row[]>`select secret_enc from sso_setup`)[0]?.secret_enc;
+      const u = await fromCc({ do: 'set', boxId, secret: 'new-secret', acceptUnclear: true });
+      expect(u).toMatchObject({ reason: 'bad-call', set: { fields: ['secret'], ok: false } });
+      expect(sent.filter((c) => c.op === 'sso_set')).toHaveLength(1);
+      expect((await sql<Row[]>`select secret_enc from sso_setup`)[0]?.secret_enc).toEqual(before);
     } finally {
       behind = false;
     }

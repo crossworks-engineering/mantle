@@ -912,7 +912,7 @@ setup says so there.
   still reads a newer box. A newer CC always sends it; a box a release
   behind refuses it (`bad-call`, before the nonce is taken), and the CC asks
   once more without it, except for a save that carries a label.
-- `sso_set { nonce, by, tenant?, clientId?, secret?, label? }`: the tenant
+- `sso_set { nonce, by, tenant?, clientId?, secret?, label?, acceptUnclear? }`: the tenant
   and the client ID are GUIDs; the issuer is built from the tenant
   (`https://login.microsoftonline.com/<tenant>/v2.0`; another cloud or
   provider stays a `.env` line). The label is the sign-in button's word,
@@ -925,13 +925,19 @@ setup says so there.
   refused (`env-wins`); (2) in
   `optional` or `required` a new secret is saved only when the Test with it
   answers `ok` (else `test`, with the code), so a wrong paste never breaks
-  sign-in. A changed tenant or client ID clears a stored secret the same
+  sign-in; or, with `acceptUnclear: true` (a person's confirm, sent only
+  with a secret), when it answers `unclear` (answered `acceptedUnclear:
+true`; [oidc-sign-in.md](oidc-sign-in.md), "A new secret later").
+  `secret-refused` and every other code stay refused, the flag or not; a box
+  a release behind refuses the flag (`bad-call`), and the CC does not send
+  the save again without it. A changed tenant or client ID clears a stored secret the same
   save does not replace (`secretCleared`): a secret is never sent to another
   issuer or with another app (so save the three together). A save that
   cannot apply every value it carries applies none: a box a release behind
   refuses a label (`bad-call`), so none of that save applies there. The
   nonce is the call id, as `tool`'s. The audit row names `by`, the fields,
-  a new label (it is public) and the answer, never a value of the secret.
+  a new label (it is public), the confirm when it was sent and the answer,
+  never a value of the secret.
 - `sso_test`: one Test with the saved values (the setup screen's own).
 - `sso_mode { nonce, by, mode }`: raise the mode to `setup`, `optional` or
   `required`. Two checks: (1) the box `.env` has no mode line, else

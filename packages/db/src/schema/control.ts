@@ -203,7 +203,15 @@ export type ControlSsoView = {
   reason: string | null;
   status: ControlSsoStatus | null;
   test: { code: string; at: string; by: string } | null;
-  set: { fields: string[]; ok: boolean; reason: string | null; by: string; at: string } | null;
+  set: {
+    fields: string[];
+    ok: boolean;
+    reason: string | null;
+    by: string;
+    at: string;
+    /** The secret was saved on an `unclear` Test, as the person confirmed. */
+    acceptedUnclear?: true;
+  } | null;
   /** The last raise of the mode (0372): the mode asked, and the one before
    *  when the box said it. Absent before any. */
   mode?: {

@@ -129,6 +129,7 @@ const SsoReply = z
       .regex(/^[a-z][a-z-]{0,29}$/)
       .optional(),
     secretCleared: z.literal(true).optional(),
+    acceptedUnclear: z.literal(true).optional(),
     from: Mode.optional(),
     status: SsoStatus.optional(),
   })
@@ -214,7 +215,9 @@ async function sendSsoCall(
     const staged = JSON.parse(
       open(Buffer.from(c.sealed, 'base64'), controlToolAad(box.id, c.id)),
     ) as Record<string, unknown>;
-    if (name === 'sso_set') sent.fields.push(...Object.keys(staged));
+    // The fields a save carries; the confirm flag is not a value.
+    if (name === 'sso_set')
+      sent.fields.push(...Object.keys(staged).filter((k) => k !== 'acceptUnclear'));
     else sent.to = typeof staged.mode === 'string' ? staged.mode : '';
     args = { nonce: c.id, by: c.by.slice(0, 200), ...staged };
   }
@@ -224,8 +227,16 @@ async function sendSsoCall(
   } catch (err) {
     // A box a release behind (0399) refuses the label flag as bad-call,
     // before it takes the nonce: ask once more without it. Not for a save
-    // that carries a label: that save cannot apply there, so none of it does.
-    if (!(err instanceof CallFailed) || err.code !== 'bad-call' || 'label' in args) throw err;
+    // that carries a label or the unclear confirm: that save cannot apply
+    // there, so none of it does (bad-call), never a save without the confirm.
+    if (
+      !(err instanceof CallFailed) ||
+      err.code !== 'bad-call' ||
+      'label' in args ||
+      'acceptUnclear' in args
+    ) {
+      throw err;
+    }
     reply = await callBox(key, box.url, name, args);
   }
   const r = SsoReply.safeParse(reply);
@@ -347,7 +358,12 @@ async function saveSso(
   sent: SsoSent,
   answer: Parameters<typeof saveControlToolAnswer>[2],
 ): Promise<void> {
-  const out = (answer.output ?? {}) as { test?: string; from?: string; status?: never };
+  const out = (answer.output ?? {}) as {
+    test?: string;
+    from?: string;
+    acceptedUnclear?: true;
+    status?: never;
+  };
   await saveControlSsoView(
     boxId,
     { name: c.name ?? '', by: c.by, fields: sent.fields, ...(sent.to ? { to: sent.to } : {}) },
@@ -356,6 +372,7 @@ async function saveSso(
       reason: answer.reason ?? null,
       ...(out.test ? { test: out.test } : {}),
       ...(out.from ? { from: out.from } : {}),
+      ...(out.acceptedUnclear ? { acceptedUnclear: true } : {}),
       ...(out.status ? { status: out.status } : {}),
     },
   ).catch((e) => log('control').error('saving a sign-in view:', e));

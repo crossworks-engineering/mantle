@@ -175,8 +175,8 @@ The Test asks a client credentials token for the app itself (on Entra, scope
 `<client id>/.default`), with the secret sent in the body
 (`client_secret_post`, the only credential Mantle takes: no certificate). On
 Entra with **Assignment required?** on Yes, an app must be assigned to get a
-token, so the Test may answer `unclear` with a good secret. Untested on a real
-tenant: on `unclear`, lock and try a real sign-in first
+token, so the Test answers `unclear` with a good secret (seen on a real
+tenant, 2026-11-24): on `unclear`, lock and try a real sign-in first
 ([oidc-entra.md](oidc-entra.md), "The Test button and Assignment required").
 
 **To lock it:** set `MANTLE_OIDC_MODE=optional`, run `docker compose up -d`,
@@ -293,9 +293,11 @@ it is pasted once at the CC and sealed with the box's own master key.
    their own CC password, and saves. Then Test. The issuer is built from the
    tenant (`https://login.microsoftonline.com/<tenant>/v2.0`): another cloud
    or another provider stays a `.env` line.
-3. After a Test answers `ok`, the CC Admin raises the box to `optional`
-   ("Turn on"). The tenant and client ID are locked from then on: the CC
-   cannot go back to `setup`.
+3. After a Test, the CC Admin raises the box to `optional` ("Turn on"). The
+   page asks a Test first, and after one that answers `unclear` it shows a
+   warning to confirm; the box itself asks no passed Test for the raise.
+   The tenant and client ID are locked from then on: the CC cannot go back
+   to `setup`.
 4. Any time after setup opens, the CC Admin may set the button's label (for
    example `Microsoft`) with their own CC password, in any mode but off. A box
    a release behind refuses a save with a label whole (`bad-call`).
@@ -357,6 +359,26 @@ another issuer or with another app.
 the CC in any mode but off, with no window. In `optional` or `required` the
 box saves it only when the Test with it answers `ok`, so a wrong paste never
 breaks sign-in. In `setup` it is saved as the screen saves it.
+
+One way past a Test that answers `unclear`, for a person who confirms it:
+the save carries `acceptUnclear: true` (with their CC password, as every
+save). The first save without it is refused with reason `test` and the code
+`unclear`, so the page can ask. With it, a secret whose Test answers
+`unclear` is saved, and the answer (`acceptedUnclear: true`), the CC's view
+and the box's audit row say so; the CC's own row (`fleet.sso_set`) names
+the confirm (`acceptUnclear: true`; for `self` the result too). Every other code stays refused, the flag or not:
+`secret-refused` (the provider said the client or the secret is wrong:
+`invalid_client` or a 401), `unreachable`, `issuer-mismatch`, `env-missing`,
+`no-secret`, `secret-unreadable`. `unclear` means the provider answered with
+another error and did not say the secret is wrong; Entra with **Assignment
+required?** on Yes answers so for a good secret, always. The stake, if the
+secret is in fact wrong: in `optional` company sign-in fails and passwords
+keep working; in `required` company sign-in fails for everybody until a good
+secret is saved, and only the original account (and honoured outside marks)
+keeps a password. The flag does nothing in `setup` (no Test is asked there)
+and nothing for any code but `unclear`. A box a release behind refuses it
+(`bad-call`), the whole save, and the CC does not send that save again
+without it.
 
 **The Control Center's own box** (owner, 2026-11-13). A CC has no CC above
 it, so its own box is the first entry on the same Fleet sign-in page, with

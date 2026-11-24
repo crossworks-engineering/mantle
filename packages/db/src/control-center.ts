@@ -1526,6 +1526,8 @@ export type ControlSsoAnswer = {
   test?: string;
   /** sso_mode: the mode word before the raise. */
   from?: string;
+  /** sso_set: the secret was saved on an `unclear` Test, as confirmed. */
+  acceptedUnclear?: true;
   status?: ControlSsoStatus;
 };
 
@@ -1563,6 +1565,7 @@ export function nextSsoView(
             reason: answer.ok ? null : (answer.reason ?? 'refused'),
             by: call.by,
             at: now,
+            ...(answer.acceptedUnclear ? { acceptedUnclear: true as const } : {}),
           }
         : (prev?.set ?? null),
     mode:
@@ -1611,7 +1614,14 @@ export function checkSsoSet(ask: {
   clientId?: string;
   secret?: string;
   label?: string;
-}): Checked<{ tenant?: string; clientId?: string; secret?: string; label?: string }> {
+  acceptUnclear?: boolean;
+}): Checked<{
+  tenant?: string;
+  clientId?: string;
+  secret?: string;
+  label?: string;
+  acceptUnclear?: true;
+}> {
   const args = {
     ...(ask.tenant !== undefined ? { tenant: ask.tenant.trim().toLowerCase() } : {}),
     ...(ask.clientId !== undefined ? { clientId: ask.clientId.trim().toLowerCase() } : {}),
@@ -1640,7 +1650,18 @@ export function checkSsoSet(ask: {
   ) {
     return { ok: false, error: `The client secret is 1 to ${CONTROL_SSO_SECRET_MAX} characters.` };
   }
-  return { ok: true, value: args };
+  // The person's confirm of a secret whose Test answers unclear: a flag on
+  // a secret only (with none it means nothing, and is left out, so an older
+  // box is not refused for it).
+  return {
+    ok: true,
+    value: {
+      ...args,
+      ...(ask.acceptUnclear === true && args.secret !== undefined
+        ? { acceptUnclear: true as const }
+        : {}),
+    },
+  };
 }
 
 /** One ask of the Company sign-in page. */
@@ -1653,6 +1674,7 @@ export type ControlSsoAsk =
       clientId?: string;
       secret?: string;
       label?: string;
+      acceptUnclear?: boolean;
     }
   | { do: 'mode'; boxId: string; mode: string }
   | { do: 'answers'; callIds: readonly string[] };
