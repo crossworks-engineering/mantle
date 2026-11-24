@@ -33,6 +33,7 @@ import { registerMantleTools } from '../build-server';
  * commit. That is the point: the diff shows the surface change.
  */
 const HTTP_SURFACE = [
+  'access_grant_add',
   'access_set',
   'agent_grant_tool_group',
   'agent_set_thinking_effort',
@@ -213,6 +214,7 @@ const HTTP_SURFACE = [
   'video_ingest',
   'worker_group_ensure',
   'workspace_user_set',
+  'access_grant_remove',
   'api_key_delete',
   'api_tool_delete',
   'app_delete',

@@ -344,6 +344,11 @@ const EXEMPT: Readonly<Record<string, string>> = {
     "adds no tool; an in-brain agent's text on a group another workspace holds waits for a person (heldGroupDoor)",
   'sandbox_publish.group_slug': NAMES_A_GROUP,
   'app_tools_set.tool_slugs': "an app's declared tools, no tool group",
+  // The Grant Access panel's folder confirm (how many items a folder's
+  // change reaches), as the route body's. A widening in-brain call waits in
+  // Pending for a person anyway (access_grant_add is confirm-gated).
+  'access_grant_add.confirm': LEVEL_CONFIRM,
+  'access_grant_remove.confirm': LEVEL_CONFIRM,
   'recall_map_delete.confirm': FOLLOWS_RIGHTS,
   app_publish: FOLLOWS_RIGHTS,
   page_commit: FOLLOWS_RIGHTS,

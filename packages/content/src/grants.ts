@@ -620,6 +620,31 @@ export async function getGrants(caller: WsCaller, nodeId: string): Promise<Grant
   return buildResponse(ctx, await loadItem(ctx, nodeId));
 }
 
+/** A workspace a grant change names, by its id or its exact name: its id.
+ *  An id goes through as given (each change's own rule answers it). A name
+ *  is looked up where the panel shows workspaces: the caller's own, and
+ *  the item's rows the caller may see. One match answers its id; none is
+ *  "Workspace not found."; two are refused, so the caller names the id. */
+export async function grantWorkspaceRef(
+  caller: WsCaller,
+  nodeId: string,
+  ref: string,
+): Promise<string> {
+  const name = ref.trim();
+  if (UUID_RE.test(name)) return name.toLowerCase();
+  const ctx = await loadCtx(caller);
+  const panel = await buildResponse(ctx, await loadItem(ctx, nodeId));
+  const hits = new Set<string>();
+  for (const w of ctx.mine.values()) if (w.name === name) hits.add(w.id);
+  for (const r of panel.rows) if (r.name === name) hits.add(r.wsId);
+  const [only, more] = [...hits];
+  if (only && !more) return only;
+  if (more) {
+    throw new GrantError(400, 'invalid', `Two workspaces are named "${name}": name it by its id.`);
+  }
+  throw WS_NOT_FOUND();
+}
+
 /** The panel after a change, or `{ visible: false }` when the caller no
  *  longer reads the item. */
 async function after(caller: WsCaller, nodeId: string): Promise<GrantsWriteResponse> {

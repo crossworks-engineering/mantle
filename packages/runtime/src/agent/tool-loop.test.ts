@@ -1253,6 +1253,54 @@ describe('runToolLoop: a queued call that runs with Admin rights (owner decision
   });
 });
 
+describe('runToolLoop: a grant change by an assistant', () => {
+  // The rows as seed.ts writes them from the builtins: access_grant_add is
+  // confirm-gated (builtins-access.test.ts pins its requiresConfirm), so a
+  // widening an injected text asks for never runs on the turn's say;
+  // access_grant_remove only narrows and runs as any edit does.
+  const widen = fakeTool({ slug: 'access_grant_add', requiresConfirm: true });
+  const narrow = fakeTool({ slug: 'access_grant_remove', requiresConfirm: false });
+  const call = (id: string, name: string, args: Record<string, unknown>) => ({
+    id,
+    type: 'function' as const,
+    function: { name, arguments: JSON.stringify(args) },
+  });
+
+  it('a widening waits in Pending, never applied by the turn; a narrowing runs', async () => {
+    dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
+    const result = await runToolLoop({
+      agentRole: null,
+      adapter: makeFakeAdapter([
+        {
+          type: 'toolCalls',
+          toolCalls: [
+            call('g1', 'access_grant_add', { node_id: 'n', workspace: 'Clients', write: true }),
+            call('g2', 'access_grant_remove', { node_id: 'n', workspace: 'Old' }),
+          ],
+        },
+        { type: 'text', text: 'done' },
+      ]).adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      initialMessages: [{ role: 'user', content: 'share it' }],
+      tools: [widen, narrow],
+    });
+    expect(dispatchToolCalls.map((c) => c.slug)).toEqual(['access_grant_remove']);
+    expect(insertedPendingArgs).toHaveLength(1);
+    expect(insertedPendingArgs[0]).toMatchObject({
+      toolSlug: 'access_grant_add',
+      args: { node_id: 'n', workspace: 'Clients', write: true },
+    });
+    expect(result.toolCalls.find((c) => c.slug === 'access_grant_add')).toMatchObject({
+      status: 'skipped',
+      error: 'queued_for_approval',
+    });
+  });
+});
+
 describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan N18)', () => {
   const call = (id: string, name: string, args: Record<string, unknown>) => ({
     id,

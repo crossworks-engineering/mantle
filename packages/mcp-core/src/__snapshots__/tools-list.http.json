@@ -1,7 +1,44 @@
 [
  {
+  "name": "access_grant_add",
+  "description": "Grant one item to a workspace, as the item's Grant Access panel does: the users of that workspace then read it (`write: true`: and edit it). On a workspace the item is already in, `write: true` switches Write on. Needs a Moderator of the item's home and of that workspace; the panel's refusals come back in its words. A folder passes the grant to everything inside it (`confirm`). Answers the item's grants after the change, as `access_get`. To narrow use `access_grant_remove`; a public link is `node_share`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "node_id": {
+     "type": "string",
+     "description": "The item (page, file, folder, app, table, ...)."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "The workspace: its id, or its exact name, e.g. \"Engineering\"."
+    },
+    "confirm": {
+     "type": "boolean",
+     "description": "A folder only: the change reaches everything inside it. Send true once the user knows how many items (the refusal without it says)."
+    },
+    "write": {
+     "type": "boolean",
+     "description": "Whether the workspace may edit the item too."
+    }
+   },
+   "required": [
+    "node_id",
+    "workspace"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "access_grant_add",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "access_set",
-  "description": "Retired: nothing has a level any more. A brain item's readers are its grants (its Grant Access panel; see `access_get`), an assistant reads the workspace it answers in, and a tool group is system-wide or Admin only. Answers how to make the change instead.",
+  "description": "Retired: nothing has a level any more. A brain item's readers are its grants: change them with `access_grant_add` and `access_grant_remove` (see `access_get`). An assistant reads the workspace it answers in, and a tool group is system-wide or Admin only. Answers how to make the change instead.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8626,6 +8663,43 @@
   }
  },
  {
+  "name": "access_grant_remove",
+  "description": "Take one item away from a workspace, as the item's Grant Access panel does: its users no longer read it (a row that follows the item's folder becomes \"Removed here\"). `keep_read: true` only switches that grant's Write off. Needs a Moderator of the item's home or of that workspace; the home's own row never goes (move the item instead); the panel's refusals come back in its words. A folder's change reaches everything inside it (`confirm`). Answers the item's grants after the change, as `access_get`. To widen use `access_grant_add`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "node_id": {
+     "type": "string",
+     "description": "The item (page, file, folder, app, table, ...)."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "The workspace: its id, or its exact name, e.g. \"Engineering\"."
+    },
+    "confirm": {
+     "type": "boolean",
+     "description": "A folder only: the change reaches everything inside it. Send true once the user knows how many items (the refusal without it says)."
+    },
+    "keep_read": {
+     "type": "boolean",
+     "description": "Keep the grant and switch only its Write off."
+    }
+   },
+   "required": [
+    "node_id",
+    "workspace"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "access_grant_remove",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "api_key_delete",
   "description": "Ask to delete a vault key by name: it **waits for the owner** to approve it in the app (the reply says queued for approval), then the key is gone, not reversible: agents, workers and tools that use it are left with no key. Check the name with `api_key_refs` first. Never returns the value. To change a value use `api_key_set` instead.",
   "inputSchema": {
@@ -10554,7 +10628,7 @@
  },
  {
   "name": "access_get",
-  "description": "For a brain item: its grants, the workspaces that read it (`home`: the workspace it lives in; `grants`: one row per workspace with `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not)). Items have no level any more; grants are changed in the item's Grant Access panel.",
+  "description": "For a brain item: its grants, the workspaces that read it (`home`: the workspace it lives in; `grants`: one row per workspace with `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not)). Change them with `access_grant_add` and `access_grant_remove`.",
   "inputSchema": {
    "type": "object",
    "properties": {

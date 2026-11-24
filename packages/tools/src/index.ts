@@ -189,7 +189,12 @@ export { WORKER_DELEGATION_TOOLS, buildSummarizeTextInput } from './builtins-wor
 export { TRANSLATE_TOOLS, TRANSLATOR_SETTINGS_TOOLS } from './builtins-translate';
 export { EXPORT_TOOLS } from './builtins-export';
 export { DOCUMENT_TOOLS, PDF_TOOL_OPS } from './builtins-documents';
-export { ACCESS_TOOLS } from './builtins-access';
+export {
+  ACCESS_TOOLS,
+  access_grant_add,
+  access_grant_remove,
+  GRANT_NEEDS_LOGIN,
+} from './builtins-access';
 export { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';

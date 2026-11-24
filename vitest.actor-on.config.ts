@@ -18,6 +18,8 @@ export default defineConfig({
       'server/web/server/w6b-*.db.test.ts',
       'server/web/server/a2b2b-write-gateway.db.test.ts',
       'server/web/lib/grants.db.test.ts',
+      // The grant tools over MCP beside the routes: the same actor.
+      'server/web/server/grants-mcp.db.test.ts',
       'server/web/server/a6-grant-sweep.db.test.ts',
       'server/web/server/a6b-exit-sweep.db.test.ts',
       'packages/db/src/workspaces*.db.test.ts',

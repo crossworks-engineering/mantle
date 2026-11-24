@@ -1,5 +1,7 @@
 {
   "access_get": "read",
+  "access_grant_add": "write",
+  "access_grant_remove": "delete",
   "access_set": "write",
   "agent_grant_tool_group": "write",
   "agent_list": "read",
