@@ -537,6 +537,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       'at',
       'backup',
       'counts',
+      'keys',
       'schema',
       'signIn',
       'status',
