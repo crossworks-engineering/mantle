@@ -38,6 +38,12 @@ import {
   superuserClient,
 } from '@mantle/db/test-support';
 
+// The run asks the Fleet page more than its rate limit allows one login in
+// ten minutes (fleetSso, 60): read at load, so set before the app loads.
+vi.hoisted(() => {
+  process.env.MANTLE_RATE_LIMIT_SCALE ??= '3';
+});
+
 const URL_ = process.env.MANTLE_TEST_DATABASE_URL;
 type Row = Record<string, unknown>;
 const TENANT = '11111111-2222-4333-8444-555555555555';
@@ -262,7 +268,9 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
 
   afterAll(async () => {
     vi.restoreAllMocks();
-    for (const k of [...ENV_KEYS, 'MANTLE_MASTER_KEY_NEXT']) delete process.env[k];
+    for (const k of [...ENV_KEYS, 'MANTLE_MASTER_KEY_NEXT', 'MANTLE_RATE_LIMIT_SCALE']) {
+      delete process.env[k];
+    }
     config?.setOidcRow({});
     await new Promise((r) => provider?.close(r));
     await (sql as unknown as { end?: () => Promise<void> } | undefined)?.end?.();
@@ -436,16 +444,20 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
       output: { test: 'unclear', acceptedUnclear: true },
     });
     expect(await opened()).toBe(FUZZY);
-    const sets = await auditRows('fleet.sso_set', 1);
-    expect(sets).toContainEqual(
-      expect.objectContaining({
-        detail: expect.objectContaining({
-          boxId: 'self',
-          fields: ['secret'],
-          acceptUnclear: true,
-          result: { ok: true, reason: null, test: 'unclear', acceptedUnclear: true },
-        }),
-      }),
+    // The row is written after the answer: wait for it.
+    await vi.waitFor(
+      async () =>
+        expect(await auditRows('fleet.sso_set', 1)).toContainEqual(
+          expect.objectContaining({
+            detail: expect.objectContaining({
+              boxId: 'self',
+              fields: ['secret'],
+              acceptUnclear: true,
+              result: { ok: true, reason: null, test: 'unclear', acceptedUnclear: true },
+            }),
+          }),
+        ),
+      { timeout: 5000, interval: 100 },
     );
     // Back to the good one for the rest of the run.
     expect(await set({ secret: GOOD })).toMatchObject({ ok: true, output: { test: 'ok' } });
@@ -477,16 +489,19 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
     expect(await set({ label: 'Okta' })).toMatchObject({ ok: false, reason: 'env-wins' });
     expect(await status()).toMatchObject({ label: 'Company account', labelFrom: 'env' });
     env({ MANTLE_OIDC_LABEL: undefined });
-    const sets = await auditRows('fleet.sso_set', 1);
-    expect(sets).toContainEqual(
-      expect.objectContaining({
-        detail: expect.objectContaining({
-          boxId: 'self',
-          fields: ['label'],
-          label: 'Microsoft',
-          result: { ok: true, reason: null },
-        }),
-      }),
+    await vi.waitFor(
+      async () =>
+        expect(await auditRows('fleet.sso_set', 1)).toContainEqual(
+          expect.objectContaining({
+            detail: expect.objectContaining({
+              boxId: 'self',
+              fields: ['label'],
+              label: 'Microsoft',
+              result: { ok: true, reason: null },
+            }),
+          }),
+        ),
+      { timeout: 5000, interval: 100 },
     );
   });
 
