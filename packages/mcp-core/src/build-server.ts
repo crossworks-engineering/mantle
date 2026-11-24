@@ -35,6 +35,7 @@ import {
   WORKER_DELEGATION_TOOLS,
   TRANSLATE_TOOLS,
   TRANSLATOR_SETTINGS_TOOLS,
+  SEARCH_LANGUAGES_TOOLS,
   EXPORT_TOOLS,
   DOCUMENT_TOOLS,
   ACCESS_TOOLS,
@@ -334,6 +335,8 @@ export function registerMantleTools(
   registerBuiltinTools(TRANSLATE_TOOLS);
   // Its models, an Admin setting (the settings area): MCP only.
   registerBuiltinTools(TRANSLATOR_SETTINGS_TOOLS);
+  // The brain's search languages (the Settings screen's field): MCP only.
+  registerBuiltinTools(SEARCH_LANGUAGES_TOOLS);
   registerResponderTools(ctx);
 
   // ─── Export (Word / Excel) ───────────────────────────────────────────────────

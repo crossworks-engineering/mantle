@@ -15,6 +15,7 @@ export {
   DEFAULT_PREFERENCES,
   loadProfilePreferences,
   updateProfilePreferences,
+  saveSearchLanguages,
   noteInboundChannel,
   isValidTimezone,
   isValidLocale,

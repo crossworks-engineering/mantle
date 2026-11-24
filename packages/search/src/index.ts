@@ -16,6 +16,13 @@ export {
   type ScopeTable,
 } from './scope';
 export { grantUnionFilter, peerPerLoginRow, pgArrayLiteral } from './pg';
+export {
+  SEARCH_LANGUAGES_KEY,
+  SEARCH_LANGUAGES_MAX,
+  loadSearchLanguages,
+  normalizeSearchLanguages,
+  parseSearchLanguages,
+} from './search-languages';
 
 export {
   goldRank,
@@ -224,7 +231,7 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
 
   let ftsRows: { id: string }[] = [];
   // Rarest terms ORed (see keyword-query.ts): a long query ANDed matched nothing.
-  const kq = opts.q?.trim() ? await resolveKeywordQuery(opts.q.trim(), 'nodes') : null;
+  const kq = opts.q?.trim() ? await resolveKeywordQuery(opts.q.trim(), 'nodes', opts.ownerId) : null;
   if (kq) {
     const kw = keywordSql(nodes.searchTsv, kq);
     const ranked = (n: number) =>

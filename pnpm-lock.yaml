@@ -781,6 +781,9 @@ importers:
 
   packages/search:
     dependencies:
+      '@mantle/api-keys':
+        specifier: workspace:*
+        version: link:../api-keys
       '@mantle/client-types':
         specifier: workspace:*
         version: link:../client-types
@@ -793,6 +796,9 @@ importers:
       '@mantle/std':
         specifier: workspace:*
         version: link:../std
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@opentelemetry/api@1.9.1)(pg@8.22.0)(postgres@3.4.9(patch_hash=5f9e843345f7ff09bcc85aa0d63fa992bd13de09064392e281914af27ac298e2))

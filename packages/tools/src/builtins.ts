@@ -12,6 +12,7 @@ import { type BuiltinToolDef } from './types';
 import { withPolicyFlags } from './tool-policy';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { TRANSLATE_TOOLS, TRANSLATOR_SETTINGS_TOOLS } from './builtins-translate';
+import { SEARCH_LANGUAGES_TOOLS } from './builtins-search-languages';
 import { VIDEO_TOOLS } from './builtins-video';
 import { IMAGE_TOOLS } from './builtins-images';
 import { EVENT_TOOLS } from './builtins-events';
@@ -328,6 +329,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...MODEL_CHECK_TOOLS,
   // The Translator's models, set over MCP (mcpOnly).
   ...TRANSLATOR_SETTINGS_TOOLS,
+  // The brain's search languages, set over MCP (mcpOnly).
+  ...SEARCH_LANGUAGES_TOOLS,
   // The Sync service's accounts (sync_*): an Admin user's client runs them
   // as the account screens do.
   ...SYNC_TOOLS,

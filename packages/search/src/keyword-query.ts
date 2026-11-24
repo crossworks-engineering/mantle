@@ -46,6 +46,8 @@
  */
 import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { db } from '@mantle/db';
+import { translateQuery } from './query-translate';
+import { loadSearchLanguages } from './search-languages';
 
 /** Most terms kept for the OR query. Long enough to cover a paragraph's
  *  distinctive words; short enough that the match set stays small. */
@@ -129,32 +131,78 @@ export function pickKeywordTerms(
   opts: { maxTerms?: number; dfCeiling?: number } = {},
 ): KeywordQuery | null {
   if (rows.length === 0) return null;
+  const rare = rareRows(rows, opts);
+  if (rare.length === 0) return { mode: 'and', text };
+  return { mode: 'or', terms: weighTerms(rare) };
+}
+
+/** The rows worth searching for, rarest first, at most `maxTerms` (pure). */
+function rareRows(
+  rows: readonly LexemeDf[],
+  opts: { maxTerms?: number; dfCeiling?: number },
+): LexemeDf[] {
   const maxTerms = opts.maxTerms ?? KEYWORD_MAX_TERMS;
   const dfCeiling = opts.dfCeiling ?? KEYWORD_DF_CEILING;
-  const rare = rows
-    .filter(
-      (r) =>
-        r.lexeme.length > 0 &&
-        !CHAT_FILLER.has(r.lexeme) &&
-        !QUESTION_FRAME.has(r.lexeme) &&
-        Number.isFinite(r.df) &&
-        r.df > 0 &&
-        r.df <= dfCeiling,
-    )
-    // Rarest first; ties by lexeme so the pick is stable across runs.
-    .sort((a, b) => a.df - b.df || byLexeme(a, b))
-    .slice(0, Math.max(0, maxTerms));
-  if (rare.length === 0) return { mode: 'and', text };
-  return {
-    mode: 'or',
-    terms: rare
-      .map((r, rank) => ({
-        lexeme: r.lexeme,
-        weight: idfWeight(r.df, rank),
-        rows: r.rows ?? null,
-      }))
-      .sort(byLexeme),
-  };
+  return (
+    rows
+      .filter(
+        (r) =>
+          r.lexeme.length > 0 &&
+          !CHAT_FILLER.has(r.lexeme) &&
+          !QUESTION_FRAME.has(r.lexeme) &&
+          Number.isFinite(r.df) &&
+          r.df > 0 &&
+          r.df <= dfCeiling,
+      )
+      // Rarest first; ties by lexeme so the pick is stable across runs.
+      .sort((a, b) => a.df - b.df || byLexeme(a, b))
+      .slice(0, Math.max(0, maxTerms))
+  );
+}
+
+/** Rows (rarest first) as weighted terms, sorted by lexeme (pure). */
+function weighTerms(rare: readonly LexemeDf[]): KeywordTerm[] {
+  return rare
+    .map((r, rank) => ({
+      lexeme: r.lexeme,
+      weight: idfWeight(r.df, rank),
+      rows: r.rows ?? null,
+    }))
+    .sort(byLexeme);
+}
+
+/**
+ * The keyword query with the query's translations' terms added (pure;
+ * search-languages.ts). `rows` are the original text's lexemes, `translated`
+ * each translation's. Each text's rare terms are picked by the same rule
+ * (`maxTerms` each, so a translation never pushes an original term out),
+ * the original's first; a lexeme two texts share is one term. The union is
+ * weighed by today's rarity rule, one rank order across it.
+ *
+ * Today's query stands when no translation adds a rare term, and when the
+ * original falls back to AND while that AND can match a row (every lexeme
+ * is in some row: its words are only common). An AND that holds a word no
+ * row holds matches nothing (an English query on Spanish documents), so
+ * the translations' terms take its place. A text with no searchable lexeme
+ * at all stays null.
+ */
+export function pickTranslatedKeywordTerms(
+  text: string,
+  rows: readonly LexemeDf[],
+  translated: readonly (readonly LexemeDf[])[],
+  opts: { maxTerms?: number; dfCeiling?: number } = {},
+): KeywordQuery | null {
+  const original = pickKeywordTerms(text, rows, opts);
+  if (original === null) return null;
+  const extra = translated.flatMap((t) => rareRows(t, opts));
+  if (extra.length === 0) return original;
+  if (original.mode === 'and' && rows.every((r) => r.df > 0)) return original;
+  const kept = new Map<string, LexemeDf>();
+  for (const r of [...(original.mode === 'or' ? rareRows(rows, opts) : []), ...extra]) {
+    if (!kept.has(r.lexeme)) kept.set(r.lexeme, r);
+  }
+  const union = [...kept.values()].sort((a, b) => a.df - b.df || byLexeme(a, b));
+  return { mode: 'or', terms: weighTerms(union) };
 }
 
 /** Rarity weight `ln(1/df) * RANK_DECAY^rank` (rank 0 = the rarest kept
@@ -229,16 +277,36 @@ async function lexemeFrequencies(
 /**
  * Resolve the keyword query for `text` against `table`. Never throws: a failed
  * lookup falls back to the original AND query.
+ *
+ * With `ownerId` and the brain's search languages set (search-languages.ts),
+ * the query's translations add their terms (pickTranslatedKeywordTerms),
+ * within the translation's time budget (query-translate.ts). With the list
+ * empty, or no `ownerId`, it is today's query, the same calls and the same
+ * answer.
  */
 export async function resolveKeywordQuery(
   text: string,
   table: 'content_chunks' | 'nodes',
+  ownerId?: string,
 ): Promise<KeywordQuery | null> {
-  try {
-    return pickKeywordTerms(text, await lexemeFrequencies(text, table));
-  } catch {
-    return { mode: 'and', text };
+  const languages = ownerId ? await loadSearchLanguages(ownerId) : [];
+  if (languages.length === 0) {
+    try {
+      return pickKeywordTerms(text, await lexemeFrequencies(text, table));
+    } catch {
+      return { mode: 'and', text };
+    }
   }
+  const [rows, translations] = await Promise.all([
+    lexemeFrequencies(text, table).catch(() => null),
+    translateQuery(ownerId!, text, languages),
+  ]);
+  if (rows === null) return { mode: 'and', text };
+  // A translation's lookup that fails only leaves its terms out.
+  const translated = await Promise.all(
+    translations.map((t) => lexemeFrequencies(t, table).catch(() => [] as LexemeDf[])),
+  );
+  return pickTranslatedKeywordTerms(text, rows, translated);
 }
 
 /** The WHERE predicate and ORDER BY terms for a `search_tsv` column. */

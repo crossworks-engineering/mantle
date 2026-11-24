@@ -230,7 +230,7 @@ async function runChunkSearch(
   // rows holding a term no more rows than the pool hold: a question with no
   // rare literal leaves the arm silent instead of fusing in rows that merely
   // share ordinary words (they cost vector-only quality, docs/recall-eval.md).
-  const resolved = await resolveKeywordQuery(q, 'content_chunks');
+  const resolved = await resolveKeywordQuery(q, 'content_chunks', opts.ownerId);
   const kq = resolved ? gateRareTerms(resolved, pool) : null;
   const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
   // Under a big workspace scope the text match runs first, fenced (offset
