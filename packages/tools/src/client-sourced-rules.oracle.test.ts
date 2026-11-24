@@ -184,6 +184,7 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   note_from_page: creates(),
   translate: creates(),
   translator_settings: always('changes which models the Translator runs'),
+  search_languages: always('it adds a paid translation to every new search query'),
 
   // ── Tables ───────────────────────────────────────────────────────────────
   table_create: creates(),

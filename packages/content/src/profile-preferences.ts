@@ -632,10 +632,7 @@ export async function savePreferencesFor(
  * InputError on a list that is not one (the caller's 400). Returns the
  * list as stored.
  */
-export async function saveSearchLanguages(
-  ownerId: string,
-  languages: unknown,
-): Promise<string[]> {
+export async function saveSearchLanguages(ownerId: string, languages: unknown): Promise<string[]> {
   const parsed = parseSearchLanguages(languages);
   if (!parsed.ok) throw new InputError(parsed.error);
   // The row exists after a read (made on the first one).

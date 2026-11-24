@@ -6103,6 +6103,32 @@
   }
  },
  {
+  "name": "search_languages",
+  "description": "Read or set the brain's search languages: extra languages (codes such as `es`) every word search also looks in, by a translation of the query (the Translator worker's model, cached). Use when the brain holds documents in another language that English words miss. With no argument it only reads them; `languages: []` turns it off. For translating a text or an item use `translate`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "languages": {
+     "maxItems": 3,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 40
+     },
+     "description": "Language codes to search in besides English, e.g. [\"es\"]; [] for none."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "search_languages",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "secret_create",
   "description": "Capture a sensitive value — password, PIN, API key, recovery code, anything the user explicitly says is private — into the encrypted /secrets store. ALWAYS prefer this over `note_create` or `file_create` for a dictated credential: a note stores it in plaintext where any future tool call can read it, while this seals the value behind a key only the owner's browser session can unlock. The value is REDACTED in trace logs — never echo it back to the user; confirm by title only ('saved your safe PIN'). For multi-field secrets (e.g. a server with both username and password) the /secrets UI is still the right path; this handles the common one-value case.",
   "inputSchema": {

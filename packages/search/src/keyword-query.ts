@@ -175,9 +175,10 @@ function weighTerms(rare: readonly LexemeDf[]): KeywordTerm[] {
  * The keyword query with the query's translations' terms added (pure;
  * search-languages.ts). `rows` are the original text's lexemes, `translated`
  * each translation's. Each text's rare terms are picked by the same rule
- * (`maxTerms` each, so a translation never pushes an original term out),
- * the original's first; a lexeme two texts share is one term. The union is
- * weighed by today's rarity rule, one rank order across it.
+ * (`maxTerms` each, so a translation never pushes an original term out);
+ * a lexeme two texts share is one term. The union is weighed by today's
+ * rarity rule, the original's terms first (today's ranks and weights),
+ * then the translations' terms, rarest first.
  *
  * Today's query stands when no translation adds a rare term, and when the
  * original falls back to AND while that AND can match a row (every lexeme
@@ -197,12 +198,18 @@ export function pickTranslatedKeywordTerms(
   const extra = translated.flatMap((t) => rareRows(t, opts));
   if (extra.length === 0) return original;
   if (original.mode === 'and' && rows.every((r) => r.df > 0)) return original;
+  // The original's terms first, in today's order with today's weights; the
+  // translations' after them, rarest first. With the rank decay a row
+  // holding the original's rarest term still outranks every row that holds
+  // only translated terms, so the person's own words lead as before.
   const kept = new Map<string, LexemeDf>();
-  for (const r of [...(original.mode === 'or' ? rareRows(rows, opts) : []), ...extra]) {
-    if (!kept.has(r.lexeme)) kept.set(r.lexeme, r);
-  }
-  const union = [...kept.values()].sort((a, b) => a.df - b.df || byLexeme(a, b));
-  return { mode: 'or', terms: weighTerms(union) };
+  const first = original.mode === 'or' ? rareRows(rows, opts) : [];
+  for (const r of first) kept.set(r.lexeme, r);
+  const after = extra
+    .filter((r) => !kept.has(r.lexeme))
+    .sort((a, b) => a.df - b.df || byLexeme(a, b));
+  for (const r of after) if (!kept.has(r.lexeme)) kept.set(r.lexeme, r);
+  return { mode: 'or', terms: weighTerms([...kept.values()]) };
 }
 
 /** Rarity weight `ln(1/df) * RANK_DECAY^rank` (rank 0 = the rarest kept

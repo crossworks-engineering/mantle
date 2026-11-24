@@ -72,17 +72,30 @@ describe('pickTranslatedKeywordTerms', () => {
     );
   });
 
-  it('adds the translations’ rare terms, one rarity rank order across them all', () => {
+  it('adds the translations’ rare terms after the original’s, which keep today’s weights', () => {
     const kq = pickTranslatedKeywordTerms('pressure valve', english, [spanish]);
     expect(lexemes(kq)).toEqual(['presion', 'pressur', 'valv', 'valvul']);
-    const w = Object.fromEntries((kq as { terms: Array<{ lexeme: string; weight: number }> }).terms.map((t) => [t.lexeme, t.weight]));
-    // valvul (0.001) is the rarest of the union, then valv, presion, pressur.
+    const w = Object.fromEntries(
+      (kq as { terms: Array<{ lexeme: string; weight: number }> }).terms.map((t) => [
+        t.lexeme,
+        t.weight,
+      ]),
+    );
+    // The original's terms rank first (valv, then pressur), as today; then
+    // the Spanish ones, rarest first (valvul, then presion).
     expect(w).toEqual({
-      valvul: idfWeight(0.001, 0),
-      valv: idfWeight(0.002, 1),
-      presion: idfWeight(0.004, 2),
-      pressur: idfWeight(0.01, 3),
+      valv: idfWeight(0.002, 0),
+      pressur: idfWeight(0.01, 1),
+      valvul: idfWeight(0.001, 2),
+      presion: idfWeight(0.004, 3),
     });
+    const today = pickKeywordTerms('pressure valve', english);
+    for (const t of today?.mode === 'or' ? today.terms : []) {
+      expect(w[t.lexeme]).toBe(t.weight);
+    }
+    // A row holding the original's rarest term outranks one holding every
+    // translated term.
+    expect(w.valv!).toBeGreaterThan(w.valvul! + w.presion!);
   });
 
   it('never lets a translation push an original term out (maxTerms each)', () => {
@@ -92,9 +105,11 @@ describe('pickTranslatedKeywordTerms', () => {
   });
 
   it('a lexeme two texts share is one term', () => {
-    const kq = pickTranslatedKeywordTerms('psv-101 valve', [{ lexeme: 'psv-101', df: 0.0005 }], [
-      [{ lexeme: 'psv-101', df: 0.0005 }, ...spanish],
-    ]);
+    const kq = pickTranslatedKeywordTerms(
+      'psv-101 valve',
+      [{ lexeme: 'psv-101', df: 0.0005 }],
+      [[{ lexeme: 'psv-101', df: 0.0005 }, ...spanish]],
+    );
     expect(lexemes(kq)).toEqual(['presion', 'psv-101', 'valvul']);
   });
 
@@ -103,7 +118,10 @@ describe('pickTranslatedKeywordTerms', () => {
       { lexeme: 'pressur', df: 0 },
       { lexeme: 'valv', df: 0 },
     ];
-    expect(pickKeywordTerms('pressure valve', rows)).toEqual({ mode: 'and', text: 'pressure valve' });
+    expect(pickKeywordTerms('pressure valve', rows)).toEqual({
+      mode: 'and',
+      text: 'pressure valve',
+    });
     expect(lexemes(pickTranslatedKeywordTerms('pressure valve', rows, [spanish]))).toEqual([
       'presion',
       'valvul',
@@ -176,7 +194,7 @@ describe('resolveKeywordQuery', () => {
     translations = ['válvula', 'soupape'];
     dfByText = {
       valve: [{ lexeme: 'valv', df: 0.002, rows: 3 }],
-      'válvula': [{ lexeme: 'valvul', df: 0.001, rows: 2 }],
+      válvula: [{ lexeme: 'valvul', df: 0.001, rows: 2 }],
     };
     expect(lexemes(await resolveKeywordQuery('valve', 'nodes', 'owner-1'))).toEqual([
       'valv',

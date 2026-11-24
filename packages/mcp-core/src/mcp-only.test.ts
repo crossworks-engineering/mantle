@@ -103,6 +103,9 @@ describe('mcpOnly builtins', () => {
         'recall_map_set_slug',
         'recall_pending',
         'recall_revisions',
+        // The brain's search languages (Settings): an Admin user's client
+        // reads and sets them as the settings screen does.
+        'search_languages',
         // Settings > Services (docs/services.md): an Admin user's client
         // reads and switches the box's optional services.
         'service_list',

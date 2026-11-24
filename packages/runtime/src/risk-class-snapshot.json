@@ -292,6 +292,7 @@
   "screenshots": "read",
   "search": "read",
   "search_chunks": "read",
+  "search_languages": "write",
   "search_nodes": "read",
   "secret_create": "write",
   "service_list": "read",

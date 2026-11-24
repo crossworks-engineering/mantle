@@ -302,6 +302,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'sandbox_rm',
   'sandbox_stop',
   'screenshot_render',
+  'search_languages',
   'secret_create',
   'service_set',
   'set_timezone',

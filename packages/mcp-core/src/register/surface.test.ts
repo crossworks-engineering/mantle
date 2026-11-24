@@ -165,6 +165,7 @@ const HTTP_SURFACE = [
   'sandbox_publish',
   'sandbox_stop',
   'screenshot_render',
+  'search_languages',
   'secret_create',
   'service_set',
   'set_timezone',

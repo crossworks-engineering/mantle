@@ -16,8 +16,9 @@
  * `saveSearchLanguages` in @mantle/content (the one place a profile row is
  * written). Set in Settings (System) and over MCP (`search_languages`).
  */
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, profiles } from '@mantle/db';
+import { errorMessage } from '@mantle/std';
 
 /** The preferences key on the brain's profile row. */
 export const SEARCH_LANGUAGES_KEY = 'searchLanguages';
@@ -90,13 +91,16 @@ export function normalizeSearchLanguages(raw: unknown): string[] {
  */
 export async function loadSearchLanguages(ownerId: string): Promise<string[]> {
   try {
+    // The column as drizzle maps it (a raw jsonb expression comes back as
+    // text from the driver).
     const [row] = await db
-      .select({ value: sql<unknown>`${profiles.preferences} -> ${SEARCH_LANGUAGES_KEY}::text` })
+      .select({ preferences: profiles.preferences })
       .from(profiles)
       .where(eq(profiles.userId, ownerId))
       .limit(1);
-    return row ? normalizeSearchLanguages(row.value) : [];
-  } catch {
+    return row ? normalizeSearchLanguages(row.preferences?.[SEARCH_LANGUAGES_KEY]) : [];
+  } catch (err) {
+    console.warn(`[search] search languages not read (${errorMessage(err)}): English only`);
     return [];
   }
 }

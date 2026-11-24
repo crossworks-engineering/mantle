@@ -190,6 +190,7 @@ describe('MCP tool hints on the surface', () => {
       'run_cancel',
       'sandbox_autostart',
       'sandbox_stop',
+      'search_languages',
       'service_set',
       'set_timezone',
       'sync_drive_set',

@@ -53,7 +53,11 @@ export type TranslateRoute = {
 
 /** One translation call (the model route, the system prompt, the query):
  *  the answer text. Swappable for tests (`setQueryTranslatorForTests`). */
-export type TranslateCall = (route: TranslateRoute, system: string, user: string) => Promise<string>;
+export type TranslateCall = (
+  route: TranslateRoute,
+  system: string,
+  user: string,
+) => Promise<string>;
 
 const cache = new Map<string, Promise<string>>();
 
@@ -102,7 +106,9 @@ async function translateRoute(
     onSummarizer = true;
   }
   if (!resolved.ok) {
-    return { why: `no usable ${onSummarizer ? 'translator or summarizer' : 'translator'} worker (${resolved.why})` };
+    return {
+      why: `no usable ${onSummarizer ? 'translator or summarizer' : 'translator'} worker (${resolved.why})`,
+    };
   }
   const worker: AiWorker = resolved.worker;
   const refused = modelPolicyRefusal(worker.provider, worker.model, worker.baseUrl ?? null);
@@ -260,7 +266,9 @@ export async function translateQuery(
     }
     return out;
   } catch (err) {
-    console.warn(`[search] query not translated (${errorMessage(err)}): the word search ran on the original text`);
+    console.warn(
+      `[search] query not translated (${errorMessage(err)}): the word search ran on the original text`,
+    );
     return [];
   }
 }
