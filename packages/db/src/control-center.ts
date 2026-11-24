@@ -408,8 +408,9 @@ export function freshKeyBox(
 
 /** The CC's own box as @mantle/api-keys ownKeyLines read it in process:
  *  its lines, or none and `keys-area` (the caller lacks the vault's own
- *  area). */
-export type OwnKeyLines = { ok: true; keys: ControlKeyLine[] } | { ok: false; reason: 'keys-area' };
+ *  area) or `error` (its read or test failed). */
+export type OwnKeyLines =
+  { ok: true; keys: ControlKeyLine[] } | { ok: false; reason: 'keys-area' | 'error' };
 
 /** The CC's own box in the key status view. */
 export function selfKeyBox(own: OwnKeyLines): FleetKeyBox {

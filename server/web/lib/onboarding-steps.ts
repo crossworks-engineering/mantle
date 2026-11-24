@@ -4,7 +4,15 @@ import { db, sql } from '@mantle/db';
 import { bucketStatus } from '@mantle/storage';
 import { parserHealth } from '@mantle/files';
 import { loadPreferencesFor, savePreferencesFor, isPurposeArchetype } from '@mantle/content';
-import { setApiKey, listApiKeys, findProviderKeyId, findProviderKeyIds } from '@mantle/api-keys';
+import {
+  setApiKey,
+  listApiKeys,
+  findProviderKeyId,
+  findProviderKeyIds,
+  probeAndRecord,
+  recordKeyValueSet,
+  type VaultActor,
+} from '@mantle/api-keys';
 import {
   resolveEmbeddingConfig,
   probeEmbeddingRoute,
@@ -15,7 +23,6 @@ import { upsertEmbeddingConfig } from '@/lib/embedding-config';
 import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@mantle/client-types/model-choices';
 import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
-import { probeApiKey } from '@/lib/api-key-test';
 import {
   provisionDefaults,
   savePersonaAgent,
@@ -248,6 +255,22 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
   return checks;
 }
 
+/**
+ * Who the wizard's key writes and tests name in the vault's own records: the
+ * brain owner, as the Keys screen would. The wizard sets a key with setApiKey
+ * (an internal writer, past the vault's gate), then writes the vault's same
+ * records (recordKeyValueSet, probeAndRecord), so key status on the fleet
+ * sees each new value and each test (docs/control-center.md).
+ */
+const wizard = (userId: string): VaultActor => ({ loginId: userId, via: 'web' });
+
+/** setApiKey, with the vault's own record of the new value. */
+async function setWizardKey(userId: string, service: string, value: string) {
+  const row = await setApiKey(userId, service, 'default', value);
+  await recordKeyValueSet(wizard(userId), row);
+  return row;
+}
+
 export async function runSanityChecks(userId: string): Promise<SanityCheck[]> {
   const checks: SanityCheck[] = [];
   // The key per service an unpinned lookup would use ('default', else the oldest).
@@ -255,12 +278,12 @@ export async function runSanityChecks(userId: string): Promise<SanityCheck[]> {
 
   const orKeyId = keyIds.get('openrouter');
   if (orKeyId) {
-    const t = await probeApiKey(orKeyId, 'openrouter');
+    const t = await probeAndRecord(wizard(userId), orKeyId, 'openrouter');
     checks.push({ label: 'OpenRouter (chat, images)', ok: t.ok, detail: t.message });
   }
   const xaiKeyId = keyIds.get('xai');
   if (xaiKeyId) {
-    const t = await probeApiKey(xaiKeyId, 'xai');
+    const t = await probeAndRecord(wizard(userId), xaiKeyId, 'xai');
     checks.push({ label: 'xAI (voice: speak + transcribe)', ok: t.ok, detail: t.message });
   }
 
@@ -370,7 +393,7 @@ export async function onboardingState(userId: string) {
 }
 
 /** The result of a key probe, as the wizard shows it. */
-export type KeyTest = Awaited<ReturnType<typeof probeApiKey>>;
+export type KeyTest = Awaited<ReturnType<typeof probeAndRecord>>;
 
 export async function saveStep(userId: string, step: string) {
   await savePreferencesFor(userId, { onboardingStep: step });
@@ -411,8 +434,8 @@ export async function saveKey(
       test: { ok: false, message: 'Paste a key first.', provider: service, adapter: '' },
     };
   }
-  const row = await setApiKey(userId, service, 'default', trimmed);
-  const test = await probeApiKey(row.id, service);
+  const row = await setWizardKey(userId, service, trimmed);
+  const test = await probeAndRecord(wizard(userId), row.id, service);
   return { saved: true, test };
 }
 
@@ -479,7 +502,7 @@ export async function saveModels(
           message: `Couldn't reach the Azure endpoint: ${errorMessage(err)}`,
         };
       }
-      await setApiKey(userId, 'custom', 'default', azureKey);
+      await setWizardKey(userId, 'custom', azureKey);
     }
     await savePreferencesFor(userId, {
       onboardingModels: { assistantModel, workerModel, route, azureBaseUrl },
@@ -517,8 +540,8 @@ export async function saveEmbedding(
 
   let keyId: string;
   if (trimmed) {
-    const row = await setApiKey(userId, provider, 'default', trimmed);
-    const test = await probeApiKey(row.id, provider);
+    const row = await setWizardKey(userId, provider, trimmed);
+    const test = await probeAndRecord(wizard(userId), row.id, provider);
     if (!test.ok) return { saved: true, configured: false, test };
     keyId = row.id;
   } else {
@@ -635,7 +658,7 @@ export async function testKey(userId: string, service: string): Promise<KeyTest>
       adapter: '',
     };
   }
-  return probeApiKey(keyId, service);
+  return probeAndRecord(wizard(userId), keyId, service);
 }
 
 /** `configuredBy`: the login running the step (null for the anchor); it

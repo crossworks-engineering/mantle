@@ -43,6 +43,14 @@ vi.mock('@mantle/content', () => ({
 }));
 vi.mock('@mantle/api-keys', () => ({
   setApiKey: async (_u: string, service: string) => ({ id: `key-${service}` }),
+  // The vault's own records of the wizard's writes and tests.
+  recordKeyValueSet: async () => {},
+  probeAndRecord: async (_who: unknown, _id: string, service: string) => ({
+    ok: true,
+    message: 'ok',
+    provider: service,
+    adapter: '',
+  }),
   listApiKeys: async () => h.keys,
   findProviderKeyId: async (_u: string, service: string) =>
     h.keys.find((k) => k.service === service)?.id ?? null,
@@ -66,14 +74,6 @@ vi.mock('@/lib/embedding-config', () => ({
     h.embeddingSaved += 1;
     h.embeddingInput = input;
   },
-}));
-vi.mock('@/lib/api-key-test', () => ({
-  probeApiKey: async (_id: string, service: string) => ({
-    ok: true,
-    message: 'ok',
-    provider: service,
-    adapter: '',
-  }),
 }));
 vi.mock('@/lib/onboarding-provision', () => ({
   provisionDefaults: async () => ({}),

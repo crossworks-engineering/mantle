@@ -19,12 +19,15 @@ const keysWith = vi.hoisted(() => ({
   },
   // The caller holds the keys area (the CC's own box shows its lines).
   keysArea: true,
+  // The CC's own read or test fails.
+  selfFails: false,
   tested: [] as unknown[],
 }));
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/api-keys')>()),
   ownKeyLines: vi.fn(async (_owner: string, who?: unknown) => {
     if (who) keysWith.tested.push(who);
+    if (keysWith.selfFails) return { ok: false, reason: 'error' };
     return keysWith.keysArea
       ? { ok: true, keys: [keysWith.line] }
       : { ok: false, reason: 'keys-area' };
@@ -140,7 +143,23 @@ describe('control_box_list', () => {
 describe('control_key_status and control_key_test', () => {
   afterEach(() => {
     keysWith.keysArea = true;
+    keysWith.selfFails = false;
     keysWith.tested.length = 0;
+  });
+
+  it("this box's test fails: error for this box alone, the others answer", async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+    keysWith.selfFails = true;
+    const r = await tool('control_key_test').handler({}, ctx);
+    expect(r.ok).toBe(true);
+    const boxes = (r as { output: { boxes: Record<string, unknown>[] } }).output.boxes;
+    expect(boxes[0]).toMatchObject({
+      id: 'self',
+      keys: null,
+      keysReason: 'error',
+      tested: 'error',
+    });
+    expect(boxes[1]).toMatchObject({ id: 'b1', tested: 'ok' });
   });
 
   it('answer every line without its print, this box first', async () => {

@@ -1289,6 +1289,55 @@ export async function testVaultKey(
   return { ...result, name: key.name, kind: key.kind };
 }
 
+// ── The records of an internal writer ────────────────────────────────────────
+
+/**
+ * The vault's own record of a key value that an internal writer set with
+ * setApiKey (index.ts: onboarding's steps, on the web and in the terminal
+ * wizard, which this gate does not see): the same `vault.key.set` row a set
+ * here writes, naming `value`. Key status on the fleet reads a key's set time
+ * from it (key-status.ts), so a value written past this gate still moves the
+ * set time, and an older test no longer counts for the new value.
+ */
+export async function recordKeyValueSet(who: VaultActor, row: ApiKey): Promise<void> {
+  const key = summary(row);
+  await audit(who, 'vault.key.set', {
+    keyId: key.id,
+    name: key.name,
+    kind: key.kind,
+    op: row.createdAt.getTime() === row.updatedAt.getTime() ? 'add' : 'replace',
+    changed: ['value'],
+  });
+}
+
+/**
+ * A token's provider probe (probe.ts) with the vault's own test record, the
+ * same `vault.key.test` row testVaultKey writes, for a caller past this
+ * gate's sight (onboarding's steps). So every test of a key, wherever it
+ * ran, is what key status reads as its last test.
+ */
+export async function probeAndRecord(
+  who: VaultActor,
+  keyId: string,
+  service: string,
+): Promise<TestApiKeyResult> {
+  const result = await probeApiKey(keyId, service);
+  const [row] = await db
+    .select({ name: apiKeys.name, kind: apiKeys.kind })
+    .from(apiKeys)
+    .where(eq(apiKeys.id, keyId))
+    .limit(1);
+  if (row) {
+    await audit(who, 'vault.key.test', {
+      keyId,
+      name: row.name ?? service,
+      kind: row.kind,
+      ok: result.ok,
+    });
+  }
+  return result;
+}
+
 // ── Import ───────────────────────────────────────────────────────────────────
 
 /** The columns of an import, in order (a header row naming them is
