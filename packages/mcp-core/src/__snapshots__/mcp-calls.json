@@ -2,8 +2,8 @@
  "stdio owner": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged.",
   "tools": {
-   "count": 377,
-   "sha256": "cbf0240ed83fabcd3b89fba27c7d3b67af748d435e7f254f9904bc8837c8e782"
+   "count": 379,
+   "sha256": "dc8538fffbe91473bcd59b925b6aff2dfaaac762282c41177f16c3e8b940c543"
   },
   "calls": [
    {
@@ -659,8 +659,8 @@
  "admin oauth rw": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 378,
-   "sha256": "5fbc16bc1993df6446ba21b010410a270553bb60503ea201431ccdc73e2201b4"
+   "count": 380,
+   "sha256": "62747d03ea08e3f9a16cf503b3a10947980a191d864ed7c0834839cbf0bed618"
   },
   "calls": [
    {
@@ -1487,8 +1487,8 @@
  "member oauth rw (private workspace)": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 242,
-   "sha256": "233852706b3b2ae19f689b06158205217ad63f380ed150072476e60b538d8787"
+   "count": 245,
+   "sha256": "a64bd431b213b5dd292190634c2ad85c4cf8e1bd9dde35b69a0f28596cde52e8"
   },
   "calls": [
    {
@@ -2358,8 +2358,8 @@
  "member oauth ro": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 94,
-   "sha256": "df5924bdc977fbcff028b9bf6604e1ad4cbc2fa2d21da7448f24617e92f16942"
+   "count": 95,
+   "sha256": "0b4d2f4580bc7143249a1ba2a324c47bd4a2d5e8b067eae3ea2e8e9bc41bf5f2"
   },
   "calls": [
    {
@@ -2931,8 +2931,8 @@
  "member oauth rw (no private workspace)": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 242,
-   "sha256": "70bfc93cff53bb887a1366d281df1cd2672651f8d283b93fead788f05fee6d0b"
+   "count": 245,
+   "sha256": "7746da96ac5d4eb704bc4ca7b2b12f31546135e3403bfc0931985d925ed86ea9"
   },
   "calls": [
    {
@@ -4356,8 +4356,8 @@
  "member key ro, every area": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 92,
-   "sha256": "c0fab3debebab05fea370644f9a5eee00b5502210db4ccce0a011023c96264e9"
+   "count": 93,
+   "sha256": "ba3f01168af219183b568783df79cde548a686a46f2929009899b3944063eb01"
   },
   "calls": [
    {
@@ -4940,7 +4940,7 @@
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
    "count": 242,
-   "sha256": "d0cd96be04115a1d49c85492f31e5e0ec7714e0b2132871f42f9daf52ad15f57"
+   "sha256": "c41e03b4583afebec5c33abdf9ec6a72c7233c2b2abc59672872ada4930ebd01"
   },
   "calls": [
    {
@@ -5739,8 +5739,8 @@
  "member peer rw": {
   "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call. A circuit drawn from the uploaded P&IDs: call `circuit_trace` first and follow the steps its result carries (`workflow`, `next`): `circuit_verify` at most once per trace in a turn, `circuit_trace` again, then save that `pid` unchanged. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
   "tools": {
-   "count": 195,
-   "sha256": "b37759a2c0776c50c31d3918a0abf5e42b77877a6785d709cbe42e5a4d69d505"
+   "count": 196,
+   "sha256": "c8fa5a9203da1ea9b520d3dafcb8adffa61784cc23b2cfb9eed26c0cf813266d"
   },
   "calls": [
    {
