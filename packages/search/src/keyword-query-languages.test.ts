@@ -125,7 +125,20 @@ describe('pickTranslatedKeywordTerms', () => {
     expect(w.valvul).toBeLessThanOrEqual(w.valv! / 2);
   });
 
-  it('never lets a translation push an original term out (maxTerms each)', () => {
+  it('all translations together add at most maxTerms terms', () => {
+    const list = (p: string) =>
+      Array.from({ length: 8 }, (_, i) => ({ lexeme: `${p}${i}`, df: 0.0001 * (i + 1) }));
+    const kq = pickTranslatedKeywordTerms('pressure valve', english, [
+      list('es'),
+      list('fr'),
+      list('de'),
+    ]);
+    const terms = lexemes(kq) as string[];
+    expect(terms).toEqual(expect.arrayContaining(['pressur', 'valv']));
+    expect(terms).toHaveLength(2 + 8);
+  });
+
+  it('never lets a translation push an original term out', () => {
     const many = Array.from({ length: 8 }, (_, i) => ({ lexeme: `es${i}`, df: 0.0001 }));
     const kq = pickTranslatedKeywordTerms('pressure valve', english, [many]);
     expect(lexemes(kq)).toEqual(expect.arrayContaining(['pressur', 'valv', 'es0', 'es7']));

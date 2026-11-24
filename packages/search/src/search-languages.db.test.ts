@@ -228,13 +228,6 @@ describe.skipIf(!URL)('search languages on a mixed English and Spanish corpus', 
 
     // On: uncached (the stub waits 400 ms, a fast model's round trip), then cached.
     await setLanguages(['es']);
-    console.log(
-      '[debug] anchor',
-      anchor,
-      JSON.stringify(await su`select user_id, preferences from profiles where user_id = ${anchor}`),
-      JSON.stringify(await s.loadSearchLanguages(anchor)),
-      JSON.stringify(await m.asSystem(() => s.loadSearchLanguages(anchor), 'test')),
-    );
     translateDelayMs = 400;
     const coldMs: number[] = [];
     const warmMs: number[] = [];

@@ -43,16 +43,56 @@ function canonicalCode(code: string): string {
   return `${head}-${sub.toLowerCase()}`;
 }
 
-/** Whether the code names a language (the runtime's own list). */
-function knownLanguage(code: string): boolean {
-  try {
-    return (
-      new Intl.DisplayNames(['en'], { type: 'language', fallback: 'none' }).of(code) !== undefined
-    );
-  } catch {
-    return false;
-  }
+/**
+ * Postgres's text search configs by language code (Postgres 18). A
+ * translation's own stop words ("de", "la", "die", "van") are no stop words
+ * to the `english` rules, and a brain with few documents in that language
+ * would count them rare: its words go through its language's stop list
+ * before the lookup (keyword-query.ts). So only a language with one is a
+ * search language.
+ */
+const STOP_WORD_CONFIGS: Readonly<Record<string, string>> = {
+  ar: 'arabic',
+  ca: 'catalan',
+  da: 'danish',
+  de: 'german',
+  el: 'greek',
+  en: 'english',
+  es: 'spanish',
+  et: 'estonian',
+  eu: 'basque',
+  fi: 'finnish',
+  fr: 'french',
+  ga: 'irish',
+  hi: 'hindi',
+  hu: 'hungarian',
+  hy: 'armenian',
+  id: 'indonesian',
+  it: 'italian',
+  lt: 'lithuanian',
+  nb: 'norwegian',
+  ne: 'nepali',
+  nl: 'dutch',
+  nn: 'norwegian',
+  no: 'norwegian',
+  pt: 'portuguese',
+  ro: 'romanian',
+  ru: 'russian',
+  sr: 'serbian',
+  sv: 'swedish',
+  ta: 'tamil',
+  tr: 'turkish',
+  yi: 'yiddish',
+};
+
+/** The stop-list config for a language code (`pt-BR` → portuguese), or
+ *  null when Postgres has none (pure). */
+export function stopWordConfig(lang: string): string | null {
+  return STOP_WORD_CONFIGS[lang.split('-')[0]!.toLowerCase()] ?? null;
 }
+
+/** The languages a search language may be, for an error (pure). */
+const SUPPORTED = Object.keys(STOP_WORD_CONFIGS).join(', ');
 
 /**
  * Check what a person or an agent sets (pure): a list of codes, at most
@@ -78,10 +118,10 @@ export function parseSearchLanguages(
       };
     }
     const c = canonicalCode(code);
-    if (!knownLanguage(c)) {
+    if (!stopWordConfig(c)) {
       return {
         ok: false,
-        error: `'${c}' is not a language code this box knows. Use a code such as "es", "fr" or "pt-BR".`,
+        error: `'${c}' is not a search language: word search needs the language's stop words, which this box has for ${SUPPORTED} (a region such as pt-BR is fine).`,
       };
     }
     if (!out.includes(c)) out.push(c);

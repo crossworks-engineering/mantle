@@ -523,7 +523,10 @@ the access rules) is unchanged.
 
 - **The setting:** the brain's profile row, key `searchLanguages`
   ([`search-languages.ts`](../packages/search/src/search-languages.ts)), at
-  most 3 codes. Set on the AI workers screen under the Translator,
+  most 3 codes, each a language Postgres has a stop list for (31 codes:
+  Spanish, French, German, Portuguese, Dutch, Italian, Russian and more; a
+  region such as `pt-BR` is fine). A language without one is refused: its
+  function words would read as rare words on a mostly English brain. Set on the AI workers screen under the Translator,
   `PUT /api/settings/search-languages` (the Settings area), or the MCP
   tool `search_languages`.
 - **The translation:** the Translator worker's model (a brain without one:
@@ -532,9 +535,10 @@ the access rules) is unchanged.
   the `search_nodes` and `search_chunks` tools, and the chat's own
   retrieval (a chat message of 300 characters or less is translated, and
   its first answer may wait up to the budget). A search asks for it by
-  `translate: true`; a peer's search, a call that may not spend the owner's
-  keys (ownerKeysOff, an API key on the search route) and `recall_eval`
-  never do. A query over 300 characters is not translated.
+  `translate: true`; a peer, an API key, a call that may not spend the
+  owner's keys (ownerKeysOff) and `recall_eval` never do. A query over 300
+  characters is not translated. All translations together add at most 8
+  terms.
 - **The cache:** each answer is kept in the process (2000 at most, oldest
   out), so a repeated query costs nothing. Not in `ai_answer_cache`: that
   table is keyed by the node an answer was paid for, and a query has none.

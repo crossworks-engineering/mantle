@@ -25,8 +25,10 @@ describe('parseSearchLanguages', () => {
     expect(sentence.ok).toBe(false);
     if (!sentence.ok) expect(sentence.error).toContain('"es"');
     expect(parseSearchLanguages([3]).ok).toBe(false);
-    // Shaped like a code, but no language.
+    // Shaped like a code, but no language; or a language with no stop list.
     expect(parseSearchLanguages(['zz']).ok).toBe(false);
+    expect(parseSearchLanguages(['af']).ok).toBe(false);
+    expect(parseSearchLanguages(['ca', 'et']).ok).toBe(true);
     expect(parseSearchLanguages(['en']).ok).toBe(true);
   });
 

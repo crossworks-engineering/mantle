@@ -139,8 +139,9 @@ const chatCall: TranslateCall = async (route, system, user) => {
     maxTokens: 256,
     maxRetries: 0,
   });
-  // A cut answer is no answer: an error, asked again next time (not kept).
-  if (result.finishReason === 'length') throw new Error('the answer was cut at its length limit');
+  // A cut answer is no translation, kept as a refusal is: a model that
+  // spends its tokens before it answers would only be cut again.
+  if (result.finishReason === 'length') return '';
   return result.text ?? '';
 };
 

@@ -121,3 +121,35 @@ describe('search_chunks on a connection outside an Admin scope (M-a)', () => {
     expect(scorePassages).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('search_chunks: the search languages translation (paid) is asked only where it may spend', () => {
+  const translateOf = () =>
+    vi
+      .mocked(searchChunksExplained)
+      .mock.calls.map((c) => (c[0] as { translate?: boolean }).translate);
+
+  it('never for a member, a key or a peer; for an Admin connection and a chat turn', async () => {
+    const adminKey = {
+      ...MEMBER_MCP,
+      via: 'api' as const,
+      loginId: 'admin-1',
+      mcp: { via: 'key' as const, write: true },
+    };
+    const adminPeer = {
+      ...MEMBER_MCP,
+      via: 'federation' as const,
+      loginId: 'admin-1',
+      mcp: { via: 'peer' as const, write: true },
+    };
+    const adminOauth = {
+      ...MEMBER_MCP,
+      loginId: 'admin-1',
+      mcp: { via: 'oauth' as const, write: true },
+    };
+    const turn = { kind: 'web', loginId: 'member-1' } as never;
+    for (const surface of [MEMBER_MCP, adminKey, adminPeer, adminOauth, turn]) {
+      await search_chunks.handler({ q: 'pressure valve', limit: 3 }, ctx(surface));
+    }
+    expect(translateOf()).toEqual([false, false, false, true, true]);
+  });
+});

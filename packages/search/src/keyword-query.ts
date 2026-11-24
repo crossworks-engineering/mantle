@@ -47,7 +47,7 @@
 import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import { translateQuery } from './query-translate';
-import { loadSearchLanguages } from './search-languages';
+import { loadSearchLanguages, stopWordConfig } from './search-languages';
 
 /** Most terms kept for the OR query. Long enough to cover a paragraph's
  *  distinctive words; short enough that the match set stays small. */
@@ -208,7 +208,10 @@ export function pickTranslatedKeywordTerms(
   let last = first.reduce((m, t) => Math.min(m, t.weight), Infinity);
   const after: KeywordTerm[] = [];
   const ranked = [...extra].sort((a, b) => a.df - b.df || byLexeme(a, b));
+  // All translations together add at most maxTerms, as one query does.
+  const most = opts.maxTerms ?? KEYWORD_MAX_TERMS;
   for (const r of ranked) {
+    if (after.length >= most) break;
     if (seen.has(r.lexeme)) continue;
     seen.add(r.lexeme);
     const own = idfWeight(r.df, first.length + after.length);
@@ -249,40 +252,6 @@ export function gateRareTerms(kq: KeywordQuery, maxRows: number): KeywordQuery |
  */
 export function lexemesToTsqueryText(lexemes: readonly string[]): string {
   return lexemes.map((l) => `'${l.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`).join(' | ');
-}
-
-/** Postgres's text search configs by language code (those in every
- *  supported Postgres): a translation's stop words come from its own. */
-const STOP_WORD_CONFIGS: Readonly<Record<string, string>> = {
-  ar: 'arabic',
-  da: 'danish',
-  de: 'german',
-  el: 'greek',
-  en: 'english',
-  es: 'spanish',
-  fi: 'finnish',
-  fr: 'french',
-  ga: 'irish',
-  hu: 'hungarian',
-  id: 'indonesian',
-  it: 'italian',
-  lt: 'lithuanian',
-  nb: 'norwegian',
-  ne: 'nepali',
-  nl: 'dutch',
-  nn: 'norwegian',
-  no: 'norwegian',
-  pt: 'portuguese',
-  ro: 'romanian',
-  ru: 'russian',
-  sv: 'swedish',
-  ta: 'tamil',
-  tr: 'turkish',
-};
-
-/** The config for a language code (`pt-BR` → portuguese), or null (pure). */
-export function stopWordConfig(lang: string): string | null {
-  return STOP_WORD_CONFIGS[lang.split('-')[0]!.toLowerCase()] ?? null;
 }
 
 /**

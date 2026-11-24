@@ -29,7 +29,7 @@ import { publicErrorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { surfaceHiddenNodeTypes } from './team-visibility';
 import { SEARCH_TOOL_KINDS } from '@mantle/client-types/kind-lists';
-import { ownerKeysOff } from './surface';
+import { keyOrPeerVia, ownerKeysOff } from './surface';
 
 export const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
@@ -110,10 +110,10 @@ export const search_nodes: BuiltinToolDef = {
         limit: num(input.limit, 20),
         queryEmbedding,
         excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
-        // The brain's search languages: a paid translation, so never on a
-        // call that may not spend the owner's keys (a peer, a key outside
-        // an Admin scope).
-        translate: !ownerKeysOff(ctx),
+        // The brain's search languages: a paid translation, so never for
+        // an API key or a peer, nor a call that may not spend the owner's
+        // keys (the search route's rule too).
+        translate: !ownerKeysOff(ctx) && keyOrPeerVia(ctx) === null,
       });
       ctx.step?.setOutput({ count: rows.length });
       // Content-currency annotation: a superseded hit still surfaces (the
@@ -228,8 +228,8 @@ export const search_chunks: BuiltinToolDef = {
         windows,
         // A live judge scores the whole pool: hybrid head, then window head.
         windowMerge: scoringUse?.mode === 'live' ? 'union' : 'turns',
-        // The brain's search languages: paid, as the scoring above.
-        translate: !ownerKeysOff(ctx),
+        // The brain's search languages: paid, never for a key or a peer.
+        translate: !ownerKeysOff(ctx) && keyOrPeerVia(ctx) === null,
       });
       trace.setSearch(search);
       found.forEach((h, i) =>
