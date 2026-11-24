@@ -55,6 +55,7 @@ reader is `drawing-raster`.
 | `plot-dwf`        | dwf                            | heavy  | none                       | package          |
 | `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package          |
 | `drawing-raster`  | tif, tiff, smf, 000            | light  | none                       | package (Python) |
+| `mail`            | eml, msg, mbox                 | light  | none                       | package          |
 | `site-tags`       | after a reader                 | light  | none                       | package          |
 | `links`           | pdf, after a reader            | light  | none                       | package          |
 | `iso-title-block` | tif, tiff, smf, 000 (an Agent) | heavy  | none                       | package          |
@@ -2091,6 +2092,43 @@ asks no job for a `Texts` tab with no row. The fixed set is nine made-up
 databases as JSON (`pkg/site-tags/fixtures/`), each read with the defaults
 and with one set of options; the golden files hold the rows, the warnings
 and the `pipelines_after` entry the old path gave.
+
+## The mail reader
+
+The built-in Reader `mail` (`packages/files/src/pipelines/pkg/mail/`, 1.0.0,
+2026-11-24, ingestion program item A1) reads an email file: `.eml` (one RFC
+822 message, mailparser 3.13.0, MIT, the pin of server/sync), `.mbox` (split
+on the `From ` line that starts each message; a body line `>From ` loses
+one `>`, mboxrd; each part read as an `.eml`) and an Outlook `.msg` (an OLE2
+compound file, @kenjiuno/msgreader 1.29.0, Apache-2.0; an RTF-only body is
+unpacked with @kenjiuno/decompressrtf 0.1.4, BSD-2-Clause, and read by
+anydoc). All three run on Bun in the parser job `pipelineRun`; no model is
+asked.
+
+One step, one write: the tab `Mail` (a row a message: `Message`, `From`,
+`To`, `Cc`, `Date`, `Subject`, `Attachments`), the description of a mail
+database, and `text`. The core has no text route for these types
+(`parserRouteForExt` is `none`), so the Reader's text is the file's text
+(see "Text and pictures from every Reader"): each message's header lines,
+its whole body (plain; else HTML through the markup reader, which is kit for
+it; else RTF through anydoc, kit too), and its attachments by name, type and
+size. A mailbox has a heading `## Message N` before each message.
+`produces.table: false`: no automatic Table.
+
+Attachments are named, never read (docs/files.md, 8f): the detail cut
+`mail_attachments`. Two safety caps end a read early and say it as the cut
+`mail_messages` (`read` of `total` messages, the file `partial`): 32 M
+characters of text (`MAIL_TEXT_MAX_CHARS`, the parser's answer must fit
+its wire) and 150 s (`MAIL_READ_MAX_MS`, under `needs.timeMs` of 240 s, so
+a huge mailbox ends in part rather than killed whole). An empty file:
+`ok` with no write, so it keeps the default text. A `.msg` that is no OLE2
+file is read as an `.eml`; an OLE2 file the reader cannot read throws, and
+the file gets `document_unreadable`.
+
+Files that were uploaded before this Reader have the default text (their
+name). They are read again by a re-extract, a person's act, per box (the
+program's Q3): `pipeline_reread` keeps a file's text and so does not give
+them their text.
 
 ## The spreadsheet reader as a package
 

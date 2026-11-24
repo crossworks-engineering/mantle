@@ -267,7 +267,10 @@ clear a key only the brain sets, never change it. The next read says its
 cuts again, each key replacing its entry.
 
 Two cuts are details only (the owner's call, 2026-11-19): `pictures_small`
-and `pictures_tiny`, icons, bullets and small logos the size gate skipped.
+and `pictures_tiny`, icons, bullets and small logos the size gate skipped. An
+archive's contents (`archive`, `archive_sealed`, 8e) and a mail's
+attachments (`mail_attachments`, 8f) are details by the same rule: they are
+never read on upload, by design.
 They stay in a file's `cuts` with their sentence (file_get, node_read), but
 alone they leave the file `indexed`, never count for the partial filter of
 file_list or the stale list, and push nothing; a partial file's hint leaves
@@ -293,6 +296,8 @@ The cuts said today, each with its key:
 | `pictures_small`, `pictures_metafile`, `pictures_unreadable`, `pictures_tiny`                                            | pictures the gate left out (`embedded-images.ts`, said by the picture pass once its read is whole; a duplicate is no cut). The cap and the parser's answer budget are `data.images` (`{ kept, found }`) |
 | `pictures_large`                                                                                                         | Visio pictures past 32 MB, or past 256 MB a drawing (`vsdx.ts`)                                                                                                                                         |
 | `description`                                                                                                            | a calendar event posted with `descriptionChars` past the description it holds (POST /api/sidecar/events, on the event node)                                                                             |
+| `mail_messages`                                                                                                          | a mail or mailbox read in part: its text past 32 M characters, or its read past 150 s (the `mail` Reader, 8f); the messages past the cap are counted                                                    |
+| `mail_attachments`                                                                                                       | a detail: the attachments of a mail, named in its text and its Mail tab, never read (8f)                                                                                                                |
 
 A calendar feed's own cuts (a series past 50,000 occurrences before the
 horizon, an event past 16 MB of text, a description past 20,000
@@ -588,6 +593,51 @@ MCP client acting for them; no trigger, timer or sweep starts one:
   pairs. An unknown fault is said in a fixed sentence (the detail is in the
   log). No entry's path is ever used as a disk path: every file lands by its cleaned name
   through `upsertFile`, inside the new folder.
+
+### 8f. Email files
+
+An `.eml`, an Outlook `.msg` and a mailbox `.mbox` are read by the built-in
+Reader `mail` (docs/pipelines.md, "The mail reader"): no model, one parser
+job. Each message gives its sender, recipients (To, Cc), date and subject,
+and its whole body: the plain text part, else the HTML part through the
+markup reader, else (a `.msg`) its RTF body. That is the file's text, read
+into passages and vectors as any document's. A mailbox has one section
+`## Message N` a message, so a passage names its message. The file also gets
+a database with one tab, `Mail`: one row a message (`Message`, `From`,
+`To`, `Cc`, `Date` in UTC, `Subject`, `Attachments`). It makes no
+automatic Table.
+
+**Attachments are named, never read** (the owner's answer Q2, 2026-11-23:
+the archive rule). Each attachment's name, type and size are in the text
+and its name is in the `Attachments` cell, so a mail is found by what it
+carried. The read stamps the detail cut `mail_attachments` (`{ what:
+'attachments', read: 0, total }`): the file stays `indexed`, and its
+sentence says the attachments are not read. To read one, a person uploads
+it as its own file. A part shown inline in the message (a forwarded mail
+shown in the body) is the message's own text and is read; one sent as an
+attachment is a name. Mail synced from a mailbox is not this path: its
+attachments are files of their own (docs/email-ingest.md), and an attached
+email there is kept as an `.eml` file that this Reader reads like any
+other, under the rule of 3b (an email attachment's database rows are for an
+Admin user only).
+
+**Nothing is cut silently.** Two safety caps stop a read, each said as the
+cut `mail_messages` (the file is `partial`): the text of one read (32 M
+characters, `MAIL_TEXT_MAX_CHARS`, so the parser's answer fits its wire)
+and its time (150 s, `MAIL_READ_MAX_MS`, inside the job's 240 s). The
+messages read stay; the ones past the cap are counted (`read` of `total`),
+not read. A first message longer than the text cap keeps the head of its
+body and counts as not read in full. The stored text past 1,000,000
+characters is `text_store`, as for any document; search covers all of it.
+
+An empty file gives no text and no database; it keeps the default text (its
+name, type and size). An Outlook file that is no message (OLE2 that the
+reader cannot read) is `document_unreadable`. A `.msg` that is no OLE2 file
+is read as an `.eml` (a renamed message).
+
+Not built yet: "Extract contents" for a mail (its attachments written as
+files beside it, as an archive's). The owner chose it with Q2; it needs a
+parser job that hands the attachments to the brain, apart from this Reader.
 
 ---
 

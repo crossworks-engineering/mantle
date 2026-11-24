@@ -308,7 +308,8 @@ text/summary/embedding work re-runs; spend is one vision call per image _kept_.
 ## 3b. File databases
 
 Every table-type file uploaded in Files (xlsx, xls, csv, Microsoft Project XML,
-dwg, dxf, dgn, dwf, and a PDF that reads as a drawing or a ruled form) gets one
+dwg, dxf, dgn, dwf, a PDF that reads as a drawing or a ruled form, and an email:
+eml, msg, mbox, whose tab Mail holds a row a message, docs/files.md 8f) gets one
 read-only database. It stays with the file. Nobody edits
 its rows. An assistant or an app reads it with `file_sql`. `file_get` and
 `file_read` name it (`file_database`: its tabs and that line), with the same
