@@ -7,9 +7,9 @@ import {
 
 describe('parseSearchLanguages', () => {
   it('takes codes, in their usual case, once each', () => {
-    expect(parseSearchLanguages(['es', ' ES ', 'pt-br', 'zh-hant'])).toEqual({
+    expect(parseSearchLanguages(['es', ' ES ', 'pt-br', 'sr-latn'])).toEqual({
       ok: true,
-      languages: ['es', 'pt-BR', 'zh-Hant'],
+      languages: ['es', 'pt-BR', 'sr-Latn'],
     });
     expect(parseSearchLanguages(['es-419'])).toEqual({ ok: true, languages: ['es-419'] });
   });

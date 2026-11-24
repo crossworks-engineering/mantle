@@ -39,7 +39,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
     },
   };
 });
-vi.mock('./search-languages', () => ({
+vi.mock('./search-languages', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./search-languages')>()),
   loadSearchLanguages: vi.fn(async () => languages),
 }));
 vi.mock('./query-translate', () => ({
