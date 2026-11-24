@@ -179,7 +179,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `MANTLE_TRUSTED_PROXIES` | 1 | above 0, min 1 | proxy hops in front of the server (X-Forwarded-For) |
 | `MANTLE_MAX_UPLOAD_MB` | 512 | whole, min 1 | streamed upload cap, MB; 0 or less is 1 |
 | `APP_SQL_MAX_DB_MB` | 256 | whole, min 1 | one app database, MB; 0 or less is 1 |
-| `APP_SNAPSHOT_MAX_MB` | 2048 | whole, min 1 | snapshot history of one app or table, MB; 0 or less is 1 |
+| `APP_SNAPSHOT_MAX_MB` | 2048 | whole, min 1 | one budget for the app and table snapshots of the whole box, MB, not one per app or table: a new manual app snapshot is refused once the manual snapshots already use this much or more (automatic ones do not count; a member's own snapshots are counted apart, against the same number); a new table snapshot is refused once all snapshots, automatic ones too, use this much or more; 0 or less is 1 |
 | `APP_SNAPSHOT_AUTO_MAX_MB` | 1024 | whole, min 1 | automatic app snapshots, MB; 0 or less is 1 |
 | `APP_SNAPSHOT_MCP_MAX_MB` | 512 | whole, min 1 | app snapshots before an MCP write, MB; 0 or less is 1 |
 | `APP_CODE_EDIT_MAX_MB` | 64 | whole, min 1 | code-tool undo records of one app, MB; 0 or less is 1 |
