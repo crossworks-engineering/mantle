@@ -126,6 +126,9 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
     skip: 'as POST /api/fleet/bans; lib/control/invite-channel.db.test.ts drives the CC rows and the box',
   },
   'POST /api/fleet/keys': { skip: 'as POST /api/fleet/bans' },
+  'POST /api/fleet/keys/test': {
+    skip: 'as POST /api/fleet/bans; lib/control/key-status.db.test.ts drives the CC rows and the box',
+  },
   'POST /api/fleet/models': { skip: 'as POST /api/fleet/bans' },
   'POST /api/fleet/settings': { skip: 'as POST /api/fleet/bans' },
   'POST /api/fleet/sso': {

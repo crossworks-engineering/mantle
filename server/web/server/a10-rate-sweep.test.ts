@@ -452,6 +452,14 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     body: JSON_BODY,
     limits: [login('fleet:invite', 60, 10 * MIN)],
   },
+  // The Control Center's key status Test now: one budget per login. Off a
+  // CC it answers the plain 404 after the gate took it.
+  {
+    row: 'POST /api/fleet/keys/test',
+    cred: 'owner',
+    body: JSON_BODY,
+    limits: [login('fleet:key-test', 20, 10 * MIN)],
+  },
   ...ADMIN_PUSH.map((row): SweepCell => ({
     row,
     cred: 'owner',
