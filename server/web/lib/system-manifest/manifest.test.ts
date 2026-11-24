@@ -852,10 +852,12 @@ describe('every shipped default model is a closed lab model', () => {
    *  hosts for it); an open-weight model is not: any third-party host may
    *  serve it, and that host then sees the client's text. */
   const CLOSED_LABS = ['anthropic', 'openai', 'google', 'x-ai', 'perplexity', 'typesafe'];
-  const OPEN_WEIGHT = [
+  /** Open-weight families: whole makers, and the open models of an allowed
+   *  maker, matched anywhere in the id (`google/medgemma-*`,
+   *  `openai/whisper-*`, `perplexity/r1-1776`; xAI's Grok 1 and 2 weights
+   *  are public, `xai-org/grok-1` and `xai-org/grok-2`). */
+  const OPEN_WEIGHT_MAKERS = [
     'meta-llama/',
-    'openai/gpt-oss',
-    'google/gemma',
     'mistralai/',
     'deepseek/',
     'qwen/',
@@ -864,11 +866,16 @@ describe('every shipped default model is a closed lab model', () => {
     'moonshotai/',
     'liquid/',
   ];
+  const OPEN_WEIGHT_NAMES = /gemma|gpt-oss|whisper|r1-1776|grok-[12](?![0-9])/;
   /** Reported 2026-11-24, not changed: the Translator's fallback and high
    *  models (params) are Mistral open-weight models, served today only by
    *  Mistral itself. They wait for the owner's word; take each off this
    *  list in the change that moves it. Never add to it. */
-  const REPORTED = ['mistralai/mistral-small-2603', 'mistralai/mistral-medium-3-5'];
+  const REPORTED = [
+    'worker translator fallback_model ships mistralai/mistral-small-2603',
+    'worker translator high_model ships mistralai/mistral-medium-3-5',
+  ];
+  const placeOf = (d: { where: string; model: string }) => `${d.where} ships ${d.model}`;
 
   /** Each default: where it ships, its route's provider, its model id. */
   const defaults: { where: string; provider: string; model: string }[] = [
@@ -910,19 +917,21 @@ describe('every shipped default model is a closed lab model', () => {
       'a default must be served only by its maker or by Azure, AWS or Google Cloud; ' +
       'an open-weight model or a :free variant may be served by any third-party host';
     for (const d of defaults) {
-      if (REPORTED.includes(d.model)) continue;
+      if (REPORTED.includes(placeOf(d))) continue;
       const id = d.model.replace(/^~/, '');
-      expect(CLOSED_LABS, `${d.where} ships ${d.model}: ${why}`).toContain(makerOf(d));
+      const said = `${placeOf(d)}: ${why}`;
+      expect(CLOSED_LABS, said).toContain(makerOf(d));
       expect(
-        OPEN_WEIGHT.some((p) => id.startsWith(p)),
-        `${d.where} ships ${d.model}: ${why}`,
+        OPEN_WEIGHT_MAKERS.some((p) => id.startsWith(p)),
+        said,
       ).toBe(false);
-      expect(id.endsWith(':free'), `${d.where} ships ${d.model}: ${why}`).toBe(false);
+      expect(OPEN_WEIGHT_NAMES.test(id), said).toBe(false);
+      expect(id.endsWith(':free'), said).toBe(false);
     }
   });
 
   it('the reported list only names defaults that still ship', () => {
-    const shipped = new Set(defaults.map((d) => d.model));
-    for (const m of REPORTED) expect(shipped.has(m), `${m} no longer ships: drop it`).toBe(true);
+    const shipped = new Set(defaults.map(placeOf));
+    for (const m of REPORTED) expect(shipped.has(m), `${m} no longer: drop it`).toBe(true);
   });
 });

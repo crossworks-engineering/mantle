@@ -13,4 +13,6 @@
 --   docker exec mantle_web cat /app/packages/db/rollback/0397_scan_reader_lab_model.revert.sql \
 --     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
 -- then pin the older image straight away (docs/update-prod.md "Rollback").
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
 DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792340180000;

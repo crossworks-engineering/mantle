@@ -2,8 +2,10 @@
  * Migration scan_reader_lab_model, on a real migrated Postgres: a Scan
  * reader route still on the old shipped default moves to the lab model, a
  * model picked by hand is kept, the backup route moves on its own, another
- * kind is never touched, and a second run changes nothing. Everything runs
- * inside ONE transaction that is rolled back.
+ * kind is never touched; the pool's template row moves, a row edited by
+ * hand is kept, and where the new row is there already the old one goes;
+ * a second run changes nothing. Everything runs inside ONE transaction
+ * that is rolled back.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/db/src/scan-reader-lab-model-migration.db.test.ts
  */
@@ -18,10 +20,11 @@ const OLD = 'meta-llama/llama-3.1-8b-instruct';
 const NEW = 'openai/gpt-6-luna';
 
 type Row = Record<string, unknown>;
-type Sql = ((strings: TemplateStringsArray, ...v: unknown[]) => Promise<Row[]>) & {
-  unsafe: (q: string) => Promise<Row[]>;
-  begin: <T>(fn: (tx: Sql) => Promise<T>) => Promise<T>;
-};
+type Sql = ((strings: TemplateStringsArray, ...v: unknown[]) => Promise<Row[]>) &
+  ((list: readonly string[]) => unknown) & {
+    unsafe: (q: string) => Promise<Row[]>;
+    begin: <T>(fn: (tx: Sql) => Promise<T>) => Promise<T>;
+  };
 
 function migrationStatements(): string[] {
   const dir = join(__dirname, '..', 'migrations');
@@ -52,10 +55,78 @@ describe.skipIf(!URL)('migration scan_reader_lab_model', () => {
   let admin: Sql;
 
   beforeAll(() => {
-    admin = superuserClient(URL!) as unknown as Sql;
+    const su = superuserClient(URL!);
+    // As the app's drizzle pool sent them: a json or jsonb parameter goes as
+    // the text it is (`${JSON.stringify(v)}::jsonb`), not a JSON string of it.
+    const serializers = (su.options as unknown as { serializers: Record<string, unknown> })
+      .serializers;
+    serializers['114'] = serializers['3802'] = (v: unknown) => v;
+    admin = su as unknown as Sql;
   });
   afterAll(async () => {
     await (admin as unknown as { end: () => Promise<void> }).end();
+  });
+
+  it('moves only the pool row still the shipped template', async () => {
+    await inRollback(admin, async (tx) => {
+      const OLD_ROUTES = JSON.stringify([{ provider: 'openrouter', model: OLD }]);
+      const SHIPPED = 'the shipped default: the text model behind the mistral-ocr PDF parser';
+      const owners = { plain: randomUUID(), edited: randomUUID(), both: randomUUID() };
+      for (const id of Object.values(owners)) {
+        await tx`insert into auth.users (id, email, password_hash, role)
+                 values (${id}, ${`${id.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
+      }
+      const add = async (owner: string, name: string, routes: string, note: string) => {
+        await tx`insert into curated_models (owner_id, pool, position, name, vendor, routes, note)
+                 values (${owner}, 'scan_reader', 0, ${name}, 'Meta', ${routes}::jsonb, ${note})`;
+      };
+      await add(owners.plain, 'Meta: Llama 3.1 8B Instruct', OLD_ROUTES, SHIPPED);
+      await add(owners.edited, 'Meta: Llama 3.1 8B Instruct', OLD_ROUTES, 'my own pick');
+      await add(owners.both, 'Meta: Llama 3.1 8B Instruct', OLD_ROUTES, SHIPPED);
+      await add(
+        owners.both,
+        'OpenAI: GPT-6 Luna',
+        JSON.stringify([{ provider: 'openrouter', model: NEW }]),
+        'added by hand',
+      );
+
+      await migrate(tx);
+
+      const rows = async (owner: string) =>
+        await tx`select name, vendor, routes, note from curated_models
+                 where owner_id = ${owner} order by name`;
+      const plain = await rows(owners.plain);
+      expect(plain).toHaveLength(1);
+      expect(plain[0]).toMatchObject({
+        name: 'OpenAI: GPT-6 Luna',
+        vendor: 'OpenAI',
+        routes: [{ provider: 'openrouter', model: NEW }],
+      });
+      expect(String(plain[0]!['note'])).toMatch(/^the shipped default: the chat model/);
+      expect(await rows(owners.edited)).toEqual([
+        {
+          name: 'Meta: Llama 3.1 8B Instruct',
+          vendor: 'Meta',
+          routes: [{ provider: 'openrouter', model: OLD }],
+          note: 'my own pick',
+        },
+      ]);
+      expect(await rows(owners.both)).toEqual([
+        {
+          name: 'OpenAI: GPT-6 Luna',
+          vendor: 'Meta',
+          routes: [{ provider: 'openrouter', model: NEW }],
+          note: 'added by hand',
+        },
+      ]);
+
+      const all = async () =>
+        await tx`select owner_id, name, routes, note, updated_at from curated_models
+                 where owner_id in ${tx(Object.values(owners))} order by owner_id, name`;
+      const before = await all();
+      await migrate(tx);
+      expect(await all()).toEqual(before);
+    });
   });
 
   it('moves only a route still on the old default', async () => {
