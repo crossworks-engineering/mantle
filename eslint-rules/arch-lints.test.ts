@@ -652,7 +652,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 3 CC broadcast rows (GET, HEAD and POST /api/fleet/broadcasts).
     // + the 3 key status rows (GET, HEAD /api/fleet/keys and POST
     //   /api/fleet/keys/test).
-    expect(rows.length).toBe(1032);
+    // + the 3 search languages rows (GET, HEAD and PUT
+    //   /api/settings/search-languages).
+    expect(rows.length).toBe(1035);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
