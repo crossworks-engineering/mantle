@@ -2780,6 +2780,13 @@
       "when": 1792340180000,
       "tag": "0397_scan_reader_lab_model",
       "breakpoints": true
+    },
+    {
+      "idx": 398,
+      "version": "7",
+      "when": 1792340240000,
+      "tag": "0398_translator_lab_models",
+      "breakpoints": true
     }
   ]
 }

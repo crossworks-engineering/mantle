@@ -2352,10 +2352,20 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   // Translator: the `translate` tool's model (text or an item into a
   // language). Required, so it reaches existing brains on upgrade: it costs
   // nothing until someone calls the tool (no trigger starts it). Without one
-  // the tool falls back to the summarizer. Owner's models (2026-11-19,
-  // checked in the live catalog): the fallback runs a part only when the
-  // primary fails it, the high model only for a call that asks
-  // `quality: 'high'`; never a second pass.
+  // the tool falls back to the summarizer. The model is the owner's
+  // (2026-11-19): the fallback runs a part only when the primary fails it,
+  // the high model only for a call that asks `quality: 'high'`; never a
+  // second pass. All three are closed lab models (owner, 2026-11-24: no
+  // default sends client text to a third-party host). Endpoints checked
+  // 2026-11-24, none with an expiration date: Gemini 3.1 Flash Lite on
+  // Google and Google AI Studio; GPT-6 Luna on OpenAI, Azure and Amazon
+  // Bedrock; Claude Sonnet 5.5 on Anthropic, Claude Platform on AWS,
+  // Google, Azure and Amazon Bedrock. The fallback is another lab than
+  // either model it backs, so a refusal (`content_filter`) is not met
+  // again by the same lab. Live check 2026-11-24, 6 short passages in 3
+  // language pairs: every model finished each one; Luna costs about what
+  // the Mistral Small fallback did, Sonnet about 1.5 to 2 times the Mistral
+  // Medium high model (docs/ai-workers.md).
   {
     kind: 'translator',
     name: 'Translator',
@@ -2363,10 +2373,8 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     provider: 'openrouter',
     model: 'google/gemini-3.1-flash-lite',
     params: {
-      fallback_model: 'mistralai/mistral-small-2603',
-      // The catalog gives this model an expiration_date of 2027-01-31:
-      // swap it before then.
-      high_model: 'mistralai/mistral-medium-3-5',
+      fallback_model: 'openai/gpt-6-luna',
+      high_model: 'anthropic/claude-sonnet-5.5',
     },
   },
   // Suggester: proposes one follow-up question after a completed turn (the

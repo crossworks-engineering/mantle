@@ -1101,14 +1101,25 @@ Owner's rules:
   numbers, units and names unchanged. The text is fenced as data.
 - **Models.** The worker's own model runs every part (shipped:
   `google/gemini-3.1-flash-lite`). `params.fallback_model` (shipped:
-  `mistralai/mistral-small-2603`) takes a part only when the primary fails
+  `openai/gpt-6-luna`) takes a part only when the primary fails
   it: an error, a refusal, an empty or far too short answer, or one cut at
   the output limit. `params.high_model` (shipped:
-  `mistralai/mistral-medium-3-5`; OpenRouter lists an expiration date of
-  2027-01-31 for it, so it must be swapped before then) runs a call that
-  asks `quality: 'high'`
+  `anthropic/claude-sonnet-5.5`) runs a call that asks `quality: 'high'`
   instead of the worker's model. No part is ever sent twice once it has a
-  good answer. The models are ids on the worker's own provider.
+  good answer. The models are ids on the worker's own provider. All three
+  are closed lab models, served only by their lab, Azure, Amazon Bedrock
+  or Google (endpoints checked 2026-11-24). The fallback is another lab
+  than either model it backs, so a refusal is not met again by the same
+  lab. Until v0.712 the fallback and the high model were Mistral
+  open-weight models (`mistralai/mistral-small-2603`,
+  `mistralai/mistral-medium-3-5`); migration 0398 moves a worker still on
+  them, and the pool's two template rows, and keeps a model a person
+  picked. Live check 2026-11-24, 6 short made-up passages (English to
+  German, English to Japanese, Spanish to English), each model alone:
+  every passage finished, with the code, the tags and the numbers kept.
+  Cost per passage: GPT-6 Luna $0.0001 to $0.0002 (Mistral Small about
+  the same), Claude Sonnet 5.5 $0.0027 to $0.0048 (Mistral Medium $0.0015
+  to $0.0025).
 - **Rights.** The item is read in the caller's scope (an item it does not
   read answers as a random id, before any spend); mail needs the Connectors
   area of the Admin workspace. `save` writes through the content library,

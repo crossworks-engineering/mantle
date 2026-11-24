@@ -2063,44 +2063,44 @@
   {
     "pool": "translator",
     "position": 1,
-    "name": "Mistral: Mistral Small 2603",
-    "vendor": "Mistral",
+    "name": "OpenAI: GPT-6 Luna",
+    "vendor": "OpenAI",
     "routes": [
       {
         "provider": "openrouter",
-        "model": "mistralai/mistral-small-2603"
+        "model": "openai/gpt-6-luna"
       }
     ],
     "pricing": {
-      "inputPerM": 0.15,
-      "outputPerM": 0.6,
+      "inputPerM": 0.1,
+      "outputPerM": 0.5,
       "currency": "USD",
-      "capturedAt": "2026-11-19T00:00:00.000Z",
+      "capturedAt": "2026-11-24T09:00:00.000Z",
       "source": "openrouter"
     },
     "rating": 4,
-    "note": "the shipped fallback: takes a part only when the primary fails it; 262k context"
+    "note": "the shipped fallback: takes a part only when the primary fails it; another lab than the primary and the high model; a closed lab model, served only by OpenAI, Azure or Amazon Bedrock; 1M context"
   },
   {
     "pool": "translator",
     "position": 2,
-    "name": "Mistral: Mistral Medium 3.5",
-    "vendor": "Mistral",
+    "name": "Anthropic: Claude Sonnet 5.5",
+    "vendor": "Anthropic",
     "routes": [
       {
         "provider": "openrouter",
-        "model": "mistralai/mistral-medium-3-5"
+        "model": "anthropic/claude-sonnet-5.5"
       }
     ],
     "pricing": {
-      "inputPerM": 1.5,
-      "outputPerM": 7.5,
+      "inputPerM": 2,
+      "outputPerM": 10,
       "currency": "USD",
-      "capturedAt": "2026-11-19T00:00:00.000Z",
+      "capturedAt": "2026-11-24T09:00:00.000Z",
       "source": "openrouter"
     },
     "rating": 4,
-    "note": "the shipped high model: quality 'high' only, for terminology or style work"
+    "note": "the shipped high model: quality 'high' only, for terminology or style work; a closed lab model, served only by Anthropic, Azure, Amazon Bedrock or Google; 1M context"
   },
   {
     "pool": "decider",

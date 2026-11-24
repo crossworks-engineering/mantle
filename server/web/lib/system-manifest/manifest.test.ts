@@ -867,14 +867,6 @@ describe('every shipped default model is a closed lab model', () => {
     'liquid/',
   ];
   const OPEN_WEIGHT_NAMES = /gemma|gpt-oss|whisper|r1-1776|grok-[12](?![0-9])/;
-  /** Reported 2026-11-24, not changed: the Translator's fallback and high
-   *  models (params) are Mistral open-weight models, served today only by
-   *  Mistral itself. They wait for the owner's word; take each off this
-   *  list in the change that moves it. Never add to it. */
-  const REPORTED = [
-    'worker translator fallback_model ships mistralai/mistral-small-2603',
-    'worker translator high_model ships mistralai/mistral-medium-3-5',
-  ];
   const placeOf = (d: { where: string; model: string }) => `${d.where} ships ${d.model}`;
 
   /** Each default: where it ships, its route's provider, its model id. */
@@ -907,8 +899,10 @@ describe('every shipped default model is a closed lab model', () => {
     return d.provider === 'xai' ? 'x-ai' : d.provider;
   };
 
-  it('finds the defaults it checks, the Scan reader among them', () => {
+  it('finds the defaults it checks, the Scan reader and the Translator params among them', () => {
     expect(defaults.some((d) => d.where === 'worker scan_reader')).toBe(true);
+    expect(defaults.some((d) => d.where === 'worker translator fallback_model')).toBe(true);
+    expect(defaults.some((d) => d.where === 'worker translator high_model')).toBe(true);
     expect(defaults.length).toBeGreaterThan(20);
   });
 
@@ -917,7 +911,6 @@ describe('every shipped default model is a closed lab model', () => {
       'a default must be served only by its maker or by Azure, AWS or Google Cloud; ' +
       'an open-weight model or a :free variant may be served by any third-party host';
     for (const d of defaults) {
-      if (REPORTED.includes(placeOf(d))) continue;
       const id = d.model.replace(/^~/, '');
       const said = `${placeOf(d)}: ${why}`;
       expect(CLOSED_LABS, said).toContain(makerOf(d));
@@ -928,10 +921,5 @@ describe('every shipped default model is a closed lab model', () => {
       expect(OPEN_WEIGHT_NAMES.test(id), said).toBe(false);
       expect(id.endsWith(':free'), said).toBe(false);
     }
-  });
-
-  it('the reported list only names defaults that still ship', () => {
-    const shipped = new Set(defaults.map(placeOf));
-    for (const m of REPORTED) expect(shipped.has(m), `${m} no longer: drop it`).toBe(true);
   });
 });
