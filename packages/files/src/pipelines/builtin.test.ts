@@ -228,7 +228,7 @@ describe('the built-in pipelines', () => {
     expect(afterMatches(readerFor(BUILTIN_PIPELINES, 'dxf')!, 'dxf', texts)).toBe(false);
   });
 
-  it("dbExtsOf is the nine extensions FILE_DB_EXTS held before, in the same order, then the raster reader's four", () => {
+  it("dbExtsOf is the nine extensions FILE_DB_EXTS held before, in the same order, then the raster reader's four and the mail reader's three", () => {
     expect([...dbExtsOf(BUILTIN_PIPELINES)]).toEqual([
       'xlsx',
       'xls',
@@ -243,6 +243,9 @@ describe('the built-in pipelines', () => {
       'tiff',
       'smf',
       '000',
+      'eml',
+      'msg',
+      'mbox',
     ]);
   });
 });
@@ -259,6 +262,7 @@ describe('the roles', () => {
       'plot-dwf': 'reader',
       'drawing-cad': 'reader',
       'drawing-raster': 'reader',
+      mail: 'reader',
       'site-tags': 'after',
       'iso-title-block': 'agent',
       links: 'after',

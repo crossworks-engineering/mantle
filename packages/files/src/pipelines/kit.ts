@@ -52,4 +52,8 @@ export const PIPELINE_KIT_FILES: readonly string[] = [
   // the sink a step says it in (the CAD and DWF packages).
   'read-cut.ts',
   'read-cut-sink.ts',
+  // The markup reader and anydoc: the core's text read, and the mail
+  // package's body read (an HTML body; an Outlook RTF body).
+  'markup.ts',
+  'anydoc.ts',
 ];

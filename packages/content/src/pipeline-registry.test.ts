@@ -29,6 +29,9 @@ const READER_OF: Record<string, string> = {
   tiff: 'drawing-raster',
   smf: 'drawing-raster',
   '000': 'drawing-raster',
+  eml: 'mail',
+  msg: 'mail',
+  mbox: 'mail',
 };
 
 describe('the registry of a box with the built-ins only', () => {

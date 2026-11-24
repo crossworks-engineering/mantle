@@ -5,6 +5,7 @@
  * route of a type, and the audit line (numbers by type only).
  */
 import { describe, expect, it } from 'vitest';
+import { BUILTIN_PIPELINES, dbExtsOf } from '@mantle/files/pipelines/builtin';
 import {
   coverageCheck,
   coverageOf,
@@ -61,6 +62,14 @@ describe('routeOfExt', () => {
     expect(routeOfExt('mpp', DB_EXTS)).toBe('export');
     expect(routeOfExt('eml', DB_EXTS)).toBe('none');
     expect(routeOfExt('log', DB_EXTS)).toBe('none');
+  });
+
+  it('takes the mail types as the built-in Reader mail reads them, with a database', () => {
+    const builtin = dbExtsOf(BUILTIN_PIPELINES);
+    for (const ext of ['eml', 'msg', 'mbox']) {
+      expect(routeOfExt(ext, builtin), ext).toBe('pipeline');
+      expect(dbExpected(ext, builtin), ext).toBe(true);
+    }
   });
 
   it('takes a type with only an own Reader as a pipeline', () => {
@@ -183,6 +192,28 @@ describe('coverageOf', () => {
     });
     const [row] = coverageOf([zip], DB_EXTS, new Set());
     expect(row).toMatchObject({ route: 'archive', indexed: 1, partial: 0, notFull: 0 });
+  });
+
+  it("keeps a mail indexed: its attachments' detail cut is no shortfall", () => {
+    const mail = file('eml', {
+      ...done,
+      read_cut: { mail_attachments: { what: 'attachments', read: 0, total: 2 } },
+    });
+    const [row] = coverageOf([mail], new Set(['eml']), new Set([`${mail.id}.${SHA.slice(0, 16)}`]));
+    expect(row).toMatchObject({ route: 'pipeline', indexed: 1, partial: 0, withDb: 1, notFull: 0 });
+  });
+
+  it('counts a mailbox read in part as partial, with its cut', () => {
+    const mbox = file('mbox', {
+      ...done,
+      read_cut: { mail_messages: { what: 'messages', read: 3, total: 9 } },
+    });
+    const [row] = coverageOf(
+      [mbox],
+      new Set(['mbox']),
+      new Set([`${mbox.id}.${SHA.slice(0, 16)}`]),
+    );
+    expect(row).toMatchObject({ partial: 1, withDb: 1, cuts: { mail_messages: 1 } });
   });
 
   it('sorts by file count', () => {

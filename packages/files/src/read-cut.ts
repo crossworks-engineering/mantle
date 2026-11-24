@@ -203,6 +203,13 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
       : 'An archive is kept as it is: what is in it is not read. Extract its contents to read it as files.',
   archive_sealed: () =>
     'An archive is kept as it is: what is in it is not read, and this box cannot extract a 7z or RAR archive. Unpack it elsewhere and upload its files.',
+  // A mail's attachments (the Reader `mail`): named, never read, as an
+  // archive's entries (the owner's answer Q2, 2026-11-23). A detail.
+  mail_attachments: (c) =>
+    `Its ${n(c.total ?? 0)} attachment${c.total === 1 ? ' is' : 's are'} not read, only named in search. To read one, upload it as its own file.`,
+  // A mailbox read in part (the Reader's text or time cap).
+  mail_messages: (c) =>
+    `Only ${ofTotal(c)} messages were read in full. The other messages are not in search.`,
   description: (c) =>
     c.read === 0
       ? `Its description (${n(c.total ?? 0)} characters) was left out: the feed was too large to send with it.`
@@ -261,7 +268,8 @@ export function readCutsOf(raw: unknown): ReadCuts {
  *  only"): pictures the size gate skipped as icons, bullets or small logos
  *  (`pictures_small`, `pictures_tiny`), and an archive's contents, which
  *  are never read on upload ("archives are archives", the same day:
- *  `archive`, `archive_sealed`). They stay in a file's `cuts` with their
+ *  `archive`, `archive_sealed`), and a mail's attachments, named only by
+ *  the same rule (`mail_attachments`). They stay in a file's `cuts` with their
  *  sentence, but alone they never make it `partial` nor push the admins.
  *  Every other cut does. The SQL form (ops/queries.ts
  *  readCutMakesPartialSql) names the same reasons. */
@@ -270,6 +278,7 @@ export const DETAIL_ONLY_CUT_REASONS: readonly string[] = [
   'pictures_tiny',
   'archive',
   'archive_sealed',
+  'mail_attachments',
 ];
 
 /** Whether a cut of this key makes the file `partial` (not a detail only). */

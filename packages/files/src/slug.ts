@@ -475,6 +475,13 @@ export function mimeForExt(ext: string): string {
       return 'video/x-matroska';
     case 'avi':
       return 'video/x-msvideo';
+    // ── Mail (the Reader `mail`).
+    case 'eml':
+      return 'message/rfc822';
+    case 'msg':
+      return 'application/vnd.ms-outlook';
+    case 'mbox':
+      return 'application/mbox';
     // ── Archives.
     case 'zip':
       return 'application/zip';

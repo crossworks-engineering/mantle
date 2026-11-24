@@ -326,6 +326,22 @@ export const BUILTIN_PIPELINES = [
       },
     },
   }),
+  // Email: an .eml, an Outlook .msg, a mailbox .mbox (./pkg/mail). The core
+  // has no text route for them, so this Reader's text is the file's text:
+  // every message's headers and whole body, its attachments named only
+  // (docs/pipelines.md, "The mail reader").
+  pkg({
+    id: 'mail',
+    name: 'Email',
+    description:
+      'Reads an email (.eml, Outlook .msg) or a mailbox (.mbox): each message gives its sender, recipients, date, subject and whole body as text, and a row of the tab Mail. Attachments are named, not read.',
+    version: '1.0.0',
+    match: { ext: ['eml', 'msg', 'mbox'] },
+    produces: { text: true, table: false },
+    // The read stops itself at MAIL_READ_MAX_MS (150 s) and says the
+    // messages it left out, inside this deadline.
+    needs: { weight: 'light', timeMs: 240_000 },
+  }),
   // An `after` pipeline: it reads the Texts tab of a drawing's database and
   // adds the tab `Site tags`. Model-free, a package (./pkg/site-tags), one
   // parser job a run. On in every workspace, as every pipeline is.

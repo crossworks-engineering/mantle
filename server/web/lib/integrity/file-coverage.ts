@@ -74,6 +74,7 @@ export const POPULAR_EXTS: ReadonlySet<string> = new Set([
   'json',
   'eml',
   'msg',
+  'mbox',
   'dwg',
   'dxf',
   'dgn',

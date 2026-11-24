@@ -52,6 +52,8 @@
   "dependencies": {
     "@fast-csv/parse": "^5.0.8",
     "@firecrawl/anydoc": "0.2.4",
+    "@kenjiuno/decompressrtf": "0.1.4",
+    "@kenjiuno/msgreader": "1.29.0",
     "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
@@ -62,6 +64,7 @@
     "exceljs": "^4.4.0",
     "heic-convert": "^2.1.0",
     "jszip": "^3.10.2",
+    "mailparser": "3.13.0",
     "mammoth": "^1.13.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "6.4.299",
