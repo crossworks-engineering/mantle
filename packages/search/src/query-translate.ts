@@ -276,15 +276,11 @@ export async function translateQuery(
       .map((a, i) => ({ lang: languages[i]!, text: a }))
       .filter((a) => a.text && a.text.toLowerCase() !== text.toLowerCase());
     if (missed.length) {
-      warn(
-        `translated terms left out (${missed.join('; ')}): the word search ran on the rest`,
-      );
+      warn(`translated terms left out (${missed.join('; ')}): the word search ran on the rest`);
     }
     return out;
   } catch (err) {
-    warn(
-      `query not translated (${errorMessage(err)}): the word search ran on the original text`,
-    );
+    warn(`query not translated (${errorMessage(err)}): the word search ran on the original text`);
     return [];
   }
 }
