@@ -41,15 +41,27 @@ the label in use and its source (`label`, `labelFrom`: `env`, `row` or
 The sign-in screen shows the label to anyone, before anyone signs in
 (`GET /api/auth/oidc/config`), so a label set on a screen is held to one
 pattern at the CC and again at the box, and a value that does not fit is
-refused (400), never stored. The rule, after the value is trimmed: 1 to 60
-characters, each a letter (any script), a digit, a space or one of
-`. , - ' & ( ) +`, with at least one letter or digit. So no line break, no
-control character, no markup, no other mark. As a regular expression
-(`SSO_LABEL_RE`, `packages/client-types/src/sso-label.ts`):
+refused (400), never stored. The rule, on the value put in Unicode NFC and
+trimmed (the stored value is that one): 1 to 60 characters, counted in code
+points after NFC. Each is a letter (any script), a digit, a combining mark
+right after a letter, a digit or another mark (an accent, a Devanagari or
+Tamil vowel sign, an Arabic vowel mark), a space, or one of
+`. , - ' ’ & ( ) +`; at least one is a letter or a digit. So an accent
+typed as two parts (`e` and U+0301, as a macOS file name holds it) is taken
+and stored as one. Refused: line breaks, control characters, format
+characters (right-to-left marks and overrides, zero-width characters), a
+no-break space or any space but U+0020, emoji, markup, any other mark, and
+a combining mark with no letter or digit before it. The curly apostrophe
+(U+2019) is taken: phones and macOS type it for `'` in a name. As a regular
+expression (`SSO_LABEL_RE` with `ssoLabelValue`,
+`packages/client-types/src/sso-label.ts`, the one function the box route, the
+box's signed case, the CC route and the CC's ask all call):
 
 ```text
-^(?=.*[\p{L}\p{N}])[\p{L}\p{N} .,'&()+-]{1,60}$   (flag u)
+^(?=.{1,60}$)(?=.*[\p{L}\p{N}])(?:[\p{L}\p{N}]\p{M}*|[ .,'’&()+-])+$   (flag u, on the NFC value)
 ```
+
+The database holds the same length (`char_length` 1 to 60, code points).
 
 A `.env` label is the owner's own line: one line, at most 60 characters, not
 held to the pattern (a CC shows one that does not fit as empty). Every

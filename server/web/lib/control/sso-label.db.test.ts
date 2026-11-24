@@ -205,6 +205,12 @@ describe.skipIf(!URL_)('the sign-in label from the Control Center', () => {
       ok: true,
       value: { label: 'Microsoft' },
     });
+    // The CC's ask puts the label in NFC, as the box stores it.
+    expect(cc.checkSsoSet({ label: 'Socie\u0301te\u0301' })).toEqual({
+      ok: true,
+      value: { label: 'Société' },
+    });
+    expect(cc.checkSsoSet({ label: 'Okta\u202E' }).ok).toBe(false);
   });
 
   it('a label in setup, optional and required; the .env wins; an empty one clears', async () => {
@@ -218,6 +224,17 @@ describe.skipIf(!URL_)('the sign-in label from the Control Center', () => {
       expect((r.status as Row).label).toBe(`Microsoft ${mode}`);
       expect((r.status as Row).labelFrom).toBe('row');
     }
+    // The box's signed case puts a label in NFC too; marks after letters fit.
+    expect(await setLabel('e\u0301'.repeat(60))).toMatchObject({ ok: true });
+    expect(await rowLabel()).toBe('é'.repeat(60));
+    expect(await setLabel('தமிழ்')).toMatchObject({ ok: true });
+    expect(await rowLabel()).toBe('தமிழ்');
+    const rtl = await post({
+      op: 'sso_set',
+      args: { nonce: randomUUID(), by: 'x', label: 'Okta\u200F' },
+    });
+    expect(rtl.status).toBe(400);
+    expect(await setLabel('Microsoft required')).toMatchObject({ ok: true });
     env({ MANTLE_OIDC_LABEL: 'Company account' });
     expect(await setLabel('Okta')).toMatchObject({ ok: false, reason: 'env-wins' });
     expect(await rowLabel()).toBe('Microsoft required');

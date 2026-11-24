@@ -31,7 +31,7 @@ import type {
   FleetKeyLine,
   FleetKeyState,
 } from '@mantle/client-types';
-import { SSO_LABEL_MAX, ssoLabelValue } from '@mantle/client-types/sso-label';
+import { SSO_LABEL_REFUSED, ssoLabelValue } from '@mantle/client-types/sso-label';
 import { db } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import {
@@ -1616,15 +1616,16 @@ export function checkSsoSet(ask: {
     ...(ask.tenant !== undefined ? { tenant: ask.tenant.trim().toLowerCase() } : {}),
     ...(ask.clientId !== undefined ? { clientId: ask.clientId.trim().toLowerCase() } : {}),
     ...(ask.secret !== undefined ? { secret: ask.secret.trim() } : {}),
-    ...(ask.label !== undefined ? { label: ask.label.trim() } : {}),
+    // In NFC and trimmed, as the box stores it ('' clears it).
+    ...(ask.label !== undefined ? { label: ssoLabelValue(ask.label) || '' } : {}),
   };
   if (Object.keys(args).length === 0) {
     return { ok: false, error: 'Give a tenant ID, a client ID, a client secret or a label.' };
   }
-  if (args.label !== undefined && ssoLabelValue(args.label) === false) {
+  if (ask.label !== undefined && ssoLabelValue(ask.label) === false) {
     return {
       ok: false,
-      error: `The label is 1 to ${SSO_LABEL_MAX} characters: letters, digits, spaces and . , - ' & ( ) + only.`,
+      error: SSO_LABEL_REFUSED,
     };
   }
   if (

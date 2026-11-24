@@ -917,7 +917,8 @@ setup says so there.
   (`https://login.microsoftonline.com/<tenant>/v2.0`; another cloud or
   provider stays a `.env` line). The label is the sign-in button's word,
   held to one pattern at the CC and again at the box (1 to 60 characters,
-  letters, digits, spaces and `. , - ' & ( ) +`; '' clears it;
+  letters with their combining marks, digits, spaces and
+  `. , - ' ’ & ( ) +`, in NFC; '' clears it;
   [oidc-sign-in.md](oidc-sign-in.md), "The label"). Two checks: (1) the
   tenant and the client ID only while the mode word is `setup`, the secret
   and the label in any mode but off, and a value the box `.env` holds is

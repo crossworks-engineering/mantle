@@ -44,7 +44,7 @@ import {
   type ControlSsoCase,
 } from '@mantle/db/control-center';
 import { UUID_RE } from '@mantle/std';
-import { SSO_LABEL_RE } from '@mantle/client-types/sso-label';
+import { ssoLabelValue } from '@mantle/client-types/sso-label';
 import { log } from '@mantle/tracing';
 import { CallFailed, callBox } from './run';
 import { KeyLines } from './key-lines';
@@ -104,7 +104,10 @@ const SsoStatus = z
     clientIdFrom: Source,
     // Absent from a box a release behind (0399). A .env label that does not
     // fit the screens' pattern shows as ''.
-    label: held(SSO_LABEL_RE).optional(),
+    label: z
+      .string()
+      .transform((v) => ssoLabelValue(v) || '')
+      .optional(),
     labelFrom: Source.optional(),
     secret: Source,
     secretSetAt: held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/).nullable(),

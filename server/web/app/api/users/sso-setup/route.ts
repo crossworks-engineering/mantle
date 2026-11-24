@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { oidcLabelInEnv, oidcModeWord } from '@mantle/config';
-import { SSO_LABEL_MAX, ssoLabelValue } from '@mantle/client-types/sso-label';
+import { SSO_LABEL_MAX, SSO_LABEL_REFUSED, ssoLabelValue } from '@mantle/client-types/sso-label';
 import { seal } from '@mantle/crypto';
 import { loadOidcRow, SSO_SECRET_AAD } from '@mantle/db';
 import { NextResponse } from '@/server/http-compat';
@@ -45,9 +45,7 @@ const Body = z
     label: z
       .string()
       .max(SSO_LABEL_MAX * 4)
-      .refine((v) => ssoLabelValue(v) !== false, {
-        message: `The label is 1 to ${SSO_LABEL_MAX} characters: letters, digits, spaces and . , - ' & ( ) + only.`,
-      })
+      .refine((v) => ssoLabelValue(v) !== false, { message: SSO_LABEL_REFUSED })
       .optional(),
     password: z.string().min(1).max(1024),
   })

@@ -500,6 +500,15 @@ describe.skipIf(!URL_)('the setup screen through the app', () => {
     process.env.MANTLE_OIDC_MODE = 'required';
     expect((await putLabel('Société Générale', ownerCookie)).status).toBe(200);
     expect(await labelRow()).toBe('Société Générale');
+    // An accent typed in two parts is stored in NFC; a Hindi name with its
+    // vowel signs fits; 60 accented letters fit the column's check.
+    expect((await putLabel('Socie\u0301te\u0301', ownerCookie)).status).toBe(200);
+    expect(await labelRow()).toBe('Société');
+    expect((await putLabel('हिन्दी', ownerCookie)).status).toBe(200);
+    expect(await labelRow()).toBe('हिन्दी');
+    expect((await putLabel('e\u0301'.repeat(60), ownerCookie)).status).toBe(200);
+    expect(await labelRow()).toBe('é'.repeat(60));
+    expect((await putLabel('Okta\u200F', ownerCookie)).status).toBe(400);
     // '' clears it: the default again.
     expect((await putLabel('', ownerCookie)).status).toBe(200);
     expect(await labelRow()).toBeNull();

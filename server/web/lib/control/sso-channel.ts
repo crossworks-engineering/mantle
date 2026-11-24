@@ -215,6 +215,6 @@ export function ssoAuditMore(call: SsoCall): Record<string, unknown> {
       (f) => call.args[f] !== undefined,
     ),
     // The label is public (the sign-in screen shows it): the row names it.
-    ...(call.args.label !== undefined ? { label: call.args.label.trim() } : {}),
+    ...(call.args.label !== undefined ? { label: ssoLabelValue(call.args.label) || '' } : {}),
   };
 }
