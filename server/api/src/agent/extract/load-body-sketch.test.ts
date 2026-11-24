@@ -22,7 +22,7 @@ const h = vi.hoisted(() => ({
   documentWorkerPrefersNative: vi.fn(),
   parseDocumentBytes: vi.fn(),
   sketchIngestPdfNode: vi.fn(),
-  sketchReadStored: vi.fn(async () => false),
+  sketchPagesLeftOn: vi.fn(async () => false),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -61,7 +61,7 @@ vi.mock('./images', () => ({
 
 vi.mock('./pdf-sketch', () => ({
   sketchIngestPdfNode: h.sketchIngestPdfNode,
-  sketchReadStored: h.sketchReadStored,
+  sketchPagesLeftOn: h.sketchPagesLeftOn,
 }));
 
 import { loadExtractableBody } from './load-body';
@@ -101,7 +101,7 @@ beforeEach(async () => {
   h.tryUnlockPdf.mockResolvedValue(null);
   h.documentWorkerPrefersNative.mockResolvedValue(false);
   h.sketchIngestPdfNode.mockResolvedValue(null);
-  h.sketchReadStored.mockResolvedValue(false);
+  h.sketchPagesLeftOn.mockResolvedValue(false);
   const { db } = await import('@mantle/db');
   vi.mocked(db.update).mockReturnValue({
     set: (v: unknown) => {
@@ -162,9 +162,36 @@ describe('loadExtractableBody: the sketch read of a scanned drawing', () => {
   it('a read again whose sketch read cannot run now fails the job: no whole-page read in its place', async () => {
     // The database holds a sketch read that left pages; the read again
     // dropped the text, and the sketch read gave null (no vision worker now).
-    h.sketchReadStored.mockResolvedValue(true);
+    h.sketchPagesLeftOn.mockResolvedValue(true);
     await expect(run()).rejects.toThrow(/scan read of this drawing could not run now/);
     expect(h.ocrIngestPdfNode).not.toHaveBeenCalled();
     expect(sets).toHaveLength(0);
+  });
+
+  it('the same with a text layer: no text-layer read in place of the sketch read', async () => {
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.from('%PDF-1.7'),
+      ext: 'pdf',
+      filename: 'scan.pdf',
+    });
+    h.parseDocumentBytes.mockResolvedValue('Title block text of the sheet, revision B, made up');
+    h.sketchPagesLeftOn.mockResolvedValue(true);
+    await expect(run()).rejects.toThrow(/scan read of this drawing could not run now/);
+    expect(h.ocrIngestPdfNode).not.toHaveBeenCalled();
+    expect(sets).toHaveLength(0);
+  });
+
+  it('a first read, with no sketch read on record, goes on as before', async () => {
+    h.sketchPagesLeftOn.mockResolvedValue(false);
+    h.ocrIngestPdfNode.mockResolvedValue({
+      text: 'whole-page text of a made-up scan, long enough',
+      encrypted: false,
+      bytesMissing: false,
+      rasterizeError: null,
+      ran: true,
+    });
+    const res = await run();
+    expect(res.ok).toBe(true);
+    expect(h.ocrIngestPdfNode).toHaveBeenCalledTimes(1);
   });
 });

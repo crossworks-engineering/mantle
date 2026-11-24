@@ -870,4 +870,31 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       ),
     ).toEqual([{ 'Scan pages past the cap': 2, 'Scan pages not read why': 'past_page_cap 2' }]);
   }, 120_000);
+
+  it('a read again that reads fewer pages whole than the read before writes nothing', async () => {
+    h.pages = 12;
+    h.onePiece = true;
+    const file = await scanFile('a made-up scan, a read again that fails early');
+    h.answerOf = (name) => ({ ran: true, text: `1: TK-${pageOfCall(name)}` });
+    h.callMs = 11 * 60_000;
+    const clock = movedClock();
+    try {
+      expect(await read(file.id)).not.toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+    const before = await rowsOf(file.id, 'SELECT * FROM "Pages" ORDER BY "Page"');
+    expect(await rowsOf(file.id, `SELECT "Scan pages read" FROM "File"`)).toEqual([
+      { 'Scan pages read': 3 },
+    ]);
+    // No kept answers here (the cache is off): the read again asks again,
+    // and its second call does not run.
+    h.callMs = 0;
+    h.vision.length = 0;
+    h.answerOf = (name) =>
+      pageOfCall(name) === 2 ? { ran: false, text: '' } : { ran: true, text: '1: TK-1' };
+    expect(await read(file.id)).toBeNull();
+    expect(h.vision).toHaveLength(2);
+    expect(await rowsOf(file.id, 'SELECT * FROM "Pages" ORDER BY "Page"')).toEqual(before);
+  });
 });

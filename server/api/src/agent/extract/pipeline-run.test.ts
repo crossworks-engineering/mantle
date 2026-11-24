@@ -107,7 +107,7 @@ vi.mock('./pdf-kind', () => ({
 }));
 vi.mock('./pdf-sketch', () => ({
   sketchIngestPdfNode: vi.fn(spend),
-  sketchReadStored: vi.fn(async () => false),
+  sketchPagesLeftOn: vi.fn(async () => false),
 }));
 vi.mock('../extractor.js', () => ({ extractNode: vi.fn(spend) }));
 vi.mock('@mantle/db', async (orig) => ({

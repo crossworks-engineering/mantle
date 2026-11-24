@@ -70,23 +70,38 @@ export async function storedPdfOf(abs: string): Promise<StoredPdf | null> {
   }
 }
 
+/** What a PDF's database at `abs` says of its sketch read: `none` (a
+ *  drawing database with no sketch read), `whole` (one that read every scan
+ *  page), `left` (one that left scan pages not read: a person's read again
+ *  reads them), `other` (no row, or another shape: not a drawing
+ *  database), or `unknown` (the tab cannot be read now: a busy reader
+ *  pool). The one rule of the read again of a file read in part
+ *  (pdfTextKeptOf, and the extract's check before a whole-page read:
+ *  server/api extract/pdf-sketch.ts sketchPagesLeftOn). */
+export async function sketchStateOf(
+  abs: string,
+): Promise<'none' | 'whole' | 'left' | 'other' | 'unknown'> {
+  try {
+    const r = await runTableSql(abs, 'SELECT * FROM "File"', { cap: 1 });
+    const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
+    if (!stored) return 'other';
+    if (!stored.visionRead) return 'none';
+    return stored.scanPagesNotRead > 0 ? 'left' : 'whole';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /** Whether a reindex keeps the text of a PDF whose database is at `abs`
  *  (the file is there): its File tab holds the sketch read, or the tab
  *  cannot be read now (a busy reader pool, no row, another shape). Fail
  *  closed, as pdfReadAgainOf: a tab that cannot be read keeps the paid
  *  text, so a reindex never pays a whole-page OCR again by a read error.
- *  A sketch read that left scan pages not read keeps no text: the read
- *  again is how a person reads the rest (the extract's sketch read is due
- *  again on a node with no text, and pays only for the pictures it has
- *  not read: server/api extract/pdf-sketch.ts). */
+ *  A sketch read that left scan pages not read keeps no text (sketchStateOf
+ *  `left`): the read again is how a person reads the rest. */
 export async function pdfTextKeptOf(abs: string): Promise<boolean> {
-  try {
-    const r = await runTableSql(abs, 'SELECT * FROM "File"', { cap: 1 });
-    const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
-    return !stored || (stored.visionRead && stored.scanPagesNotRead === 0);
-  } catch {
-    return true;
-  }
+  const state = await sketchStateOf(abs);
+  return state === 'whole' || state === 'other' || state === 'unknown';
 }
 
 /** A file as a conditional write compares it: inode, size and mtime. */

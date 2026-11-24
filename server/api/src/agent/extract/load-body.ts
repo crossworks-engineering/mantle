@@ -52,7 +52,7 @@ import {
   visionIngestImageNode,
 } from './images';
 import { scanUnreadSentence } from '@mantle/runtime/agent';
-import { sketchIngestPdfNode, sketchReadStored } from './pdf-sketch';
+import { sketchIngestPdfNode, sketchPagesLeftOn } from './pdf-sketch';
 import { readCutStampSql } from './read-cut-stamp';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 
@@ -775,6 +775,26 @@ export async function loadExtractableBody(
     });
   }
 
+  // A file whose sketch read left scan pages, read again by a person: its
+  // text went with the read again (file_reindex). When the sketch read did
+  // not run now (no vision worker, its reader off, a busy parser or reader
+  // pool), no other read takes its place (a text layer alone, a native or a
+  // whole-page read): the job fails, the queue's bounded retries ask nothing
+  // that was read, and a read again later reads on. One check, fail closed
+  // (sketchPagesLeftOn).
+  if (
+    !sketch &&
+    isPdf &&
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    (await sketchPagesLeftOn(node))
+  ) {
+    throw new Error(
+      'the scan read of this drawing could not run now (no vision worker, its reader off, or the parser busy); its database keeps the pages read: read it again later',
+    );
+  }
+
   // prefer_native: a PDF WITH a text layer, but the document worker is set to
   // always read PDFs through the model (tabular docs whose text layer scrambles
   // columns). One native read (nativeReadPdfNode); keep the text-layer body if
@@ -790,17 +810,6 @@ export async function loadExtractableBody(
     !sketch && isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
 
   if (isPdfWithoutTextLayer) {
-    // A file whose database holds its sketch read gets no whole-page read on
-    // top of it: a person's read again of a file read in part drops its text
-    // (file_reindex), and when the sketch read cannot run now (no vision
-    // worker, its reader off, a busy parser) a paid whole-page read would
-    // take its place. The job fails instead: the queue's bounded retries ask
-    // nothing that was read, and a read again later reads on.
-    if (!sketch && (await sketchReadStored(node))) {
-      throw new Error(
-        'the scan read of this drawing could not run now (no vision worker, its reader off, or the parser busy); its database keeps the pages read: read it again later',
-      );
-    }
     let ocr: Awaited<ReturnType<typeof ocrIngestPdfNode>>;
     try {
       // The sketch read is this file's read: no second one on top of it.

@@ -811,7 +811,14 @@ export async function parserPdfPieces(
 ): Promise<SketchPagePieces[]> {
   const asked = pages.slice(0, SKETCH_BATCH_PAGES);
   const body = jsonOf(
-    await exchange('pdfPieces', bytes, { pages: asked }, PARSER_ANSWER_MAX_BYTES),
+    // Counted a batch: a batch that fails twice never stops the others.
+    await exchange(
+      'pdfPieces',
+      bytes,
+      { pages: asked },
+      PARSER_ANSWER_MAX_BYTES,
+      `p${asked[0] ?? 0}`,
+    ),
   );
   const got = new Map<number, Record<string, unknown>>();
   for (const raw of Array.isArray(body.pages) ? body.pages : []) {

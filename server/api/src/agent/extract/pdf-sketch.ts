@@ -87,7 +87,7 @@ import {
 } from '@mantle/files';
 import { noteReadCut } from '@mantle/files/read-cut-sink';
 import { buildFileDatabase, readFileRowNow } from '@mantle/content/file-database';
-import { storedPageKindsOf, storedPdfOf } from '@mantle/content/pdf-read';
+import { sketchStateOf, storedPageKindsOf, storedPdfOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { runVisionWorker } from '@mantle/runtime/agent';
@@ -109,16 +109,21 @@ async function sketchTimeMs(ownerId: string): Promise<number> {
 }
 
 /**
- * Whether the database of the node's bytes holds a sketch read (`Vision
- * read`). The extract's one check before a whole-page read: a file whose
- * read is its sketch read never gets one on top of it (or in its place,
- * when its read again cannot run now). False when no File tab can be read.
+ * Whether the database of the node's bytes holds a sketch read that left
+ * scan pages not read, or its File tab cannot be read now (fail closed):
+ * the extract's one check before any other read of a PDF with no text on
+ * its node. Such a node lost its text to a person's read again (file_reindex,
+ * pdfTextKeptOf: the same rule, sketchStateOf), so a sketch read that did
+ * not run now must not be replaced by a text-layer, native or whole-page
+ * read: the extract fails and is tried again.
  */
-export async function sketchReadStored(node: typeof nodes.$inferSelect): Promise<boolean> {
+export async function sketchPagesLeftOn(node: typeof nodes.$inferSelect): Promise<boolean> {
   const sha = (node.data as Record<string, unknown> | null)?.sha256;
   if (!isFileSha256(sha)) return false;
   const abs = await fileDbSqlitePath(node.id, sha);
-  return abs !== null && (await storedPdfOf(abs))?.visionRead === true;
+  if (!abs) return false;
+  const state = await sketchStateOf(abs);
+  return state === 'left' || state === 'unknown';
 }
 
 /**
@@ -338,9 +343,13 @@ export async function sketchIngestPdfNode(
         node.id,
       );
 
-      // No picture was read by the model: nothing to store.
+      // No picture was read by the model: nothing to store. A read again
+      // that read fewer pages whole than the read before (a call failed
+      // early) writes nothing either: the first read stands, and the
+      // extract is tried again (load-body: the pages are left).
       const model = run.model;
       if (model === null) return null;
+      if (read.filter((p) => p.status === 'ok').length < file.scanPagesRead) return null;
       // Past here: no parser job, no model call before the write. The rows
       // are made in this process, and the one write is buildFileDatabase
       // with `parsed` (it reads nothing). Only after the write, with `Vision
