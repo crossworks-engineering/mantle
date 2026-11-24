@@ -1573,12 +1573,17 @@ export const READ_WORKER_MODEL = 'google/gemini-3.8-flash';
  *  (manifest.test.ts holds every default to that rule). OpenRouter endpoints
  *  checked 2026-11-24: OpenAI, Azure, Amazon Bedrock; no expiry date. Also
  *  the fact workers' model, so a box runs one model fewer.
- *  Live check 2026-11-24 (a made-up scanned page, a picture only): the
- *  parsed text is the same, byte for byte, as with the earlier carrier; the
- *  input is the page text only (about 330 tokens a light page, 1,260 a dense
- *  one: no picture is forwarded); reasoning is on and max_tokens 16 ends in
- *  `length`, which the read ignores. Billed beside the $0.002 parser fee:
- *  about $0.00004 a light page, $0.00017 a dense one. */
+ *  It takes images, so the parser also hands it the pictures it cut out of
+ *  the page (at most 8; a text-only model gets none); they go to the same
+ *  hosts. OpenRouter has no option to keep them back, and the only text-only
+ *  closed lab models it lists are old ones at ten times the price.
+ *  Live check 2026-11-24 (made-up scanned pages): the parsed text is the
+ *  same, byte for byte, as with the earlier carrier; a page with two
+ *  figures sends about 360 tokens of pictures more; reasoning is on and
+ *  max_tokens 16 ends in `length`, which the read ignores. A model that
+ *  refuses after the parse still gives the page (parsePdf takes the text
+ *  from the error). Billed beside the $0.002 parser fee: about $0.00004 a
+ *  light page, $0.00017 a dense one, up to about $0.0003 with 8 pictures. */
 export const SCAN_READER_MODEL = 'openai/gpt-6-luna';
 
 // ── Agents ───────────────────────────────────────────────────────────────────

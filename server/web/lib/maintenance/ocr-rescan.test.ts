@@ -26,7 +26,7 @@ describe('estimateOcrCost', () => {
     expect(e.scan).toEqual({ calls: 404, usd: 404 * SCAN_READER_PAGE_USD });
     expect(e.expectedUsd).toBeCloseTo(404 * SCAN_READER_PAGE_USD);
     // Worst: every page a figure, one vision call more a page, at the US
-    // price: 404 x (0.0022 + (1000 x 2 + 500 x 12) / 1e6).
+    // price: 404 x (0.0025 + (1000 x 2 + 500 x 12) / 1e6).
     expect(e.worstUsd).toBeCloseTo(404 * (SCAN_READER_PAGE_USD_MAX + 0.008));
   });
 

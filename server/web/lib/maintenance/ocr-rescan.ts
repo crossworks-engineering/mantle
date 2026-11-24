@@ -41,12 +41,15 @@ import { fallbackCostMicroUsd } from '@mantle/tracing';
 import { sleep as stdSleep } from '@mantle/std';
 import { fetchProviderModels } from '../model-explorer';
 
-/** The Scan reader's price of a page (mistral-ocr, $2 per 1,000 pages, plus
- *  the small text model behind it: $0.00203 billed a page on the scan bench,
- *  2026-11-19), and in the US region ($2.20 per 1,000). Not in any model
- *  catalog: the engine's fee is OpenRouter's, per page. */
-export const SCAN_READER_PAGE_USD = 0.00203;
-export const SCAN_READER_PAGE_USD_MAX = 0.0022;
+/** The Scan reader's price of a page: mistral-ocr's $2 per 1,000 pages plus
+ *  the chat model behind it. Billed on made-up pages, 2026-11-24, with
+ *  openai/gpt-6-luna: $0.00204 a light page, $0.00206 a page with two
+ *  figures, $0.00217 a dense page; so $0.0021 a page. The most: the US
+ *  region's $2.20 per 1,000, a dense page and 8 cut-out pictures, about
+ *  $0.0025. Not in any model catalog: the engine's fee is OpenRouter's, per
+ *  page. */
+export const SCAN_READER_PAGE_USD = 0.0021;
+export const SCAN_READER_PAGE_USD_MAX = 0.0025;
 
 /** The pg-boss queues the extractor consumes (server/api extract-queue.ts):
  *  the main queue and the heavy and book lanes, where a drawing's or a
@@ -248,7 +251,7 @@ export async function printScanEstimate(
   const est = estimateOcrCost({ pagesPerDoc, tokens, scanReader: true, visionPrice });
   const per1000 = (v: number) => `$${(v * 1000).toFixed(2)}`;
   log(
-    `  Scan reader: ${workers.scanReader.provider} ${workers.scanReader.engine} (text model ${workers.scanReader.model}), ${per1000(SCAN_READER_PAGE_USD)} per 1,000 pages (${per1000(SCAN_READER_PAGE_USD_MAX)} in the US region)`,
+    `  Scan reader: ${workers.scanReader.provider} ${workers.scanReader.engine} (chat model ${workers.scanReader.model}), ${per1000(SCAN_READER_PAGE_USD)} per 1,000 pages (at most ${per1000(SCAN_READER_PAGE_USD_MAX)}: the US region, dense pages with pictures)`,
   );
   const visionLine = workers.vision
     ? `  vision worker (a page mostly a figure only): ${workers.vision.provider} ${workers.vision.model}, ${visionPrice ? `$${visionPrice.inPerM}/M in, $${visionPrice.outPerM}/M out (${visionPrice.source})` : 'no known price'}; tokens per page ${tokens.in} in, ${tokens.out} out (${tokens.source})`

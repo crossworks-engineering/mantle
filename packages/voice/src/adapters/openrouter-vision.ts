@@ -65,6 +65,18 @@ export function fileAnnotationText(annotations: unknown): string {
   return parts.join('\n');
 }
 
+/** The parsed text an OpenRouter error body carries for a file the parser
+ *  read before the model failed (`error.metadata.file_annotations`). */
+function errorAnnotationText(body: string | undefined): string {
+  if (!body) return '';
+  try {
+    const parsed = JSON.parse(body) as { error?: { metadata?: { file_annotations?: unknown } } };
+    return fileAnnotationText(parsed.error?.metadata?.file_annotations).trim();
+  } catch {
+    return '';
+  }
+}
+
 function headers(apiKey: string): Record<string, string> {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -296,32 +308,46 @@ export const openrouterVisionAdapter: VisionDispatcher = {
     if (!pdf || pdf.length === 0) throw new Error('openrouter-vision: empty PDF buffer');
     if (!opts.engine) throw new Error('openrouter-vision: a PDF parser engine is required');
     const dataUrl = `data:application/pdf;base64,${pdf.toString('base64')}`;
-    // The parser reads the file; the model only gets its text as input, and
-    // its answer (16 tokens) is not used. `usage.include` asks for the billed
+    // The parser reads the file; the model gets its text (and, if the model
+    // takes images, up to 8 pictures the parser cut out) as input, and its
+    // answer (16 tokens) is not used. `usage.include` asks for the billed
     // cost, which holds the parser's fee.
-    const r = await post(
-      opts.apiKey,
-      {
-        model: opts.model,
-        max_tokens: opts.maxTokens ?? 16,
-        temperature: 0,
-        usage: { include: true },
-        plugins: [{ id: 'file-parser', pdf: { engine: opts.engine } }],
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Reply OK.' },
-              {
-                type: 'file',
-                file: { filename: opts.filename ?? 'page.pdf', file_data: dataUrl },
-              },
-            ],
-          },
-        ],
-      },
-      PROVIDER_TIMEOUTS.visionDocument,
-    );
+    let r: Awaited<ReturnType<typeof post>>;
+    try {
+      r = await post(
+        opts.apiKey,
+        {
+          model: opts.model,
+          max_tokens: opts.maxTokens ?? 16,
+          temperature: 0,
+          usage: { include: true },
+          plugins: [{ id: 'file-parser', pdf: { engine: opts.engine } }],
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'Reply OK.' },
+                {
+                  type: 'file',
+                  file: { filename: opts.filename ?? 'page.pdf', file_data: dataUrl },
+                },
+              ],
+            },
+          ],
+        },
+        PROVIDER_TIMEOUTS.visionDocument,
+      );
+    } catch (err) {
+      // The model refused or failed after the parser read the page: the
+      // error carries the parsed text (`error.metadata.file_annotations`),
+      // and the parser's fee is billed all the same. The text is all the
+      // read needs, so it is the answer (finish `error`); with none, the
+      // error stands. The fee is not in the error: no billed cost is
+      // reported.
+      const text = err instanceof ProviderHttpError ? errorAnnotationText(err.body) : '';
+      if (!text) throw err;
+      return { text, model: opts.model, finishReason: 'error' };
+    }
     return {
       text: fileAnnotationText(r.annotations).trim(),
       model: r.model,

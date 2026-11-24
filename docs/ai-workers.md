@@ -714,19 +714,25 @@ model the parser's text rides on: it answers 16 tokens, which are not
 used; the page's text is the parser's own. It is a closed lab model, so
 the page text goes only to its maker or to Azure, AWS or Google Cloud,
 never to a third-party host of an open-weight model (`manifest.test.ts`
-holds every shipped default to that rule). The parser forwards the page
-text only, not the picture (checked live 2026-11-24: about 330 input
-tokens on a light page, 1,260 on a dense one). Until v0.712 the model was
+holds every shipped default to that rule). The model takes images, so the
+parser also hands it the pictures it cut out of the page (at most 8; a
+text-only model gets none), to the same hosts; OpenRouter has no option to
+keep them back. A model that refuses after the parse still gives the page:
+`parsePdf` takes the parsed text from the error
+(`error.metadata.file_annotations`; the parser's fee is billed all the
+same). Until v0.712 the model was
 `meta-llama/llama-3.1-8b-instruct`, which third-party hosts serve;
-migration 0397 moves a worker still on that id to the new one (a model
-picked by hand is kept). `required: true`: it reaches existing brains on
+migration 0397 moves a worker still on that id to the new one, and the
+Scan reader pool's template row with it (a model or a row picked or edited
+by hand is kept). `required: true`: it reaches existing brains on
 upgrade (the reconcile's required pass), for a brain with an OpenRouter key.
 Its model pool is `scan_reader`; its provider eligibility the vision
 capability. The worker test reads a one-page PDF (the document test).
 
 **Cost on existing brains** (for the release notes). Every scanned page of a
 book now costs the parser's $2.00 per 1,000 pages ($2.20 in the US region)
-plus about $0.04 to $0.17 of the chat model (a light to a dense page).
+plus about $0.04 to $0.17 of the chat model (a light to a dense page; up
+to about $0.30 when each page has 8 cut-out pictures).
 Before, Tesseract read most scanned
 pages for nothing and vision (about $3.94 per 1,000) read the ones it read
 badly: a book of good scans costs more now, a book of poor scans about half.
@@ -772,7 +778,10 @@ the decider is optional, an upgrade never adds it, and an operator adds it
 (with `scan_read_check` live) to have Jev check their scanned pages.
 
 **The bench** (2026-11-19, made-up pages only; four sets of 12 copies of the
-generated spec book):
+generated spec book; mistral-ocr with the earlier carrier, Llama 3.1 8B,
+whose share of the cost was about $0.03 per 1,000 pages; with
+`openai/gpt-6-luna` it is about $0.04 to $0.17, so mistral-ocr's row reads
+about $2.04 to $2.17):
 
 | reader                                 | cells found: clean / fair / poor / bad | judged bad (no local OCR) | per 1,000 pages | s a page   |
 | -------------------------------------- | -------------------------------------- | ------------------------- | --------------- | ---------- |
@@ -908,7 +917,8 @@ share their pages (above): one paid call a page between them.
 large-PDF e2e set: marks and cuts in the parser image on a workstation, the
 paid calls from the Mac with the bench key): 140 of 140 pages read by the
 Scan reader, every true table cell found (100%), $0.284 billed in all:
-**$2.03 per 1,000 pages**; a call 3.75 s median, 4.79 s at p90, 4 at once.
+**$2.03 per 1,000 pages** (with the earlier carrier, Llama 3.1 8B; with
+`openai/gpt-6-luna` about $2.04 to $2.17); a call 3.75 s median, 4.79 s at p90, 4 at once.
 The marks and cuts took 16.8 s for the 140 pages on 2 CPUs. A chat turn on
 it read 56 pages in its 60 s (63 s wall) and said the 84 others.
 

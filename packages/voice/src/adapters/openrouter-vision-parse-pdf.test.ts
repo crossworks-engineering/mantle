@@ -1,6 +1,6 @@
 /**
  * `parsePdf` on OpenRouter (the Scan reader's read): a one-page PDF through
- * the `file-parser` plugin with the worker's engine, a text model with a
+ * the `file-parser` plugin with the worker's engine, a chat model with a
  * 16-token cap, and the page's text from the file annotation, not from the
  * model's answer; the billed cost from `usage.cost`. A made-up provider.
  */
@@ -89,6 +89,36 @@ describe('openrouter vision: parsePdf', () => {
     });
     expect(r.text).toBe('');
     expect(r.reportedCostUsd).toBeUndefined();
+  });
+
+  it('a model that refuses after the parse: the parsed text from the error is the read', async () => {
+    const reply = (body: unknown) => {
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify(body), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        })) as typeof fetch;
+    };
+    reply({
+      error: {
+        message: 'This model does not take this image.',
+        code: 400,
+        metadata: {
+          file_annotations: [
+            { type: 'file', file: { content: [{ type: 'text', text: ' PAGE 9 ' }] } },
+          ],
+        },
+      },
+    });
+    const opts = { apiKey: 'k', engine: 'mistral-ocr', model: 'm' };
+    expect(await openrouterVisionAdapter.parsePdf!(pdf, opts)).toEqual({
+      text: 'PAGE 9',
+      model: 'm',
+      finishReason: 'error',
+    });
+    // No parsed text in the error: the error stands (the read fails).
+    reply({ error: { message: 'Bad request.', code: 400 } });
+    await expect(openrouterVisionAdapter.parsePdf!(pdf, opts)).rejects.toThrow(/400/);
   });
 
   it('refuses with no key, no PDF or no engine before any call', async () => {
