@@ -80,7 +80,6 @@ export const MSG_RTF_MAX_BYTES = 16 * 1024 * 1024;
  *  `needs.timeMs` (240 s); a read that stops here keeps what it read. */
 export const MAIL_READ_MAX_MS = 150_000;
 
-
 const OLE2 = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
 /** True for the first bytes of an OLE2 compound file (an Outlook `.msg`). */
