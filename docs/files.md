@@ -296,7 +296,7 @@ The cuts said today, each with its key:
 | `pictures_small`, `pictures_metafile`, `pictures_unreadable`, `pictures_tiny`                                            | pictures the gate left out (`embedded-images.ts`, said by the picture pass once its read is whole; a duplicate is no cut). The cap and the parser's answer budget are `data.images` (`{ kept, found }`) |
 | `pictures_large`                                                                                                         | Visio pictures past 32 MB, or past 256 MB a drawing (`vsdx.ts`)                                                                                                                                         |
 | `description`                                                                                                            | a calendar event posted with `descriptionChars` past the description it holds (POST /api/sidecar/events, on the event node)                                                                             |
-| `mail_messages`                                                                                                          | a mail or mailbox read in part: its text past 32 M characters, or its read past 150 s (the `mail` Reader, 8f); the messages past the cap are counted                                                    |
+| `mail_messages`                                                                                                          | a mail or mailbox read in part: its answer past 40 MB, its read past 150 s, a message mailparser refused, an RTF body past its bounds (the `mail` Reader, 8f)                                           |
 | `mail_attachments`                                                                                                       | a detail: the attachments of a mail, named in its text and its Mail tab, never read (8f)                                                                                                                |
 
 A calendar feed's own cuts (a series past 50,000 occurrences before the
@@ -598,19 +598,20 @@ MCP client acting for them; no trigger, timer or sweep starts one:
 
 An `.eml`, an Outlook `.msg` and a mailbox `.mbox` are read by the built-in
 Reader `mail` (docs/pipelines.md, "The mail reader"): no model, one parser
-job. Each message gives its sender, recipients (To, Cc), date and subject,
+job. Each message gives its sender, recipients (To, Cc, Bcc), date and subject,
 and its whole body: the plain text part, else the HTML part through the
 markup reader, else (a `.msg`) its RTF body. That is the file's text, read
 into passages and vectors as any document's. A mailbox has one section
 `## Message N` a message, so a passage names its message. The file also gets
 a database with one tab, `Mail`: one row a message (`Message`, `From`,
-`To`, `Cc`, `Date` in UTC, `Subject`, `Attachments`). It makes no
+`To`, `Cc`, `Bcc`, `Date` in UTC, `Subject`, `Attachments`). It makes no
 automatic Table.
 
 **Attachments are named, never read** (the owner's answer Q2, 2026-11-23:
 the archive rule). Each attachment's name, type and size are in the text
 and its name is in the `Attachments` cell, so a mail is found by what it
-carried. The read stamps the detail cut `mail_attachments` (`{ what:
+carried. An attachment's bytes are drained as the message is parsed,
+counted and never kept. The read stamps the detail cut `mail_attachments` (`{ what:
 'attachments', read: 0, total }`): the file stays `indexed`, and its
 sentence says the attachments are not read. To read one, a person uploads
 it as its own file. A part shown inline in the message (a forwarded mail
@@ -621,19 +622,26 @@ email there is kept as an `.eml` file that this Reader reads like any
 other, under the rule of 3b (an email attachment's database rows are for an
 Admin user only).
 
-**Nothing is cut silently.** Two safety caps stop a read, each said as the
-cut `mail_messages` (the file is `partial`): the text of one read (32 M
-characters, `MAIL_TEXT_MAX_CHARS`, so the parser's answer fits its wire)
-and its time (150 s, `MAIL_READ_MAX_MS`, inside the job's 240 s). The
-messages read stay; the ones past the cap are counted (`read` of `total`),
-not read. A first message longer than the text cap keeps the head of its
-body and counts as not read in full. The stored text past 1,000,000
+**Nothing is cut silently.** The cut `mail_messages` (`read` of `total`
+messages read in full; the file is `partial`) says each of these: two
+safety caps that end a read early, the bytes of the answer (40 MB of
+JSON in UTF-8 for the text and the tab, `MAIL_ANSWER_MAX_BYTES`, so it
+fits the parser's 96 MB wire) and its time (150 s, `MAIL_READ_MAX_MS`,
+inside the job's 240 s); a message of a mailbox that mailparser refuses
+(past 1,000 parts or a 1 MB header block), which stays in the text as
+"[This message could not be read.]" while the others are read; and an
+Outlook RTF body whose header claims more than its bytes or more than
+16 MB (`MSG_RTF_MAX_BYTES`), which is not unpacked. The messages read
+stay; the ones past a cap are counted, not read. A first message past the
+answer cap keeps the head of its body and counts as not read in full. The stored text past 1,000,000
 characters is `text_store`, as for any document; search covers all of it.
 
 An empty file gives no text and no database; it keeps the default text (its
-name, type and size). An Outlook file that is no message (OLE2 that the
-reader cannot read) is `document_unreadable`. A `.msg` that is no OLE2 file
-is read as an `.eml` (a renamed message).
+name, type and size). The bytes choose the reader, not the name: an
+OLE2 file is read as an Outlook message, anything else as RFC 822 (a
+renamed message). An Outlook file that is no message (OLE2 that the reader
+cannot read), or a single `.eml` mailparser refuses, is
+`document_unreadable`.
 
 Not built yet: "Extract contents" for a mail (its attachments written as
 files beside it, as an archive's). The owner chose it with Q2; it needs a

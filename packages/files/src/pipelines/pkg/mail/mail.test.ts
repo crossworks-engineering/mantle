@@ -120,6 +120,15 @@ describe('an .mbox', () => {
     expect(parts[0]!.toString('latin1').startsWith('From: sender0')).toBe(true);
   });
 
+  it('skips a byte order mark and blank lines before the first From line', () => {
+    const bytes = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from('\r\n\n'),
+      mboxOf(['x', 'y']),
+    ]);
+    expect(splitMbox(bytes)).toHaveLength(2);
+  });
+
   it('is one message when it does not start with From, and none when empty', () => {
     expect(splitMbox(PLAIN)).toEqual([PLAIN]);
     expect(splitMbox(Buffer.alloc(0))).toEqual([]);
@@ -138,28 +147,27 @@ describe('an .mbox', () => {
       'From',
       'To',
       'Cc',
+      'Bcc',
       'Date',
       'Subject',
       'Attachments',
     ]);
     expect(tab.rows.map((r) => r[0])).toEqual([1, 2, 3]);
-    expect(tab.rows[1]![5]).toBe('Note 2');
+    expect(tab.rows[1]![6]).toBe('Note 2');
   });
 
   it('stops at the text cap and counts the messages it left out', async () => {
     const read = await readMail(
-      mboxOf(['a'.repeat(100), 'b'.repeat(100), 'c'.repeat(100)]),
+      mboxOf(['a'.repeat(1000), 'b'.repeat(1000), 'c'.repeat(1000)]),
       'mbox',
-      {
-        maxChars: 400,
-      },
+      { maxBytes: 2600 },
     );
     expect(read).toMatchObject({ total: 3, stopped: 'text', whole: 2 });
     expect(read.messages).toHaveLength(2);
   });
 
   it('keeps the head of a first message past the text cap, read in part', async () => {
-    const read = await readMail(mboxOf(['z'.repeat(5000)]), 'mbox', { maxChars: 1000 });
+    const read = await readMail(mboxOf(['z'.repeat(5000)]), 'mbox', { maxBytes: 1000 });
     expect(read).toMatchObject({ total: 1, stopped: 'text', whole: 0 });
     expect(read.messages[0]!.body.length).toBeGreaterThan(500);
     expect(read.messages[0]!.body.length).toBeLessThan(1000);
@@ -172,6 +180,25 @@ describe('an .mbox', () => {
       now: () => (t += 10),
     });
     expect(read).toMatchObject({ total: 3, stopped: 'time', whole: 1 });
+  });
+});
+
+describe('a message that cannot be read', () => {
+  const huge = `From: x@example.test\nX-Pad: ${'a'.repeat(1_200_000)}\nSubject: Big\n\nbody`;
+
+  it('in a mailbox is counted as not read, and the others are kept', async () => {
+    const mbox = Buffer.from(
+      `From a@example.test Tue Nov  3 09:30:00 2026\nSubject: A\n\nfirst\n\nFrom b@example.test Tue Nov  3 09:30:00 2026\n${huge}\n\nFrom c@example.test Tue Nov  3 09:30:00 2026\nSubject: C\n\nthird\n`,
+      'latin1',
+    );
+    const read = await readMail(mbox, 'mbox');
+    expect(read).toMatchObject({ total: 3, whole: 2, stopped: null });
+    expect(mailText(read, 'mbox')).toContain('## Message 2\n\n[This message could not be read.]');
+    expect(mailText(read, 'mbox')).toContain('third');
+  });
+
+  it('alone throws, so the file gets its word', async () => {
+    await expect(readMail(Buffer.from(huge, 'latin1'), 'eml')).rejects.toThrow();
   });
 });
 
@@ -188,6 +215,7 @@ describe('an Outlook .msg', () => {
       recipients: [
         { name: 'Bo Example', smtp: 'bo@example.test', type: 'to' },
         { name: 'Cy Example', smtp: 'cy@example.test', type: 'cc' },
+        { name: 'Di Example', smtp: 'di@example.test', type: 'bcc' },
       ],
       attachments: [
         {
@@ -203,10 +231,12 @@ describe('an Outlook .msg', () => {
       from: 'Ada Example <ada@example.test>',
       to: 'Bo Example <bo@example.test>',
       cc: 'Cy Example <cy@example.test>',
+      bcc: 'Di Example <di@example.test>',
       date: '2026-11-03T07:30:00.000Z',
       subject: 'Valve V-7 test',
       body: 'Test passed at 10 bar.',
       attachments: [{ name: 'report.xlsx', type: 'application/vnd.ms-excel', bytes: 13 }],
+      whole: true,
     });
     expect(mailText(read, 'msg')).not.toContain('made up bytes');
   });
@@ -225,6 +255,18 @@ describe('an Outlook .msg', () => {
     const rtf = '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\f0 Flow is 12 m3/h.\\par}';
     const [m] = (await readMail(madeUpMsg({ subject: 'R', rtf }), 'msg')).messages;
     expect(m!.body).toContain('Flow is 12 m3/h.');
+  });
+
+  it('does not unpack an RTF body whose header claims more than its bytes, and counts it', async () => {
+    const bytes = madeUpMsg({ subject: 'R', rtfHeaderSize: 20_000_000, rtf: '{\\rtf1 x}' });
+    const read = await readMail(bytes, 'msg');
+    expect(read).toMatchObject({ total: 1, whole: 0 });
+    expect(read.messages[0]!.body).toBe('');
+  });
+
+  it('is read as an Outlook message by its bytes, whatever its name', async () => {
+    const [m] = (await readMail(madeUpMsg({ subject: 'Named eml', body: 'b' }), 'eml')).messages;
+    expect(m!.subject).toBe('Named eml');
   });
 
   it('throws on an OLE2 file that is no message', async () => {
@@ -286,7 +328,10 @@ describe('the step', () => {
   it('says a mailbox read in part, which makes the file partial', () => {
     expect(cutMakesPartial('mail_messages')).toBe(true);
     expect(readCutHint('mail_messages', { what: 'messages', read: 2, total: 5 })).toBe(
-      'Only 2 of 5 messages were read in full. The other messages are not in search.',
+      'Only 2 of 5 messages were read in full. The others are not in search, or only in part.',
+    );
+    expect(readCutHint('mail_messages', { what: 'messages', read: 0, total: 1 })).toBe(
+      'Its message was read in part. The rest of it is not in search.',
     );
   });
 });

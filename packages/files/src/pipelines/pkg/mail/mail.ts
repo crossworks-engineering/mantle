@@ -22,15 +22,20 @@
  * so a forwarded mail shown inline is read as the body; one sent as an
  * attachment is a name.
  *
- * Two safety caps, each said as a cut (docs/files.md, "Read in part"): the
- * text of one read (MAIL_TEXT_MAX_CHARS, the parser's answer must fit its
- * wire) and the time of one read (MAIL_READ_MAX_MS, so a huge mailbox ends
- * in part, not killed whole by the job's deadline). The messages past either
- * are counted, not read.
+ * An attachment's bytes are drained as they are parsed, counted and never
+ * kept, so a large attachment costs no memory.
+ *
+ * Nothing is cut silently (docs/files.md, "Read in part"). Two safety caps
+ * end a read early: the bytes of one answer (MAIL_ANSWER_MAX_BYTES, the
+ * parser's answer must fit its 96 MB wire) and the time of one read
+ * (MAIL_READ_MAX_MS, so a huge mailbox ends in part, not killed whole by the
+ * job's deadline). A message of a mailbox that mailparser refuses, or an
+ * Outlook RTF body past its bounds, is not read. Each of these is counted:
+ * `whole` is the messages read in full, of `total`.
  */
 import { decompressRTF } from '@kenjiuno/decompressrtf';
 import MsgReader, { type FieldsData } from '@kenjiuno/msgreader';
-import { simpleParser, type AddressObject } from 'mailparser';
+import { MailParser, type AddressObject, type AttachmentStream } from 'mailparser';
 import { parseAnydocBytes } from '../../../anydoc';
 import { htmlToText } from '../../../markup';
 
@@ -42,11 +47,15 @@ export type MailMessage = {
   from: string;
   to: string;
   cc: string;
+  bcc: string;
   /** ISO 8601 in UTC, or '' when the message has no date we can read. */
   date: string;
   subject: string;
   body: string;
   attachments: MailAttachment[];
+  /** False: the message was not read in full (refused, its body past a
+   *  bound, or cut by the answer cap). */
+  whole: boolean;
 };
 
 /** What one read gives: the messages read, how many the file holds, and
@@ -55,20 +64,22 @@ export type MailRead = {
   messages: MailMessage[];
   total: number;
   stopped: 'text' | 'time' | null;
-  /** How many of `messages` are read in full: all but a first message
-   *  whose body the text cap cut. */
+  /** How many of `messages` are read in full. */
   whole: number;
 };
 
-/** The most characters of text one read gives: the text travels in the
- *  parser's answer (96 MB on the wire), as the sheet's read budget. */
-export const MAIL_TEXT_MAX_CHARS = 32 * 1024 * 1024;
+/** The most bytes the messages take in the answer, as JSON in UTF-8 (the
+ *  text and the tab both): the answer is at most 96 MB on the wire
+ *  (PARSER_ANSWER_MAX_BYTES), so this leaves room to spare. */
+export const MAIL_ANSWER_MAX_BYTES = 40 * 1024 * 1024;
+
+/** The most bytes of an Outlook RTF body, packed and unpacked. */
+export const MSG_RTF_MAX_BYTES = 16 * 1024 * 1024;
 
 /** The most time one read takes. The job's deadline is the manifest's
  *  `needs.timeMs` (240 s); a read that stops here keeps what it read. */
 export const MAIL_READ_MAX_MS = 150_000;
 
-export const MAIL_EXTS: readonly string[] = ['eml', 'msg', 'mbox'];
 
 const OLE2 = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
@@ -77,63 +88,84 @@ export function isOle2(bytes: Buffer): boolean {
   return bytes.length >= 8 && bytes.subarray(0, 8).equals(OLE2);
 }
 
-/** Read the messages of a mail file. `ext` is `eml`, `msg` or `mbox`. A
- *  `.msg` that is no OLE2 file is read as an `.eml` (a renamed message);
- *  an OLE2 file that msgreader cannot read throws. */
+/** Read the messages of a mail file. `ext` is `eml`, `msg` or `mbox`. An
+ *  OLE2 file is read as an Outlook message whatever its name, and any
+ *  other bytes as RFC 822 (a renamed message); an OLE2 file that msgreader
+ *  cannot read throws, as a single message mailparser refuses does. */
 export async function readMail(
   bytes: Buffer,
   ext: string,
-  opts: { maxChars?: number; maxMs?: number; now?: () => number } = {},
+  opts: { maxBytes?: number; maxMs?: number; now?: () => number } = {},
 ): Promise<MailRead> {
-  const maxChars = opts.maxChars ?? MAIL_TEXT_MAX_CHARS;
+  const maxBytes = opts.maxBytes ?? MAIL_ANSWER_MAX_BYTES;
   const maxMs = opts.maxMs ?? MAIL_READ_MAX_MS;
   const now = opts.now ?? Date.now;
-  if (ext === 'msg' && isOle2(bytes)) {
-    const m = await readMsg(bytes);
-    if (m.body.length <= maxChars) return { messages: [m], total: 1, stopped: null, whole: 1 };
-    return {
-      messages: [{ ...m, body: m.body.slice(0, maxChars) }],
-      total: 1,
-      stopped: 'text',
-      whole: 0,
-    };
-  }
-  const parts = ext === 'mbox' ? splitMbox(bytes) : [bytes];
+  const ole = isOle2(bytes);
+  const parts = ole ? [bytes] : ext === 'mbox' ? splitMbox(bytes) : [bytes];
   const start = now();
   const messages: MailMessage[] = [];
-  let chars = 0;
+  let used = 0;
+  const done = (stopped: MailRead['stopped']): MailRead => ({
+    messages,
+    total: parts.length,
+    stopped,
+    whole: messages.filter((m) => m.whole).length,
+  });
   for (const part of parts) {
-    if (messages.length > 0 && now() - start > maxMs) {
-      return { messages, total: parts.length, stopped: 'time', whole: messages.length };
-    }
-    const m = await readEml(part);
-    const size = messageChars(m);
-    if (chars + size > maxChars) {
+    if (messages.length > 0 && now() - start > maxMs) return done('time');
+    // One bad message of a mailbox does not cost the others: it is counted
+    // as not read. A file of one message throws, and gets its word.
+    const m = ole
+      ? await readMsg(part)
+      : parts.length > 1
+        ? await readEml(part).catch(() => UNREAD)
+        : await readEml(part);
+    const size = answerBytes(m);
+    if (used + size > maxBytes) {
       // The first message is kept, its body cut to the budget, so a file of
-      // one huge message still gives its headers and the first of its text.
-      const whole = messages.length;
-      if (whole === 0) {
-        messages.push({
-          ...m,
-          body: m.body.slice(0, Math.max(0, maxChars - (size - m.body.length))),
-        });
-      }
-      return { messages, total: parts.length, stopped: 'text', whole };
+      // one huge message still gives its headers and the head of its text.
+      if (messages.length === 0) messages.push(cutToFit(m, maxBytes));
+      return done('text');
     }
-    chars += size;
+    used += size;
     messages.push(m);
   }
-  return { messages, total: parts.length, stopped: null, whole: messages.length };
+  return done(null);
 }
 
-/** The characters a message takes in the text (its headers and body). */
-function messageChars(m: MailMessage): number {
-  return m.from.length + m.to.length + m.cc.length + m.subject.length + m.body.length + 64;
+/** A message of a mailbox mailparser refused: counted, not read. */
+const UNREAD: MailMessage = {
+  from: '',
+  to: '',
+  cc: '',
+  bcc: '',
+  date: '',
+  subject: '',
+  body: '[This message could not be read.]',
+  attachments: [],
+  whole: false,
+};
+
+/** The bytes a message takes in the answer: its text and its row, as JSON
+ *  in UTF-8 (escapes counted). */
+function answerBytes(m: MailMessage): number {
+  return Buffer.byteLength(JSON.stringify([messageText(m), mailRow(m, 0)]));
+}
+
+/** The message with its body cut until it fits `maxBytes`. */
+function cutToFit(m: MailMessage, maxBytes: number): MailMessage {
+  let body = m.body;
+  for (let size = answerBytes(m); size > maxBytes && body.length > 0;) {
+    body = body.slice(0, Math.floor((body.length * maxBytes) / size) - 1);
+    size = answerBytes({ ...m, body });
+  }
+  return { ...m, body, whole: false };
 }
 
 // ─── mbox ──────────────────────────────────────────────────────────────
 
 const FROM_LINE = Buffer.from('\nFrom ');
+const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 /**
  * The messages of a mailbox: each starts at a line `From ` (at the start of
@@ -142,7 +174,12 @@ const FROM_LINE = Buffer.from('\nFrom ');
  * `>`) loses one `>`. A file that does not start with `From ` is one
  * message (an `.eml` named `.mbox`). An empty file has none.
  */
-export function splitMbox(bytes: Buffer): Buffer[] {
+export function splitMbox(raw: Buffer): Buffer[] {
+  // A byte order mark and blank lines before the first `From ` are no message.
+  let lead = raw.subarray(0, 3).equals(BOM) ? 3 : 0;
+  while (lead < raw.length && (raw[lead] === 0x0a || raw[lead] === 0x0d || raw[lead] === 0x20))
+    lead += 1;
+  const bytes = raw.subarray(lead);
   if (bytes.length === 0) return [];
   if (!bytes.subarray(0, 5).equals(FROM_LINE.subarray(1))) return [bytes];
   const starts: number[] = [0];
@@ -175,30 +212,56 @@ const addressText = (a: AddressObject | AddressObject[] | undefined): string =>
 const isoOf = (d: Date | undefined | null): string =>
   d instanceof Date && !Number.isNaN(d.getTime()) ? d.toISOString() : '';
 
-/** One RFC 822 message. mailparser reads any bytes: a file with no headers
- *  gives a message with empty fields. */
+/** One RFC 822 message, read as a stream: each attachment's bytes are
+ *  drained and counted, never kept. mailparser reads any bytes (a file with
+ *  no headers gives empty fields); it refuses a message past its own bounds
+ *  (1,000 parts, a header block past 1 MB), which throws. */
 async function readEml(bytes: Buffer): Promise<MailMessage> {
-  const mail = await simpleParser(bytes, {
+  const parser = new MailParser({
     skipHtmlToText: true,
     skipTextToHtml: true,
     skipTextLinks: true,
     skipImageLinks: true,
     checksumAlgo: false,
   });
-  const html = typeof mail.html === 'string' ? mail.html : '';
-  const body = (mail.text ?? '').trim() || (html ? htmlToText(html).trim() : '');
+  const attachments: MailAttachment[] = [];
+  let text = '';
+  let html = '';
+  await new Promise<void>((resolve, reject) => {
+    parser.on(
+      'data',
+      (d: AttachmentStream | { type: 'text'; text?: string; html?: string | false }) => {
+        if (d.type === 'text') {
+          text = d.text ?? '';
+          html = typeof d.html === 'string' ? d.html : '';
+          return;
+        }
+        const at = attachments.length;
+        const a: MailAttachment = {
+          name: d.filename ?? `attachment-${at + 1}`,
+          type: d.contentType ?? '',
+          bytes: 0,
+        };
+        attachments.push(a);
+        d.content.on('data', (c: Buffer) => (a.bytes! += c.length));
+        d.content.on('end', () => d.release?.());
+        d.content.on('error', reject);
+      },
+    );
+    parser.on('end', () => resolve());
+    parser.on('error', reject);
+    parser.end(bytes);
+  });
   return {
-    from: addressText(mail.from),
-    to: addressText(mail.to),
-    cc: addressText(mail.cc),
-    date: isoOf(mail.date),
-    subject: mail.subject ?? '',
-    body,
-    attachments: mail.attachments.map((a, i) => ({
-      name: a.filename ?? `attachment-${i + 1}`,
-      type: a.contentType ?? '',
-      bytes: a.size ?? null,
-    })),
+    from: addressText(parser.from),
+    to: addressText(parser.to),
+    cc: addressText(parser.cc),
+    bcc: addressText(parser.bcc),
+    date: isoOf(parser.date),
+    subject: parser.subject ?? '',
+    body: text.trim() || (html ? htmlToText(html).trim() : ''),
+    attachments,
+    whole: true,
   };
 }
 
@@ -218,17 +281,18 @@ async function readMsg(bytes: Buffer): Promise<MailMessage> {
   const reader = new MsgReader(new DataView(bytes.buffer, bytes.byteOffset, bytes.length));
   const f = reader.getFileData() as FieldsData & { error?: string };
   if (f.error) throw new Error(`The Outlook message could not be read: ${f.error}`);
-  const recipients = (kind: 'to' | 'cc') =>
+  const recipients = (kind: 'to' | 'cc' | 'bcc') =>
     (f.recipients ?? [])
       .filter((r) => (r.recipType ?? 'to') === kind)
       .map((r) => person(r.name, r.smtpAddress ?? r.email))
       .filter(Boolean)
       .join(', ');
-  const body = await msgBody(f);
+  const { body, whole } = await msgBody(f);
   return {
     from: person(f.senderName, f.senderSmtpAddress ?? f.senderEmail),
     to: recipients('to'),
     cc: recipients('cc'),
+    bcc: recipients('bcc'),
     date: isoOf(dateOf(f.clientSubmitTime ?? f.messageDeliveryTime ?? f.creationTime)),
     subject: f.subject ?? '',
     body,
@@ -237,6 +301,7 @@ async function readMsg(bytes: Buffer): Promise<MailMessage> {
       type: a.attachMimeTag ?? (a.innerMsgContent ? 'application/vnd.ms-outlook' : ''),
       bytes: typeof a.contentLength === 'number' ? a.contentLength : null,
     })),
+    whole,
   };
 }
 
@@ -254,16 +319,28 @@ function msgAttachmentName(a: FieldsData, i: number): string {
   return shown || `attachment-${i + 1}`;
 }
 
-async function msgBody(f: FieldsData): Promise<string> {
+/** The body of an Outlook message, and whether it was read. An RTF body
+ *  whose header claims more than its bytes hold, or more than
+ *  MSG_RTF_MAX_BYTES, is not unpacked (the unpacker trusts that header). */
+async function msgBody(f: FieldsData): Promise<{ body: string; whole: boolean }> {
   const plain = (f.body ?? '').trim();
-  if (plain) return plain;
+  if (plain) return { body: plain, whole: true };
   const html = f.bodyHtml ?? (f.html ? Buffer.from(f.html).toString('utf8') : '');
-  if (html.trim()) return htmlToText(html).trim();
-  if (f.compressedRtf && f.compressedRtf.length > 0) {
-    const rtf = Buffer.from(decompressRTF([...f.compressedRtf]));
-    return (await parseAnydocBytes(rtf, 'rtf')).trim();
+  if (html.trim()) return { body: htmlToText(html).trim(), whole: true };
+  const packed = f.compressedRtf;
+  if (!packed || packed.length === 0) return { body: '', whole: true };
+  const head = Buffer.from(packed.buffer, packed.byteOffset, packed.length);
+  const fits =
+    head.length >= 16 &&
+    head.readUInt32LE(0) + 4 <= head.length &&
+    Math.max(head.length, head.readUInt32LE(4)) <= MSG_RTF_MAX_BYTES;
+  if (!fits) return { body: '', whole: false };
+  try {
+    const rtf = Buffer.from(decompressRTF(packed as unknown as number[]));
+    return { body: (await parseAnydocBytes(rtf, 'rtf')).trim(), whole: true };
+  } catch {
+    return { body: '', whole: false };
   }
-  return '';
 }
 
 // ─── text and tab ──────────────────────────────────────────────────────
@@ -288,6 +365,7 @@ function messageText(m: MailMessage): string {
     ['From', m.from],
     ['To', m.to],
     ['Cc', m.cc],
+    ['Bcc', m.bcc],
     ['Date', m.date],
     ['Subject', m.subject],
   ]
@@ -309,6 +387,20 @@ export function mailText(read: MailRead, ext: string): string {
   return read.messages.map((m, i) => `## Message ${i + 1}\n\n${messageText(m)}`).join('\n\n');
 }
 
+/** One row of the tab Mail. */
+function mailRow(m: MailMessage, i: number) {
+  return [
+    i + 1,
+    m.from,
+    m.to,
+    m.cc,
+    m.bcc,
+    m.date || null,
+    m.subject,
+    m.attachments.map((a) => a.name).join('; '),
+  ];
+}
+
 /** The tab Mail: one row a message, its headers and its attachments'
  *  names. The bodies are the file's text (search), not cells. */
 export function mailTab(read: MailRead) {
@@ -319,18 +411,11 @@ export function mailTab(read: MailRead) {
       { name: 'From', type: 'text' as const },
       { name: 'To', type: 'text' as const },
       { name: 'Cc', type: 'text' as const },
+      { name: 'Bcc', type: 'text' as const },
       { name: 'Date', type: 'datetime' as const },
       { name: 'Subject', type: 'text' as const },
       { name: 'Attachments', type: 'text' as const },
     ],
-    rows: read.messages.map((m, i) => [
-      i + 1,
-      m.from,
-      m.to,
-      m.cc,
-      m.date || null,
-      m.subject,
-      m.attachments.map((a) => a.name).join('; '),
-    ]),
+    rows: read.messages.map(mailRow),
   };
 }

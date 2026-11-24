@@ -13,12 +13,12 @@
  *   gets its word (document_unreadable), as for any reader.
  * - Attachments are named, never read: the detail cut `mail_attachments`
  *   says so (it does not make the file partial, as an archive's entries).
- * - A read that stopped at a safety cap says the messages it left out
- *   (`mail_messages`): the file is partial.
+ * - A read that stopped at a safety cap, or a message not read in full,
+ *   says how many were read in full (`mail_messages`): the file is partial.
  */
 import { FILE_TABS_WRITE, type PipelineStep } from '../../contract';
 import type { ReadCutValue } from '../../../read-cut';
-import { MAIL_TEXT_MAX_CHARS, mailTab, mailText, readMail } from './mail';
+import { mailTab, mailText, readMail } from './mail';
 
 export const step: PipelineStep = async (req, job) => {
   const ext = (req.file?.ext ?? '').toLowerCase();
@@ -28,13 +28,9 @@ export const step: PipelineStep = async (req, job) => {
   const readCuts: Record<string, ReadCutValue> = {};
   if (attachments > 0)
     readCuts.mail_attachments = { what: 'attachments', read: 0, total: attachments };
-  if (read.stopped) {
-    readCuts.mail_messages = {
-      what: 'messages',
-      read: read.whole,
-      total: read.total,
-      ...(read.stopped === 'text' ? { limit: MAIL_TEXT_MAX_CHARS } : {}),
-    };
+  // Read in part: a cap ended the read, or a message was not read in full.
+  if (read.whole < read.total) {
+    readCuts.mail_messages = { what: 'messages', read: read.whole, total: read.total };
   }
   return {
     status: 'ok',

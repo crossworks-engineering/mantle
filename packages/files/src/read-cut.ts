@@ -207,9 +207,12 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   // archive's entries (the owner's answer Q2, 2026-11-23). A detail.
   mail_attachments: (c) =>
     `Its ${n(c.total ?? 0)} attachment${c.total === 1 ? ' is' : 's are'} not read, only named in search. To read one, upload it as its own file.`,
-  // A mailbox read in part (the Reader's text or time cap).
+  // A mail read in part: the Reader's answer or time cap, a message
+  // mailparser refused, an Outlook RTF body past its bounds.
   mail_messages: (c) =>
-    `Only ${ofTotal(c)} messages were read in full. The other messages are not in search.`,
+    c.total === 1
+      ? 'Its message was read in part. The rest of it is not in search.'
+      : `Only ${ofTotal(c)} messages were read in full. The others are not in search, or only in part.`,
   description: (c) =>
     c.read === 0
       ? `Its description (${n(c.total ?? 0)} characters) was left out: the feed was too large to send with it.`

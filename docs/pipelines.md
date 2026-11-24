@@ -2106,7 +2106,7 @@ anydoc). All three run on Bun in the parser job `pipelineRun`; no model is
 asked.
 
 One step, one write: the tab `Mail` (a row a message: `Message`, `From`,
-`To`, `Cc`, `Date`, `Subject`, `Attachments`), the description of a mail
+`To`, `Cc`, `Bcc`, `Date`, `Subject`, `Attachments`), the description of a mail
 database, and `text`. The core has no text route for these types
 (`parserRouteForExt` is `none`), so the Reader's text is the file's text
 (see "Text and pictures from every Reader"): each message's header lines,
@@ -2116,13 +2116,18 @@ size. A mailbox has a heading `## Message N` before each message.
 `produces.table: false`: no automatic Table.
 
 Attachments are named, never read (docs/files.md, 8f): the detail cut
-`mail_attachments`. Two safety caps end a read early and say it as the cut
-`mail_messages` (`read` of `total` messages, the file `partial`): 32 M
-characters of text (`MAIL_TEXT_MAX_CHARS`, the parser's answer must fit
-its wire) and 150 s (`MAIL_READ_MAX_MS`, under `needs.timeMs` of 240 s, so
-a huge mailbox ends in part rather than killed whole). An empty file:
-`ok` with no write, so it keeps the default text. A `.msg` that is no OLE2
-file is read as an `.eml`; an OLE2 file the reader cannot read throws, and
+`mail_attachments`; their bytes are drained as the message is parsed
+(mailparser's stream), never kept. The cut `mail_messages` (`read` of
+`total` messages read in full, the file `partial`) says what was not read:
+the answer cap (40 MB of JSON in UTF-8, `MAIL_ANSWER_MAX_BYTES`, under the
+96 MB wire), the time cap (150 s, `MAIL_READ_MAX_MS`, under `needs.timeMs`
+of 240 s, so a huge mailbox ends in part rather than killed whole), a
+message of a mailbox mailparser refuses (counted; the others are read), and
+an RTF body whose header claims more than its bytes or 16 MB (not
+unpacked: the unpacker trusts that header). An empty file: `ok` with no
+write, so it keeps the default text. The bytes choose the reader: OLE2 is
+an Outlook message whatever the name, anything else RFC 822. An OLE2 file
+the reader cannot read, or a single message mailparser refuses, throws, and
 the file gets `document_unreadable`.
 
 Files that were uploaded before this Reader have the default text (their

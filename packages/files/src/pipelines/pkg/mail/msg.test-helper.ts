@@ -22,9 +22,11 @@ export type MadeUpMsg = {
   bodyHtml?: string;
   /** An RTF body, stored as compressed RTF of the uncompressed kind (MELA). */
   rtf?: string;
+  /** A made-up size in the RTF header, past the bytes it holds. */
+  rtfHeaderSize?: number;
   /** Unix ms. */
   submitted?: number;
-  recipients?: { name: string; smtp: string; type: 'to' | 'cc' }[];
+  recipients?: { name: string; smtp: string; type: 'to' | 'cc' | 'bcc' }[];
   attachments?: { name: string; mime?: string; data: Buffer }[];
 };
 
@@ -53,10 +55,10 @@ function fileTime(ms: number): Buffer {
 
 /** Compressed RTF of the uncompressed kind: the 16-byte header, then the
  *  RTF as it is. */
-function melaRtf(rtf: string): Buffer {
+function melaRtf(rtf: string, claimed?: number): Buffer {
   const raw = Buffer.from(rtf, 'latin1');
   const head = Buffer.alloc(16);
-  head.writeUInt32LE(raw.length + 12, 0);
+  head.writeUInt32LE(claimed ?? raw.length + 12, 0);
   head.writeUInt32LE(raw.length, 4);
   head.writeUInt32LE(0x414c454d, 8);
   head.writeUInt32LE(0, 12);
@@ -91,7 +93,7 @@ export function madeUpMsg(m: MadeUpMsg): Buffer {
   str(0, '5D01', m.senderSmtp);
   str(0, '1000', m.body);
   str(0, '1013', m.bodyHtml);
-  if (m.rtf !== undefined) stream(0, '__substg1.0_10090102', melaRtf(m.rtf));
+  if (m.rtf !== undefined) stream(0, '__substg1.0_10090102', melaRtf(m.rtf, m.rtfHeaderSize));
   const rootProps: Buffer[] = [Buffer.alloc(32)];
   if (m.submitted !== undefined) rootProps.push(prop(0x00390040, fileTime(m.submitted)));
   stream(0, '__properties_version1.0', Buffer.concat(rootProps));
@@ -105,7 +107,7 @@ export function madeUpMsg(m: MadeUpMsg): Buffer {
     });
     str(dir, '3001', r.name);
     str(dir, '39FE', r.smtp);
-    const type = prop(0x0c150003, int32(r.type === 'cc' ? 2 : 1));
+    const type = prop(0x0c150003, int32(r.type === 'bcc' ? 3 : r.type === 'cc' ? 2 : 1));
     stream(dir, '__properties_version1.0', Buffer.concat([Buffer.alloc(8), type]));
   }
   for (const [i, a] of (m.attachments ?? []).entries()) {
