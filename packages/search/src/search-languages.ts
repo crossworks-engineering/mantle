@@ -20,6 +20,9 @@
 import { eq } from 'drizzle-orm';
 import { db, profiles } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
+
+const logger = log('search');
 
 /** The preferences key on the brain's profile row. */
 export const SEARCH_LANGUAGES_KEY = 'searchLanguages';
@@ -157,7 +160,7 @@ export async function loadSearchLanguages(ownerId: string): Promise<string[]> {
       .limit(1);
     return row ? normalizeSearchLanguages(row.preferences?.[SEARCH_LANGUAGES_KEY]) : [];
   } catch (err) {
-    console.warn(`[search] search languages not read (${errorMessage(err)}): English only`);
+    logger.warn(`search languages not read (${errorMessage(err)}): English only`);
     return [];
   }
 }

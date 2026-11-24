@@ -17,6 +17,7 @@
     "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
+    "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
     "drizzle-orm": "^0.45.4"
   },

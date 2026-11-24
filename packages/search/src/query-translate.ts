@@ -26,6 +26,9 @@ import { resolveDefaultWorker } from '@mantle/api-keys';
 import { getChatAdapter, type ProviderCredential } from '@mantle/voice';
 import type { AiWorker, TranslatorParams } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
+
+const logger = log('search');
 
 /** The whole search waits at most this long for its translations. */
 export const TRANSLATE_BUDGET_MS = 1500;
@@ -271,14 +274,14 @@ export async function translateQuery(
       .map((a, i) => ({ lang: languages[i]!, text: a }))
       .filter((a) => a.text && a.text.toLowerCase() !== text.toLowerCase());
     if (missed.length) {
-      console.warn(
-        `[search] translated terms left out (${missed.join('; ')}): the word search ran on the rest`,
+      logger.warn(
+        `translated terms left out (${missed.join('; ')}): the word search ran on the rest`,
       );
     }
     return out;
   } catch (err) {
-    console.warn(
-      `[search] query not translated (${errorMessage(err)}): the word search ran on the original text`,
+    logger.warn(
+      `query not translated (${errorMessage(err)}): the word search ran on the original text`,
     );
     return [];
   }
