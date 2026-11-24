@@ -1391,7 +1391,7 @@ export const RECALL_PROMPTS = {
     title:
       'Build an app or tool that reads data from files: drawings, P&IDs, isometrics, DWGs, PDFs, spreadsheets',
     useWhen:
-      'Build an app, a tool or a report that reads data from uploaded files: tags, line numbers, equipment, blocks or text on P&IDs, isometrics and other drawings (pdf, dwg, dxf, dgn, dwf, tif, tiff, smf, 000), or rows of a spreadsheet register or plan (xlsx, xls, csv, xml).',
+      'Build an app, a tool or a report that reads data from uploaded files: tags, line numbers, equipment, blocks or text on P&IDs, isometrics and other drawings (pdf, dwg, dxf, dgn, dwf, tif, tiff, smf, 000), rows of a spreadsheet register or plan (xlsx, xls, csv, xml), or the messages of an email or mailbox (eml, msg, mbox).',
     bodyMd: `A sheet, plan or drawing read at upload has its own file database: every row of a sheet, every word, tag and line number of a drawing, with its place on the sheet. Read it with \`file_sql\`. It costs no model. Do not build a vision reader for it.
 
 1. Find the files: \`folder_list\`, \`file_list\` (\`data: true\` lists every file with a database), or \`search\` with \`type: 'file'\`.
@@ -1405,6 +1405,7 @@ The main tabs (step 3 shows the real ones):
 - CAD drawings (dwg, dxf, dgn): Texts, Inserts, Blocks, Symbols, Placements, Segments, Nodes, Circuits. A DWF plot set (dwf): its sheets, layers and labels.
 - PDF drawings and forms (pdf): Pages, Texts (each word with its page box), Tags (join on \`Key\`), Lines, Markups. A scan may hold few words: its Gaps tab marks the text that was not read.
 - Raster drawings (tif, tiff, smf, 000): the sheet's size and title.
+- Email and mailboxes (eml, msg, mbox): Mail, one row a message (Message, From, To, Cc, Bcc, Date, Subject, Attachments). The bodies are the file's text: read them with \`file_read\` or \`search\`. Attachments are named, not read.
 
 Use vision (\`model_call\` with a picture) only for what the database does not hold: the symbols on a PDF drawing, what a line connects on a PDF, and text a Gaps row marks as not read. Send a small cut-out area, not the whole sheet, and keep the answer in \`host.db\`, so it is asked once.`,
   },
