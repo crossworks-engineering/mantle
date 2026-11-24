@@ -580,7 +580,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // (any login).
     // The CC broadcast (+3 with a caller): GET (+HEAD) and POST
     // /api/fleet/broadcasts (owner, the settings area).
-    expect(rows.filter((r) => r.caller).length).toBe(908);
+    // Key status on the fleet (+3 with a caller): GET (+HEAD)
+    // /api/fleet/keys and POST /api/fleet/keys/test (owner, the settings
+    // area).
+    expect(rows.filter((r) => r.caller).length).toBe(911);
     // 894 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -645,7 +648,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     //   /api/messenger/to, POST /api/messenger/c/:id/attachments, GET and
     //   HEAD /api/messenger/attachments/:id, POST .../attachments/:id/save).
     // + the 3 CC broadcast rows (GET, HEAD and POST /api/fleet/broadcasts).
-    expect(rows.length).toBe(1029);
+    // + the 3 key status rows (GET, HEAD /api/fleet/keys and POST
+    //   /api/fleet/keys/test).
+    expect(rows.length).toBe(1032);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
