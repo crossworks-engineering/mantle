@@ -499,20 +499,24 @@ pages past the cap`, `Scan pages not read` (all of these, the cap
   is `partial` and `files:coverage` counts it as not read in full (a
   shortcut cut).
 - The rest is read by a person: a read again of the file (`file_reindex`,
-  Files > Read again). For a file read in part the read again drops the
-  file's text, as for any file, so the sketch read is due again; it cuts the
-  pages again and asks only for the pictures it has no kept answer of: the
-  answers a sketch read kept are taken whatever the read-again stamp (a
-  picture is the same bytes when its page is cut again, and its key names
-  the model and the prompt; another model, or a cutter that cuts the page
-  another way, asks again). Pages past the per-file cap stay unread.
-  Nothing reads the rest by itself: no trigger, no timer, no requeue. When
-  that read cannot run now (no vision worker, its reader off, a busy
-  parser), the extract fails and is tried again by the queue's bounded
-  retries, never read by a whole-page OCR in its place (the database keeps
-  the pages read). A file read under the old 10-page cap has no cut yet:
-  the maintenance task `scan-pages-stamp` (docs/maintenance-runner.md) puts
-  it on from the File tab, with no model.
+  Files > Read again). For a file read in part (pages its time, a failed call
+  or an older page cap left; pages past the 500 do not count) the read again
+  drops the file's text, as for any file, so the sketch read is due again; it
+  cuts the pages again and asks only for the pictures it has no kept answer
+  of: the answers a sketch read kept are taken whatever the read-again stamp
+  (a picture is the same bytes when its page is cut again, and its key names
+  the model and the prompt). A picture whose answer was empty, a file read
+  before the answer cache (2026-11-20), another model, or a cutter that cuts
+  the page another way is asked again. A read of every scan page takes the
+  `scan_pages` cut off. Nothing reads the rest by itself: no trigger, no
+  timer, no requeue. When that read cannot run now (no vision worker, its
+  reader off, a busy parser or reader pool), the extract fails and is tried
+  again by the queue's bounded retries, never read by a text-layer, native
+  or whole-page read in its place: the database keeps the pages read, but
+  until a read again runs the file has no text and no vector of its own
+  (its old chunks stay). A file read under the old 10-page cap has no cut
+  yet: the maintenance task `scan-pages-stamp` (docs/maintenance-runner.md)
+  puts it on from the File tab, with no model.
 - One time for a file and its bytes otherwise. The page facts are read again first (no model);
   when that read names the file another kind than the database holds, or has
   more pages not read whole, nothing is asked. The database is then written again over the same name with the

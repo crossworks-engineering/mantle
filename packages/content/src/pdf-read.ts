@@ -39,7 +39,7 @@ import {
 } from '@mantle/files';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { readTabColumns, runTableSql } from '@mantle/tabledb';
+import { readTabColumns, runTableSql, TableSqlError } from '@mantle/tabledb';
 import { askCapOf } from './pipeline-agent';
 import {
   agentStep,
@@ -72,10 +72,11 @@ export async function storedPdfOf(abs: string): Promise<StoredPdf | null> {
 
 /** What a PDF's database at `abs` says of its sketch read: `none` (a
  *  drawing database with no sketch read), `whole` (one that read every scan
- *  page), `left` (one that left scan pages not read: a person's read again
- *  reads them), `other` (no row, or another shape: not a drawing
- *  database), or `unknown` (the tab cannot be read now: a busy reader
- *  pool). The one rule of the read again of a file read in part
+ *  page, or left only pages past the per-file cap), `left` (one that left
+ *  scan pages a read again can read: a person's read again reads them),
+ *  `other` (no File tab, no row, or another shape: not a drawing database),
+ *  or `unknown` (the tab cannot be read now: a busy reader pool, a
+ *  timeout). The one rule of the read again of a file read in part
  *  (pdfTextKeptOf, and the extract's check before a whole-page read:
  *  server/api extract/pdf-sketch.ts sketchPagesLeftOn). */
 export async function sketchStateOf(
@@ -86,9 +87,10 @@ export async function sketchStateOf(
     const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
     if (!stored) return 'other';
     if (!stored.visionRead) return 'none';
-    return stored.scanPagesNotRead > 0 ? 'left' : 'whole';
-  } catch {
-    return 'unknown';
+    return stored.scanPagesLeft > 0 ? 'left' : 'whole';
+  } catch (err) {
+    // A query the file refuses (no File table): another shape, for good.
+    return err instanceof TableSqlError && err.code === 'sql' ? 'other' : 'unknown';
   }
 }
 

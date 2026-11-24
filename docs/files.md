@@ -454,8 +454,8 @@ itself (cost safety: no trigger, no timer).
   bytes, so the pass chunks, embeds and reads facts from the kept text, and
   no whole-page OCR is paid on top. But for one whose sketch read left scan
   pages not read (`Scan pages not read` above 0): it drops its text as any
-  file, so the sketch read is due again and reads the pages left, paying
-  only for the pictures not read yet (docs/file-ingestion.md, 3b). A PDF (the extension or the mimeType)
+  file, so the sketch read is due again and reads the pages left, using the
+  answers it kept (docs/file-ingestion.md, 3b). A PDF (the extension or the mimeType)
   whose database is there but whose File tab cannot be read now keeps it
   too (fail closed). So a sketch-read file keeps its text through a reader
   version bump: a reindex re-chunks and re-embeds it but does not re-read

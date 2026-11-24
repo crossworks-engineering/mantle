@@ -40,7 +40,7 @@ import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { readerPassOf, readerTextOf, standingReaderText } from '@mantle/content/reader-passes';
-import { withReadCutSink } from '@mantle/files/read-cut-sink';
+import { currentReadCuts, withReadCutSink } from '@mantle/files/read-cut-sink';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
@@ -762,12 +762,15 @@ export async function loadExtractableBody(
     // extraction model failed after this point) must find the text on the
     // node, and not run the whole-page read on top. The read's cuts go with
     // it (a scan page not read: `scan_pages`): that retry reads no pages,
-    // so it would not say them again.
+    // so it would not say them again. A read that read every scan page takes
+    // off a `scan_pages` of the read before (kept by a read again with the
+    // node's other cuts), or the file stays partial.
+    const whole = !Object.hasOwn(currentReadCuts(), 'scan_pages');
     await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
       await db
         .update(nodes)
         .set({
-          data: sql`${nodes.data} || jsonb_build_object('text', ${body.slice(0, TEXT_STORE_MAX_CHARS)}::text, 'ocr', true)${readCutStampSql()}`,
+          data: sql`(${nodes.data} || jsonb_build_object('text', ${body.slice(0, TEXT_STORE_MAX_CHARS)}::text, 'ocr', true)${readCutStampSql()})${whole ? sql` #- '{read_cut,scan_pages}'` : sql``}`,
           updatedAt: new Date(),
         })
         .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));

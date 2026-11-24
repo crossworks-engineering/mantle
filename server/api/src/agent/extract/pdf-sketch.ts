@@ -35,8 +35,9 @@
  * tab holds `Vision read`, and a database that has it is not read again,
  * but for one that left scan pages not read on a node with no text: a
  * person's read again of a file read in part (file_reindex drops its text
- * for it). That read pays only for the pictures not read yet: the answers
- * this read kept are taken whatever the read-again stamp. A retry of the
+ * for it). That read asks only for the pictures it has no kept answer of:
+ * the answers a sketch read kept are taken whatever the read-again stamp
+ * (an empty answer is not kept as one). A retry of the
  * extract after the text was stored finds the text, and does not read again.
  * A copy of the file is another file, with its own database and its own
  * read. When the worker reads no picture at all (none is wired, or every
@@ -285,9 +286,9 @@ export async function sketchIngestPdfNode(
       };
       // This read's kept answers are taken also on a person's read again
       // (the scope's `since` left out): a read again of a file read in part
-      // pays only for the pictures not read yet (a picture is the same bytes
-      // when its page is cut again, and its key names the model and the
-      // prompt). The wait's chain (`from`) and the keep's mark are the
+      // asks only for the pictures it has no kept answer of (a picture is
+      // the same bytes when its page is cut again, and its key names the
+      // model and the prompt). The wait's chain (`from`) and the keep's mark are the
       // job's, as in any scope.
       await withAnswerCache(
         async () => {

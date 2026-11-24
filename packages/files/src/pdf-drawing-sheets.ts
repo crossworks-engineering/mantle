@@ -449,6 +449,10 @@ export function pdfFileTabOf(
   /** Scan pages the sketch read read whole (`Scan pages read`); 0 with no
    *  read. */
   scanPagesRead: number;
+  /** Scan pages a read again can read: those not read but for the pages
+   *  past the per-file cap. A database of before `Scan pages not read`:
+   *  its pages past the cap (the old cap was 10). */
+  scanPagesLeft: number;
   notReadWhole: number;
 } | null {
   const cell = (name: string) => row[columns.indexOf(name)];
@@ -469,6 +473,13 @@ export function pdfFileTabOf(
           : cell('Scan pages past the cap'),
       ) || 0,
     scanPagesRead: Number(cell('Scan pages read')) || 0,
+    scanPagesLeft: columns.includes('Scan pages not read')
+      ? Math.max(
+          0,
+          (Number(cell('Scan pages not read')) || 0) -
+            (Number(cell('Scan pages past the cap')) || 0),
+        )
+      : Number(cell('Scan pages past the cap')) || 0,
     notReadWhole: Number(cell('Pages not read whole') ?? 0),
     decision:
       typeof answer === 'string' && answer

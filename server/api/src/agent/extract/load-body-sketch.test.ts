@@ -194,4 +194,22 @@ describe('loadExtractableBody: the sketch read of a scanned drawing', () => {
     expect(res.ok).toBe(true);
     expect(h.ocrIngestPdfNode).toHaveBeenCalledTimes(1);
   });
+
+  it("a read of every scan page takes off the read before's scan_pages cut; a read in part keeps its own", async () => {
+    const { PgDialect } = await import('drizzle-orm/pg-core');
+    const { noteReadCut, withReadCutSink } = await import('@mantle/files/read-cut-sink');
+    const rendered = () => new PgDialect().sqlToQuery((sets[0] as { data: never }).data).sql;
+    h.sketchIngestPdfNode.mockResolvedValue({ text: SKETCH });
+    await run();
+    expect(rendered()).toContain(`#- '{read_cut,scan_pages}'`);
+    sets.length = 0;
+    h.sketchIngestPdfNode.mockImplementation(async () => {
+      noteReadCut('scan_pages', { what: 'pages', read: 3, total: 12 });
+      return { text: SKETCH };
+    });
+    // The extractor's sink of the read (extractNode opens it).
+    await withReadCutSink(() => run());
+    expect(rendered()).not.toContain('#-');
+    expect(rendered()).toContain('read_cut');
+  });
 });

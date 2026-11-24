@@ -450,6 +450,7 @@ describe('the rows of a read', () => {
         visionRead: vision,
         scanPagesNotRead: 0,
         scanPagesRead: 0,
+        scanPagesLeft: 0,
         notReadWhole: 0,
       });
     }
@@ -460,6 +461,11 @@ describe('the rows of a read', () => {
     expect(
       pdfFileTabOf([...old, 'Scan pages not read'], ['scan', 'scan', 1, 37, 40])?.scanPagesNotRead,
     ).toBe(40);
+    // A read again can read the pages past an older cap, not those past this one.
+    expect(pdfFileTabOf(old, ['scan', 'scan', 1, 37])?.scanPagesLeft).toBe(37);
+    expect(
+      pdfFileTabOf([...old, 'Scan pages not read'], ['scan', 'scan', 1, 37, 40])?.scanPagesLeft,
+    ).toBe(3);
   });
 
   it('with no sketch read the File tab says so and no vision cell is filled', () => {

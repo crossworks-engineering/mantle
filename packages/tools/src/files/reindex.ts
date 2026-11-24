@@ -24,7 +24,7 @@
  *    whose weaker text replaces it). But for one whose sketch read left scan
  *    pages not read (`Scan pages not read`, a cap or its time): its text
  *    goes as any file's, so the extract's sketch read is due again and
- *    reads the pages left, paying only for the pictures not read yet
+ *    reads the pages left, using the answers it kept
  *    (server/api extract/pdf-sketch.ts). A PDF whose database is there but
  *    whose File tab cannot be read now keeps it too (fail closed,
  *    pdfTextKeptOf). A PDF as the extractor tells one: the extension or
