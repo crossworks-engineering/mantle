@@ -33,9 +33,6 @@ export const TRANSLATE_BUDGET_MS = 1500;
 /** A longer query is not translated. */
 export const TRANSLATE_MAX_CHARS = 300;
 
-/** A call that has not answered by now is given up, cache and all. */
-const CALL_DEADLINE_MS = 20_000;
-
 /** Kept answers, per process. */
 const CACHE_MAX = 2000;
 
@@ -126,7 +123,8 @@ async function translateRoute(
 }
 
 /** The real call: one short chat, no retries (the budget is short; a
- *  late answer would only fill the cache). */
+ *  late answer would only fill the cache). The adapter's own deadline
+ *  (PROVIDER_TIMEOUTS.chat) ends a call that hangs. */
 const chatCall: TranslateCall = async (route, system, user) => {
   const adapter = getChatAdapter(route.provider);
   if (!adapter) throw new Error(`provider '${route.provider}' cannot run a chat call`);
@@ -140,7 +138,6 @@ const chatCall: TranslateCall = async (route, system, user) => {
     temperature: route.temperature,
     maxTokens: 256,
     maxRetries: 0,
-    signal: AbortSignal.timeout(CALL_DEADLINE_MS),
   });
   if (result.finishReason === 'length') return '';
   return result.text ?? '';
