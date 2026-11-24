@@ -387,20 +387,40 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
       const allowed = verdict.reason.includes(TEAM_APP_TOOLS_ALLOWED)
         ? ''
         : ` ${TEAM_APP_TOOLS_ALLOWED}`;
-      // A tool group helps a built-in only. An outside tool's refusal names
-      // its own fix (External access, or the connector's workspaces).
-      const builtin = (await resolveTool(ownerId, slug))?.handler.kind === 'builtin';
-      const fix = builtin
-        ? 'Declare such a tool from an enabled team-level group instead (`tool_group_list` shows levels), or keep the app in the Admin workspace only.'
-        : 'A tool group does not help an outside tool: do what the first sentence names, or keep the app in the Admin workspace only.';
+      // A tool group helps a built-in only. A connector tool needs its
+      // connector opened to the workspaces that hold the app (the connectors
+      // area: System users only); an http tool needs External access (the
+      // assistants area: System users only); a recipe or shell tool can get
+      // neither.
+      const fix = outsideToolFix((await resolveTool(ownerId, slug))?.handler.kind);
       warnings.push(
-        `${verdict.reason} Everyone running this app (admins too) gets an error: an app a workspace other than Admin holds runs the team rules.${allowed} ${fix}`,
+        `${verdict.reason} Everyone running this app (admins too) gets an error: an app a workspace other than Admin holds runs the team rules.${allowed}${fix ? ` ${fix}` : ''}`,
       );
     }
     return warnings;
   } catch {
     return [];
   }
+}
+
+/** The way out an author warning names for a refused tool, by its kind
+ *  (the handler's): '' for no tool. */
+export function outsideToolFix(kind: string | undefined): string {
+  const admin = 'or keep the app in the Admin workspace only.';
+  if (kind === 'builtin') {
+    return `Declare such a tool from an enabled team-level group instead (\`tool_group_list\` shows levels), ${admin}`;
+  }
+  if (kind === 'mcp') {
+    return `A tool group does not help a connector tool: a System user opens its connector to the workspaces that hold this app (with Write on, for a tool that writes), ${admin}`;
+  }
+  if (kind === 'http') {
+    return `A tool group does not help an http tool: a System user switches External access on for it if it only reads (Settings → Tools), ${admin}`;
+  }
+  if (kind === 'recipe' || kind === 'shell') {
+    return 'A tool group does not help a recipe or shell tool, and it cannot get External access: keep the app in the Admin workspace only.';
+  }
+  // No tool by that slug: the refusal says so, and no setting helps.
+  return '';
 }
 
 /**

@@ -22,24 +22,58 @@ vi.mock('./resolve', () => ({
   resolveTool: vi.fn(async (_owner: string, slug: string) =>
     slug === 'missing'
       ? null
-      : slug === 'weather'
+      : slug === 'site_conn'
         ? {
             slug,
             enabled: true,
             requiresConfirm: false,
-            handler: { kind: 'http', url: 'https://x.test' },
+            handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' },
             externalAccess: null,
           }
-        : {
-            slug,
-            enabled: true,
-            requiresConfirm: false,
-            handler: { kind: 'builtin', ref: slug },
-            externalAccess: null,
-          },
+        : slug === 'site_recipe'
+          ? {
+              slug,
+              enabled: true,
+              requiresConfirm: false,
+              handler: { kind: 'recipe', steps: [] },
+              externalAccess: null,
+            }
+          : slug === 'weather'
+            ? {
+                slug,
+                enabled: true,
+                requiresConfirm: false,
+                handler: { kind: 'http', url: 'https://x.test' },
+                externalAccess: null,
+              }
+            : {
+                slug,
+                enabled: true,
+                requiresConfirm: false,
+                handler: { kind: 'builtin', ref: slug },
+                externalAccess: null,
+              },
   ),
   resolveTools: vi.fn(),
 }));
+// A connector tool's refusal needs the database (its connector's holders):
+// stand in its verdict, every other slug runs the real rule.
+vi.mock('./member-app-tools', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./member-app-tools')>();
+  return {
+    ...real,
+    memberAppToolVerdict: vi.fn(async (...a: Parameters<typeof real.memberAppToolVerdict>) =>
+      a[2] === 'site_conn'
+        ? {
+            ok: false as const,
+            status: 403 as const,
+            reason:
+              "The tool 'site_conn' belongs to a connector no workspace other than Admin holds, so a team app can't use it.",
+          }
+        : real.memberAppToolVerdict(...a),
+    ),
+  };
+});
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getAppRuntime: vi.fn(async () => (h.app ? { authorLevel: 'admin', ...h.app } : null)),
@@ -155,7 +189,27 @@ describe('appToolWarnings follows the holders', () => {
     expect(w).toContain('Settings → Tools');
     expect(w).not.toMatch(/An admin can/);
     expect(w).not.toMatch(/team-level group instead/);
-    expect(w).toContain('A tool group does not help an outside tool');
+    expect(w).toContain(
+      'A tool group does not help an http tool: a System user switches External access on for it if it only reads',
+    );
+    expect(w).not.toMatch(/first sentence/);
+  });
+
+  it('a connector tool: a System user opens its connector to the workspaces, no tool group', async () => {
+    h.app = { toolRules: 'team', manifest: { toolSlugs: ['site_conn'] } };
+    const [w] = await appToolWarnings('brain', 'app');
+    expect(w).toContain("'site_conn'");
+    expect(w).toContain(
+      'a System user opens its connector to the workspaces that hold this app (with Write on, for a tool that writes)',
+    );
+    expect(w).not.toMatch(/team-level group instead|External access|first sentence/);
+  });
+
+  it('a recipe tool: neither a tool group nor External access, only the Admin workspace', async () => {
+    h.app = { toolRules: 'team', manifest: { toolSlugs: ['site_recipe'] } };
+    const [w] = await appToolWarnings('brain', 'app');
+    expect(w).toContain('cannot get External access: keep the app in the Admin workspace only.');
+    expect(w).not.toMatch(/team-level group instead/);
   });
 
   it('offers a team-level group for a built-in only', async () => {
