@@ -281,6 +281,7 @@ GET /api/services/status class=area scope=area:settings caller=owner gone=false
 GET /api/services/sync/oauth/callback class=public scope=- caller=- gone=false
 GET /api/services/sync/oauth/start class=public scope=- caller=- gone=false
 GET /api/services/sync/ui class=public scope=- caller=- gone=false
+GET /api/settings/search-languages class=area scope=area:settings caller=owner gone=false
 GET /api/settings/worker-groups class=area scope=area:settings caller=owner gone=false
 GET /api/shares class=content scope=content caller=owner gone=false
 GET /api/shares/all class=content scope=content caller=owner gone=false
@@ -584,6 +585,7 @@ HEAD /api/services/status class=area scope=area:settings caller=owner gone=false
 HEAD /api/services/sync/oauth/callback class=public scope=- caller=- gone=false
 HEAD /api/services/sync/oauth/start class=public scope=- caller=- gone=false
 HEAD /api/services/sync/ui class=public scope=- caller=- gone=false
+HEAD /api/settings/search-languages class=area scope=area:settings caller=owner gone=false
 HEAD /api/settings/worker-groups class=area scope=area:settings caller=owner gone=false
 HEAD /api/shares class=content scope=content caller=owner gone=false
 HEAD /api/shares/all class=content scope=content caller=owner gone=false
@@ -1022,6 +1024,7 @@ PUT /api/profile/share-neat class=self scope=self caller=owner gone=false
 PUT /api/profile/sounds class=self scope=- caller=login gone=false
 PUT /api/push/preferences class=self scope=self caller=owner gone=false
 PUT /api/recall/maps/:id/cards/:card class=content scope=content caller=owner gone=false
+PUT /api/settings/search-languages class=area scope=area:settings caller=owner gone=false
 PUT /api/sidecar/state/:key class=public scope=- caller=- gone=false
 PUT /api/tables/:id/draft class=content scope=content caller=owner gone=false
 PUT /api/tools/:id/external-access class=area scope=area:assistants caller=owner gone=false
