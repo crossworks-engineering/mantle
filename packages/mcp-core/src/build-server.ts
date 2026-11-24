@@ -630,6 +630,9 @@ export const MANTLE_MCP_INSTRUCTIONS = [
   'When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind.',
   "Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it.",
   'Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules.',
+  // Files read at upload have a file database: named here so folder_list
+  // and file_get are listed in full on the tool map too (map-surface.ts).
+  "A sheet, plan or drawing read at upload has a file database: find files with search, folder_list or file_list (data: true lists every file with one); file_get names its tabs. Read a drawing's words, tags and line numbers, or a sheet's rows, with file_sql (no model cost) before any vision call.",
   // Loaded on every connection, so a pointer: circuit_trace's result
   // carries the steps the internal agents' skills give (`workflow`, one
   // text: @mantle/tools circuit-trace/workflow.ts).

@@ -56,7 +56,7 @@ import {
   WORKER_SYSTEM_PROMPT,
   WORKER_TOOL_GROUP_SLUGS,
 } from '@mantle/runs';
-import { SKILL_INSTRUCTIONS, AGENT_PROMPTS } from './prompts';
+import { SKILL_INSTRUCTIONS, AGENT_PROMPTS, RECALL_PROMPTS } from './prompts';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -236,6 +236,37 @@ const APP_ADMIN_TOOL_SLUGS = [
 const APP_AUTHORING_TOOL_SLUGS = [
   ...APP_TOOL_SLUGS.filter((s) => !APP_ADMIN_TOOL_SLUGS.includes(s)),
   ...CODE_TOOL_SLUGS,
+];
+
+// ── Recall maps ──────────────────────────────────────────────────────────────
+
+/**
+ * A Recall map every brain ships with: one published map whose entry card
+ * leads to one confirmed prompt, so `recall_match` finds it when an agent
+ * starts the task (docs/recall.md). Seeded once per brain by `key`
+ * (seedManifestRecallMaps, recorded in `recallMapsSeeded`): a map the owner
+ * edits or deletes later stays as the owner left it. A change to the words
+ * reaches fresh brains only.
+ */
+export type ManifestRecallMap = {
+  key: string;
+  title: string;
+  enterWhen: string;
+  /** The entry card's body: what the map is for, in one line. */
+  entryBody: string;
+  prompt: { title: string; useWhen: string; bodyMd: string };
+};
+
+export const MANIFEST_RECALL_MAPS: readonly ManifestRecallMap[] = [
+  {
+    key: 'file-databases',
+    title: 'Read data from files',
+    enterWhen:
+      'Building an app, a tool or a report that reads data from uploaded files: sheets, plans, drawings, CAD or PDFs.',
+    entryBody:
+      "How to read a file's data from its file database with file_sql, before any vision call.",
+    prompt: RECALL_PROMPTS.file_databases,
+  },
 ];
 
 // ── Skills ───────────────────────────────────────────────────────────────────

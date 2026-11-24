@@ -16,7 +16,7 @@ CLI `pnpm seed:*` scripts, and the `/settings/config` checker **all** derive fro
 
 - **Definitions + links:** [`manifest.ts`](manifest.ts), `MANIFEST_SKILLS`,
   `MANIFEST_TOOL_GROUPS`, `MANIFEST_AGENTS` (incl. the `isPersona` entry),
-  `MANIFEST_WORKERS`, `MANIFEST_HTTP_TOOLS`.
+  `MANIFEST_WORKERS`, `MANIFEST_HTTP_TOOLS`, `MANIFEST_RECALL_MAPS`.
 - **Prompt + skill BODIES:** [`prompts.ts`](prompts.ts), `SKILL_INSTRUCTIONS`
   and `AGENT_PROMPTS`; the manifest references them by slug.
 - **Seeder (DB writes):** [`seed.ts`](seed.ts), `applyManifest`,
@@ -52,6 +52,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` and the owner switches `tool_loading` / `suggest_follow_up` / `top_p` excepted) | ✅ overwrite, switches kept | `syncSpecialistDefs` |
 | Specialist **prompt still an earlier shipped default**, byte for byte, with no Studio save in its history (owner decision 2026-10-26; disabled agents too; never the persona, never an edited prompt; a revert in Studio sticks) | ✅ moved to the current default, the old text kept as a prose version (one Studio revert) | `upgradeUneditedPrompts` + `retiredPromptSha256` + `promptHistoryIsShippedOnly` |
 | New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
+| New shipped **Recall map** (`MANIFEST_RECALL_MAPS`, words in `RECALL_PROMPTS`) | ✅ **once per brain** by key (recorded in the anchor's `recallMapsSeeded`): published, its prompt confirmed, written as owner `system`; an owner's later edit or delete sticks; changed words reach fresh brains only | `seedManifestRecallMaps` (onboarding too) |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
 

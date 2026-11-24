@@ -24,6 +24,14 @@ report fields, and the v1 screen. Migration 0209 deletes any leftover v1 row
 tags again. Now the checks run inside the write and a failing write is
 refused, so nothing is ever served that failed one.
 
+**A shipped map.** Every brain gets one published map from the product,
+"Read data from files", with one confirmed prompt: read a file's data from
+its file database with `file_sql` before any vision call. It is seeded once
+per brain from the system manifest (`MANIFEST_RECALL_MAPS`,
+`seedManifestRecallMaps`), written as owner `system`, and held by Admin like
+any map at the Recall root. An owner may edit or delete it; it is not seeded
+again.
+
 ## How a map works
 
 - **A map is a `recall` node** under the `recall` tree root, filed in folders

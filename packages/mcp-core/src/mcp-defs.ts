@@ -28,6 +28,7 @@ import { SEARCH_TOOL_KINDS } from '@mantle/client-types/kind-lists';
 import {
   MCP_SURFACE_POLICIES,
   SEARCH_TOOLS,
+  fileDbNote,
   thrownToolDatabaseError,
   type BuiltinToolDef,
   type McpSurfaceSlug,
@@ -169,7 +170,7 @@ const SEARCH = mcpTool({
   slug: 'search',
   group: 'search',
   description:
-    "Hybrid semantic + full-text search over the user's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
+    "Hybrid semantic + full-text search over the user's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body. A file hit's rows (a sheet's, a drawing's words and tags): `file_sql`.",
   shape: {
     q: z.string().optional(),
     branch: z.string().optional(),
@@ -283,7 +284,7 @@ const FILE_READ = mcpTool({
   slug: 'file_read',
   group: 'files',
   description:
-    'Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files).',
+    'Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files). A file with a database gives file_database (its tabs): read its rows with `file_sql`, not the bytes.',
   shape: { file_id: z.string().uuid() },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
@@ -293,8 +294,10 @@ const FILE_READ = mcpTool({
         return { content: [{ type: 'text', text: 'file not found' }], isError: true };
       }
       const isText = res.row.isText;
+      const database = await fileDbNote(ownerId, file_id);
       const out = {
         file: res.row,
+        ...(database ? { file_database: database } : {}),
         ...(isText
           ? { content_text: res.bytes.toString('utf8') }
           : { content_base64: res.bytes.toString('base64') }),
@@ -308,7 +311,7 @@ const FILE_GET = mcpTool({
   slug: 'file_get',
   group: 'files',
   description:
-    "Fetch a file's metadata by id without loading bytes. Useful for resolving a uuid surfaced by search before deciding what to do with it.",
+    "Fetch a file's metadata by id without loading bytes. Useful for resolving a uuid surfaced by search before deciding what to do with it. A file with a database gives file_database (its tabs): read its rows with `file_sql`.",
   shape: { file_id: z.string().uuid() },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
@@ -317,7 +320,8 @@ const FILE_GET = mcpTool({
       if (!row) {
         return { content: [{ type: 'text', text: 'file not found' }], isError: true };
       }
-      return jsonReply(row);
+      const database = await fileDbNote(ownerId, file_id);
+      return jsonReply(database ? { ...row, file_database: database } : row);
     };
   },
 });

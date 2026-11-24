@@ -865,7 +865,7 @@ Always parameterize (\`?\` placeholders). Each app sees only its own database. I
 
 **Reference data: seed it yourself with \`app_db_seed\`.** When the app needs pre-loaded lookup data (a fluids table, a rate matrix, an imported dataset), YOU load it at authoring time: read the source with your read tools (\`file_read\`, \`file_sql\`, a page…), transform it to row objects in your head, and call \`app_db_seed({ id, table, rows, replace })\`: atomic bulk INSERT, validated against the live columns, up to 2000 rows per call (batch bigger sets; \`replace: true\` on the first batch only). Then verify with \`app_db_query\` (\`SELECT count(*)\`). This is a one-time authoring step, NOT an integration: don't delegate it to the toolsmith, and never ship an app that asks the user to paste in its own reference data.
 
-**Rows from a file: read them live.** An app that only reads a sheet or a drawing calls \`file_sql\` (declare it) and copies nothing. An app that must write those rows, past what \`app_db_seed\` should carry, copies them once in its own code with \`file_sql\` then \`host.db.exec\`: the authoring guide's "Copying a sheet into an app" has the loop.
+**Rows from a file: read them live.** A sheet, plan or drawing read at upload has a file database (\`file_get\` names its tabs): a drawing's words, tags and line numbers with their place, a sheet's rows. Read them with \`file_sql\`, at no model cost; never build a vision reader for them. Vision (\`model_call\` with a picture) is only for what the database does not hold (the symbols on a PDF drawing, what a line connects, text a \`Gaps\` row marks as not read), on a small cut-out area, with the answer kept in \`host.db\`. An app that only reads a sheet or a drawing calls \`file_sql\` (declare it) and copies nothing. An app that must write those rows, past what \`app_db_seed\` should carry, copies them once in its own code with \`file_sql\` then \`host.db.exec\`: the authoring guide's "Copying a sheet into an app" has the loop.
 
 **No app reads a Table.** Owner decision: apps have no Table access, even when the running member has the Write switch. \`app_tools_set\` refuses a new Table tool (the \`table_*\` tools, \`node_read\`, \`export_node\`). One a list already holds still runs on a box with no MANTLE_NO_AUTO_TABLES line, and with the line none runs. Keep the app's rows in \`host.db\`, and give people a grid with \`app_table_export_set\`.
 
@@ -1375,3 +1375,37 @@ How you work:
 - For risky or destructive actions, say plainly what it will do, then execute it (you're trusted), and report the result.
 - Keep replies tight: what you ran, what came back, what's next.`,
 };
+
+/**
+ * The words of the shipped Recall prompts (MANIFEST_RECALL_MAPS in
+ * manifest.ts). A prompt is matched by meaning (recall_match embeds the
+ * title, the use_when line and the body), so the title and the use_when
+ * line carry the words a person uses for the task. Measured 2026-11-24 with
+ * EmbeddingGemma, the default local embedder: six task lines (tags on
+ * P&IDs, equipment from drawings, line numbers from isometrics, Excel
+ * registers, an equipment register sheet, blocks in DWGs) matched at 0.40
+ * to 0.52; four unrelated lines at 0.31 or less (the floor is 0.35).
+ */
+export const RECALL_PROMPTS = {
+  file_databases: {
+    title:
+      'Build an app or tool that reads data from files: drawings, P&IDs, isometrics, DWGs, PDFs, spreadsheets',
+    useWhen:
+      'Build an app, a tool or a report that reads data from uploaded files: tags, line numbers, equipment, blocks or text on P&IDs, isometrics and other drawings (pdf, dwg, dxf, dgn, dwf, tif, tiff, smf, 000), or rows of a spreadsheet register or plan (xlsx, xls, csv, xml).',
+    bodyMd: `A sheet, plan or drawing read at upload has its own file database: every row of a sheet, every word, tag and line number of a drawing, with its place on the sheet. Read it with \`file_sql\`. It costs no model. Do not build a vision reader for it.
+
+1. Find the files: \`folder_list\`, \`file_list\` (\`data: true\` lists every file with a database), or \`search\` with \`type: 'file'\`.
+2. Check its database: \`file_get\` gives \`file_database\` with its tabs. A picture cut from a drawing names its source file there: read that file.
+3. See the real tabs and columns: \`file_sql\` with the \`file_id\` and no \`sql\`.
+4. Read the rows: \`file_sql\` with \`sql\`. For many files make one call with \`folder\` or \`file_ids\`, never a loop.
+
+The main tabs (step 3 shows the real ones):
+- Sheets (xlsx, xls, csv): one tab per sheet, with \`_pos\` and \`_rid\`.
+- Microsoft Project plans (xml): tasks, resources and assignments.
+- CAD drawings (dwg, dxf, dgn): Texts, Inserts, Blocks, Symbols, Placements, Segments, Nodes, Circuits. A DWF plot set (dwf): its sheets, layers and labels.
+- PDF drawings and forms (pdf): Pages, Texts (each word with its page box), Tags (join on \`Key\`), Lines, Markups. A scan may hold few words: its Gaps tab marks the text that was not read.
+- Raster drawings (tif, tiff, smf, 000): the sheet's size and title.
+
+Use vision (\`model_call\` with a picture) only for what the database does not hold: the symbols on a PDF drawing, what a line connects on a PDF, and text a Gaps row marks as not read. Send a small cut-out area, not the whole sheet, and keep the answer in \`host.db\`, so it is asked once.`,
+  },
+} as const;

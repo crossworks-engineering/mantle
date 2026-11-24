@@ -561,6 +561,10 @@ export type ProfilePreferences = {
    *  `group:delegation` and `delegate:<slug>`, each once, so one the owner
    *  removes later stays removed. Written by the reconcile alone. */
   workspaceDelegationGranted?: Record<string, string[]>;
+  /** The keys of the shipped Recall maps the reconcile has seeded
+   *  (seedManifestRecallMaps), each once, so a map the owner edits or
+   *  deletes later stays as the owner left it. Written by the seed alone. */
+  recallMapsSeeded?: string[];
   /** When true, outbound/egress tools (email_send, web_fetch, web_search)
    *  fired during an UNATTENDED heartbeat run park for operator approval
    *  instead of executing inline. Only tools that reach OUT are gated — the

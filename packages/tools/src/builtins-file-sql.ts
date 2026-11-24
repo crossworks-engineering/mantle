@@ -394,7 +394,7 @@ export const file_sql: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Query a file with SQL',
   description:
-    'Run one read-only SELECT on an uploaded file\'s database and return columns + rows; with no `sql`, its tabs, columns and description. Spreadsheets, CSVs, Project XML, drawings (tabs Texts, Symbols, Placements, Segments, Shapes) and some PDFs have one; a PDF\'s may hold `Links` and `Link nodes`: no `sql` says how to follow them. **For many files pass `file_ids` or `folder`; never loop or copy:** `sql` runs on each file, rows get `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads them as `results`, e.g. `SELECT "Key", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names; **always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`, for text `file_read`.',
+    "One read-only SELECT on an uploaded file's database (no model, no cost): columns + rows; with no `sql`, its tabs, columns and description. Sheets, CSVs and Project XML have one. A DWG, DXF or DGN: Texts, Inserts, Blocks, Symbols, Placements, Segments, Shapes, Nodes, Circuits. A drawing PDF: File, Pages, Texts (words with page boxes), Tags (join on `Key`), Lines, Markups, Gaps (text not read), maybe `Links`. **Read text, tags and line numbers here, not with vision.** **Many files: pass `file_ids` or `folder`, never loop or copy:** rows get `_file_id` and `_file`; `then_sql` reads them as `results`. Double-quote names; **always double-quote FTS MATCH terms.** For a Table use `table_sql`, for text `file_read`.",
   inputSchema: {
     type: 'object',
     properties: {

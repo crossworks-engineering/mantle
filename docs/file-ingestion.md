@@ -310,7 +310,9 @@ text/summary/embedding work re-runs; spend is one vision call per image _kept_.
 Every table-type file uploaded in Files (xlsx, xls, csv, Microsoft Project XML,
 dwg, dxf, dgn, dwf, and a PDF that reads as a drawing or a ruled form) gets one
 read-only database. It stays with the file. Nobody edits
-its rows. An assistant or an app reads it with `file_sql`. Whoever may read the
+its rows. An assistant or an app reads it with `file_sql`. `file_get` and
+`file_read` name it (`file_database`: its tabs and that line), with the same
+rights as `file_sql`; a picture cut from a file names its source's. Whoever may read the
 file may read its rows, but for an email attachment: its rows are for an Admin
 user only, and a key also needs the Search area.
 

@@ -11,6 +11,7 @@ export {
   seedToolCapabilities,
   seedManifestWorkers,
   seedManifestHeartbeats,
+  seedManifestRecallMaps,
   adoptManifestItem,
   type ApplyManifestOpts,
   type ApplyManifestResult,

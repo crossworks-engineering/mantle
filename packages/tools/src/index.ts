@@ -219,6 +219,7 @@ export { DIAGRAM_TOOLS, DIAGRAM_TOOL_SLUGS } from './builtins-diagrams';
 export { CIRCUIT_TOOLS, CIRCUIT_TOOL_SLUGS } from './builtins-circuits';
 export { DRAWING_REDRAW_TOOLS } from './builtins-drawing-redraw';
 export { FILE_SQL_TOOLS, fileSqlAnswer } from './builtins-file-sql';
+export { fileDbNote, type FileDbNote } from './file-db-note';
 export { fileProcessing } from './builtins-files';
 export { fileStaleList, reindexFiles, reindexIdsOf } from './builtins-files';
 export { archiveExtractAnswer, extractArchive } from './builtins-files';

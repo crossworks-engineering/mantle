@@ -20,6 +20,33 @@ is a small virtual file tree stored on the app row (`{ entry, files }`, max **50
 files / 256 KB each**). It reads and writes your data **only** through tools you
 explicitly grant it and an optional per-app SQLite database.
 
+## Reading a file's data
+
+A sheet, plan or drawing read at upload has its own **file database**: every
+row of a sheet; every word, tag and line number of a drawing, with its place on
+the sheet. Read it with `file_sql`. It costs no model. Do not build a vision
+reader for it. A scanned drawing may hold few words: its `Gaps` tab marks the
+text that was not read.
+
+1. **Find the file**: `folder_list`, `file_list` (`data: true` lists every
+   file with a database), or `search` / `search_nodes` with `type: 'file'`.
+2. **Check for its database**: `file_get` or `file_read` gives
+   `file_database` with its tabs (a `file_list` row says `status.db: 'ready'`).
+   A picture cut from a drawing names its source file there: read that one.
+3. **Read it** with `file_sql`: no `sql` lists the tabs and columns. For many
+   files make one call with `folder` or `file_ids` (_Reading many files at
+   once_ below).
+
+A drawing PDF holds Pages, Texts (each word with its page box), Tags (join on
+`Key`), Lines and Markups. A DWG, DXF or DGN holds Texts, Inserts, Blocks,
+Symbols, Placements, Segments, Nodes and Circuits.
+
+**Vision (`model_call` with a picture) is only for what the file database does
+not hold**: the symbols on a PDF drawing, what a line connects on a PDF, and
+the text a `Gaps` row marks as not read.
+Send a small cut-out area, not the whole sheet, and keep the answer in
+`host.db` so it is asked once.
+
 ## The build loop (MCP tools)
 
 0. **`app_authoring_guide(section?)`**: read this guide first.
@@ -583,8 +610,9 @@ So to show your data in an app, you give it a tool that returns that data:
   because the http path never reads a reply's cost. `model_call` spends on
   the brain's key, so only an app the Admin workspace alone holds may call
   it; team rules refuse it. `messages` is the OpenAI chat shape: a user turn
-  may hold `text` and `image_url` parts (a `data:image/png;base64,...` URL). A PDF `file` part is refused: send the page as a picture (render it
-  to a PNG), or read its text first (`file_read` or `read_section`).
+  may hold `text` and `image_url` parts (a `data:image/png;base64,...` URL). A PDF `file` part is refused: read its rows first with `file_sql`
+  (_Reading a file's data_), or its text (`file_read` or `read_section`); send
+  a picture only of a small area the database does not hold.
   `no_data_collection: true` sends the call only to providers that do not
   keep or train on the data (OpenRouter only; the call fails when no
   provider of the model meets it). There is no JSON mode: ask for JSON in

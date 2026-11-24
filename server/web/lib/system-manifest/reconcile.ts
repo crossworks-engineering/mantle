@@ -60,6 +60,7 @@ import {
   addAgentDelegates,
   applyManifest,
   seedToolCapabilities,
+  seedManifestRecallMaps,
   seedManifestWorkers,
 } from './seed';
 import {
@@ -709,6 +710,15 @@ export async function reconcileOwner(ownerId: string) {
   // overwritten (operator cost choices stand); optional media workers are left
   // to onboarding.
   const { created: workersCreated } = await seedManifestWorkers(ownerId, { requiredOnly: true });
+  // The shipped Recall maps, once per brain (seedManifestRecallMaps). Last,
+  // and never in the way of the steps above: a failure is retried on the
+  // next version's reconcile.
+  let recallMapsSeeded: string[] = [];
+  try {
+    recallMapsSeeded = await seedManifestRecallMaps(ownerId);
+  } catch (err) {
+    log('reconcile').warn(`recall maps not seeded (non-fatal): ${errorMessage(err)}`);
+  }
 
   return {
     builtinsSkipped,
@@ -722,6 +732,7 @@ export async function reconcileOwner(ownerId: string) {
     promptsUpgraded,
     retired,
     workersCreated,
+    recallMapsSeeded,
   };
 }
 
@@ -778,6 +789,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
       promptsUpgraded,
       retired,
       workersCreated,
+      recallMapsSeeded,
     } = await reconcileOwner(ownerId);
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 
@@ -793,6 +805,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
         (retired.length ? `; retired ${retired.join(', ')}` : '') +
         (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : '') +
         (seededHeartbeats.length ? `; heartbeats +${seededHeartbeats.join(',')}` : '') +
+        (recallMapsSeeded.length ? `; recall maps +${recallMapsSeeded.join(',')}` : '') +
         (builtinsSkipped ? `; builtins skipped ${builtinsSkipped}` : ''),
     );
   } catch (err) {

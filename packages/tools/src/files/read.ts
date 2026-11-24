@@ -33,6 +33,7 @@ import {
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str, strOpt, boolOpt as bool } from '../coerce';
 import { FILE_ID_PRE } from '../builtins-common';
+import { fileDbNote } from '../file-db-note';
 
 export const folder_list: BuiltinToolDef = {
   slug: 'folder_list',
@@ -78,8 +79,9 @@ export const file_list: BuiltinToolDef = {
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
     'With `data: true` instead, list the files that have a read-only database (spreadsheets, CSVs, plans, drawings) in every folder, or under `parent_path`, each with its state; query one with `file_sql`. ' +
+    "A row with `status.db: 'ready'` has one: read its rows with `file_sql`, no model. " +
     "Each file says if its content was read (`extraction`); `extraction: 'failed'` lists the unread files, `'partial'` the files read only in part (`extraction.cuts` says what was left out: rows, sheets, characters, pictures, pages). " +
-    "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
+    "For sub-folders use `folder_list`; for a file's text `file_read`; to find files by topic `search_nodes` with `type='file'` (passages: `search_chunks`).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -217,7 +219,7 @@ export const file_read: BuiltinToolDef = {
   },
   name: 'Read a file',
   description:
-    "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). " +
+    "Read a file's content by id. For text files returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). A file with a database gives file_database (its tabs): read its rows with `file_sql`. " +
     '**For a LARGE indexed document this returns the opening + a section outline, NOT the whole text** — to read a specific part, use `search_chunks` + `read_section`; pass `full: true` only when you truly need every word. Use `node_read` for notes/events/tasks/secrets.',
   preconditions: FILE_ID_PRE,
   inputSchema: {
@@ -333,10 +335,12 @@ export const file_read: BuiltinToolDef = {
           passages: chunkRows.length,
           sections: sections.length,
         });
+        const database = await fileDbNote(ctx.ownerId, meta.id);
         return {
           ok: true,
           output: {
             file: meta,
+            ...(database ? { file_database: database } : {}),
             content: text.slice(0, FILE_HEAD_CHARS),
             truncated: true,
             total_chars: text.length,
@@ -356,7 +360,11 @@ export const file_read: BuiltinToolDef = {
       hasExtractedText: !!text,
       textChars: text?.length ?? 0,
     });
-    return { ok: true, output: { file: meta, content: text } };
+    const database = await fileDbNote(ctx.ownerId, meta.id);
+    return {
+      ok: true,
+      output: { file: meta, ...(database ? { file_database: database } : {}), content: text },
+    };
   },
 };
 
@@ -372,7 +380,7 @@ export const file_get: BuiltinToolDef = {
   },
   name: 'Fetch file metadata',
   description:
-    "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. Its `extraction` says if the content was read, and for a file read only in part (`partial`) what was left out (`cuts`, `hint`). " +
+    "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. Its `extraction` says if the content was read, and for a file read only in part (`partial`) what was left out (`cuts`, `hint`). A file with a database gives file_database (its tabs): read its rows with `file_sql`. " +
     'For the actual file content use `file_read`; for listing files in a folder use `file_list`.',
   preconditions: FILE_ID_PRE,
   inputSchema: {
@@ -395,7 +403,8 @@ export const file_get: BuiltinToolDef = {
         ok: false,
         error: 'file not found — find the right id with file_list / search_nodes, then re-issue.',
       };
-    return { ok: true, output: row };
+    const database = await fileDbNote(ctx.ownerId, row.id);
+    return { ok: true, output: database ? { ...row, file_database: database } : row };
   },
 };
 

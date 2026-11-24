@@ -117,4 +117,25 @@ describe('app authoring guidance on the MCP surface', () => {
     expect(out.text).toContain(':host_me_id');
     expect(out.text).not.toContain('## Binding to data');
   });
+
+  // Agents built vision readers for what a file's database held (2026-11-24):
+  // the instructions, the tool text and the guide send them to file_sql first.
+  it('sends an agent to the file database before any vision call', async () => {
+    // Named, so the tool map lists them in full too (map-surface.ts).
+    for (const slug of ['file_sql', 'file_list', 'folder_list', 'file_get']) {
+      expect(MANTLE_MCP_INSTRUCTIONS, slug).toContain(slug);
+    }
+    expect(tools.get('file_sql')?.description).toContain('not with vision');
+    for (const slug of ['model_call', 'extract_from_image']) {
+      expect(tools.get(slug)?.description, slug).toContain('use `file_sql` first');
+    }
+    for (const slug of ['file_get', 'file_read']) {
+      expect(tools.get(slug)?.description, slug).toContain('file_database');
+    }
+    const res = await tools.get('app_authoring_guide')!.handler({ section: 'reading a file' });
+    const out = JSON.parse(res.content[0]!.text) as { section: string[]; text: string };
+    expect(out.section).toEqual(["Reading a file's data"]);
+    expect(out.text).toContain('`file_sql`');
+    expect(out.text).toContain('host.db');
+  });
 });

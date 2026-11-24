@@ -38,6 +38,7 @@ import {
   projectFontKey,
   projectFontSize,
   projectGrantedGroups,
+  projectSeededKeys,
   projectHomeDesk,
   projectHomeDeskVersion,
   projectHouseStyle,
@@ -220,6 +221,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         : undefined,
     contentKindGroupsGranted: projectGrantedGroups(prefs.contentKindGroupsGranted),
     workspaceDelegationGranted: projectGrantedGroups(prefs.workspaceDelegationGranted),
+    recallMapsSeeded: projectSeededKeys(prefs.recallMapsSeeded),
   };
 }
 
@@ -452,6 +454,7 @@ export async function updateProfilePreferences(
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
     contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),
     workspaceDelegationGranted: projectGrantedGroups(merged.workspaceDelegationGranted),
+    recallMapsSeeded: projectSeededKeys(merged.recallMapsSeeded),
   };
 }
 

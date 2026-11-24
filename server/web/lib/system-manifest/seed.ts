@@ -20,7 +20,8 @@
  */
 
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { InputError } from '@mantle/std';
+import { InputError, errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { findProviderKeyId, findProviderKeyIds } from '@mantle/api-keys';
 import {
   onFullSystemRoute,
@@ -43,6 +44,7 @@ import {
   MANIFEST_AGENTS,
   MANIFEST_HEARTBEATS,
   MANIFEST_HTTP_TOOLS,
+  MANIFEST_RECALL_MAPS,
   MANIFEST_SKILLS,
   MANIFEST_SKILL_SLUGS,
   MANIFEST_TOOL_GROUPS,
@@ -61,7 +63,13 @@ import {
   specialistParamsTarget,
   TEAM_RESPONDER_SLUG,
 } from './reconcile-util';
-import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
+import {
+  createRecallMap,
+  deleteRecallMap,
+  loadProfilePreferences,
+  putRecallCard,
+  updateProfilePreferences,
+} from '@mantle/content';
 import { adoptWorkerParams, resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
 import { seedCuratedModelPools } from '../model-pools-seed';
@@ -909,4 +917,64 @@ async function adoptManifestItemHere(
       await adoptWorker(ownerId, slug as AiWorkerKind);
       return;
   }
+}
+
+/** The shipped maps are the product's, written as the brain's owner: the
+ *  map is published and its prompt confirmed, as a person's would be. */
+const SYSTEM_RECALL_ACTOR = { kind: 'owner' as const, id: null, name: 'system' };
+
+/**
+ * The shipped Recall maps (MANIFEST_RECALL_MAPS), each once per brain: a map
+ * whose key `recallMapsSeeded` does not list is made (published, its prompt
+ * confirmed), then listed. A listed key is never made again, so an owner who
+ * edits or deletes the map keeps that. A map whose cards could not be
+ * written is deleted again, so the next run makes it whole. Two seeds at
+ * the same moment (a double onboarding submit) could make the map twice:
+ * accepted, the owner deletes one. Returns the keys
+ * seeded. The prompt's vector is written after the commit (and on the next
+ * recall_match, if the embedder was down).
+ */
+export async function seedManifestRecallMaps(ownerId: string): Promise<string[]> {
+  const done = (await loadProfilePreferences(ownerId)).recallMapsSeeded ?? [];
+  const seeded: string[] = [];
+  for (const m of MANIFEST_RECALL_MAPS.filter((x) => !done.includes(x.key))) {
+    const made = await createRecallMap(
+      ownerId,
+      { title: m.title, enterWhen: m.enterWhen },
+      SYSTEM_RECALL_ACTOR,
+    );
+    try {
+      const card = await putRecallCard(
+        ownerId,
+        made.mapId,
+        null,
+        { ...m.prompt, prompt: true, after: 'start' },
+        SYSTEM_RECALL_ACTOR,
+        made.version,
+      );
+      await putRecallCard(
+        ownerId,
+        made.mapId,
+        'start',
+        {
+          title: m.title,
+          bodyMd: m.entryBody,
+          options: [
+            { label: m.prompt.title, useWhen: m.prompt.useWhen, targetSlug: card.cardSlug! },
+          ],
+        },
+        SYSTEM_RECALL_ACTOR,
+        card.version,
+      );
+    } catch (err) {
+      // The first error is the one to see: a failed clean-up is logged.
+      await deleteRecallMap(ownerId, made.mapId, SYSTEM_RECALL_ACTOR).catch((e: unknown) => {
+        log('recall-seed').warn(`half-made map not deleted: ${errorMessage(e)}`);
+      });
+      throw err;
+    }
+    seeded.push(m.key);
+    await updateProfilePreferences(ownerId, { recallMapsSeeded: [...done, ...seeded] });
+  }
+  return seeded;
 }

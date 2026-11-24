@@ -110,14 +110,14 @@ const app_authoring_guide: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Read the mini-app authoring guide',
   description:
-    "Read the guide to building a Mantle mini app with the app_* tools. Call it BEFORE writing an app. It covers who runs the app (`host.me()` gives `{ id, name, kind }`; `:host_me_id`, `:host_me_name`, `:host_me_kind` in host.db SQL record who did something, filled by the server), the `@host` bridge (host.db, host.tools.call with app_tools_set), allowed imports, theme tokens, per-app SQLite, sharing, and the team and client level rules. Omit `section` for the whole guide (about 8k tokens); pass one, e.g. 'who is running', for that part only.",
+    "Read the guide to building a Mantle mini app with the app_* tools. Call it BEFORE writing an app. It covers who runs the app (`host.me()` gives `{ id, name, kind }`; `:host_me_id`, `:host_me_name`, `:host_me_kind` in host.db SQL record who did something, filled by the server), reading a file's data (`file_sql` first, not a vision model), the `@host` bridge (host.db, host.tools.call with app_tools_set), allowed imports, theme tokens, per-app SQLite, sharing, and the team and client level rules. Omit `section` for the whole guide (about 8k tokens); pass one, e.g. 'who is running', for that part only.",
   inputSchema: {
     type: 'object',
     properties: {
       section: {
         type: 'string',
         description:
-          "Part of a section heading, e.g. 'who is running the app', 'host', 'binding to data', 'sqlite', 'sharing', 'team apps'. Omit for the whole guide.",
+          "Part of a section heading, e.g. 'who is running the app', 'reading a file', 'host', 'binding to data', 'sqlite', 'sharing', 'team apps'. Omit for the whole guide.",
       },
     },
   },

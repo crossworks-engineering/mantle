@@ -656,6 +656,14 @@ export function projectGrantedGroups(raw: unknown): Record<string, string[]> | u
   return rows.length ? Object.fromEntries(rows) : undefined;
 }
 
+/** The keys of the seeded Recall maps (recallMapsSeeded): non-empty
+ *  strings, each once; anything else is dropped. */
+export function projectSeededKeys(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const keys = [...new Set(raw.filter((s): s is string => typeof s === 'string' && s !== ''))];
+  return keys.length ? keys : undefined;
+}
+
 /** The house style a NEW brain starts with (Settings, Profile). Seeded only when
  *  a profile row is first created, so an owner who edits or clears it keeps
  *  their choice. The dash characters are escapes so the source holds none. */

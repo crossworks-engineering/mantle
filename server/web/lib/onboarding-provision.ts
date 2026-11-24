@@ -1,5 +1,7 @@
 import { db, agents, eq, and, isRefusedRight } from '@mantle/db';
 import { findProviderKeyIds } from '@mantle/api-keys';
+import { log } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 import {
   buildPersonaPrompt,
   DEFAULT_PERSONA_NAMES,
@@ -21,6 +23,7 @@ import {
   applyManifest,
   seedToolCapabilities,
   seedManifestWorkers,
+  seedManifestRecallMaps,
   PERSONA_MANIFEST,
   PERSONA_SLUG,
   PERSONA_TOOL_GROUP_SLUGS,
@@ -74,6 +77,11 @@ export const PERSONA_AGENT_SLUG = PERSONA_SLUG;
 async function seedSpecialistStack(ownerId: string): Promise<string[]> {
   try {
     const { seededAgents } = await applyManifest(ownerId);
+    // The shipped Recall maps: a failure is logged, and the boot reconcile
+    // seeds them on a later start.
+    await seedManifestRecallMaps(ownerId).catch((err: unknown) => {
+      log('onboarding').warn(`recall maps not seeded: ${errorMessage(err)}`);
+    });
     return seededAgents;
   } catch (err) {
     // A refused right (42501: a write the narrow login may not make off its

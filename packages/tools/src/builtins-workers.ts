@@ -327,7 +327,7 @@ const extract_from_image: BuiltinToolDef = {
   },
   name: 'Read text from an image',
   description:
-    "Run the owner's default vision worker over an image and return the extracted text. Use when the user asks to re-read a previously-sent photo, OCR a file in their notes, or extract content from a specific image they reference. For photos that JUST arrived in this conversation, the agent's auto-ingest pipeline has already saved the transcript as a note — search_nodes for it before re-extracting.",
+    "Run the owner's default vision worker over an image and return the extracted text. Use when the user asks to re-read a previously-sent photo, OCR a file in their notes, or extract content from a specific image they reference. To read a file's text, tags or line numbers, use `file_sql` first; vision is for what the file database does not hold. For photos that JUST arrived in this conversation, the agent's auto-ingest pipeline has already saved the transcript as a note — search_nodes for it before re-extracting.",
   preconditions: IMAGE_FILE_ID_PRE,
   inputSchema: {
     type: 'object',
@@ -1492,7 +1492,7 @@ const model_call: BuiltinToolDef = {
   },
   name: 'Call a chat model',
   description:
-    "Send one prompt, or a list of chat messages with pictures, to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge, read a drawing) and no other tool fits. For a summary use `summarize_text`. An http tool may not carry a model provider's key: call the model here instead. The text and pictures go to the provider.",
+    "Send one prompt, or a list of chat messages with pictures, to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge) and no other tool fits. To read a file's text, tags or line numbers, use `file_sql` first; vision is for what the file database does not hold. For a summary use `summarize_text`. An http tool may not carry a model provider's key: call the model here instead. The text and pictures go to the provider.",
   inputSchema: {
     type: 'object',
     required: ['model'],
