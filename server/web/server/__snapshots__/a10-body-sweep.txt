@@ -3023,3 +3023,10 @@ POST /api/fleet/broadcasts owner empty => 404 application/json {"error":"not fou
 POST /api/fleet/broadcasts owner nul => 404 application/json {"error":"not found"}
 POST /api/fleet/broadcasts owner array => 404 application/json {"error":"not found"}
 POST /api/fleet/broadcasts owner chunked => 404 application/json {"error":"not found"}
+# 2026-11-24 (key status on the fleet, docs/control-center.md "Key status on the fleet"): POST /api/fleet/keys/test had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
+POST /api/fleet/keys/test owner valid => 404 application/json {"error":"not found"}
+POST /api/fleet/keys/test owner malformed => 404 application/json {"error":"not found"}
+POST /api/fleet/keys/test owner empty => 404 application/json {"error":"not found"}
+POST /api/fleet/keys/test owner nul => 404 application/json {"error":"not found"}
+POST /api/fleet/keys/test owner array => 404 application/json {"error":"not found"}
+POST /api/fleet/keys/test owner chunked => 404 application/json {"error":"not found"}
