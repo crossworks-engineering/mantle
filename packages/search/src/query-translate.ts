@@ -28,7 +28,9 @@ import type { AiWorker, TranslatorParams } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
-const logger = log('search');
+/** The search's log lines. Made per line, not at import: a test that
+ *  fakes @mantle/tracing without `log` can still import this module. */
+const warn = (message: string) => log('search').warn(message);
 
 /** The whole search waits at most this long for its translations. */
 export const TRANSLATE_BUDGET_MS = 1500;
@@ -274,13 +276,13 @@ export async function translateQuery(
       .map((a, i) => ({ lang: languages[i]!, text: a }))
       .filter((a) => a.text && a.text.toLowerCase() !== text.toLowerCase());
     if (missed.length) {
-      logger.warn(
+      warn(
         `translated terms left out (${missed.join('; ')}): the word search ran on the rest`,
       );
     }
     return out;
   } catch (err) {
-    logger.warn(
+    warn(
       `query not translated (${errorMessage(err)}): the word search ran on the original text`,
     );
     return [];

@@ -22,7 +22,9 @@ import { db, profiles } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
-const logger = log('search');
+/** The search's log lines. Made per line, not at import: a test that
+ *  fakes @mantle/tracing without `log` can still import this module. */
+const warn = (message: string) => log('search').warn(message);
 
 /** The preferences key on the brain's profile row. */
 export const SEARCH_LANGUAGES_KEY = 'searchLanguages';
@@ -160,7 +162,7 @@ export async function loadSearchLanguages(ownerId: string): Promise<string[]> {
       .limit(1);
     return row ? normalizeSearchLanguages(row.preferences?.[SEARCH_LANGUAGES_KEY]) : [];
   } catch (err) {
-    logger.warn(`search languages not read (${errorMessage(err)}): English only`);
+    warn(`search languages not read (${errorMessage(err)}): English only`);
     return [];
   }
 }
