@@ -26,7 +26,7 @@
  *  - grants and a home move through the definers the write role calls
  *    (mantle_grant_change, mantle_grant_move_home: 0279). The grants panel
  *    calls the same definers on the system pool with no scope today, its
- *    rights checked in TypeScript (server/web/lib/grants.ts); the grid checks
+ *    rights checked in TypeScript (@mantle/content grants.ts); the grid checks
  *    the database's rule, the surface cells the panel's;
  *  - system work on the system pool.
  *

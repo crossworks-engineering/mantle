@@ -36,6 +36,10 @@ export const AS_SYSTEM_PINS = {
   // an Admin scope's attachment bytes, a file's derived items and drawings,
   // the re-index of a flag change or a move, an app's export sync; never in
   // the caller's scope, docs/actors.md, "8. Exits").
+  // The grants panel's rules (the routes and the MCP grant tools) read in
+  // the caller's scope; the page refold after a change is its one exit
+  // (pageRefoldSystem).
+  'packages/content/src/grants.ts': { count: 1, why: ['page-refold'] },
   'packages/db/src/system-step.ts': { count: 1, why: ['brain-bookkeeping'] },
   'packages/mcp-core/src/login-surface.ts': { count: 1, why: ['audit-log'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 1, why: ['agent-workspace'] },
@@ -58,9 +62,6 @@ export const AS_SYSTEM_PINS = {
   'packages/tools/src/pending-origin.ts': { count: 1, why: ['pending-approval'] },
   'server/web/lib/app-runner.ts': { count: 1, why: ['app-data'] },
   'server/web/lib/auth/rule-in-query.ts': { count: 1, why: ['rule-in-query'] },
-  // The grants panel reads in the caller's scope; the page
-  // refold after a change is its one exit (pageRefoldSystem).
-  'server/web/lib/grants.ts': { count: 1, why: ['page-refold'] },
 };
 
 export const rule = pinnedRule({
