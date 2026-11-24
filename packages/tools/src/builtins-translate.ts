@@ -506,7 +506,7 @@ export const translateTool: BuiltinToolDef = {
         enum: ['standard', 'high'],
         default: 'standard',
         description:
-          "'high' runs the translation on the Translator's stronger, dearer model (about six times the price): only when the user asks for careful terminology or style.",
+          "'high' runs the translation on the Translator's stronger, dearer model (about ten times the price): only when the user asks for careful terminology or style.",
       },
     },
     required: ['to'],

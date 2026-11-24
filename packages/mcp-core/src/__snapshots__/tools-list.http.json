@@ -8082,7 +8082,7 @@
       "standard",
       "high"
      ],
-     "description": "'high' runs the translation on the Translator's stronger, dearer model (about six times the price): only when the user asks for careful terminology or style."
+     "description": "'high' runs the translation on the Translator's stronger, dearer model (about ten times the price): only when the user asks for careful terminology or style."
     },
     "workspace": {
      "type": "string",

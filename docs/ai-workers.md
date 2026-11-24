@@ -723,7 +723,7 @@ keep them back. A model that refuses after the parse still gives the page:
 provider's error code only), and records the parser's fee, which is billed
 all the same. The error reports no cost, so the figure recorded is the list
 fee (`MISTRAL_OCR_PAGE_USD`, $0.002 a page; $0.0022 in the US region), not
-a reported one. Until v0.712 the model was
+a reported one. Before the release with migration 0397 the model was
 `meta-llama/llama-3.1-8b-instruct`, which third-party hosts serve;
 migration 0397 moves a worker still on that id to the new one, and the
 Scan reader pool's template row with it (a model or a row picked or edited
@@ -1110,8 +1110,8 @@ Owner's rules:
   are closed lab models, served only by their lab, Azure, Amazon Bedrock
   or Google (endpoints checked 2026-11-24). The fallback is another lab
   than either model it backs, so a refusal is not met again by the same
-  lab. Until v0.712 the fallback and the high model were Mistral
-  open-weight models (`mistralai/mistral-small-2603`,
+  lab. Before the release with migration 0398 the fallback and the high
+  model were Mistral open-weight models (`mistralai/mistral-small-2603`,
   `mistralai/mistral-medium-3-5`); migration 0398 moves a worker still on
   them, and the pool's two template rows, and keeps a model a person
   picked. Live check 2026-11-24, 6 short made-up passages (English to

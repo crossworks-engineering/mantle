@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { CURATED_MODEL_POOLS } from '@mantle/client-types/model-pools-data';
 import {
   WORKSPACE_DELEGATE_SLUGS,
   MANIFEST_AGENTS,
@@ -868,6 +869,7 @@ describe('every shipped default model is a closed lab model', () => {
   ];
   const OPEN_WEIGHT_NAMES = /gemma|gpt-oss|whisper|r1-1776|grok-[12](?![0-9])/;
   const placeOf = (d: { where: string; model: string }) => `${d.where} ships ${d.model}`;
+  const SHIPPED_ROWS = CURATED_MODEL_POOLS.filter((r) => r.note?.startsWith('the shipped'));
 
   /** Each default: where it ships, its route's provider, its model id. */
   const defaults: { where: string; provider: string; model: string }[] = [
@@ -889,6 +891,16 @@ describe('every shipped default model is a closed lab model', () => {
           model: v as string,
         })),
     ]),
+    // The pool template's shipped rows (a note that starts "the shipped"):
+    // a model combo offers them as the default. The other rows are options
+    // an owner may pick, not defaults.
+    ...SHIPPED_ROWS.flatMap((r) =>
+      r.routes.map((route) => ({
+        where: `pool ${r.pool} row ${r.name}`,
+        provider: route.provider,
+        model: route.model,
+      })),
+    ),
   ];
 
   /** The maker: the id's vendor part on a router, the provider on a direct
@@ -903,7 +915,35 @@ describe('every shipped default model is a closed lab model', () => {
     expect(defaults.some((d) => d.where === 'worker scan_reader')).toBe(true);
     expect(defaults.some((d) => d.where === 'worker translator fallback_model')).toBe(true);
     expect(defaults.some((d) => d.where === 'worker translator high_model')).toBe(true);
+    expect(defaults.some((d) => d.where.startsWith('pool translator row'))).toBe(true);
     expect(defaults.length).toBeGreaterThan(20);
+  });
+
+  /** The pools whose shipped rows name each slot of their worker: the row
+   *  a combo offers as the shipped model must be the model the manifest
+   *  ships. Other pools' shipped rows are older picks than the manifest
+   *  (they predate its model moves) and are not tied here. */
+  it('the Scan reader and Translator pools ship the manifest models', () => {
+    const slotOf = (note: string) =>
+      note.startsWith('the shipped fallback')
+        ? 'fallback_model'
+        : note.startsWith('the shipped high model')
+          ? 'high_model'
+          : 'model';
+    for (const kind of ['scan_reader', 'translator'] as const) {
+      const w = MANIFEST_WORKERS.find((x) => x.kind === kind)!;
+      const params = (w.params ?? {}) as Record<string, unknown>;
+      const rows = SHIPPED_ROWS.filter((r) => r.pool === kind);
+      expect(rows.length, kind).toBeGreaterThan(0);
+      for (const r of rows) {
+        const slot = slotOf(r.note ?? '');
+        const want = slot === 'model' ? w.model : params[slot];
+        expect(
+          r.routes.map((x) => x.model),
+          `pool ${kind} row ${r.name} (${slot})`,
+        ).toEqual([want]);
+      }
+    }
   });
 
   it('each one is made by a closed lab, not an open-weight family, never a :free variant', () => {
