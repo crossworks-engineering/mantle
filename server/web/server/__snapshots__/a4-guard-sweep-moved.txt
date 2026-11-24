@@ -221,41 +221,60 @@ m219 500 content-type=application/json cache-control=no-store  [pipeline:ownerAs
 m220 500 content-type=application/json cache-control=no-store  [pipeline:ownerAsset ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:login-self out=system:login-self]
 m221 500 content-type=application/json cache-control=no-store  [pipeline:ownerAsset ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:login-self out=system:login-self]
 m222 500 content-type=application/json cache-control=no-store  [touch 00000001] [pipeline:ownerAsset ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:login-self out=system:login-self]
-m223 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:session ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=-]
-m224 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-m225 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:session ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
-m226 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
-m227 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-m228 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [touch 00000002] [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
-m229 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [pipeline:session ok null actor=system:http:no-login out=-]
-m230 500 content-type=application/json cache-control=no-store  [pipeline:session ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=-]
-m231 500 content-type=application/json cache-control=no-store  [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-m232 500 content-type=application/json cache-control=no-store  [pipeline:session ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
-m233 401 content-type=application/json cache-control=no-store  [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
-m234 500 content-type=application/json cache-control=no-store  [touch 00000001] [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
-m235 401 content-type=application/json cache-control=no-store  [touch 00000002] [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
-m236 401 content-type=application/json cache-control=no-store  [pipeline:session ok null actor=system:http:no-login out=-]
-m237 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
-m238 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
-m239 403 content-type=application/json cache-control=no-store {"error":"forbidden","reason":"area","area":"users","message":"You cannot manage this part of the brain."} [pipeline:ownerWithSource R403 {"error":"forbidden","reason":"area","area":"users","message":"You cannot manage this part of the brain."} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
-m240 403 content-type=application/json cache-control=no-store {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} [pipeline:ownerWithSource R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
-m241 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [pipeline:ownerWithSource ok {"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
-m242 403 content-type=application/json cache-control=no-store {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} [touch 00000002] [pipeline:ownerWithSource R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
-m243 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [pipeline:ownerWithSource R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
-m244 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
-m245 500 content-type=application/json cache-control=no-store  [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
-m246 429 content-type=application/json cache-control=no-store retry-after=60 {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60} [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
-m247 429 content-type=application/json cache-control=no-store retry-after=60 {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60} [touch 00000001] [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
-m248 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:readerAsset ok {"member":null,"user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
-m249 500 content-type=application/json cache-control=no-store  [pipeline:readerAsset ok {"member":null,"user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
-m250 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
-m251 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
-m252 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
-m253 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
-m254 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
-m255 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m223 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:false]
+m224 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m225 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=user:false]
+m226 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m227 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [pipeline:ownerWithSource ok {"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m228 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000002] [pipeline:ownerWithSource ok {"source":"mobile","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m229 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [pipeline:ownerWithSource R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+m230 500 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:false]
+m231 500 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m232 500 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=user:false]
+m233 500 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m234 500 content-type=application/json cache-control=no-store  [touch 00000001] [pipeline:ownerWithSource ok {"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m235 500 content-type=application/json cache-control=no-store  [touch 00000002] [pipeline:ownerWithSource ok {"source":"mobile","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m236 401 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+m237 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:session ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=-]
+m238 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+m239 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:session ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
+m240 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+m241 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+m242 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [touch 00000002] [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+m243 401 content-type=application/json cache-control=no-store {"error":"unauthorized"} [pipeline:session ok null actor=system:http:no-login out=-]
+m244 500 content-type=application/json cache-control=no-store  [pipeline:session ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=-]
+m245 500 content-type=application/json cache-control=no-store  [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+m246 500 content-type=application/json cache-control=no-store  [pipeline:session ok {"actor.displayName":"admin 4444","actor.email":"admin-4444@example.invalid","actor.id":"44444444-4444-4444-8444-444444444444","actor.isOwner":false,"email":"admin-4444@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
+m247 401 content-type=application/json cache-control=no-store  [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+m248 500 content-type=application/json cache-control=no-store  [touch 00000001] [pipeline:session ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=-]
+m249 401 content-type=application/json cache-control=no-store  [touch 00000002] [pipeline:session ok null actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+m250 401 content-type=application/json cache-control=no-store  [pipeline:session ok null actor=system:http:no-login out=-]
+m251 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+m252 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+m253 403 content-type=application/json cache-control=no-store {"error":"forbidden","reason":"area","area":"users","message":"You cannot manage this part of the brain."} [pipeline:ownerWithSource R403 {"error":"forbidden","reason":"area","area":"users","message":"You cannot manage this part of the brain."} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
+m254 403 content-type=application/json cache-control=no-store {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} [pipeline:ownerWithSource R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+m255 500 content-type=application/json cache-control=no-store {"error":"internal error"} [touch 00000001] [pipeline:ownerWithSource ok {"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+m256 403 content-type=application/json cache-control=no-store {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} [touch 00000002] [pipeline:ownerWithSource R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+m257 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m258 500 content-type=application/json cache-control=no-store  [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m259 429 content-type=application/json cache-control=no-store retry-after=60 {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60} [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
+m260 429 content-type=application/json cache-control=no-store retry-after=60 {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60} [touch 00000001] [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:true]
+m261 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:readerAsset ok {"member":null,"user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m262 500 content-type=application/json cache-control=no-store  [pipeline:readerAsset ok {"member":null,"user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m263 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m264 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m265 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:ownerWithSource ok {"source":"api","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m266 500 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource ok {"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m267 500 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource ok {"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m268 500 content-type=application/json cache-control=no-store  [pipeline:ownerWithSource ok {"source":"api","user.actor":{"id":"22222222-2222-4222-8222-222222222222","email":"member-2222@example.invalid","displayName":"member 2222","isOwner":false},"user.email":"member-2222@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m269 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m270 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m271 500 content-type=application/json cache-control=no-store {"error":"internal error"} [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
+m272 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:ro:55555555-5555-4555-8555-555555555555 out=user:false]
+m273 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
+m274 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 11035
+# cells whose guard entry moved to the pipeline: 11071
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -4863,20 +4882,20 @@ first POST /api/screenshots member-cookie=m60
 first POST /api/screenshots admin-bearer=m48
 first POST /api/screenshots member-bearer=m61
 first POST /api/screenshots revoked-bearer=m27
-first GET /api/search owner-cookie=m21
-first GET /api/search admin-cookie=m22
-first GET /api/search limited-cookie=m23
-first GET /api/search member-cookie=m49
-first GET /api/search admin-bearer=m25
-first GET /api/search member-bearer=m50
-first GET /api/search revoked-bearer=m27
-first HEAD /api/search owner-cookie=m28
-first HEAD /api/search admin-cookie=m29
-first HEAD /api/search limited-cookie=m30
-first HEAD /api/search member-cookie=m58
-first HEAD /api/search admin-bearer=m32
-first HEAD /api/search member-bearer=m59
-first HEAD /api/search revoked-bearer=m34
+first GET /api/search owner-cookie=m223
+first GET /api/search admin-cookie=m224
+first GET /api/search limited-cookie=m225
+first GET /api/search member-cookie=m226
+first GET /api/search admin-bearer=m227
+first GET /api/search member-bearer=m228
+first GET /api/search revoked-bearer=m229
+first HEAD /api/search owner-cookie=m230
+first HEAD /api/search admin-cookie=m231
+first HEAD /api/search limited-cookie=m232
+first HEAD /api/search member-cookie=m233
+first HEAD /api/search admin-bearer=m234
+first HEAD /api/search member-bearer=m235
+first HEAD /api/search revoked-bearer=m236
 first GET /api/secrets owner-cookie=m35
 first GET /api/secrets admin-cookie=m36
 first GET /api/secrets limited-cookie=m152
@@ -4975,6 +4994,27 @@ first HEAD /api/services/status member-cookie=m31
 first HEAD /api/services/status admin-bearer=m42
 first HEAD /api/services/status member-bearer=m33
 first HEAD /api/services/status revoked-bearer=m34
+first GET /api/settings/search-languages owner-cookie=m35
+first GET /api/settings/search-languages admin-cookie=m36
+first GET /api/settings/search-languages limited-cookie=m43
+first GET /api/settings/search-languages member-cookie=m24
+first GET /api/settings/search-languages admin-bearer=m38
+first GET /api/settings/search-languages member-bearer=m26
+first GET /api/settings/search-languages revoked-bearer=m27
+first PUT /api/settings/search-languages owner-cookie=m35
+first PUT /api/settings/search-languages admin-cookie=m36
+first PUT /api/settings/search-languages limited-cookie=m43
+first PUT /api/settings/search-languages member-cookie=m24
+first PUT /api/settings/search-languages admin-bearer=m38
+first PUT /api/settings/search-languages member-bearer=m26
+first PUT /api/settings/search-languages revoked-bearer=m27
+first HEAD /api/settings/search-languages owner-cookie=m39
+first HEAD /api/settings/search-languages admin-cookie=m40
+first HEAD /api/settings/search-languages limited-cookie=m44
+first HEAD /api/settings/search-languages member-cookie=m31
+first HEAD /api/settings/search-languages admin-bearer=m42
+first HEAD /api/settings/search-languages member-bearer=m33
+first HEAD /api/settings/search-languages revoked-bearer=m34
 first GET /api/settings/worker-groups owner-cookie=m35
 first GET /api/settings/worker-groups admin-cookie=m36
 first GET /api/settings/worker-groups limited-cookie=m43
@@ -5873,13 +5913,13 @@ first HEAD /api/updates member-cookie=m31
 first HEAD /api/updates admin-bearer=m42
 first HEAD /api/updates member-bearer=m33
 first HEAD /api/updates revoked-bearer=m34
-first GET /api/updates/check owner-cookie=m223
-first GET /api/updates/check admin-cookie=m224
-first GET /api/updates/check limited-cookie=m225
-first GET /api/updates/check member-cookie=m226
-first GET /api/updates/check admin-bearer=m227
-first GET /api/updates/check member-bearer=m228
-first GET /api/updates/check revoked-bearer=m229
+first GET /api/updates/check owner-cookie=m237
+first GET /api/updates/check admin-cookie=m238
+first GET /api/updates/check limited-cookie=m239
+first GET /api/updates/check member-cookie=m240
+first GET /api/updates/check admin-bearer=m241
+first GET /api/updates/check member-bearer=m242
+first GET /api/updates/check revoked-bearer=m243
 first POST /api/updates/check owner-cookie=m35
 first POST /api/updates/check admin-cookie=m36
 first POST /api/updates/check limited-cookie=m43
@@ -5887,13 +5927,13 @@ first POST /api/updates/check member-cookie=m24
 first POST /api/updates/check admin-bearer=m38
 first POST /api/updates/check member-bearer=m26
 first POST /api/updates/check revoked-bearer=m27
-first HEAD /api/updates/check owner-cookie=m230
-first HEAD /api/updates/check admin-cookie=m231
-first HEAD /api/updates/check limited-cookie=m232
-first HEAD /api/updates/check member-cookie=m233
-first HEAD /api/updates/check admin-bearer=m234
-first HEAD /api/updates/check member-bearer=m235
-first HEAD /api/updates/check revoked-bearer=m236
+first HEAD /api/updates/check owner-cookie=m244
+first HEAD /api/updates/check admin-cookie=m245
+first HEAD /api/updates/check limited-cookie=m246
+first HEAD /api/updates/check member-cookie=m247
+first HEAD /api/updates/check admin-bearer=m248
+first HEAD /api/updates/check member-bearer=m249
+first HEAD /api/updates/check revoked-bearer=m250
 first POST /api/updates/request owner-cookie=m35
 first POST /api/updates/request admin-cookie=m36
 first POST /api/updates/request limited-cookie=m43
@@ -6013,13 +6053,13 @@ first DELETE /api/users/:id/oidc member-cookie=m24
 first DELETE /api/users/:id/oidc admin-bearer=m38
 first DELETE /api/users/:id/oidc member-bearer=m26
 first DELETE /api/users/:id/oidc revoked-bearer=m27
-first POST /api/users/:id/password owner-cookie=m237
-first POST /api/users/:id/password admin-cookie=m238
-first POST /api/users/:id/password limited-cookie=m239
-first POST /api/users/:id/password member-cookie=m240
-first POST /api/users/:id/password admin-bearer=m241
-first POST /api/users/:id/password member-bearer=m242
-first POST /api/users/:id/password revoked-bearer=m243
+first POST /api/users/:id/password owner-cookie=m251
+first POST /api/users/:id/password admin-cookie=m252
+first POST /api/users/:id/password limited-cookie=m253
+first POST /api/users/:id/password member-cookie=m254
+first POST /api/users/:id/password admin-bearer=m255
+first POST /api/users/:id/password member-bearer=m256
+first POST /api/users/:id/password revoked-bearer=m229
 first GET /api/users/oidc owner-cookie=m35
 first GET /api/users/oidc admin-cookie=m36
 first GET /api/users/oidc limited-cookie=m62
@@ -6090,7 +6130,7 @@ first GET /api/v1/contacts member-cookie=m24
 first GET /api/v1/contacts admin-bearer=m25
 first GET /api/v1/contacts member-bearer=m26
 first GET /api/v1/contacts revoked-bearer=m27
-first GET /api/v1/contacts key-read=m244
+first GET /api/v1/contacts key-read=m257
 first GET /api/v1/contacts key-write=m22
 first GET /api/v1/contacts key-member=m24
 first HEAD /api/v1/contacts owner-cookie=m28
@@ -6100,7 +6140,7 @@ first HEAD /api/v1/contacts member-cookie=m31
 first HEAD /api/v1/contacts admin-bearer=m32
 first HEAD /api/v1/contacts member-bearer=m33
 first HEAD /api/v1/contacts revoked-bearer=m34
-first HEAD /api/v1/contacts key-read=m245
+first HEAD /api/v1/contacts key-read=m258
 first HEAD /api/v1/contacts key-write=m29
 first HEAD /api/v1/contacts key-member=m31
 first GET /api/v1/contacts/:id owner-cookie=m21
@@ -6110,7 +6150,7 @@ first GET /api/v1/contacts/:id member-cookie=m24
 first GET /api/v1/contacts/:id admin-bearer=m25
 first GET /api/v1/contacts/:id member-bearer=m26
 first GET /api/v1/contacts/:id revoked-bearer=m27
-first GET /api/v1/contacts/:id key-read=m244
+first GET /api/v1/contacts/:id key-read=m257
 first GET /api/v1/contacts/:id key-write=m22
 first GET /api/v1/contacts/:id key-member=m24
 first HEAD /api/v1/contacts/:id owner-cookie=m28
@@ -6120,7 +6160,7 @@ first HEAD /api/v1/contacts/:id member-cookie=m31
 first HEAD /api/v1/contacts/:id admin-bearer=m32
 first HEAD /api/v1/contacts/:id member-bearer=m33
 first HEAD /api/v1/contacts/:id revoked-bearer=m34
-first HEAD /api/v1/contacts/:id key-read=m245
+first HEAD /api/v1/contacts/:id key-read=m258
 first HEAD /api/v1/contacts/:id key-write=m29
 first HEAD /api/v1/contacts/:id key-member=m31
 first POST /api/v1/documents/chromium/convert/:source owner-cookie=m45
@@ -6170,7 +6210,7 @@ first POST /api/v1/documents/pdfengines/bookmarks/read member-cookie=m24
 first POST /api/v1/documents/pdfengines/bookmarks/read admin-bearer=m25
 first POST /api/v1/documents/pdfengines/bookmarks/read member-bearer=m26
 first POST /api/v1/documents/pdfengines/bookmarks/read revoked-bearer=m27
-first POST /api/v1/documents/pdfengines/bookmarks/read key-read=m244
+first POST /api/v1/documents/pdfengines/bookmarks/read key-read=m257
 first POST /api/v1/documents/pdfengines/bookmarks/read key-write=m22
 first POST /api/v1/documents/pdfengines/bookmarks/read key-write-area=m22
 first POST /api/v1/documents/pdfengines/bookmarks/read key-member=m24
@@ -6191,19 +6231,19 @@ first POST /api/v1/documents/pdfengines/metadata/read member-cookie=m24
 first POST /api/v1/documents/pdfengines/metadata/read admin-bearer=m25
 first POST /api/v1/documents/pdfengines/metadata/read member-bearer=m26
 first POST /api/v1/documents/pdfengines/metadata/read revoked-bearer=m27
-first POST /api/v1/documents/pdfengines/metadata/read key-read=m244
+first POST /api/v1/documents/pdfengines/metadata/read key-read=m257
 first POST /api/v1/documents/pdfengines/metadata/read key-write=m22
 first POST /api/v1/documents/pdfengines/metadata/read key-write-area=m22
 first POST /api/v1/documents/pdfengines/metadata/read key-member=m24
 first POST /api/v1/documents/pdfengines/metadata/write owner-cookie=m45
-first POST /api/v1/documents/pdfengines/metadata/write admin-cookie=m246
+first POST /api/v1/documents/pdfengines/metadata/write admin-cookie=m259
 first POST /api/v1/documents/pdfengines/metadata/write limited-cookie=m47
 first POST /api/v1/documents/pdfengines/metadata/write member-cookie=m24
-first POST /api/v1/documents/pdfengines/metadata/write admin-bearer=m247
+first POST /api/v1/documents/pdfengines/metadata/write admin-bearer=m260
 first POST /api/v1/documents/pdfengines/metadata/write member-bearer=m26
 first POST /api/v1/documents/pdfengines/metadata/write revoked-bearer=m27
-first POST /api/v1/documents/pdfengines/metadata/write key-write=m246
-first POST /api/v1/documents/pdfengines/metadata/write key-write-area=m246
+first POST /api/v1/documents/pdfengines/metadata/write key-write=m259
+first POST /api/v1/documents/pdfengines/metadata/write key-write-area=m259
 first POST /api/v1/documents/pdfengines/metadata/write key-member=m24
 first GET /api/v1/events owner-cookie=m21
 first GET /api/v1/events admin-cookie=m22
@@ -6212,7 +6252,7 @@ first GET /api/v1/events member-cookie=m49
 first GET /api/v1/events admin-bearer=m25
 first GET /api/v1/events member-bearer=m50
 first GET /api/v1/events revoked-bearer=m27
-first GET /api/v1/events key-read=m244
+first GET /api/v1/events key-read=m257
 first GET /api/v1/events key-write=m22
 first GET /api/v1/events key-member=m49
 first POST /api/v1/events owner-cookie=m45
@@ -6231,7 +6271,7 @@ first HEAD /api/v1/events member-cookie=m58
 first HEAD /api/v1/events admin-bearer=m32
 first HEAD /api/v1/events member-bearer=m59
 first HEAD /api/v1/events revoked-bearer=m34
-first HEAD /api/v1/events key-read=m245
+first HEAD /api/v1/events key-read=m258
 first HEAD /api/v1/events key-write=m29
 first HEAD /api/v1/events key-member=m58
 first GET /api/v1/files owner-cookie=m21
@@ -6241,7 +6281,7 @@ first GET /api/v1/files member-cookie=m49
 first GET /api/v1/files admin-bearer=m25
 first GET /api/v1/files member-bearer=m50
 first GET /api/v1/files revoked-bearer=m27
-first GET /api/v1/files key-read=m244
+first GET /api/v1/files key-read=m257
 first GET /api/v1/files key-write=m22
 first GET /api/v1/files key-write-area=m22
 first GET /api/v1/files key-member=m49
@@ -6262,7 +6302,7 @@ first HEAD /api/v1/files member-cookie=m58
 first HEAD /api/v1/files admin-bearer=m32
 first HEAD /api/v1/files member-bearer=m59
 first HEAD /api/v1/files revoked-bearer=m34
-first HEAD /api/v1/files key-read=m245
+first HEAD /api/v1/files key-read=m258
 first HEAD /api/v1/files key-write=m29
 first HEAD /api/v1/files key-write-area=m29
 first HEAD /api/v1/files key-member=m58
@@ -6273,7 +6313,7 @@ first GET /api/v1/files/:id member-cookie=m129
 first GET /api/v1/files/:id admin-bearer=m130
 first GET /api/v1/files/:id member-bearer=m131
 first GET /api/v1/files/:id revoked-bearer=m132
-first GET /api/v1/files/:id key-read=m248
+first GET /api/v1/files/:id key-read=m261
 first GET /api/v1/files/:id key-write=m127
 first GET /api/v1/files/:id key-write-area=m127
 first GET /api/v1/files/:id key-member=m129
@@ -6284,7 +6324,7 @@ first HEAD /api/v1/files/:id member-cookie=m137
 first HEAD /api/v1/files/:id admin-bearer=m138
 first HEAD /api/v1/files/:id member-bearer=m139
 first HEAD /api/v1/files/:id revoked-bearer=m140
-first HEAD /api/v1/files/:id key-read=m249
+first HEAD /api/v1/files/:id key-read=m262
 first HEAD /api/v1/files/:id key-write=m135
 first HEAD /api/v1/files/:id key-write-area=m135
 first HEAD /api/v1/files/:id key-member=m137
@@ -6295,7 +6335,7 @@ first GET /api/v1/files/:id/download member-cookie=m129
 first GET /api/v1/files/:id/download admin-bearer=m130
 first GET /api/v1/files/:id/download member-bearer=m131
 first GET /api/v1/files/:id/download revoked-bearer=m132
-first GET /api/v1/files/:id/download key-read=m248
+first GET /api/v1/files/:id/download key-read=m261
 first GET /api/v1/files/:id/download key-write=m127
 first GET /api/v1/files/:id/download key-write-area=m127
 first GET /api/v1/files/:id/download key-member=m129
@@ -6306,7 +6346,7 @@ first HEAD /api/v1/files/:id/download member-cookie=m137
 first HEAD /api/v1/files/:id/download admin-bearer=m138
 first HEAD /api/v1/files/:id/download member-bearer=m139
 first HEAD /api/v1/files/:id/download revoked-bearer=m140
-first HEAD /api/v1/files/:id/download key-read=m249
+first HEAD /api/v1/files/:id/download key-read=m262
 first HEAD /api/v1/files/:id/download key-write=m135
 first HEAD /api/v1/files/:id/download key-write-area=m135
 first HEAD /api/v1/files/:id/download key-member=m137
@@ -6317,7 +6357,7 @@ first GET /api/v1/journal member-cookie=m24
 first GET /api/v1/journal admin-bearer=m25
 first GET /api/v1/journal member-bearer=m26
 first GET /api/v1/journal revoked-bearer=m27
-first GET /api/v1/journal key-read=m244
+first GET /api/v1/journal key-read=m257
 first GET /api/v1/journal key-write=m22
 first GET /api/v1/journal key-member=m24
 first POST /api/v1/journal owner-cookie=m45
@@ -6336,7 +6376,7 @@ first HEAD /api/v1/journal member-cookie=m31
 first HEAD /api/v1/journal admin-bearer=m32
 first HEAD /api/v1/journal member-bearer=m33
 first HEAD /api/v1/journal revoked-bearer=m34
-first HEAD /api/v1/journal key-read=m245
+first HEAD /api/v1/journal key-read=m258
 first HEAD /api/v1/journal key-write=m29
 first HEAD /api/v1/journal key-member=m31
 first GET /api/v1/nodes/:id owner-cookie=m21
@@ -6346,7 +6386,7 @@ first GET /api/v1/nodes/:id member-cookie=m49
 first GET /api/v1/nodes/:id admin-bearer=m25
 first GET /api/v1/nodes/:id member-bearer=m50
 first GET /api/v1/nodes/:id revoked-bearer=m27
-first GET /api/v1/nodes/:id key-read=m244
+first GET /api/v1/nodes/:id key-read=m257
 first GET /api/v1/nodes/:id key-write=m22
 first GET /api/v1/nodes/:id key-member=m49
 first HEAD /api/v1/nodes/:id owner-cookie=m28
@@ -6356,7 +6396,7 @@ first HEAD /api/v1/nodes/:id member-cookie=m58
 first HEAD /api/v1/nodes/:id admin-bearer=m32
 first HEAD /api/v1/nodes/:id member-bearer=m59
 first HEAD /api/v1/nodes/:id revoked-bearer=m34
-first HEAD /api/v1/nodes/:id key-read=m245
+first HEAD /api/v1/nodes/:id key-read=m258
 first HEAD /api/v1/nodes/:id key-write=m29
 first HEAD /api/v1/nodes/:id key-member=m58
 first GET /api/v1/notes owner-cookie=m21
@@ -6366,7 +6406,7 @@ first GET /api/v1/notes member-cookie=m49
 first GET /api/v1/notes admin-bearer=m25
 first GET /api/v1/notes member-bearer=m50
 first GET /api/v1/notes revoked-bearer=m27
-first GET /api/v1/notes key-read=m244
+first GET /api/v1/notes key-read=m257
 first GET /api/v1/notes key-write=m22
 first GET /api/v1/notes key-member=m49
 first POST /api/v1/notes owner-cookie=m45
@@ -6385,7 +6425,7 @@ first HEAD /api/v1/notes member-cookie=m58
 first HEAD /api/v1/notes admin-bearer=m32
 first HEAD /api/v1/notes member-bearer=m59
 first HEAD /api/v1/notes revoked-bearer=m34
-first HEAD /api/v1/notes key-read=m245
+first HEAD /api/v1/notes key-read=m258
 first HEAD /api/v1/notes key-write=m29
 first HEAD /api/v1/notes key-member=m58
 first GET /api/v1/notes/:id owner-cookie=m21
@@ -6395,7 +6435,7 @@ first GET /api/v1/notes/:id member-cookie=m49
 first GET /api/v1/notes/:id admin-bearer=m25
 first GET /api/v1/notes/:id member-bearer=m50
 first GET /api/v1/notes/:id revoked-bearer=m27
-first GET /api/v1/notes/:id key-read=m244
+first GET /api/v1/notes/:id key-read=m257
 first GET /api/v1/notes/:id key-write=m22
 first GET /api/v1/notes/:id key-member=m49
 first HEAD /api/v1/notes/:id owner-cookie=m28
@@ -6405,7 +6445,7 @@ first HEAD /api/v1/notes/:id member-cookie=m58
 first HEAD /api/v1/notes/:id admin-bearer=m32
 first HEAD /api/v1/notes/:id member-bearer=m59
 first HEAD /api/v1/notes/:id revoked-bearer=m34
-first HEAD /api/v1/notes/:id key-read=m245
+first HEAD /api/v1/notes/:id key-read=m258
 first HEAD /api/v1/notes/:id key-write=m29
 first HEAD /api/v1/notes/:id key-member=m58
 first GET /api/v1/pages owner-cookie=m21
@@ -6415,9 +6455,9 @@ first GET /api/v1/pages member-cookie=m49
 first GET /api/v1/pages admin-bearer=m25
 first GET /api/v1/pages member-bearer=m50
 first GET /api/v1/pages revoked-bearer=m27
-first GET /api/v1/pages key-read=m244
+first GET /api/v1/pages key-read=m257
 first GET /api/v1/pages key-write=m22
-first GET /api/v1/pages key-read-area=m244
+first GET /api/v1/pages key-read-area=m257
 first GET /api/v1/pages key-write-area=m22
 first GET /api/v1/pages key-member=m49
 first POST /api/v1/pages owner-cookie=m45
@@ -6437,9 +6477,9 @@ first HEAD /api/v1/pages member-cookie=m58
 first HEAD /api/v1/pages admin-bearer=m32
 first HEAD /api/v1/pages member-bearer=m59
 first HEAD /api/v1/pages revoked-bearer=m34
-first HEAD /api/v1/pages key-read=m245
+first HEAD /api/v1/pages key-read=m258
 first HEAD /api/v1/pages key-write=m29
-first HEAD /api/v1/pages key-read-area=m245
+first HEAD /api/v1/pages key-read-area=m258
 first HEAD /api/v1/pages key-write-area=m29
 first HEAD /api/v1/pages key-member=m58
 first GET /api/v1/pages/:id owner-cookie=m21
@@ -6449,9 +6489,9 @@ first GET /api/v1/pages/:id member-cookie=m49
 first GET /api/v1/pages/:id admin-bearer=m25
 first GET /api/v1/pages/:id member-bearer=m50
 first GET /api/v1/pages/:id revoked-bearer=m27
-first GET /api/v1/pages/:id key-read=m244
+first GET /api/v1/pages/:id key-read=m257
 first GET /api/v1/pages/:id key-write=m22
-first GET /api/v1/pages/:id key-read-area=m244
+first GET /api/v1/pages/:id key-read-area=m257
 first GET /api/v1/pages/:id key-write-area=m22
 first GET /api/v1/pages/:id key-member=m49
 first PATCH /api/v1/pages/:id owner-cookie=m188
@@ -6468,31 +6508,31 @@ first HEAD /api/v1/pages/:id member-cookie=m58
 first HEAD /api/v1/pages/:id admin-bearer=m32
 first HEAD /api/v1/pages/:id member-bearer=m59
 first HEAD /api/v1/pages/:id revoked-bearer=m34
-first HEAD /api/v1/pages/:id key-read=m245
+first HEAD /api/v1/pages/:id key-read=m258
 first HEAD /api/v1/pages/:id key-write=m29
-first HEAD /api/v1/pages/:id key-read-area=m245
+first HEAD /api/v1/pages/:id key-read-area=m258
 first HEAD /api/v1/pages/:id key-write-area=m29
 first HEAD /api/v1/pages/:id key-member=m58
-first GET /api/v1/search owner-cookie=m21
-first GET /api/v1/search admin-cookie=m22
-first GET /api/v1/search limited-cookie=m23
-first GET /api/v1/search member-cookie=m49
-first GET /api/v1/search admin-bearer=m25
-first GET /api/v1/search member-bearer=m50
-first GET /api/v1/search revoked-bearer=m27
-first GET /api/v1/search key-read=m244
-first GET /api/v1/search key-write=m22
-first GET /api/v1/search key-member=m49
-first HEAD /api/v1/search owner-cookie=m28
-first HEAD /api/v1/search admin-cookie=m29
-first HEAD /api/v1/search limited-cookie=m30
-first HEAD /api/v1/search member-cookie=m58
-first HEAD /api/v1/search admin-bearer=m32
-first HEAD /api/v1/search member-bearer=m59
-first HEAD /api/v1/search revoked-bearer=m34
-first HEAD /api/v1/search key-read=m245
-first HEAD /api/v1/search key-write=m29
-first HEAD /api/v1/search key-member=m58
+first GET /api/v1/search owner-cookie=m223
+first GET /api/v1/search admin-cookie=m224
+first GET /api/v1/search limited-cookie=m225
+first GET /api/v1/search member-cookie=m226
+first GET /api/v1/search admin-bearer=m227
+first GET /api/v1/search member-bearer=m228
+first GET /api/v1/search revoked-bearer=m229
+first GET /api/v1/search key-read=m263
+first GET /api/v1/search key-write=m264
+first GET /api/v1/search key-member=m265
+first HEAD /api/v1/search owner-cookie=m230
+first HEAD /api/v1/search admin-cookie=m231
+first HEAD /api/v1/search limited-cookie=m232
+first HEAD /api/v1/search member-cookie=m233
+first HEAD /api/v1/search admin-bearer=m234
+first HEAD /api/v1/search member-bearer=m235
+first HEAD /api/v1/search revoked-bearer=m236
+first HEAD /api/v1/search key-read=m266
+first HEAD /api/v1/search key-write=m267
+first HEAD /api/v1/search key-member=m268
 first GET /api/v1/tables owner-cookie=m21
 first GET /api/v1/tables admin-cookie=m22
 first GET /api/v1/tables limited-cookie=m23
@@ -6500,7 +6540,7 @@ first GET /api/v1/tables member-cookie=m49
 first GET /api/v1/tables admin-bearer=m25
 first GET /api/v1/tables member-bearer=m50
 first GET /api/v1/tables revoked-bearer=m27
-first GET /api/v1/tables key-read=m244
+first GET /api/v1/tables key-read=m257
 first GET /api/v1/tables key-write=m22
 first GET /api/v1/tables key-member=m49
 first HEAD /api/v1/tables owner-cookie=m28
@@ -6510,7 +6550,7 @@ first HEAD /api/v1/tables member-cookie=m58
 first HEAD /api/v1/tables admin-bearer=m32
 first HEAD /api/v1/tables member-bearer=m59
 first HEAD /api/v1/tables revoked-bearer=m34
-first HEAD /api/v1/tables key-read=m245
+first HEAD /api/v1/tables key-read=m258
 first HEAD /api/v1/tables key-write=m29
 first HEAD /api/v1/tables key-member=m58
 first GET /api/v1/tables/:id owner-cookie=m21
@@ -6520,7 +6560,7 @@ first GET /api/v1/tables/:id member-cookie=m49
 first GET /api/v1/tables/:id admin-bearer=m25
 first GET /api/v1/tables/:id member-bearer=m50
 first GET /api/v1/tables/:id revoked-bearer=m27
-first GET /api/v1/tables/:id key-read=m244
+first GET /api/v1/tables/:id key-read=m257
 first GET /api/v1/tables/:id key-write=m22
 first GET /api/v1/tables/:id key-member=m49
 first HEAD /api/v1/tables/:id owner-cookie=m28
@@ -6530,7 +6570,7 @@ first HEAD /api/v1/tables/:id member-cookie=m58
 first HEAD /api/v1/tables/:id admin-bearer=m32
 first HEAD /api/v1/tables/:id member-bearer=m59
 first HEAD /api/v1/tables/:id revoked-bearer=m34
-first HEAD /api/v1/tables/:id key-read=m245
+first HEAD /api/v1/tables/:id key-read=m258
 first HEAD /api/v1/tables/:id key-write=m29
 first HEAD /api/v1/tables/:id key-member=m58
 first POST /api/v1/tables/:id/commit owner-cookie=m45
@@ -6549,7 +6589,7 @@ first GET /api/v1/tables/:id/rows member-cookie=m49
 first GET /api/v1/tables/:id/rows admin-bearer=m25
 first GET /api/v1/tables/:id/rows member-bearer=m50
 first GET /api/v1/tables/:id/rows revoked-bearer=m27
-first GET /api/v1/tables/:id/rows key-read=m244
+first GET /api/v1/tables/:id/rows key-read=m257
 first GET /api/v1/tables/:id/rows key-write=m22
 first GET /api/v1/tables/:id/rows key-member=m49
 first POST /api/v1/tables/:id/rows owner-cookie=m45
@@ -6568,7 +6608,7 @@ first HEAD /api/v1/tables/:id/rows member-cookie=m58
 first HEAD /api/v1/tables/:id/rows admin-bearer=m32
 first HEAD /api/v1/tables/:id/rows member-bearer=m59
 first HEAD /api/v1/tables/:id/rows revoked-bearer=m34
-first HEAD /api/v1/tables/:id/rows key-read=m245
+first HEAD /api/v1/tables/:id/rows key-read=m258
 first HEAD /api/v1/tables/:id/rows key-write=m29
 first HEAD /api/v1/tables/:id/rows key-member=m58
 first PATCH /api/v1/tables/:id/rows/:rowId owner-cookie=m45
@@ -6587,7 +6627,7 @@ first GET /api/v1/tasks member-cookie=m49
 first GET /api/v1/tasks admin-bearer=m25
 first GET /api/v1/tasks member-bearer=m50
 first GET /api/v1/tasks revoked-bearer=m27
-first GET /api/v1/tasks key-read=m244
+first GET /api/v1/tasks key-read=m257
 first GET /api/v1/tasks key-write=m22
 first GET /api/v1/tasks key-member=m49
 first POST /api/v1/tasks owner-cookie=m45
@@ -6606,7 +6646,7 @@ first HEAD /api/v1/tasks member-cookie=m58
 first HEAD /api/v1/tasks admin-bearer=m32
 first HEAD /api/v1/tasks member-bearer=m59
 first HEAD /api/v1/tasks revoked-bearer=m34
-first HEAD /api/v1/tasks key-read=m245
+first HEAD /api/v1/tasks key-read=m258
 first HEAD /api/v1/tasks key-write=m29
 first HEAD /api/v1/tasks key-member=m58
 first GET /api/v1/tasks/:id owner-cookie=m21
@@ -6616,7 +6656,7 @@ first GET /api/v1/tasks/:id member-cookie=m49
 first GET /api/v1/tasks/:id admin-bearer=m25
 first GET /api/v1/tasks/:id member-bearer=m50
 first GET /api/v1/tasks/:id revoked-bearer=m27
-first GET /api/v1/tasks/:id key-read=m244
+first GET /api/v1/tasks/:id key-read=m257
 first GET /api/v1/tasks/:id key-write=m22
 first GET /api/v1/tasks/:id key-member=m49
 first PATCH /api/v1/tasks/:id owner-cookie=m45
@@ -6635,7 +6675,7 @@ first HEAD /api/v1/tasks/:id member-cookie=m58
 first HEAD /api/v1/tasks/:id admin-bearer=m32
 first HEAD /api/v1/tasks/:id member-bearer=m59
 first HEAD /api/v1/tasks/:id revoked-bearer=m34
-first HEAD /api/v1/tasks/:id key-read=m245
+first HEAD /api/v1/tasks/:id key-read=m258
 first HEAD /api/v1/tasks/:id key-write=m29
 first HEAD /api/v1/tasks/:id key-member=m58
 first GET /api/v1/whoami owner-cookie=m1
@@ -6645,11 +6685,11 @@ first GET /api/v1/whoami member-cookie=m4
 first GET /api/v1/whoami admin-bearer=m5
 first GET /api/v1/whoami member-bearer=m6
 first GET /api/v1/whoami revoked-bearer=m7
-first GET /api/v1/whoami key-read=m250
-first GET /api/v1/whoami key-write=m251
-first GET /api/v1/whoami key-read-area=m250
-first GET /api/v1/whoami key-write-area=m251
-first GET /api/v1/whoami key-member=m252
+first GET /api/v1/whoami key-read=m269
+first GET /api/v1/whoami key-write=m270
+first GET /api/v1/whoami key-read-area=m269
+first GET /api/v1/whoami key-write-area=m270
+first GET /api/v1/whoami key-member=m271
 first HEAD /api/v1/whoami owner-cookie=m14
 first HEAD /api/v1/whoami admin-cookie=m15
 first HEAD /api/v1/whoami limited-cookie=m16
@@ -6657,11 +6697,11 @@ first HEAD /api/v1/whoami member-cookie=m17
 first HEAD /api/v1/whoami admin-bearer=m18
 first HEAD /api/v1/whoami member-bearer=m19
 first HEAD /api/v1/whoami revoked-bearer=m20
-first HEAD /api/v1/whoami key-read=m253
-first HEAD /api/v1/whoami key-write=m254
-first HEAD /api/v1/whoami key-read-area=m253
-first HEAD /api/v1/whoami key-write-area=m254
-first HEAD /api/v1/whoami key-member=m255
+first HEAD /api/v1/whoami key-read=m272
+first HEAD /api/v1/whoami key-write=m273
+first HEAD /api/v1/whoami key-read-area=m272
+first HEAD /api/v1/whoami key-write-area=m273
+first HEAD /api/v1/whoami key-member=m274
 first GET /api/workspaces owner-cookie=m1
 first GET /api/workspaces admin-cookie=m2
 first GET /api/workspaces limited-cookie=m3
@@ -10041,16 +10081,16 @@ more POST /api/screenshots bumped-cookie=m27
 more POST /api/screenshots gone-cookie=m27
 more POST /api/screenshots rotated-bearer=m27
 more POST /api/screenshots expired-bearer=m27
-more GET /api/search disabled-cookie=m27
-more GET /api/search bumped-cookie=m27
-more GET /api/search gone-cookie=m27
-more GET /api/search rotated-bearer=m27
-more GET /api/search expired-bearer=m27
-more HEAD /api/search disabled-cookie=m34
-more HEAD /api/search bumped-cookie=m34
-more HEAD /api/search gone-cookie=m34
-more HEAD /api/search rotated-bearer=m34
-more HEAD /api/search expired-bearer=m34
+more GET /api/search disabled-cookie=m229
+more GET /api/search bumped-cookie=m229
+more GET /api/search gone-cookie=m229
+more GET /api/search rotated-bearer=m229
+more GET /api/search expired-bearer=m229
+more HEAD /api/search disabled-cookie=m236
+more HEAD /api/search bumped-cookie=m236
+more HEAD /api/search gone-cookie=m236
+more HEAD /api/search rotated-bearer=m236
+more HEAD /api/search expired-bearer=m236
 more GET /api/secrets disabled-cookie=m27
 more GET /api/secrets bumped-cookie=m27
 more GET /api/secrets gone-cookie=m27
@@ -10121,6 +10161,21 @@ more HEAD /api/services/status bumped-cookie=m34
 more HEAD /api/services/status gone-cookie=m34
 more HEAD /api/services/status rotated-bearer=m34
 more HEAD /api/services/status expired-bearer=m34
+more GET /api/settings/search-languages disabled-cookie=m27
+more GET /api/settings/search-languages bumped-cookie=m27
+more GET /api/settings/search-languages gone-cookie=m27
+more GET /api/settings/search-languages rotated-bearer=m27
+more GET /api/settings/search-languages expired-bearer=m27
+more PUT /api/settings/search-languages disabled-cookie=m27
+more PUT /api/settings/search-languages bumped-cookie=m27
+more PUT /api/settings/search-languages gone-cookie=m27
+more PUT /api/settings/search-languages rotated-bearer=m27
+more PUT /api/settings/search-languages expired-bearer=m27
+more HEAD /api/settings/search-languages disabled-cookie=m34
+more HEAD /api/settings/search-languages bumped-cookie=m34
+more HEAD /api/settings/search-languages gone-cookie=m34
+more HEAD /api/settings/search-languages rotated-bearer=m34
+more HEAD /api/settings/search-languages expired-bearer=m34
 more GET /api/settings/worker-groups disabled-cookie=m27
 more GET /api/settings/worker-groups bumped-cookie=m27
 more GET /api/settings/worker-groups gone-cookie=m27
@@ -10761,21 +10816,21 @@ more HEAD /api/updates bumped-cookie=m34
 more HEAD /api/updates gone-cookie=m34
 more HEAD /api/updates rotated-bearer=m34
 more HEAD /api/updates expired-bearer=m34
-more GET /api/updates/check disabled-cookie=m229
-more GET /api/updates/check bumped-cookie=m229
-more GET /api/updates/check gone-cookie=m229
-more GET /api/updates/check rotated-bearer=m229
-more GET /api/updates/check expired-bearer=m229
+more GET /api/updates/check disabled-cookie=m243
+more GET /api/updates/check bumped-cookie=m243
+more GET /api/updates/check gone-cookie=m243
+more GET /api/updates/check rotated-bearer=m243
+more GET /api/updates/check expired-bearer=m243
 more POST /api/updates/check disabled-cookie=m27
 more POST /api/updates/check bumped-cookie=m27
 more POST /api/updates/check gone-cookie=m27
 more POST /api/updates/check rotated-bearer=m27
 more POST /api/updates/check expired-bearer=m27
-more HEAD /api/updates/check disabled-cookie=m236
-more HEAD /api/updates/check bumped-cookie=m236
-more HEAD /api/updates/check gone-cookie=m236
-more HEAD /api/updates/check rotated-bearer=m236
-more HEAD /api/updates/check expired-bearer=m236
+more HEAD /api/updates/check disabled-cookie=m250
+more HEAD /api/updates/check bumped-cookie=m250
+more HEAD /api/updates/check gone-cookie=m250
+more HEAD /api/updates/check rotated-bearer=m250
+more HEAD /api/updates/check expired-bearer=m250
 more POST /api/updates/request disabled-cookie=m27
 more POST /api/updates/request bumped-cookie=m27
 more POST /api/updates/request gone-cookie=m27
@@ -10861,11 +10916,11 @@ more DELETE /api/users/:id/oidc bumped-cookie=m27
 more DELETE /api/users/:id/oidc gone-cookie=m27
 more DELETE /api/users/:id/oidc rotated-bearer=m27
 more DELETE /api/users/:id/oidc expired-bearer=m27
-more POST /api/users/:id/password disabled-cookie=m243
-more POST /api/users/:id/password bumped-cookie=m243
-more POST /api/users/:id/password gone-cookie=m243
-more POST /api/users/:id/password rotated-bearer=m243
-more POST /api/users/:id/password expired-bearer=m243
+more POST /api/users/:id/password disabled-cookie=m229
+more POST /api/users/:id/password bumped-cookie=m229
+more POST /api/users/:id/password gone-cookie=m229
+more POST /api/users/:id/password rotated-bearer=m229
+more POST /api/users/:id/password expired-bearer=m229
 more GET /api/users/oidc disabled-cookie=m27
 more GET /api/users/oidc bumped-cookie=m27
 more GET /api/users/oidc gone-cookie=m27
@@ -11101,16 +11156,16 @@ more HEAD /api/v1/pages/:id bumped-cookie=m34
 more HEAD /api/v1/pages/:id gone-cookie=m34
 more HEAD /api/v1/pages/:id rotated-bearer=m34
 more HEAD /api/v1/pages/:id expired-bearer=m34
-more GET /api/v1/search disabled-cookie=m27
-more GET /api/v1/search bumped-cookie=m27
-more GET /api/v1/search gone-cookie=m27
-more GET /api/v1/search rotated-bearer=m27
-more GET /api/v1/search expired-bearer=m27
-more HEAD /api/v1/search disabled-cookie=m34
-more HEAD /api/v1/search bumped-cookie=m34
-more HEAD /api/v1/search gone-cookie=m34
-more HEAD /api/v1/search rotated-bearer=m34
-more HEAD /api/v1/search expired-bearer=m34
+more GET /api/v1/search disabled-cookie=m229
+more GET /api/v1/search bumped-cookie=m229
+more GET /api/v1/search gone-cookie=m229
+more GET /api/v1/search rotated-bearer=m229
+more GET /api/v1/search expired-bearer=m229
+more HEAD /api/v1/search disabled-cookie=m236
+more HEAD /api/v1/search bumped-cookie=m236
+more HEAD /api/v1/search gone-cookie=m236
+more HEAD /api/v1/search rotated-bearer=m236
+more HEAD /api/v1/search expired-bearer=m236
 more GET /api/v1/tables disabled-cookie=m27
 more GET /api/v1/tables bumped-cookie=m27
 more GET /api/v1/tables gone-cookie=m27

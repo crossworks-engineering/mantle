@@ -627,31 +627,17 @@ export async function savePreferencesFor(
 
 /**
  * Set the brain's search languages (@mantle/search search-languages.ts) on
- * the owner's row, the one the search reads (its `ownerId`): one jsonb
- * merge of the one key, so nothing else on the row moves. Throws
- * InputError on a list that is not one (the caller's 400). Returns the
- * list as stored.
+ * the owner's row, the one the search reads (its `ownerId`): the one key
+ * merged by `updateProfilePreferences`, so nothing else on the row moves.
+ * Throws InputError on a list that is not one (the caller's 400). Returns
+ * the list as stored.
  */
 export async function saveSearchLanguages(ownerId: string, languages: unknown): Promise<string[]> {
   const parsed = parseSearchLanguages(languages);
   if (!parsed.ok) throw new InputError(parsed.error);
-  // The row exists after a read (made on the first one).
-  await loadProfilePreferences(ownerId);
-  const merge = JSON.stringify({ [SEARCH_LANGUAGES_KEY]: parsed.languages });
-  const written = await profileWrite(() =>
-    db
-      .update(profiles)
-      .set({ preferences: sql`${profiles.preferences} || ${merge}::jsonb`, updatedAt: new Date() })
-      .where(eq(profiles.userId, ownerId))
-      .returning({ userId: profiles.userId }),
-  );
-  // The row rule writes the brain's row only for a scope with the Settings
-  // area: a write it filtered out is said, never reported as done.
-  if (written.length === 0) {
-    throw new InputError(
-      "The search languages were not saved: this login may not change the brain's settings. Ask an Admin user with the Settings area.",
-    );
-  }
+  await updateProfilePreferences(ownerId, {
+    [SEARCH_LANGUAGES_KEY]: parsed.languages,
+  } as Partial<ProfilePreferences>);
   return parsed.languages;
 }
 

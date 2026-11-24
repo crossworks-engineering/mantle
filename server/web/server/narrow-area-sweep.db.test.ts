@@ -753,6 +753,7 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'PATCH /api/telegram/chats/:id': ['telegram-responder'],
     'POST /api/tool-groups': ['tool-group-grant'],
     'POST /api/tools': ['tool-config'],
+    'PUT /api/settings/search-languages': ['profile-row'],
     'PUT /api/tools/settings': ['profile-row'],
     'PUT /api/tools/:id/external-access': ['tool-config'],
     'POST /api/users': ['login-credential'],

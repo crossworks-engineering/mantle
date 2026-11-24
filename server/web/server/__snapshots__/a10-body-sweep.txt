@@ -3030,3 +3030,10 @@ POST /api/fleet/keys/test owner empty => 404 application/json {"error":"not foun
 POST /api/fleet/keys/test owner nul => 404 application/json {"error":"not found"}
 POST /api/fleet/keys/test owner array => 404 application/json {"error":"not found"}
 POST /api/fleet/keys/test owner chunked => 404 application/json {"error":"not found"}
+# 2026-11-24 (search languages, plan page 0a1eab17, docs/memory.md 4.1a): PUT /api/settings/search-languages had no route on main; its cells are the branch's own answers (no valid body is kept for it: the sweep's body names no `languages`, so valid, empty and nul are the 400 of its body; narrow-area-sweep.entries.ts drives a real write).
+PUT /api/settings/search-languages owner valid => 400 application/json {"error":"languages: Invalid input: expected array, received undefined"}
+PUT /api/settings/search-languages owner malformed => 400 application/json {"error":"invalid JSON"}
+PUT /api/settings/search-languages owner empty => 400 application/json {"error":"languages: Invalid input: expected array, received undefined"}
+PUT /api/settings/search-languages owner nul => 400 application/json {"error":"languages: Invalid input: expected array, received undefined"}
+PUT /api/settings/search-languages owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+PUT /api/settings/search-languages owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
