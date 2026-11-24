@@ -1398,9 +1398,9 @@ cutter then:
   pieces are left out and listed (`notSent`), and so are pieces past 400 a
   page.
 
-The answer holds, for each page asked for: its status (`ok`, `no_picture`,
-`refused` for a white or too large picture or when the cutter had no time
-left, `over_budget` when the pictures
+The answer holds, for each page asked for: its status (`ok`, `no_picture`
+when the page was not drawn or the job had no time left to cut it, `refused`
+for a white or too large picture, `over_budget` when the pictures
 before it used the answer's 64 MB), the resolution, each piece's box on the
 page and the picture it is in, and the pictures. The client checks that every
 piece names a picture of its own page before a model sees any of it.

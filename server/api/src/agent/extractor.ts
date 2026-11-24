@@ -44,7 +44,7 @@ import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
 import { isDocumentTitleMention } from '@mantle/content';
 import { readByStampOf, withParserScope } from '@mantle/files';
-import { noteReadCut, withReadCutSink } from '@mantle/files/read-cut-sink';
+import { currentReadCuts, noteReadCut, withReadCutSink } from '@mantle/files/read-cut-sink';
 import { notifyReadPartial, readCutStampSql } from './extract/read-cut-stamp';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { reusesTableSummary, runExtractorModel } from './extract/model';
@@ -120,7 +120,12 @@ async function extractAdmitted(
       : undefined;
   // Past the store's limit the stored text is cut (the passages below
   // cover all of it): said, so the file shows as read in part.
-  if (persistedText !== undefined && rawBody.length > TEXT_STORE_MAX_CHARS) {
+  // Not again when the read said it (the sketch read, as it stored its text).
+  if (
+    persistedText !== undefined &&
+    rawBody.length > TEXT_STORE_MAX_CHARS &&
+    !Object.hasOwn(currentReadCuts(), 'text_store')
+  ) {
     noteReadCut('text_store', {
       what: 'characters',
       read: TEXT_STORE_MAX_CHARS,

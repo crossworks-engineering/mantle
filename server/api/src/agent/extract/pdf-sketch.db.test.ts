@@ -360,18 +360,10 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       { ran: true, text: '3: U2-E-12A' },
     ];
     const out = await read(file.id);
-    // The parser for the page facts and the pieces, the model once a
-    // picture. The page that could not be drawn is asked once more as the
-    // first page of a batch of its own. After the write, Site tags (on in
-    // every workspace) runs its one model-free job on the new Texts, and
-    // Links one on the Pages.
-    expect(parserCalls).toEqual([
-      '/pdf/drawing',
-      '/pdf/pieces',
-      '/pdf/pieces',
-      'site-tags 1',
-      'links 1',
-    ]);
+    // The parser twice (the page facts, the pieces), the model once a
+    // picture. After the write, Site tags (on in every workspace) runs its
+    // one model-free job on the new Texts, and Links one on the Pages.
+    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces', 'site-tags 1', 'links 1']);
     expect(h.vision.map((v) => v.filename.replace(/^.*#/, ''))).toEqual([
       'page-1-part-1.png',
       'page-1-part-2.png',
@@ -696,10 +688,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       { ran: true, text: '3: FT-101' },
     ];
     expect(await read(file.id)).not.toBeNull();
-    // The page that could not be drawn starts a batch of its own after the
-    // calls: a parser job after paid calls, whose failure pays none twice
-    // (the answer cache).
-    expect(h.order).toEqual(['/pdf/drawing', '/pdf/pieces', 'vision', 'vision', '/pdf/pieces']);
+    expect(h.order).toEqual(['/pdf/drawing', '/pdf/pieces', 'vision', 'vision']);
   });
 
   it('a parser failure comes before the calls: nothing paid, nothing written', async () => {

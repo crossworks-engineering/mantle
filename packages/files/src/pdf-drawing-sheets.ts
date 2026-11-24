@@ -790,7 +790,7 @@ export function pdfDrawingSheets(
                 ` not read why), Pages says which (Vision status: time, the read's time ran out;` +
                 ` not_read, a call before it did not run; past_page_cap; no_picture, refused,` +
                 ` over_budget, the page could not be cut). A read again of the file reads those` +
-                ` its time or a failed call left.`
+                ` its time, a failed call or a page not drawn (no_picture) left.`
               : '') +
             ` A word of it has` +
             ` the box of the piece it was read in, not its own, its Line is the number of that` +

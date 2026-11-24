@@ -232,7 +232,7 @@ export async function sketchIngestPdfNode(
       const late = () => run.spent >= budget;
       const read: SketchRead['pages'] = [];
       /** The answers of one page's pictures, in order; null for a picture
-       *  not asked (the read stopped). */
+       *  with no answer (its call did not run, or the read stopped). */
       const askPage = async (page: SketchPagePieces): Promise<(string | null)[]> => {
         const answers: (string | null)[] = [];
         for (const [k, png] of page.pictures.entries()) {
@@ -352,12 +352,10 @@ export async function sketchIngestPdfNode(
               at += batch.length;
               continue;
             }
-            // The parser's job ran out of time to draw the rest (`no_picture`)
-            // or of room for its pictures (`over_budget`): they start the next
-            // batch. A first page so is stated, alone.
-            const over = pieces.findIndex(
-              (p) => p.status === 'over_budget' || p.status === 'no_picture',
-            );
+            // Pages whose pictures did not fit after the pages before them
+            // (`over_budget`) start the next batch; a first page so is
+            // stated, alone.
+            const over = pieces.findIndex((p) => p.status === 'over_budget');
             const taken = over < 0 ? pieces.length : Math.max(over, 1);
             at += taken;
             for (const page of pieces.slice(0, taken)) {

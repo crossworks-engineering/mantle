@@ -494,9 +494,11 @@ What it costs, and when it runs:
   read.
 - Nothing is left out in silence. A scan page not read whole has its reason
   in `Pages` (`Vision status`): `past_page_cap` (past the 500), `time` (the
-  read's time ran out before it), `not_read` (a call before it, or for one of
-  its pictures, did not run), `no_picture`, `refused` or `over_budget` (the
-  page could not be drawn or cut). `File` holds `Scan pages read`, `Scan
+  read's time ran out before it), `not_read` (two calls in a row before it
+  did not run, or the call for one of its pictures), `no_picture` (not drawn,
+  or the parser's job had no time left to cut it), `refused` or
+  `over_budget` (the cutter refused it, or its pictures alone pass the job's
+  answer). `File` holds `Scan pages read`, `Scan
 pages past the cap`, `Scan pages not read` (all of these, the cap
   included) and `Scan pages not read why` (`time 120, not_read 2`). A file
   with a scan page not read is read in part: the cut `scan_pages` (read of
@@ -543,8 +545,8 @@ pages past the cap`, `Scan pages not read` (all of these, the cap
   is busy in a later batch makes the extract try again (the pictures read
   are kept answers, so the try again pays for none of them twice); a batch
   the parser refuses after pages were read is stated (`no_picture`) and the
-  read goes on. Pages the parser's job had no time left to draw are
-  `no_picture` and start the next batch.
+  read goes on. A page the parser's job had no time left to cut is
+  `no_picture`, so a read again cuts it.
 - The rebuild (`dwg-reindex --pdf`) asks no model, so a file it builds has no
   vision read until an extract of that file runs. A database it writes for a
   sketch kind makes the next extract of that file read the pieces (up to 4
