@@ -509,10 +509,13 @@ A brain whose documents are in other languages sets **search languages**
 (owner's word 2026-11-24, plan page 0a1eab17): a short list of codes, for
 example `es`, empty by default. With the list set, `resolveKeywordQuery`
 also takes the query's translation into each language
-([`query-translate.ts`](../packages/search/src/query-translate.ts)), picks
-each translation's rare terms by the same rule, and adds them to the one OR
-query, after the original's: the original's terms keep today's ranks and
-weights, so a row holding the query's own rarest word still leads. A
+([`query-translate.ts`](../packages/search/src/query-translate.ts)), drops
+the translation's own stop words ("de", "la": Postgres's stop list for that
+language, which the `english` rules do not know), picks its rare terms by
+the same rule, and adds them to the one OR query, after the original's.
+The original's terms keep today's ranks and weights, and each translated
+term weighs at most half the term before it, so a row holding the query's
+own rarest word still leads. A
 Spanish word put through the same `english` rules gives the same token as
 the indexed Spanish word, so no new index is needed, and no document is
 ever translated. Everything else in search (the vector arm, the fusion,
@@ -525,8 +528,13 @@ the access rules) is unchanged.
   tool `search_languages`.
 - **The translation:** the Translator worker's model (a brain without one:
   the summarizer's route), one short call per new query and language, only
-  when a person or an agent searches: never a trigger or a timer. A query
-  over 300 characters (a whole chat message) is not translated.
+  when a person or an agent searches, on the owner's keys: the search box,
+  the `search_nodes` and `search_chunks` tools, and the chat's own
+  retrieval (a chat message of 300 characters or less is translated, and
+  its first answer may wait up to the budget). A search asks for it by
+  `translate: true`; a peer's search, a call that may not spend the owner's
+  keys (ownerKeysOff, an API key on the search route) and `recall_eval`
+  never do. A query over 300 characters is not translated.
 - **The cache:** each answer is kept in the process (2000 at most, oldest
   out), so a repeated query costs nothing. Not in `ai_answer_cache`: that
   table is keyed by the node an answer was paid for, and a query has none.
@@ -535,13 +543,15 @@ the access rules) is unchanged.
   what arrived (the original text at the least), with one warn line; a
   late answer still lands in the cache for the next search.
 - **With the list empty** the word arm is today's, the same lookup and the
-  same answer (`keyword-query-languages.test.ts` holds it).
+  same answer, after one read of the setting
+  (`keyword-query-languages.test.ts` holds it).
 
 Measured on a made-up corpus of 60 English and Spanish passages
 (`search-languages.db.test.ts`, the model stubbed at 400 ms): with the list
 empty, none of the 6 Spanish target passages came back from the word arm;
 with `es`, all 6 did (word rank 2 or 3), and each English passage on the
-same subject kept word rank 1. Time per search: 10 ms off, 13 ms with `es`
+same subject kept word rank 1. With 900 more English passages (Spanish
+about 3%), no Spanish passage came back for its stop words alone. Time per search: 10 ms off, 13 ms with `es`
 cached, the model's time plus 13 ms not cached; a 5 s model stopped at the
 1.5 s budget. One call on a small hosted model costs about $0.00004.
 

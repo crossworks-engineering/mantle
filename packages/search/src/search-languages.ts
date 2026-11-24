@@ -14,7 +14,8 @@
  * Stored on the brain's profile row (the anchor owner's preferences, key
  * `searchLanguages`), as the backup settings are: read here, written by
  * `saveSearchLanguages` in @mantle/content (the one place a profile row is
- * written). Set in Settings (System) and over MCP (`search_languages`).
+ * written). Set on the AI workers screen under the Translator (a System
+ * Settings screen, the settings area) and over MCP (`search_languages`).
  */
 import { eq } from 'drizzle-orm';
 import { db, profiles } from '@mantle/db';
@@ -42,6 +43,17 @@ function canonicalCode(code: string): string {
   return `${head}-${sub.toLowerCase()}`;
 }
 
+/** Whether the code names a language (the runtime's own list). */
+function knownLanguage(code: string): boolean {
+  try {
+    return (
+      new Intl.DisplayNames(['en'], { type: 'language', fallback: 'none' }).of(code) !== undefined
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Check what a person or an agent sets (pure): a list of codes, at most
  * `SEARCH_LANGUAGES_MAX`, each a real code. `[]` clears the setting.
@@ -66,6 +78,12 @@ export function parseSearchLanguages(
       };
     }
     const c = canonicalCode(code);
+    if (!knownLanguage(c)) {
+      return {
+        ok: false,
+        error: `'${c}' is not a language code this box knows. Use a code such as "es", "fr" or "pt-BR".`,
+      };
+    }
     if (!out.includes(c)) out.push(c);
   }
   if (out.length > SEARCH_LANGUAGES_MAX) {

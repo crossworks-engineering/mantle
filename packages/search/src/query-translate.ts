@@ -139,7 +139,8 @@ const chatCall: TranslateCall = async (route, system, user) => {
     maxTokens: 256,
     maxRetries: 0,
   });
-  if (result.finishReason === 'length') return '';
+  // A cut answer is no answer: an error, asked again next time (not kept).
+  if (result.finishReason === 'length') throw new Error('the answer was cut at its length limit');
   return result.text ?? '';
 };
 
@@ -217,6 +218,9 @@ async function until(
   }
 }
 
+/** One translation of a query, with its language. */
+export type QueryTranslation = { lang: string; text: string };
+
 /**
  * The query's translations into `languages`, in their order, each one
  * that arrived within the budget and is a translation (not empty, not the
@@ -228,7 +232,7 @@ export async function translateQuery(
   query: string,
   languages: readonly string[],
   opts: { budgetMs?: number } = {},
-): Promise<string[]> {
+): Promise<QueryTranslation[]> {
   const text = query.trim();
   if (languages.length === 0 || !text) return [];
   if (text.length > TRANSLATE_MAX_CHARS) return [];
@@ -255,7 +259,9 @@ export async function translateQuery(
         return '';
       }),
     );
-    const out = answers.filter((a) => a && a.toLowerCase() !== text.toLowerCase());
+    const out = answers
+      .map((a, i) => ({ lang: languages[i]!, text: a }))
+      .filter((a) => a.text && a.text.toLowerCase() !== text.toLowerCase());
     if (missed.length) {
       console.warn(
         `[search] translated terms left out (${missed.join('; ')}): the word search ran on the rest`,

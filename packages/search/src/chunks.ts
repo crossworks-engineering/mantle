@@ -87,6 +87,14 @@ export type ChunkSearchOptions = {
    */
   arms?: 'both' | 'keyword';
   /**
+   * Also look for the query's words in the brain's search languages
+   * (search-languages.ts): a paid translation on the owner's keys for a
+   * new query. Set only where a brain login searches and may spend (the
+   * search route, the responder, the search tools outside ownerKeysOff);
+   * never for a peer or an eval. Off by default.
+   */
+  translate?: boolean;
+  /**
    * Passage windows (content_chunk_windows; the brain's
    * `embedding_config.chunk_windows`). When set and `q` is set, a window arm
    * searches the vectors INSIDE each chunk and returns their chunks; the
@@ -230,7 +238,11 @@ async function runChunkSearch(
   // rows holding a term no more rows than the pool hold: a question with no
   // rare literal leaves the arm silent instead of fusing in rows that merely
   // share ordinary words (they cost vector-only quality, docs/recall-eval.md).
-  const resolved = await resolveKeywordQuery(q, 'content_chunks', opts.ownerId);
+  const resolved = await resolveKeywordQuery(
+    q,
+    'content_chunks',
+    opts.translate ? opts.ownerId : undefined,
+  );
   const kq = resolved ? gateRareTerms(resolved, pool) : null;
   const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
   // Under a big workspace scope the text match runs first, fenced (offset

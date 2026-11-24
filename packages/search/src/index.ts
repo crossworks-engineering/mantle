@@ -141,6 +141,14 @@ export interface SearchOptions {
    * queries here; it can't filter a semantically-relevant node out.
    */
   semanticWeight?: number;
+  /**
+   * Also look for the query's words in the brain's search languages
+   * (search-languages.ts): a paid translation on the owner's keys for a
+   * new query. Set only where a brain login searches and may spend (the
+   * search route, the responder, the search tools outside ownerKeysOff);
+   * never for a peer or an eval. Off by default.
+   */
+  translate?: boolean;
 }
 
 const RRF_K = 60;
@@ -232,7 +240,7 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   let ftsRows: { id: string }[] = [];
   // Rarest terms ORed (see keyword-query.ts): a long query ANDed matched nothing.
   const kq = opts.q?.trim()
-    ? await resolveKeywordQuery(opts.q.trim(), 'nodes', opts.ownerId)
+    ? await resolveKeywordQuery(opts.q.trim(), 'nodes', opts.translate ? opts.ownerId : undefined)
     : null;
   if (kq) {
     const kw = keywordSql(nodes.searchTsv, kq);

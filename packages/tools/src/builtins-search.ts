@@ -110,6 +110,10 @@ export const search_nodes: BuiltinToolDef = {
         limit: num(input.limit, 20),
         queryEmbedding,
         excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
+        // The brain's search languages: a paid translation, so never on a
+        // call that may not spend the owner's keys (a peer, a key outside
+        // an Admin scope).
+        translate: !ownerKeysOff(ctx),
       });
       ctx.step?.setOutput({ count: rows.length });
       // Content-currency annotation: a superseded hit still surfaces (the
@@ -224,6 +228,8 @@ export const search_chunks: BuiltinToolDef = {
         windows,
         // A live judge scores the whole pool: hybrid head, then window head.
         windowMerge: scoringUse?.mode === 'live' ? 'union' : 'turns',
+        // The brain's search languages: paid, as the scoring above.
+        translate: !ownerKeysOff(ctx),
       });
       trace.setSearch(search);
       found.forEach((h, i) =>

@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { ownerCaller } from '@/lib/auth';
+import { ownerCallerWithSource } from '@/lib/auth';
 import { parseSearchQuery } from '@mantle/client-types/search-query';
 import { resolveSupersededTargets, searchChunks, searchNodes } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
@@ -25,7 +25,10 @@ export const policy = routePolicy({
  * names the workspace it opens in (`workspace`), and `ws` is echoed.
  */
 export async function GET(req: Request) {
-  const user = ownerCaller();
+  const { user, source } = ownerCallerWithSource();
+  // The brain's search languages: a paid translation, for a person's
+  // session only, never an API key (the search tools' ownerKeysOff rule).
+  const translate = source !== 'api';
 
   const parsed = parseSearchQuery(new URL(req.url).searchParams);
   if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
@@ -57,6 +60,7 @@ export async function GET(req: Request) {
       q,
       branch,
       limit,
+      translate,
     });
     // Same content-currency annotation as nodes mode (and the MCP twin):
     // a stale passage still surfaces, but carries its living successor.
@@ -104,6 +108,7 @@ export async function GET(req: Request) {
     tags,
     limit,
     queryEmbedding,
+    translate,
   });
   const [successors, homes] = await Promise.all([
     resolveSupersededTargets(

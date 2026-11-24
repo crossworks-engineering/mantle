@@ -25,6 +25,9 @@ describe('parseSearchLanguages', () => {
     expect(sentence.ok).toBe(false);
     if (!sentence.ok) expect(sentence.error).toContain('"es"');
     expect(parseSearchLanguages([3]).ok).toBe(false);
+    // Shaped like a code, but no language.
+    expect(parseSearchLanguages(['zz']).ok).toBe(false);
+    expect(parseSearchLanguages(['en']).ok).toBe(true);
   });
 
   it('refuses more than the most', () => {

@@ -48,13 +48,13 @@ describe('translateQuery', () => {
   it('translates into each language, and a repeated query is a cache hit', async () => {
     fake(async (_u, system) => (system.includes('Spanish') ? 'válvula de presión' : 'soupape'));
     expect(await translateQuery('o', 'pressure valve', ['es', 'fr'])).toEqual([
-      'válvula de presión',
-      'soupape',
+      { lang: 'es', text: 'válvula de presión' },
+      { lang: 'fr', text: 'soupape' },
     ]);
     expect(calls).toHaveLength(2);
     expect(await translateQuery('o', 'pressure valve', ['es', 'fr'])).toEqual([
-      'válvula de presión',
-      'soupape',
+      { lang: 'es', text: 'válvula de presión' },
+      { lang: 'fr', text: 'soupape' },
     ]);
     expect(calls).toHaveLength(2);
     expect(warns).toEqual([]);
@@ -66,8 +66,8 @@ describe('translateQuery', () => {
       translateQuery('o', 'valve', ['es']),
       translateQuery('o', 'valve', ['es']),
     ]);
-    expect(a).toEqual(['válvula']);
-    expect(b).toEqual(['válvula']);
+    expect(a).toEqual([{ lang: 'es', text: 'válvula' }]);
+    expect(b).toEqual([{ lang: 'es', text: 'válvula' }]);
     expect(calls).toHaveLength(1);
   });
 
@@ -81,7 +81,9 @@ describe('translateQuery', () => {
     expect(warns[0]).toContain('past the time budget');
     release('válvula');
     await new Promise((r) => setTimeout(r, 0));
-    expect(await translateQuery('o', 'valve', ['es'], { budgetMs: 50 })).toEqual(['válvula']);
+    expect(await translateQuery('o', 'valve', ['es'], { budgetMs: 50 })).toEqual([
+      { lang: 'es', text: 'válvula' },
+    ]);
     expect(calls).toHaveLength(1);
   });
 

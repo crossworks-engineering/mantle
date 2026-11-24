@@ -8,19 +8,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const lookups: string[] = [];
+const stopListed: string[] = [];
 let dfByText: Record<string, Array<{ lexeme: string; df: number; rows: number | null }>> = {};
 let languages: string[] = [];
 const translateCalls: Array<{ query: string; languages: readonly string[] }> = [];
-let translations: string[] = [];
+let translations: Array<{ lang: string; text: string }> = [];
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     db: {
-      // mantle_lexeme_df(text, table, ...): the text is the first value.
+      // mantle_lexeme_df(text, table, ...): the text is the first value
+      // that is not a config or a table (a translation's sits inside the
+      // ts_debug of its language's stop words).
       execute: vi.fn(async (q: { queryChunks?: unknown[] }) => {
-        const text = (q.queryChunks ?? []).find((c) => typeof c === 'string') as string;
+        const flat = (c: unknown): unknown[] =>
+          c && typeof c === 'object' && 'queryChunks' in c
+            ? (c as { queryChunks: unknown[] }).queryChunks.flatMap(flat)
+            : [c];
+        const strings = flat(q).filter((c): c is string => typeof c === 'string');
+        const skip = new Set(['nodes', 'content_chunks', 'spanish', 'french']);
+        const text = strings.find((c) => !skip.has(c))!;
+        if (strings.includes('spanish') || strings.includes('french')) stopListed.push(text);
         lookups.push(text);
         const rows = dfByText[text];
         if (!rows) throw new Error('no such text');
@@ -47,6 +57,7 @@ const lexemes = (kq: ReturnType<typeof pickKeywordTerms>) =>
 
 beforeEach(() => {
   lookups.length = 0;
+  stopListed.length = 0;
   translateCalls.length = 0;
   dfByText = {};
   languages = [];
@@ -81,14 +92,14 @@ describe('pickTranslatedKeywordTerms', () => {
         t.weight,
       ]),
     );
-    // The original's terms rank first (valv, then pressur), as today; then
-    // the Spanish ones, rarest first (valvul, then presion).
-    expect(w).toEqual({
-      valv: idfWeight(0.002, 0),
-      pressur: idfWeight(0.01, 1),
-      valvul: idfWeight(0.001, 2),
-      presion: idfWeight(0.004, 3),
-    });
+    // The original's terms rank first (valv, then pressur) with today's
+    // weights; then the Spanish ones, rarest first (valvul, then presion),
+    // each at most half the term before it.
+    expect(w.valv).toBe(idfWeight(0.002, 0));
+    expect(w.pressur).toBe(idfWeight(0.01, 1));
+    expect(w.valvul).toBeLessThanOrEqual(w.pressur! / 2);
+    expect(w.presion).toBeLessThanOrEqual(w.valvul! / 2);
+    expect(w.presion).toBeGreaterThan(0);
     const today = pickKeywordTerms('pressure valve', english);
     for (const t of today?.mode === 'or' ? today.terms : []) {
       expect(w[t.lexeme]).toBe(t.weight);
@@ -96,6 +107,22 @@ describe('pickTranslatedKeywordTerms', () => {
     // A row holding the original's rarest term outranks one holding every
     // translated term.
     expect(w.valv!).toBeGreaterThan(w.valvul! + w.presion!);
+  });
+
+  it('a far rarer translated term still weighs less than the original’s last term', () => {
+    const kq = pickTranslatedKeywordTerms(
+      'valve',
+      [{ lexeme: 'valv', df: 0.04 }],
+      [[{ lexeme: 'valvul', df: 0.0002 }]],
+    );
+    const w = Object.fromEntries(
+      (kq as { terms: Array<{ lexeme: string; weight: number }> }).terms.map((t) => [
+        t.lexeme,
+        t.weight,
+      ]),
+    );
+    expect(w.valv).toBe(idfWeight(0.04, 0));
+    expect(w.valvul).toBeLessThanOrEqual(w.valv! / 2);
   });
 
   it('never lets a translation push an original term out (maxTerms each)', () => {
@@ -164,7 +191,7 @@ describe('resolveKeywordQuery', () => {
 
   it('with es set: the Spanish terms join the query', async () => {
     languages = ['es'];
-    translations = ['válvula de presión'];
+    translations = [{ lang: 'es', text: 'válvula de presión' }];
     dfByText = {
       'pressure valve': [
         { lexeme: 'pressur', df: 0, rows: 0 },
@@ -178,6 +205,9 @@ describe('resolveKeywordQuery', () => {
     const kq = await resolveKeywordQuery('pressure valve', 'content_chunks', 'owner-1');
     expect(lexemes(kq)).toEqual(['presion', 'valvul']);
     expect(translateCalls).toEqual([{ query: 'pressure valve', languages: ['es'] }]);
+    // The translation's words went through the Spanish stop list; the
+    // original did not.
+    expect(stopListed).toEqual(['válvula de presión']);
   });
 
   it('with es set and no translation (budget, error): today’s query', async () => {
@@ -191,7 +221,10 @@ describe('resolveKeywordQuery', () => {
 
   it('a translation whose lookup fails only leaves its terms out', async () => {
     languages = ['es', 'fr'];
-    translations = ['válvula', 'soupape'];
+    translations = [
+      { lang: 'es', text: 'válvula' },
+      { lang: 'fr', text: 'soupape' },
+    ];
     dfByText = {
       valve: [{ lexeme: 'valv', df: 0.002, rows: 3 }],
       válvula: [{ lexeme: 'valvul', df: 0.001, rows: 2 }],

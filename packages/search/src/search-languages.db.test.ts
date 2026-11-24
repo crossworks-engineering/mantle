@@ -107,6 +107,7 @@ describe.skipIf(!URL)('search languages on a mixed English and Spanish corpus', 
   const englishIds = ENGLISH.map(() => randomUUID());
   const fillerIds = [...FILLER_EN, ...FILLER_ES].map(() => randomUUID());
   const allIds = [...spanishIds, ...englishIds, ...fillerIds];
+  const bulkId = randomUUID();
   let translateDelayMs = 0;
   let translateCalls = 0;
 
@@ -129,6 +130,7 @@ describe.skipIf(!URL)('search languages on a mixed English and Spanish corpus', 
           embedding: vec(1000 + i),
           limit: 10,
           nodeIds: allIds,
+          translate: true,
         }),
       'test',
     );
@@ -173,8 +175,9 @@ describe.skipIf(!URL)('search languages on a mixed English and Spanish corpus', 
         await su`update profiles set preferences = ${savedPrefs}::text::jsonb
                   where user_id = ${anchor}`;
       }
-      await su`delete from content_chunks where node_id = any(${`{${allIds.join(',')}}`}::uuid[])`;
-      await su`delete from nodes where id = any(${`{${allIds.join(',')}}`}::uuid[])`;
+      const every = `{${[...allIds, bulkId].join(',')}}`;
+      await su`delete from content_chunks where node_id = any(${every}::uuid[])`;
+      await su`delete from nodes where id = any(${every}::uuid[])`;
       await su.end();
     }
     await m?.closeDb();
@@ -273,6 +276,43 @@ describe.skipIf(!URL)('search languages on a mixed English and Spanish corpus', 
     for (const r of rows.filter((x) => x.arm !== 'off'))
       expect(r.kr, `${r.arm}: ${r.query}`).not.toBeNull();
   }, 120_000);
+
+  it('a mostly English brain: the translation’s stop words ("de", "la") find nothing', async () => {
+    // 900 more English passages: the Spanish ones are now about 3%, so "de"
+    // and "la" would count as rare. Under the Spanish stop list they are no
+    // terms, and no Spanish shift log (which holds them, and no query word)
+    // comes back from the word arm.
+    await su`insert into nodes (id, owner_id, type, title, path)
+             values (${bulkId}, ${anchor}, 'page', ${`sl-${tag} bulk`}, 'pages')`;
+    await su`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
+             select ${anchor}, ${bulkId}, g,
+                    'Daily round ' || g || ': the crew checked the pumps and the tanks.',
+                    ${`[${vec(7).join(',')}]`}::vector
+               from generate_series(0, 899) g`;
+    await su`analyze content_chunks`;
+    const ids = [...allIds, bulkId];
+    await setLanguages(['es']);
+    try {
+      const r = await m.asSystem(
+        () =>
+          s.searchChunksExplained({
+            ownerId: anchor,
+            q: QUERIES[0]!.q,
+            embedding: vec(1000),
+            limit: 50,
+            nodeIds: ids,
+            translate: true,
+          }),
+        'test',
+      );
+      const fillerEs = new Set<string>(fillerIds.slice(FILLER_EN.length));
+      const wordHits = r.hits.filter((h) => h.arms.kr !== undefined);
+      expect(wordHits.some((h) => h.nodeId === spanishIds[0])).toBe(true);
+      expect(wordHits.filter((h) => fillerEs.has(h.nodeId))).toEqual([]);
+    } finally {
+      await setLanguages([]);
+    }
+  }, 60_000);
 
   it('a translation slower than the budget never makes the search slower than the budget', async () => {
     await setLanguages(['es']);

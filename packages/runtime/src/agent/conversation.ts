@@ -1119,6 +1119,9 @@ async function loadConversationContextAtLevel(args: {
       // Hybrid arm: the same text the embedding was computed from, so an
       // exact-term question is rescued by keyword when it embeds poorly.
       q: chunkQuery,
+      // The brain's search languages (a short message is translated: one
+      // paid call per new message and language, within the time budget).
+      translate: true,
       // small pool so the cutoff can trim without starving
       limit: scoringUse
         ? passageScoringPool(scoringUse, chunkLimit, { windows })

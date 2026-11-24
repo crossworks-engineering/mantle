@@ -198,24 +198,36 @@ export function pickTranslatedKeywordTerms(
   const extra = translated.flatMap((t) => rareRows(t, opts));
   if (extra.length === 0) return original;
   if (original.mode === 'and' && rows.every((r) => r.df > 0)) return original;
-  // The original's terms first, in today's order with today's weights; the
-  // translations' after them, rarest first. With the rank decay a row
-  // holding the original's rarest term still outranks every row that holds
-  // only translated terms, so the person's own words lead as before.
-  const kept = new Map<string, LexemeDf>();
-  const first = original.mode === 'or' ? rareRows(rows, opts) : [];
-  for (const r of first) kept.set(r.lexeme, r);
-  const after = extra
-    .filter((r) => !kept.has(r.lexeme))
-    .sort((a, b) => a.df - b.df || byLexeme(a, b));
-  for (const r of after) if (!kept.has(r.lexeme)) kept.set(r.lexeme, r);
-  return { mode: 'or', terms: weighTerms([...kept.values()]) };
+  // The original's terms first, with today's weights; the translations'
+  // after them, rarest first, each weighing at most RANK_DECAY of the term
+  // before it. So every term outweighs all after it together, and a row
+  // holding the original's rarest term outranks every row that holds only
+  // translated terms: the person's own words lead as before.
+  const first = original.mode === 'or' ? original.terms : [];
+  const seen = new Set(first.map((t) => t.lexeme));
+  let last = first.reduce((m, t) => Math.min(m, t.weight), Infinity);
+  const after: KeywordTerm[] = [];
+  const ranked = [...extra].sort((a, b) => a.df - b.df || byLexeme(a, b));
+  for (const r of ranked) {
+    if (seen.has(r.lexeme)) continue;
+    seen.add(r.lexeme);
+    const own = idfWeight(r.df, first.length + after.length);
+    const weight = Number.isFinite(last) ? Math.min(own, idfCap(last)) : own;
+    after.push({ lexeme: r.lexeme, weight, rows: r.rows ?? null });
+    last = weight;
+  }
+  return { mode: 'or', terms: [...first, ...after].sort(byLexeme) };
 }
 
 /** Rarity weight `ln(1/df) * RANK_DECAY^rank` (rank 0 = the rarest kept
  *  term), rounded so the SQL text is stable (pure). */
 export function idfWeight(df: number, rank = 0): number {
   return Math.round(Math.log(1 / Math.max(df, MIN_DF)) * Math.pow(RANK_DECAY, rank) * 1000) / 1000;
+}
+
+/** A weight at most RANK_DECAY of `w`, rounded down as idfWeight rounds. */
+function idfCap(w: number): number {
+  return Math.floor(w * RANK_DECAY * 1000) / 1000;
 }
 
 /**
@@ -237,6 +249,40 @@ export function gateRareTerms(kq: KeywordQuery, maxRows: number): KeywordQuery |
  */
 export function lexemesToTsqueryText(lexemes: readonly string[]): string {
   return lexemes.map((l) => `'${l.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`).join(' | ');
+}
+
+/** Postgres's text search configs by language code (those in every
+ *  supported Postgres): a translation's stop words come from its own. */
+const STOP_WORD_CONFIGS: Readonly<Record<string, string>> = {
+  ar: 'arabic',
+  da: 'danish',
+  de: 'german',
+  el: 'greek',
+  en: 'english',
+  es: 'spanish',
+  fi: 'finnish',
+  fr: 'french',
+  ga: 'irish',
+  hu: 'hungarian',
+  id: 'indonesian',
+  it: 'italian',
+  lt: 'lithuanian',
+  nb: 'norwegian',
+  ne: 'nepali',
+  nl: 'dutch',
+  nn: 'norwegian',
+  no: 'norwegian',
+  pt: 'portuguese',
+  ro: 'romanian',
+  ru: 'russian',
+  sv: 'swedish',
+  ta: 'tamil',
+  tr: 'turkish',
+};
+
+/** The config for a language code (`pt-BR` → portuguese), or null (pure). */
+export function stopWordConfig(lang: string): string | null {
+  return STOP_WORD_CONFIGS[lang.split('-')[0]!.toLowerCase()] ?? null;
 }
 
 /**
@@ -263,7 +309,19 @@ export function lexemesToTsqueryText(lexemes: readonly string[]): string {
 async function lexemeFrequencies(
   text: string,
   table: 'content_chunks' | 'nodes',
+  lang?: string,
 ): Promise<LexemeDf[]> {
+  // A translation's own stop words ("de", "la", "y") are no stop words to
+  // the `english` rules, and a brain with few documents in that language
+  // would count them rare: its words go through Postgres's stop list for
+  // that language first (ts_debug: a stop word has no lexeme), the words
+  // themselves kept as written for the `english` lookup.
+  const config = lang ? stopWordConfig(lang) : null;
+  const input = config
+    ? sql`(select coalesce(string_agg(d.token, ' '), '')
+             from ts_debug(${config}::regconfig, ${text}) d
+            where d.lexemes is not null and cardinality(d.lexemes) > 0)`
+    : sql`${text}`;
   // Residual signal (accepted): the document frequencies are
   // the whole table's, so which of the caller's terms the keyword arm ORs
   // can shift with what other workspaces hold: a faint existence signal by
@@ -271,7 +329,7 @@ async function lexemeFrequencies(
   // (mantle_lexeme_df, 0293: pg_stats and the capped counts, numbers only).
   const rows = (await db.execute(
     sql`select lexeme, rows, df
-          from "public"."mantle_lexeme_df"(${text}, ${table}, ${COUNT_LEXEMES}::int,
+          from "public"."mantle_lexeme_df"(${input}, ${table}, ${COUNT_LEXEMES}::int,
                                             ${COUNT_CAP}::int, ${KEYWORD_DF_CEILING}::float8)`,
   )) as unknown as Array<{ lexeme: string; df: number | string; rows: number | string | null }>;
   return rows.map((r) => ({
@@ -288,8 +346,9 @@ async function lexemeFrequencies(
  * With `ownerId` and the brain's search languages set (search-languages.ts),
  * the query's translations add their terms (pickTranslatedKeywordTerms),
  * within the translation's time budget (query-translate.ts). With the list
- * empty, or no `ownerId`, it is today's query, the same calls and the same
- * answer.
+ * empty it is today's query, the same lookup and the same answer (one more
+ * read: the setting). With no `ownerId` (the caller may not spend on a
+ * translation) it is today's query exactly.
  */
 export async function resolveKeywordQuery(
   text: string,
@@ -311,7 +370,7 @@ export async function resolveKeywordQuery(
   if (rows === null) return { mode: 'and', text };
   // A translation's lookup that fails only leaves its terms out.
   const translated = await Promise.all(
-    translations.map((t) => lexemeFrequencies(t, table).catch(() => [] as LexemeDf[])),
+    translations.map((t) => lexemeFrequencies(t.text, table, t.lang).catch(() => [] as LexemeDf[])),
   );
   return pickTranslatedKeywordTerms(text, rows, translated);
 }
