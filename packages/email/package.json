@@ -26,7 +26,7 @@
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "sanitize-html": "^2.18.1"
+    "sanitize-html": "^2.18.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
