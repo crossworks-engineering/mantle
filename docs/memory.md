@@ -497,6 +497,54 @@ worker config, how the cache works, how Rebuild Index re-embeds the
 whole corpus on a model swap, live in
 [`ai-workers.md` §5e](./ai-workers.md#5e-embedding--the-cross-cutting-kind).
 
+### 4.1a Words in other languages (search languages)
+
+Search is a hybrid: the vector arm above, and a word arm over `search_tsv`
+([`keyword-query.ts`](../packages/search/src/keyword-query.ts), the rarest
+terms of the query, ORed). The vectors work across languages; the words do
+not. Every `search_tsv` is built with the `english` rules, so an English
+query never matches a Spanish word.
+
+A brain whose documents are in other languages sets **search languages**
+(owner's word 2026-11-24, plan page 0a1eab17): a short list of codes, for
+example `es`, empty by default. With the list set, `resolveKeywordQuery`
+also takes the query's translation into each language
+([`query-translate.ts`](../packages/search/src/query-translate.ts)), picks
+each translation's rare terms by the same rule, and adds them to the one OR
+query, after the original's: the original's terms keep today's ranks and
+weights, so a row holding the query's own rarest word still leads. A
+Spanish word put through the same `english` rules gives the same token as
+the indexed Spanish word, so no new index is needed, and no document is
+ever translated. Everything else in search (the vector arm, the fusion,
+the access rules) is unchanged.
+
+- **The setting:** the brain's profile row, key `searchLanguages`
+  ([`search-languages.ts`](../packages/search/src/search-languages.ts)), at
+  most 3 codes. Set on the AI workers screen under the Translator,
+  `PUT /api/settings/search-languages` (the Settings area), or the MCP
+  tool `search_languages`.
+- **The translation:** the Translator worker's model (a brain without one:
+  the summarizer's route), one short call per new query and language, only
+  when a person or an agent searches: never a trigger or a timer. A query
+  over 300 characters (a whole chat message) is not translated.
+- **The cache:** each answer is kept in the process (2000 at most, oldest
+  out), so a repeated query costs nothing. Not in `ai_answer_cache`: that
+  table is keyed by the node an answer was paid for, and a query has none.
+- **Never slower than the budget:** the search waits at most 1.5 s for its
+  translations. Past it, or on an error or a refusal, the search runs on
+  what arrived (the original text at the least), with one warn line; a
+  late answer still lands in the cache for the next search.
+- **With the list empty** the word arm is today's, the same lookup and the
+  same answer (`keyword-query-languages.test.ts` holds it).
+
+Measured on a made-up corpus of 60 English and Spanish passages
+(`search-languages.db.test.ts`, the model stubbed at 400 ms): with the list
+empty, none of the 6 Spanish target passages came back from the word arm;
+with `es`, all 6 did (word rank 2 or 3), and each English passage on the
+same subject kept word rank 1. Time per search: 10 ms off, 13 ms with `es`
+cached, the model's time plus 13 ms not cached; a 5 s model stopped at the
+1.5 s budget. One call on a small hosted model costs about $0.00004.
+
 ### 4.2 Graph retrieval: "what's connected to what?"
 
 A **graph database** stores **entities** (nodes) and the named

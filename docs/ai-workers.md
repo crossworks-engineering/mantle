@@ -1165,6 +1165,13 @@ three models and `part_tokens`, or sets any of them after the box policy and
 catalog checks. The Control Center's fleet `workerModel` sets the worker's
 model too, as for every shipped kind.
 
+**Search languages** (2026-11-24, [`memory.md` 4.1a](./memory.md#41a-words-in-other-languages-search-languages)):
+the Translator's model also translates a search query into the brain's
+search languages, for the word arm of search. One short call per new query
+and language, only when a person or an agent searches; the card sits under
+the Translator worker on the AI workers screen, and over MCP it is
+`search_languages`.
+
 ## 5e. Embedding: the cross-cutting kind
 
 > **⚠ SUPERSEDED (migration 0061).** Embedding is **no longer an ai-worker
