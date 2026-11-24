@@ -482,7 +482,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await exec(sqlTag`update tools set handler = ${moved}::jsonb where id = ${ids.site_query!}`);
     expect(await verdict('site_query')).toMatchObject({
       ok: false,
-      reason: expect.stringMatching(/changed after an admin marked it/),
+      reason: expect.stringMatching(/changed after it was marked read-only.*a System user/),
     });
     expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
       on: false,
@@ -497,7 +497,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await ta.clearConnectorExternalAccess(anchor, 'mcp-site');
     expect(await verdict('site_query')).toMatchObject({
       ok: false,
-      reason: expect.stringMatching(/changed after an admin marked it/),
+      reason: expect.stringMatching(/changed after it was marked read-only.*a System user/),
     });
     expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
       on: false,

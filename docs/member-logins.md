@@ -81,7 +81,7 @@ what such a tool does, so an admin decides per tool with the switch
   PATCH or DELETE. Never a recipe or a shell tool, and never a tool that
   needs a confirmation (nobody is there to confirm in an app loop).
   Built-ins need no switch.
-- **Who switches it on.** Only an admin, in Settings > Tools on the tool
+- **Who switches it on.** Only a System user (the assistants area holds it, and only System users hold that area: [workspaces.md](workspaces.md)), in Settings > Tools on the tool
   (`PUT /api/tools/:id/external-access` `{ allow, readOnlyConfirmed }`), in the
   dev tool console, or by approving a held call that asks for it. The read-only
   confirmation is required: the row keeps

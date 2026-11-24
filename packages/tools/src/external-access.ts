@@ -272,7 +272,9 @@ export type ExternalToolVerdict =
  * a member's (member-app-tools.ts) and a client app's (client-app-tools.ts).
  * The caller has checked that the app
  * declares the tool and resolved the enabled row. Nothing else gates it: the
- * app's sharing decided who runs the app.
+ * app's sharing decided who runs the app. The refusal names who can fix it:
+ * a System user, since the switch's route (PUT /api/tools/:id/external-access)
+ * is the assistants area, which only System users hold.
  */
 export function externalToolVerdict(
   tool: Tool,
@@ -284,7 +286,7 @@ export function externalToolVerdict(
   return {
     ok: false,
     status: 403,
-    reason: `The tool '${slug}' can't be used from ${who}: it is an outside tool without External access. An admin can switch External access on for a tool that only reads (Settings → Tools).`,
+    reason: `The tool '${slug}' can't be used from ${who}: it is an outside tool without External access. A System user can switch External access on for a tool that only reads (Settings → Tools).`,
   };
 }
 
@@ -507,7 +509,7 @@ export async function connectorToolVerdict(
   const policy = connectorToolPolicy(tool);
   if (policy.fields.mark === 'stale') {
     return refuse(
-      `The tool '${slug}' changed after an admin marked it read-only, so ${who} can't use it until an admin marks it again.`,
+      `The tool '${slug}' changed after it was marked read-only, so ${who} can't use it until a System user marks it again (Settings → Tools).`,
     );
   }
   const write = policy.effect === 'write';

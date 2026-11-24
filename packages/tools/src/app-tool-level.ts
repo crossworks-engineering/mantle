@@ -387,8 +387,14 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
       const allowed = verdict.reason.includes(TEAM_APP_TOOLS_ALLOWED)
         ? ''
         : ` ${TEAM_APP_TOOLS_ALLOWED}`;
+      // A tool group helps a built-in only. An outside tool's refusal names
+      // its own fix (External access, or the connector's workspaces).
+      const builtin = (await resolveTool(ownerId, slug))?.handler.kind === 'builtin';
+      const fix = builtin
+        ? 'Declare such a tool from an enabled team-level group instead (`tool_group_list` shows levels), or keep the app in the Admin workspace only.'
+        : 'A tool group does not help an outside tool: do what the first sentence names, or keep the app in the Admin workspace only.';
       warnings.push(
-        `${verdict.reason} Everyone running this app (admins too) gets an error: an app a workspace other than Admin holds runs the team rules.${allowed} Declare such a tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin open a connector to that workspace, switch External access on for an http tool that only reads, or keep the app in the Admin workspace only.`,
+        `${verdict.reason} Everyone running this app (admins too) gets an error: an app a workspace other than Admin holds runs the team rules.${allowed} ${fix}`,
       );
     }
     return warnings;

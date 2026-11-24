@@ -380,7 +380,7 @@ async function dispatchGated(
     if (toolServiceSwitchedOff(h.ref)) {
       return {
         ok: false,
-        error: `this tool needs the '${toolService(h.ref)}' service, which is switched off on this box: an admin switches it on in Settings > Services (or with service_set)`,
+        error: `this tool needs the '${toolService(h.ref)}' service, which is switched off on this box: a System user switches it on in Settings > Services (or with service_set)`,
       };
     }
     // Owner-only tools refuse anyone but the owner before any other work: a

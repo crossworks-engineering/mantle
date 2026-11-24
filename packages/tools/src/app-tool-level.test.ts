@@ -148,6 +148,24 @@ describe('appToolWarnings follows the holders', () => {
     expect(w[0]).toMatch(/admins too/);
   });
 
+  it('names who fixes an http tool, and offers no tool group for it', async () => {
+    h.app = { toolRules: 'team', manifest: { toolSlugs: ['weather'] } };
+    const [w] = await appToolWarnings('brain', 'app');
+    expect(w).toContain('A System user can switch External access on');
+    expect(w).toContain('Settings → Tools');
+    expect(w).not.toMatch(/An admin can/);
+    expect(w).not.toMatch(/team-level group instead/);
+    expect(w).toContain('A tool group does not help an outside tool');
+  });
+
+  it('offers a team-level group for a built-in only', async () => {
+    h.app = { toolRules: 'team', manifest: { toolSlugs: ['note_delete'] } };
+    const [w] = await appToolWarnings('brain', 'app');
+    expect(w).toContain("'note_delete'");
+    expect(w).toContain('team-level group instead');
+    expect(w).not.toMatch(/External access/);
+  });
+
   it('says nothing for an app Admin alone holds, or a missing one', async () => {
     h.app = { toolRules: 'admin', manifest: { toolSlugs: ['contact_list', 'weather'] } };
     expect(await appToolWarnings('brain', 'app')).toEqual([]);

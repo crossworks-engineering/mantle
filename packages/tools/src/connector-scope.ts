@@ -32,7 +32,7 @@ export const CONNECTOR_WRITE_ERROR =
 
 /** The refusal of a connector tool whose read-only mark went stale. */
 export const CONNECTOR_STALE_MARK_ERROR =
-  'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
+  'This connector tool changed after it was marked read-only; it runs again once a System user marks it again (Settings > Tools).';
 
 /** What the connector rule reads of a scope (a caller's `facts.connector`). */
 export type ConnectorScopeFacts = Readonly<{
