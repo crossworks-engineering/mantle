@@ -9,7 +9,11 @@
  *
  * Then what a change means for row security: a login outside the new
  * workspace still reads nothing of the item; a login inside reads it, and
- * what a folder grant flows to.
+ * what a folder grant flows to. access_get answers each login what its own
+ * panel shows. An assistant's widening goes through the real queue and
+ * the real approval: it runs once, in the asker's scope, as the asker, and
+ * not when the asker lost the right in between; an in-brain call's folder
+ * confirm never counts. Each tool's event names where it came from (`via`).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/server/grants-mcp.db.test.ts
  */
@@ -58,6 +62,10 @@ describe.skipIf(!URL)('grant tools over MCP agree with the Grant Access routes',
   const R = randomUUID();
   const Z = randomUUID(); // archived
   const X = randomUUID(); // mem's private workspace
+  const T2 = randomUUID(); // mem moderates it: the approval tests' target
+  const adm = randomUUID(); // an Admin user outside System
+  let adminWs = '';
+  const agent = randomUUID(); // a Proj assistant
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -112,12 +120,19 @@ describe.skipIf(!URL)('grant tools over MCP agree with the Grant Access routes',
       ? { ok: true, code: null, error: null }
       : { ok: false, code: body.code ?? null, error: body.error ?? null };
   };
+  /** A login's own OAuth MCP connection, as the gate's caller says it. */
+  const MCP = { entry: 'mcp', via: 'oauth' } as const;
   const toolAnswer = async (
     def: import('@mantle/tools').BuiltinToolDef,
     input: Json,
+    caller: Json = MCP,
   ): Promise<Outcome & { output?: Json }> => {
     const res = await inScope(() =>
-      def.handler(input, { ownerId: owner, surface: { kind: 'web', loginId: who } }),
+      def.handler(input, {
+        ownerId: owner,
+        surface: { kind: 'web', loginId: who },
+        caller: caller as never,
+      }),
     );
     if (res.ok) return { ok: true, code: null, error: null, output: res.output as Json };
     const m2 = /^([a-z_]+): /.exec(res.error);
@@ -168,9 +183,15 @@ describe.skipIf(!URL)('grant tools over MCP agree with the Grant Access routes',
       )
     ).map((r) => ({ ...r, via: r.via ? (twin[r.via] ?? 'folder') : null }));
   const eventsOf = async (id: string) =>
-    x<{ ws: string; action: string; actor: string | null; excluded: string | null }>(
+    x<{
+      ws: string;
+      action: string;
+      actor: string | null;
+      excluded: string | null;
+      via: string | null;
+    }>(
       sql`select workspace_id::text as ws, action, actor_id::text as actor,
-                 subject->>'excluded' as excluded
+                 subject->>'excluded' as excluded, subject->>'via' as via
             from workspace_events where subject->>'node' = ${id} order by at, action`,
     );
 
@@ -215,7 +236,10 @@ describe.skipIf(!URL)('grant tools over MCP agree with the Grant Access routes',
       expect(r.tool.error!.startsWith(`${r.route.code}: ${r.route.error}`)).toBe(true);
     expect(await rowsOf(r.b)).toEqual(await rowsOf(r.a));
     const [ea, eb] = [await eventsOf(r.a), await eventsOf(r.b)];
-    expect(eb).toEqual(ea);
+    // The same rows; the screen's name no source, the tool's its connection.
+    expect(eb.map((e) => ({ ...e, via: null }))).toEqual(ea);
+    expect(ea.every((e) => e.via === null)).toBe(true);
+    expect(eb.every((e) => e.via === 'mcp-oauth')).toBe(true);
   };
 
   beforeAll(async () => {
@@ -231,17 +255,36 @@ describe.skipIf(!URL)('grant tools over MCP agree with the Grant Access routes',
       (${mem}, ${email(mem, 'mem')}, 'x', false, 'member', 'Mia Member'),
       (${mem2}, ${email(mem2, 'mem')}, 'x', false, 'member', 'Max Member'),
       (${mem3}, ${email(mem3, 'mem')}, 'x', false, 'member', 'Moe Member')`);
+    // A second Admin login: the app pools may not make one (a new login is a
+    // member), so the superuser does.
+    await su(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      values (${adm}, ${email(adm, 'adm')}, 'x', false, 'admin', 'Ada Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await ts.runWorkspacesSwitch();
     await su(sql`insert into workspaces (id, owner_id, name) values
       (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay'), (${R}, ${owner}, 'Reef'),
-      (${Z}, ${owner}, 'Zinc'), (${X}, ${owner}, 'Mia (only you)')`);
+      (${Z}, ${owner}, 'Zinc'), (${X}, ${owner}, 'Mia (only you)'), (${T2}, ${owner}, 'Tide')`);
     await su(sql`insert into private_workspaces (login_id, workspace_id) values (${mem}, ${X})`);
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${P}, ${owner}, true), (${P}, ${mem}, true),
       (${Q}, ${owner}, true), (${Q}, ${mem2}, true), (${Q}, ${mem}, false),
-      (${R}, ${mem2}, true), (${Z}, ${owner}, true), (${X}, ${mem}, true)`);
+      (${R}, ${mem2}, true), (${Z}, ${owner}, true), (${X}, ${mem}, true),
+      (${T2}, ${mem}, true)`);
+    adminWs = (
+      await x<{ id: string }>(
+        sql`select id::text as id from workspaces where owner_id = ${owner} and is_admin`,
+      )
+    )[0]!.id;
+    // An Admin user is a Moderator of Admin, and here in no other workspace.
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${adminWs}, ${adm}, true) on conflict (workspace_id, login_id) do update set moderator = true`);
+    await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role, workspace_id)
+      values (${agent}, ${owner}, 'gmcp-proj', 'Proj', 'fake/model', 'p', 'responder', ${P})`);
+    // Outside System, whatever the switch did with Admin users.
+    await su(sql`delete from workspace_users w using workspaces s
+      where w.workspace_id = s.id and s.bridge_key = 'system' and w.login_id = ${adm}`);
+    await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     await su(sql`update workspaces set archived_at = now() where id = ${Z}`);
   }, 180_000);
 
@@ -408,6 +451,197 @@ describe.skipIf(!URL)('grant tools over MCP agree with the Grant Access routes',
     await as(owner);
     expect((await viaTool('remove', f, Q, true)).ok).toBe(true);
     expect(await reads(mem2, child)).toBe(0);
+  });
+
+  it("access_get answers what the caller's own panel shows: a member, an Admin user, the owner", async () => {
+    const one = await import('@/app/api/grants/[nodeId]/route');
+    // Homed in P, granted to Q and R: mem sees P and Q, mem2 sees Q and R
+    // and no home name, adm (Admin, users area) and the owner see all.
+    const it1 = await node('note', 'read me', 'notes');
+    await homeIn(it1, P);
+    await grantRow(it1, Q);
+    await grantRow(it1, R);
+    // adm reads it through Admin (an Admin user reads only its workspaces).
+    await grantRow(it1, adminWs);
+    for (const login of [mem, mem2, adm, owner]) {
+      await as(login);
+      const r = await appAnswerOf(inScope(() => one.GET(req('GET'), p({ nodeId: it1 })), false));
+      expect(r.status, login).toBe(200);
+      const screen = (await r.json()) as Json;
+      const tool = await toolAnswer(t.access_get, { node_id: it1 });
+      expect(tool.ok, `${login} ${tool.error}`).toBe(true);
+      expect(tool.output!.home, login).toBe(screen.home.name);
+      expect(
+        (tool.output!.grants as Json[]).map((g) => [g.workspaceId, g.workspace, g.write]),
+        login,
+      ).toEqual((screen.rows as Json[]).map((x) => [x.wsId, x.name, x.write]));
+    }
+    await as(mem2);
+    const hidden = await toolAnswer(t.access_get, { node_id: it1 });
+    expect(hidden.output!.home).toBeNull();
+    expect((hidden.output!.grants as Json[]).map((g) => g.workspace)).toEqual(['Quay', 'Reef']);
+    // An item the caller reads nothing of: not found, as on the screen.
+    await as(mem3);
+    expect((await toolAnswer(t.access_get, { node_id: it1 })).code).toBe('not_found');
+  });
+
+  it("an in-brain call's folder confirm never counts; a person's own connection's does", async () => {
+    const path = `notes.h${randomUUID().slice(0, 8).replace(/-/g, '')}`;
+    const f = await node('branch', 'Held', path);
+    await node('note', 'inside', path);
+    const before = await rowsOf(f);
+    await as(owner);
+    for (const caller of [
+      { entry: 'pending', via: 'process' },
+      { entry: 'turn', via: 'turn' },
+      {},
+    ]) {
+      const res = await toolAnswer(
+        t.access_grant_add,
+        { node_id: f, workspace: P, confirm: true },
+        caller,
+      );
+      expect(res.code, JSON.stringify(caller)).toBe('confirm_required');
+      expect(res.error).toMatch(/Grant Access panel, which shows the count/);
+    }
+    expect(await rowsOf(f)).toEqual(before);
+    expect(
+      (await toolAnswer(t.access_grant_add, { node_id: f, workspace: P, confirm: true })).ok,
+    ).toBe(true);
+  });
+
+  describe("an assistant's widening through the real queue and approval", () => {
+    let rt: typeof import('@mantle/runtime/agent');
+    let tracing: typeof import('@mantle/tracing');
+    let ex: typeof import('../../../packages/runtime/src/agent/tool-loop/execute-call');
+    beforeAll(async () => {
+      rt = await import('@mantle/runtime/agent');
+      tracing = await import('@mantle/tracing');
+      ex = await import('../../../packages/runtime/src/agent/tool-loop/execute-call');
+    });
+
+    /** mem asks the Proj assistant to widen `item`'s grants (default: Write
+     *  on, on Proj's own row): the tool loop's own queue path. The pending
+     *  row's id. A Proj assistant's turn reads Proj only, so that is all
+     *  it can reach. */
+    const ask = async (item: string, extra: Json = {}) => {
+      const slug = 'access_grant_add';
+      const input = { node_id: item, workspace: P, write: true, ...extra };
+      const row = await m.asSystem(() => t.resolveTool(owner, slug), 'test');
+      expect(row?.requiresConfirm).toBe(true);
+      const pendingIds: string[] = [];
+      await m.runAsActor(m.loginActor(mem, 'rw'), () =>
+        rt.withAgentScope(
+          { id: agent, ownerId: owner, workspaceId: P, role: 'responder' },
+          () =>
+            tracing.startTrace(
+              { kind: 'responder_turn', ownerId: owner, agentId: agent, loginId: mem },
+              () =>
+                ex.executeToolCall({
+                  args: {
+                    ownerId: owner,
+                    agentId: agent,
+                    agentSlug: 'gmcp-proj',
+                    surface: { kind: 'team', loginId: mem },
+                  } as never,
+                  slug,
+                  call: {
+                    id: `call-${randomUUID().slice(0, 6)}`,
+                    function: { name: slug, arguments: JSON.stringify(input) },
+                  },
+                  tool: row!,
+                  input,
+                  argParseError: null,
+                  argValidation: null,
+                  argValidationMode: 'off',
+                  lastUserMessage: undefined,
+                  pendingIds,
+                } as never),
+            ),
+          { loginId: mem },
+        ),
+      );
+      expect(pendingIds).toHaveLength(1);
+      return pendingIds[0]!;
+    };
+    /** The owner approves it, as a batch does. */
+    const approve = (pending: string) =>
+      m.runAsActor(m.loginActor(owner, 'owner'), () =>
+        t.approvePendingCall(owner, pending, { approverLoginId: owner }),
+      );
+    const rowOf = async (pending: string) =>
+      (
+        await x<{ status: string; error: string | null }>(
+          sql`select status::text as status, error from pending_tool_calls where id = ${pending}`,
+        )
+      )[0]!;
+    const writeInP = async (item: string) =>
+      (await rowsOf(item)).find((r) => r.ws === P)?.write === true;
+    const inTide = async (item: string) => (await rowsOf(item)).some((r) => r.ws === T2);
+
+    it("runs once, in the asker's scope, as the asker", async () => {
+      const item = await node('note', 'asked', 'notes');
+      await homeIn(item, P);
+      const pending = await ask(item);
+      // Held: nothing applied on the turn's say.
+      expect(await writeInP(item)).toBe(false);
+      expect(await approve(pending)).not.toBeNull();
+      expect(await writeInP(item)).toBe(true);
+      expect(await eventsOf(item)).toEqual([
+        { ws: P, action: 'grant.write', actor: mem, excluded: null, via: 'pending' },
+      ]);
+      expect((await rowOf(pending)).status).toBe('approved');
+      // Used once: a second approval finds nothing to decide.
+      expect(await approve(pending)).toBeNull();
+      expect(await eventsOf(item)).toHaveLength(1);
+    });
+
+    it('is refused when the asker lost Moderator of the home in between', async () => {
+      const item = await node('note', 'asked then lost', 'notes');
+      await homeIn(item, P);
+      const pending = await ask(item);
+      await su(sql`update workspace_users set moderator = false
+        where workspace_id = ${P} and login_id = ${mem}`);
+      try {
+        let answer: unknown;
+        try {
+          answer = await approve(pending);
+        } catch (err) {
+          answer = err;
+        }
+        expect(await writeInP(item)).toBe(false);
+        expect(await eventsOf(item)).toEqual([]);
+        // Either the approval's re-check refused it (still pending), or it
+        // ran in the asker's scope and the panel's rule refused it there.
+        const after = await rowOf(pending);
+        if (answer instanceof Error) expect(after.status).toBe('pending');
+        else expect(after.error ?? '').toMatch(/forbidden/);
+      } finally {
+        await su(sql`update workspace_users set moderator = true
+          where workspace_id = ${P} and login_id = ${mem}`);
+      }
+    });
+
+    it("reaches no workspace outside the assistant's own, approved or not", async () => {
+      // mem moderates Tide too, but a Proj assistant's turn reads Proj only.
+      const item = await node('note', 'asked elsewhere', 'notes');
+      await homeIn(item, P);
+      const pending = await ask(item, { workspace: T2, write: false });
+      await approve(pending);
+      expect(await inTide(item)).toBe(false);
+      expect((await rowOf(pending)).error ?? '').toMatch(/^not_found: Workspace not found/);
+    });
+
+    it('a folder: the approval is no confirm, so nothing changes', async () => {
+      const path = `notes.q${randomUUID().slice(0, 8).replace(/-/g, '')}`;
+      const f = await node('branch', 'Asked folder', path);
+      await node('note', 'inside', path);
+      await homeIn(f, P);
+      const pending = await ask(f, { confirm: true });
+      await approve(pending);
+      expect(await writeInP(f)).toBe(false);
+      expect((await rowOf(pending)).error ?? '').toMatch(/^confirm_required/);
+    });
   });
 
   it('with no login scope the tools refuse and change nothing', async () => {

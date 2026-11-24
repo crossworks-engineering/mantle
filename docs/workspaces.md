@@ -280,16 +280,19 @@ every workspace it is granted to, each with a Write switch.
   row that follows its folder changes on the folder (the panel's "Change
   here" and "Restore" stay in the panel). Who may call the two writes:
 
-  | Caller                                                                            | Add, Write on                                         | Write off, remove                         |
-  | --------------------------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------- |
-  | A login's own MCP client (OAuth, stdio)                                           | at once, with its own rights                          | with its own rights                       |
-  | An API key or a linked brain (as its login)                                       | only when it names the tool (risky); no folder change | the same                                  |
-  | An assistant's chat turn, or its delegated child, that holds the tool (below)     | waits in Pending for a person; no folder change       | with its login's rights; no folder change |
-  | A team app (any app another workspace holds)                                      | never                                                 | never                                     |
-  | An app only Admin holds, run by an Admin user                                     | asks the runner's confirm in the app                  | with the runner's rights                  |
-  | A recipe step, or an item of a runner queue                                       | never                                                 | never                                     |
-  | A call with no login (the Control Center's admin channel, a heartbeat of its own) | refused                                               | refused                                   |
+  | Caller                                                                            | Add, Write on                                                           | Write off, remove                                                 |
+  | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------- |
+  | A login's own MCP client (OAuth, stdio)                                           | at once, with its own rights                                            | with its own rights                                               |
+  | An API key or a linked brain (as its login)                                       | only when it names the tool (risky); no folder change                   | the same                                                          |
+  | An assistant's chat turn, or its delegated child, that holds the tool (below)     | waits in Pending for a person; its own workspace only; no folder change | with its login's rights; its own workspace only; no folder change |
+  | A team app (any app another workspace holds)                                      | never                                                                   | never                                                             |
+  | An app only Admin holds, run by an Admin user                                     | asks the runner's confirm in the app                                    | with the runner's rights                                          |
+  | A recipe step, or an item of a runner queue                                       | never                                                                   | never                                                             |
+  | A call with no login (the Control Center's admin channel, a heartbeat of its own) | refused                                                                 | refused                                                           |
 
+  An assistant's turn reads the one workspace it answers in, so its grant
+  changes reach only that workspace (another is "not found", approved or
+  not): Write on its own row, say, never a grant to another workspace.
   A turn holds the tools only through a tool group granted to its agent.
   The shipped `access` group holds them; it is Admin only (so only a turn
   whose scope holds the Admin workspace gets it) and attached to no agent,
