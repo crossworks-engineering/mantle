@@ -43,6 +43,11 @@ const h = vi.hoisted(() => ({
   onePiece: false,
   /** The first pages of the pieces batches the parser refuses (a 400). */
   piecesRefused: [] as number[],
+  /** Pages whose pictures do not fit after another page's (`heavy`), or at
+   *  all (`tooBig`): it and every page after it in its batch are
+   *  over_budget, as the parser answers. */
+  heavy: [] as number[],
+  tooBig: [] as number[],
   /** The answer of a call by its picture's file name, over `answers`. */
   answerOf: null as null | ((filename: string) => { ran: boolean; text: string }),
   /** The stand-in keeps and takes answers as the gateway does (the
@@ -286,6 +291,8 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     h.pages = 2;
     h.onePiece = false;
     h.piecesRefused = [];
+    h.heavy = [];
+    h.tooBig = [];
     h.answerOf = null;
     h.cache = false;
     h.callMs = 0;
@@ -325,7 +332,12 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
           if (h.piecesRefused.includes(asked[0]!)) {
             return Response.json({ ok: false, code: 'failed', error: 'made up' }, { status: 400 });
           }
-          return Response.json({ ok: true, pages: asked.map(onePieceOf) });
+          let over = false;
+          const answered = asked.map((n, i) => {
+            over ||= h.tooBig.includes(n) || (i > 0 && h.heavy.includes(n));
+            return over ? { page: n, status: 'over_budget' } : onePieceOf(n);
+          });
+          return Response.json({ ok: true, pages: answered });
         }
         if (route === '/pdf/pieces') return Response.json({ ok: true, pages: pieces });
         return Response.json({ ok: true, ...(h.drawing as object) });
@@ -896,5 +908,33 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(await read(file.id)).toBeNull();
     expect(h.vision).toHaveLength(2);
     expect(await rowsOf(file.id, 'SELECT * FROM "Pages" ORDER BY "Page"')).toEqual(before);
+  });
+
+  it('pages whose pictures did not fit start the next batch: only a page too large by itself stays unread', async () => {
+    h.pages = 15;
+    h.onePiece = true;
+    h.heavy = [5];
+    h.tooBig = [12];
+    const file = await scanFile('a made-up scan, a heavy batch');
+    h.order.length = 0;
+    h.answerOf = (name) => ({ ran: true, text: `1: TK-${pageOfCall(name)}` });
+    const { cuts } = await readWithCuts(file.id);
+    // Pages 1 to 4; then 5 to 11 (12 is too large by itself, so 12 to 14
+    // are over the budget after it); then 12 alone; then 13 to 15.
+    expect(h.order.filter((r) => r === '/pdf/pieces')).toHaveLength(4);
+    expect(h.vision.map((v) => pageOfCall(v.filename))).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15,
+    ]);
+    expect(await rowsOf(file.id, `SELECT "Vision status" FROM "Pages" WHERE "Page" = 12`)).toEqual([
+      { 'Vision status': 'over_budget' },
+    ]);
+    expect(
+      await rowsOf(file.id, `SELECT "Scan pages not read", "Scan pages not read why" FROM "File"`),
+    ).toEqual([{ 'Scan pages not read': 1, 'Scan pages not read why': 'over_budget 1' }]);
+    expect(cuts).toEqual({ scan_pages: { what: 'pages', read: 14, total: 15 } });
+    // Stated and read in part, but a read again reads it no better: not due.
+    h.vision.length = 0;
+    expect(await read(file.id)).toBeNull();
+    expect(h.vision).toEqual([]);
   });
 });

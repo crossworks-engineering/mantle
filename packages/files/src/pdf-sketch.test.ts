@@ -463,9 +463,22 @@ describe('the rows of a read', () => {
     ).toBe(40);
     // A read again can read the pages past an older cap, not those past this one.
     expect(pdfFileTabOf(old, ['scan', 'scan', 1, 37])?.scanPagesLeft).toBe(37);
+    // A newer database: only the reasons a read again can read.
+    const now = [...old, 'Scan pages not read', 'Scan pages not read why'];
     expect(
-      pdfFileTabOf([...old, 'Scan pages not read'], ['scan', 'scan', 1, 37, 40])?.scanPagesLeft,
-    ).toBe(3);
+      pdfFileTabOf(now, [
+        'scan',
+        'scan',
+        1,
+        2,
+        9,
+        'time 3, refused 1, no_picture 2, past_page_cap 2, not_read 1',
+      ])?.scanPagesLeft,
+    ).toBe(6);
+    expect(
+      pdfFileTabOf(now, ['scan', 'scan', 1, 2, 3, 'over_budget 1, past_page_cap 2'])?.scanPagesLeft,
+    ).toBe(0);
+    expect(pdfFileTabOf(now, ['scan', 'scan', 1, 0, 0, null])?.scanPagesLeft).toBe(0);
   });
 
   it('with no sketch read the File tab says so and no vision cell is filled', () => {

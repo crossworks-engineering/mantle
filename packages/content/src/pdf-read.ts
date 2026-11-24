@@ -39,7 +39,7 @@ import {
 } from '@mantle/files';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { readTabColumns, runTableSql, TableSqlError } from '@mantle/tabledb';
+import { readTabColumns, runTableSql } from '@mantle/tabledb';
 import { askCapOf } from './pipeline-agent';
 import {
   agentStep,
@@ -88,9 +88,20 @@ export async function sketchStateOf(
     if (!stored) return 'other';
     if (!stored.visionRead) return 'none';
     return stored.scanPagesLeft > 0 ? 'left' : 'whole';
-  } catch (err) {
-    // A query the file refuses (no File table): another shape, for good.
-    return err instanceof TableSqlError && err.code === 'sql' ? 'other' : 'unknown';
+  } catch {
+    // A file with no File table (another Reader's database): another shape,
+    // for good. Any other failure (a busy or slow reader, a lock, the file
+    // replaced just now) is `unknown`: fail closed.
+    try {
+      const t = await runTableSql(
+        abs,
+        `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'File'`,
+        { cap: 1 },
+      );
+      return Number(t.rows[0]?.[0]) === 0 ? 'other' : 'unknown';
+    } catch {
+      return 'unknown';
+    }
   }
 }
 

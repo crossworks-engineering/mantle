@@ -98,13 +98,20 @@ vi.mock('@mantle/tabledb', async (orig) => ({
     const state = h.dbs.get(abs.split('/').pop()!);
     if (state === 'unreadable') throw new Error('the reader pool is busy');
     return {
-      columns: ['Kind', 'Rules kind', 'Vision read', 'Scan pages not read'],
+      columns: [
+        'Kind',
+        'Rules kind',
+        'Vision read',
+        'Scan pages not read',
+        'Scan pages not read why',
+      ],
       rows: [
         [
           'scan',
           'scan',
           state === 'sketch' || state === 'partial' ? 1 : 0,
           state === 'partial' ? 9 : 0,
+          state === 'partial' ? 'time 9' : null,
         ],
       ],
     };

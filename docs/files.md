@@ -453,7 +453,9 @@ itself (cost safety: no trigger, no timer).
   `ocr`, `vision_model`): the read is paid for and runs one time for its
   bytes, so the pass chunks, embeds and reads facts from the kept text, and
   no whole-page OCR is paid on top. But for one whose sketch read left scan
-  pages not read (`Scan pages not read` above 0): it drops its text as any
+  pages a read again can read (its time ran out, a call failed, a batch was
+  not drawn; not a page past the cap or one the parser refuses for good): it
+  drops its text as any
   file, so the sketch read is due again and reads the pages left, using the
   answers it kept (docs/file-ingestion.md, 3b). A PDF (the extension or the mimeType)
   whose database is there but whose File tab cannot be read now keeps it

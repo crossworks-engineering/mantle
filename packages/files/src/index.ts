@@ -596,6 +596,7 @@ export {
   SKETCH_KINDS,
   SKETCH_MAX_PAGES,
   SKETCH_PROMPT,
+  SKETCH_READ_AGAIN,
   SKETCH_TIME_SHARE,
   parsePieceAnswer,
   sketchMarkdown,

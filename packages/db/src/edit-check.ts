@@ -54,6 +54,10 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
     'server/api/src/agent/extract/read-cut-stamp.ts',
     'server/api/src/agent/extract/agent-text.ts',
     'packages/content/src/events.ts',
+    // The sketch read's cut, stored with its text; the stamp of the files
+    // read under the old 10-page cap.
+    'server/api/src/agent/extract/load-body.ts',
+    'server/web/lib/maintenance/scan-pages-stamp.ts',
   ],
   // The refold.
   refolded: [

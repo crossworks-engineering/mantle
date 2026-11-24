@@ -18,7 +18,7 @@ const apply = process.argv.slice(2).includes('--apply');
 async function main(): Promise<number> {
   const c = await stampScanPages(apply);
   console.log(
-    `[scan-pages-stamp] PDF files with no scan_pages cut: ${c.pdfs}; with a sketch read: ${c.sketched}; read in part: ${c.partial}; File tab not readable now: ${c.unreadable}; stamped: ${c.stamped}`,
+    `[scan-pages-stamp] PDF files with no scan_pages cut: ${c.pdfs}; with a sketch read: ${c.sketched}; read in part: ${c.partial}; no drawing File tab read (not a drawing database, or busy now): ${c.unreadable}; stamped: ${c.stamped}`,
   );
   if (!apply && c.partial > 0) {
     console.log('[scan-pages-stamp] DRY RUN: pass --apply to stamp them');

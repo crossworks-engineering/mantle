@@ -185,6 +185,13 @@ export function sketchPageNone(
   return { page, status, dpi: 0, pictures: 0, pieces: [], notSent: [] };
 }
 
+/** The reasons of a scan page not read that a read again can read: the
+ *  read's time ran out, a call before it did not run, or its batch could not
+ *  be drawn now. Not `refused` or `over_budget` (the same bytes cut the same
+ *  way), nor `past_page_cap`: stated, and the file read in part, but a read
+ *  again reads them no better. */
+export const SKETCH_READ_AGAIN: readonly string[] = ['time', 'not_read', 'no_picture'];
+
 /** The scan pages of a read not read whole, by why: each page's status
  *  that is not `ok`, and `past_page_cap`. */
 export function sketchPagesNotRead(read: SketchRead): Record<string, number> {

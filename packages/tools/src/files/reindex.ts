@@ -22,7 +22,8 @@
  *    `ocr`, `vision_model`) stays and the pass chunks, embeds and reads
  *    facts from it again (dropped, the extract would pay a whole-page OCR
  *    whose weaker text replaces it). But for one whose sketch read left scan
- *    pages not read (`Scan pages not read`, a cap or its time): its text
+ *    pages a read again can read (its time, a failed call, a batch not
+ *    drawn: sketchStateOf `left`): its text
  *    goes as any file's, so the extract's sketch read is due again and
  *    reads the pages left, using the answers it kept
  *    (server/api extract/pdf-sketch.ts). A PDF whose database is there but

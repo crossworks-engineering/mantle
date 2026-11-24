@@ -146,11 +146,12 @@ export async function sketchIngestPdfNode(
   if (!abs) return null;
   const file = await storedPdfOf(abs);
   if (!file || !(SKETCH_KINDS as readonly string[]).includes(file.kind)) return null;
-  // Read before: due again only for pages it left, on a node whose text is
+  // Read before: due again only for pages it left that a read again can
+  // read (scanPagesLeft, the rule of sketchStateOf), on a node whose text is
   // gone (a person's read again). Its text on the node is that read's: a
   // retry of the extract never reads on top of it.
   const hasText = typeof data.text === 'string' && data.text.trim() !== '';
-  if (file.visionRead && (file.scanPagesNotRead === 0 || hasText)) return null;
+  if (file.visionRead && (file.scanPagesLeft === 0 || hasText)) return null;
   // The page types of its tab Pages (the router's part 2): the database is
   // written whole below, so they are put in again. A tab that cannot be
   // read is no sketch read now (before any spend): a paid page answer is
@@ -293,13 +294,18 @@ export async function sketchIngestPdfNode(
       await withAnswerCache(
         async () => {
           // A batch of pages a parser job, each batch asked before the next
-          // is cut: only one batch's pictures are held.
-          for (let at = 0; at < pages.length; at += SKETCH_BATCH_PAGES) {
+          // is cut: only one batch's pictures are held. The next batch starts
+          // at the first page whose pictures did not fit in the job's answer
+          // (`over_budget`: the parser takes no more after it), so only a
+          // page over the budget by itself stays unread.
+          let at = 0;
+          while (at < pages.length) {
             const batch = pages.slice(at, at + SKETCH_BATCH_PAGES);
             if (run.stopped || Date.now() >= until) {
               for (const n of batch) {
                 read.push(sketchPageNone(n, run.stopped ? 'not_read' : 'time'));
               }
+              at += batch.length;
               continue;
             }
             let pieces: SketchPagePieces[];
@@ -328,9 +334,13 @@ export async function sketchIngestPdfNode(
               // after others were read is stated, and the read goes on.
               if (run.model === null || !isParserError(err) || err.retryable) throw err;
               for (const n of batch) read.push(sketchPageNone(n, 'no_picture'));
+              at += batch.length;
               continue;
             }
-            for (const page of pieces) {
+            const over = pieces.findIndex((p) => p.status === 'over_budget');
+            const taken = over < 0 ? pieces.length : Math.max(over, 1);
+            at += taken;
+            for (const page of pieces.slice(0, taken)) {
               // A page the parser could not cut keeps its own status.
               if (!run.stopped && page.status === 'ok' && Date.now() >= until) {
                 read.push(sketchPageNone(page.page, 'time'));

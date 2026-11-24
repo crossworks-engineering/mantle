@@ -33,7 +33,8 @@ export type ScanPagesStampCounts = {
   partial: number;
   /** Stamped by this run (0 on a dry run). */
   stamped: number;
-  /** A database whose File tab could not be read now. */
+  /** A database with no drawing File tab read: not a drawing database (a
+   *  book's, another Reader's), or one busy now. */
   unreadable: number;
 };
 

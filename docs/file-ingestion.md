@@ -451,7 +451,9 @@ read it. This is the sketch read (`packages/files/src/pdf-sketch.ts`,
    No model. Every scan page of the file is read: the pages are cut 10 at a
    time (`SKETCH_BATCH_PAGES`, one parser job a batch), and each batch is
    asked before the next is cut, all in the one extract, so only one batch's
-   pictures are held.
+   pictures are held. A page whose pictures do not fit in the job's answer
+   after the pages before it starts the next batch, so only a page too large
+   by itself is left (`over_budget`).
 2. Each packed picture is one call to the vision worker, which answers one
    line a piece: `number: text`. A number the picture does not hold is dropped.
    Each call asks for the least thinking (OpenRouter `reasoning.effort`
@@ -499,8 +501,9 @@ pages past the cap`, `Scan pages not read` (all of these, the cap
   is `partial` and `files:coverage` counts it as not read in full (a
   shortcut cut).
 - The rest is read by a person: a read again of the file (`file_reindex`,
-  Files > Read again). For a file read in part (pages its time, a failed call
-  or an older page cap left; pages past the 500 do not count) the read again
+  Files > Read again). For a file read in part with pages a read again can
+  read (`SKETCH_READ_AGAIN`: `time`, `not_read`, `no_picture`; on a database
+  of before 2026-11-24, the pages past the old 10-page cap) the read again
   drops the file's text, as for any file, so the sketch read is due again; it
   cuts the pages again and asks only for the pictures it has no kept answer
   of: the answers a sketch read kept are taken whatever the read-again stamp

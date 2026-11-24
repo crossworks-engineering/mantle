@@ -21,6 +21,7 @@ import {
 import { CONFIDENCE, type LineRow, type TagRow, type WordRow } from './pdf-rows';
 import {
   SKETCH_MAX_PAGES,
+  SKETCH_READ_AGAIN,
   sketchPageRows,
   sketchPagesNotRead,
   type SketchRead,
@@ -449,9 +450,9 @@ export function pdfFileTabOf(
   /** Scan pages the sketch read read whole (`Scan pages read`); 0 with no
    *  read. */
   scanPagesRead: number;
-  /** Scan pages a read again can read: those not read but for the pages
-   *  past the per-file cap. A database of before `Scan pages not read`:
-   *  its pages past the cap (the old cap was 10). */
+  /** Scan pages a read again can read (SKETCH_READ_AGAIN, by `Scan pages
+   *  not read why`). A database of before `Scan pages not read`: its pages
+   *  past the cap (the old cap was 10). */
   scanPagesLeft: number;
   notReadWhole: number;
 } | null {
@@ -474,11 +475,7 @@ export function pdfFileTabOf(
       ) || 0,
     scanPagesRead: Number(cell('Scan pages read')) || 0,
     scanPagesLeft: columns.includes('Scan pages not read')
-      ? Math.max(
-          0,
-          (Number(cell('Scan pages not read')) || 0) -
-            (Number(cell('Scan pages past the cap')) || 0),
-        )
+      ? readAgainCount(cell('Scan pages not read why'))
       : Number(cell('Scan pages past the cap')) || 0,
     notReadWhole: Number(cell('Pages not read whole') ?? 0),
     decision:
@@ -492,6 +489,17 @@ export function pdfFileTabOf(
           }
         : null,
   };
+}
+
+/** The pages of `Scan pages not read why` (`time 120, refused 2`, as the
+ *  File tab writes it) a read again can read (SKETCH_READ_AGAIN). */
+function readAgainCount(why: unknown): number {
+  if (typeof why !== 'string') return 0;
+  let n = 0;
+  for (const [, reason, count] of why.matchAll(/([a-z_]+) (\d+)/g)) {
+    if (SKETCH_READ_AGAIN.includes(reason!)) n += Number(count);
+  }
+  return n;
 }
 
 /** What each kind is, in one sentence: the description of a database
