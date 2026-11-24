@@ -7,8 +7,8 @@
  * text route for these types, so this Reader's text is the file's text
  * (docs/pipelines.md, "Text and pictures from every Reader").
  *
- * - No message (an empty file): `ok` with no tabs and no text. The file
- *   keeps the default text (its name, type and size).
+ * - No message (an empty file): a write with no tabs and no text, so the
+ *   database is the word `no-rows` and the file keeps the default text.
  * - An Outlook file that cannot be read throws: a failed job, and the file
  *   gets its word (document_unreadable), as for any reader.
  * - Attachments are named, never read: the detail cut `mail_attachments`
@@ -23,7 +23,11 @@ import { mailTab, mailText, readMail } from './mail';
 export const step: PipelineStep = async (req, job) => {
   const ext = (req.file?.ext ?? '').toLowerCase();
   const read = await readMail(await job.bytes(), ext);
-  if (read.messages.length === 0) return { status: 'ok' };
+  // No message: no tabs, so the write gives the word `no-rows`, and no text,
+  // so the file keeps the default text.
+  if (read.messages.length === 0) {
+    return { status: 'ok', calls: [{ call: 'tool', tool: FILE_TABS_WRITE, input: { tabs: [] } }] };
+  }
   const attachments = read.messages.reduce((n, m) => n + m.attachments.length, 0);
   const readCuts: Record<string, ReadCutValue> = {};
   if (attachments > 0)

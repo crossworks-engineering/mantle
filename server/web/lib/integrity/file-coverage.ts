@@ -88,9 +88,10 @@ export const POPULAR_EXTS: ReadonlySet<string> = new Set([
   'zip',
 ]);
 
-/** The types no route reads today that the check still names, so they show
- *  as themselves, not as `(other)`: the popular ones, and the plan's gap
- *  types. A type some route reads is named by that. */
+/** The types the check names whatever reads them, so they show as
+ *  themselves, not as `(other)`: the popular ones, and the plan's gap types
+ *  (eml, msg and mbox have the Reader `mail` since A1). A type some route
+ *  reads is named by that too. */
 const NAMED_TYPES: ReadonlySet<string> = new Set([
   'eml',
   'msg',

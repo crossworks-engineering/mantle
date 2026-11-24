@@ -101,6 +101,16 @@ describe('an .eml', () => {
     expect(m!.body).not.toContain('p{}');
   });
 
+  it('cuts only a made-up attachment name past any file system length', async () => {
+    const long = 'n'.repeat(400);
+    const eml = Buffer.from(
+      PLAIN.toString('latin1').replaceAll('datasheet.pdf', `${long}.pdf`),
+      'latin1',
+    );
+    const [m] = (await readMail(eml, 'eml')).messages;
+    expect(m!.attachments[0]!.name).toHaveLength(255);
+  });
+
   it('decodes an 8-bit charset and an encoded subject', async () => {
     const [m] = (await readMail(LATIN1, 'eml')).messages;
     expect(m).toMatchObject({ subject: 'Café', body: 'Café ouvert' });
@@ -193,7 +203,9 @@ describe('a message that cannot be read', () => {
     );
     const read = await readMail(mbox, 'mbox');
     expect(read).toMatchObject({ total: 3, whole: 2, stopped: null });
-    expect(mailText(read, 'mbox')).toContain('## Message 2\n\n[This message could not be read.]');
+    expect(mailText(read, 'mbox')).toMatch(
+      /## Message 2\n\n(?:[^#]*\n)?\[The rest of this message could not be read\.\]/,
+    );
     expect(mailText(read, 'mbox')).toContain('third');
   });
 
@@ -321,8 +333,10 @@ describe('the step', () => {
   });
 
   it('writes nothing for an empty mailbox', async () => {
-    const { r } = await run(Buffer.alloc(0), 'mbox');
-    expect(r).toEqual({ status: 'ok' });
+    const { r, input } = await run(Buffer.from('\r\n'), 'mbox');
+    expect(r.status).toBe('ok');
+    // No tabs: the word no-rows. No text: the default text stays.
+    expect(input).toEqual({ tabs: [] });
   });
 
   it('says a mailbox read in part, which makes the file partial', () => {

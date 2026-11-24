@@ -2122,10 +2122,13 @@ Attachments are named, never read (docs/files.md, 8f): the detail cut
 the answer cap (40 MB of JSON in UTF-8, `MAIL_ANSWER_MAX_BYTES`, under the
 96 MB wire), the time cap (150 s, `MAIL_READ_MAX_MS`, under `needs.timeMs`
 of 240 s, so a huge mailbox ends in part rather than killed whole), a
-message of a mailbox mailparser refuses (counted; the others are read), and
-an RTF body whose header claims more than its bytes or 16 MB (not
-unpacked: the unpacker trusts that header). An empty file: `ok` with no
-write, so it keeps the default text. The bytes choose the reader: OLE2 is
+message of a mailbox mailparser refuses (its headers and attachment names
+kept, counted; the others are read), and an RTF body whose header claims
+more than its bytes or that is past 2 MB packed (not unpacked: the unpacker
+reads to that header's size and unpacks up to 8 times). A body is never
+measured past the budget in characters, so no huge string is stringified.
+An empty file: a write with no tabs (the word `no-rows`) and no text, so it
+keeps the default text. The bytes choose the reader: OLE2 is
 an Outlook message whatever the name, anything else RFC 822. An OLE2 file
 the reader cannot read, or a single message mailparser refuses, throws, and
 the file gets `document_unreadable`.

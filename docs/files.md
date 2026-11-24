@@ -628,16 +628,19 @@ safety caps that end a read early, the bytes of the answer (40 MB of
 JSON in UTF-8 for the text and the tab, `MAIL_ANSWER_MAX_BYTES`, so it
 fits the parser's 96 MB wire) and its time (150 s, `MAIL_READ_MAX_MS`,
 inside the job's 240 s); a message of a mailbox that mailparser refuses
-(past 1,000 parts or a 1 MB header block), which stays in the text as
-"[This message could not be read.]" while the others are read; and an
-Outlook RTF body whose header claims more than its bytes or more than
-16 MB (`MSG_RTF_MAX_BYTES`), which is not unpacked. The messages read
+(past 1,000 parts or a 1 MB header block), which keeps what was read of it
+(its headers, its attachment names) and the line "[The rest of this message
+could not be read.]" while the others are read; and an Outlook RTF body
+whose header claims more than its bytes, or past 2 MB packed
+(`MSG_RTF_MAX_PACKED_BYTES`; it unpacks to at most 8 times that), which is
+not unpacked. An attachment name past 255 characters (no file system's) is
+cut there. The messages read
 stay; the ones past a cap are counted, not read. A first message past the
 answer cap keeps the head of its body and counts as not read in full. The stored text past 1,000,000
 characters is `text_store`, as for any document; search covers all of it.
 
-An empty file gives no text and no database; it keeps the default text (its
-name, type and size). The bytes choose the reader, not the name: an
+An empty file gives no text and a database of no rows (the word `no-rows`);
+it keeps the default text (its name, type and size). The bytes choose the reader, not the name: an
 OLE2 file is read as an Outlook message, anything else as RFC 822 (a
 renamed message). An Outlook file that is no message (OLE2 that the reader
 cannot read), or a single `.eml` mailparser refuses, is

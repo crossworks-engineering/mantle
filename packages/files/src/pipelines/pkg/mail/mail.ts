@@ -73,8 +73,9 @@ export type MailRead = {
  *  (PARSER_ANSWER_MAX_BYTES), so this leaves room to spare. */
 export const MAIL_ANSWER_MAX_BYTES = 40 * 1024 * 1024;
 
-/** The most bytes of an Outlook RTF body, packed and unpacked. */
-export const MSG_RTF_MAX_BYTES = 16 * 1024 * 1024;
+/** The most bytes of an Outlook RTF body, packed: it unpacks to at most 8
+ *  times that (16 MB). */
+export const MSG_RTF_MAX_PACKED_BYTES = 2 * 1024 * 1024;
 
 /** The most time one read takes. The job's deadline is the manifest's
  *  `needs.timeMs` (240 s); a read that stops here keeps what it read. */
@@ -114,12 +115,10 @@ export async function readMail(
     if (messages.length > 0 && now() - start > maxMs) return done('time');
     // One bad message of a mailbox does not cost the others: it is counted
     // as not read. A file of one message throws, and gets its word.
-    const m = ole
-      ? await readMsg(part)
-      : parts.length > 1
-        ? await readEml(part).catch(() => UNREAD)
-        : await readEml(part);
-    const size = answerBytes(m);
+    const m = ole ? await readMsg(part) : await readEml(part, parts.length > 1);
+    // A body past the budget in characters is past it in bytes: never
+    // measured whole (a string that large may not stringify).
+    const size = m.body.length > maxBytes ? Infinity : answerBytes(m);
     if (used + size > maxBytes) {
       // The first message is kept, its body cut to the budget, so a file of
       // one huge message still gives its headers and the head of its text.
@@ -132,34 +131,29 @@ export async function readMail(
   return done(null);
 }
 
-/** A message of a mailbox mailparser refused: counted, not read. */
-const UNREAD: MailMessage = {
-  from: '',
-  to: '',
-  cc: '',
-  bcc: '',
-  date: '',
-  subject: '',
-  body: '[This message could not be read.]',
-  attachments: [],
-  whole: false,
-};
-
 /** The bytes a message takes in the answer: its text and its row, as JSON
  *  in UTF-8 (escapes counted). */
 function answerBytes(m: MailMessage): number {
   return Buffer.byteLength(JSON.stringify([messageText(m), mailRow(m, 0)]));
 }
 
-/** The message with its body cut until it fits `maxBytes`. */
+/** The message with its body cut until it fits `maxBytes`: first to
+ *  `maxBytes` characters (no string past the budget is measured), then by
+ *  the share that is over, a few passes at most. The headers fit: each
+ *  header block is at most 1 MB (mailparser) and each attachment name at
+ *  most NAME_MAX_CHARS. */
 function cutToFit(m: MailMessage, maxBytes: number): MailMessage {
-  let body = m.body;
-  for (let size = answerBytes(m); size > maxBytes && body.length > 0;) {
+  let body = m.body.slice(0, maxBytes);
+  for (let size = answerBytes({ ...m, body }); size > maxBytes && body.length > 0;) {
     body = body.slice(0, Math.floor((body.length * maxBytes) / size) - 1);
     size = answerBytes({ ...m, body });
   }
   return { ...m, body, whole: false };
 }
+
+/** The most characters of an attachment's name: past any file system's
+ *  name length, so only a made-up name is ever cut. */
+const NAME_MAX_CHARS = 255;
 
 // ─── mbox ──────────────────────────────────────────────────────────────
 
@@ -214,8 +208,11 @@ const isoOf = (d: Date | undefined | null): string =>
 /** One RFC 822 message, read as a stream: each attachment's bytes are
  *  drained and counted, never kept. mailparser reads any bytes (a file with
  *  no headers gives empty fields); it refuses a message past its own bounds
- *  (1,000 parts, a header block past 1 MB), which throws. */
-async function readEml(bytes: Buffer): Promise<MailMessage> {
+ *  (1,000 parts, a header block past 1 MB). Then a file of one message
+ *  throws; a message of a mailbox (`lenient`) keeps what was read of it, its
+ *  headers and attachment names, and counts as not read in full, so one bad
+ *  message does not cost the others. */
+async function readEml(bytes: Buffer, lenient: boolean): Promise<MailMessage> {
   const parser = new MailParser({
     skipHtmlToText: true,
     skipTextToHtml: true,
@@ -226,7 +223,7 @@ async function readEml(bytes: Buffer): Promise<MailMessage> {
   const attachments: MailAttachment[] = [];
   let text = '';
   let html = '';
-  await new Promise<void>((resolve, reject) => {
+  const read = new Promise<void>((resolve, reject) => {
     parser.on(
       'data',
       (d: AttachmentStream | { type: 'text'; text?: string; html?: string | false }) => {
@@ -237,7 +234,7 @@ async function readEml(bytes: Buffer): Promise<MailMessage> {
         }
         const at = attachments.length;
         const a: MailAttachment = {
-          name: d.filename ?? `attachment-${at + 1}`,
+          name: (d.filename ?? `attachment-${at + 1}`).slice(0, NAME_MAX_CHARS),
           type: d.contentType ?? '',
           bytes: 0,
         };
@@ -251,6 +248,14 @@ async function readEml(bytes: Buffer): Promise<MailMessage> {
     parser.on('error', reject);
     parser.end(bytes);
   });
+  let whole = true;
+  try {
+    await read;
+  } catch (err) {
+    if (!lenient) throw err;
+    whole = false;
+  }
+  const body = text.trim() || (html ? htmlToText(html).trim() : '');
   return {
     from: addressText(parser.from),
     to: addressText(parser.to),
@@ -258,9 +263,11 @@ async function readEml(bytes: Buffer): Promise<MailMessage> {
     bcc: addressText(parser.bcc),
     date: isoOf(parser.date),
     subject: parser.subject ?? '',
-    body: text.trim() || (html ? htmlToText(html).trim() : ''),
+    body: whole
+      ? body
+      : [body, '[The rest of this message could not be read.]'].filter(Boolean).join('\n\n'),
     attachments,
-    whole: true,
+    whole,
   };
 }
 
@@ -311,6 +318,10 @@ function dateOf(s: string | undefined): Date | null {
 /** The name of a `.msg` attachment: its long file name, its short one, or,
  *  for an embedded message, its display name with `.msg`. */
 function msgAttachmentName(a: FieldsData, i: number): string {
+  return msgName(a, i).slice(0, NAME_MAX_CHARS);
+}
+
+function msgName(a: FieldsData, i: number): string {
   const name = (a.fileName ?? a.fileNameShort ?? '').trim();
   if (name) return name;
   const shown = (a.name ?? '').trim();
@@ -318,9 +329,10 @@ function msgAttachmentName(a: FieldsData, i: number): string {
   return shown || `attachment-${i + 1}`;
 }
 
-/** The body of an Outlook message, and whether it was read. An RTF body
- *  whose header claims more than its bytes hold, or more than
- *  MSG_RTF_MAX_BYTES, is not unpacked (the unpacker trusts that header). */
+/** The body of an Outlook message, and whether it was read. An RTF body is
+ *  unpacked only when its header's size is within its bytes (the unpacker
+ *  reads to that size) and it is at most MSG_RTF_MAX_PACKED_BYTES (it
+ *  unpacks to at most 8 times that). */
 async function msgBody(f: FieldsData): Promise<{ body: string; whole: boolean }> {
   const plain = (f.body ?? '').trim();
   if (plain) return { body: plain, whole: true };
@@ -332,7 +344,7 @@ async function msgBody(f: FieldsData): Promise<{ body: string; whole: boolean }>
   const fits =
     head.length >= 16 &&
     head.readUInt32LE(0) + 4 <= head.length &&
-    Math.max(head.length, head.readUInt32LE(4)) <= MSG_RTF_MAX_BYTES;
+    head.length <= MSG_RTF_MAX_PACKED_BYTES;
   if (!fits) return { body: '', whole: false };
   try {
     const rtf = Buffer.from(decompressRTF(packed as unknown as number[]));
