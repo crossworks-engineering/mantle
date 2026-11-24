@@ -24,12 +24,13 @@
  * Cost. It runs inside an admitted extract only, after the extract's cost
  * guard (`llmWorkAllowed`), for at most SKETCH_MAX_PAGES (500) pages of a
  * file and 4 pictures a page, each call within the box's spend caps (a day
- * cap is a wait). No page is started after the read's share of the job's
- * time (SKETCH_TIME_SHARE of the box's extract time budget, counted from
- * the read's start): the pages left are stated (`time`), never asked by
- * anything that starts by itself. So the job keeps inside its budget in the
- * normal case; one that runs past it is tried again by the queue, and the
- * try again pays for no picture read (the answer cache).
+ * cap is a wait). No page is started once the vision calls have taken the
+ * read's share of the job's time (SKETCH_TIME_SHARE of the box's extract
+ * time budget; cutting pages is not counted, so every read again reads on):
+ * the pages left are stated (`time`), never asked by anything that starts
+ * by itself. A long file's cut can take a job past its budget: the queue
+ * then tries it again, and the try again finds the read written, or pays
+ * for no picture read (the answer cache).
  *
  * When it runs. One time for a file and its bytes: the database's `File`
  * tab holds `Vision read`, and a database that has it is not read again,
@@ -42,9 +43,10 @@
  * A copy of the file is another file, with its own database and its own
  * read. When the worker reads no picture at all (none is wired, or every
  * call failed), nothing is written, and the next extract of the file tries
- * again. A call that fails after others ran stops the read: that picture
- * and the ones after it are stated (`Gaps`, `not_read`) and are not asked
- * again in this read.
+ * again. Two calls in a row that fail stop the read: those pictures and
+ * the ones after them are stated (`Gaps`, `not_read`) and are not asked
+ * again in this read; one picture that fails alone is stated, and the read
+ * goes on.
  *
  * The order is for money (docs/pipelines.md, "The PDF set"). The page facts
  * (`/pdf/drawing`) are read before the first vision call. The pieces
@@ -191,8 +193,11 @@ export async function sketchIngestPdfNode(
       // The box's options of the reader (the title block), so the rows of
       // this read and the stamp follow them as an upload's do.
       const titleBlock = titleBlockOf(state.options);
-      // No picture is asked past this: the read's share of the job's time.
-      const until = Date.now() + (await sketchTimeMs(ownerId));
+      // No page is started once the vision calls have taken this: the read's
+      // share of the job's time. Cutting pages is not counted, so a read
+      // again, which cuts every page again and takes the kept answers, always
+      // gets its share for the pages left.
+      const budget = await sketchTimeMs(ownerId);
       // The page facts again (the parser, no model): the database is written
       // whole, so it needs them beside the read.
       const drawing = await step(
@@ -217,10 +222,14 @@ export async function sketchIngestPdfNode(
       }
 
       // `model`: the model that read a picture, null while none has.
-      // `stopped`: a call that did not run (the worker down, a rate limit)
-      // stops the read: the pictures after it are not asked. With nothing
-      // read, nothing is written and a later extract reads it all.
-      const run: { model: string | null; stopped: boolean } = { model: null, stopped: false };
+      // `stopped`: two calls in a row that did not run (the worker down, a
+      // rate limit) stop the read: the pictures after them are not asked;
+      // one picture the provider refuses alone never stops the pages after
+      // it (`failed`: calls in a row that did not run). With nothing read,
+      // nothing is written and a later extract reads it all. `spent`: ms in
+      // vision calls, against the read's share of the time.
+      const run = { model: null as string | null, stopped: false, spent: 0, failed: 0 };
+      const late = () => run.spent >= budget;
       const read: SketchRead['pages'] = [];
       /** The answers of one page's pictures, in order; null for a picture
        *  not asked (the read stopped). */
@@ -231,6 +240,7 @@ export async function sketchIngestPdfNode(
             answers.push(null);
             continue;
           }
+          const t0 = Date.now();
           const res = await step(
             {
               name: 'extract_vision',
@@ -278,9 +288,14 @@ export async function sketchIngestPdfNode(
           // (extract-queue.ts), never written with pictures left unread.
           // The pictures read before it are kept answers (@mantle/db
           // answer-cache.ts): the try again pays for none of them twice.
+          run.spent += Date.now() - t0;
           if (res.wait) throw new ProviderWaitError(res.wait, 'vision');
-          if (res.ran) run.model = res.model ?? 'unknown';
-          else run.stopped = true;
+          if (res.ran) {
+            run.model = res.model ?? 'unknown';
+            run.failed = 0;
+          } else if (++run.failed >= 2) {
+            run.stopped = true;
+          }
           answers.push(res.ran ? res.text : null);
         }
         return answers;
@@ -301,7 +316,7 @@ export async function sketchIngestPdfNode(
           let at = 0;
           while (at < pages.length) {
             const batch = pages.slice(at, at + SKETCH_BATCH_PAGES);
-            if (run.stopped || Date.now() >= until) {
+            if (run.stopped || late()) {
               for (const n of batch) {
                 read.push(sketchPageNone(n, run.stopped ? 'not_read' : 'time'));
               }
@@ -337,12 +352,17 @@ export async function sketchIngestPdfNode(
               at += batch.length;
               continue;
             }
-            const over = pieces.findIndex((p) => p.status === 'over_budget');
+            // The parser's job ran out of time to draw the rest (`no_picture`)
+            // or of room for its pictures (`over_budget`): they start the next
+            // batch. A first page so is stated, alone.
+            const over = pieces.findIndex(
+              (p) => p.status === 'over_budget' || p.status === 'no_picture',
+            );
             const taken = over < 0 ? pieces.length : Math.max(over, 1);
             at += taken;
             for (const page of pieces.slice(0, taken)) {
               // A page the parser could not cut keeps its own status.
-              if (!run.stopped && page.status === 'ok' && Date.now() >= until) {
+              if (!run.stopped && page.status === 'ok' && late()) {
                 read.push(sketchPageNone(page.page, 'time'));
                 continue;
               }

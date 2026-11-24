@@ -40,7 +40,7 @@ import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { readerPassOf, readerTextOf, standingReaderText } from '@mantle/content/reader-passes';
-import { currentReadCuts, withReadCutSink } from '@mantle/files/read-cut-sink';
+import { currentReadCuts, noteReadCut, withReadCutSink } from '@mantle/files/read-cut-sink';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
@@ -766,6 +766,16 @@ export async function loadExtractableBody(
     // off a `scan_pages` of the read before (kept by a read again with the
     // node's other cuts), or the file stays partial.
     const whole = !Object.hasOwn(currentReadCuts(), 'scan_pages');
+    // The stored text is cut at its limit (a scan of 500 pages can pass
+    // it): said with it, as the extractor says it at the end of a read.
+    if (body.length > TEXT_STORE_MAX_CHARS) {
+      noteReadCut('text_store', {
+        what: 'characters',
+        read: TEXT_STORE_MAX_CHARS,
+        total: body.length,
+        limit: TEXT_STORE_MAX_CHARS,
+      });
+    }
     await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
       await db
         .update(nodes)

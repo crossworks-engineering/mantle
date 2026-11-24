@@ -484,11 +484,14 @@ What it costs, and when it runs:
 - At most 500 scan pages of a file (`SKETCH_MAX_PAGES`, per file; it was 10
   until 2026-11-24) and 4 pictures a page: 2,000 vision calls a file at
   most, each with an answer cap that follows the pieces in its picture.
-- No page is started after the read's share of the job's time: half of the
-  box's extract time budget (`SKETCH_TIME_SHARE`; 30 minutes of the default
-  60), counted from the read's start, so the job keeps inside its budget in
-  the normal case. One that runs past it (a slow provider on the last page)
-  is tried again by the queue, and the try again pays for no picture read.
+- No page is started once the vision calls have taken the read's share of
+  the job's time: half of the box's extract time budget
+  (`SKETCH_TIME_SHARE`; 30 minutes of the default 60). The time to cut the
+  pages is not counted, so a read again, which cuts every page again and
+  takes the kept answers, always gets its share for the pages left. A long
+  file's cut can take the job past its budget: the queue then tries it
+  again, and the try again finds the read written, or pays for no picture
+  read.
 - Nothing is left out in silence. A scan page not read whole has its reason
   in `Pages` (`Vision status`): `past_page_cap` (past the 500), `time` (the
   read's time ran out before it), `not_read` (a call before it, or for one of
@@ -533,13 +536,15 @@ pages past the cap`, `Scan pages not read` (all of these, the cap
   read, gets the whole-page read as before, and the next extract of the file
   tries again. When that whole-page read gives text, the extract ends and
   nothing runs again by itself; a re-extract a person starts then reads the
-  pieces and puts their text after the whole-page text. A call that fails
-  after others ran stops the read: its picture and the ones after it are
-  stated (`not_read`) and are not asked again in that read. A parser that
+  pieces and puts their text after the whole-page text. Two calls in a row
+  that fail stop the read: their pictures and the ones after them are
+  stated (`not_read`) and are not asked again in that read; one picture
+  that fails alone is stated, and the read goes on. A parser that
   is busy in a later batch makes the extract try again (the pictures read
   are kept answers, so the try again pays for none of them twice); a batch
   the parser refuses after pages were read is stated (`no_picture`) and the
-  read goes on.
+  read goes on. Pages the parser's job had no time left to draw are
+  `no_picture` and start the next batch.
 - The rebuild (`dwg-reindex --pdf`) asks no model, so a file it builds has no
   vision read until an extract of that file runs. A database it writes for a
   sketch kind makes the next extract of that file read the pieces (up to 4

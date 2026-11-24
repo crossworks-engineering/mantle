@@ -548,12 +548,15 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(h.vision).toEqual([]);
   });
 
-  it('a worker that does not run: one call, nothing written, and the next extract tries again', async () => {
+  it('a worker that does not run: two calls, nothing written, and the next extract tries again', async () => {
     const file = await scanFile('a made-up scan, worker down');
-    h.answers = [{ ran: false, text: '' }];
+    h.answers = [
+      { ran: false, text: '' },
+      { ran: false, text: '' },
+    ];
     expect(await read(file.id)).toBeNull();
-    // The second picture was not sent after the first call did not run.
-    expect(h.vision).toHaveLength(1);
+    // Two calls in a row that did not run stop the read.
+    expect(h.vision).toHaveLength(2);
     expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
       { 'Vision read': 0 },
     ]);
@@ -900,13 +903,13 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       { 'Scan pages read': 3 },
     ]);
     // No kept answers here (the cache is off): the read again asks again,
-    // and its second call does not run.
+    // and its second and third calls do not run (two in a row stop it).
     h.callMs = 0;
     h.vision.length = 0;
     h.answerOf = (name) =>
-      pageOfCall(name) === 2 ? { ran: false, text: '' } : { ran: true, text: '1: TK-1' };
+      [2, 3].includes(pageOfCall(name)) ? { ran: false, text: '' } : { ran: true, text: '1: TK-1' };
     expect(await read(file.id)).toBeNull();
-    expect(h.vision).toHaveLength(2);
+    expect(h.vision).toHaveLength(3);
     expect(await rowsOf(file.id, 'SELECT * FROM "Pages" ORDER BY "Page"')).toEqual(before);
   });
 
@@ -936,5 +939,26 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     h.vision.length = 0;
     expect(await read(file.id)).toBeNull();
     expect(h.vision).toEqual([]);
+  });
+
+  it('one picture that fails alone is stated, and the read goes on to the pages after it', async () => {
+    h.pages = 4;
+    h.onePiece = true;
+    const file = await scanFile('a made-up scan, one picture refused');
+    h.answerOf = (name) =>
+      pageOfCall(name) === 2
+        ? { ran: false, text: '' }
+        : { ran: true, text: `1: TK-${pageOfCall(name)}` };
+    const { cuts } = await readWithCuts(file.id);
+    expect(h.vision.map((v) => pageOfCall(v.filename))).toEqual([1, 2, 3, 4]);
+    expect(
+      await rowsOf(file.id, `SELECT "Page", "Vision status" FROM "Pages" ORDER BY "Page"`),
+    ).toEqual([
+      { Page: 1, 'Vision status': 'ok' },
+      { Page: 2, 'Vision status': 'not_read' },
+      { Page: 3, 'Vision status': 'ok' },
+      { Page: 4, 'Vision status': 'ok' },
+    ]);
+    expect(cuts).toEqual({ scan_pages: { what: 'pages', read: 3, total: 4 } });
   });
 });

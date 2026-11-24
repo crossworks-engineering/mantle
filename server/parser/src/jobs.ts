@@ -233,6 +233,11 @@ export async function runJob(
           out.push({ page, status: 'no_picture' });
           continue;
         }
+        // The job's time ran out: not drawn now, so a read again draws it.
+        if (end - Date.now() < 1_000) {
+          out.push({ page, status: 'no_picture' });
+          continue;
+        }
         const cut = await pdfPagePieces(picture.png, picture.widthMm, p.dir, `pieces-${i}`, end);
         if (!cut) {
           out.push({ page, status: 'refused' });
