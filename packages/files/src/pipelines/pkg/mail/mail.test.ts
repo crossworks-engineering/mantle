@@ -276,6 +276,32 @@ describe('an Outlook .msg', () => {
     expect(read.messages[0]!.body).toBe('');
   });
 
+  it('does not unpack an RTF body past 2 MB packed, says so in the text, and counts it', async () => {
+    const read = await readMail(
+      madeUpMsg({ subject: 'R', rtf: `{\\rtf1 ${'x'.repeat(2_100_000)}}` }),
+      'msg',
+    );
+    expect(read).toMatchObject({ total: 1, whole: 0 });
+    expect(mailText(read, 'msg')).toContain('[The rest of this message could not be read.]');
+  });
+
+  it('holds a header to 1 MB and the attachments to 1,000, as for an .eml, and counts the cut', async () => {
+    const read = await readMail(
+      madeUpMsg({
+        subject: 's'.repeat(1_100_000),
+        body: 'b',
+        attachments: Array.from({ length: 1001 }, (_, i) => ({
+          name: `a${i}.txt`,
+          data: Buffer.from('x'),
+        })),
+      }),
+      'msg',
+    );
+    expect(read).toMatchObject({ total: 1, whole: 0 });
+    expect(read.messages[0]!.subject).toHaveLength(1024 * 1024);
+    expect(read.messages[0]!.attachments).toHaveLength(1000);
+  });
+
   it('is read as an Outlook message by its bytes, whatever its name', async () => {
     const [m] = (await readMail(madeUpMsg({ subject: 'Named eml', body: 'b' }), 'eml')).messages;
     expect(m!.subject).toBe('Named eml');

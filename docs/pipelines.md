@@ -2122,8 +2122,10 @@ Attachments are named, never read (docs/files.md, 8f): the detail cut
 the answer cap (40 MB of JSON in UTF-8, `MAIL_ANSWER_MAX_BYTES`, under the
 96 MB wire), the time cap (150 s, `MAIL_READ_MAX_MS`, under `needs.timeMs`
 of 240 s, so a huge mailbox ends in part rather than killed whole), a
-message of a mailbox mailparser refuses (its headers and attachment names
-kept, counted; the others are read), and an RTF body whose header claims
+message of a mailbox mailparser refuses (its headers kept, and any
+attachment names read before the refusal; the others are read), an Outlook
+message past the same bounds (a header past 1 MB, more than 1,000
+attachments), and an RTF body whose header claims
 more than its bytes or that is past 2 MB packed (not unpacked: the unpacker
 reads to that header's size and unpacks up to 8 times). A body is never
 measured past the budget in characters, so no huge string is stringified.

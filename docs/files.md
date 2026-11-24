@@ -628,13 +628,15 @@ safety caps that end a read early, the bytes of the answer (40 MB of
 JSON in UTF-8 for the text and the tab, `MAIL_ANSWER_MAX_BYTES`, so it
 fits the parser's 96 MB wire) and its time (150 s, `MAIL_READ_MAX_MS`,
 inside the job's 240 s); a message of a mailbox that mailparser refuses
-(past 1,000 parts or a 1 MB header block), which keeps what was read of it
-(its headers, its attachment names) and the line "[The rest of this message
-could not be read.]" while the others are read; and an Outlook RTF body
+(past 1,000 parts or a 1 MB header block), which keeps its headers and any
+attachment names read before the refusal, while the others are read; an
+Outlook message past the same bounds (a header past 1 MB, more than 1,000
+attachments), which keeps the first of each; and an Outlook RTF body
 whose header claims more than its bytes, or past 2 MB packed
 (`MSG_RTF_MAX_PACKED_BYTES`; it unpacks to at most 8 times that), which is
-not unpacked. An attachment name past 255 characters (no file system's) is
-cut there. The messages read
+not unpacked. Each message not read in full ends its text with the line
+"[The rest of this message could not be read.]". An attachment name past
+255 characters (no file system's) is cut there. The messages read
 stay; the ones past a cap are counted, not read. A first message past the
 answer cap keeps the head of its body and counts as not read in full. The stored text past 1,000,000
 characters is `text_store`, as for any document; search covers all of it.

@@ -263,9 +263,7 @@ async function readEml(bytes: Buffer, lenient: boolean): Promise<MailMessage> {
     bcc: addressText(parser.bcc),
     date: isoOf(parser.date),
     subject: parser.subject ?? '',
-    body: whole
-      ? body
-      : [body, '[The rest of this message could not be read.]'].filter(Boolean).join('\n\n'),
+    body,
     attachments,
     whole,
   };
@@ -294,26 +292,39 @@ async function readMsg(bytes: Buffer): Promise<MailMessage> {
       .filter(Boolean)
       .join(', ');
   const { body, whole } = await msgBody(f);
+  // The bounds mailparser holds an `.eml` to: a header at most 1 MB and at
+  // most 1,000 attachments. Past them the message is not read in full.
+  let cut = false;
+  const head = (v: string): string => {
+    if (v.length <= MSG_HEADER_MAX_CHARS) return v;
+    cut = true;
+    return v.slice(0, MSG_HEADER_MAX_CHARS);
+  };
+  const listed = f.attachments ?? [];
+  if (listed.length > MSG_MAX_ATTACHMENTS) cut = true;
   return {
-    from: person(f.senderName, f.senderSmtpAddress ?? f.senderEmail),
-    to: recipients('to'),
-    cc: recipients('cc'),
-    bcc: recipients('bcc'),
+    from: head(person(f.senderName, f.senderSmtpAddress ?? f.senderEmail)),
+    to: head(recipients('to')),
+    cc: head(recipients('cc')),
+    bcc: head(recipients('bcc')),
     date: isoOf(dateOf(f.clientSubmitTime ?? f.messageDeliveryTime ?? f.creationTime)),
-    subject: f.subject ?? '',
+    subject: head(f.subject ?? ''),
     body,
-    attachments: (f.attachments ?? []).map((a, i) => ({
+    attachments: listed.slice(0, MSG_MAX_ATTACHMENTS).map((a, i) => ({
       name: msgAttachmentName(a, i),
       type: a.attachMimeTag ?? (a.innerMsgContent ? 'application/vnd.ms-outlook' : ''),
       bytes: typeof a.contentLength === 'number' ? a.contentLength : null,
     })),
-    whole,
+    whole: whole && !cut,
   };
 }
 
 function dateOf(s: string | undefined): Date | null {
   return s ? new Date(s) : null;
 }
+
+const MSG_HEADER_MAX_CHARS = 1024 * 1024;
+const MSG_MAX_ATTACHMENTS = 1000;
 
 /** The name of a `.msg` attachment: its long file name, its short one, or,
  *  for an embedded message, its display name with `.msg`. */
@@ -363,6 +374,8 @@ const kb = (n: number): string =>
       ? `${Math.round(n / 1024)} KB`
       : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
+const NOT_WHOLE = '[The rest of this message could not be read.]';
+
 /** One attachment as a line of the text: name, type and size. */
 function attachmentLine(a: MailAttachment): string {
   const facts = [a.type, a.bytes !== null ? kb(a.bytes) : ''].filter(Boolean).join(', ');
@@ -382,7 +395,8 @@ function messageText(m: MailMessage): string {
   ]
     .filter(([, v]) => v)
     .map(([k, v]) => `${k}: ${v}`);
-  const parts = [head.join('\n'), m.body];
+  // A message not read in full says so where it stops, in its text too.
+  const parts = [head.join('\n'), m.body, m.whole ? '' : NOT_WHOLE];
   if (m.attachments.length > 0) {
     parts.push(
       `Attachments (named only, not read):\n${m.attachments.map(attachmentLine).join('\n')}`,
