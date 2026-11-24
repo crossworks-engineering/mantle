@@ -27,7 +27,8 @@ export const policy = routePolicy({
 export async function GET(req: Request) {
   const { user, source } = ownerCallerWithSource();
   // The brain's search languages: a paid translation, for a person's
-  // session only, never an API key (the search tools' ownerKeysOff rule).
+  // session only (a read-only login too: this request already pays for the
+  // query embedding), never an API key (the search tools' rule).
   const translate = source !== 'api';
 
   const parsed = parseSearchQuery(new URL(req.url).searchParams);
