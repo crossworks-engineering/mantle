@@ -48,7 +48,11 @@ export type FleetKeyLine = ControlKeyLine & { state: FleetKeyState };
  * `keys` is null when the box sent no lines; `keysReason` says why:
  *  - `old-box`: the box is a release behind (no key status yet);
  *  - `scope`: the box refuses the CC (MANTLE_CONTROL_CENTER_SCOPE=none);
- *  - `no-facts`: the box has not answered a facts read yet.
+ *  - `no-facts`: the box has not answered a facts read yet;
+ *  - `error`: the box could not read its keys (its other facts still came);
+ *  - `bad-reply`: the CC refused the shape of the box's key part;
+ *  - `keys-area` (`self` only): the person lacks the Admin `keys` area, which
+ *    the CC's own keys need, as on its Keys screen.
  * With lines, `keysReason` is null.
  *
  * `at` is when the lines were read (the box's own time), `reason` why the
@@ -62,7 +66,7 @@ export type FleetKeyBox = {
   at: string | null;
   reason: string | null;
   keys: FleetKeyLine[] | null;
-  keysReason: 'old-box' | 'scope' | 'no-facts' | null;
+  keysReason: 'old-box' | 'scope' | 'no-facts' | 'error' | 'bad-reply' | 'keys-area' | null;
   /** The last key set from the CC on this box: service, ok or a reason,
    *  who, when (the Fleet key set's own record). Null on `self`. */
   lastSet: {
@@ -79,9 +83,11 @@ export type FleetKeyStatus = { boxes: FleetKeyBox[] };
 
 /** POST /api/fleet/keys/test: each box asked, with its fresh lines when it
  *  answered. `tested` per box: `ok`, or a reason code (`scope`,
- *  `bad-call` from a box a release behind, `unreachable`, `pending` when
- *  the box did not answer within the wait: read GET /api/fleet/keys again
- *  a little later). */
+ *  `bad-call` from a box a release behind, `unreachable`, `http-500` when
+ *  a test could not run there, `busy` when 10 calls already wait, `pending`
+ *  when the box did not answer within the wait: read GET /api/fleet/keys
+ *  again a little later; `keys-area` on `self` for a person without the
+ *  `keys` area). */
 export type FleetKeyTestAnswer = {
   boxes: (FleetKeyBox & { tested: 'ok' | string })[];
 };

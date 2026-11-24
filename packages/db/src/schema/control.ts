@@ -258,11 +258,16 @@ export type ControlFacts = {
   counts: { workspaces: number; apps: number };
   backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
   /** Key status (docs/control-center.md, "Key status on the fleet"): one
-   *  line per provider key the box holds, with its print. Null: the box
-   *  refuses the CC (MANTLE_CONTROL_CENTER_SCOPE=none). Absent: a box a
-   *  release behind. Never a key. Not in the matrix (listControlMatrix
-   *  leaves it out): only listControlKeys reads it. */
+   *  line per provider key the box holds, with its print. Null: no lines,
+   *  and `keysReason` says why. Absent: a box a release behind. Never a
+   *  key. Not in the matrix (listControlMatrix leaves both out): only
+   *  listControlKeys reads them. */
   keys?: ControlKeyLine[] | null;
+  /** Why `keys` is null: `scope` (the box refuses the CC,
+   *  MANTLE_CONTROL_CENTER_SCOPE=none), `error` (the box could not read
+   *  them), `bad-reply` (the CC refused the part's shape; the rest of the
+   *  facts kept). */
+  keysReason?: 'scope' | 'error' | 'bad-reply';
 };
 
 /** The most key lines one facts answer carries. */

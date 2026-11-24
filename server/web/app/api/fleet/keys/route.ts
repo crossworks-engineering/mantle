@@ -5,8 +5,11 @@
  * last test and what that means (`state`), and a short print of the key to
  * match it with the provider's dashboard. Never a key. A linked box's lines
  * are from its last good facts read (`at`, every 5 minutes); `keysReason`
- * says why a box has none (old-box, scope, no-facts). A person's screen:
- * the MCP tool control_key_status gives the same without the prints.
+ * says why a box has none (old-box, scope, no-facts, error, bad-reply). The
+ * fleet part needs the settings area, as the fleet key set does; the CC's
+ * own box also the vault's own area, keys, as its Keys screen (else
+ * `keys-area`, and no key is opened). A person's screen: the MCP tool
+ * control_key_status gives the same without the prints.
  *
  * POST /api/fleet/keys: set or replace one provider key on the fleet
  * (docs/control-center.md, "Set a provider key on the fleet"). Body: the
@@ -47,12 +50,13 @@ export async function GET() {
   const user = ownerCaller();
   const off = ccOff();
   if (off) return off;
-  const [{ keptKeyBox, listControlKeys, selfKeyBox }, { keyLines }] = await Promise.all([
+  const [{ keptKeyBox, listControlKeys, selfKeyBox }, { ownKeyLines }] = await Promise.all([
     import('@mantle/db/control-center'),
     import('@mantle/api-keys'),
   ]);
-  // The CC's own box first, read now (its keys' owner is the brain's anchor).
-  const [self, rows] = await Promise.all([keyLines(user.id), listControlKeys()]);
+  // The CC's own box first, read now (its keys' owner is the brain's
+  // anchor), only for a person with the vault's own area, keys.
+  const [self, rows] = await Promise.all([ownKeyLines(user.id), listControlKeys()]);
   return NextResponse.json({ boxes: [selfKeyBox(self), ...rows.map(keptKeyBox)] });
 }
 

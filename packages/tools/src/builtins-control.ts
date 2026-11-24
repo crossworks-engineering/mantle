@@ -42,7 +42,7 @@ import {
   removeControlBox,
 } from '@mantle/db/control-center';
 import { authUsers, db, eq } from '@mantle/db';
-import { keyLines, testKeyLines } from '@mantle/api-keys';
+import { ownKeyLines } from '@mantle/api-keys';
 import type { FleetKeyBox } from '@mantle/client-types';
 import { isUuid, publicErrorText } from '@mantle/std';
 import { withHostIps } from '@mantle/std/host-ips';
@@ -593,7 +593,7 @@ const control_key_status: BuiltinToolDef = {
   inputSchema: { type: 'object', properties: {} },
   handler: (_input, ctx) =>
     onCc('control_key_status', async () => {
-      const [self, rows] = await Promise.all([keyLines(ctx.ownerId), listControlKeys()]);
+      const [self, rows] = await Promise.all([ownKeyLines(ctx.ownerId), listControlKeys()]);
       return {
         ok: true,
         output: { boxes: [selfKeyBox(self), ...rows.map(keptKeyBox)].map(noPrints) },
@@ -642,7 +642,7 @@ const control_key_test: BuiltinToolDef = {
         via: 'mcp' as const,
       };
       const [self, tests] = await Promise.all([
-        withSelf ? testKeyLines(who, ctx.ownerId) : null,
+        withSelf ? ownKeyLines(ctx.ownerId, who) : null,
         linked && linked.length === 0 ? [] : askControlKeyTests(linked, by(ctx)),
       ]);
       const boxes = await keyTestBoxes(self, tests);

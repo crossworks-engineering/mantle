@@ -121,10 +121,20 @@ describe.skipIf(!URL_)('key status on the fleet', () => {
     const kind = opts.kind ?? 'token';
     const sealed = seal(value, kind === 'token' ? id : `${id}:${kind}`);
     await sql`delete from api_keys where user_id = ${anchor} and service = ${service}`;
-    await sql`insert into api_keys (id, user_id, service, label, key_enc, key_version, kind, updated_at)
+    const at = opts.at ?? new Date().toISOString();
+    await sql`insert into api_keys (id, user_id, service, label, key_enc, key_version, kind,
+                created_at, updated_at)
       values (${id}, ${anchor}, ${service}, 'default', ${sealed.ciphertext}, ${sealed.keyVersion},
-              ${kind}, ${opts.at ?? new Date().toISOString()})`;
+              ${kind}, ${at}, ${at})`;
     return id;
+  };
+  /** The vault's own audit row of a write to `keyId` (what setVaultKey
+   *  writes), at `at`. */
+  const setRow = async (keyId: string, changed: string[], at: string) => {
+    await sql`insert into audit_log (actor_email, action, detail, created_at)
+      values ('test', 'vault.key.set',
+              ${sql.json({ keyId, name: 'x', kind: 'token', op: 'replace', changed, via: 'web' } as never)},
+              ${at})`;
   };
   const post = (body: Buffer, headers: Record<string, string>) =>
     Promise.resolve(
@@ -257,6 +267,23 @@ describe.skipIf(!URL_)('key status on the fleet', () => {
       expect(text).not.toContain(k);
       expect(text).not.toContain(createHash('sha256').update(k).digest('hex'));
     }
+    // The set time is the last write of the value: an edit of its tags or
+    // label moves nothing (the row's updated_at moves, the set time not).
+    const orId = String(
+      (
+        await sql<Row[]>`select id from api_keys
+          where user_id = ${anchor} and service = 'openrouter'`
+      )[0]!.id,
+    );
+    const setAt = async () =>
+      lineOf((await asBox(() => signed({ op: 'facts' })))[1].keys, 'openrouter').setAt;
+    await sql`update api_keys set updated_at = now(), tags = '{edited}' where id = ${orId}`;
+    await setRow(orId, ['tags'], '2026-11-02T08:00:00.000Z');
+    expect(await setAt()).toBe('2026-11-01T08:00:00.000Z');
+    await setRow(orId, ['value'], '2026-11-03T08:00:00.000Z');
+    expect(await setAt()).toBe('2026-11-03T08:00:00.000Z');
+    await setRow(orId, ['target', 'tags'], '2026-11-04T08:00:00.000Z');
+    expect(await setAt()).toBe('2026-11-03T08:00:00.000Z');
     // A status read is no use: last_used stays as it was.
     const [used] = await sql<Row[]>`select last_used from api_keys
       where user_id = ${anchor} and service = 'openrouter'`;
@@ -373,8 +400,19 @@ describe.skipIf(!URL_)('key status on the fleet', () => {
     await reply(({ keys: _k, ...f }) => f);
     const cc = await import('@mantle/db/control-center');
     expect(cc.keptKeyBox((await cc.listControlKeys([boxId]))[0]!).keysReason).toBe('old-box');
-    await reply((f) => ({ ...f, keys: null }));
+    await reply((f) => ({ ...f, keys: null, keysReason: 'scope' }));
     expect(cc.keptKeyBox((await cc.listControlKeys([boxId]))[0]!).keysReason).toBe('scope');
+    await reply((f) => ({ ...f, keys: null, keysReason: 'error' }));
+    expect(cc.keptKeyBox((await cc.listControlKeys([boxId]))[0]!).keysReason).toBe('error');
+    // A bad key part costs the key part only: the other facts are kept.
+    const broken = await reply((f) => ({ ...f, keys: [{ service: 'openrouter', testable: 'x' }] }));
+    expect(broken.facts_reason).toBeNull();
+    expect(broken.facts).toMatchObject({ keys: null, keysReason: 'bad-reply' });
+    expect((broken.facts as Row).agents).toBeDefined();
+    expect(cc.keptKeyBox((await cc.listControlKeys([boxId]))[0]!).keysReason).toBe('bad-reply');
+    // The matrix leaves the reason out too.
+    const [line] = await cc.listControlMatrix(boxId);
+    expect(line!.facts).not.toHaveProperty('keysReason');
     // A bad print, from a box that sends one, is never kept.
     const odd = await reply((f) => ({
       ...f,
@@ -435,6 +473,12 @@ describe.skipIf(!URL_)('key status on the fleet', () => {
           print: 'sk-or-v1-qqq…NOPE',
         });
       }
+      // One key test per box at a time: a second ask joins the first.
+      const cc = await import('@mantle/db/control-center');
+      const [one] = await cc.queueControlToolCalls([boxId], { kind: 'keys' }, 'test');
+      const [two] = await cc.queueControlToolCalls([boxId], { kind: 'keys' }, 'test');
+      expect(two!.callId).toBe(one!.callId);
+      await sql`update control_boxes set tool_job = null where id = ${boxId}`;
       // A bad body is a 400; off a CC, 404.
       expect((await fleet('/api/fleet/keys/test', 'POST', { boxIds: ['nope'] }))[0]).toBe(400);
       delete process.env.MANTLE_IS_CONTROL_CENTER;

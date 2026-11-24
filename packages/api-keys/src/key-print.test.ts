@@ -1,7 +1,7 @@
 /**
  * keyPrint (shape.ts): the short print of a provider key that key status on
  * the fleet shows (docs/control-center.md, "Key status on the fleet"). Never
- * more than a quarter of the key; a short key gives its last 4 or nothing; a
+ * more than a quarter of the key; a key under 32 characters gives nothing; a
  * shown part with a character outside [A-Za-z0-9_-] gives no print. Every
  * key here is made at run time from a repeated letter, so it looks like no
  * real key.
@@ -33,21 +33,15 @@ describe('keyPrint', () => {
     expect(shown(keyPrint(fake(40))!)).toBe(10);
   });
 
-  it('24 characters: 2 of the head and the last 4', () => {
-    expect(keyPrint(fake(24))).toBe('ab…WXYZ');
+  it('32 characters: 4 of the head and the last 4, a quarter exactly', () => {
+    expect(keyPrint(fake(32))).toBe('ab-x…WXYZ');
   });
 
-  it('23 characters: the last 4 only', () => {
-    expect(keyPrint(fake(23))).toBe('…WXYZ');
-  });
-
-  it('16 characters: the last 4 only (a quarter)', () => {
-    expect(keyPrint(fake(16))).toBe('…WXYZ');
-  });
-
-  it('15, 12, 11 and 0 characters: nothing (4 would be more than a quarter)', () => {
-    for (const n of [15, 12, 11]) expect(keyPrint(fake(n)), String(n)).toBeNull();
+  it('31, 24, 23, 16, 12, 11 and 0 characters: nothing (a short value may be typed)', () => {
+    for (const n of [31, 24, 23, 16, 12, 11]) expect(keyPrint(fake(n)), String(n)).toBeNull();
     expect(keyPrint('')).toBeNull();
+    // A typed passphrase on a custom route, under 32: no print.
+    expect(keyPrint('correct-horse-battery-staple')).toBeNull();
   });
 
   it('never more than a quarter, and always the CC pattern, at every length', () => {

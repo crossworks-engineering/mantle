@@ -352,9 +352,9 @@ export async function defaultKeyRow(
 export type ProviderKeyPrint = {
   id: string;
   service: string;
-  /** When the vault last wrote the row (updated_at): a new value, or an
-   *  edit of its tags or label. */
-  setAt: Date;
+  /** When the row was made (the set time of a key no vault write names:
+   *  one onboarding or an internal writer put there). */
+  createdAt: Date;
   /** keyPrint of the opened key, or null. */
   print: string | null;
 };
@@ -365,8 +365,8 @@ export type ProviderKeyPrint = {
  * keeps, each with its print (keyPrint). Tokens only. The key is opened in
  * memory here (openKeyRow), its print taken and the plaintext dropped; no
  * `last_used` bump (a status read is no use). On `db`, as defaultKeyRow: a
- * management read of the Control Center's key status (server/web
- * lib/control/key-status.ts), from its signed call or a CC Admin's request.
+ * management read of the Control Center's key status (key-status.ts),
+ * from the box's signed call or a CC Admin's request.
  */
 export async function providerKeyPrints(
   userId: string,
@@ -388,7 +388,7 @@ export async function providerKeyPrints(
     } catch {
       // A row that does not open (another master key) has no print.
     }
-    out.push({ id: row.id, service: row.service, setAt: row.updatedAt, print });
+    out.push({ id: row.id, service: row.service, createdAt: row.createdAt, print });
   }
   return out.sort((a, b) => a.service.localeCompare(b.service));
 }
@@ -446,5 +446,5 @@ export async function workerRoute(
 
 export * from './services';
 export * from './vault';
-export { isFleetKeyService, keyLines, testKeyLines } from './key-status';
+export { isFleetKeyService, keyLines, ownKeyLines, testKeyLines } from './key-status';
 export { canProbeService, probeApiKey, type TestApiKeyResult } from './probe';

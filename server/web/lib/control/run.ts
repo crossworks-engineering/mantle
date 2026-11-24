@@ -63,7 +63,7 @@ import {
   type ControlWriteAnswer,
 } from '@mantle/db';
 import { shapeBoxStatus } from '@mantle/tools/box-status';
-import { KeyLines } from './key-lines';
+import { keyPart } from './key-lines';
 import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';
 import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
@@ -289,9 +289,10 @@ const FactsReply = z
       .object({ lastRunAt: Stamp, ok: z.boolean(), lastSuccessAt: Stamp.nullable() })
       .strict()
       .nullable(),
-    // Key status: absent from a box a release behind, null when the box's
-    // scope line refuses the CC.
-    keys: KeyLines.nullable().optional(),
+    // Key status: absent from a box a release behind; held by keyPart
+    // alone, so a bad key part costs that part only.
+    keys: z.unknown().optional(),
+    keysReason: z.unknown().optional(),
   })
   // A part a later box adds is dropped, not a bad reply (each part kept is
   // held to its own shape), so a box rolled ahead of its CC reads fine.
@@ -304,9 +305,11 @@ export async function readFacts(key: KeyObject, box: ControlBoxRow): Promise<voi
   try {
     const r = FactsReply.safeParse(await callBox(key, box.url, 'facts'));
     if (!r.success) throw new CallFailed('bad-reply');
+    const { keys, keysReason, ...rest } = r.data;
     read = {
       facts: {
-        ...r.data,
+        ...rest,
+        ...keyPart(keys, keysReason),
         status: r.data.status ? shapeBoxStatus(r.data.status) : null,
         // A person's own assistant goes without its slug, whatever was sent.
         agents: r.data.agents.map((a) => (a.assigned ? { ...a, slug: null } : a)),
