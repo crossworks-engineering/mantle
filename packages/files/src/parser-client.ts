@@ -63,7 +63,7 @@ import {
 } from './parser-wire';
 import type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
 import {
-  SKETCH_MAX_PAGES,
+  SKETCH_BATCH_PAGES,
   SKETCH_MAX_PICTURES,
   SKETCH_MAX_PIECES,
   type SketchPagePieces,
@@ -802,13 +802,14 @@ const isBox = (v: unknown): v is [number, number, number, number] =>
  * why in its status. Throws a ParserError. What a vision model will be
  * shown is checked here: a page's entry that is not the agreed shape (a
  * piece that names no picture of its page, too many pictures or pieces) is
- * `refused`, never half taken.
+ * `refused`, never half taken. One batch: at most SKETCH_BATCH_PAGES pages
+ * (the parser job's own cap); the caller cuts a file batch by batch.
  */
 export async function parserPdfPieces(
   bytes: Buffer,
   pages: readonly number[],
 ): Promise<SketchPagePieces[]> {
-  const asked = pages.slice(0, SKETCH_MAX_PAGES);
+  const asked = pages.slice(0, SKETCH_BATCH_PAGES);
   const body = jsonOf(
     await exchange('pdfPieces', bytes, { pages: asked }, PARSER_ANSWER_MAX_BYTES),
   );

@@ -15,7 +15,7 @@ import {
   PARSER_PICTURES_BUDGET_BYTES,
   type ParserJob,
 } from '@mantle/files/parser-wire';
-import { SKETCH_MAX_PAGES, SKETCH_SCALE } from '@mantle/files/pdf-sketch';
+import { SKETCH_BATCH_PAGES, SKETCH_SCALE } from '@mantle/files/pdf-sketch';
 import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
 import { MAX_EMBEDDED_IMAGES_CEILING } from '@mantle/files/embedded-images';
 import type { ReadCuts } from '@mantle/files/read-cut';
@@ -216,7 +216,7 @@ export async function runJob(
       const asked = Array.isArray(opts.pages) ? opts.pages : [];
       const pages = [
         ...new Set(asked.filter((n): n is number => Number.isInteger(n) && n >= 1)),
-      ].slice(0, SKETCH_MAX_PAGES);
+      ].slice(0, SKETCH_BATCH_PAGES);
       const drawn = await pdfPictures(
         p.input,
         p.dir,

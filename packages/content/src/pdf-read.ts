@@ -74,12 +74,16 @@ export async function storedPdfOf(abs: string): Promise<StoredPdf | null> {
  *  (the file is there): its File tab holds the sketch read, or the tab
  *  cannot be read now (a busy reader pool, no row, another shape). Fail
  *  closed, as pdfReadAgainOf: a tab that cannot be read keeps the paid
- *  text, so a reindex never pays a whole-page OCR again by a read error. */
+ *  text, so a reindex never pays a whole-page OCR again by a read error.
+ *  A sketch read that left scan pages not read keeps no text: the read
+ *  again is how a person reads the rest (the extract's sketch read is due
+ *  again on a node with no text, and pays only for the pictures it has
+ *  not read: server/api extract/pdf-sketch.ts). */
 export async function pdfTextKeptOf(abs: string): Promise<boolean> {
   try {
     const r = await runTableSql(abs, 'SELECT * FROM "File"', { cap: 1 });
     const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
-    return !stored || stored.visionRead;
+    return !stored || (stored.visionRead && stored.scanPagesNotRead === 0);
   } catch {
     return true;
   }

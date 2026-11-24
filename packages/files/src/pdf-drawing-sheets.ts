@@ -19,7 +19,12 @@ import {
   type PdfKind,
 } from './pdf-kind';
 import { CONFIDENCE, type LineRow, type TagRow, type WordRow } from './pdf-rows';
-import { SKETCH_MAX_PAGES, sketchPageRows, type SketchRead } from './pdf-sketch';
+import {
+  SKETCH_MAX_PAGES,
+  sketchPageRows,
+  sketchPagesNotRead,
+  type SketchRead,
+} from './pdf-sketch';
 import type { ParsedSheet } from './sheet-to-grid';
 import { SHAPES } from './pipelines/shapes';
 
@@ -437,6 +442,10 @@ export function pdfFileTabOf(
   rulesVersion: number;
   decision: PdfKindDecision | null;
   visionRead: boolean;
+  /** Scan pages the sketch read did not read whole (`Scan pages not read`;
+   *  a database of before that column: `Scan pages past the cap`). 0 with
+   *  no read. */
+  scanPagesNotRead: number;
   notReadWhole: number;
 } | null {
   const cell = (name: string) => row[columns.indexOf(name)];
@@ -450,6 +459,12 @@ export function pdfFileTabOf(
     rulesKind,
     rulesVersion: Number(cell('Rules version') ?? 0) || 0,
     visionRead: cell('Vision read') === 1 || cell('Vision read') === true,
+    scanPagesNotRead:
+      Number(
+        columns.includes('Scan pages not read')
+          ? cell('Scan pages not read')
+          : cell('Scan pages past the cap'),
+      ) || 0,
     notReadWhole: Number(cell('Pages not read whole') ?? 0),
     decision:
       typeof answer === 'string' && answer
@@ -517,6 +532,8 @@ export function pdfDrawingSheets(
   const kind = named ?? decided ?? drawing.kind;
   const pastCap = Math.max(0, drawing.numPages - drawing.pages.length);
   const notRead = pagesNotReadWhole(drawing);
+  const notReadWhy = sketch ? sketchPagesNotRead(sketch) : {};
+  const scanNotRead = Object.values(notReadWhy).reduce((a, b) => a + b, 0);
   const file: ParsedSheet = {
     name: 'File',
     columns: [
@@ -543,6 +560,12 @@ export function pdfDrawingSheets(
       { name: 'Vision model', type: 'text' },
       { name: 'Scan pages read', type: 'number' },
       { name: 'Scan pages past the cap', type: 'number' },
+      // Every scan page the read did not read whole (past the cap
+      // included), and why, by Vision status: `time 120, not_read 2`.
+      // Above 0, the file is read in part (the cut `scan_pages`), and a
+      // read again of the file reads them.
+      { name: 'Scan pages not read', type: 'number' },
+      { name: 'Scan pages not read why', type: 'text' },
     ],
     rows: [
       [
@@ -564,6 +587,12 @@ export function pdfDrawingSheets(
         sketch?.model ?? null,
         sketch ? sketch.pages.filter((r) => r.status === 'ok').length : null,
         sketch ? sketch.pagesPastCap.length : null,
+        sketch ? scanNotRead : null,
+        sketch && Object.keys(notReadWhy).length > 0
+          ? Object.entries(notReadWhy)
+              .map(([why, count]) => `${why} ${count}`)
+              .join(', ')
+          : null,
       ],
     ],
   };
@@ -731,7 +760,15 @@ export function pdfDrawingSheets(
         ` Confidence is from a fixed table by how a row was read: under 0.8 is a value to check.` +
         (sketch
           ? ` Source ocr: a vision model (${sketch.model}) read the scan pages part by part` +
-            ` (Vision status in Pages; at most ${SKETCH_MAX_PAGES} pages of a file). A word of it has` +
+            ` (Vision status in Pages; at most ${SKETCH_MAX_PAGES} pages of a file).` +
+            (scanNotRead > 0
+              ? ` ${scanNotRead} scan ${scanNotRead === 1 ? 'page was' : 'pages were'} not read:` +
+                ` File says how many and why (Scan pages` +
+                ` not read why), Pages says which (Vision status: time, the read's time ran out;` +
+                ` not_read, a call before it did not run; past_page_cap; no_picture, refused,` +
+                ` over_budget, the page could not be cut). A read again of the file reads them.`
+              : '') +
+            ` A word of it has` +
             ` the box of the piece it was read in, not its own, its Line is the number of that` +
             ` piece, and every value of it is one to check against the drawing. Gaps: a place on a scan page where text is and none was` +
             ` read: the model gave no text for it (no_text_read), the model's call for its picture` +

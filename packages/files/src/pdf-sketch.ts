@@ -15,9 +15,15 @@
  * each piece with its number: one call reads many pieces and answers
  * `number: text`, and each text goes back on the page with its piece's box.
  *
- * Nothing is left out in silence. A page past the page cap, a page with no
- * picture, a piece that did not fit and a piece the model gave no text for
- * are each stated: in the page's status, or as a row of the `Gaps` tab.
+ * Every scan page of a file is read, up to the per-file cap below, in
+ * batches of pages (one parser job a batch) inside the one extract.
+ *
+ * Nothing is left out in silence. A page past the page cap, a page not
+ * reached in the read's time, a page with no picture, a piece that did not
+ * fit and a piece the model gave no text for are each stated: in the page's
+ * status, in the File tab's count of scan pages not read, or as a row of
+ * the `Gaps` tab. A file with a scan page not read is read in part (the cut
+ * `scan_pages`).
  */
 
 import type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
@@ -39,9 +45,21 @@ import { tokensOf } from './pdf-tags';
 /** The file kinds whose scan pages are read part by part. */
 export const SKETCH_KINDS: readonly PdfKind[] = ['isometric', 'scan', 'other_drawing'];
 
-/** Pages of one file the read takes on ingest, at most (the owner's
- *  decision P5: the page cap of the page OCR it replaces). */
-export const SKETCH_MAX_PAGES = 10;
+/** Scan pages of one file the read takes, at most: a bound on what one file
+ *  may spend (4 vision calls a page at most, so 2,000 calls). A page past it
+ *  is stated (`past_page_cap`) and makes the file partial. Was 10 (decision
+ *  P5) until 2026-11-24: never throw data away. */
+export const SKETCH_MAX_PAGES = 500;
+/** Scan pages one parser job cuts (`/pdf/pieces`): its time and the bytes of
+ *  its answer bound it. A file's pages are cut a batch at a time, each batch
+ *  asked before the next is cut, so only one batch's pictures are held. */
+export const SKETCH_BATCH_PAGES = 10;
+/** The share of the extract's time budget the read may ask for (the box's
+ *  `extraction_time_budget_minutes`, default 60): no picture is asked after
+ *  it, and the pages left are stated (`time`). The rest of the time is for
+ *  the write and the extract after it, so the job never runs past its
+ *  budget. */
+export const SKETCH_TIME_SHARE = 0.5;
 /** Packed pictures of one page, at most (decision P5). The parser's cutter
  *  holds the same number (`MAX_PICTURES` in pdf_pieces.py). */
 export const SKETCH_MAX_PICTURES = 4;
@@ -124,9 +142,7 @@ export function sketchPageRead(
   return {
     page: page.page,
     status:
-      page.status === 'ok' && page.pictures.length > 0 && !page.pictures.some((_, k) => asked(k))
-        ? 'not_read'
-        : page.status,
+      page.status === 'ok' && page.pictures.some((_, k) => !asked(k)) ? 'not_read' : page.status,
     dpi: page.dpi,
     pictures: page.pictures.length,
     pieces: page.pieces.map((piece, i) => ({
@@ -141,9 +157,10 @@ export function sketchPageRead(
 /** One page after the vision read. */
 export type SketchPageRead = {
   page: number;
-  /** The page's own status, or `not_read`: no picture of it was read by
-   *  the model (the worker did not run for it). */
-  status: SketchPageStatus | 'not_read';
+  /** The page's own status, or `not_read`: a picture of it was not read by
+   *  the model (a call before it did not run, so the read stopped), or
+   *  `time`: the read's time (SKETCH_TIME_SHARE) was used up before it. */
+  status: SketchPageStatus | 'not_read' | 'time';
   dpi: number;
   pictures: number;
   pieces: {
@@ -157,6 +174,25 @@ export type SketchPageRead = {
   }[];
   notSent: Box[];
 };
+
+/** A page the read did not cut: the read stopped before it (`not_read`),
+ *  its batch could not be cut (`no_picture`), or its time was used up
+ *  (`time`). */
+export function sketchPageNone(
+  page: number,
+  status: 'not_read' | 'no_picture' | 'time',
+): SketchPageRead {
+  return { page, status, dpi: 0, pictures: 0, pieces: [], notSent: [] };
+}
+
+/** The scan pages of a read not read whole, by why: each page's status
+ *  that is not `ok`, and `past_page_cap`. */
+export function sketchPagesNotRead(read: SketchRead): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of read.pages) if (p.status !== 'ok') out[p.status] = (out[p.status] ?? 0) + 1;
+  if (read.pagesPastCap.length > 0) out.past_page_cap = read.pagesPastCap.length;
+  return out;
+}
 
 /** The sketch read of one file. */
 export type SketchRead = {

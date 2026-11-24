@@ -2211,20 +2211,28 @@ database, so a dry run can count a file the run then skips.
 package, no step and no row of its own. The core starts it at the extract's
 spot when it is due, as before (`sketchIngestPdfNode`,
 `server/api/src/agent/extract/pdf-sketch.ts`: a sketch kind in the File
-tab, no `Vision read`, the cost guard, a vision worker). It reads the page
+tab, no `Vision read` (or one that left scan pages not read, on a node
+whose text a person's read again dropped), the cost guard, a vision
+worker). It reads the page
 facts again (the kit job `pdfDrawing`), and a read poorer than the first
 (`pdfReadPoorer`) asks nothing and writes nothing. Else it has the scan
-pages cut into pieces (the kit job `pdfPieces`: 300 DPI, then OpenCV), and
-makes one vision call a packed picture, 40 at most; a call that does not run
-stops the calls after it. The rows and the text of the scan are made in its
+pages cut into pieces (the kit job `pdfPieces`: 300 DPI, then OpenCV), 10
+pages a job, each batch asked before the next is cut, and makes one vision
+call a packed picture (every scan page, up to 500 a file, within half of the
+extract's time budget; a page not read is stated in `Pages` and `File`, and
+the file is read in part: docs/file-ingestion.md, 3b); a call that does not
+run stops the calls after it. The rows and the text of the scan are made in its
 own process, and the one write is `buildFileDatabase` with `parsed`. The
 Transformers of that build run only after the write, with `Vision read`
 set.
 
-Why the order, and why not steps: money. Every parser job comes before the
+Why the order, and why not steps: money. The page facts come before the
 first vision call, and after the last one there is only code in this
-process and the write. A parser that is busy, down, slow, or reads poorer
-can stop the read only before anything is paid. As steps of `drawing-pdf`,
+process and the write. A parser that reads poorer stops the read before
+anything is paid. The pieces of a later batch are cut after paid calls:
+every paid answer is kept as it comes (the answer cache, migration 0392), so
+a parser busy there only makes the extract try again, and the try again
+pays for none of the pictures read. As steps of `drawing-pdf`,
 the join was a parser job after up to 40 paid calls: when it failed,
 nothing was written, `Vision read` was never set, and the next try paid
 again, with each retry of the queue. The runner keeps no paid answer.

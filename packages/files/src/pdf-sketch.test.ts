@@ -17,8 +17,10 @@ import {
   SKETCH_PIECE_MAX_CHARS,
   parsePieceAnswer,
   sketchMarkdown,
+  sketchPageNone,
   sketchPageRead,
   sketchPageRows,
+  sketchPagesNotRead,
   sketchPagesOf,
   type SketchPagePieces,
   type SketchRead,
@@ -168,9 +170,10 @@ describe('sketchPageRead', () => {
     ]);
   });
 
-  it('a picture whose call did not run leaves its pieces not asked', () => {
+  it('a picture whose call did not run leaves its pieces not asked, and the page not read', () => {
     const read = sketchPageRead(pieces(), ['1: FT-101\n2: TK-7', null]);
-    expect(read.status).toBe('ok');
+    // Read in part: the page is not read whole, and its texts are kept.
+    expect(read.status).toBe('not_read');
     expect(read.pieces.map((p) => [p.text, p.asked])).toEqual([
       ['FT-101', true],
       ['TK-7', true],
@@ -178,9 +181,43 @@ describe('sketchPageRead', () => {
     ]);
     // No picture of the page was read: the page says so.
     expect(sketchPageRead(pieces(), [null, null]).status).toBe('not_read');
+    // A page with no picture to ask (no text found on it) is read.
+    expect(sketchPageRead(pieces({ pieces: [], pictures: [] }), []).status).toBe('ok');
     // A page with no pieces keeps its own status.
     const none = pieces({ status: 'no_picture', pieces: [], pictures: [] });
     expect(sketchPageRead(none, []).status).toBe('no_picture');
+  });
+});
+
+describe('the pages a read did not read', () => {
+  it('counts each page not read whole by its status, and the pages past the cap', () => {
+    const ok = sketchPageRead(pieces(), ['1: A-1', '3: B-2']);
+    const sketch: SketchRead = {
+      model: 'm',
+      pages: [
+        ok,
+        sketchPageRead(pieces({ page: 2 }), ['1: A-1', null]),
+        sketchPageNone(3, 'time'),
+        sketchPageNone(4, 'time'),
+        sketchPageNone(5, 'no_picture'),
+      ],
+      pagesPastCap: [6, 7],
+    };
+    expect(sketchPagesNotRead(sketch)).toEqual({
+      not_read: 1,
+      time: 2,
+      no_picture: 1,
+      past_page_cap: 2,
+    });
+    expect(sketchPagesNotRead({ model: 'm', pages: [ok], pagesPastCap: [] })).toEqual({});
+    expect(sketchPageNone(3, 'time')).toEqual({
+      page: 3,
+      status: 'time',
+      dpi: 0,
+      pictures: 0,
+      pieces: [],
+      notSent: [],
+    });
   });
 });
 
@@ -328,8 +365,15 @@ describe('the rows of a read', () => {
     };
     expect(sheets.map((s) => s.name)).toEqual(['File', 'Pages', 'Texts', 'Tags', 'Lines', 'Gaps']);
     expect(
-      cells('File', ['Vision read', 'Vision model', 'Scan pages read', 'Scan pages past the cap']),
-    ).toEqual([[true, 'made-up-model', 1, 1]]);
+      cells('File', [
+        'Vision read',
+        'Vision model',
+        'Scan pages read',
+        'Scan pages past the cap',
+        'Scan pages not read',
+        'Scan pages not read why',
+      ]),
+    ).toEqual([[true, 'made-up-model', 0, 1, 2, 'not_read 1, past_page_cap 1']]);
     expect(
       cells('Pages', [
         'Page',
@@ -340,7 +384,7 @@ describe('the rows of a read', () => {
         'Read DPI',
       ]),
     ).toEqual([
-      [1, 'ok', 3, 2, 1, 300],
+      [1, 'not_read', 3, 2, 1, 300],
       [2, 'past_page_cap', null, null, null, null],
     ]);
     expect(cells('Texts', ['Text', 'Source', 'Confidence', 'Angle'])[0]).toEqual([
@@ -359,6 +403,21 @@ describe('the rows of a read', () => {
       [1, 'not_sent'],
     ]);
     expect(description).toMatch(/Source ocr: a vision model \(made-up-model\)/);
+    expect(description).toContain('2 scan pages were not read');
+  });
+
+  it('a read of every scan page states none not read', () => {
+    const whole = sketchPageRead(pieces(), ['1: A-1', '3: B-2']);
+    const sketch: SketchRead = { model: 'm', pages: [whole], pagesPastCap: [] };
+    const { sheets, description } = pdfDrawingSheets(drawing([page(1)]), null, sketch);
+    const file = sheets.find((s) => s.name === 'File')!;
+    const at = (c: string) => file.rows[0]![file.columns.findIndex((x) => x.name === c)];
+    expect([
+      at('Scan pages read'),
+      at('Scan pages not read'),
+      at('Scan pages not read why'),
+    ]).toEqual([1, 0, null]);
+    expect(description).not.toMatch(/scan pages? (was|were) not read/);
   });
 
   it('the File tab reads back as it was written: the kinds, the decider answer, the vision mark', () => {
@@ -389,10 +448,17 @@ describe('the rows of a read', () => {
         rulesVersion: PDF_KIND_RULES_VERSION,
         decision,
         visionRead: vision,
+        scanPagesNotRead: 0,
         notReadWhole: 0,
       });
     }
     expect(pdfFileTabOf(['Tag'], ['P-1'])).toBeNull();
+    // A database of before `Scan pages not read`: the pages past the cap.
+    const old = ['Kind', 'Rules kind', 'Vision read', 'Scan pages past the cap'];
+    expect(pdfFileTabOf(old, ['scan', 'scan', 1, 37])?.scanPagesNotRead).toBe(37);
+    expect(
+      pdfFileTabOf([...old, 'Scan pages not read'], ['scan', 'scan', 1, 37, 40])?.scanPagesNotRead,
+    ).toBe(40);
   });
 
   it('with no sketch read the File tab says so and no vision cell is filled', () => {

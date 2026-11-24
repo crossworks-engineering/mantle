@@ -215,7 +215,9 @@ export const BUILTIN_PIPELINES = [
     // `rules: ...`, Decider kind, Decider confidence), put in by the core
     // (../../pdf-page-kinds.ts). 1.1.5 (2026-11-23): Kind from may say
     // `decider` (M4, live), and Kind is then the answer's kind.
-    version: '1.1.5',
+    // 1.1.6 (2026-11-24): the File tab's `Scan pages not read` and why (the
+    // sketch read reads every scan page; a page it did not read is stated).
+    version: '1.1.6',
     // Every kind the router names but `document` and `book`: a document gets
     // no database, and a book is the book reader's (`pdf-pages`). An unsure
     // PDF gets one, as before the router. A new claim changes the pin and

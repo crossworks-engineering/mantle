@@ -125,6 +125,15 @@ describe('coverageOf', () => {
     expect(row).toMatchObject({ partial: 1, shortcut: 1, notFull: 1, cuts: { ocr_pages: 1 } });
   });
 
+  it('counts the scan pages a sketch read did not read as a shortfall', () => {
+    const scan = file('pdf', {
+      ...done,
+      read_cut: { scan_pages: { what: 'pages', read: 10, total: 140 } },
+    });
+    const [row] = coverageOf([scan], DB_EXTS, new Set());
+    expect(row).toMatchObject({ partial: 1, shortcut: 1, notFull: 1, cuts: { scan_pages: 1 } });
+  });
+
   it("leaves the detail cuts out of a partial file's cuts", () => {
     const doc = file('docx', {
       ...done,

@@ -37,6 +37,20 @@ const h = vi.hoisted(() => ({
   order: [] as string[],
   /** The pieces job answers 503: a parser that is busy or down. */
   piecesDown: false,
+  /** Pages of the made-up drawing; with `onePiece`, every page asked of the
+   *  pieces job is answered with one piece in one picture. */
+  pages: 2,
+  onePiece: false,
+  /** The first pages of the pieces batches the parser refuses (a 400). */
+  piecesRefused: [] as number[],
+  /** The answer of a call by its picture's file name, over `answers`. */
+  answerOf: null as null | ((filename: string) => { ran: boolean; text: string }),
+  /** The stand-in keeps and takes answers as the gateway does (the
+   *  answer cache, keyed here by the picture's file name). */
+  cache: false,
+  /** Ms the clock moves for each call (Date.now is moved by the test). */
+  callMs: 0,
+  now: 0,
 }));
 
 vi.mock('@mantle/files/readers/pdf-drawing', async (importOriginal) => {
@@ -67,7 +81,15 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
       maxTokens?: number;
       leastThinking?: boolean;
     }) => {
-      const answer = h.answers[h.vision.length] ?? { ran: true, text: '' };
+      const ac = await import('@mantle/db/answer-cache');
+      const key = ac.answerKey('vision', [opts.filename ?? '']);
+      if (h.cache) {
+        const kept = await ac.keptAnswer<Record<string, unknown>>(key);
+        if (kept) return kept;
+      }
+      const answer = h.answerOf?.(opts.filename ?? '') ??
+        h.answers[h.vision.length] ?? { ran: true, text: '' };
+      h.now += h.callMs;
       h.order.push('vision');
       h.vision.push({
         prompt: opts.prompt ?? '',
@@ -75,12 +97,14 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
         maxTokens: opts.maxTokens,
         leastThinking: opts.leastThinking,
       });
-      return {
+      const out = {
         ran: answer.ran,
         text: answer.text,
         note: answer.ran ? null : 'Vision worker failed: made up',
         model: 'made-up-vision',
       };
+      if (h.cache && answer.ran) await ac.keepAnswer('vision', key, out, answer.text !== '');
+      return out;
     },
   };
 });
@@ -187,6 +211,33 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     { page: 2, status: 'no_picture' },
   ];
 
+  /** A page with one piece in one picture. */
+  const onePieceOf = (n: number) => ({
+    page: n,
+    status: 'ok',
+    dpi: 300,
+    pieces: [{ box: box(0.1), picture: 0, scale: 1 }],
+    notSent: [],
+    pictures: [png],
+  });
+  /** The page a vision call was for, by its picture's file name. */
+  const pageOfCall = (filename: string) => Number(/#page-(\d+)-/.exec(filename)?.[1]);
+  /** The node holds the read's text, as the extract stores it (load-body.ts). */
+  const storeText = (id: string) =>
+    su(sqlTag`update nodes set data = data || '{"text": "made-up sketch text", "ocr": true}'::jsonb
+      where id = ${id}`);
+  /** The read, with the cuts it said. */
+  const readWithCuts = async (id: string) => {
+    const { withReadCutSink } = await import('@mantle/files/read-cut-sink');
+    const node = await nodeRow(id);
+    return withReadCutSink(() => sketchIngestPdfNode(node, anchor));
+  };
+  /** Date.now moved by `h.now` (each call moves it by `h.callMs`). */
+  const movedClock = () => {
+    const real = Date.now.bind(Date);
+    return vi.spyOn(Date, 'now').mockImplementation(() => real() + h.now);
+  };
+
   beforeAll(async () => {
     scratch = await (await import('@mantle/db/test-support')).createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
@@ -232,6 +283,13 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     h.answers = [];
     h.order.length = 0;
     h.piecesDown = false;
+    h.pages = 2;
+    h.onePiece = false;
+    h.piecesRefused = [];
+    h.answerOf = null;
+    h.cache = false;
+    h.callMs = 0;
+    h.now = 0;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     const run = inProcessPipelineFetch();
@@ -243,13 +301,13 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
         const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
         const opts = sent.subarray(0, length).toString('utf8');
         h.drawing = {
-          numPages: 2,
+          numPages: h.pages,
           pageCountMayBeShort: false,
           largeImageNotRead: false,
           allRead: true,
           kind,
           sample: '',
-          pages: [PAGE(1), PAGE(2)],
+          pages: Array.from({ length: h.pages }, (_, i) => PAGE(i + 1)),
         };
         if (route === '/pipeline/run') {
           // An upload's job: `id step`, and the options as sent.
@@ -262,6 +320,13 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
         parserOpts.push(`${route} ${opts}`);
         h.order.push(route);
         if (route === '/pdf/pieces' && h.piecesDown) return new Response('busy', { status: 503 });
+        if (route === '/pdf/pieces' && h.onePiece) {
+          const asked = (JSON.parse(opts) as { pages: number[] }).pages;
+          if (h.piecesRefused.includes(asked[0]!)) {
+            return Response.json({ ok: false, code: 'failed', error: 'made up' }, { status: 400 });
+          }
+          return Response.json({ ok: true, pages: asked.map(onePieceOf) });
+        }
         if (route === '/pdf/pieces') return Response.json({ ok: true, pages: pieces });
         return Response.json({ ok: true, ...(h.drawing as object) });
       }),
@@ -304,6 +369,10 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     ).toEqual([
       { Kind: 'scan', 'Vision read': 1, 'Vision model': 'made-up-vision', 'Scan pages read': 1 },
     ]);
+    // The page that could not be drawn is stated: the file is read in part.
+    expect(
+      await rowsOf(file.id, `SELECT "Scan pages not read", "Scan pages not read why" FROM "File"`),
+    ).toEqual([{ 'Scan pages not read': 1, 'Scan pages not read why': 'no_picture 1' }]);
     expect(
       await rowsOf(file.id, `SELECT "Page", "Vision status", "Pieces", "Pieces read" FROM "Pages"`),
     ).toEqual([
@@ -397,6 +466,8 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     const file = await scanFile('a made-up scan, once');
     h.answers = [{ ran: true, text: '1: TK-7' }];
     expect(await read(file.id)).not.toBeNull();
+    // The extract stores the read's text on the node (load-body.ts).
+    await storeText(file.id);
     const calls = h.vision.length;
     parserCalls.length = 0;
     expect(await read(file.id)).toBeNull();
@@ -494,6 +565,15 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       { Why: 'not_read' },
       { Why: 'not_sent' },
     ]);
+    // The page is read in part: stated, and the file with it.
+    expect(
+      await rowsOf(file.id, `SELECT "Scan pages not read", "Scan pages not read why" FROM "File"`),
+    ).toEqual([
+      { 'Scan pages not read': 2, 'Scan pages not read why': 'not_read 1, no_picture 1' },
+    ]);
+    // With the read's text on the node (the extract stores it), a retry of
+    // the extract asks nothing again.
+    await storeText(file.id);
     h.vision.length = 0;
     expect(await read(file.id)).toBeNull();
     expect(h.vision).toEqual([]);
@@ -585,7 +665,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     ]);
   });
 
-  it('the money order: every parser job before the first vision call, none after it', async () => {
+  it('the money order: the page facts and the first batch before the first vision call, no parser job after the last', async () => {
     const file = await scanFile('a made-up scan, the order of its calls');
     h.order.length = 0;
     h.answers = [
@@ -628,7 +708,8 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     });
     vi.stubGlobal('fetch', slow);
     expect(await read(file.id)).toBeNull();
-    expect(h.order).toEqual(['/pdf/drawing', '/pdf/pieces']);
+    // Found poorer on the page facts: not one piece is cut.
+    expect(h.order).toEqual(['/pdf/drawing']);
     expect(h.vision).toEqual([]);
     expect(await rowsOf(file.id, 'SELECT * FROM "Pages" ORDER BY "Page"')).toEqual(before);
   });
@@ -660,4 +741,133 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     ]);
     expect(await rowsOf(file.id, 'SELECT * FROM "Texts" ORDER BY "Line", "Text"')).toEqual(before);
   });
+
+  it('reads every scan page: a batch of ten pages a parser job, each batch asked before the next is cut', async () => {
+    h.pages = 23;
+    h.onePiece = true;
+    const file = await scanFile('a made-up scan of 23 pages');
+    h.order.length = 0;
+    h.answerOf = (name) => ({ ran: true, text: `1: TK-${pageOfCall(name)}` });
+    const { value, cuts } = await readWithCuts(file.id);
+    expect(value?.text).toContain('TK-23');
+    const batch = (n: number) => ['/pdf/pieces', ...Array<string>(n).fill('vision')];
+    expect(h.order).toEqual(['/pdf/drawing', ...batch(10), ...batch(10), ...batch(3)]);
+    expect(h.vision.map((v) => pageOfCall(v.filename))).toEqual(
+      Array.from({ length: 23 }, (_, i) => i + 1),
+    );
+    expect(
+      await rowsOf(
+        file.id,
+        `SELECT "Scan pages read", "Scan pages past the cap", "Scan pages not read",
+          "Scan pages not read why" FROM "File"`,
+      ),
+    ).toEqual([
+      {
+        'Scan pages read': 23,
+        'Scan pages past the cap': 0,
+        'Scan pages not read': 0,
+        'Scan pages not read why': null,
+      },
+    ]);
+    // Read whole: no cut.
+    expect(cuts).toEqual({});
+  });
+
+  it('the read stops at its share of the time: the pages left are stated, the file is read in part, and a read again reads only them', async () => {
+    h.pages = 12;
+    h.onePiece = true;
+    h.cache = true;
+    const file = await scanFile('a made-up scan, its time runs out');
+    h.answerOf = (name) => ({ ran: true, text: `1: TK-${pageOfCall(name)}` });
+    // Half of the 60-minute extract budget: 30 minutes. Each call takes 11.
+    h.callMs = 11 * 60_000;
+    const clock = movedClock();
+    let first: Awaited<ReturnType<typeof readWithCuts>>;
+    try {
+      first = await readWithCuts(file.id);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(h.vision.map((v) => pageOfCall(v.filename))).toEqual([1, 2, 3]);
+    expect(first.value?.text).toContain('TK-3');
+    expect(first.cuts).toEqual({ scan_pages: { what: 'pages', read: 3, total: 12 } });
+    expect(
+      await rowsOf(
+        file.id,
+        `SELECT "Page", "Vision status" FROM "Pages" WHERE "Page" IN (3, 4, 12)`,
+      ),
+    ).toEqual([
+      { Page: 3, 'Vision status': 'ok' },
+      { Page: 4, 'Vision status': 'time' },
+      { Page: 12, 'Vision status': 'time' },
+    ]);
+    expect(
+      await rowsOf(file.id, `SELECT "Scan pages not read", "Scan pages not read why" FROM "File"`),
+    ).toEqual([{ 'Scan pages not read': 9, 'Scan pages not read why': 'time 9' }]);
+    // The coverage's word: read in part, a shortcut cut.
+    const { readCutHint } = await import('@mantle/files/read-cut');
+    expect(readCutHint('scan_pages', first.cuts.scan_pages!)).toContain('3 of 12 scan pages');
+
+    // A person's read again (its stamp: only answers kept after it), with
+    // time enough: the read reads on, and pays only for the pages left.
+    h.vision.length = 0;
+    h.callMs = 0;
+    const { withAnswerCache } = await import('@mantle/db/answer-cache');
+    const again = await withAnswerCache(() => readWithCuts(file.id), new Date(), file.id);
+    expect(h.vision.map((v) => pageOfCall(v.filename))).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(again.value?.text).toContain('TK-1');
+    expect(again.value?.text).toContain('TK-12');
+    expect(again.cuts).toEqual({});
+    expect(
+      await rowsOf(file.id, `SELECT "Scan pages read", "Scan pages not read" FROM "File"`),
+    ).toEqual([{ 'Scan pages read': 12, 'Scan pages not read': 0 }]);
+    // Read whole now: not due again.
+    h.vision.length = 0;
+    expect(await read(file.id)).toBeNull();
+    expect(h.vision).toEqual([]);
+  });
+
+  it('a batch the parser refuses after pages were read is stated, and the read goes on', async () => {
+    h.pages = 25;
+    h.onePiece = true;
+    h.piecesRefused = [11];
+    const file = await scanFile('a made-up scan, one batch refused');
+    h.answerOf = (name) => ({ ran: true, text: `1: TK-${pageOfCall(name)}` });
+    const { value, cuts } = await readWithCuts(file.id);
+    expect(value?.text).toContain('TK-25');
+    expect(h.vision).toHaveLength(15);
+    expect(cuts).toEqual({ scan_pages: { what: 'pages', read: 15, total: 25 } });
+    expect(
+      await rowsOf(file.id, `SELECT "Scan pages not read", "Scan pages not read why" FROM "File"`),
+    ).toEqual([{ 'Scan pages not read': 10, 'Scan pages not read why': 'no_picture 10' }]);
+    // The first batch refused: nothing read, so thrown as before.
+    h.piecesRefused = [1];
+    const other = await scanFile('a made-up scan, its first batch refused');
+    h.vision.length = 0;
+    await expect(read(other.id)).rejects.toThrow();
+    expect(h.vision).toEqual([]);
+  });
+
+  it('pages past the per-file cap are stated, and make the file read in part', async () => {
+    h.pages = f.SKETCH_MAX_PAGES + 2;
+    h.onePiece = true;
+    const file = await scanFile('a made-up scan past the page cap');
+    h.answerOf = () => ({ ran: true, text: '1: TK-1' });
+    const { cuts } = await readWithCuts(file.id);
+    expect(h.vision).toHaveLength(f.SKETCH_MAX_PAGES);
+    expect(cuts).toEqual({
+      scan_pages: {
+        what: 'pages',
+        read: f.SKETCH_MAX_PAGES,
+        total: f.SKETCH_MAX_PAGES + 2,
+        limit: f.SKETCH_MAX_PAGES,
+      },
+    });
+    expect(
+      await rowsOf(
+        file.id,
+        `SELECT "Scan pages past the cap", "Scan pages not read why" FROM "File"`,
+      ),
+    ).toEqual([{ 'Scan pages past the cap': 2, 'Scan pages not read why': 'past_page_cap 2' }]);
+  }, 120_000);
 });

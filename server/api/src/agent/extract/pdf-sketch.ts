@@ -13,47 +13,76 @@
  * and the text of the scan as markdown, which the caller takes as the
  * file's text.
  *
- * Cost. It runs inside an admitted extract only, after the extract's cost
- * guard (`llmWorkAllowed`), for at most 10 pages of a file and 4 pictures a
- * page: 40 vision calls a file at most. It runs one time for a file and its
- * bytes: the database's `File` tab holds `Vision read`, and a database that
- * has it is not read again. A copy of the file is another file, with its own
- * database and its own read. When the worker reads no picture at all (none is wired, or
- * every call failed), nothing is written, and the next extract of the file
- * tries again. A call that fails after others ran stops the read: that
- * picture and the ones after it are stated (`Gaps`, `not_read`) and are not
- * asked again.
+ * Every scan page of the file is read: a batch of SKETCH_BATCH_PAGES pages
+ * a parser job, each batch asked before the next is cut, all in this one
+ * extract. Nothing is left out in silence: a page not read whole (past the
+ * per-file cap SKETCH_MAX_PAGES, not reached in the read's time, after a
+ * call that did not run, or not cut) is stated in `Pages` (`Vision status`)
+ * and `File` (`Scan pages not read`, and why), and the file is read in part
+ * (the cut `scan_pages`, so the coverage counts it as not read in full).
  *
- * The order is for money (docs/pipelines.md, "The PDF set"). Every parser
- * job (the page facts, the pieces: the reader's kit jobs `/pdf/drawing` and
- * `/pdf/pieces`) runs before the first vision call; after the last vision
- * call only code in this process and the one write run. So a parser that is
- * busy, down or slow can only stop the read before anything is paid. That is
- * why this is a core path that uses the reader's kit, and not steps of the
- * package `drawing-pdf`: the runner keeps no paid answer, and a parser step
- * after the calls would make the next try pay again.
+ * Cost. It runs inside an admitted extract only, after the extract's cost
+ * guard (`llmWorkAllowed`), for at most SKETCH_MAX_PAGES (500) pages of a
+ * file and 4 pictures a page, each call within the box's spend caps (a day
+ * cap is a wait). No picture is asked after the read's share of the job's
+ * time (SKETCH_TIME_SHARE of the box's extract time budget): the pages left
+ * are stated (`time`), never asked by anything that starts by itself.
+ *
+ * When it runs. One time for a file and its bytes: the database's `File`
+ * tab holds `Vision read`, and a database that has it is not read again,
+ * but for one that left scan pages not read on a node with no text: a
+ * person's read again of a file read in part (file_reindex drops its text
+ * for it). That read pays only for the pictures not read yet: the answers
+ * this read kept are taken whatever the read-again stamp. A retry of the
+ * extract after the text was stored finds the text, and does not read again.
+ * A copy of the file is another file, with its own database and its own
+ * read. When the worker reads no picture at all (none is wired, or every
+ * call failed), nothing is written, and the next extract of the file tries
+ * again. A call that fails after others ran stops the read: that picture
+ * and the ones after it are stated (`Gaps`, `not_read`) and are not asked
+ * again in this read.
+ *
+ * The order is for money (docs/pipelines.md, "The PDF set"). The page facts
+ * (`/pdf/drawing`) are read before the first vision call. The pieces
+ * (`/pdf/pieces`) are cut a batch at a time, so a later batch's cut runs
+ * after paid calls: every paid answer is kept as it comes (@mantle/db
+ * answer-cache.ts), so a parser busy in a later batch only makes the
+ * extract try again, and the try again pays for none of the pictures read.
+ * After the last vision call only code in this process and the one write
+ * run. That is why this is a core path that uses the reader's kit, and not
+ * steps of the package `drawing-pdf`.
  */
 import { createHash } from 'node:crypto';
 import { getDefaultWorker, llmWorkAllowed, nodes } from '@mantle/db';
+import { withAnswerCache } from '@mantle/db/answer-cache';
+import { resolveEmbeddingConfig } from '@mantle/embeddings';
+import { resolveExtractionTimeBudget } from '@mantle/embeddings/extraction-concurrency';
 import {
+  SKETCH_BATCH_PAGES,
   SKETCH_KINDS,
+  SKETCH_MAX_PAGES,
   SKETCH_PROMPT,
+  SKETCH_TIME_SHARE,
   fileDbSqlitePath,
   isFileSha256,
+  isParserError,
   parserPdfDrawing,
   parserPdfPieces,
   pdfDrawingSheets,
   pagesNotReadWhole,
   pdfReadPoorer,
   sketchMarkdown,
+  sketchPageNone,
   sketchPageRead,
   sketchPagesOf,
   titleBlockOf,
   withPageKinds,
   type PdfKind,
   type PdfPageKind,
+  type SketchPagePieces,
   type SketchRead,
 } from '@mantle/files';
+import { noteReadCut } from '@mantle/files/read-cut-sink';
 import { buildFileDatabase, readFileRowNow } from '@mantle/content/file-database';
 import { storedPageKindsOf, storedPdfOf } from '@mantle/content/pdf-read';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
@@ -69,9 +98,17 @@ import { loadFileBytes } from './file-bytes';
 const SKETCH_MAX_TOKENS = 8000;
 const SKETCH_TOKENS_A_PIECE = 40;
 
+/** The read's time: its share of the box's extract time budget (the saved
+ *  setting, MANTLE_EXTRACT_EXPIRE_MIN, then 60 minutes), in ms. */
+async function sketchTimeMs(ownerId: string): Promise<number> {
+  const cfg = await resolveEmbeddingConfig(ownerId).catch(() => null);
+  return resolveExtractionTimeBudget(cfg?.extractionTimeBudgetMinutes) * 60_000 * SKETCH_TIME_SHARE;
+}
+
 /**
  * The sketch read of one PDF file node, when it is due: the file has a
- * database for its bytes that says a sketch kind and holds no vision read.
+ * database for its bytes that says a sketch kind and holds no vision read,
+ * or one that left scan pages not read while the node holds no text.
  * Null when it is not due or could not run (nothing was written and nothing
  * was paid for, but for calls that failed); else the text of the scan, ''
  * when the model read none.
@@ -80,14 +117,18 @@ export async function sketchIngestPdfNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
 ): Promise<{ text: string } | null> {
-  const sha = (node.data as Record<string, unknown> | null)?.sha256;
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const sha = data.sha256;
   if (!isFileSha256(sha)) return null;
   const abs = await fileDbSqlitePath(node.id, sha);
   if (!abs) return null;
   const file = await storedPdfOf(abs);
-  if (!file || file.visionRead || !(SKETCH_KINDS as readonly string[]).includes(file.kind)) {
-    return null;
-  }
+  if (!file || !(SKETCH_KINDS as readonly string[]).includes(file.kind)) return null;
+  // Read before: due again only for pages it left, on a node whose text is
+  // gone (a person's read again). Its text on the node is that read's: a
+  // retry of the extract never reads on top of it.
+  const hasText = typeof data.text === 'string' && data.text.trim() !== '';
+  if (file.visionRead && (file.scanPagesNotRead === 0 || hasText)) return null;
   // The page types of its tab Pages (the router's part 2): the database is
   // written whole below, so they are put in again. A tab that cannot be
   // read is no sketch read now (before any spend): a paid page answer is
@@ -127,45 +168,43 @@ export async function sketchIngestPdfNode(
       // The box's options of the reader (the title block), so the rows of
       // this read and the stamp follow them as an upload's do.
       const titleBlock = titleBlockOf(state.options);
+      // No picture is asked past this: the read's share of the job's time.
+      const until = Date.now() + (await sketchTimeMs(ownerId));
       // The page facts again (the parser, no model): the database is written
       // whole, so it needs them beside the read.
-      const cut = await step({ name: 'cut_pieces', kind: 'compute', input: {} }, async (h) => {
-        const drawing = await parserPdfDrawing(bytes, titleBlock);
-        const { pages, pastCap } = sketchPagesOf(drawing, file.kind as PdfKind);
-        const pieces = pages.length > 0 ? await parserPdfPieces(bytes, pages) : [];
-        h.setMeta({
-          pages: pages.length,
-          past_cap: pastCap.length,
-          pictures: pieces.reduce((n, p) => n + p.pictures.length, 0),
-          pieces: pieces.reduce((n, p) => n + p.pieces.length, 0),
-        });
-        return { drawing, pieces, pastCap };
-      });
-      if (!cut.pieces.some((p) => p.pictures.length > 0)) return null;
+      const drawing = await step(
+        { name: 'read_drawing', kind: 'compute', input: {} },
+        async (h) => {
+          const d = await parserPdfDrawing(bytes, titleBlock);
+          h.setMeta({ pages: d.numPages });
+          return d;
+        },
+      );
+      const { pages, pastCap } = sketchPagesOf(drawing, file.kind as PdfKind);
+      if (pages.length === 0) return null;
       // The database is written again from THIS read of the page facts. A
       // read poorer than the first (a page over its time on a busy parser:
       // another kind, or more pages not read whole) must not replace the
       // first: nothing is asked and nothing is written, and the next extract
       // tries again.
       if (
-        pdfReadPoorer(
-          { rulesKind: cut.drawing.kind, notReadWhole: pagesNotReadWhole(cut.drawing) },
-          file,
-        )
+        pdfReadPoorer({ rulesKind: drawing.kind, notReadWhole: pagesNotReadWhole(drawing) }, file)
       ) {
         return null;
       }
 
-      let model: string | null = null;
-      // A call that did not run (the worker down, a rate limit) stops the
-      // read: the pictures after it are not asked. With nothing read,
-      // nothing is written and a later extract reads it all.
-      let stopped = false;
+      // `model`: the model that read a picture, null while none has.
+      // `stopped`: a call that did not run (the worker down, a rate limit)
+      // stops the read: the pictures after it are not asked. With nothing
+      // read, nothing is written and a later extract reads it all.
+      const run: { model: string | null; stopped: boolean } = { model: null, stopped: false };
       const read: SketchRead['pages'] = [];
-      for (const page of cut.pieces) {
+      /** The answers of one page's pictures, in order; null for a picture
+       *  not asked (the read stopped). */
+      const askPage = async (page: SketchPagePieces): Promise<(string | null)[]> => {
         const answers: (string | null)[] = [];
         for (const [k, png] of page.pictures.entries()) {
-          if (stopped) {
+          if (run.stopped) {
             answers.push(null);
             continue;
           }
@@ -217,25 +256,85 @@ export async function sketchIngestPdfNode(
           // The pictures read before it are kept answers (@mantle/db
           // answer-cache.ts): the try again pays for none of them twice.
           if (res.wait) throw new ProviderWaitError(res.wait, 'vision');
-          if (res.ran) model = res.model ?? 'unknown';
-          else stopped = true;
+          if (res.ran) run.model = res.model ?? 'unknown';
+          else run.stopped = true;
           answers.push(res.ran ? res.text : null);
         }
-        read.push(sketchPageRead(page, answers));
-      }
+        return answers;
+      };
+      // This read's kept answers are taken also on a person's read again
+      // (the scope's `since` left out): a read again of a file read in part
+      // pays only for the pictures not read yet (a picture is the same bytes
+      // when its page is cut again, and its key names the model and the
+      // prompt). The wait's chain (`from`) and the keep's mark are the
+      // job's, as in any scope.
+      await withAnswerCache(
+        async () => {
+          // A batch of pages a parser job, each batch asked before the next
+          // is cut: only one batch's pictures are held.
+          for (let at = 0; at < pages.length; at += SKETCH_BATCH_PAGES) {
+            const batch = pages.slice(at, at + SKETCH_BATCH_PAGES);
+            if (run.stopped || Date.now() >= until) {
+              for (const n of batch) {
+                read.push(sketchPageNone(n, run.stopped ? 'not_read' : 'time'));
+              }
+              continue;
+            }
+            let pieces: SketchPagePieces[];
+            try {
+              pieces = await step(
+                {
+                  name: 'cut_pieces',
+                  kind: 'compute',
+                  input: { first: batch[0], pages: batch.length },
+                },
+                async (h) => {
+                  const out = await parserPdfPieces(bytes, batch);
+                  h.setMeta({
+                    pages: batch.length,
+                    past_cap: pastCap.length,
+                    pictures: out.reduce((n, p) => n + p.pictures.length, 0),
+                    pieces: out.reduce((n, p) => n + p.pieces.length, 0),
+                  });
+                  return out;
+                },
+              );
+            } catch (err) {
+              // Before any picture is read, or a parser busy for now: thrown,
+              // as before (a busy parser tries the extract again, and the
+              // pictures read are kept answers). A batch the parser refused
+              // after others were read is stated, and the read goes on.
+              if (run.model === null || !isParserError(err) || err.retryable) throw err;
+              for (const n of batch) read.push(sketchPageNone(n, 'no_picture'));
+              continue;
+            }
+            for (const page of pieces) {
+              if (!run.stopped && Date.now() >= until) {
+                read.push(sketchPageNone(page.page, 'time'));
+                continue;
+              }
+              read.push(sketchPageRead(page, await askPage(page)));
+            }
+          }
+        },
+        null,
+        node.id,
+      );
+
       // No picture was read by the model: nothing to store.
+      const model = run.model;
       if (model === null) return null;
       // Past here: no parser job, no model call before the write. The rows
       // are made in this process, and the one write is buildFileDatabase
       // with `parsed` (it reads nothing). Only after the write, with `Vision
       // read` set, may the build's `after` pipelines run their jobs.
 
-      const sketch: SketchRead = { model, pages: read, pagesPastCap: cut.pastCap, titleBlock };
+      const sketch: SketchRead = { model, pages: read, pagesPastCap: pastCap, titleBlock };
       const built = await step(
         { name: 'file_database', kind: 'compute', input: { sourceFileId: node.id } },
         async (h) => {
           const written = pdfDrawingSheets(
-            cut.drawing,
+            drawing,
             file.decision,
             sketch,
             // The stored kind stays the file's kind, as on a read again.
@@ -263,7 +362,16 @@ export async function sketchIngestPdfNode(
       // The bytes moved on, or the file turned private: its read is not kept
       // and is not its text.
       if (built.status !== 'built') return null;
-      return { text: sketchMarkdown(cut.drawing, sketch) };
+      // A scan page not read whole makes the file partial (the read's cut,
+      // docs/files.md "Read in part"): File and Pages say which and why.
+      const pagesRead = read.filter((p) => p.status === 'ok').length;
+      noteReadCut('scan_pages', {
+        what: 'pages',
+        read: pagesRead,
+        total: read.length + pastCap.length,
+        ...(pastCap.length > 0 ? { limit: SKETCH_MAX_PAGES } : {}),
+      });
+      return { text: sketchMarkdown(drawing, sketch) };
     },
   );
 }

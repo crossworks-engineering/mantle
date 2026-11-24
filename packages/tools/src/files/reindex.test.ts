@@ -43,9 +43,10 @@ const h = vi.hoisted(() => ({
   keyNoSearch: false,
   updated: 0,
   changed: [] as string[],
-  /** The database of a file, by id: its File tab says a sketch read, says
-   *  none, or cannot be read (the reader pool throws). */
-  dbs: new Map<string, 'sketch' | 'plain' | 'unreadable'>(),
+  /** The database of a file, by id: its File tab says a sketch read, one
+   *  that left scan pages not read (`partial`), says none, or cannot be read
+   *  (the reader pool throws). */
+  dbs: new Map<string, 'sketch' | 'partial' | 'plain' | 'unreadable'>(),
   sets: [] as unknown[],
   /** The box's Reader of every type, or none (the default). */
   reader: null as { id: string } | null,
@@ -97,8 +98,15 @@ vi.mock('@mantle/tabledb', async (orig) => ({
     const state = h.dbs.get(abs.split('/').pop()!);
     if (state === 'unreadable') throw new Error('the reader pool is busy');
     return {
-      columns: ['Kind', 'Rules kind', 'Vision read'],
-      rows: [['scan', 'scan', state === 'sketch' ? 1 : 0]],
+      columns: ['Kind', 'Rules kind', 'Vision read', 'Scan pages not read'],
+      rows: [
+        [
+          'scan',
+          'scan',
+          state === 'sketch' || state === 'partial' ? 1 : 0,
+          state === 'partial' ? 9 : 0,
+        ],
+      ],
     };
   }),
 }));
@@ -216,6 +224,16 @@ describe('reindexFiles', () => {
     }
     expect(keys).not.toContain('agent_text');
     expect(keys).not.toContain('pipeline_read');
+  });
+
+  it('a PDF whose sketch read left scan pages not read drops its text: the read again reads them', async () => {
+    h.rows = [row(A, 'whole.pdf'), row(B, 'part.pdf')];
+    h.dbs = new Map([
+      [A, 'sketch'],
+      [B, 'partial'],
+    ]);
+    await reindexFiles(OWNER, [A, B]);
+    expect(dropOf().ids).toBe(`{${A}}`);
   });
 
   it("the Reader's run of a PDF it queues has no page mark: a reindex asks no page type (Q2)", async () => {

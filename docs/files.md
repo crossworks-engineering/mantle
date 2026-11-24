@@ -244,7 +244,8 @@ and the cap (`limit`). A file with any entry is `partial`, and
 `extraction.cuts` lists each with its sentence (the `hint` is them all):
 "5,000 of 12,000 rows are in its text ...", "64 of 120 sheets ...". The
 scan's pages and the pictures left out (`data.images`, by part) are entries
-of the same list, said first (`ocr_pages`; `pictures`, the embedded part;
+of the same list, said first (`ocr_pages`; `scan_pages`, a scanned drawing's
+pages its sketch read did not read; `pictures`, the embedded part;
 `page_pictures`, a book's pages left to vision with no page picture yet,
 G1), so there is one model.
 
@@ -451,7 +452,10 @@ itself (cost safety: no trigger, no timer).
   holds its sketch read (`Vision read`) keeps that read's text (`text`,
   `ocr`, `vision_model`): the read is paid for and runs one time for its
   bytes, so the pass chunks, embeds and reads facts from the kept text, and
-  no whole-page OCR is paid on top. A PDF (the extension or the mimeType)
+  no whole-page OCR is paid on top. But for one whose sketch read left scan
+  pages not read (`Scan pages not read` above 0): it drops its text as any
+  file, so the sketch read is due again and reads the pages left, paying
+  only for the pictures not read yet (docs/file-ingestion.md, 3b). A PDF (the extension or the mimeType)
   whose database is there but whose File tab cannot be read now keeps it
   too (fail closed). So a sketch-read file keeps its text through a reader
   version bump: a reindex re-chunks and re-embeds it but does not re-read

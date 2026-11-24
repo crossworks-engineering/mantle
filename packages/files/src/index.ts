@@ -592,12 +592,16 @@ export {
   type PdfPageRoute,
 } from './pdf-page-kinds';
 export {
+  SKETCH_BATCH_PAGES,
   SKETCH_KINDS,
   SKETCH_MAX_PAGES,
   SKETCH_PROMPT,
+  SKETCH_TIME_SHARE,
   parsePieceAnswer,
   sketchMarkdown,
+  sketchPageNone,
   sketchPageRead,
+  sketchPagesNotRead,
   sketchPagesOf,
   type SketchPagePieces,
   type SketchPageRead,

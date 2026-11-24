@@ -53,6 +53,7 @@ import {
 } from './images';
 import { scanUnreadSentence } from '@mantle/runtime/agent';
 import { sketchIngestPdfNode } from './pdf-sketch';
+import { readCutStampSql } from './read-cut-stamp';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 
 /** The body of a node with no model call (no vision, no OCR worker): the typed
@@ -759,12 +760,14 @@ export async function loadExtractableBody(
     // Stored now, as the page OCR stores its text (./images.ts): the read is
     // paid for and its database says it ran, so a retry of this extract (the
     // extraction model failed after this point) must find the text on the
-    // node, and not run the whole-page read on top.
+    // node, and not run the whole-page read on top. The read's cuts go with
+    // it (a scan page not read: `scan_pages`): that retry reads no pages,
+    // so it would not say them again.
     await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
       await db
         .update(nodes)
         .set({
-          data: sql`${nodes.data} || jsonb_build_object('text', ${body.slice(0, TEXT_STORE_MAX_CHARS)}::text, 'ocr', true)`,
+          data: sql`${nodes.data} || jsonb_build_object('text', ${body.slice(0, TEXT_STORE_MAX_CHARS)}::text, 'ocr', true)${readCutStampSql()}`,
           updatedAt: new Date(),
         })
         .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));

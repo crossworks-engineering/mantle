@@ -131,6 +131,9 @@ const NAMED_TYPES: ReadonlySet<string> = new Set([
  *  (the key before a `:`). */
 export const SHORTCUT_CUT_REASONS: ReadonlySet<string> = new Set([
   'ocr_pages',
+  // A scanned drawing's pages its sketch read did not read (a cap, its
+  // time, a call that did not run).
+  'scan_pages',
   'page_pictures',
   'sheet_rows',
   'sheet_columns',
