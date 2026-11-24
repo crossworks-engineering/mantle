@@ -666,8 +666,8 @@ of the table. Nothing else reads it.
 
 ### Where a pipeline runs
 
-A pipeline is on in every workspace. An Admin can switch it off in a
-workspace. A router has no switch: it is used wherever its readers are.
+A pipeline is on in every workspace. A System user can switch it off in a
+workspace (the settings area). A router has no switch: it is used wherever its readers are.
 
 - A new workspace starts with every pipeline on. A file with no home
   workspace: the pipeline is on.
@@ -974,8 +974,8 @@ for each item.
 | `Layer`   | the text's layer (a CAD drawing), or empty                   |
 | `X`, `Y`  | the text's place (a CAD drawing), or empty                   |
 
-It is on in every workspace, as every pipeline is, until an Admin switches
-it off in one. It calls no model. The cost: each build of a CAD drawing or
+It is on in every workspace, as every pipeline is, until a System user
+switches it off in one. It calls no model. The cost: each build of a CAD drawing or
 a PDF reads `pipeline_state` once for it, also with no row, and runs one
 parser job (below).
 

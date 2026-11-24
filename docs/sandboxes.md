@@ -31,7 +31,7 @@ that one skips extraction cost without giving up storage or search by name.
 
 The whole feature sits behind the `sandboxes` compose profile.
 
-**From Settings (any box with a current updater).** An admin switches
+**From Settings (any box with a current updater).** A System user switches
 Sandboxes on or off in **Settings > Services**. Off stops the
 running sandboxes and sandboxd and keeps every sandbox, its `/files` and its
 apps; on brings them back. How it works, and what it writes to `.env`:

@@ -54,7 +54,7 @@ export function listBuiltins(): BuiltinToolDef[] {
  *  no such row is made; dispatch refuses one that exists anyway. */
 export function builtinRowSlugError(slug: string, ref: string): string | null {
   if (slug === ref || !tableBuiltin(slug)) return null;
-  return `This tool row is named '${slug}', another built-in tool's name, but runs '${ref}', so it does not run. Ask an admin to remove the row.`;
+  return `This tool row is named '${slug}', another built-in tool's name, but runs '${ref}', so it does not run. Ask a System user to remove the row (Settings → Tools).`;
 }
 
 /** The builtins that become rows in the owner's `tools` table — everything

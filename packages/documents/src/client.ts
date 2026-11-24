@@ -15,7 +15,7 @@ export class DocumentsUnavailableError extends Error {
   constructor(detail: string) {
     super(
       `The documents engine is not available: ${detail}. ` +
-        'An admin switches it on in Settings > Services (the Documents service).',
+        'A System user switches it on in Settings > Services (the Documents service).',
     );
     this.name = 'DocumentsUnavailableError';
   }

@@ -215,7 +215,7 @@ keeps the drawing SVG re-render (P6 is the post-back workaround, later).
 - **What switches nothing on**, says why, and leaves the next roll to try
   again: an unreadable audit log, less free disk than
   `MANTLE_SERVICE_MIN_FREE_MB` plus 2.4 GB, or a box with less than 3000 MB
-  of memory (`DOCUMENTS_MIN_MEM_MB`: an admin may still switch it on). The
+  of memory (`DOCUMENTS_MIN_MEM_MB`: a System user may still switch it on). The
   engine's image is pulled alone right after the profile is added; a
   failed download takes the profile back out (no off line), so the roll's
   own pull never fails on it. The step never fails a roll.

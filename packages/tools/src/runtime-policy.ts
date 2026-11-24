@@ -263,7 +263,7 @@ export function runtimeToolPolicy(row: Row): RuntimeToolPolicy | null {
 
 /** The refusal of a runtime tool row with no policy. */
 export const NO_RUNTIME_POLICY_ERROR =
-  'This tool has no access policy (its handler kind is not one this brain knows), so it does not run. Ask an admin to recreate it.';
+  'This tool has no access policy (its handler kind is not one this brain knows), so it does not run. Ask a System user to recreate it (Settings → Tools).';
 
 // ── The gate's sources (@mantle/db gate.ts, step 3) ─────────────────────────
 

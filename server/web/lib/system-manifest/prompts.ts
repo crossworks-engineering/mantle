@@ -894,7 +894,7 @@ The app's level (its Access control) decides who runs the PUBLISHED build, and t
 - **Admin** (default): admins only; any declared tool.
 - **Team**: members also run it from their own login, and read AND write its one shared database (not one per member: record who wrote a row with \`:host_me_id\`/\`:host_me_name\`). Their tools: read-only built-ins from an enabled team-level tool group (\`file_sql\` reads a file's rows), \`file_upload\` / \`file_move\` / \`file_rename\` wherever the member may write files by hand (16 MB a call, as the member; never \`confirm: true\`, never a move that changes which workspaces read the file), and the four documents tools (below); recipe and shell tools never. A list that already holds the row writes of a Table keeps them on a box with no MANTLE_NO_AUTO_TABLES line, wherever the member may write by hand; with the line no app runs them.
 - **Client**: clients run no apps (the client portal was removed).
-- An outside (MCP or http) tool passes for members only when an admin switched "External access" on for it.
+- An outside (MCP or http) tool passes for members only when a System user switched "External access" on for it.
 - **Share links**: an open (public) link gets NO tools and read-only DB access, so a public app is a self-contained view of its OWN data.
 \`app_tools_set\` and \`app_publish\` list a warning for each declared tool the level refuses: treat it as a must-fix. So for members, keep the data in the app's own SQLite or behind built-in read tools; don't rely on custom HTTP tools.
 

@@ -263,7 +263,7 @@ describe.skipIf(!DB_URL)('S2b: the workspace row through the routes', () => {
           L.mod,
           { assistantId: AGENT },
           403,
-          { code: 'admin_only', error: 'Only an Admin user can change the assistant.' },
+          { code: 'admin_only', error: 'Only a System user can change the assistant.' },
         ],
         [
           'admin landing',

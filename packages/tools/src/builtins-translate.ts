@@ -296,7 +296,7 @@ async function readSource(
       if (!(await callerHasArea('connectors'))) {
         return {
           error:
-            'Reading mail needs the Connectors area of the Admin workspace. Ask an Admin user to translate it.',
+            'Reading mail needs the Connectors area, which only System users hold. Ask a System user to translate it.',
         };
       }
       const [mail] = await db

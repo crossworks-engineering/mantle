@@ -565,7 +565,7 @@ export function connectorMarkRefusal(
   if (mark !== 'read') return null;
   const extra = undeclaredToolArgs(tool.inputSchema, input);
   if (extra.length === 0) return null;
-  return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
+  return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask a System user to sync the connector and mark the tool again.`;
 }
 
 /** Why a connector call is refused in a workspace turn scope, or null: the
@@ -613,7 +613,7 @@ async function connectorCallRefused(
   const { mark } = connectorToolPolicy(tool).fields;
   if (mark === 'stale') return connectorMarkRefusal(mark, tool, input);
   if (run === 'link' && mark === 'write') {
-    return 'On a shared link only connector tools an admin marked read-only run; this one can change data.';
+    return 'On a shared link only connector tools a System user marked read-only run; this one can change data.';
   }
   const marked = connectorMarkRefusal(mark, tool, input);
   if (marked !== null) return marked;

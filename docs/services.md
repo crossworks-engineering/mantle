@@ -1,8 +1,9 @@
 # Optional services: start and stop from Settings
 
-Six parts of a box are optional, and an admin can switch each one on or off
-from **Settings > Services** (`/settings/services`, admins only), or over MCP
-with `service_list` and `service_set` (an Admin login's own client). The System
+Six parts of a box are optional, and a System user can switch each one on or
+off from **Settings > Services** (`/settings/services`, the settings area,
+which only System users hold), or over MCP with `service_list` and
+`service_set` (a System user's own client). The System
 vitals pills on the dashboard show each one's state and link there:
 
 | service            | what it does                                                                                                                                             | download                                                                                        | memory                                                         |

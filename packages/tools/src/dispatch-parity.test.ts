@@ -34,7 +34,9 @@
  * file writes (owner decision 2026-11-03) re-recorded file_upload alone: a
  * recipe step may not call it now that it is seeded for mini apps. The
  * authoring kit's mark (owner, 2026-11-07) re-recorded api_skill_set and
- * api_docs_set alone: a recipe step may not call them.
+ * api_docs_set alone: a recipe step may not call them. The refusal texts'
+ * "who fixes it" (2026-11-24) re-recorded runtime:unknown alone: a System
+ * user, not an admin, recreates a tool.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';

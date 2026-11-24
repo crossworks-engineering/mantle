@@ -129,7 +129,7 @@ export function decisionErrorMessage(
   if (status !== 404 || decisionProviderPrefs(opts.privacy).zdr !== true) return base;
   return (
     `${base}. If '${opts.model}' has no zero-data-retention route, every call to it fails under ` +
-    `privacy 'zdr'. An admin may lower the decider's privacy to 'no_training' (no data ` +
+    `privacy 'zdr'. A System user may lower the decider's privacy to 'no_training' (no data ` +
     `collection, retention allowed): untick 'Request zero data retention' on the decider ` +
     `worker, which saves privacy 'no_training'. Mantle never loosens privacy by itself.`
   );

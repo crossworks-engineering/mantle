@@ -609,7 +609,7 @@ export async function patchWorkspace(
     throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
   }
   if (body.assistantId !== undefined && !seen.areas.includes('assistants')) {
-    throw new WsError(403, 'admin_only', 'Only an Admin user can change the assistant.');
+    throw new WsError(403, 'admin_only', 'Only a System user can change the assistant.');
   }
   const owner = caller.anchorId;
   const wid = w.id;
@@ -874,7 +874,7 @@ const WS_REFUSALS: Readonly<
   resources_admin_only: {
     state: '42501',
     error: () =>
-      new WsError(403, 'admin_only', 'Only an Admin user can change this workspace’s resources.'),
+      new WsError(403, 'admin_only', 'Only a System user can change this workspace’s resources.'),
   },
   no_kind: { state: 'P0002', error: () => new WsError(404, 'not_found', 'No such resource kind.') },
   assistant_exists: {
@@ -1395,7 +1395,7 @@ function mayManageResource(seen: Seen, kind: WorkspaceResourceKind): void {
     throw new WsError(
       403,
       'admin_only',
-      'Only an Admin user can change this workspace’s resources.',
+      'Only a System user can change this workspace’s resources.',
     );
   }
   if (seen.row.archived_at !== null) throw archivedError();

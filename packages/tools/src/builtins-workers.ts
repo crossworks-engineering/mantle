@@ -1613,7 +1613,7 @@ const model_call: BuiltinToolDef = {
     if (!credential) {
       return {
         ok: false,
-        error: `no '${provider}' key in the API-key vault. Ask an admin to add one under Settings → API keys, or name another provider.`,
+        error: `no '${provider}' key in the API-key vault. Ask a System user to add one under Settings → API keys, or name another provider.`,
       };
     }
     const effort = strOpt(input.reasoning_effort) as ThinkingEffort | undefined;

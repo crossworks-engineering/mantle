@@ -4,7 +4,7 @@ Link your mailboxes, choose whose mail the brain keeps, and let the assistant se
 
 ## Before you start
 
-Email and Contacts need the **Sync** service. An admin turns it on in **Settings > Services**. While it is off, both screens are hidden; nothing is deleted.
+Email and Contacts need the **Sync** service. A System user turns it on in **Settings > Services**. While it is off, both screens are hidden; nothing is deleted.
 
 ## Link a mailbox
 

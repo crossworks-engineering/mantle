@@ -21,7 +21,7 @@ const TOKEN_HEADER = 'x-mantle-sync-token';
 export class SyncOffError extends Error {
   readonly code = 'sync_off';
   constructor() {
-    super('Sync is turned off on this box. An admin can turn it on in Settings > Services.');
+    super('Sync is turned off on this box. A System user can turn it on in Settings > Services.');
     this.name = 'SyncOffError';
   }
 }

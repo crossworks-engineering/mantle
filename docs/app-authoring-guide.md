@@ -590,7 +590,7 @@ So to show your data in an app, you give it a tool that returns that data:
   the kind that works for **members**: a member's run of an app gets read-only
   built-in tools, plus a connector's tools when the user running it may
   use the connector on their own MCP (a tool without the admin's
-  read-only mark writes), and an http tool only when an admin switched
+  read-only mark writes), and an http tool only when a System user switched
   "External access" on for it (docs/member-logins.md). An open share link
   gets no tools at all.
 - **Apps only the Admin workspace holds** (and that an Admin user built)
