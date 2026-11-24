@@ -1,7 +1,7 @@
 [
  {
   "name": "access_grant_add",
-  "description": "Grant one item to a workspace, as the item's Grant Access panel does: the users of that workspace then read it (`write: true`: and edit it). On a workspace the item is already in, `write: true` switches Write on. Needs a Moderator of the item's home and of that workspace; the panel's refusals come back in its words. A folder passes the grant to everything inside it (`confirm`). Answers the item's grants after the change, as `access_get`. To narrow use `access_grant_remove`; a public link is `node_share`.",
+  "description": "Grant one item to a workspace, as the item's Grant Access panel does: the users of that workspace then read it (`write: true`: and edit it). On a workspace the item is already in, `write: true` switches Write on. Needs a Moderator of the item's home (or an Admin user who reads the item) and a Moderator of that workspace; the panel's refusals come back in its words. **An agent's call in a chat waits in Pending for a person.** A folder passes the grant to everything inside it (`confirm`). Answers the item's grants after the change, as `access_get`. To narrow use `access_grant_remove`; a public link is `node_share`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8664,7 +8664,7 @@
  },
  {
   "name": "access_grant_remove",
-  "description": "Take one item away from a workspace, as the item's Grant Access panel does: its users no longer read it (a row that follows the item's folder becomes \"Removed here\"). `keep_read: true` only switches that grant's Write off. Needs a Moderator of the item's home or of that workspace; the home's own row never goes (move the item instead); the panel's refusals come back in its words. A folder's change reaches everything inside it (`confirm`). Answers the item's grants after the change, as `access_get`. To widen use `access_grant_add`.",
+  "description": "Take one item away from a workspace, as the item's Grant Access panel does: its users no longer read it (a row that follows the item's folder becomes \"Removed here\"). `keep_read: true` only switches that grant's Write off. Needs a Moderator of the item's home (or an Admin user who reads the item) or of that workspace; the home's own row never goes (move the item instead); the panel's refusals come back in its words. A folder's change reaches everything inside it (`confirm`). Answers the item's grants after the change, as `access_get`. To widen use `access_grant_add`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -10660,15 +10660,18 @@
  },
  {
   "name": "access_get",
-  "description": "For a brain item: its grants, the workspaces that read it (`home`: the workspace it lives in; `grants`: one row per workspace with `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not)). Change them with `access_grant_add` and `access_grant_remove`.",
+  "description": "An item's grants as your Grant Access panel shows them: `home` (the workspace it lives in, null where you may not name it) and `grants`, one row per workspace you may see with `workspace`, `workspaceId`, `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not). Change them with `access_grant_add` and `access_grant_remove`.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "node_id": {
      "type": "string",
-     "description": "a brain item id (page, file, folder, …)"
+     "description": "The item (page, file, folder, app, table, ...)."
     }
    },
+   "required": [
+    "node_id"
+   ],
    "$schema": "http://json-schema.org/draft-07/schema#"
   },
   "annotations": {

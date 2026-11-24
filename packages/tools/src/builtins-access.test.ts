@@ -17,6 +17,7 @@ import {
   ACCESS_TOOLS,
   AGENT_LEVEL_GONE,
   GRANT_NEEDS_LOGIN,
+  grantConfirmCounts,
   ITEM_LEVEL_GONE,
 } from './builtins-access';
 import type { ToolHandlerContext } from './types';
@@ -138,5 +139,24 @@ describe('access_grant_add (widens: confirm-gated)', () => {
 describe('access_grant_remove (narrows)', () => {
   it('refuses with no login to act for, and teaches a missing argument', async () => {
     await bothArms(ACCESS_TOOLS.find((t) => t.slug === 'access_grant_remove')!);
+  });
+});
+
+describe('access_get reads as the login, the confirm counts on its own connection only', () => {
+  it("access_get is any login's read, by the panel (no owner flag, no Admin step)", () => {
+    expect(access_get.ownerOnly).toBeUndefined();
+    expect(access_get.policy.scope).toBe('any');
+    expect(access_get.policy.effect).toBe('read');
+    expect(access_set.ownerOnly).toBe(true);
+  });
+
+  it("a folder's confirm counts on a person's own MCP connection or the dev console only", () => {
+    const at = (entry?: string, via = 'process') =>
+      grantConfirmCounts({ ownerId: 'o1', ...(entry ? { caller: { entry, via } as never } : {}) });
+    expect(at('mcp', 'oauth')).toBe(true);
+    expect(at('owner-web', 'cookie')).toBe(true);
+    for (const entry of ['pending', 'turn', 'run', 'app', 'api-v1', undefined]) {
+      expect(at(entry), String(entry)).toBe(false);
+    }
   });
 });

@@ -1229,7 +1229,6 @@
     "GET /api/contacts|contact_list|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "GET /api/draws/:id/svg|export_node|narrower": "no real difference: draw_get with image serves a member; export_node also saves a file, so it is Admin only",
     "GET /api/export/:id|pdf_render|wider": "OPEN: the route and the tool name different callers; not yet reviewed",
-    "GET /api/grants/:nodeId|access_get|narrower": "OPEN, agent narrower: a member reads this by hand; the tool label is old",
     "GET /api/journal/:id|journal_get|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "GET /api/journal|journal_list|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "GET /api/peers/nodes|search|wider": "no real difference: search runs in the login scope; the route is the picker for peer grants",

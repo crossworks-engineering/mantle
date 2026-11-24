@@ -191,6 +191,7 @@ export { EXPORT_TOOLS } from './builtins-export';
 export { DOCUMENT_TOOLS, PDF_TOOL_OPS } from './builtins-documents';
 export {
   ACCESS_TOOLS,
+  access_get,
   access_grant_add,
   access_grant_remove,
   GRANT_NEEDS_LOGIN,

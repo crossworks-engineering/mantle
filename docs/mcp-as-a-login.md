@@ -127,13 +127,15 @@ own rules (the member turn ledger).
 
 ## Grants (2026-11-24)
 
-`access_grant_add` and `access_grant_remove` change one item's grants as
-the login, by the Grant Access panel's own functions and rules; `access_get`
-reads them (Admin). `access_set` is retired and says which tool to use.
+`access_get`, `access_grant_add` and `access_grant_remove` read and change
+one item's grants as the login, by the Grant Access panel's own functions
+and rules: the login reads what its own panel shows, and changes what it
+could change there. `access_set` is retired and says which tool to use.
 The widening one is confirm-gated (an in-brain turn's call waits in
-Pending); on this surface it acts at once. Both are risky for a key and a
-peer: one calls them only when it names them. The table of callers:
-[workspaces.md](./workspaces.md), "Items and grants".
+Pending); on this surface it acts at once. Both writes are risky for a key
+and a peer: one calls them only when it names them, and never confirms a
+folder's change. The table of callers: [workspaces.md](./workspaces.md),
+"Items and grants".
 
 ## Where a create lands (W7b)
 
