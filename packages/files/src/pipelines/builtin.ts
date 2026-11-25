@@ -281,6 +281,17 @@ export const BUILTIN_PIPELINES = [
     needs: { weight: 'heavy', timeMs: 120_000 },
   }),
   pkg({
+    id: 'plot-dwfx',
+    name: 'DWFx plot set',
+    description:
+      'Reads a DWFx plot set (the XPS form of a DWF set) and writes its sheets and the text on each sheet as tabs.',
+    version: '1.0.0',
+    match: { ext: ['dwfx'] },
+    produces: {},
+    // A light read: XML parts only, no CAD tier (../slug.ts isDrawingExt).
+    needs: { weight: 'light', timeMs: 60_000 },
+  }),
+  pkg({
     id: 'drawing-cad',
     name: 'CAD drawing',
     description:

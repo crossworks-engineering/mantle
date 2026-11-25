@@ -338,6 +338,7 @@ describe('listPipelines', () => {
       'pdf-router': [null, null],
       'drawing-pdf': [0, 0],
       'plot-dwf': [0, 0],
+      'plot-dwfx': [0, 0],
       'drawing-cad': [1, 1],
       'drawing-raster': [0, 0],
       mail: [0, 0],

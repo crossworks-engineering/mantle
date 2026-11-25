@@ -8,7 +8,8 @@
  */
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { glyphRuns, parseDwfx } from './pipelines/pkg/plot-dwf/dwfx';
+import { glyphRuns, parseDwfx, parseDwfxStructured } from './pipelines/pkg/plot-dwf/dwfx';
+import { DWFX_DESCRIPTION, dwfxGrids, step } from './pipelines/pkg/plot-dwfx/step';
 import { readDocumentText } from './read-document';
 import { withReadCutSink } from './read-cut-sink';
 import {
@@ -194,6 +195,57 @@ describe('DWFx caps say what was left out', () => {
 
   it('a small set says nothing', async () => {
     expect((await withReadCutSink(async () => parseDwfx(await dwfx()))).cuts).toEqual({});
+  });
+});
+
+describe('the plot-dwfx step: the file database', () => {
+  const run = async (bytes: Buffer) =>
+    step({} as never, { bytes: async () => bytes } as never) as unknown as Promise<{
+      status: string;
+      calls?: Array<{ input: { tabs: unknown[]; description?: string } }>;
+    }>;
+
+  it('writes Sheets and Texts, every run in page order', async () => {
+    const out = await run(await dwfx({ runs: (i) => [`A${i}`, `B${i}`] }));
+    expect(out.status).toBe('ok');
+    const input = out.calls![0]!.input;
+    expect(input.description).toBe(DWFX_DESCRIPTION);
+    const [sheets, texts] = input.tabs as Array<{ name: string; rows: unknown[][] }>;
+    expect(sheets!.name).toBe('Sheets');
+    expect(sheets!.rows).toEqual([
+      ['M-102 Rev 2', 1, 'plant-2.dwg', 'Layout2', 'drafter', 2, 'read'],
+      ['M-101 Rev 1', 2, 'plant-1.dwg', 'Layout1', 'drafter', 2, 'read'],
+    ]);
+    expect(texts!.name).toBe('Texts');
+    expect(texts!.rows).toEqual([
+      ['M-102 Rev 2', 1, 1, 'A2'],
+      ['M-102 Rev 2', 1, 2, 'B2'],
+      ['M-101 Rev 1', 2, 1, 'A1'],
+      ['M-101 Rev 1', 2, 2, 'B1'],
+    ]);
+  });
+
+  it('keeps every run, with no character budget', async () => {
+    const long = Array.from({ length: 300 }, (_v, k) => `RUN-${k}-${'x'.repeat(90)}`);
+    const parsed = await parseDwfxStructured(await dwfx({ pages: 1, runs: () => long }));
+    expect(dwfxGrids(parsed!.sheets)[1]!.rows).toHaveLength(300);
+  });
+
+  it('a missing page is a row that says so', async () => {
+    const out = await run(await dwfx({ missing: [9] }));
+    const [sheets] = out.calls![0]!.input.tabs as Array<{ rows: unknown[][] }>;
+    expect(sheets!.rows[2]).toEqual(['Sheet 3', 3, null, null, null, 0, 'missing or damaged']);
+  });
+
+  it('not a DWFx: ok with no call; no text and no title: no tabs', async () => {
+    expect(await run(Buffer.from('plain'))).toEqual({ status: 'ok' });
+    const blank = await run(await dwfx({ manifest: false, runs: () => [] }));
+    expect(blank.calls![0]!.input).toEqual({ tabs: [] });
+  });
+
+  it('a damaged DWFx fails the job with a named error', async () => {
+    const bytes = await dwfx();
+    await expect(run(bytes.subarray(0, 100))).rejects.toThrow(/dwfx: no readable ZIP/);
   });
 });
 

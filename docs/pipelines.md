@@ -53,6 +53,7 @@ reader is `drawing-raster`.
 | `pdf-router`      | pdf (a router)                 | light  | none                       | package          |
 | `drawing-pdf`     | pdf                            | light  | `pdf-file-v1`              | package          |
 | `plot-dwf`        | dwf                            | heavy  | none                       | package          |
+| `plot-dwfx`       | dwfx                           | light  | none                       | package          |
 | `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package          |
 | `drawing-raster`  | tif, tiff, smf, 000            | light  | none                       | package (Python) |
 | `mail`            | eml, msg, mbox                 | light  | none                       | package          |
@@ -1966,7 +1967,7 @@ reads them again if wanted.
 
 `plot-dwf` moved in MV4. Its folder is `pkg/plot-dwf/`: `step.ts`, and the
 container reader `dwf.ts`. Beside it, `dwfx.ts` reads a DWFx (the XPS form
-of a DWF set) for its text only, on the core route `dwfx`: no step, no tabs.
+of a DWF set): see "The DWFx reader" below.
 The step reads the bytes in hand: a file that is
 not a DWF by its magic (usually a renamed DWFx), and a DWF with no 2D
 sheets, are `ok` with no tabs (the word `no-rows`), as before; else the tabs
@@ -1983,6 +1984,24 @@ is still a heavy file: the lane comes from the extension
 (`extractWeightOfExt`), so one DWF extract at a time, as before. The parser's
 `grid` job no longer reads DWF. The rows, the stamp and the version did not
 change: the golden files of the old path (`pkg/plot-dwf/golden/`) hold it.
+
+
+## The DWFx reader
+
+A DWFx is the XPS form of a DWF set: a plain zip of XPS parts, with no
+`(DWF ` magic and no W2D stream, so `dwf.ts` cannot read it. Its reader is
+`pkg/plot-dwf/dwfx.ts`, in two places. The core text read (route `dwfx`,
+`read-document.ts`) gives one `## Sheet` block a page: the sheet title from
+the DWF `manifest.xml`, the source drawing, layout and author from the
+`descriptor.xml` beside the page, and the text of every `Glyphs`
+`UnicodeString`. The package `plot-dwfx` (`pkg/plot-dwfx/step.ts`, light)
+writes the tabs Sheets (one row a sheet) and Texts (every text run, in page
+order). It is its own package, not a match of `plot-dwf`: a new extension
+there would raise that package's version and show every DWF file as stale.
+Every part is read through the zip guard. Bytes that are not a DWFx give no
+text and no tabs; a zip that cannot be opened, or whose every page is
+missing, fails the read with a named error. The linework and the page
+pictures are not read.
 
 ## The CAD reader as a package
 

@@ -24,6 +24,7 @@ const READER_OF: Record<string, string> = {
   mpt: 'plan-mspdi',
   pdf: 'drawing-pdf',
   dwf: 'plot-dwf',
+  dwfx: 'plot-dwfx',
   dwg: 'drawing-cad',
   dxf: 'drawing-cad',
   dgn: 'drawing-cad',
