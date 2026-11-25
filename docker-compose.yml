@@ -895,6 +895,11 @@ services:
     logging: *default-logging
     profiles: ['documents']
     mem_limit: 2g
+    # Half the weight of the brain's services when the box is short of CPU,
+    # as the parser has: a job that loops (Go's template run has no limit)
+    # gives way to the web, the api and Postgres. Not `cpus`: Docker refuses
+    # to start a container whose cap passes the box's cores.
+    cpu_shares: 512
     environment:
       API_TIMEOUT: 60s
       API_ENABLE_BASIC_AUTH: 'true'
