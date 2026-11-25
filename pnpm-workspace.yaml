@@ -79,4 +79,5 @@ overrides:
 
 patchedDependencies:
   katex@0.19.1: patches/katex@0.19.1.patch
+  mdb-reader@3.2.2: patches/mdb-reader@3.2.2.patch
   postgres@3.4.9: patches/postgres@3.4.9.patch

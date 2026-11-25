@@ -80,6 +80,29 @@ describe('columns with no value to keep in a cell', () => {
   });
 });
 
+describe('calculated columns (Access 2010)', () => {
+  it('are not read, named as calculated, and the stored columns are', () => {
+    const r = open('calculated.accdb');
+    const [t] = r.tabs;
+    const names = t!.columns.map((c) => c.name);
+    expect(names).toContain('FirstName');
+    expect(names).not.toContain('LastFirst');
+    expect(names).not.toContain('AllNames');
+    expect(r.text).toContain('LastFirst (text, calculated, not read)');
+    expect(r.readCuts.access_columns).toMatchObject({ what: 'columns' });
+    // No cell holds the junk of a wrapped value.
+    for (const row of t!.rows)
+      for (const v of row)
+        if (typeof v === 'string') expect(v.includes(String.fromCharCode(0))).toBe(false);
+    // A Currency column whose values fit a double is a number.
+    expect(t!.columns.find((c) => c.name === 'Salary')!.type).toBe('number');
+    expect(t!.rows[0]![names.indexOf('Salary')]).toBe(1000000);
+    // A Decimal column with a value of 18 digits is text, every digit kept.
+    expect(t!.columns.find((c) => c.name === 'Popularity')!.type).toBe('text');
+    expect(t!.rows.map((row) => row[names.indexOf('Popularity')])).toContain('102030405060.654321');
+  });
+});
+
 describe('a damaged file', () => {
   /** types.accdb with one page's type byte broken. Page 76 is the data
    *  page of Table1; page 17 holds the list of the tables. */
@@ -89,15 +112,22 @@ describe('a damaged file', () => {
     return bytes;
   };
 
-  it('reads the other tables, names the damaged one, and says the cut', () => {
+  it('reads the batch again one row at a time, counts the rows it cannot read, and reads on', () => {
     const r = readAccess(damaged(76), 'accdb', fileDbRowKeeper(), LATER);
     if (r.locked) throw new Error('locked');
     expect(r.tabs).toEqual([]);
-    expect(r.readCuts.access_tables).toEqual({ what: 'tables', read: 3, total: 4 });
-    expect(r.text).toContain('Tables not read whole (the file may be damaged): Table1');
-    expect(r.description).toContain('Not read whole (the file may be damaged): Table1');
+    expect(r.readCuts.access_rows).toEqual({ what: 'rows', read: 0, total: 2 });
+    expect(r.readCuts.access_tables).toBeUndefined();
+    expect(r.text).toContain(
+      'Tables with rows that could not be read (the file may be damaged): Table1',
+    );
+    expect(r.description).toContain('Damaged, so read in part or not at all: Table1');
+    expect(cutMakesPartial('access_rows')).toBe(true);
+    expect(readCutHint('access_rows', r.readCuts.access_rows!)).toContain('0 of 2 rows');
     expect(cutMakesPartial('access_tables')).toBe(true);
-    expect(readCutHint('access_tables', r.readCuts.access_tables!)).toContain('3 of 4 tables');
+    expect(readCutHint('access_tables', { what: 'tables', read: 3, total: 4 })).toContain(
+      '3 of 4 tables',
+    );
   });
 
   it('throws when the list of its tables cannot be read', () => {
@@ -126,28 +156,43 @@ describe('a long read', () => {
     const r = open('types.accdb', 'accdb', fileDbRowKeeper(), Date.now() - 1);
     expect(r.tabs).toEqual([]);
     expect(r.readCuts.database_time).toEqual({ what: 'rows', read: 0, total: 2 });
-    expect(r.readCuts.access_text).toMatchObject({ read: 0, total: 2 });
+    // The text holds every row the database keeps: no text cut.
+    expect(r.readCuts.access_text).toBeUndefined();
   });
 });
 
 describe('types and cells', () => {
-  it('keeps a number type only where a double holds every value', () => {
+  it('maps the Access types, and reads no file, list or calculated column', () => {
     expect(columnTypeOf({ name: 'x', type: 'currency' })).toBe('number');
-    expect(columnTypeOf({ name: 'x', type: 'numeric', precision: 15 })).toBe('number');
-    expect(columnTypeOf({ name: 'x', type: 'numeric', precision: 18 })).toBe('text');
+    expect(columnTypeOf({ name: 'x', type: 'numeric' })).toBe('number');
     expect(columnTypeOf({ name: 'x', type: 'bigint' })).toBe('text');
+    expect(columnTypeOf({ name: 'x', type: 'double', calculated: true })).toBeNull();
     expect(columnTypeOf({ name: 'x', type: 'ole' })).toBeNull();
     expect(columnTypeOf({ name: 'x', type: 'binary' })).toBeNull();
     expect(columnTypeOf({ name: 'x', type: 'complex' })).toBeNull();
   });
 
   it('makes each value a cell of its type', () => {
-    expect(cellOf('12.3400', 'number')).toBe(12.34);
-    expect(cellOf(9007199254740993n, 'text')).toBe('9007199254740993');
-    expect(cellOf(new Date('2026-11-25T10:20:30Z'), 'datetime')).toBe('2026-11-25T10:20:30.000Z');
-    expect(cellOf(new Date(Number.NaN), 'datetime')).toBeNull();
-    expect(cellOf(Number.POSITIVE_INFINITY, 'number')).toBeNull();
-    expect(cellOf(null, 'text')).toBeNull();
+    const num = { type: 'number' as const };
+    const text = { type: 'text' as const };
+    const when = { type: 'datetime' as const };
+    expect(cellOf('12.3400', num)).toBe(12.34);
+    // A Currency or Decimal value stays text until the read settles its type.
+    expect(cellOf('1234567890123.4567', { ...num, decimal: true })).toBe('1234567890123.4567');
+    expect(cellOf(9007199254740993n, text)).toBe('9007199254740993');
+    expect(cellOf(new Date('2026-11-25T10:20:30Z'), when)).toBe('2026-11-25T10:20:30.000Z');
+    expect(cellOf(new Date(Number.NaN), when)).toBeNull();
+    expect(cellOf(Number.POSITIVE_INFINITY, num)).toBeNull();
+    expect(cellOf(null, text)).toBeNull();
+  });
+
+  it('reads a date before 1899-12-30 with a time of day as Access means it', () => {
+    // Access -1.25: the day before day 0, at 06:00. mdb-reader gives the
+    // number read as one value: day 0 less 1.25 days.
+    const naive = new Date(Date.UTC(1899, 11, 30) - 1.25 * 86_400_000);
+    expect(cellOf(naive, { type: 'datetime' })).toBe('1899-12-29T06:00:00.000Z');
+    const whole = new Date(Date.UTC(1899, 11, 28));
+    expect(cellOf(whole, { type: 'datetime' })).toBe('1899-12-28T00:00:00.000Z');
   });
 });
 

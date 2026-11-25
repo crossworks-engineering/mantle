@@ -34,6 +34,7 @@ overrides:
 
 patchedDependencies:
   katex@0.19.1: c9e0da187312d7ff5b16322271de729d870493111a24150858f8db177d7a6fe4
+  mdb-reader@3.2.2: a9a3ea774a3a0837b7c1571f972a4b20f2f724cbed67275e876df4f4da1e2be2
   postgres@3.4.9: 5f9e843345f7ff09bcc85aa0d63fa992bd13de09064392e281914af27ac298e2
 
 importers:
@@ -608,7 +609,7 @@ importers:
         version: 1.13.0
       mdb-reader:
         specifier: 3.2.2
-        version: 3.2.2
+        version: 3.2.2(patch_hash=a9a3ea774a3a0837b7c1571f972a4b20f2f724cbed67275e876df4f4da1e2be2)
       pdf-parse:
         specifier: ^2.4.5
         version: 2.4.5
@@ -10284,7 +10285,7 @@ snapshots:
     dependencies:
       '@types/mdast': 4.0.4
 
-  mdb-reader@3.2.2:
+  mdb-reader@3.2.2(patch_hash=a9a3ea774a3a0837b7c1571f972a4b20f2f724cbed67275e876df4f4da1e2be2):
     dependencies:
       browserify-aes: 1.2.0
       create-hash: 1.2.0

@@ -2165,8 +2165,11 @@ with the text pass (readerRun), and that run has no rows file. On the bench
 at a 145 MB peak.
 
 Columns of attachments, lists of many values, OLE objects and binary are
-not read (the cut `access_columns`); a damaged table keeps the rows read
-before the fault (the cut `access_tables`); a file with a password is not read (the
+not read, nor are calculated columns (the cut `access_columns`; a repo patch
+of mdb-reader, `patches/mdb-reader@3.2.2.patch`, names a calculated column);
+a damaged file is read in part (the cuts `access_tables` and `access_rows`:
+a batch that fails is read again one row at a time); a file with a password
+is not read (the
 cut `access_password`, a short text, the word `no-rows`); the text keeps
 5,000 rows a table and 1,000,000 characters (the cut `access_text`). A file
 mdb-reader cannot read throws: the job fails and the file is

@@ -1,0 +1,15 @@
+diff --git a/lib/node/Table.js b/lib/node/Table.js
+index e344c4a3c95f0cfc14effcaeddba9e0e1c599990..1a729e240ef54e97b17127a9c16eb3581a9c6dff 100644
+--- a/lib/node/Table.js
++++ b/lib/node/Table.js
+@@ -121,6 +121,10 @@ export class Table {
+                     : columnBuffer.readUInt16LE(this.#database.format.tableDefinitionPage.columnsDefinition.sizeOffset),
+                 fixedIndex: columnBuffer.readUInt16LE(this.#database.format.tableDefinitionPage.columnsDefinition.fixedIndexOffset),
+                 ...parseColumnFlags(columnBuffer.readUInt8(this.#database.format.tableDefinitionPage.columnsDefinition.flagsOffset)),
++                // Mantle patch: a calculated column (ACE 14+, the extra flags byte after the flags,
++                // mask 0xC0, as Jackcess reads it). Its stored value is wrapped, which this reader does not unwrap.
++                calculated: this.#database.format.tableDefinitionPage.columnsDefinition.flagsOffset === 15 &&
++                    (columnBuffer.readUInt8(16) & 0xc0) !== 0,
+             };
+             if (type === ColumnTypes.Numeric) {
+                 column.precision = columnBuffer.readUInt8(11);
