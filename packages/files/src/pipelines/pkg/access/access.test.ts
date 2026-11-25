@@ -80,6 +80,31 @@ describe('columns with no value to keep in a cell', () => {
   });
 });
 
+describe('a damaged file', () => {
+  /** types.accdb with one page's type byte broken. Page 76 is the data
+   *  page of Table1; page 17 holds the list of the tables. */
+  const damaged = (page: number) => {
+    const bytes = Buffer.from(fixture('types.accdb'));
+    bytes[page * 4096] = 7;
+    return bytes;
+  };
+
+  it('reads the other tables, names the damaged one, and says the cut', () => {
+    const r = readAccess(damaged(76), 'accdb', fileDbRowKeeper(), LATER);
+    if (r.locked) throw new Error('locked');
+    expect(r.tabs).toEqual([]);
+    expect(r.readCuts.access_tables).toEqual({ what: 'tables', read: 3, total: 4 });
+    expect(r.text).toContain('Tables not read whole (the file may be damaged): Table1');
+    expect(r.description).toContain('Not read whole (the file may be damaged): Table1');
+    expect(cutMakesPartial('access_tables')).toBe(true);
+    expect(readCutHint('access_tables', r.readCuts.access_tables!)).toContain('3 of 4 tables');
+  });
+
+  it('throws when the list of its tables cannot be read', () => {
+    expect(() => readAccess(damaged(17), 'accdb', fileDbRowKeeper(), LATER)).toThrow();
+  });
+});
+
 describe('a file with a password', () => {
   it('reads no table of an ACE file encrypted with one', () => {
     expect(read('encrypted.accdb')).toEqual({ locked: true });

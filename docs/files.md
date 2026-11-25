@@ -301,6 +301,7 @@ The cuts said today, each with its key:
 | `access_columns`                                                                                                         | an Access database: columns that hold files or lists (attachments, many values, OLE, binary), named, not read (8g)                                                                                      |
 | `access_text`                                                                                                            | an Access database: rows past 5,000 a table or 1,000,000 characters are not in its text, but in its database (8g)                                                                                       |
 | `access_password`                                                                                                        | an Access database with a password: no table read (8g)                                                                                                                                                  |
+| `access_tables`                                                                                                          | an Access database with a damaged table: the rows read before the fault are kept (8g)                                                                                                                   |
 
 A calendar feed's own cuts (a series past 50,000 occurrences before the
 horizon, an event past 16 MB of text, a description past 20,000
@@ -694,7 +695,10 @@ of the file shut it. The file gets no database (the word `no-rows`), a short
 text that says it is locked, and the cut `access_password` with the reason.
 To read it, a person removes the password in Access and uploads it again.
 
-A file the reader cannot read (no Access file, a broken one) is
+A table that cannot be read whole (a damaged file) keeps the rows read
+before the fault, and the other tables are read: the cut `access_tables`
+says how many tables were read whole. A file the reader cannot open at all
+(no Access file, a broken header) is
 `document_unreadable`. Saved queries, forms, reports and macros are not
 read: only tables hold rows.
 

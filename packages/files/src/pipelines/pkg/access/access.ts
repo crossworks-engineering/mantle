@@ -20,6 +20,8 @@
  * - A file with a password is not read (an ACE file encrypted with one, or
  *   a Jet file with a database password): its text says so, and the cut
  *   `access_password` gives the reason on the file.
+ * - A table that cannot be read whole (a damaged file) keeps the rows read
+ *   before the fault, and the others are read: the cut `access_tables`.
  * - The text keeps at most {@link TEXT_ROWS_PER_TABLE} rows a table and
  *   {@link TEXT_MAX_CHARS} characters, the text read's caps of a workbook
  *   (../../../xlsx.ts); the cut `access_text` says how many rows are in it.
@@ -162,18 +164,28 @@ export function readAccess(
 
   const linked = db.getTableNames({ normalTables: false, systemTables: false, linkedTables: true });
   const tables = db.getTableNames().map((name) => {
-    const table = db.getTable(name);
-    const all = table.getColumns() as AccessColumn[];
     const read: Read[] = [];
     const skipped: string[] = [];
+    // A table whose definition cannot be read (a damaged file) is named,
+    // with no rows: the other tables are read.
+    let table: ReturnType<MDBReader['getTable']> | null;
+    let all: AccessColumn[] = [];
+    let rowCount = 0;
+    try {
+      table = db.getTable(name);
+      all = table.getColumns() as AccessColumn[];
+      rowCount = table.rowCount;
+    } catch {
+      table = null;
+    }
     for (const c of all) {
       const type = columnTypeOf(c);
       if (type) read.push({ name: c.name, type });
       else skipped.push(c.name);
     }
-    return { name, table, all, read, skipped };
+    return { name, table, all, rowCount, read, skipped, broken: table === null };
   });
-  const totalRows = tables.reduce((n, t) => n + (t.read.length > 0 ? t.table.rowCount : 0), 0);
+  const totalRows = tables.reduce((n, t) => n + (t.read.length > 0 ? t.rowCount : 0), 0);
 
   const tabs: ParsedSheet[] = [];
   const parts: string[] = [];
@@ -185,28 +197,34 @@ export function readAccess(
   const empty: string[] = [];
 
   for (const t of tables) {
-    const head = `## Table: ${t.name} (${t.table.rowCount} rows)\nColumns: ${t.all
+    const head = `## Table: ${t.name} (${t.rowCount} rows)\nColumns: ${t.all
       .map((c) => `${c.name} (${columnTypeOf(c) ? c.type : `${c.type}, not read`})`)
       .join(', ')}`;
-    if (t.table.rowCount === 0) empty.push(t.name);
+    if (!t.broken && t.rowCount === 0) empty.push(t.name);
     const rows: Cell[][] = [];
-    if (t.read.length > 0 && !stopped) {
+    if (t.table && t.read.length > 0 && !stopped) {
       const names = t.read.map((c) => c.name);
-      for (let at = 0; at < t.table.rowCount && !stopped; at += BATCH_ROWS) {
-        if (Date.now() > deadline) {
-          stopped = timedOut = true;
-          break;
-        }
-        const batch = t.table.getData({ columns: names, rowOffset: at, rowLimit: BATCH_ROWS });
-        if (batch.length === 0) break;
-        for (const r of batch) {
-          const cells = t.read.map((c) => cellOf(r[c.name], c.type));
-          if (!keep.take(cells, t.name)) {
-            stopped = true;
+      try {
+        for (let at = 0; at < t.rowCount && !stopped; at += BATCH_ROWS) {
+          if (Date.now() > deadline) {
+            stopped = timedOut = true;
             break;
           }
-          rows.push(cells);
+          const batch = t.table.getData({ columns: names, rowOffset: at, rowLimit: BATCH_ROWS });
+          if (batch.length === 0) break;
+          for (const r of batch) {
+            const cells = t.read.map((c) => cellOf(r[c.name], c.type));
+            if (!keep.take(cells, t.name)) {
+              stopped = true;
+              break;
+            }
+            rows.push(cells);
+          }
         }
+      } catch {
+        // A damaged page: the rows read before it are kept, the table is
+        // said as not read whole.
+        t.broken = true;
       }
     }
     const columns: ParsedColumn[] = t.read.map((c) => ({ name: c.name, type: c.type }));
@@ -240,6 +258,7 @@ export function readAccess(
   }
 
   const skipped = tables.flatMap((t) => t.skipped.map((c) => `${t.name}.${c}`));
+  const broken = tables.filter((t) => t.broken).map((t) => t.name);
   const columnsTotal = tables.reduce((n, t) => n + t.all.length, 0);
   const summary = [
     `# Microsoft Access database (.${ext}): ${tables.length} tables, ${totalRows} rows`,
@@ -247,6 +266,9 @@ export function readAccess(
       ? [`Linked tables (their rows are in another file, not here): ${listOf(linked)}`]
       : []),
     ...(empty.length > 0 ? [`Tables with no rows: ${listOf(empty)}`] : []),
+    ...(broken.length > 0
+      ? [`Tables not read whole (the file may be damaged): ${listOf(broken)}`]
+      : []),
     ...(skipped.length > 0
       ? [
           `Columns not read (attachments, lists of many values, OLE objects, binary): ${listOf(skipped)}`,
@@ -271,6 +293,13 @@ export function readAccess(
       total: columnsTotal,
     };
   }
+  if (broken.length > 0) {
+    readCuts.access_tables = {
+      what: 'tables',
+      read: tables.length - broken.length,
+      total: tables.length,
+    };
+  }
   if (textRows < totalRows) {
     readCuts.access_text = {
       what: 'rows',
@@ -290,6 +319,9 @@ export function readAccess(
       : '') +
     (linked.length > 0
       ? ` Linked tables, whose rows are in another file: ${listOf(linked, NAMES_LISTED)}.`
+      : '') +
+    (broken.length > 0
+      ? ` Not read whole (the file may be damaged): ${listOf(broken, NAMES_LISTED)}; a tab keeps the rows read before the fault.`
       : '');
 
   return {

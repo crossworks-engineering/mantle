@@ -219,6 +219,8 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
     `${ofTotal(c)} columns were read. The others (attachments, lists of many values, OLE objects, binary) are not in its database nor in search: the file database's description names them.`,
   access_text: (c) =>
     `${ofTotal(c)} rows are in its text (at most ${limitText(c, 'rows', '5,000 rows')} a table, 1,000,000 characters in all). The other rows are not in search; file_sql reads them from the file's database.`,
+  access_tables: (c) =>
+    `${ofTotal(c)} tables were read whole. The others could not be (the file may be damaged): their rows read before the fault are kept. Compact and repair it in Access and upload it again.`,
   access_password: () =>
     'It is protected by a password, so its tables were not read. Remove the password in Access and upload the file again.',
   description: (c) =>
