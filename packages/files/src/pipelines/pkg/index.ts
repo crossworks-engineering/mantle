@@ -27,7 +27,6 @@ export const PIPELINE_PACKAGES: StepLoaders = {
   'pdf-sheet-read': () => import('./pdf-sheet-read/step'),
   'plan-mspdi': () => import('./plan-mspdi/step'),
   'plot-dwf': () => import('./plot-dwf/step'),
-  'plot-dwfx': () => import('./plot-dwfx/step'),
   'site-tags': () => import('./site-tags/step'),
   sheet: () => import('./sheet/step'),
 };

@@ -1,12 +1,10 @@
 /**
- * Autodesk DWFx → text digest, in the same shape as the DWF digest
- * (../plot-dwf/dwf.ts).
+ * Autodesk DWFx → text digest and file database, in the same shape as the
+ * DWF reader's (./dwf.ts). Part of the package `plot-dwf` (./step.ts).
  *
  * A `.dwfx` is the XPS form of a DWF plot set: a plain zip (OPC) of XPS
  * parts, with no `(DWF ` magic and no W2D stream, so ./dwf.ts cannot read
- * it. A package may import only its own folder and the kit, so the few
- * lines it shares with the DWF reader (the descriptor's properties) are
- * here again. What it gives up readily, and what this reader takes:
+ * it. What it gives up readily, and what this reader takes:
  *
  *   - the page order: the `.fdseq` names the `.fdoc` parts, and each `.fdoc`
  *     names its `.fpage` parts (a file with neither: every `.fpage`, by name);
@@ -30,7 +28,9 @@
  */
 import { noteReadCut } from '../../../read-cut-sink';
 import { isDocumentTooLarge } from '../../../read-limit';
+import type { ParsedSheet } from '../../../sheet-to-grid';
 import { loadZip, type Zip } from '../../../zip-guard';
+import { properties } from './dwf';
 
 /** Sheets read from one file. Real plot sets sit far below it. */
 const MAX_PAGES = 256;
@@ -108,18 +108,6 @@ function attrOf(tag: string, name: string): string | null {
 function tagsOf(xml: string, tag: string): string[] {
   const re = new RegExp(`<(?:[\\w.-]+:)?${tag}\\b(?:[^>"']|"[^"]*"|'[^']*')*>`, 'g');
   return [...xml.matchAll(re)].map((m) => m[0]);
-}
-
-/** The `<Property name value/>` pairs of a DWF descriptor (first one of a
- *  name wins), as ../plot-dwf/dwf.ts reads them. */
-function properties(xml: string): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const tag of tagsOf(xml, 'Property')) {
-    const name = attrOf(tag, 'name');
-    const value = attrOf(tag, 'value');
-    if (name !== null && value !== null && !map.has(name)) map.set(name, value);
-  }
-  return map;
 }
 
 /** The text runs of one page: every Glyphs UnicodeString, in order. */
@@ -296,4 +284,44 @@ export async function parseDwfx(bytes: Buffer): Promise<string> {
   });
   if (runs.total > runs.read) noteReadCut('dwfx_text', { what: 'text runs', ...runs });
   return out.join('\n');
+}
+
+/** Sheets: one row a sheet. Texts: every text run, in page order. [] for a
+ *  set with no text and no sheet title (all linework and pictures). */
+export function dwfxToGrids(sheets: DwfxSheet[]): ParsedSheet[] {
+  if (sheets.every((s) => s.runs.length === 0 && s.title === null)) return [];
+  const nameOf = (s: DwfxSheet, i: number) => s.title ?? `Sheet ${i + 1}`;
+  return [
+    {
+      name: 'Sheets',
+      columns: [
+        { name: 'Sheet', type: 'text' },
+        { name: 'Page', type: 'number' },
+        { name: 'Source drawing', type: 'text' },
+        { name: 'Layout', type: 'text' },
+        { name: 'Author', type: 'text' },
+        { name: 'Text runs', type: 'number' },
+        { name: 'Read', type: 'text' },
+      ],
+      rows: sheets.map((s, i) => [
+        nameOf(s, i),
+        i + 1,
+        s.sourceFile,
+        s.layout,
+        s.author,
+        s.runs.length,
+        s.unreadable ? 'missing or damaged' : 'read',
+      ]),
+    },
+    {
+      name: 'Texts',
+      columns: [
+        { name: 'Sheet', type: 'text' },
+        { name: 'Page', type: 'number' },
+        { name: 'Order', type: 'number' },
+        { name: 'Text', type: 'text' },
+      ],
+      rows: sheets.flatMap((s, i) => s.runs.map((text, k) => [nameOf(s, i), i + 1, k + 1, text])),
+    },
+  ];
 }

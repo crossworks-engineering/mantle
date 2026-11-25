@@ -161,7 +161,7 @@ describe('parseDwf digest', () => {
     expect(text).toContain('DWF drawing set');
   });
 
-  it('a ZIP without the DWF magic (renamed DWFx) is sniff-rejected to ""', async () => {
+  it('a ZIP without the DWF magic and with no XPS page is sniff-rejected to ""', async () => {
     const fixture = await buildFixture();
     const bareZip = fixture.subarray('(DWF V06.20)'.length);
     expect(await readDocumentText(bareZip, 'dwf')).toBe('');

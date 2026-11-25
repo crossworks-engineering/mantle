@@ -52,8 +52,7 @@ reader is `drawing-raster`.
 | `plan-mspdi`      | xml, mpp, mpt                  | light  | none                       | package          |
 | `pdf-router`      | pdf (a router)                 | light  | none                       | package          |
 | `drawing-pdf`     | pdf                            | light  | `pdf-file-v1`              | package          |
-| `plot-dwf`        | dwf                            | heavy  | none                       | package          |
-| `plot-dwfx`       | dwfx                           | light  | none                       | package          |
+| `plot-dwf`        | dwf, dwfx                      | heavy  | none                       | package          |
 | `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package          |
 | `drawing-raster`  | tif, tiff, smf, 000            | light  | none                       | package (Python) |
 | `mail`            | eml, msg, mbox                 | light  | none                       | package          |
@@ -1965,42 +1964,47 @@ reads them again if wanted.
 
 ## The DWF reader as a package
 
-`plot-dwf` moved in MV4. Its folder is `pkg/plot-dwf/`: `step.ts`, and the
-container reader `dwf.ts`. A DWFx (the XPS form of a DWF set) has its own
-package: see "The DWFx reader" below.
-The step reads the bytes in hand: a file that is
-not a DWF by its magic (usually a renamed DWFx), and a DWF with no 2D
-sheets, are `ok` with no tabs (the word `no-rows`), as before; else the tabs
-Sheets, Layers and Labels and the description of a DWF database, in one
-write call. A DWF that cannot be opened fails the job, as the old `grid` job
-failed. The old path sent every `.dwf` to the parser, so each read is one
-parser job before and after. The text for search stays on the `text` job,
-which imports `parseDwf` from the package folder. The sheet pictures stay on
-the `images` job, in `packages/files/src/dwf-images.ts` (with the renderer of
-the CAD tier): that part of the old `dwf.ts` stayed out of the package
-because it uses the picture code and the config, which are not kit. The
-manifest's `needs.timeMs` is 120 s, the deadline of the old `grid` job. A DWF
-is still a heavy file: the lane comes from the extension
-(`extractWeightOfExt`), so one DWF extract at a time, as before. The parser's
-`grid` job no longer reads DWF. The rows, the stamp and the version did not
-change: the golden files of the old path (`pkg/plot-dwf/golden/`) hold it.
+`plot-dwf` moved in MV4. Its folder is `pkg/plot-dwf/`: `step.ts`, the
+container reader `dwf.ts`, and since 1.1.0 the DWFx reader `dwfx.ts` (see
+"DWFx in plot-dwf" below). The step reads the bytes in hand, by the bytes,
+not the name: bytes with the DWF magic are a DWF, any other bytes are tried
+as a DWFx. A file that is neither (a foreign zip renamed `.dwf`, bytes that
+are not a zip), and a DWF with no 2D sheets, are `ok` with no tabs (the word
+`no-rows`), as before; else the tabs Sheets, Layers and Labels and the
+description of a DWF database, in one write call. A DWF that cannot be
+opened fails the job, as the old `grid` job failed. The old path sent every
+`.dwf` to the parser, so each read is one parser job before and after. The
+text for search stays on the `text` job, which imports `parseDwf` from the
+package folder. The sheet pictures stay on the `images` job, in
+`packages/files/src/dwf-images.ts` (with the renderer of the CAD tier): that
+part of the old `dwf.ts` stayed out of the package because it uses the
+picture code and the config, which are not kit. The manifest's
+`needs.timeMs` is 120 s, the deadline of the old `grid` job. A DWF is still
+a heavy file: the lane comes from the extension (`extractWeightOfExt`), so
+one DWF extract at a time, as before. The parser's `grid` job no longer
+reads DWF. The rows of a DWF did not change in the move: the golden files of
+the old path (`pkg/plot-dwf/golden/`) hold it. They hold it in 1.1.0 too.
 
-## The DWFx reader
+## DWFx in plot-dwf
 
 A DWFx is the XPS form of a DWF set: a plain zip of XPS parts, with no
-`(DWF ` magic and no W2D stream, so `dwf.ts` cannot read it. Its reader is
-`pkg/plot-dwfx/dwfx.ts`, used in two places. The core text read (route `dwfx`,
-`read-document.ts`) gives one `## Sheet` block a page: the sheet title from
-the DWF `manifest.xml`, the source drawing, layout and author from the
-`descriptor.xml` beside the page, and the text of every `Glyphs`
-`UnicodeString`. The package `plot-dwfx` (`pkg/plot-dwfx/step.ts`, light)
-writes the tabs Sheets (one row a sheet) and Texts (every text run, in page
-order). It is its own package, not a match of `plot-dwf`: a new extension
-there would raise that package's version and show every DWF file as stale.
-Every part is read through the zip guard. Bytes that are not a DWFx give no
-text and no tabs; a zip that cannot be opened, or whose every page is
-missing, fails the read with a named error. The linework and the page
-pictures are not read.
+`(DWF ` magic and no W2D stream, so `dwf.ts` cannot read it. `plot-dwf`
+1.1.0 matches `dwfx` too, and reads it with `pkg/plot-dwf/dwfx.ts`, in two
+places. The core text read (route `dwfx`, `read-document.ts`) gives one
+`## Sheet` block a page: the sheet title from the DWF `manifest.xml`, the
+source drawing, layout and author from the `descriptor.xml` beside the
+page, and the text of every `Glyphs` `UnicodeString`. The step writes the
+tabs Sheets (one row a sheet) and Texts (every text run, in page order),
+with the description of a DWFx database. Every part is read through the zip
+guard. Bytes that are not a DWFx give no text and no tabs; a zip that
+cannot be opened, or whose every page is missing, fails the read with a
+named error. The linework and the page pictures are not read. A DWFx is a
+light file: `dwfx` is no drawing extension (`isDrawingExt`), so it takes the
+light lane, whatever the manifest's weight.
+
+The new extension raised the version (see "When to raise a version"): every
+DWF database stamped 1.0.0 now shows as read by an older version, though its
+rows would be the same. Nothing reads them again by itself.
 
 ## The CAD reader as a package
 

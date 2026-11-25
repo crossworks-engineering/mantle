@@ -335,7 +335,7 @@ export const INGESTABLE_EXTS = new Set<string>([
   // digest, not vector geometry.
   'dwf',
   // Autodesk DWFx (the XPS form of a DWF set): sheet names and page text,
-  // read in the parser (packages/files/src/pipelines/pkg/plot-dwfx/dwfx.ts).
+  // read in the parser (packages/files/src/pipelines/pkg/plot-dwf/dwfx.ts).
   // A light read: not a drawing for the CAD tier (isDrawingExt).
   'dwfx',
   // DWG, DXF and DGN drawings: the parser's CAD tier reads them.
@@ -442,7 +442,7 @@ export type ParserRoute =
   | 'utf8'
   /** Autodesk DWF container: sheets/layers/labels digest (./pipelines/pkg/plot-dwf/dwf.ts). */
   | 'dwf'
-  /** Autodesk DWFx (XPS): sheet names and page text (./pipelines/pkg/plot-dwfx/dwfx.ts). */
+  /** Autodesk DWFx (XPS): sheet names and page text (./pipelines/pkg/plot-dwf/dwfx.ts). */
   | 'dwfx'
   /** DWG, DXF and DGN (CAD_EXTS): the CAD tier's registry digest (./dwg.ts),
    *  a route named by the extension. */

@@ -8,8 +8,8 @@
  */
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { glyphRuns, parseDwfx, parseDwfxStructured } from './pipelines/pkg/plot-dwfx/dwfx';
-import { DWFX_DESCRIPTION, dwfxGrids, step } from './pipelines/pkg/plot-dwfx/step';
+import { dwfxToGrids, glyphRuns, parseDwfx, parseDwfxStructured } from './pipelines/pkg/plot-dwf/dwfx';
+import { DWFX_DESCRIPTION, step } from './pipelines/pkg/plot-dwf/step';
 import { readDocumentText } from './read-document';
 import { withReadCutSink } from './read-cut-sink';
 import {
@@ -198,7 +198,7 @@ describe('DWFx caps say what was left out', () => {
   });
 });
 
-describe('the plot-dwfx step: the file database', () => {
+describe('the plot-dwf step on a DWFx: the file database', () => {
   const run = async (bytes: Buffer) =>
     step({} as never, { bytes: async () => bytes } as never) as unknown as Promise<{
       status: string;
@@ -228,7 +228,7 @@ describe('the plot-dwfx step: the file database', () => {
   it('keeps every run, with no character budget', async () => {
     const long = Array.from({ length: 300 }, (_v, k) => `RUN-${k}-${'x'.repeat(90)}`);
     const parsed = await parseDwfxStructured(await dwfx({ pages: 1, runs: () => long }));
-    expect(dwfxGrids(parsed!.sheets)[1]!.rows).toHaveLength(300);
+    expect(dwfxToGrids(parsed!.sheets)[1]!.rows).toHaveLength(300);
   });
 
   it('a missing page is a row that says so', async () => {
@@ -241,6 +241,13 @@ describe('the plot-dwfx step: the file database', () => {
     expect(await run(Buffer.from('plain'))).toEqual({ status: 'ok' });
     const blank = await run(await dwfx({ manifest: false, runs: () => [] }));
     expect(blank.calls![0]!.input).toEqual({ tabs: [] });
+  });
+
+  it('a renamed DWFx (.dwf) is read as a DWFx, by the step and the text read', async () => {
+    const bytes = await dwfx();
+    const out = await run(bytes);
+    expect(out.calls![0]!.input.description).toBe(DWFX_DESCRIPTION);
+    expect(await readDocumentText(bytes, 'dwf')).toBe(await parseDwfx(bytes));
   });
 
   it('a damaged DWFx fails the job with a named error', async () => {
