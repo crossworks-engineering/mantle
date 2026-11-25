@@ -17,7 +17,9 @@
  *  - a book's read (the book lane) is one trace: a `pipeline_run` with
  *    source and lane 'book', the extract runs in it, and a trace opened
  *    inside carries the lane too; a run on demand in the book lane is told
- *    its lane.
+ *    its lane;
+ *  - a run that says `extractAgain` (an Agent's new page text on a file
+ *    too short to extract) sends the file's extract once more.
  * The notify is the real one (notifyPipelineRun), read on a LISTEN of the
  * test with the runtime's own parse (pipelineRunOfPayload).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue-run.db.test.ts
@@ -42,6 +44,8 @@ const runs = vi.hoisted(() => ({
   laneOf: new Map<string, string | undefined>(),
   /** Whether each run on demand was told the page mark (Q2). */
   pagesOf: [] as [string, boolean][],
+  /** Runs that say `extractAgain`. */
+  again: new Set<string>(),
 }));
 vi.mock('./extractor.js', () => ({
   extractNode: vi.fn(async (nodeId: string, ownerId: string) => {
@@ -84,6 +88,9 @@ vi.mock('./extract/pipeline-run.js', () => ({
           stopped: 'provider_rate_limit',
           wait: { for: 'provider', reason: 'rate_limit' },
         };
+      }
+      if (runs.again.has(key)) {
+        return { status: 'asked', rows: 1, made: 1, reused: 0, warnings: [], extractAgain: true };
       }
       return { status: 'built', tabs: 1, rows: 1 };
     },
@@ -286,6 +293,22 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
       runs.keepFails.delete(key);
       error.mockRestore();
     }
+  }, 90_000);
+
+  it("an Agent's new page text on a file too short to extract sends its extract once more", async () => {
+    const pdf = await file('one-page-scan.pdf');
+    const key = `pdf-page-read:${pdf}`;
+    runs.again.add(key);
+    await m.runAsSystem('test', () => q.enqueuePipelineRun(pdf, 'pdf-page-read'));
+    await until('the extract ran after the run', () => runs.extracts.includes(pdf));
+    await until('its jobs are done', async () =>
+      (await jobs(pdf)).every((j) => j.state === 'completed'),
+    );
+    // One run, then the extract: a job of the file's own key, read once.
+    const all = await jobs(pdf);
+    expect(all[0]).toMatchObject({ run: 'pdf-page-read', key });
+    expect(all.slice(1).every((j) => j.run === null && j.key === pdf)).toBe(true);
+    expect(runs.extracts.filter((id) => id === pdf)).toHaveLength(1);
   }, 90_000);
 
   it("a book's read is one trace, with the book lane; a run on demand there is told its lane", async () => {
