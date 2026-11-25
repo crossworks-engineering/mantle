@@ -78,7 +78,7 @@
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.2",
-    "livekit-server-sdk": "2.19.2",
+    "livekit-server-sdk": "2.20.1",
     "marked": "^18.1.2",
     "mathjs": "15.2.0",
     "saxes": "6.0.0",

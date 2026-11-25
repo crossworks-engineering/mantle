@@ -144,7 +144,7 @@
     "lowlight": "^3.3.0",
     "lucide-react": "^1.64.0",
     "modern-screenshot": "4.7.0",
-    "openid-client": "6.8.8",
+    "openid-client": "6.9.1",
     "pg-boss": "^12.38.0",
     "postgres": "^3.4.9",
     "prettier": "^3.9.10",
