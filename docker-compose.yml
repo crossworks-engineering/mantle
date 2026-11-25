@@ -987,7 +987,7 @@ services:
   # outbound HTTP proxy on :1055). Image PINNED (tailscale/tailscale#16108);
   # override via TS_IMAGE_TAG.
   tailscale:
-    image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.102.5}
+    image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.104.7}
     container_name: mantle_tailscale
     restart: unless-stopped
     logging: *default-logging
