@@ -41,14 +41,7 @@ describe('ssoLabelValue', () => {
   });
 
   it('takes Thai, Vietnamese, Arabic and Hebrew with their marks', () => {
-    for (const ok of [
-      'ภาษาไทย',
-      'ที่นี่',
-      'มหาวิทยาลัย',
-      'مُحَمَّد',
-      'بِسْمِ ٱللَّهِ',
-      'בְּרֵאשִׁית',
-    ]) {
+    for (const ok of ['ภาษาไทย', 'ที่นี่', 'มหาวิทยาลัย', 'مُحَمَّد', 'بِسْمِ ٱللَّهِ', 'בְּרֵאשִׁית']) {
       expect(ssoLabelValue(ok), ok).toBe(ok.normalize('NFC'));
     }
     // Vietnamese typed in parts (NFD) is one letter each in NFC.
