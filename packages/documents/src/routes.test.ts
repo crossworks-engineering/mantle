@@ -181,6 +181,61 @@ describe('options: the engine field names, strict', () => {
   });
 });
 
+describe('encrypt passwords (GHSA-r77c-ghhj-665p)', () => {
+  const encrypt = findRoute('pdfengines/encrypt')!;
+  // Every route that takes the encrypt fields takes them from one schema.
+  const routes = [encrypt, findRoute('chromium/convert/html')!, findRoute('libreoffice/convert')!];
+  const REFUSED: Record<string, string> = {
+    'line feed': 'a\nb',
+    'carriage return': 'a\rb',
+    'CR LF': 'a\r\nb',
+    'the advisory payload': '\n256\n--\n--add-attachment\n/etc/passwd\n--\n--encrypt\nA\nB',
+    'a NUL byte': 'a\u0000b',
+    'a tab': 'a\tb',
+    DEL: 'a\u007fb',
+    'a C1 control (NEL)': 'a\u0085b',
+    'a line separator': 'a\u2028b',
+    'a paragraph separator': 'a\u2029b',
+  };
+  const ALLOWED = [
+    'plain',
+    '@/proc/self/cmdline',
+    '@secret',
+    'pass word with spaces',
+    'p@ss-wörd_€1!',
+    'x'.repeat(128),
+  ];
+
+  for (const [name, value] of Object.entries(REFUSED)) {
+    it(`refuses ${name} in either password, with why`, () => {
+      for (const r of routes) {
+        for (const field of ['userPassword', 'ownerPassword']) {
+          expect(() => checkOptions(r, { [field]: value })).toThrow(
+            new RegExp(
+              `${field}: a password may not hold a line break or another control character`,
+            ),
+          );
+        }
+      }
+    });
+  }
+
+  it('takes a printable password, a leading "@" included', () => {
+    for (const r of routes) {
+      for (const value of ALLOWED) {
+        expect(checkOptions(r, { userPassword: value, ownerPassword: value })).toMatchObject({
+          userPassword: value,
+          ownerPassword: value,
+        });
+      }
+    }
+  });
+
+  it('still caps the length at 128', () => {
+    expect(() => checkOptions(encrypt, { userPassword: 'x'.repeat(129) })).toThrow(/userPassword/);
+  });
+});
+
 describe('form values', () => {
   it('booleans and numbers as text, arrays and objects as JSON', () => {
     expect(formValue(true)).toBe('true');

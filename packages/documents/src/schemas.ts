@@ -175,9 +175,21 @@ export const OPTIMIZE = {
   imageQuality: z.number().int().min(1).max(100),
 };
 
+/** A PDF password: no line break and no other control character. Such a
+ *  value is never a real password, and it is the half of GHSA-r77c-ghhj-665p
+ *  that splits a qpdf argument file into injected options. A leading "@" is
+ *  taken: from 8.40.0 the engine glues each password to its option
+ *  (`--user-password=`), so qpdf never reads it as an argument file. */
+const password = z
+  .string()
+  .max(128)
+  .refine((s) => !/[\p{Cc}\u2028\u2029]/u.test(s), {
+    message: 'a password may not hold a line break or another control character',
+  });
+
 export const ENCRYPT = {
-  userPassword: z.string().max(128),
-  ownerPassword: z.string().max(128),
+  userPassword: password,
+  ownerPassword: password,
   allowPrinting: bool,
   allowCopying: bool,
   allowModifying: bool,

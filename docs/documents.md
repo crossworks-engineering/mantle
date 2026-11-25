@@ -81,7 +81,9 @@ engine stores nothing, so off loses nothing.
   stamp, rotate, optimize, encryption, LibreOffice properties, screenshot
   properties). The Mantle-owned fields (`url`, `cookies`,
   `extraHttpHeaders`, `userAgent`, `downloadFrom`, the webhook fields, the
-  raw file fields) are refused before the schema runs, each with why;
+  raw file fields) are refused before the schema runs, each with why. An
+  encrypt password with a line break or another control character is
+  refused (GHSA-r77c-ghhj-665p); a leading `@` is taken;
 - the client (`src/client.ts`): fetch + FormData, basic auth, the
   `NET_TIMEOUTS.documentsJob` deadline, and one error per engine answer
   (400 a form field, 409 the job failed, 413 too large, 503 busy; off or
