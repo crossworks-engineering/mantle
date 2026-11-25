@@ -155,7 +155,9 @@ export function engineName(filename: string): string {
   const base = filename.slice(Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\')) + 1);
   const name = base
     .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')
-    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .split('')
+    .filter((c) => c.charCodeAt(0) >= 0x20 && c.charCodeAt(0) !== 0x7f)
+    .join('')
     .normalize('NFC');
   const dot = name.lastIndexOf('.');
   return dot === -1 ? name : name.slice(0, dot) + name.slice(dot).toLowerCase();
