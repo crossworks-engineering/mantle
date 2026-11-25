@@ -156,7 +156,10 @@ const htmlText = (s: string): string => s.replace(/[&<>{}]/g, (c) => `&#${c.char
  *  - U+0000 to U+001F and U+007F: Bun writes CR and LF as %0D and %0A, Go
  *    refuses a raw CR or LF in a header, and Gotenberg drops them all.
  *  - half of a UTF-16 pair: UTF-8 cannot hold it; the writer sends U+FFFD.
- *  - not NFC: Gotenberg normalizes the name to NFC.
+ *  - not NFC: Gotenberg normalizes the name to NFC. `take` sends the NFC
+ *    form itself (a name copied from a Mac is often NFD), so this never
+ *    refuses a call; two names that differ only in form then meet in the
+ *    exact compare, as they would in the engine.
  *  - empty: Go reads a part with no file name as a value, not a file.
  * Everything else (spaces, dots, `;`, `%`, braces, any letter) goes as it is.
  */
@@ -264,7 +267,9 @@ export async function resolveInputs(
   }
   const parts: Part[] = [];
   let total = 0;
-  const take = async (field: string, filename: string, bytes: Buffer): Promise<void> => {
+  /** Holds one input and returns the name it goes under (the NFC form). */
+  const take = async (field: string, name: string, bytes: Buffer): Promise<string> => {
+    const filename = name.normalize('NFC');
     if (bytes.length > DOCUMENTS_MAX_INPUT_BYTES) {
       throw new InputError(
         `${filename} is ${Math.round(bytes.length / 1024 / 1024)} MB; one input may be at most ${DOCUMENTS_MAX_INPUT_BYTES / 1024 / 1024} MB`,
@@ -289,6 +294,7 @@ export async function resolveInputs(
       );
     }
     parts.push({ field, filename, bytes });
+    return filename;
   };
   const readFile = async (fileId: string, name: string) => {
     const file = await deps.readFile(caller.ownerId, fileId);
@@ -338,8 +344,7 @@ export async function resolveInputs(
         );
       const names: string[] = [];
       if (markdown) {
-        await take('files', 'file.md', Buffer.from(markdown, 'utf8'));
-        names.push('file.md');
+        names.push(await take('files', 'file.md', Buffer.from(markdown, 'utf8')));
       }
       for (const id of mdIds) {
         const f = await readFile(id, 'file_ids');
@@ -349,8 +354,7 @@ export async function resolveInputs(
           );
         }
         if (stem === 'document') stem = stemOf(f.filename);
-        await take('files', f.filename, f.bytes);
-        names.push(f.filename);
+        names.push(await take('files', f.filename, f.bytes));
       }
       const wrapper =
         html ??

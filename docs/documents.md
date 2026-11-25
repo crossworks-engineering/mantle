@@ -100,7 +100,9 @@ engine stores nothing, so off loses nothing.
   MB per input, 128 MB in all, 4 MB inline, 50 files. Every file name must be
   plain (`notPlain`: no `"`, `\`, `/`, control character or broken
   character, in NFC, not empty), so the engine stores it as sent; a name that
-  is not is refused with "rename the file". No two inputs of a call may share
+  is not is refused with "rename the file". Mantle sends every name in NFC
+  itself, so a decomposed name (often from a Mac) is not refused, and two
+  names that differ only in that form count as one. No two inputs of a call may share
   a name (the extension in any case), across every form field, since the
   engine keeps them in one flat folder. The markdown wrapper
   runs as a Go template in the engine, so every `{{` in it must open

@@ -488,7 +488,6 @@ describe('plain names only, one name per file (the flat directory)', () => {
     ['a NUL', 'a\u0000b.pdf', /without a control character \(U\+0000\)$/],
     ['DEL', 'a\u007fb.pdf', /without a control character \(U\+007F\)$/],
     ['half of a UTF-16 pair', 'a\ud800.pdf', /without a broken character/],
-    ['a decomposed accent', 'cafe\u0301.pdf', /without letters in decomposed form/],
     ['an empty name', '', /without an empty name$/],
   ];
   for (const [what, filename, why] of REFUSED) {
@@ -537,10 +536,37 @@ describe('plain names only, one name per file (the flat directory)', () => {
     expect(out.parts.map((p) => p.filename)).toEqual(['a.pdf', 'b.pdf', 'c.pdf']);
   });
 
+  it('a decomposed (NFD) name goes as its NFC form, and still meets its NFC twin', async () => {
+    const nfd = 'cafe\u0301.pdf';
+    const nfc = 'caf\u00e9.pdf';
+    const one = await embed(nfd);
+    expect(one.parts.map((p) => p.filename)).toContain(nfc);
+    expect(one.parts.some((p) => p.filename === nfd)).toBe(false);
+    await expect(
+      resolveInputs(
+        r('pdfengines/merge'),
+        { file_ids: [ID(5), ID(6)] },
+        caller,
+        named({ [ID(5)]: nfc, [ID(6)]: nfd }),
+      ),
+    ).rejects.toThrow(/two inputs are both named "caf\u00e9\.pdf"; the engine keeps/);
+    // A .md file: the wrapper Mantle builds names the form that was sent.
+    const out = await resolveInputs(
+      md,
+      { file_ids: [ID(5)] },
+      caller,
+      named({ [ID(5)]: 'cafe\u0301.md' }),
+    );
+    const wrapper = out.parts.find((p) => p.filename === 'index.html')!.bytes.toString('utf8');
+    expect(wrapper).toContain('{{ toHTML "caf\u00e9.md" }}');
+    expect(out.parts.map((p) => p.filename)).toContain('caf\u00e9.md');
+  });
+
   it('notPlain names what it found, or null', () => {
     expect(notPlain('plain name.pdf')).toBeNull();
     expect(notPlain('a/b')).toBe('a slash');
     expect(notPlain('\u001f')).toBe('a control character (U+001F)');
+    expect(notPlain('cafe\u0301.pdf')).toMatch(/decomposed form/);
   });
 });
 
