@@ -541,11 +541,16 @@ describe('the off list', () => {
     const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
     for (const src of [
       read('./pipeline-test.ts'),
-      read('./pipeline-reread.ts'),
       read('../../../server/web/lib/maintenance/pipeline-reread.ts'),
     ]) {
       expect(src).not.toMatch(/pipelineOffHere|\.offIn\b/);
     }
+    // The re-read of older files does not read it either. `missing` writes a
+    // first database, so it reads it, on that one line only.
+    const reread = read('./pipeline-reread.ts');
+    expect(reread).not.toMatch(/\.offIn\b/);
+    expect(reread.match(/pipelineOffHere\(/g)).toEqual(['pipelineOffHere(']);
+    expect(reread).toMatch(/missing && pipelineOffHere\(state, now\.home\)/);
   });
 });
 

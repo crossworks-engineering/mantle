@@ -711,7 +711,8 @@ workspace (the settings area). A router has no switch: it is used wherever its r
 - The Admin task `pipeline-reread` does not read the off list: it reads
   again only files the pipeline already wrote (the same files as the tool
   `pipeline_reread`), so it never writes a pipeline's first result into a
-  workspace where it is off.
+  workspace where it is off. `pipeline_reread` with `missing: true` writes
+  a first database, so it reads the off list (`not-attached`).
 
 It holds no rights check of its own. The Admin check is the route's policy and
 the tool's scope (area `settings`). The table holds no secret and grants no
