@@ -234,7 +234,7 @@ points at it. Its shape is a contract (code tools read it; schema 2):
   "languages": [
     {
       "name": "node",
-      "version": "26.13.0",
+      "version": "26.13.1",
       "tools": [{ "name": "tsc", "version": "…" }],
       "use": "…"
     }
