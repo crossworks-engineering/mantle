@@ -91,9 +91,12 @@ vi.mock('@mantle/content/pipeline-asks', () => ({
   pipelineAsksDayCap: () => 500,
 }));
 
-vi.mock('@mantle/content/pipeline-state', async () => {
+vi.mock('@mantle/content/pipeline-state', async (orig) => {
   const f = await import('@mantle/files');
   return {
+    // The one rule of the off list, as it is.
+    pipelineOffHere: (await orig<typeof import('@mantle/content/pipeline-state')>())
+      .pipelineOffHere,
     // No own pipeline on this box (the registry's one read of them).
     ownManifests: async () => h.own,
     pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => ({
