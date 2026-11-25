@@ -232,11 +232,11 @@ RUN apt-get update \
 # hides it. The version is .bun-version's (eslint-rules/bun-version.test.ts).
 FROM node:26-slim AS bun-binary
 ARG TARGETARCH
-ADD --checksum=sha256:e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76 \
-    https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64-baseline.zip \
+ADD --checksum=sha256:dcb23a18a1c2fff12d57bcef696dbbb42eb67fde29f43816ecb595459a24c463 \
+    https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-linux-x64-baseline.zip \
     /tmp/bun-amd64.zip
-ADD --checksum=sha256:baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e \
-    https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-aarch64.zip \
+ADD --checksum=sha256:18656a3bf0ea5641f5796ae4213b75255579a70a0fded2f337933785568cdf84 \
+    https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-linux-aarch64.zip \
     /tmp/bun-arm64.zip
 RUN apt-get update \
     && apt-get install -y --no-install-recommends unzip \

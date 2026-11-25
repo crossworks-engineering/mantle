@@ -161,9 +161,9 @@ ENV NODE_PATH=/opt/mantle-kit/node/node_modules:/usr/local/lib/node_modules \
     DISABLE_AUTOUPDATER=1
 
 # Bun (x64: the baseline build, which needs no AVX2).
-ARG BUN_VERSION=1.4.4
-ARG BUN_SHA256_AMD64=e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76
-ARG BUN_SHA256_ARM64=baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e
+ARG BUN_VERSION=1.4.5
+ARG BUN_SHA256_AMD64=dcb23a18a1c2fff12d57bcef696dbbb42eb67fde29f43816ecb595459a24c463
+ARG BUN_SHA256_ARM64=18656a3bf0ea5641f5796ae4213b75255579a70a0fded2f337933785568cdf84
 RUN case "$TARGETARCH" in \
       amd64) a=x64-baseline; sum=$BUN_SHA256_AMD64 ;; \
       arm64) a=aarch64; sum=$BUN_SHA256_ARM64 ;; \
