@@ -10,6 +10,9 @@
  *    an older Spreadsheet. The dry run counts both and sends nothing; its
  *    number is the list's `older`. `apply` with `limit: 1` sends one notify
  *    and gives `next`; the next call sends the other.
+ *  - `missing`: a read CSV of Team with no database, beside the two with
+ *    one, is the one file the real SQL walk takes; a Transformer is
+ *    refused.
  *  - The reader of a PDF drawing is refused with `pdf`; an unknown
  *    pipeline is a 404; a field the body does not take is a 400.
  *  - A login without the settings area (the admin role in Team only, a
@@ -50,6 +53,8 @@ describe.skipIf(!URL)(
     /** A made-up CSV in Admin, and one in Team, which `admin` is not in. */
     let adminFile = '';
     let teamFile = '';
+    /** A read CSV in Team with no database for its bytes. */
+    let bareFile = '';
 
     const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
       (await m.systemDb.execute(q)) as unknown as T[];
@@ -149,6 +154,9 @@ describe.skipIf(!URL)(
         );
       adminFile = (await made(adminWs, 'in-admin')).id;
       teamFile = (await made(teamWs, 'in-team')).id;
+      bareFile = (await made(teamWs, 'in-team-bare')).id;
+      await x(sql`update nodes set data = data || '{"extract_completed_at":"2026-06-01T00:00:00Z"}'::jsonb
+        where id = ${bareFile}`);
       // Each file's database, read by an older Spreadsheet (made up).
       const { writeDocFile } = await import('@mantle/tabledb/write');
       const { mkdirSync } = await import('node:fs');
@@ -221,6 +229,30 @@ describe.skipIf(!URL)(
       expect([two.queued, two.next]).toEqual([1, null]);
       expect(await sent()).toEqual([`sheet:${adminFile}`, `sheet:${teamFile}`].sort());
       notifies.length = 0;
+    });
+
+    it('missing takes the read files with no database for their bytes, of every workspace, and no other', async () => {
+      const dry = await post(admin, 'sheet', { missing: true });
+      const text = await dry.text();
+      expect(dry.status, text).toBe(200);
+      expect(JSON.parse(text)).toMatchObject({
+        apply: false,
+        choices: [{ pipeline: 'sheet', files: 1 }],
+        queued: 0,
+        skipped: {},
+        next: null,
+      });
+      expect(await sent()).toEqual([]);
+      const run = await post(admin, 'sheet', { missing: true, apply: true });
+      expect(((await run.json()) as import('@mantle/client-types').PipelineRunAnswer).queued).toBe(
+        1,
+      );
+      expect(await sent()).toEqual([`sheet:${bareFile}`]);
+      notifies.length = 0;
+      // Only a Reader makes a database.
+      const transformer = await post(admin, 'site-tags', { missing: true });
+      expect(transformer.status).toBe(400);
+      expect(await sent()).toEqual([]);
     });
 
     it('takes the reader of a PDF drawing (MV5); refuses an unknown pipeline and a field it does not take', async () => {
