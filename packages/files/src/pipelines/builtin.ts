@@ -271,9 +271,10 @@ export const BUILTIN_PIPELINES = [
     id: 'plot-dwf',
     name: 'DWF plot set',
     description:
-      'Reads a DWF plot set and writes its sheets, their layers and their labels as tabs.',
-    version: '1.0.0',
-    match: { ext: ['dwf'] },
+      'Reads a DWF plot set and writes its sheets, their layers and their labels as tabs; a DWFx plot set, its sheets and the text on each sheet.',
+    // 1.1.0: reads DWFx too (./pkg/plot-dwf/dwfx.ts). A DWF reads as before.
+    version: '1.1.0',
+    match: { ext: ['dwf', 'dwfx'] },
     produces: {},
     // The deadline of the old path's job for this read (the job `grid`,
     // PARSER_JOB_TIMEOUT_MS in ../parser-wire.ts), so a DWF that fit before

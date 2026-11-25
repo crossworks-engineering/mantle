@@ -44,6 +44,7 @@ export const READER_VERSIONS: Readonly<Record<ReaderKey, number>> = {
   mpp: 1,
   utf8: 1,
   dwf: 1,
+  dwfx: 1,
   dwg: 1,
   dxf: 1,
   dgn: 1,

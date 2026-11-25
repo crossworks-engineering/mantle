@@ -49,11 +49,12 @@
  * bomb degrades that sheet to metadata-only instead of allocating gigabytes
  * in-process.
  *
- * DWFx (`.dwfx`) is a different container (OPC/XPS) and stream format — it is
- * routed to an honest export-required skip in ../../../slug.ts, not here. Dispatch in
- * read-document.ts is gated on {@link sniffDwf}, so a mislabelled `.dwf` (usually a
- * renamed DWFx) yields '' and takes the extractor's honest hollow-skip rather
- * than indexing its own filename.
+ * DWFx (`.dwfx`) is a different container (OPC/XPS) with no W2D stream: it
+ * has its own reader in this package, ./dwfx.ts (route `dwfx`). The rule
+ * of the package, in the step and the text read alike: bytes with the DWF
+ * magic ({@link sniffDwf}) are read here, any other bytes by ./dwfx.ts. So a
+ * renamed DWFx is read as a DWFx, and a foreign zip renamed `.dwf` yields ''
+ * and takes the extractor's honest hollow-skip.
  *
  * Where it runs, all in the parser service: the package's step (./step.ts,
  * the parser job `pipelineRun`) gives the registry workbook; the text read
@@ -150,7 +151,7 @@ function attr(tag: string, name: string): string | null {
 
 /** All `<ePlot:Property name value/>` pairs of a descriptor, one scan,
  *  attribute order free (first occurrence of a name wins). */
-function properties(xml: string): Map<string, string> {
+export function properties(xml: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const m of xml.matchAll(/<[^>]*Property\b[^>]*>/g)) {
     const name = attr(m[0], 'name');

@@ -267,7 +267,9 @@ export function isDrawingExt(ext: string): boolean {
  *  documents, and its kind is known only after the read. */
 export type ExtractWeight = 'light' | 'heavy';
 export function extractWeightOfExt(ext: string): ExtractWeight {
-  return isDrawingExt(ext) ? 'heavy' : 'light';
+  // A DWFx is no drawing of the CAD tier, but its Reader is the DWF one
+  // (plot-dwf), and one Reader has one weight, so it takes the DWF lane.
+  return isDrawingExt(ext) || ext === 'dwfx' ? 'heavy' : 'light';
 }
 
 /**
@@ -334,6 +336,11 @@ export const INGESTABLE_EXTS = new Set<string>([
   // in the parser (packages/files/src/pipelines/pkg/plot-dwf/dwf.ts). Metadata + layer/label
   // digest, not vector geometry.
   'dwf',
+  // Autodesk DWFx (the XPS form of a DWF set): sheet names and page text,
+  // read in the parser (packages/files/src/pipelines/pkg/plot-dwf/dwfx.ts).
+  // Not a drawing for the CAD tier (isDrawingExt); a heavy file, as its
+  // Reader plot-dwf is (extractWeightOfExt).
+  'dwfx',
   // DWG, DXF and DGN drawings: the parser's CAD tier reads them.
   ...CAD_EXTS,
   ...ANYDOC_EXTS,
@@ -399,14 +406,6 @@ export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
     'vsd',
     'Old binary Visio drawings (.vsd) cannot be read. In Visio use File → Save As and choose Visio Drawing (*.vsdx), then upload that: its shape text and pictures are read in full. The .vsd stays findable by its name.',
   ],
-  // DWFx is the XPS-based successor to DWF. Mantle reads classic DWF (.dwf);
-  // the DWFx package is a different container and stream format that this
-  // parser does not decode. Re-publishing is a one-click choice in the plot
-  // dialog, so the honest move is to name it.
-  [
-    'dwfx',
-    'DWFx drawings use a different container than the classic DWF Mantle can read. In AutoCAD plot/publish again choosing the "DWF" (not DWFx) format and upload that — or upload the source DWG or DXF directly, both ingest.',
-  ],
 ]);
 
 /** The way out for a Project file the converter cannot take (a version it
@@ -446,6 +445,8 @@ export type ParserRoute =
   | 'utf8'
   /** Autodesk DWF container: sheets/layers/labels digest (./pipelines/pkg/plot-dwf/dwf.ts). */
   | 'dwf'
+  /** Autodesk DWFx (XPS): sheet names and page text (./pipelines/pkg/plot-dwf/dwfx.ts). */
+  | 'dwfx'
   /** DWG, DXF and DGN (CAD_EXTS): the CAD tier's registry digest (./dwg.ts),
    *  a route named by the extension. */
   | CadExt
@@ -458,6 +459,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (LEGACY_SHEET_EXTS.has(ext)) return 'legacy-sheet';
   if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
   if (ext === 'dwf') return 'dwf';
+  if (ext === 'dwfx') return 'dwfx';
   if (isCadExt(ext)) return ext;
   if (ext === 'vsdx') return 'vsdx';
   if (MPP_EXTS.has(ext)) return 'mpp';

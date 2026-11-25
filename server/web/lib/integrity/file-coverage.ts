@@ -158,6 +158,8 @@ export const SHORTCUT_CUT_REASONS: ReadonlySet<string> = new Set([
   'dwf_sheets',
   'dwf_scan',
   'dwf_labels',
+  'dwfx_pages',
+  'dwfx_text',
 ]);
 
 /** A skip that is no shortfall: the file has nothing to read. */

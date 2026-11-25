@@ -182,6 +182,10 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
     `${n(left(c))} of ${n(c.total ?? c.read)} sheets were scanned in part (a drawing stream past 16 MB, or past 500 layers or 2,000 distinct labels on a sheet).`,
   dwf_labels: (c) =>
     `${ofTotal(c)} distinct labels are in its text (8,000 characters a sheet). The others are in the file's database only (file_sql).`,
+  dwfx_pages: (c) =>
+    `${ofTotal(c)} sheets of the DWFx were read. The others (past the ${limitText(c, 'sheet', '256-sheet')} limit, or a missing or damaged page) are not in search.`,
+  dwfx_text: (c) =>
+    `${ofTotal(c)} text runs are in its text (20,000 characters a sheet). The others are not in search.`,
   layer_list: (c) =>
     `${ofTotal(c)} layers are in its layer list (a ${limitText(c, 'layer', '400-layer')} limit).`,
   agent_text: (c) =>

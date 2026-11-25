@@ -17,7 +17,7 @@
  * the second counted failure for the same bytes): silently indexing a
  * filename would poison retrieval. The only '' text and the only [] picture
  * with no run is a sniff miss (not that format's bytes, ./cad-sniff.ts),
- * which takes the extractor's hollow-skip carve-out like a renamed DWFx does
+ * which takes the extractor's hollow-skip carve-out like a foreign zip named .dwf does
  * on the dwf route.
  */
 import { createHash } from 'node:crypto';

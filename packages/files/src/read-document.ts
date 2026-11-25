@@ -91,15 +91,16 @@ export async function readDocumentText(bytes: Buffer, ext: string): Promise<stri
     if (isZip(bytes)) await assertZipWithinLimits(bytes);
     return legacySheetText(bytes);
   }
-  // Autodesk DWF plot sets: container parse → sheets/layers/labels digest.
-  // Content-gated: a file named `.dwf` that lacks the DWF magic (usually a
-  // renamed DWFx, an OPC zip) returns '' and takes the extractor's honest
-  // hollow skip. Throws on a corrupt container.
-  if (e === 'dwf') {
-    // The DWF reader is the package plot-dwf; the text read stays here.
+  // Autodesk DWF and DWFx plot sets, the package plot-dwf; the text read
+  // stays here. By the bytes, as the package's step: the DWF magic is a DWF
+  // (sheets/layers/labels digest), any other bytes are tried as a DWFx
+  // (sheet names and page text, every part through the zip guard). Neither
+  // (a foreign zip renamed `.dwf`, bytes that are not a zip): '', the
+  // extractor's honest hollow skip. A corrupt container throws.
+  if (e === 'dwf' || e === 'dwfx') {
     const { sniffDwf, parseDwf } = await import('./pipelines/pkg/plot-dwf/dwf');
-    if (!sniffDwf(bytes)) return '';
-    return parseDwf(bytes);
+    if (sniffDwf(bytes)) return parseDwf(bytes);
+    return (await import('./pipelines/pkg/plot-dwf/dwfx')).parseDwfx(bytes);
   }
   // `.xml` is a container, not a format: only a document that is actually
   // MSPDI gets the plan renderer. A file that sniffs as a plan but yields no
