@@ -21,12 +21,19 @@ export type ZipEntry =
       repeat: { head?: string; chunk: Buffer | string; times: number; tail?: string };
       /** Write this as the uncompressed size instead of the real one. */
       declaredSize?: number;
+    }
+  | {
+      name: string;
+      /** A part deflated by the caller (raw deflate), with the CRC and the
+       *  size of its unpacked bytes: an entry too large to hold unpacked. */
+      deflated: { body: Buffer; crc: number; size: number };
     };
 
 type Built = { name: Buffer; method: number; crc: number; size: number; body: Buffer };
 
 function build(entry: ZipEntry): Built {
   const name = Buffer.from(entry.name, 'utf8');
+  if ('deflated' in entry) return { name, method: 8, ...entry.deflated };
   if ('repeat' in entry) {
     const { times } = entry.repeat;
     const head = Buffer.from(entry.repeat.head ?? '');

@@ -141,7 +141,7 @@ const HINTS: Readonly<Record<string, (c: ReadCutValue) => string>> = {
   sheet_rows: (c) =>
     `${ofTotal(c)} rows are in its text (at most ${limitText(c, 'rows', '5,000 rows')} a sheet). The other rows are not in search; file_sql reads them from the file's database when it has one.`,
   sheet_columns: (c) =>
-    `${ofTotal(c)} columns are in its text (at most ${limitText(c, 'columns', '256 columns')} a sheet). The other columns are not in search.`,
+    `${ofTotal(c)} columns are in its text (at most ${limitText(c, 'columns', '256 columns')} a sheet). The other columns are not in search; file_sql reads them from the file's database when it has one.`,
   sheet_text: (c) =>
     c.limit === undefined && c.total !== undefined
       ? `${ofTotal(c)} sheets are in its text: the read of a large workbook stops in its first long sheet. The other sheets are not in search.`

@@ -45,9 +45,9 @@
  *     names survive.
  *
  * Memory safety: every entry read is preflighted against the ZIP central
- * directory's DECLARED uncompressed size before inflating (same defence as
- * sheet-read.ts's `sheetXmlBytes`), so a deflate bomb degrades that sheet to
- * metadata-only instead of allocating gigabytes in-process.
+ * directory's DECLARED uncompressed size before inflating, so a deflate
+ * bomb degrades that sheet to metadata-only instead of allocating gigabytes
+ * in-process.
  *
  * DWFx (`.dwfx`) is a different container (OPC/XPS) and stream format — it is
  * routed to an honest export-required skip in ../../../slug.ts, not here. Dispatch in

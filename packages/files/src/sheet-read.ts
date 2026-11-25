@@ -52,8 +52,9 @@
  * around 1 GB RSS — roughly 25x the XML size. `MAX_UPLOAD_BYTES` is 64 MB, so
  * an unguarded `load()` could ask for tens of gigabytes.
  *
- * So we pre-flight: read the zip's central directory, sum the uncompressed
- * size of the worksheet parts, and refuse in-process parsing past a ceiling
+ * So we pre-flight: measure the real unpacked size of the worksheet parts
+ * (the zip guard, ./zip-guard.ts, which also refuses a zip bomb; the zip's
+ * directory can lie), and refuse in-process parsing past a ceiling
  * ({@link SpreadsheetTooLargeError}). Past it, the text read (./xlsx.ts) and
  * a file database read (./sheet-grid.ts with a row keeper) read the
  * workbook as a stream instead ({@link streamWorkbookRows}, the ingest
@@ -67,6 +68,7 @@ import { PassThrough } from 'node:stream';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { DocumentTooLargeError } from './read-limit';
+import { assertZipWithinLimits, isStreamedPart } from './zip-guard';
 
 /**
  * Ceiling on total uncompressed worksheet XML we will open in-process, in
@@ -91,36 +93,25 @@ export class SpreadsheetTooLargeError extends DocumentTooLargeError {
 }
 
 /**
- * Total uncompressed bytes of the `xl/worksheets/sheetN.xml` parts, read from
- * the zip directory without decompressing anything.
+ * Total unpacked bytes of the `xl/worksheets/sheetN.xml` parts, measured by
+ * the zip guard (./zip-guard.ts): their real size, not the size the zip's
+ * directory claims (it can lie). Throws a DocumentTooLargeError for a zip
+ * bomb or a part past the guard's caps.
  *
- * Returns `null` when the size cannot be determined — not a valid zip (a
- * legacy .xls reaching here by mistake, or a corrupt upload), or a JSZip build
- * that no longer carries the field. `null` means "unknown", and the caller
- * treats unknown as allowed: refusing every workbook because we could not
- * measure one would be a worse failure than the one we are guarding against.
+ * Returns `null` for bytes that are not a zip (a legacy .xls reaching here
+ * by mistake, or a corrupt upload): exceljs then reports them itself.
  */
 export async function sheetXmlBytes(buf: Buffer): Promise<number | null> {
-  let zip: JSZip;
   try {
-    zip = await JSZip.loadAsync(buf);
+    await JSZip.loadAsync(buf);
   } catch {
     return null;
   }
   let total = 0;
-  let measured = false;
-  for (const [path, entry] of Object.entries(zip.files)) {
-    if (entry.dir || !/^xl\/worksheets\/sheet\d+\.xml$/.test(path)) continue;
-    // `_data.uncompressedSize` is JSZip-internal but has been stable across
-    // the whole 3.x line, and it is the only way to get the inflated size
-    // without inflating. Missing field → we simply cannot measure.
-    const size = (entry as unknown as { _data?: { uncompressedSize?: number } })._data
-      ?.uncompressedSize;
-    if (typeof size !== 'number' || !Number.isFinite(size)) continue;
-    total += size;
-    measured = true;
+  for (const [path, size] of await assertZipWithinLimits(buf, { sheets: true })) {
+    if (isStreamedPart(path)) total += size;
   }
-  return measured ? total : null;
+  return total;
 }
 
 /**

@@ -18,6 +18,15 @@ const rels = (entries: Array<[string, string]>) =>
     .map(([id, target]) => `<Relationship Id="${id}" Target="${target}"/>`)
     .join('')}</Relationships>`;
 
+/** A sheet's relationships, typed as Excel writes them. */
+const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const sheetRels = (entries: Array<[string, string, string]>) =>
+  `<?xml version="1.0"?><Relationships>${entries
+    .map(
+      ([id, type, target]) => `<Relationship Id="${id}" Type="${REL}/${type}" Target="${target}"/>`,
+    )
+    .join('')}</Relationships>`;
+
 const pic = (rId: string, descr?: string) =>
   `<p:pic><p:nvPicPr><p:cNvPr id="2" name="Picture 2"${
     descr ? ` descr="${descr}"` : ''
@@ -151,9 +160,15 @@ describe('extractOoxmlImages — xlsx', () => {
       ]),
     );
     zip.file('xl/worksheets/sheet1.xml', `<worksheet><drawing r:id="rIdD1"/></worksheet>`);
-    zip.file('xl/worksheets/_rels/sheet1.xml.rels', rels([['rIdD1', '../drawings/drawing1.xml']]));
+    zip.file(
+      'xl/worksheets/_rels/sheet1.xml.rels',
+      sheetRels([['rIdD1', 'drawing', '../drawings/drawing1.xml']]),
+    );
     zip.file('xl/worksheets/sheet2.xml', `<worksheet><drawing r:id="rIdD2"/></worksheet>`);
-    zip.file('xl/worksheets/_rels/sheet2.xml.rels', rels([['rIdD2', '../drawings/drawing2.xml']]));
+    zip.file(
+      'xl/worksheets/_rels/sheet2.xml.rels',
+      sheetRels([['rIdD2', 'drawing', '../drawings/drawing2.xml']]),
+    );
     zip.file('xl/drawings/drawing1.xml', `<xdr:wsDr>${pic('rId1')}</xdr:wsDr>`);
     zip.file('xl/drawings/_rels/drawing1.xml.rels', rels([['rId1', '../media/a.png']]));
     zip.file('xl/drawings/drawing2.xml', `<xdr:wsDr>${pic('rId1')}</xdr:wsDr>`);
@@ -167,6 +182,36 @@ describe('extractOoxmlImages — xlsx', () => {
     );
     expect(images.map((i) => i.location?.sheet)).toEqual(['Setup', 'Results']);
     expect(images.map((i) => i.bytes.readUInt32BE(1_000))).toEqual([11, 12]);
+  });
+
+  it("finds a sheet's drawing from its relationships, never reading the sheet itself", async () => {
+    // A sheet can unpack to a GB and is read as a stream (zip-guard.ts): the
+    // picture read must not need it. Here it is not in the zip at all, and a
+    // comments drawing (vmlDrawing) is no picture drawing.
+    const zip = new JSZip();
+    zip.file(
+      'xl/workbook.xml',
+      `<workbook><sheets><sheet name="Register" r:id="rIdA"/></sheets></workbook>`,
+    );
+    zip.file('xl/_rels/workbook.xml.rels', rels([['rIdA', 'worksheets/sheet1.xml']]));
+    zip.file(
+      'xl/worksheets/_rels/sheet1.xml.rels',
+      sheetRels([
+        ['rId1', 'vmlDrawing', '../drawings/vmlDrawing1.vml'],
+        ['rId2', 'drawing', '../drawings/drawing1.xml'],
+      ]),
+    );
+    zip.file('xl/drawings/vmlDrawing1.vml', '<xml/>');
+    zip.file('xl/drawings/drawing1.xml', `<xdr:wsDr>${pic('rId1')}</xdr:wsDr>`);
+    zip.file('xl/drawings/_rels/drawing1.xml.rels', rels([['rId1', '../media/a.png']]));
+    zip.file('xl/media/a.png', png(21));
+
+    const images = await extractOoxmlImages(
+      Buffer.from(await zip.generateAsync({ type: 'uint8array' })),
+      'xlsx',
+    );
+    expect(images.map((i) => i.location?.sheet)).toEqual(['Register']);
+    expect(images.map((i) => i.bytes.readUInt32BE(1_000))).toEqual([21]);
   });
 
   it('returns nothing for a workbook with no drawings', async () => {

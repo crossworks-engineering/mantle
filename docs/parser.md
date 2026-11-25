@@ -219,7 +219,13 @@ Inside the limits, the readers keep cheap early refusals, so a bomb is
 usually turned away before it costs much:
 
 - zip-based formats: each part inflated at most 128 MB, 512 MB in all,
-  100,000 entries (`packages/files/src/zip-guard.ts`);
+  100,000 entries (`packages/files/src/zip-guard.ts`). A workbook's sheet
+  is read as a stream, so it has no flat cap and is not counted in the
+  total: it may not unpack past 100 times its packed size (real sheets
+  unpack 4 to 13 times, a zip bomb about 1,000), and all the sheets
+  together not past 100 times the file's size (entries can overlap). It is
+  measured as a stream, never held. Any other file keeps the flat caps for
+  every part;
 - legacy workbooks (`.xls`, `.xlsb`): converted only up to
   1,000,000 cells per sheet; a larger sheet is left out and named in the
   text (`packages/files/src/legacy-sheet.ts`);

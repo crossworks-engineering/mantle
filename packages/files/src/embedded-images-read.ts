@@ -106,7 +106,14 @@ export async function readEmbeddedImages(
 ): Promise<ExtractEmbeddedImagesResult> {
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
   const lower = ext.toLowerCase();
-  if (ZIP_IMAGE_EXTS.has(lower) && isZip(bytes)) await assertZipWithinLimits(bytes);
+  if (ZIP_IMAGE_EXTS.has(lower) && isZip(bytes)) {
+    // A workbook's sheets are never read here (./ooxml-media.ts finds a
+    // sheet's drawings from its rels): measured as a stream (./zip-guard.ts).
+    await assertZipWithinLimits(
+      bytes,
+      lower === 'xlsx' || lower === 'xlsm' ? { sheets: true } : {},
+    );
+  }
   const counted: import('./pdf').PdfPicturesCounted = { overCap: 0 };
   const raw = await extractRaw(bytes, lower, {
     maxImages: cap,

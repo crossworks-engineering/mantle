@@ -15,10 +15,21 @@
  * read every part through {@link loadZip}, which applies the same caps as
  * it goes.
  *
- * The caps mirror anydoc's own (128 MB a part, 512 MB a file): far past any
- * real document (XML compresses about ten to one). This is a cheap early
- * refusal, run only inside the parser service; the parser container's memory
- * limit is the guarantee behind it.
+ * The caps mirror anydoc's own (128 MB a part, 512 MB a file). They are right
+ * for a part a reader inflates whole, and wrong for a part read as a stream:
+ * a workbook's sheets ({@link isStreamedPart}). Plant registers on client
+ * boxes hold sheets of 169 MB to 1 GB of XML, packed 4 to 13 times
+ * (2026-11-25), and the sheet reader takes them as a stream
+ * (./sheet-read.ts). Such a part is held to one rule only: it may not unpack
+ * to more than {@link MAX_ZIP_STREAM_RATIO} times its packed size (a zip bomb
+ * unpacks about a thousand times), and the sheets together not past that
+ * many times the file's size. It is measured as a stream, never held, and
+ * it does not count against the file's total, which bounds what a reader
+ * holds.
+ *
+ * This is a cheap early refusal, run only inside the parser service; the
+ * parser container's memory limit and the job's time limit are the
+ * guarantee behind it.
  */
 
 import zlib from 'node:zlib';
@@ -31,8 +42,29 @@ export const MAX_ZIP_ENTRY_BYTES = 128 * 1024 * 1024;
 export const MAX_ZIP_TOTAL_BYTES = 512 * 1024 * 1024;
 /** Parts one zip may hold. */
 export const MAX_ZIP_ENTRIES = 100_000;
+/** Times its packed size a part read as a stream may unpack to, past the
+ *  part cap: real sheets unpack 4 to 13 times, a zip bomb about 1,000. */
+export const MAX_ZIP_STREAM_RATIO = 100;
 
-export type ZipLimits = { maxEntryBytes?: number; maxTotalBytes?: number };
+/** A part its reader reads as a stream, never whole: a workbook's sheet
+ *  (./sheet-read.ts reads one past its size check as a stream; the picture
+ *  read finds a sheet's drawings from its rels, ./ooxml-media.ts). The
+ *  test is exceljs's own, not anchored, so every part its whole reader
+ *  takes as a sheet is measured as one (a `/xl/...` or `sheet1.xml.bak`
+ *  name too). */
+export function isStreamedPart(path: string): boolean {
+  return /xl\/worksheets\/sheet\d+\.xml/.test(path);
+}
+
+export type ZipLimits = {
+  maxEntryBytes?: number;
+  maxTotalBytes?: number;
+  /** The file is a workbook, read by the sheet reader: its sheets
+   *  ({@link isStreamedPart}) are measured as a stream, under their own rule.
+   *  Any other file keeps the flat caps for every part (a docx can name a
+   *  part like a sheet, and mammoth reads it whole). */
+  sheets?: true;
+};
 
 type Compressed = {
   compression?: { magic?: string } | null;
@@ -89,6 +121,69 @@ function inflateCapped(
   }
 }
 
+/** The bytes a deflated part unpacks to, counted as it inflates and never
+ *  held; 'over' past `cap`. Corrupt deflate data counts what it unpacked
+ *  before its error (its reader reports the error): never 0, so a sheet
+ *  that unpacks to GBs before a bad tail is still too large for the whole
+ *  reader (./sheet-read.ts `loadWorkbook`). */
+function inflatedSize(content: Uint8Array, cap: number): Promise<number | 'over'> {
+  return new Promise((resolve) => {
+    const inflate = zlib.createInflateRaw({ chunkSize: 1024 * 1024 });
+    let size = 0;
+    let done = false;
+    const finish = (v: number | 'over') => {
+      if (done) return;
+      done = true;
+      resolve(v);
+    };
+    inflate.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > cap) {
+        finish('over');
+        inflate.destroy();
+      }
+    });
+    inflate.on('end', () => finish(size));
+    inflate.on('error', () => finish(size));
+    inflate.end(content);
+  });
+}
+
+/** A part read as a stream ({@link isStreamedPart}), measured as a stream:
+ *  its real size, or a {@link DocumentTooLargeError} past the part cap AND
+ *  past {@link MAX_ZIP_STREAM_RATIO} times its packed size, or past
+ *  `budget`, what the file's sheets have left together. */
+async function streamedPartSize(
+  path: string,
+  entry: JSZipType.JSZipObject,
+  maxEntry: number,
+  budget: number,
+): Promise<number> {
+  const data = compressedOf(entry);
+  if (!data) throw new Error(`the zip guard cannot read part ${path}: JSZip has no _data`);
+  const content = data.compressedContent;
+  if (!content) return 0;
+  const magic = data.compression?.magic;
+  const own = Math.max(maxEntry, MAX_ZIP_STREAM_RATIO * content.byteLength);
+  const cap = Math.min(own, budget);
+  // Stored: its bytes are the file's own, already in memory (but entries
+  // can overlap, so it counts against the budget too).
+  const size =
+    magic === STORE
+      ? content.byteLength > cap
+        ? 'over'
+        : content.byteLength
+      : magic === DEFLATE
+        ? await inflatedSize(content, cap)
+        : 0;
+  if (size !== 'over') return size;
+  throw new DocumentTooLargeError(
+    cap < own
+      ? `The file's sheets unpack to more than ${MAX_ZIP_STREAM_RATIO} times the file's size (${path} and the sheets before it), the mark of a zip bomb.`
+      : `The file's part ${path} unpacks to more than ${MAX_ZIP_STREAM_RATIO} times its packed size, the mark of a zip bomb.`,
+  );
+}
+
 function tooLarge(path: string, size: number, maxEntry: number, budget: number): Error {
   return size > maxEntry
     ? new DocumentTooLargeError(
@@ -112,9 +207,14 @@ async function jszip(bytes: Buffer): Promise<JSZipType> {
 
 /**
  * Inflate every part of the zip once, under the caps, and throw a
- * {@link DocumentTooLargeError} at the first part past them. Returns each
- * part's real inflated size. Throws whatever JSZip throws for bytes that are
- * not a zip.
+ * {@link DocumentTooLargeError} at the first part past them. In a workbook
+ * (`limits.sheets`), a part read as a stream ({@link isStreamedPart}) is
+ * measured as a stream, under its own
+ * rule, and not counted in the total: the sheets together have their own,
+ * {@link MAX_ZIP_STREAM_RATIO} times the file's size (entries can overlap,
+ * so the sum of the parts' own rules bounds nothing). Returns each part's
+ * real inflated size. Throws whatever JSZip throws for bytes that are not
+ * a zip.
  */
 export async function assertZipWithinLimits(
   bytes: Buffer,
@@ -124,8 +224,18 @@ export async function assertZipWithinLimits(
   let budget = limits.maxTotalBytes ?? MAX_ZIP_TOTAL_BYTES;
   const zip = await jszip(bytes);
   const sizes = new Map<string, number>();
+  let sheetBudget = Math.max(
+    limits.maxTotalBytes ?? MAX_ZIP_TOTAL_BYTES,
+    MAX_ZIP_STREAM_RATIO * bytes.length,
+  );
   for (const [path, entry] of Object.entries(zip.files)) {
     if (entry.dir) continue;
+    if (limits.sheets && isStreamedPart(path)) {
+      const size = await streamedPartSize(path, entry, maxEntry, sheetBudget);
+      sheetBudget -= size;
+      sizes.set(path, size);
+      continue;
+    }
     const out = inflateCapped(path, entry, maxEntry, budget);
     const size = out?.byteLength ?? 0;
     budget -= size;

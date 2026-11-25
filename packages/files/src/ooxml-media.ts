@@ -70,8 +70,14 @@ function relsPathFor(partPath: string): string {
 export const ATTR = (tag: string, name: string): string | undefined =>
   new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1];
 
-/** rId → absolute part path, for one part's relationship file. */
-export async function relationshipsFor(zip: Zip, partPath: string): Promise<Map<string, string>> {
+/** rId → absolute part path, for one part's relationship file; with
+ *  `type`, only the relationships of that type (the last word of its
+ *  `Type` URI, as `drawing`). */
+export async function relationshipsFor(
+  zip: Zip,
+  partPath: string,
+  type?: string,
+): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const file = zip.file(relsPathFor(partPath));
   if (!file) return out;
@@ -81,6 +87,7 @@ export async function relationshipsFor(zip: Zip, partPath: string): Promise<Map<
     const target = ATTR(tag, 'Target');
     // External relationships point at a URL, not a part in this archive.
     if (!id || !target || ATTR(tag, 'TargetMode') === 'External') continue;
+    if (type !== undefined && !ATTR(tag, 'Type')?.endsWith(`/${type}`)) continue;
     out.set(id, resolvePart(partPath, target));
   }
   return out;
@@ -196,18 +203,13 @@ export async function extractOoxmlImages(bytes: Buffer, ext: string): Promise<Em
 
   // Workbooks: a sheet points at a drawing part, and the drawing holds the
   // pictures. Walking sheets in workbook order (rather than listing
-  // xl/drawings/) keeps images attributed to the sheet they sit on.
+  // xl/drawings/) keeps images attributed to the sheet they sit on. The
+  // drawing is found from the sheet's relationships, never its XML: a
+  // sheet can unpack to a GB (read as a stream, ./zip-guard.ts), and it
+  // holds one drawing at most (OOXML's <drawing> is 0..1).
   const sheetNames = await workbookSheetOrder(zip);
   for (const { path: sheetPath, name } of sheetNames) {
-    const sheetXml = await zip.file(sheetPath)?.async('string');
-    if (!sheetXml) continue;
-    const sheetRels = await relationshipsFor(zip, sheetPath);
-    const drawingIds = tagsNamed(sheetXml, (name) => name === 'drawing')
-      .map((tag) => ATTR(tag, 'r:id'))
-      .filter((v): v is string => Boolean(v));
-    for (const rId of drawingIds) {
-      const drawingPath = sheetRels.get(rId);
-      if (!drawingPath) continue;
+    for (const drawingPath of (await relationshipsFor(zip, sheetPath, 'drawing')).values()) {
       const drawingXml = await zip.file(drawingPath)?.async('string');
       if (!drawingXml) continue;
       const drawingRels = await relationshipsFor(zip, drawingPath);

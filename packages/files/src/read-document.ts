@@ -32,8 +32,10 @@ export class UnsupportedFormatError extends Error {
 }
 
 /** The zip-based formats: each part is inflated once under the caps
- *  (./zip-guard.ts) before a reader that inflates parts whole sees it. */
-const ZIP_EXTS = new Set(['docx', 'xlsx', 'xlsm', 'pptx', 'odt', 'ods', 'odp', 'epub', 'vsdx']);
+ *  (./zip-guard.ts) before a reader that inflates parts whole sees it.
+ *  Not .xlsx and .xlsm: the sheet reader runs the guard itself, once, as it
+ *  measures the sheets (./sheet-read.ts `loadWorkbook`). */
+const ZIP_EXTS = new Set(['docx', 'pptx', 'odt', 'ods', 'odp', 'epub', 'vsdx']);
 
 function isZip(bytes: Buffer): boolean {
   return bytes.length >= 4 && bytes.readUInt32BE(0) === 0x504b0304;
