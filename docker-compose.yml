@@ -841,7 +841,7 @@ services:
   # reach it, and a crashed/pathological render dies here, never in web.
   # See server/web/lib/render-pdf.ts.
   browser:
-    image: ghcr.io/browserless/chromium:v2.57.0
+    image: ghcr.io/browserless/chromium:v2.64.3
     container_name: mantle_browser
     restart: unless-stopped
     logging: *default-logging
