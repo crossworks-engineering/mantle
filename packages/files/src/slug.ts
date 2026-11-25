@@ -90,6 +90,9 @@ export function extOf(filename: string): string {
  * The sets that drive ingestion + editor behaviour.
  *  - TEXT_EXTS: editable in the UI, `data.content` populated, extractor reads
  *    them in-process (UTF-8 is not parsing).
+ *  - CODE_EXTS: source code, scripts, config and logs, read in-process as
+ *    text (the `utf8` route) with a binary guard (./code-text.ts). Not in
+ *    TEXT_EXTS: no `data.content`, not editable in the UI.
  *  - ANYDOC_EXTS: legacy Office, OpenDocument, RTF and EPUB, read by anydoc
  *    in the parser service (packages/files/src/anydoc.ts).
  *  - MARKUP_EXTS: HTML and XML, tags stripped in the parser service
@@ -101,12 +104,116 @@ export function extOf(filename: string): string {
  * (server/parser), the one process that opens untrusted documents.
  */
 export const TEXT_EXTS = new Set<string>(['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'csv']);
+/**
+ * Source code, scripts, config and logs: plain text under its own name. Read
+ * as text on the `utf8` route, like TEXT_EXTS, so its words are chunked and
+ * found; before 2026-11-25 these got the default text (a name card of about
+ * 200 characters). Bytes that are not text (a NUL in the head: a renamed
+ * binary, an MPEG `.ts` video) are refused, never indexed as garbage
+ * (./code-text.ts). Kept apart from TEXT_EXTS so the upload and the editor
+ * treat them as before (no `data.content`, no edit in the UI). No Reader
+ * pipeline takes any of these (builtin.ts), so the core read is the only one.
+ */
+export const CODE_EXTS: ReadonlySet<string> = new Set<string>([
+  // JavaScript and TypeScript
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'ts',
+  'tsx',
+  'mts',
+  'cts',
+  'vue',
+  'svelte',
+  // Other languages
+  'py',
+  'pyw',
+  'rb',
+  'php',
+  'pl',
+  'pm',
+  'lua',
+  'r',
+  'go',
+  'rs',
+  'java',
+  'kt',
+  'kts',
+  'scala',
+  'groovy',
+  'gradle',
+  'swift',
+  'dart',
+  'c',
+  'h',
+  'cc',
+  'cpp',
+  'cxx',
+  'hpp',
+  'hh',
+  'cs',
+  'fs',
+  'vb',
+  'vbs',
+  'bas',
+  'm',
+  'sql',
+  'graphql',
+  'gql',
+  'proto',
+  // Styles
+  'css',
+  'scss',
+  'sass',
+  'less',
+  // Shell and batch
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'ps1',
+  'psm1',
+  'psd1',
+  'bat',
+  'cmd',
+  // Config
+  'ini',
+  'cfg',
+  'conf',
+  'toml',
+  'properties',
+  'tf',
+  'hcl',
+  'reg',
+  // Logs, diffs, plain-text documents and tables
+  'log',
+  'diff',
+  'patch',
+  'tex',
+  'bib',
+  'rst',
+  'adoc',
+  'tsv',
+  'srt',
+  'vtt',
+]);
 export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
 /** Read by anydoc (a Rust library) in the parser service: legacy Word
- *  (.doc), PowerPoint (.ppt), LibreOffice native (.odt/.ods/.odp), Rich Text
+ *  (.doc, and .wbk, Word's backup copy: the same Word 97 file, or a .docx
+ *  when its bytes are a zip, read-document.ts), PowerPoint (.ppt), LibreOffice native (.odt/.ods/.odp), Rich Text
  *  (.rtf) and e-books (.epub). The legacy sheets (.xls/.xlsb) use anydoc
  *  too, through the legacy-sheet conversion, so they are not in this set. */
-export const ANYDOC_EXTS = new Set<string>(['doc', 'ppt', 'odt', 'ods', 'odp', 'rtf', 'epub']);
+export const ANYDOC_EXTS = new Set<string>([
+  'doc',
+  'wbk',
+  'ppt',
+  'odt',
+  'ods',
+  'odp',
+  'rtf',
+  'epub',
+]);
 /** LibreOffice native formats: text by anydoc, pictures straight from the
  *  zip (packages/files/src/ooxml-media.ts). */
 export const ODF_EXTS = new Set<string>(['odt', 'ods', 'odp']);
@@ -205,6 +312,7 @@ export const SOME_FILES_EXTS: ReadonlySet<string> = new Set(['xml', 'tif', 'tiff
  *  all of them through the parser service. */
 export const INGESTABLE_EXTS = new Set<string>([
   ...TEXT_EXTS,
+  ...CODE_EXTS,
   'pdf',
   'docx',
   'xlsx',
@@ -343,7 +451,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'dwf') return 'dwf';
   if (isCadExt(ext)) return ext;
   if (ext === 'vsdx') return 'vsdx';
-  if (TEXT_EXTS.has(ext)) return 'utf8';
+  if (TEXT_EXTS.has(ext) || CODE_EXTS.has(ext)) return 'utf8';
   if (ANYDOC_EXTS.has(ext)) return 'anydoc';
   if (MARKUP_EXTS.has(ext)) return 'markup';
   return 'none';
@@ -381,8 +489,12 @@ export function mimeForExt(ext: string): string {
       return 'application/pdf';
     case 'png':
       return 'image/png';
+    // JFIF and JPE are JPEG under other names (a browser's "Save image" on
+    // Windows gives .jfif): the vision read takes them as it takes .jpg.
     case 'jpg':
     case 'jpeg':
+    case 'jfif':
+    case 'jpe':
       return 'image/jpeg';
     case 'gif':
       return 'image/gif';
@@ -412,6 +524,7 @@ export function mimeForExt(ext: string): string {
     case 'xlsb':
       return 'application/vnd.ms-excel.sheet.binary.macroEnabled.12';
     case 'doc':
+    case 'wbk':
       return 'application/msword';
     case 'pptx':
       return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';

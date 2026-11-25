@@ -90,6 +90,8 @@ const IMAGE_BEARING_EXTS = new Set([
   'ods',
   'odp',
   'doc',
+  // Word's backup copy (.wbk): a .doc, or a .docx when a zip.
+  'wbk',
   'ppt',
   'xls',
   'xlsb',

@@ -390,6 +390,59 @@ describe('isVisionImage (ext routing beats client-supplied mime)', () => {
   });
 });
 
+import { CODE_EXTS } from './slug';
+import { readerKeyOf } from './read-stamp';
+import { BUILTIN_PIPELINES } from './pipelines/builtin';
+
+describe('code, config and logs (CODE_EXTS, 2026-11-25)', () => {
+  it('reads the types the fleet sweep found as text, on the utf8 route', () => {
+    for (const ext of ['tsx', 'ts', 'mjs', 'sql', 'py', 'cjs', 'css', 'toml', 'sh', 'ini']) {
+      expect(CODE_EXTS.has(ext), ext).toBe(true);
+      expect(parserRouteForExt(ext), ext).toBe('utf8');
+      expect(INGESTABLE_EXTS.has(ext), ext).toBe(true);
+      expect(readerKeyOf(`a.${ext}`), ext).toBe('utf8');
+    }
+  });
+
+  it('keeps them out of TEXT_EXTS: no data.content, not editable, mime as before', () => {
+    for (const ext of CODE_EXTS) {
+      expect(TEXT_EXTS.has(ext), ext).toBe(false);
+      expect(mimeForExt(ext), ext).toBe('application/octet-stream');
+    }
+  });
+
+  it('takes no type a Reader pipeline, an export hint, media or another route has', () => {
+    const readerExts = new Set(BUILTIN_PIPELINES.flatMap((p) => [...p.match.ext]));
+    for (const ext of CODE_EXTS) {
+      expect(readerExts.has(ext), ext).toBe(false);
+      expect(exportHintForExt(ext), ext).toBeUndefined();
+      expect(MEDIA_EXTS.has(ext), ext).toBe(false);
+      expect(ANYDOC_EXTS.has(ext) || MARKUP_EXTS.has(ext) || CAD_EXTS.has(ext), ext).toBe(false);
+      expect(mimeForExt(ext).startsWith('image/'), ext).toBe(false);
+    }
+  });
+});
+
+describe('JPEG under its other names (.jfif, .jpe)', () => {
+  it('is image/jpeg and takes the vision read, as .jpg does', () => {
+    for (const ext of ['jfif', 'jpe']) {
+      expect(mimeForExt(ext)).toBe('image/jpeg');
+      // An old upload stored octet-stream: the extension still routes it.
+      expect(isVisionImage(ext, 'application/octet-stream')).toBe(true);
+      expect(readerKeyOf(`photo.${ext}`)).toBe('image');
+    }
+  });
+});
+
+describe('Word backup (.wbk)', () => {
+  it('is read like a .doc, by anydoc', () => {
+    expect(ANYDOC_EXTS.has('wbk')).toBe(true);
+    expect(parserRouteForExt('wbk')).toBe('anydoc');
+    expect(mimeForExt('wbk')).toBe('application/msword');
+    expect(isVisionImage('wbk', 'application/msword')).toBe(false);
+  });
+});
+
 describe('folderSlugOf (names people give folders)', () => {
   it('keeps the plain slug when the name has Latin letters or digits', () => {
     expect(folderSlugOf('Acme Corp')).toBe('acme-corp');

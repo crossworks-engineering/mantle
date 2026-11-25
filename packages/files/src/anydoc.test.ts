@@ -2,11 +2,14 @@
  * anydoc (./anydoc.ts) through the real native addon, on fixtures built here:
  * RTF is plain text, an ODT is a small zip, a workbook comes from exceljs,
  * and a binary Excel 97-2003 `.xls` (BIFF8 in a compound file) is written
- * from scratch by ./biff.test-helper.ts. Legacy `.doc` and `.ppt` have no
- * fixture: no license-clean way to write one here (no office suite on the
- * build machines, and their binary formats are far larger than BIFF's); they
- * were compared against Tika on public test files outside the suite.
+ * from scratch by ./biff.test-helper.ts. Legacy `.ppt` has no fixture: no
+ * license-clean way to write one here (no office suite on the build
+ * machines, and its binary format is far larger than BIFF's); it was
+ * compared against Tika on public test files outside the suite. Legacy Word
+ * has one, fixtures/made-up.wbk: two made-up lines written as a Word 97 file
+ * by LibreOffice and named as Word names its backup copy (.wbk).
  */
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 import { anydocSheets, parseAnydocBytes } from './anydoc';
@@ -139,5 +142,44 @@ describe('anydocSheets and the legacy-sheet conversion', () => {
     expect(xls.readUInt32BE(0)).toBe(0xd0cf11e0);
     const text = await readDocumentText(xls, 'xls');
     expect(text).toBe('# Sheet: Orders\nTag,Qty\nP-101,4\nValve,2.5\n\n# Sheet: Notes\nChecked');
+  });
+});
+
+/** A minimal .docx: the three parts mammoth needs. */
+async function docx(paragraph: string): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    '[Content_Types].xml',
+    '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+  );
+  zip.file(
+    '_rels/.rels',
+    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+  );
+  zip.file(
+    'word/document.xml',
+    `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${paragraph}</w:t></w:r></w:p></w:body></w:document>`,
+  );
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+describe('Word backup (.wbk)', () => {
+  const wbk = readFileSync(new URL('./fixtures/made-up.wbk', import.meta.url));
+
+  it('is a Word 97 compound file', () => {
+    expect(wbk.subarray(0, 8).toString('hex')).toBe('d0cf11e0a1b11ae1');
+  });
+
+  it('anydoc reads it as a .doc', async () => {
+    const md = await parseAnydocBytes(wbk, 'wbk');
+    expect(md).toContain('Pump P-101 seal replaced.');
+    expect(md).toContain('Second line of the backup.');
+  });
+
+  it('the parser reads it, and a .wbk that is a zip as a .docx', async () => {
+    await expect(readDocumentText(wbk, 'wbk')).resolves.toContain('P-101');
+    await expect(readDocumentText(await docx('Backup of a docx.'), 'wbk')).resolves.toContain(
+      'Backup of a docx.',
+    );
   });
 });

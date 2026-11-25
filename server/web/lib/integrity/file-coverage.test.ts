@@ -61,7 +61,13 @@ describe('routeOfExt', () => {
     expect(routeOfExt('mp4', DB_EXTS)).toBe('media');
     expect(routeOfExt('mpp', DB_EXTS)).toBe('export');
     expect(routeOfExt('eml', DB_EXTS)).toBe('none');
-    expect(routeOfExt('log', DB_EXTS)).toBe('none');
+    // Code, config and logs are read as text since 2026-11-25 (CODE_EXTS).
+    expect(routeOfExt('log', DB_EXTS)).toBe('text');
+    expect(routeOfExt('tsx', DB_EXTS)).toBe('text');
+    expect(routeOfExt('exe', DB_EXTS)).toBe('none');
+    // JPEG under its other names takes the vision read; a Word backup anydoc.
+    expect(routeOfExt('jfif', DB_EXTS)).toBe('vision');
+    expect(routeOfExt('wbk', DB_EXTS)).toBe('parser');
   });
 
   it('takes the mail types as the built-in Reader mail reads them, with a database', () => {
@@ -183,6 +189,15 @@ describe('coverageOf', () => {
       new Set(),
     );
     expect(rows[0]).toMatchObject({ route: 'none', indexed: 1, nameOnly: 1, notFull: 1 });
+  });
+
+  it('counts a code file read as text as full, one read as a name card as not full', () => {
+    const asText = file('py', { ...done, read_by: { reader: 'utf8', v: 1 } });
+    const noStamp = file('py', done);
+    // Read before code had a reader: its stamp says the default text.
+    const asNameCard = file('py', { ...done, read_by: { reader: 'none', v: 1 } });
+    const [row] = coverageOf([asText, noStamp, asNameCard], DB_EXTS, new Set());
+    expect(row).toMatchObject({ ext: 'py', route: 'text', indexed: 3, notFull: 1 });
   });
 
   it('keeps an archive indexed: its detail cut is no shortfall', () => {

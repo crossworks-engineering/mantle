@@ -1201,6 +1201,14 @@ structure or the brain wrote the bytes itself:
 
 - **Plain text** (`TEXT_EXTS` in `packages/files/src/slug.ts`: md, txt, csv,
   json, yaml): decoded as UTF-8. Reading a string is not parsing.
+- **Code, config and logs** (`CODE_EXTS` in `packages/files/src/slug.ts`: py,
+  ts, tsx, js, mjs, sql, css, sh, ps1, bat, ini, toml, log and more; since
+  2026-11-25): decoded as text on the same `utf8` route, a UTF-16 LE or
+  UTF-8 byte-order mark honoured (`packages/files/src/code-text.ts`). One
+  guard: a NUL in the first 8000 bytes (git's rule) means the bytes are not
+  text, and the read is refused with the typed `unsupported` verdict, so a
+  renamed binary is recorded as `document_unreadable`, never indexed as
+  garbage. Not in `TEXT_EXTS`: no `data.content`, not editable in the UI.
 - **Delimited text to grids** (CSV and pasted tables,
   `packages/files/src/sheet-to-grid.ts`): a split over a string, for the
   Table import and pasted text. A CSV's database read is not here: it is

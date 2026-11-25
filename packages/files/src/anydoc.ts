@@ -40,6 +40,8 @@ import type { EmbeddedImage } from './embedded-images';
  *  the values are their string forms. */
 const FORMAT_FOR_EXT: Record<string, string> = {
   doc: 'doc',
+  // Word's backup copy: the same Word 97 file under another name.
+  wbk: 'doc',
   ppt: 'ppt',
   pptx: 'pptx',
   odt: 'odt',

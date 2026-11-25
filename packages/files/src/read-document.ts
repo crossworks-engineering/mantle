@@ -19,7 +19,8 @@
 
 import { noteReadCut } from './read-cut-sink';
 import { assertZipWithinLimits } from './zip-guard';
-import { ANYDOC_EXTS, LEGACY_SHEET_EXTS, MARKUP_EXTS, TEXT_EXTS } from './slug';
+import { readCodeText } from './code-text';
+import { ANYDOC_EXTS, CODE_EXTS, LEGACY_SHEET_EXTS, MARKUP_EXTS, TEXT_EXTS } from './slug';
 
 /** No reader in the parser takes this extension. */
 export class UnsupportedFormatError extends Error {
@@ -63,6 +64,10 @@ async function legacySheetText(bytes: Buffer): Promise<string> {
 export async function readDocumentText(bytes: Buffer, ext: string): Promise<string> {
   const e = ext.toLowerCase();
   if (TEXT_EXTS.has(e)) return bytes.toString('utf8');
+  if (CODE_EXTS.has(e)) return readCodeText(bytes, e);
+  // A Word backup (.wbk) is the file it backs up: Word 97 bytes (anydoc's
+  // `doc`), or a .docx when its bytes are a zip.
+  if (e === 'wbk' && isZip(bytes)) return readDocumentText(bytes, 'docx');
   if (ZIP_EXTS.has(e) && isZip(bytes)) await assertZipWithinLimits(bytes);
   if (e === 'pdf') return (await import('./pdf')).parsePdf(bytes);
   if (e === 'docx') return (await import('./docx')).parseDocx(bytes);

@@ -10,7 +10,10 @@
  *  - its read failed, or it was skipped for a reason other than an empty
  *    body (`no_parser`, `no_vision_text`, ...);
  *  - no reader takes its type (the default text: name, type and size; an
- *    archive is read as what it is, by design, so it is no shortfall);
+ *    archive is read as what it is, by design, so it is no shortfall), or
+ *    its read is stamped as that default text (`read_by` reader `none`): a
+ *    type that has a reader now and whose file has not been read again (a
+ *    code file read as a name card before 2026-11-25);
  *  - it holds a shortcut cut: a reader that read only the first part to save
  *    work (SHORTCUT_CUT_REASONS). A safety cut (a size or a cost bound) is
  *    counted in `cuts` but is not a shortfall;
@@ -38,6 +41,7 @@ import {
   MEDIA_EXTS,
   mimeForExt,
   parserRouteForExt,
+  readByOf,
   readFileDbNone,
   SEALED_ARCHIVE_EXTS,
   SOME_FILES_EXTS,
@@ -292,7 +296,7 @@ export function coverageOf(
     const lost =
       ex.state === 'failed' ||
       (ex.state === 'skipped' && !EMPTY_SKIPS.has(ex.reason ?? '')) ||
-      (read && row.route === 'none') ||
+      (read && (row.route === 'none' || readByOf(f.data)?.reader === 'none')) ||
       short ||
       noDb;
     if (lost) row.notFull += 1;

@@ -27,7 +27,16 @@ import { assertZipWithinLimits } from './zip-guard';
  *  out; docs/file-ingestion.md). */
 const ANYDOC_IMAGE_EXTS = new Set<string>([...ANYDOC_EXTS].filter((ext) => !ODF_EXTS.has(ext)));
 
-const ZIP_IMAGE_EXTS = new Set(['docx', 'pptx', 'xlsx', 'xlsm', 'epub', 'vsdx', ...ODF_EXTS]);
+const ZIP_IMAGE_EXTS = new Set([
+  'docx',
+  'wbk',
+  'pptx',
+  'xlsx',
+  'xlsm',
+  'epub',
+  'vsdx',
+  ...ODF_EXTS,
+]);
 
 function isZip(bytes: Buffer): boolean {
   return bytes.length >= 4 && bytes.readUInt32BE(0) === 0x504b0304;
@@ -46,7 +55,10 @@ async function extractRaw(
     notScan?: true;
   },
 ): Promise<EmbeddedImage[]> {
-  if (ext === 'docx') return (await import('./docx')).extractDocxImages(bytes);
+  // A Word backup (.wbk) whose bytes are a zip is a .docx.
+  if (ext === 'docx' || (ext === 'wbk' && isZip(bytes))) {
+    return (await import('./docx')).extractDocxImages(bytes);
+  }
   // The cap is forwarded so the PDF pass stops decoding pages once it holds
   // enough real pictures.
   if (ext === 'pdf') {

@@ -6,7 +6,8 @@
  *
  * Nothing here opens a document. Four routes:
  *   1. Plain text formats (TEXT_EXTS: txt, md, csv, json, yaml): decoded as
- *      UTF-8 in this process. Reading a string is not parsing.
+ *      UTF-8 in this process. Reading a string is not parsing. Code, config
+ *      and logs (CODE_EXTS) the same, with a binary guard (./code-text.ts).
  *   2. DWG, DXF and DGN: the parser's CAD tier, through ./dwg.ts (the one
  *      exchange the digest, the registry workbook and the render share).
  *   3. Every other readable format: the parser service (server/parser,
@@ -24,7 +25,8 @@
  * extractor) treats '' as the honest "no_text_layer" / "no_parser" skip.
  */
 
-import { INGESTABLE_EXTS, isCadExt, parserRouteForExt, TEXT_EXTS } from './slug';
+import { readCodeText } from './code-text';
+import { CODE_EXTS, INGESTABLE_EXTS, isCadExt, parserRouteForExt, TEXT_EXTS } from './slug';
 
 export async function parseDocumentBytes(
   bytes: Buffer,
@@ -34,6 +36,7 @@ export async function parseDocumentBytes(
   const e = ext.toLowerCase();
   if (reader && parserRouteForExt(e) === 'none') return reader(bytes);
   if (TEXT_EXTS.has(e)) return bytes.toString('utf8');
+  if (CODE_EXTS.has(e)) return readCodeText(bytes, e);
   // CAD drawings (DWG, DXF, DGN): a sniff miss returns '' (the hollow skip);
   // a failed exchange throws the parser's typed error.
   if (isCadExt(e)) return (await import('./dwg')).parseCadFile(bytes, e);
