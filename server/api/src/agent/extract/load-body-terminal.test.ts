@@ -68,8 +68,8 @@ vi.mock('@mantle/content/reader-passes', () => ({
   standingReaderText: vi.fn(async () => null),
 }));
 
-import { defaultFileText, ParserError } from '@mantle/files';
-import { loadExtractableBody } from './load-body';
+import { defaultFileText, isDefaultFileText, ParserError } from '@mantle/files';
+import { loadExtractableBody, readNodeBodyLocal } from './load-body';
 
 const WORKER = { id: 'w1', slug: 'extractor', params: {}, apiKeyId: null };
 
@@ -170,6 +170,56 @@ describe('loadExtractableBody: terminal skips', () => {
     expect(h.ocrIngestPdfNode).toHaveBeenCalled();
     expect(res.ok && res.rawBody).toContain('The quick brown fox');
     expect(res.ok && res.rawBody).not.toContain('File name:');
+  });
+
+  describe('one type, one read: the cost guard local read gives the same default text', () => {
+    // Repsol, 2026-11-13: 152 files of one type with no reader, one upload,
+    // one folder. The first 72 were read before the folder had an assistant
+    // (the cost guard's local read: their name as the document), the other
+    // 80 after (the full pass: a skip). The local read now gives the
+    // default text as the full pass does.
+    const bytes = Buffer.concat([
+      Buffer.from([0x44, 0x33, 0x22, 0x11, 0x53, 0x55, 0x52, 0x44]),
+      Buffer.alloc(56),
+    ]);
+    const load = () =>
+      h.loadFileBytes.mockResolvedValue({
+        bytes,
+        filename: 'weld-scan-0042.opd',
+        ext: 'opd',
+        mime: 'application/octet-stream',
+      });
+
+    it('the local read and the full pass give one text', async () => {
+      load();
+      const node = fileNode('weld-scan-0042.opd', 'application/octet-stream');
+      const local = await readNodeBodyLocal(node);
+      const full = await run(node);
+      expect(local).toContain('File name: weld-scan-0042.opd');
+      expect(local).toContain('File type: .opd');
+      expect(local).toContain('File size: 64 bytes');
+      expect(isDefaultFileText(local)).toBe(true);
+      expect(full.ok && full.rawBody).toBe(local);
+      expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+    });
+
+    it('the local read makes a stored default text again, as the full pass does', async () => {
+      const stored = await defaultFileText({
+        filename: 'weld-scan-0042.opd',
+        ext: 'opd',
+        bytes: null,
+      });
+      load();
+      const local = await readNodeBodyLocal(
+        fileNode('weld-scan-0042.opd', 'application/octet-stream', { text: stored }),
+      );
+      expect(local).toContain('File size: 64 bytes');
+    });
+
+    it('a type WITH a reader keeps its own local read (the name, never a default text)', async () => {
+      const local = await readNodeBodyLocal(fileNode('renamed-office-file.dwg', 'image/vnd.dwg'));
+      expect(local).toBe('renamed-office-file.dwg');
+    });
   });
 
   it('a note whose own words look like a default text keeps them as its body', async () => {

@@ -57,10 +57,13 @@ import { readCutStampSql } from './read-cut-stamp';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 
 /** The body of a node with no model call (no vision, no OCR worker): the typed
- *  dispatch below. The cost guard's local-only index reads this. */
+ *  dispatch below. The cost guard's local-only index reads this. A file no
+ *  reader takes gets its default text here too, as on the full pass: one
+ *  type gets one read whether its folder has an assistant or not. */
 export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promise<string> {
+  let body: string;
   try {
-    return await readNodeBodyRaw(node);
+    body = await readNodeBodyRaw(node);
   } catch (err) {
     // A file the parser gave up on (twice, or a reader's verdict)
     // indexes by its title here, as any unreadable file does; the full pass
@@ -68,6 +71,56 @@ export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promis
     if (isParserError(err) && !err.retryable) return node.title;
     throw err;
   }
+  if (node.type !== 'file') return body;
+  const type = fileTypeOf(node);
+  if (!noReaderHollow(node, type, body)) return body;
+  return (await defaultTextOf(node, type)).text;
+}
+
+/** A file's name, extension and mime as the extract reads them: the
+ *  upload's `filename`, else the title (an email attachment has no
+ *  filename), and the stored `mimeType`, else the one of the extension. */
+function fileTypeOf(node: typeof nodes.$inferSelect): {
+  filename: string;
+  ext: string;
+  mime: string;
+} {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const filename = typeof data.filename === 'string' ? data.filename : node.title;
+  const ext = extOf(filename);
+  const mime = typeof data.mimeType === 'string' ? data.mimeType : mimeForExt(ext);
+  return { filename, ext, mime };
+}
+
+/** True when the read of a file no reader takes (route `none`) gave its
+ *  name only: it gets the default text. */
+function noReaderHollow(
+  node: typeof nodes.$inferSelect,
+  type: { ext: string; mime: string },
+  body: string,
+): boolean {
+  const parserRoute = parserRouteForExt(type.ext);
+  return (
+    parserRoute === 'none' &&
+    isHollowFilenameBody({ mime: type.mime, parserRoute, rawBody: body, title: node.title })
+  );
+}
+
+/** The default text of a file no reader takes (packages/files
+ *  default-text.ts). No bytes (the file is not on disk or in storage): the
+ *  text has the name and the type. */
+async function defaultTextOf(
+  node: typeof nodes.$inferSelect,
+  type: { filename: string; ext: string; mime: string },
+): Promise<{ text: string; bytesIn: number | null }> {
+  const loaded = await loadFileBytes(node);
+  const text = await defaultFileText({
+    filename: type.filename,
+    ext: type.ext,
+    mime: type.mime,
+    bytes: loaded?.bytes ?? null,
+  });
+  return { text, bytesIn: loaded?.bytes.length ?? null };
 }
 
 /**
@@ -326,6 +379,9 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   const data = (node.data ?? {}) as Record<string, unknown>;
   const candidates = [data.content, data.text, data.body, data.markdown];
   for (const c of candidates) {
+    // A file's stored default text is no read of it: a Reader installed
+    // later for the type must get to give its own (loadExtractableBody).
+    if (node.type === 'file' && typeof c === 'string' && isDefaultFileText(c)) continue;
     // Ignore a cached value that's just the title — that's the hollow
     // filename-only fallback a prior (buggy) extract may have stored; using
     // it would shortcut the real parse below and re-index nothing. Forces a
@@ -1044,16 +1100,13 @@ export async function loadExtractableBody(
     rawBody = await step(
       { name: 'default_text', kind: 'compute', input: { ext: fileExt, filename: fileNameForType } },
       async (h) => {
-        // No bytes (the file is not on disk or in storage): the text has
-        // the name and the type.
-        const loaded = await loadFileBytes(node);
-        const text = await defaultFileText({
+        // The same text as the cost guard's local read (readNodeBodyLocal).
+        const { text, bytesIn } = await defaultTextOf(node, {
           filename: fileNameForType,
           ext: fileExt,
           mime: fileMime,
-          bytes: loaded?.bytes ?? null,
         });
-        h.setMeta({ bytes_in: loaded?.bytes.length ?? null, chars_out: text.length });
+        h.setMeta({ bytes_in: bytesIn, chars_out: text.length });
         return text;
       },
     );
