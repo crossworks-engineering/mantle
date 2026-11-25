@@ -298,6 +298,9 @@ The cuts said today, each with its key:
 | `description`                                                                                                            | a calendar event posted with `descriptionChars` past the description it holds (POST /api/sidecar/events, on the event node)                                                                             |
 | `mail_messages`                                                                                                          | a mail or mailbox read in part: its answer past 40 MB, its read past 150 s, a message mailparser refused, an RTF body past its bounds (the `mail` Reader, 8f)                                           |
 | `mail_attachments`                                                                                                       | a detail: the attachments of a mail, named in its text and its Mail tab, never read (8f)                                                                                                                |
+| `access_columns`                                                                                                         | an Access database: columns that hold files or lists (attachments, many values, OLE, binary), named, not read (8g)                                                                                      |
+| `access_text`                                                                                                            | an Access database: rows past 5,000 a table or 1,000,000 characters are not in its text, but in its database (8g)                                                                                       |
+| `access_password`                                                                                                        | an Access database with a password: no table read (8g)                                                                                                                                                  |
 
 A calendar feed's own cuts (a series past 50,000 occurrences before the
 horizon, an event past 16 MB of text, a description past 20,000
@@ -651,6 +654,49 @@ cannot read), or a single `.eml` mailparser refuses, is
 Not built yet: "Extract contents" for a mail (its attachments written as
 files beside it, as an archive's). The owner chose it with Q2; it needs a
 parser job that hands the attachments to the brain, apart from this Reader.
+
+### 8g. Access databases
+
+An `.accdb` (Access 2007 and later) and an `.mdb` (Access 97 to 2003) are
+read by the built-in Reader `access` (docs/pipelines.md, "The Access
+reader"): no model, one parser job. Each table of the file with rows gives
+one tab of the file's database, with the table's name, its columns and their
+Access types: a number type for Byte, Integer, Long, Single, Double,
+Currency and a Decimal of 15 digits or fewer; a checkbox for Yes/No; a date
+for a Date/Time column whose values are all at midnight, else a date and
+time; text for Short Text, Long Text, a Replication ID, a Large Number and a
+longer Decimal (so no digit is lost). `file_sql` reads it as any file
+database. The upload makes a Table of it on a box that still makes them, as
+for a workbook.
+
+The file's text is the Reader's: a summary (its tables and row counts, the
+linked tables, whose rows are in another file, the tables with no rows, and
+the columns not read), then each table's columns and its first rows as CSV.
+At most 5,000 rows a table and 1,000,000 characters are in the text, the
+caps of a workbook's text; the cut `access_text` says how many rows are in
+it. The database keeps every row to the import ceiling and the read budget
+(`TABLE_IMPORT_MAX_ROWS`, `MANTLE_FILE_DB_CSV_MAX_MB`), as a workbook read in
+memory: past them the rows are counted, not kept, and said as
+`database_rows` or `database_size`. A read that reaches the job's time keeps
+the rows read, said as `database_time`.
+
+**Columns not read.** A column whose cells hold files or lists (an
+attachment, a list of many values, an OLE object, a binary field) is not
+read: the reader library reads such a column badly (it reads only
+attachments, and the whole hidden table again for each row), and an OLE
+object can be megabytes a cell. The columns are named in the text and in
+the database's description, and the cut `access_columns` makes the file
+`partial`.
+
+**A password.** A file encrypted with a password, and a Jet file with a
+database password (whose pages are not encrypted), are not read: the owner
+of the file shut it. The file gets no database (the word `no-rows`), a short
+text that says it is locked, and the cut `access_password` with the reason.
+To read it, a person removes the password in Access and uploads it again.
+
+A file the reader cannot read (no Access file, a broken one) is
+`document_unreadable`. Saved queries, forms, reports and macros are not
+read: only tables hold rows.
 
 ---
 

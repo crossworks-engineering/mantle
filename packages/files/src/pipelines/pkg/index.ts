@@ -16,6 +16,7 @@ export type StepModule = { step: PipelineStep };
 export type StepLoaders = Readonly<Record<string, () => Promise<StepModule>>>;
 
 export const PIPELINE_PACKAGES: StepLoaders = {
+  access: () => import('./access/step'),
   'drawing-cad': () => import('./drawing-cad/step'),
   'drawing-pdf': () => import('./drawing-pdf/step'),
   'iso-title-block': () => import('./iso-title-block/step'),

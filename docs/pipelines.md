@@ -56,6 +56,7 @@ reader is `drawing-raster`.
 | `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package          |
 | `drawing-raster`  | tif, tiff, smf, 000            | light  | none                       | package (Python) |
 | `mail`            | eml, msg, mbox                 | light  | none                       | package          |
+| `access`          | accdb, mdb                     | light  | none                       | package          |
 | `site-tags`       | after a reader                 | light  | none                       | package          |
 | `links`           | pdf, after a reader            | light  | none                       | package          |
 | `iso-title-block` | tif, tiff, smf, 000 (an Agent) | heavy  | none                       | package          |
@@ -2139,6 +2140,41 @@ Files that were uploaded before this Reader have the default text (their
 name). They are read again by a re-extract, a person's act, per box (the
 program's Q3): `pipeline_reread` keeps a file's text and so does not give
 them their text.
+
+## The Access reader
+
+The built-in Reader `access` (`packages/files/src/pipelines/pkg/access/`,
+1.0.0, 2026-11-25) reads a Microsoft Access database, `.accdb` (ACE 12 to 17) and `.mdb` (Jet 3 and Jet 4), with mdb-reader 3.2.2 (MIT, pure
+JavaScript; its browser-only crypto dependencies are not loaded on Bun), in
+the parser job `pipelineRun`. No model is asked and the parser image needs
+no new package.
+
+One step, one write: a tab per user table with rows, its columns typed from
+the Access column types (docs/files.md, 8g), the description of an Access
+database, and `text`. The core has no text route for these types, so the
+Reader's text is the file's text (see "Text and pictures from every
+Reader"). `produces.text` only: the upload makes a Table as for a workbook.
+
+The rows are kept by the file database read's keeper (`fileDbRowKeeper`, the
+`sheet` Reader's): a table is read in batches of 1,000 rows and the read
+stops at the keeper's cut, so the job holds the file, the kept rows and one
+batch. The rows past the cut are counted from the tables' row counts. The
+rows are not spilled to a rows file: a Reader that gives text shares one run
+with the text pass (readerRun), and that run has no rows file. On the bench
+(WS3) a public 11 MB `.accdb` of 30 tables and 133,792 rows read in 0.2 s
+at a 145 MB peak.
+
+Columns of attachments, lists of many values, OLE objects and binary are
+not read (the cut `access_columns`); a file with a password is not read (the
+cut `access_password`, a short text, the word `no-rows`); the text keeps
+5,000 rows a table and 1,000,000 characters (the cut `access_text`). A file
+mdb-reader cannot read throws: the job fails and the file is
+`document_unreadable`.
+
+Files uploaded before this Reader have the default text (their name), as the
+mail types had. A re-read of the Reader (`pipeline_reread`) builds their
+database with no model; their text needs a re-extract (`file_reindex`),
+which asks the model for the summary.
 
 ## The spreadsheet reader as a package
 

@@ -342,6 +342,22 @@ export const BUILTIN_PIPELINES = [
     // messages it left out, inside this deadline.
     needs: { weight: 'light', timeMs: 240_000 },
   }),
+  // A Microsoft Access database: an .accdb or an .mdb (./pkg/access). The
+  // core has no text route for them, so this Reader's text is the file's
+  // text: a summary of its tables, then their first rows (docs/pipelines.md,
+  // "The Access reader").
+  pkg({
+    id: 'access',
+    name: 'Access database',
+    description:
+      'Reads a Microsoft Access database (.accdb, .mdb): each table gives one tab, with its own columns and column types. Attachments, OLE objects and lists of many values are named, not read. A file with a password is not read.',
+    version: '1.0.0',
+    match: { ext: ['accdb', 'mdb'] },
+    produces: { text: true },
+    // The job's whole time (PARSER_JOB_TIMEOUT_MS.pipelineRun). A read that
+    // reaches it keeps the rows it read, with the cut said.
+    needs: { weight: 'light', timeMs: 240_000 },
+  }),
   // An `after` pipeline: it reads the Texts tab of a drawing's database and
   // adds the tab `Site tags`. Model-free, a package (./pkg/site-tags), one
   // parser job a run. On in every workspace, as every pipeline is.

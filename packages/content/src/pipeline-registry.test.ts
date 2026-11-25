@@ -32,6 +32,8 @@ const READER_OF: Record<string, string> = {
   eml: 'mail',
   msg: 'mail',
   mbox: 'mail',
+  accdb: 'access',
+  mdb: 'access',
 };
 
 describe('the registry of a box with the built-ins only', () => {

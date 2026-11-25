@@ -595,6 +595,10 @@ export function mimeForExt(ext: string): string {
       return 'application/vnd.ms-outlook';
     case 'mbox':
       return 'application/mbox';
+    // ── Access databases (the Reader `access`).
+    case 'accdb':
+    case 'mdb':
+      return 'application/vnd.ms-access';
     // ── Archives.
     case 'zip':
       return 'application/zip';

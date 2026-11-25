@@ -66,6 +66,7 @@
     "jszip": "^3.10.2",
     "mailparser": "3.13.0",
     "mammoth": "^1.13.0",
+    "mdb-reader": "3.2.2",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "6.4.299",
     "saxes": "^6.0.0"
