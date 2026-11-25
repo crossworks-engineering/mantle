@@ -15,6 +15,8 @@ export {
   PREVIEWABLE_MARKDOWN_EXTS,
   EXPORT_REQUIRED_EXTS,
   exportHintForExt,
+  MPP_EXTS,
+  MPP_EXPORT_HINT,
   parserRouteForExt,
   isVisionImage,
   CAD_EXTS,

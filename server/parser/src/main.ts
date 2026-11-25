@@ -594,6 +594,8 @@ async function main(): Promise<void> {
       // In the image (PARSER_PYTHON is named there): qpdf, the cutter of
       // page windows, and Tesseract with its English data, the local OCR.
       () => import('./pipeline-job').then((m) => m.ocrToolsThere()),
+      // In the image (PARSER_MPP is named there): the Project converter.
+      () => import('./mpp').then((m) => m.mppConverterThere(os.tmpdir())),
     ]);
   }
   // A job directory left by a killed server is garbage now (in the

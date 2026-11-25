@@ -63,6 +63,7 @@ import {
   sheetPictures,
 } from './cad';
 import { JobFailure } from './job-failure';
+import { mppToMspdi } from './mpp';
 import type { JobPaths } from './jobs';
 import { qpdfPage, qpdfPageCount, qpdfThere } from './pdf-split';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
@@ -93,6 +94,7 @@ export function jobHandle(p: JobPaths, jobEnd: number): StepJob {
     },
     dwfRender: (bytes, opts) => dwfRenderer(p.dir, end - Date.now())(bytes, opts),
     sheetPictures: (spec) => sheetPictures(p.input, spec, p.dir, end - Date.now()),
+    mppToMspdi: () => mppToMspdi(p.input, p.dir, end - Date.now()),
   };
 }
 

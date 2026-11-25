@@ -49,7 +49,7 @@ reader is `drawing-raster`.
 | id                | Extensions                     | Weight | Shapes it promises         | Runs             |
 | ----------------- | ------------------------------ | ------ | -------------------------- | ---------------- |
 | `sheet`           | xlsx, xls, csv                 | light  | none                       | package          |
-| `plan-mspdi`      | xml                            | light  | none                       | package          |
+| `plan-mspdi`      | xml, mpp, mpt                  | light  | none                       | package          |
 | `pdf-router`      | pdf (a router)                 | light  | none                       | package          |
 | `drawing-pdf`     | pdf                            | light  | `pdf-file-v1`              | package          |
 | `plot-dwf`        | dwf                            | heavy  | none                       | package          |
@@ -1954,6 +1954,13 @@ directly (`not_mine`, and `ok` with no tabs, which the write spot makes
 `renderMspdiText` from the package folder. The parser's `grid` job no
 longer reads XML. The rows, the stamp and the version did not change: the
 golden files of the old path (`pkg/plan-mspdi/golden/`) hold it.
+
+Version 1.1.0 (2026-11-25) added Project's native `.mpp` and `.mpt` to the
+match. The step converts an OLE2 body to MSPDI first, through the parser's
+converter (`job.mppToMspdi()`, docs/parser.md "Project plans"), then reads
+it as any plan. An XML's rows did not change (the golden files hold that);
+the raised version shows the XML plans read at 1.0.0 as stale, and a person
+reads them again if wanted.
 
 ## The DWF reader as a package
 

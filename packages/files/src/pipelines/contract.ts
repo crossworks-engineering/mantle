@@ -408,6 +408,11 @@ export type StepJob = {
     ext: string;
     pictures: readonly SheetPictureSpec[];
   }): Promise<SheetPictures | null>;
+  /** The body as MSPDI XML, when it is a Microsoft Project file (.mpp,
+   *  .mpt): converted by MPXJ in the parser (server/parser/src/mpp.ts).
+   *  Throws, with the reason a person can act on, for a file it cannot
+   *  convert (a read password, a damaged file, an unknown version). */
+  mppToMspdi(): Promise<Buffer>;
 };
 
 /** A package's entry: `pkg/<id>/step.ts` exports `step`. */

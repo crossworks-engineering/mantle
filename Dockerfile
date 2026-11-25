@@ -226,6 +226,60 @@ RUN apt-get update \
     && /tmp/build/bin/pip install --no-cache-dir "setuptools==84.0.0" "wheel==0.48.0" "cython==3.3.0" \
     && /tmp/build/bin/pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels /tmp/ezdxf
 
+# ── 1a⅝. mpxj-build: the Project reader, MPXJ as a native program ─────────
+# THE ONE PLACE OF THE PROJECT READER. Microsoft Project's .mpp and .mpt are
+# an undocumented binary; MPXJ (LGPL-2.1-or-later, Java) is the one reader of
+# them. Built here with GraalVM as a native program, mpp-to-mspdi
+# (server/parser/mpp/MppToMspdi.java), so no JVM runs in the parser image. It
+# writes MSPDI XML, which the plan reader reads (server/parser/src/mpp.ts).
+# A separate program the parser runs, never linked into our code (the LGPL
+# note in THIRD-PARTY-NOTICES.md). MPXJ's version is pinned in
+# server/parser/mpp/pom.xml, and its own pom pins what it brings; the
+# parser's health says the version (`mpxj`).
+# The jars and our class: Maven and the JDK, pinned by their multi-arch
+# index digests (amd64 and arm64).
+FROM maven:3.9.16-eclipse-temurin-25@sha256:93b8a14ea2f412782e4e842651273b4d903e35cc496284f178fbbe2d67d00976 AS mpxj-jars
+WORKDIR /mpp
+COPY server/parser/mpp/pom.xml server/parser/mpp/MppToMspdi.java ./
+RUN mvn -B -q dependency:copy-dependencies -DincludeScope=runtime -DoutputDirectory=/jars \
+    && mkdir /classes \
+    && javac --release 25 -cp '/jars/*' -d /classes MppToMspdi.java
+# The native program: GraalVM CE 25.0.2, pinned by its index digest. What
+# MPXJ looks up by name at run time (its reader of each Project version, the
+# JAXB of the XML writer) is found by GraalVM's tracing agent, run here on
+# MPXJ's own made-up samples of Project 98 to 2010 and later
+# (server/parser/mpp/samples), so an MPXJ bump needs no hand-kept list: the
+# build traces it again. -march=compatibility: any x86-64 or arm64 CPU, not
+# only the build machine's. -J-Xmx9g: the build's own heap, measured at a
+# 9.8 GB peak on amd64, within a 16 GB CI runner. The last step converts
+# every sample with the native program, so a reader the trace missed fails
+# the build, not a box: each plan gives its tasks, the password sample exit
+# 3, a cut copy and a file that is no plan exit 4.
+FROM ghcr.io/graalvm/native-image-community:25.0.2@sha256:0d936f32bb8acb5bc60c41b33e05f064d7a6aaf36b726538296c54949bd4a3c0 AS mpxj-build
+COPY --from=mpxj-jars /jars /jars
+COPY --from=mpxj-jars /classes /classes
+COPY server/parser/mpp/samples /samples
+WORKDIR /work
+RUN for f in /samples/*.mpp; do \
+      java -agentlib:native-image-agent=config-merge-dir=/trace -cp '/classes:/jars/*' \
+        MppToMspdi "$f" "/work/$(basename "$f").xml" || [ "$f" = /samples/password-mpp9.mpp ] || exit 1; \
+    done
+RUN mkdir /out \
+    && native-image -J-Xmx9g --no-fallback -march=compatibility -H:+AddAllCharsets \
+       -H:ConfigurationFileDirectories=/trace -cp '/classes:/jars/*' -o /out/mpp-to-mspdi MppToMspdi
+RUN set -e; cd /work; /out/mpp-to-mspdi --version | grep -qx 'mpxj [0-9.]*'; \
+    for f in /samples/*.mpp; do \
+      if [ "$f" = /samples/password-mpp9.mpp ]; then \
+        e=0; /out/mpp-to-mspdi -Xmx256m "$f" out.xml || e=$?; [ "$e" = 3 ]; \
+      else \
+        /out/mpp-to-mspdi -Xmx256m "$f" out.xml; grep -q '<Task>' out.xml; \
+      fi; \
+    done; \
+    head -c 20000 /samples/plan-mpp9.mpp > cut.mpp; \
+    e=0; /out/mpp-to-mspdi cut.mpp out.xml || e=$?; [ "$e" = 4 ]; \
+    echo 'no plan' > none.mpp; \
+    e=0; /out/mpp-to-mspdi none.mpp out.xml || e=$?; [ "$e" = 4 ]
+
 # ── 1a½. bun-binary: the Bun runtime, for the parser and the server ───────
 # One zip per platform, each pinned by its checksum; amd64 takes the baseline
 # build, because the plain one needs AVX2 and stops with SIGILL on a VM that
@@ -313,7 +367,12 @@ RUN /opt/cad/bin/pip install --no-cache-dir --no-deps --only-binary :all: \
     && rm -rf /root/.cache
 # No MPLCONFIGDIR here: each job gets its own, inside the job's directory
 # (server/parser/src/proc.ts jobEnv), so no job reads a cache another left.
+# The Project reader (the mpxj-build stage): one native program, which
+# needs only libc and zlib, both in the base image. PARSER_MPP names it for
+# the parser (server/parser/src/mpp.ts) and the boot smoke's check.
+COPY --from=mpxj-build /out/mpp-to-mspdi /usr/local/bin/mpp-to-mspdi
 ENV PARSER_PYTHON=/opt/cad/bin/python \
+    PARSER_MPP=/usr/local/bin/mpp-to-mspdi \
     MPLBACKEND=Agg
 
 # ── 1c. parser: the parser service (server/parser) ─────────────────────────

@@ -3,6 +3,10 @@
  * its tabs Tasks, Resources and Assignments, with the description of a plan.
  * One step, one write call. It runs in the parser job `pipelineRun`.
  *
+ * - A native Project file (`.mpp`, `.mpt`: an OLE2 body) is converted to
+ *   MSPDI by the parser first (job.mppToMspdi), then read as any plan. A
+ *   file the converter cannot take throws its reason (a read password, a
+ *   damaged file), and the job fails with it.
  * - No Project root: `not_mine`. An XML that is not a plan gets no name.
  *   (The core's early check on the first 8 KB, in auto-table.ts, rules most
  *   such files out before any read; this is the check on the bytes in hand.)
@@ -13,11 +17,12 @@
  *   sniffs as a plan but gives no plan (broken or empty) writes no tabs.
  */
 import { FILE_TABS_WRITE, type PipelineStep } from '../../contract';
-import { mspdiRootPresent, sniffMspdi } from '../../../mspdi-sniff';
+import { isOle2, mspdiRootPresent, sniffMspdi } from '../../../mspdi-sniff';
 import { parseMspdi } from './mspdi';
 
 export const step: PipelineStep = async (_req, job) => {
-  const bytes = await job.bytes();
+  const body = await job.bytes();
+  const bytes = isOle2(body) ? await job.mppToMspdi() : body;
   if (!mspdiRootPresent(bytes)) return { status: 'not_mine' };
   if (!sniffMspdi(bytes)) return { status: 'ok' };
   const plan = parseMspdi(bytes);

@@ -1348,6 +1348,45 @@ Tesseract's English data or the two Python packages do not load
 `pdfplumber` and `pypdfium2` versions. The Readers that use them are the
 built-ins' (`docs/pipelines.md`, "Page windows").
 
+## Project plans
+
+Microsoft Project's native `.mpp` (and its templates, `.mpt`) is an
+undocumented OLE2 binary that differs by Project version. Its one reader is
+MPXJ (LGPL-2.1-or-later, Java). The parser image carries it as a native
+program, `mpp-to-mspdi` (`server/parser/mpp/MppToMspdi.java`), built with
+GraalVM in the Dockerfile's `mpxj-build` stage, so no JVM runs. It writes
+MSPDI XML, the XML Project itself saves, and the one plan reader there is
+(the package `plan-mspdi`) reads that XML: the text for search (the `text`
+job) and the Tasks, Resources and Assignments tabs of the file's database
+(the step converts an OLE2 body first, `job.mppToMspdi()`). A plan saved as
+XML takes the same reader with no conversion.
+
+The converter is a child of the job, as qpdf is (`server/parser/src/mpp.ts`):
+in the job's group, with a deadline of its own (at most 120 s) and a heap
+cap of its own (`-Xmx1024m`), so one plan cannot take the parser's memory.
+Its exit code is its answer, and every refusal says what a person can do:
+
+| Exit | What                                         | The read                                                          |
+| ---- | -------------------------------------------- | ----------------------------------------------------------------- |
+| 0    | the XML is written                           | read as a plan                                                    |
+| 3    | a read password is set                       | `failed` for good: open it in Project and save it without one, or save as XML |
+| 4    | not a Project file MPXJ knows, or damaged    | `failed` for good, with the XML export (the old `needs_export` words, `MPP_EXPORT_HINT`) |
+| 1    | anything else (out of its heap: `too_large`) | `failed` for good, the converter's last line and the XML export   |
+
+A file with only a write password is read: Project opens it read-only with
+no password too. A read password is never bypassed.
+
+Measured on amd64 (2026-11-25): the program is 50.3 MB, and converts each
+made-up sample (`server/parser/mpp/samples`, Project 98 to 2019) in about
+0.02 s with a peak of about 45 MB. Its build takes about 80 s of the image
+build with 24 cores, with a build heap of 9 GB (`-J-Xmx9g`, a 10 GB peak).
+What MPXJ looks up by name at run time is found by GraalVM's tracing agent
+on the samples during the build, so an MPXJ bump needs no hand-kept list;
+the build then converts every sample with the native program and fails on
+any miss. MPXJ's version is pinned in `server/parser/mpp/pom.xml`, and
+`/healthz` says it (`mpxj`). The boot smoke fails the image when the
+converter does not answer (`mppConverterThere`).
+
 ## The PDF page reader
 
 The PDF packages (`pdf-router` and `drawing-pdf`, run by the job

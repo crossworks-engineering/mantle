@@ -51,6 +51,18 @@ export function mspdiRootPresent(head: Buffer | string): boolean {
   }
 }
 
+/**
+ * Is this an OLE2 compound file, the container of Project's native `.mpp`
+ * and `.mpt`? The plan reader converts such a body to MSPDI first
+ * (StepJob.mppToMspdi). An XML never starts with these eight bytes, so the
+ * check cannot take a plan saved as XML for a native one.
+ */
+export function isOle2(head: Buffer): boolean {
+  return (
+    head.length >= 8 && head.readUInt32BE(0) === 0xd0cf11e0 && head.readUInt32BE(4) === 0xa1b11ae1
+  );
+}
+
 const ROOT_RE = /<([A-Za-z_][\w.-]*:)?Project(\s|>|\/)/;
 const TASKS_RE = /<([A-Za-z_][\w.-]*:)?Tasks(\s|>)/;
 

@@ -228,12 +228,14 @@ describe('the built-in pipelines', () => {
     expect(afterMatches(readerFor(BUILTIN_PIPELINES, 'dxf')!, 'dxf', texts)).toBe(false);
   });
 
-  it("dbExtsOf is the nine extensions FILE_DB_EXTS held before, in the same order, then the raster reader's four, the mail reader's three and the Access reader's two", () => {
+  it("dbExtsOf is the nine extensions FILE_DB_EXTS held before, in the same order, with Project's two native types after xml, then the raster reader's four, the mail reader's three and the Access reader's two", () => {
     expect([...dbExtsOf(BUILTIN_PIPELINES)]).toEqual([
       'xlsx',
       'xls',
       'csv',
       'xml',
+      'mpp',
+      'mpt',
       'pdf',
       'dwf',
       'dwg',

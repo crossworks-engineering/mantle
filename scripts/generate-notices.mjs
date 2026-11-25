@@ -119,6 +119,33 @@ const BUNDLED_ASSETS = [
     license: '(Apache-2.0 OR BSD-3-Clause)',
     path: 'the parser image (Dockerfile), the CAD venv',
     licenseFile: 'scripts/license-texts/Apache-2.0.txt',
+  }, // The Project converter (the Dockerfile's mpxj-build stage): one native
+  // program, a separate executable the parser runs, never linked into
+  // Mantle's code. Built from these jars as they are, and the samples it is
+  // traced and checked on are MPXJ's own test data.
+  {
+    name: 'MPXJ 16.11.0 (Java, the Project converter mpp-to-mspdi in the parser image; source https://github.com/joniles/mpxj), and its test plans in server/parser/mpp/samples',
+    license: 'LGPL-2.1-or-later',
+    path: 'the parser image (Dockerfile, mpxj-build), /usr/local/bin/mpp-to-mspdi; server/parser/mpp/samples',
+    licenseFile: 'scripts/license-texts/LGPL-2.1-or-later.txt',
+  },
+  {
+    name: 'Apache POI 5.5.1, Apache Commons Codec 1.20.0, Collections 4.5.0, IO 2.21.0, Math 3.6.1, Apache Log4j API 2.24.3, SparseBitSet 1.3, RTF Parser Kit 1.16.0 (Java, in the Project converter)',
+    license: 'Apache-2.0',
+    path: 'the parser image (Dockerfile, mpxj-build), /usr/local/bin/mpp-to-mspdi',
+    licenseFile: 'scripts/license-texts/Apache-2.0.txt',
+  },
+  {
+    name: 'Jakarta XML Binding API 3.0.1, Eclipse Implementation of JAXB 3.0.2 (jaxb-runtime, jaxb-core, txw2), istack commons runtime 4.0.1, Jakarta Activation 2.0.1 (Java, in the Project converter)',
+    license: 'BSD-3-Clause (Eclipse Distribution License 1.0)',
+    path: 'the parser image (Dockerfile, mpxj-build), /usr/local/bin/mpp-to-mspdi',
+    licenseFile: 'scripts/license-texts/BSD-3-Clause.txt',
+  },
+  {
+    name: 'GraalVM Community Edition 25.0.2 native image runtime and the OpenJDK 25 class library compiled into the Project converter',
+    license: 'GPL-2.0-only WITH Classpath-exception-2.0',
+    path: 'the parser image (Dockerfile, mpxj-build), /usr/local/bin/mpp-to-mspdi',
+    licenseFile: 'scripts/license-texts/GPL-2.0-with-Classpath-exception.txt',
   },
 ];
 
@@ -276,7 +303,12 @@ function main() {
       'dynamically-loaded libraries (WebAssembly / prebuilt native binaries) without modification; ' +
       'their LGPL terms are satisfied by this notice and by shipping them as replaceable, ' +
       'independently-licensed modules. Dual-licensed components (e.g. `jszip` MIT-or-GPL, ' +
-      '`@zone-eu/mailsplit` MIT-or-EUPL) are used under their permissive (MIT) option.',
+      '`@zone-eu/mailsplit` MIT-or-EUPL) are used under their permissive (MIT) option. ' +
+      'MPXJ (LGPL-2.1-or-later) is built, unmodified, into a separate program, `mpp-to-mspdi` ' +
+      'in the parser image, which the parser runs as a child process and talks to by files ' +
+      'only; its source and our build of it (`server/parser/mpp`, the Dockerfile) are public. ' +
+      'The OpenJDK class library compiled into that program is GPL-2.0 with the Classpath ' +
+      'Exception (see Bundled assets).',
   );
   out.push('');
 

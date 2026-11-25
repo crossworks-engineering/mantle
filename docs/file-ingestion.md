@@ -65,7 +65,7 @@ per-provider size guard (`maxImageBytesFor`) for the responder's raw-pixel
 fallback, the durable index always goes through the vision worker regardless.
 
 **Table-type files everywhere** (`.xlsx`, `.xls`, `.csv`, Microsoft Project
-`.xml`, `.dwg`, `.dxf`, `.dgn`, `.dwf`) also get one read-only database during the durable
+`.mpp`, `.mpt` and `.xml`, `.dwg`, `.dxf`, `.dgn`, `.dwf`) also get one read-only database during the durable
 index pass (`maybeAutoTableSpreadsheet`), which stays with the file, whichever
 upload path it arrived on. An assistant or an app reads it with `file_sql`. See
 [File databases](#3b-file-databases) below. On a box with no
@@ -307,7 +307,8 @@ text/summary/embedding work re-runs; spend is one vision call per image _kept_.
 
 ## 3b. File databases
 
-Every table-type file uploaded in Files (xlsx, xls, csv, Microsoft Project XML,
+Every table-type file uploaded in Files (xlsx, xls, csv, Microsoft Project
+mpp, mpt and XML,
 dwg, dxf, dgn, dwf, a PDF that reads as a drawing or a ruled form, and an email:
 eml, msg, mbox, whose tab Mail holds a row a message, docs/files.md 8f, and an
 Access database: accdb, mdb, a tab a table, docs/files.md 8g) gets one

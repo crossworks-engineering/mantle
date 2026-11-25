@@ -32,6 +32,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -527,6 +528,91 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
       ).toEqual(golden(`${name}.text.json`));
     }
   }, 120_000);
+});
+
+/** The Project converter, when this run has one (PARSER_MPP: in the
+ *  parser image, or a copy of its program on a test host). Without it the
+ *  block below is skipped: the step's own routing is pinned with a fake
+ *  converter in plan-mspdi/step.test.ts. */
+const MPP_CONVERTER = process.env.PARSER_MPP;
+const mppThere = !!MPP_CONVERTER && existsSync(MPP_CONVERTER);
+
+describe.skipIf(!mppThere)('plan-mspdi on a native Project file (a real converter)', () => {
+  const SAMPLES = path.join(HERE, '..', '..', '..', 'server', 'parser', 'mpp', 'samples');
+  const sample = (name: string) => readFileSync(path.join(SAMPLES, name));
+  const plans = readdirSync(SAMPLES)
+    .filter((n) => n.startsWith('plan-') && n.endsWith('.mpp'))
+    .sort();
+  /** The rows of one tab of a file database, read back from the file. */
+  const rowsIn = (abs: string, tab: string, column: string): unknown[] => {
+    const out: unknown[] = [];
+    scanTabColumns(abs, tab, [column], { maxRows: 10_000, cellMaxChars: 5000 }, (r) => {
+      out.push(r[column]);
+      return true;
+    });
+    return out;
+  };
+
+  it('each made-up plan, Project 98 to 2010, gives Tasks, Resources and Assignments in its file database', async () => {
+    expect(plans).toHaveLength(4);
+    for (const name of plans) {
+      const { out, jobs } = await jobsOf(() => parseFileSheets(sample(name), 'mpp', { pipelines }));
+      expect(jobs, name).toEqual(['/pipeline/run']);
+      if (out.kind !== 'sheets') throw new Error(`${name}: no sheets: ${JSON.stringify(out)}`);
+      expect(
+        out.sheets.map((t) => t.name),
+        name,
+      ).toEqual(['Tasks', 'Resources', 'Assignments']);
+      expect(out.description, name).toMatch(/^Microsoft Project plan\./);
+      // Written as a file database, and read back from the file.
+      const abs = path.join(workdir, `${name}.sqlite`);
+      writeFileDatabaseDoc(abs, ensureWorkbookDoc({ tabs: tabsOfSheets(out.sheets) }), {
+        fileId: '00000000-0000-4000-8000-000000000001',
+        ownerId: '00000000-0000-4000-8000-000000000002',
+      });
+      const counts = {
+        tasks: rowsIn(abs, 'Tasks', 'Name').length,
+        resources: rowsIn(abs, 'Resources', 'Name').length,
+        assignments: rowsIn(abs, 'Assignments', 'Task').length,
+      };
+      console.log(`mpp ${name}: ${sample(name).length} bytes, ${JSON.stringify(counts)}`);
+      for (const [tab, n] of Object.entries(counts)) expect(n, `${name} ${tab}`).toBeGreaterThan(0);
+      expect(counts, name).toEqual({
+        tasks: out.sheets[0]!.rows.length,
+        resources: out.sheets[1]!.rows.length,
+        assignments: out.sheets[2]!.rows.length,
+      });
+    }
+  }, 120_000);
+
+  it('the text job reads the plan, not the bytes', async () => {
+    for (const name of plans) {
+      const text = await parserText(sample(name), 'mpp');
+      expect(text, name).toMatch(/^Project plan: /);
+      expect(text, name).toMatch(/Task 1/);
+    }
+  }, 120_000);
+
+  it('a password protected plan is refused for good, with what to do', async () => {
+    const bytes = sample('password-mpp9.mpp');
+    const err = await failure(parserText(bytes, 'mpp'));
+    expect(err.code).toBe('failed');
+    expect(err.retryable).toBe(false);
+    expect(err.message).toMatch(/password protected/);
+    expect(await parseFileSheets(bytes, 'mpp', { pipelines })).toEqual({
+      kind: 'none',
+      word: 'unreadable',
+    });
+  }, 60_000);
+
+  it('a cut plan and a file that is no plan are refused for good, naming the XML export', async () => {
+    for (const bytes of [sample('plan-mpp9.mpp').subarray(0, 20_000), Buffer.from('no plan')]) {
+      const err = await failure(parserText(bytes, 'mpp'));
+      expect(err.code).toBe('failed');
+      expect(err.retryable).toBe(false);
+      expect(err.message).toMatch(/Save As and choose XML/);
+    }
+  }, 60_000);
 });
 
 describe('plot-dwf through a real parser job (the move MV4)', () => {

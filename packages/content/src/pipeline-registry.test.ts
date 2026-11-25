@@ -20,6 +20,8 @@ const READER_OF: Record<string, string> = {
   xls: 'sheet',
   csv: 'sheet',
   xml: 'plan-mspdi',
+  mpp: 'plan-mspdi',
+  mpt: 'plan-mspdi',
   pdf: 'drawing-pdf',
   dwf: 'plot-dwf',
   dwg: 'drawing-cad',

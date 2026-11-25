@@ -34,11 +34,17 @@ async function* linesOf(text: string): AsyncGenerator<string> {
 }
 
 /** Fakes of the native helpers a test may give (the CAD tier's reply, the
- *  PDF eye and pictures). */
+ *  PDF eye and pictures, the Project converter). */
 export type StepHelpers = Partial<
   Pick<
     StepJob,
-    'cadRender' | 'pdfEye' | 'pdfPictures' | 'sheetPictures' | 'pdfPageCount' | 'pdfPage'
+    | 'cadRender'
+    | 'pdfEye'
+    | 'pdfPictures'
+    | 'sheetPictures'
+    | 'pdfPageCount'
+    | 'pdfPage'
+    | 'mppToMspdi'
   >
 >;
 
@@ -66,6 +72,8 @@ export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers
     cadRender: helpers.cadRender ?? none('cadRender'),
     dwfRender: none('dwfRender'),
     sheetPictures: none('sheetPictures'),
+    // No converter in a test: a test gives the XML it stands for.
+    mppToMspdi: none('mppToMspdi'),
     ...helpers,
   };
 }

@@ -20,6 +20,7 @@ import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
 import { MAX_EMBEDDED_IMAGES_CEILING } from '@mantle/files/embedded-images';
 import type { ReadCuts } from '@mantle/files/read-cut';
 import { withReadCutSink } from '@mantle/files/read-cut-sink';
+import { MPP_EXTS } from '@mantle/files/slug';
 import { dwfRenderer, dwgCrop, extractAudio, pdfEye, pdfPagePieces } from './cad';
 import { errorMessage } from '@mantle/std';
 import { JobFailure } from './job-failure';
@@ -87,8 +88,15 @@ export async function runJob(
       // What a reader left out goes back with the text (`cuts`: the parser
       // client says it again in the extract's sink; docs/files.md, "Read in
       // part").
+      const ext = str(opts.ext, 'ext');
+      // A Microsoft Project file is converted to the XML Project saves, then
+      // read as that XML: the one plan reader (./mpp.ts).
+      const mpp = MPP_EXTS.has(ext.toLowerCase());
+      const body = mpp
+        ? await (await import('./mpp')).mppToMspdi(p.input, p.dir, jobEndOf(timeoutMs) - Date.now())
+        : await fs.readFile(p.input);
       const { value: text, cuts } = await withReadCutSink(async () =>
-        readDocumentText(await fs.readFile(p.input), str(opts.ext, 'ext')),
+        readDocumentText(body, mpp ? 'xml' : ext),
       );
       return writeJson(p.outJson, { ok: true, text, ...cutsField(cuts) });
     }

@@ -18,6 +18,8 @@ import {
   EXPORT_REQUIRED_EXTS,
   folderSlugOf,
   exportHintForExt,
+  MPP_EXPORT_HINT,
+  MPP_EXTS,
   extOf,
   INGESTABLE_EXTS,
   isVisionImage,
@@ -328,21 +330,22 @@ describe('parserRouteForExt', () => {
 });
 
 describe('exportHintForExt', () => {
-  it('names Microsoft Project plans and the export that fixes them', () => {
-    const hint = exportHintForExt('mpp');
-    expect(hint).toBeDefined();
-    // The value of this entry is entirely in what it tells the user to DO —
-    // a refusal that doesn't name the recovery move is the thing it replaced.
-    expect(hint).toMatch(/Save As/i);
-    expect(hint).toMatch(/XML/);
+  it('names the export for nothing Project: native plans are read now', () => {
+    // .mpp and .mpt are converted to MSPDI in the parser (route `mpp`), so
+    // they leave the export list. The words stay for a file the converter
+    // cannot take (MPP_EXPORT_HINT).
+    for (const ext of ['mpp', 'mpt', 'MPP']) expect(exportHintForExt(ext)).toBeUndefined();
+    expect(MPP_EXPORT_HINT).toMatch(/Save As/);
+    expect(MPP_EXPORT_HINT).toMatch(/XML/);
   });
 
-  it('covers Project templates too', () => {
-    expect(exportHintForExt('mpt')).toMatch(/XML/);
-  });
-
-  it('is case-insensitive — Windows hands us .MPP', () => {
-    expect(exportHintForExt('MPP')).toBe(exportHintForExt('mpp'));
+  it('routes Project plans and templates to the converter, as ingestable', () => {
+    for (const ext of ['mpp', 'mpt']) {
+      expect(parserRouteForExt(ext)).toBe('mpp');
+      expect(INGESTABLE_EXTS.has(ext)).toBe(true);
+      expect(MPP_EXTS.has(ext)).toBe(true);
+      expect(mimeForExt(ext)).toBe('application/vnd.ms-project');
+    }
   });
 
   it('stays silent for everything the parser ladder actually handles', () => {

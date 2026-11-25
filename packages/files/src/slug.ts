@@ -227,6 +227,14 @@ export const LEGACY_SHEET_EXTS = new Set<string>(['xls', 'xlsb']);
  *  MSPDI export is recognised by content before the generic read.
  *  `.html`/`.htm` are saved web pages, the same shape. */
 export const MARKUP_EXTS = new Set<string>(['html', 'htm', 'xml']);
+/**
+ * Microsoft Project's native files: plans (`.mpp`) and templates (`.mpt`),
+ * an undocumented OLE2 binary that differs by Project version. The parser
+ * converts one to MSPDI XML, the XML Project saves, with MPXJ built as a
+ * native program (server/parser/src/mpp.ts), and the plan reader reads that
+ * XML (the package plan-mspdi). One reader of plans, for both.
+ */
+export const MPP_EXTS: ReadonlySet<string> = new Set(['mpp', 'mpt']);
 /** The drawings the parser's CAD tier reads: AutoCAD DWG, AutoCAD DXF (the
  *  DWG interchange twin, deliberately NOT in TEXT_EXTS even though ASCII DXF
  *  is text: raw group codes would index as garbage) and MicroStation DGN (V8,
@@ -330,6 +338,9 @@ export const INGESTABLE_EXTS = new Set<string>([
   ...CAD_EXTS,
   ...ANYDOC_EXTS,
   ...MARKUP_EXTS,
+  // Microsoft Project plans and templates: converted to MSPDI XML, then
+  // read as a plan (MPP_EXTS).
+  ...MPP_EXTS,
 ]);
 
 /**
@@ -372,24 +383,14 @@ export const MEDIA_EXTS = new Set<string>([
  * which looks, from the outside, exactly like a successful ingest. The user
  * believes their plan is in the brain; it isn't, and nothing ever said so.
  *
- * Microsoft Project is the case that prompted this. `.mpp` is a proprietary,
- * undocumented, version-varying binary OLE2 format: there is no JavaScript
- * reader for it, and reading one natively means MPXJ, which is Java and would
- * cost this stack a JVM sidecar. Since a plan has to leave Project as an export
- * either way, the honest move is to say so at ingest time and name the export.
+ * Microsoft Project prompted this list. Its native `.mpp`/`.mpt` are read
+ * now (MPP_EXTS above), and its words for a plan the converter cannot take
+ * live on as MPP_EXPORT_HINT.
  *
  * Keep the hints in the house error style — state the recovery move, not just
  * the refusal (see packages/tools/CLAUDE.md).
  */
 export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
-  [
-    'mpp',
-    "Microsoft Project plans are a proprietary binary format Mantle can't read. In Project use File → Save As and choose XML (*.xml) for the full plan — tasks, resources, assignments and dependencies — then upload that. Exporting the task list as CSV or XLSX also works and becomes a queryable Table, but loses the outline hierarchy and links.",
-  ],
-  [
-    'mpt',
-    "Microsoft Project templates are a proprietary binary format Mantle can't read. Open it in Project and use File → Save As → XML (*.xml), then upload that instead.",
-  ],
   // Old binary Visio (2003-2010). Apache Tika read its shape text; since the
   // parser service replaced Tika there is no reader for it, so the drawing is
   // findable by its name only until one is added. Saving as .vsdx is a menu
@@ -407,6 +408,11 @@ export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
     'DWFx drawings use a different container than the classic DWF Mantle can read. In AutoCAD plot/publish again choosing the "DWF" (not DWFx) format and upload that — or upload the source DWG or DXF directly, both ingest.',
   ],
 ]);
+
+/** The way out for a Project file the converter cannot take (a version it
+ *  does not know, a damaged file): Project's own XML export, read in full. */
+export const MPP_EXPORT_HINT =
+  'In Microsoft Project use File, Save As and choose XML (*.xml), then upload that: tasks, resources, assignments and links are read in full.';
 
 /** The recovery hint for a format that needs exporting, or undefined when the
  *  extension isn't one of them. */
@@ -434,6 +440,9 @@ export type ParserRoute =
   | 'markup'
   /** Visio .vsdx: shape text (./vsdx.ts). */
   | 'vsdx'
+  /** Microsoft Project .mpp/.mpt: converted to MSPDI XML in the parser
+   *  (server/parser/src/mpp.ts), then read as the plan it is. */
+  | 'mpp'
   | 'utf8'
   /** Autodesk DWF container: sheets/layers/labels digest (./pipelines/pkg/plot-dwf/dwf.ts). */
   | 'dwf'
@@ -451,6 +460,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'dwf') return 'dwf';
   if (isCadExt(ext)) return ext;
   if (ext === 'vsdx') return 'vsdx';
+  if (MPP_EXTS.has(ext)) return 'mpp';
   if (TEXT_EXTS.has(ext) || CODE_EXTS.has(ext)) return 'utf8';
   if (ANYDOC_EXTS.has(ext)) return 'anydoc';
   if (MARKUP_EXTS.has(ext)) return 'markup';
@@ -542,6 +552,9 @@ export function mimeForExt(ext: string): string {
       return 'application/epub+zip';
     case 'vsdx':
       return 'application/vnd.ms-visio.drawing';
+    case 'mpp':
+    case 'mpt':
+      return 'application/vnd.ms-project';
     case 'vsd':
       return 'application/vnd.visio';
     case 'dwf':

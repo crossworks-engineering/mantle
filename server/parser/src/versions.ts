@@ -5,8 +5,10 @@
  * deadline, never throwing.
  */
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import { env } from '@mantle/config';
 import { CAD_DIR } from './cad';
+import { mppConverterVersion } from './mpp';
 import { runGroup } from './proc';
 
 let probed: Promise<Record<string, string>> | null = null;
@@ -60,6 +62,9 @@ async function probe(): Promise<Record<string, string>> {
   const ts = await runGroup('tesseract', ['--version'], { timeoutMs: 10_000, stdout: true });
   const tsv = ts.code === 0 ? ts.stdout.split('\n')[0]?.split(/\s+/)[1] : undefined;
   if (tsv) out.tesseract = tsv;
+  // The Project converter (./mpp.ts): "mpxj 16.11.0" -> "16.11.0".
+  const mpxj = await mppConverterVersion(os.tmpdir());
+  if (mpxj) out.mpxj = mpxj.split(' ')[1] ?? '';
   return out;
 }
 

@@ -143,9 +143,11 @@ export const BUILTIN_PIPELINES = [
     id: 'plan-mspdi',
     name: 'Microsoft Project plan',
     description:
-      'Reads a Microsoft Project plan saved as XML and writes its tasks, resources and assignments as tabs.',
-    version: '1.0.0',
-    match: { ext: ['xml'] },
+      'Reads a Microsoft Project plan, native (.mpp, .mpt) or saved as XML, and writes its tasks, resources and assignments as tabs.',
+    // 1.1.0 (2026-11-25): native .mpp and .mpt too, converted to MSPDI XML
+    // in the parser (server/parser/src/mpp.ts), then read as before.
+    version: '1.1.0',
+    match: { ext: ['xml', 'mpp', 'mpt'] },
     produces: {},
     // The deadline of the job it ran in before the move (the grid job): the
     // parser server kills its pipelineRun job at this time.

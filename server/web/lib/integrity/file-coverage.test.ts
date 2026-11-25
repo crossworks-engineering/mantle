@@ -59,7 +59,8 @@ describe('routeOfExt', () => {
     expect(routeOfExt('dwg', DB_EXTS)).toBe('parser');
     expect(routeOfExt('png', DB_EXTS)).toBe('vision');
     expect(routeOfExt('mp4', DB_EXTS)).toBe('media');
-    expect(routeOfExt('mpp', DB_EXTS)).toBe('export');
+    expect(routeOfExt('mpp', DB_EXTS)).toBe('parser');
+    expect(routeOfExt('vsd', DB_EXTS)).toBe('export');
     expect(routeOfExt('eml', DB_EXTS)).toBe('none');
     // Code, config and logs are read as text since 2026-11-25 (CODE_EXTS).
     expect(routeOfExt('log', DB_EXTS)).toBe('text');

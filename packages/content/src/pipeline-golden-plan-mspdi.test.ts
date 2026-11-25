@@ -121,7 +121,10 @@ describe('plan-mspdi: the step gives what the old path gave', () => {
     expect(oddCells(golden('odd-number.xml'))).toEqual({ rows: 2, hours: [8, null], work: [8, 4] });
   });
 
-  it('the stamp is the same: the id and the version did not move', async () => {
+  // The version moved once since the move, on purpose: 1.1.0 (2026-11-25)
+  // added the native .mpp and .mpt to the match. An XML's rows did not
+  // change (the golden files below hold that).
+  it('the stamp: the id did not move, and the version is 1.1.0 since .mpp joined the match', async () => {
     const parsed = await readInProcess(fixture('traps.xml'));
     if (parsed.kind !== 'sheets') throw new Error('no sheets');
     expect(
@@ -131,7 +134,7 @@ describe('plan-mspdi: the step gives what the old path gave', () => {
       ),
     ).toEqual({
       pipeline_id: 'plan-mspdi',
-      pipeline_version: '1.0.0',
+      pipeline_version: '1.1.0',
       pipeline_api: '1',
       shapes: '',
     });
