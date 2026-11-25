@@ -34,6 +34,15 @@ overrides:
   # ^8.22.0 while the rest of the tree had settled on 8.20.0; this pins both to one.
   pg: 8.22.0
 
+  # Held for the Bun lane (2026-11-25). `pnpm test` runs vitest on Bun, and
+  # vitest 5.1.1's forks pool calls `child.channel?.unref()`, which Bun does not
+  # have (oven-sh/bun#33593, open): Bun 1.4.5 then starts no test at all. 5.1.x
+  # fixes no advisory that 5.0.5 has. vitest pins @vitest/mocker and
+  # @vitest/spy exactly, so they follow. Lift this when Bun gives the channel
+  # `unref` or vitest guards the call; prove it with `pnpm test` on the
+  # `.bun-version` Bun. Dependabot ignores vitest for the same reason.
+  vitest: 5.0.5
+
   # ── Security backstops (Dependabot, 2026-08) ─────────────────────────────
   # Parents that pin a vulnerable version exactly, or to a major with no
   # patched release. Scoped to the pinning parent so the rest of the tree

@@ -12,6 +12,11 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Held at 5.0.5 for the Bun lane: see the `vitest` override in
+      # pnpm-workspace.yaml for why and when to lift it.
+      - dependency-name: vitest
+      - dependency-name: '@vitest/*'
   - package-ecosystem: github-actions
     directory: /
     schedule:
