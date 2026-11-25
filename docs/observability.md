@@ -266,7 +266,11 @@ reason: 'facts_deferred', why, deferred, processed, at }` until the last
   path AND the object isn't in storage (a metadata-only node, e.g. an email
   attachment indexed from headers whose body was never fetched). Distinct from
   `no_text_layer` (we HAVE the file but it's an unreadable scan): the fix is to
-  re-fetch the source, not to OCR. `details` carries the sha256.
+  re-fetch the source, not to OCR. `details` carries the sha256. Any type
+  with a reader, not only a PDF: a Word file with no bytes once indexed its
+  own name as the document and was stamped read (2026-11-25, a row the files
+  watcher made at a folder's old path after a move and a rename; the watcher
+  now makes no row for a file gone from disk by its insert).
 - `unsupported_media`, an audio/video file (by extension OR mime). Stored and
   playable but no parser reads it; transcription is only ever the explicit
   `video_ingest` tool, never this sweep (cost-safety). Hint points at

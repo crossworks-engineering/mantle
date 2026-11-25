@@ -72,6 +72,7 @@ import {
   trailForCaller,
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
+import { log } from '@mantle/tracing';
 import { assertAppRunFileWrite } from '../app-run-write';
 import { removeFileDbNamesAfterCommit } from '../file-dbs';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
@@ -1279,6 +1280,14 @@ export async function deleteFileById(args: {
   return { ok: true };
 }
 
+/** Whether a file is at this path now. */
+async function isOnDisk(absPath: string): Promise<boolean> {
+  return fsp.stat(absPath).then(
+    (s) => s.isFile(),
+    () => false,
+  );
+}
+
 /**
  * Sync a file the watcher just observed on disk into the DB without
  * re-writing it. Differs from `upsertFile` in two ways:
@@ -1301,6 +1310,9 @@ export async function syncFileFromDisk(args: {
   /** The file read whole (a small file), or its sha256 and size hashed as
    *  a stream (a large one, never held in memory: the watcher). */
   bytes: Buffer | { sha256: string; size: number };
+  /** Where the watcher saw the file. A new row is made only while the file
+   *  is still there (looked at after the folder's heads): 'skipped' if not. */
+  diskPath?: string;
 }): Promise<{ status: 'noop' | 'inserted' | 'updated' | 'skipped'; nodeId: string | null }> {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`syncFileFromDisk: parent '${args.parentPath}' is outside the files root`);
@@ -1447,29 +1459,46 @@ export async function syncFileFromDisk(args: {
   }
 
   // Heads first: the folder it lands in, shared.
-  const [inserted] = await withDeadlockRetry(() =>
-    withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], (tx) =>
-      tx
-        .insert(nodes)
-        .values({
-          ownerId: args.ownerId,
-          type: 'file',
-          title: filename,
-          slug: filename,
-          path: args.parentPath,
-          data: newData,
-          tags: ['file'],
-        })
-        // A file is unique per (owner, folder, filename): migration 0184. The one
-        // clash left is a race: an upload wrote these bytes and inserted its node
-        // between our lookup and this insert. That node IS this file; no-op.
-        .onConflictDoNothing({
-          target: [nodes.ownerId, nodes.path, nodes.slug],
-          where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
-        })
-        .returning({ id: nodes.id }),
-    ),
+  const insertedRows = await withDeadlockRetry(() =>
+    withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], async (tx) => {
+      // The file is still on disk here, looked at after the heads: a move
+      // or rename of it or its folder that held them has placed its disk
+      // and committed, and its rows went with it. The watcher read these
+      // bytes before that; a row made now would sit at a path with no
+      // bytes, and its extract would index the file's name as the document
+      // (an agent moved a folder, then renamed it: every file in it twice,
+      // once with no bytes).
+      if (args.diskPath && !(await isOnDisk(args.diskPath))) return null;
+      return (
+        tx
+          .insert(nodes)
+          .values({
+            ownerId: args.ownerId,
+            type: 'file',
+            title: filename,
+            slug: filename,
+            path: args.parentPath,
+            data: newData,
+            tags: ['file'],
+          })
+          // A file is unique per (owner, folder, filename): migration 0184. The one
+          // clash left is a race: an upload wrote these bytes and inserted its node
+          // between our lookup and this insert. That node IS this file; no-op.
+          .onConflictDoNothing({
+            target: [nodes.ownerId, nodes.path, nodes.slug],
+            where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+          })
+          .returning({ id: nodes.id })
+      );
+    }),
   );
+  if (insertedRows === null) {
+    log('files').warn(
+      `SKIPPED ${args.parentPath}/${filename}: gone from disk (moved or renamed) after the watcher read it; no node made at the old path`,
+    );
+    return { status: 'skipped', nodeId: null };
+  }
+  const [inserted] = insertedRows;
   if (!inserted) {
     const [winner] = await db
       .select({ id: nodes.id })

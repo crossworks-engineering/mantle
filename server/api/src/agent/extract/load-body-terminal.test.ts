@@ -235,10 +235,47 @@ describe('loadExtractableBody: terminal skips', () => {
   });
 
   it('a type WITH a reader whose bytes are not that type keeps the no_parser skip', async () => {
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.from('PK\u0003\u0004 not a drawing at all'),
+      filename: 'renamed-office-file.dwg',
+      ext: 'dwg',
+      mime: 'image/vnd.dwg',
+    });
     const res = await run(fileNode('renamed-office-file.dwg', 'image/vnd.dwg'));
     expect(res.ok).toBe(false);
     expect(terminal()).toBe('no_parser');
     expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+  });
+
+  // One box, 2026-11-25: 75 Word files "read OK" with their own name as the
+  // whole text. Their rows sat at a path their bytes had moved away from.
+  it.each([
+    ['maintenance-procedure-for-pumps.doc', 'application/msword'],
+    [
+      'turnaround-scope-review-notes.docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ],
+    ['unit-overview-slides-2019.pptx', 'application/vnd.ms-powerpoint'],
+  ])('a %s with no bytes is bytes_unavailable, never its name as the text', async (name, mime) => {
+    const res = await run(fileNode(name, mime, { size_bytes: 180_000 }));
+    expect(res.ok).toBe(false);
+    expect(terminal()).toBe('bytes_unavailable');
+    expect(h.parseDocumentBytes).not.toHaveBeenCalled();
+  });
+
+  it('a .doc whose bytes are there is read as before', async () => {
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.from('fake word bytes'),
+      filename: 'maintenance-procedure-for-pumps.doc',
+      ext: 'doc',
+      mime: 'application/msword',
+    });
+    h.parseDocumentBytes.mockResolvedValueOnce(
+      'Isolate the pump, drain the casing, then check the seal faces for wear.',
+    );
+    const res = await run(fileNode('maintenance-procedure-for-pumps.doc', 'application/msword'));
+    expect(res.ok && res.rawBody).toContain('check the seal faces');
+    expect(h.recordTerminalSkip).not.toHaveBeenCalled();
   });
 
   describe('a reader fails on bytes of its format', () => {

@@ -95,6 +95,9 @@ async function handleUpsert(absPath: string): Promise<void> {
       parentPath: loc.parentPath,
       filename: loc.filename,
       bytes,
+      // Moved or renamed away while this read (a folder move, then a
+      // rename): no row at the old path.
+      diskPath: absPath,
     });
     // 'skipped' was logged by syncFileFromDisk itself.
     if (res.status === 'inserted' || res.status === 'updated') {

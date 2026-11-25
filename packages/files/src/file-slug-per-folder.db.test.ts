@@ -8,7 +8,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/file-slug-per-folder.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -120,6 +120,38 @@ describe.skipIf(!URL)('file slugs are unique per folder', () => {
       bytes: Buffer.from('bytes'),
     });
     expect(res).toEqual({ status: 'noop', nodeId: winner!.id });
+  });
+
+  // One box, 2026-11-25: an agent moved a folder, then renamed it. The
+  // watcher read each file at the moved path, and made its row after the
+  // rename: a second row per file, at a path with no bytes, whose extract
+  // indexed the file's name as the document.
+  it('the watcher makes no row for a file gone from disk by the time it inserts', async () => {
+    const { diskPathForFile } = await import('./paths');
+    const gone = 'moved-away-procedure.doc';
+    const res = await ops.syncFileFromDisk({
+      ownerId: owner,
+      parentPath: sub,
+      filename: gone,
+      bytes: Buffer.from('old word bytes'),
+      diskPath: diskPathForFile(sub, gone)!,
+    });
+    expect(res).toEqual({ status: 'skipped', nodeId: null });
+    expect(await fileRows(gone)).toEqual([]);
+
+    const here = 'still-here-procedure.doc';
+    const at = diskPathForFile(sub, here)!;
+    await mkdir(path.dirname(at), { recursive: true });
+    await writeFile(at, 'word bytes');
+    const made = await ops.syncFileFromDisk({
+      ownerId: owner,
+      parentPath: sub,
+      filename: here,
+      bytes: Buffer.from('word bytes'),
+      diskPath: at,
+    });
+    expect(made.status).toBe('inserted');
+    expect((await fileRows(here)).map((r) => r.path)).toEqual([sub]);
   });
 
   it('other node types keep the owner-wide slug rule', async () => {

@@ -1074,6 +1074,39 @@ export async function loadExtractableBody(
     if (native?.text && native.text.trim().length >= 20) rawBody = native.text;
   }
 
+  // No bytes, for a type with a reader: readNodeBodyRaw fell back to the
+  // title, which would index the file's NAME as the document and stamp it
+  // read (a row left at a path its bytes moved away from). The honest skip
+  // PDFs get above, for every type with a reader. A type no reader takes
+  // gets its default text below, which says the bytes are missing.
+  if (
+    node.type === 'file' &&
+    rawBody.trim() === node.title.trim() &&
+    parserRouteForExt(fileExt) !== 'none' &&
+    !(await loadFileBytes(node))
+  ) {
+    await recordTerminalSkip(
+      {
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'bytes_unavailable',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          extension: fileExt,
+          sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
+          hint: "The file's bytes are not at its path on disk nor in object storage (moved or removed outside the brain?). Put the file back, or upload it again, then read it again.",
+        },
+      },
+      node,
+    );
+    return { ok: false };
+  }
+
   // Generalised hollow-body guard. readNodeBodyRaw falls back to the TITLE for
   // any file no parser handles, and the ≥20-char check below was the only gate
   // — so a file with a long descriptive name indexed its own filename as the
