@@ -91,7 +91,9 @@ export function missesDatabase(
  *  the SQL: the read state's own (extractionOf, readCutsOfFile), the read's
  *  stamp (`read_by`), the checksum, and the name and type of the file.
  *  Never its text. */
-export const fileReadStateKeys = () => sql<Record<string, unknown>>`jsonb_strip_nulls(jsonb_build_object(
+export const fileReadStateKeys = () => sql<
+  Record<string, unknown>
+>`jsonb_strip_nulls(jsonb_build_object(
   'filename', ${nodes.data}->'filename',
   'mimeType', ${nodes.data}->'mimeType',
   'sha256', ${nodes.data}->'sha256',
