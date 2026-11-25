@@ -14,6 +14,7 @@ import {
   DOCUMENTS_MAX_INPUT_BYTES,
   DOCUMENTS_MAX_TOTAL_BYTES,
   checkMarkdownWrapper,
+  engineName,
   resolveInputs,
   type InputDeps,
 } from './inputs';
@@ -333,7 +334,7 @@ describe('html and markdown', () => {
 });
 
 describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
-  const NAMES = ['file.md', 'notes.md'];
+  const NAMES = ['file.md', 'notes.md', 'Report {final}.md'];
   const ALLOWED = [
     '<body>{{ toHTML "file.md" }}</body>',
     '<body>{{toHTML "file.md"}}</body>',
@@ -341,6 +342,7 @@ describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
     '<body>{{-\ttoHTML\n"file.md"\r\n-}}</body>',
     '<body>{{ toHTML `file.md` }}</body>',
     '<h1>A}}</h1>{{ toHTML "file.md" }}<hr>{{ toHTML "notes.md" }}',
+    '{{ toHTML "Report {final}.md" }}',
   ];
   const REFUSED: Record<string, string> = {
     'a range over an integer': '{{range 100000}}0123456789abcdef{{end}}{{ toHTML "file.md" }}',
@@ -353,7 +355,6 @@ describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
     'a variable': '{{ $x := toHTML "file.md" }}{{ $x }}',
     'an extra argument': '{{ toHTML "file.md" "notes.md" }}',
     'a third brace': '{{{ toHTML "file.md" }}',
-    'a brace in the name': '{{ toHTML "file.md{{range 9}}" }}',
     'an escape in the name': '{{ toHTML "file\\x2emd" }}',
     'a trim marker with no space': '{{-toHTML "file.md"}}',
     'a literal {{ in a script': '<script>if (a) {{ b() }}</script>{{ toHTML "file.md" }}',
@@ -382,6 +383,13 @@ describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
     expect(() => checkMarkdownWrapper('<body>no place</body>', NAMES)).toThrow(
       /must place the markdown/,
     );
+    // Braces inside a quoted name are text to Go's lexer: no action opens there.
+    expect(() => checkMarkdownWrapper('{{ toHTML "file.md{{range 9}}" }}', NAMES)).toThrow(
+      /names no \.md file sent/,
+    );
+    expect(() => checkMarkdownWrapper('{{range 9}}{{end}}', NAMES)).toThrow(
+      /belongs in the \.md file, which is not a template/,
+    );
   });
 
   it("guards the caller's wrapper and Mantle's own, whose file names go in it", async () => {
@@ -398,14 +406,107 @@ describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
       readFile: async () => ({ filename, bytes: Buffer.from('# x') }),
     });
     const id = ['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'];
-    for (const filename of [
-      'a" }}{{range 1000000000000000}}{{end}}{{ toHTML "b.md',
-      '{{range 1000000000000000}}{{end}}.md',
-    ]) {
+    for (const filename of ['a" }}{{range 9}}{{end}}{{ toHTML "b.md', 'a\\b.md']) {
       await expect(
         resolveInputs(r('chromium/convert/markdown'), { file_ids: id }, caller, named(filename)),
-      ).rejects.toThrow(/html \(the markdown wrapper\)/);
+      ).rejects.toThrow(/^rename the file .*a double quote, a backslash or a line break/);
     }
+    // Braces and markup in a name are fine: the title is escaped, and in the
+    // toHTML string they are text.
+    const out = await resolveInputs(
+      r('chromium/convert/markdown'),
+      { file_ids: id },
+      caller,
+      named('{{range 1000000000000000}}{{end}} <b>&.md'),
+    );
+    const wrapper = out.parts.find((p) => p.filename === 'index.html')!.bytes.toString();
+    expect(wrapper).toContain(
+      '<title>&#123;&#123;range 1000000000000000&#125;&#125;&#123;&#123;end&#125;&#125; &#60;b&#62;&#38;</title>',
+    );
+    expect(wrapper).toContain('{{ toHTML "{{range 1000000000000000}}{{end}} <b>&.md" }}');
+  });
+});
+
+describe('one flat directory: no two inputs the engine would confuse', () => {
+  const named = (files: Record<string, string>): InputDeps => ({
+    ...deps,
+    readFile: async (_o, id) => {
+      const filename = files[id];
+      return filename ? { filename, bytes: Buffer.from('x') } : null;
+    },
+  });
+  const ID = (n: number) =>
+    `${String(n).repeat(8)}-${String(n).repeat(4)}-4${String(n).repeat(3)}-8${String(n).repeat(3)}-${String(n).repeat(12)}`;
+  const md = r('chromium/convert/markdown');
+
+  it('an extra file named index.html cannot sit beside the markdown wrapper', async () => {
+    const deps2 = named({ [ID(5)]: 'index.html' });
+    for (const extra of [
+      { embed_file_ids: [ID(5)] },
+      { watermark_file_id: ID(5) },
+      { stamp_file_id: ID(5) },
+      { facturx_file_id: ID(5) },
+    ]) {
+      await expect(
+        resolveInputs(md, { markdown: '# hi', ...extra }, caller, deps2),
+      ).rejects.toThrow(/two inputs are both named index\.html as the engine stores them/);
+    }
+  });
+
+  it('names the engine stores alike are one name: path, extension case, Unicode form, control characters', async () => {
+    const twins: Array<[string, string]> = [
+      ['a.pdf', 'folder/a.pdf'],
+      ['a.pdf', 'c:\\x\\a.pdf'],
+      ['a.pdf', 'a.PDF'],
+      ['caf\u00e9.pdf', 'cafe\u0301.pdf'],
+      ['a.pdf', 'a\u0000.pdf'],
+      ['a.pdf', '\u001fa\u007f.pdf'],
+    ];
+    for (const [one, two] of twins) {
+      await expect(
+        resolveInputs(
+          r('pdfengines/merge'),
+          { file_ids: [ID(5), ID(6)] },
+          caller,
+          named({ [ID(5)]: one, [ID(6)]: two }),
+        ),
+      ).rejects.toThrow(
+        /two inputs are both named a\.pdf|two inputs are both named caf\u00e9\.pdf/,
+      );
+    }
+    await expect(
+      resolveInputs(
+        md,
+        { markdown: '# hi', embed_file_ids: [ID(5)] },
+        caller,
+        named({ [ID(5)]: 'sub/INDEX.html' }),
+      ),
+    ).resolves.toBeTruthy();
+    await expect(
+      resolveInputs(
+        md,
+        { markdown: '# hi', embed_file_ids: [ID(5)] },
+        caller,
+        named({ [ID(5)]: 'x/index.HTML' }),
+      ),
+    ).rejects.toThrow(/both named index\.html/);
+  });
+
+  it('two different names still pass', async () => {
+    const out = await resolveInputs(
+      r('pdfengines/merge'),
+      { file_ids: [ID(5), ID(6)], embed_file_ids: [ID(7)] },
+      caller,
+      named({ [ID(5)]: 'a.pdf', [ID(6)]: 'b.pdf', [ID(7)]: 'c.pdf' }),
+    );
+    expect(out.parts.map((p) => p.filename)).toEqual(['a.pdf', 'b.pdf', 'c.pdf']);
+  });
+
+  it('engineName follows Gotenberg 8.40.0', () => {
+    expect(engineName('x/y\\Na\u0001me.TXT')).toBe('Name.txt');
+    expect(engineName('.HTACCESS')).toBe('.htaccess');
+    expect(engineName('noext')).toBe('noext');
+    expect(engineName('a\ud800.pdf')).toBe('a\ufffd.pdf');
   });
 });
 

@@ -137,15 +137,40 @@ function text(v: unknown, name: string): string | null {
 
 const ext = (filename: string): string => filename.toLowerCase().replace(/^.*\./, '');
 const stemOf = (filename: string): string => filename.replace(/\.[^.]+$/, '') || 'document';
+/** A file stem as HTML text; the braces too, so a stem never opens a
+ *  template action in the markdown wrapper's title. */
+const htmlText = (s: string): string => s.replace(/[&<>{}]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** `{{ toHTML "name" }}` as Go's template lexer reads it: its spaces, its
- *  trim markers (`{{- ` and ` -}}`), a quoted or a raw string. The name holds
- *  no quote, backslash, brace or line break. Sticky: it must match where the
- *  `{{` is. */
+/**
+ * A file name as the engine stores and finds it, so two inputs it would
+ * confuse are refused here. Gotenberg 8.40.0 (`sanitizeFilename` in
+ * pkg/modules/api/context.go) keeps what follows the last `/` or `\`, drops
+ * U+0000 to U+001F and U+007F, and NFC-normalizes; every file of every form
+ * field then sits in one map and one folder, and a second file of a name
+ * becomes `name (2).ext`. Its lookup (`FormData.path`) also takes the name
+ * with its extension lower-cased. So `embeds/index.html` next to the
+ * markdown wrapper could be the one the engine parses: one name, one file.
+ */
+export function engineName(filename: string): string {
+  const base = filename.slice(Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\')) + 1);
+  const name = base
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .normalize('NFC');
+  const dot = name.lastIndexOf('.');
+  return dot === -1 ? name : name.slice(0, dot) + name.slice(dot).toLowerCase();
+}
+
+/** `{{ toHTML "name" }}` as Go's template lexer reads it (text/template
+ *  lex.go, the same in Go 1.25 and 1.27): its spaces, its trim markers
+ *  (`{{- ` and ` -}}`), a quoted or a raw string. Inside a quoted string the
+ *  lexer stops only at `"`, `\` or a line break, so braces there are text;
+ *  the name may hold no quote, backslash or line break (no escapes). Sticky:
+ *  it must match where the `{{` is. */
 const GO_SPACE = '[ \\t\\r\\n]';
 const TO_HTML_ACTION = new RegExp(
   `\\{\\{(?:-${GO_SPACE})?${GO_SPACE}*toHTML${GO_SPACE}+` +
-    `(?:"([^"\\\\{}\\r\\n]*)"|\`([^\`{}\\r\\n]*)\`)${GO_SPACE}*(?:${GO_SPACE}-)?\\}\\}`,
+    `(?:"([^"\\\\\\r\\n]*)"|\`([^\`\\r\\n]*)\`)${GO_SPACE}*(?:${GO_SPACE}-)?\\}\\}`,
   'y',
 );
 
@@ -165,7 +190,7 @@ export function checkMarkdownWrapper(wrapper: string, names: readonly string[]):
     const m = TO_HTML_ACTION.exec(wrapper);
     if (!m) {
       throw new InputError(
-        `html (the markdown wrapper) may hold only {{ toHTML "file.md" }}, once for each .md file sent; it holds ${JSON.stringify(wrapper.slice(at, at + 40))}`,
+        `html (the markdown wrapper) may hold only {{ toHTML "file.md" }}, once for each .md file sent; it holds ${JSON.stringify(wrapper.slice(at, at + 40))}. Text that holds {{ belongs in the .md file, which is not a template`,
       );
     }
     const name = m[1] ?? m[2] ?? '';
@@ -226,9 +251,10 @@ export async function resolveInputs(
         `the inputs together pass ${DOCUMENTS_MAX_TOTAL_BYTES / 1024 / 1024} MB; split the call`,
       );
     }
-    if (parts.some((p) => p.field === field && p.filename === filename)) {
+    const same = parts.find((p) => engineName(p.filename) === engineName(filename));
+    if (same) {
       throw new InputError(
-        `two inputs are both named ${filename}; the engine keeps one flat directory, so names must differ`,
+        `two inputs are both named ${engineName(filename)} as the engine stores them (${JSON.stringify(same.filename)} and ${JSON.stringify(filename)}); the engine keeps every file of a call in one flat directory, so names must differ: rename one`,
       );
     }
     parts.push({ field, filename, bytes });
@@ -295,9 +321,18 @@ export async function resolveInputs(
         await take('files', f.filename, f.bytes);
         names.push(f.filename);
       }
+      if (!html) {
+        // Mantle's own wrapper places each file by its name in a Go string.
+        const bad = names.find((n) => /["\\\r\n]/.test(n));
+        if (bad !== undefined) {
+          throw new InputError(
+            `rename the file ${JSON.stringify(bad)}: the engine places a markdown file by its name inside a template string, and a name there may not hold a double quote, a backslash or a line break`,
+          );
+        }
+      }
       const wrapper =
         html ??
-        `<!doctype html><html><head><meta charset="utf-8"><title>${stem}</title></head><body>${names
+        `<!doctype html><html><head><meta charset="utf-8"><title>${htmlText(stem)}</title></head><body>${names
           .map((n) => `{{ toHTML "${n}" }}`)
           .join('\n')}</body></html>`;
       // Both wrappers: the caller's, and Mantle's own (file names go in it).
