@@ -99,9 +99,17 @@ const dbosDir = depDir(join(repoRoot, 'server/api'), '@dbos-inc/dbos-sdk');
 const postgresJsDir = depDir(join(repoRoot, 'packages/db'), 'postgres');
 
 /** pg-boss hands its own config to pg.Pool, so a PgBoss without `max` gets
- *  pg-pool's default. */
+ *  pg-pool's default. Since 12.39.0 the config is spread into the options
+ *  with one key added after it, `onConnect` (the session statements, run on
+ *  each new pooled connection before pg-pool hands it out; a failed one is
+ *  ended, not kept). The pattern holds the whole object, so a `max` or any
+ *  other key added to it fails this test. */
 const PG_BOSS_MAX = (() => {
-  pinned(join(pgBossDir, 'dist/db.js'), /new pg\.Pool\(this\.config\)/, 'pg-boss pool');
+  pinned(
+    join(pgBossDir, 'dist/db.js'),
+    /new pg\.Pool\(\{\s*\.\.\.this\.config,\s*(?:\/\/[^\n]*\s*)*onConnect: async \(client\) => \{\s*for \(const statement of this\.sessionStatements\) \{\s*await client\.query\(statement\);\s*\}\s*\}\s*\}\)/,
+    'pg-boss pool',
+  );
   const m = pinned(
     join(pgPoolDir, 'index.js'),
     /this\.options\.max = this\.options\.max \|\| this\.options\.poolSize \|\| (\d+)/,
