@@ -18,7 +18,7 @@ import { noteReadCuts } from '@mantle/files/read-cut-sink';
 import { effectiveOptions, keptReaderRun } from '@mantle/files';
 import { bookVisionPageCountOf, bookVisionPageSetOf } from './book-pages';
 import { readFileDbStamp, readFileRowNow } from './file-database';
-import { filePagesOf, pagesText } from './page-passages';
+import { filePagesOf, hasPageWords, pagesText } from './page-passages';
 import { boxPipelines, type BoxPipelines } from './pipeline-registry';
 import {
   pagesReadOf,
@@ -125,12 +125,21 @@ export async function standingReaderText(
   const kept = keptReaderRun<PipelineRunResult>(routedRunKey(reader, file.sha256, ext, options));
   const run = kept ? await kept.catch(() => null) : null;
   if (run?.status === 'ok' && run.write?.text) {
-    return {
-      text: run.write.text,
-      ...(run.windows
-        ? { pages: { read: pagesReadOf(run.windows), total: run.windows.pagesTotal } }
-        : {}),
-    };
+    const read = run.windows
+      ? { pages: { read: pagesReadOf(run.windows), total: run.windows.pagesTotal } }
+      : {};
+    if (reader.produces.pages !== true || hasPageWords(run.write.text)) {
+      return { text: run.write.text, ...read };
+    }
+    // A Reader of pages whose run gave page headings and no words: every
+    // page scanned or blank, the scanned ones left to its Agent (a one-page
+    // scan). Its text is the database's pages, where the Agent's text of a
+    // page it read stands. With none yet the Reader still stands, with no
+    // text: the Agent reads the scanned pages (the core reads none of them,
+    // so no page is paid twice), and its new text runs the extract once
+    // more (server/api/src/agent/extract/pipeline-run.ts, extractAgain).
+    const stored = await filePagesOf({ id: file.id, ownerId, sha256: file.sha256 }, pipelines);
+    return { text: stored ? pagesText(stored.pages) : '', ...read };
   }
   if (reader.produces.pages !== true) return null;
   const pages = await filePagesOf({ id: file.id, ownerId, sha256: file.sha256 }, pipelines);

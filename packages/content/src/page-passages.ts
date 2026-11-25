@@ -162,3 +162,10 @@ export function pageHeading(page: number): string {
 export function pagesText(pages: readonly PageText[]): string {
   return pages.map((p) => `${pageHeading(p.page)}\n${p.text.trim()}`).join('\n\n');
 }
+
+/** Whether a text by page holds words: a text of `## Page N` lines and
+ *  nothing else (a Reader's run over pages that are all scanned or blank,
+ *  pdf_pages.py) holds none. */
+export function hasPageWords(text: string): boolean {
+  return text.replace(/^[ \t]*## Page \d+[ \t]*$/gm, '').trim() !== '';
+}

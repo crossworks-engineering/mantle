@@ -2676,7 +2676,17 @@ Reader's text is the file's text: from the run of this extract's database
 pass, kept for the extract (`routedReaderRun`, no second job), else, for a
 Reader that says `produces.pages`, from its pages in the database. The pages
 it read are stamped as the scan OCR stamps them (`ocr`). A Reader that gave
-no text leaves the file to the core's read, as before. The database's stamp
+no text leaves the file to the core's read, as before. A run of page
+headings and no words is no text of the Reader's own (every page scanned or
+blank: a one-page scan the book reader left to its Agent): the Reader still
+stands, with the Agent's text of its pages when the database holds it, else
+with no text, so the extract ends `body_too_short` and the core reads no page
+the Agent reads (no page is paid twice). The Agent's run that paid for a
+page of such a file sends its extract once more (`extractAgain`,
+server/api/src/agent/extract/pipeline-run.ts), and the Agent's text is the
+file's text. Two checks bound it: a paid page in the run, and the
+`body_too_short` stamp, which a read with text takes off. No model is asked
+for it but that one extract. The database's stamp
 names that Reader, not the extension's reader. Such a Reader writes
 the `File` tab (`pdf-file-v1`) with its kind: a read again of a PDF finds its
 kind there, and a database with no `File` tab is kept as it is (`kept`).

@@ -12,7 +12,10 @@
  *    re-index doors;
  *  - an Agent's run held by the provider says its wait in its trace, but
  *    not when a paid answer of the run was not kept: the queue then fails
- *    the run once (sendWaiting), and a person runs it again.
+ *    the run once (sendWaiting), and a person runs it again;
+ *  - an Agent of page text that paid for a page of a file whose extract
+ *    ended `body_too_short` (a one-page scan read before its Agent) says
+ *    `extractAgain`, and no other run does.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +30,10 @@ const h = vi.hoisted(() => ({
   /** Whether a paid answer of the run was not kept (answerKeepFailed). */
   keepFailed: false,
   metas: [] as Record<string, unknown>[],
+  /** The paid calls of the Agent run. */
+  made: 2,
+  /** The file's extract skip stamp, or none. */
+  skip: undefined as string | undefined,
 }));
 
 /** The made-up file name of an id, by its first letter. */
@@ -50,6 +57,7 @@ vi.mock('@mantle/files', async (orig) => ({
     data: {
       filename: nameOf(id),
       sha256: 'b'.repeat(64),
+      ...(h.skip ? { extract_skipped: { reason: h.skip, at: '2026-11-24T00:00:00Z' } } : {}),
     },
   })),
   readFileNodeBytes: vi.fn(async () => {
@@ -73,7 +81,7 @@ vi.mock('@mantle/content/file-database', () => ({
     return {
       status: 'asked',
       rows: 2,
-      made: 2,
+      made: h.made,
       reused: 0,
       warnings: [],
       ...(h.agentStop ? { stopped: h.agentStop } : {}),
@@ -145,6 +153,8 @@ beforeEach(() => {
   h.agentStop = undefined;
   h.keepFailed = false;
   h.metas = [];
+  h.made = 2;
+  h.skip = undefined;
 });
 
 describe('the job of a run on demand', () => {
@@ -211,6 +221,29 @@ describe('the job of a run on demand', () => {
     expect(unkept).toMatchObject({ wait: { for: 'provider', reason: 'rate_limit' } });
     expect(h.metas.at(-1)).toMatchObject({ stopped: 'provider_rate_limit' });
     expect(h.metas.at(-1)).not.toHaveProperty('waiting');
+  });
+
+  it('an Agent of page text that paid for a page of a file too short to extract sends the extract once more', async () => {
+    h.skip = 'body_too_short';
+    const out = await runPipelineJob(OWNER, PDF, 'pdf-page-read');
+    expect(out).toMatchObject({ status: 'asked', made: 2, extractAgain: true });
+    // Said in the trace too.
+    expect(h.metas.at(-1)).toMatchObject({ extractAgain: true });
+    // No paid page (every ask answered from the tab): no extract.
+    h.made = 0;
+    expect(await runPipelineJob(OWNER, PDF, 'pdf-page-read')).not.toHaveProperty('extractAgain');
+    // A file whose extract read text, or ended another way: none.
+    h.made = 2;
+    h.skip = undefined;
+    expect(await runPipelineJob(OWNER, PDF, 'pdf-page-read')).not.toHaveProperty('extractAgain');
+    h.skip = 'no_text_layer';
+    expect(await runPipelineJob(OWNER, PDF, 'pdf-page-read')).not.toHaveProperty('extractAgain');
+    // An Agent of fields, not page text: none.
+    h.skip = 'body_too_short';
+    const TIF = '10000000-0000-4000-8000-000000000000';
+    expect(await runPipelineJob(OWNER, TIF, 'iso-title-block')).not.toHaveProperty(
+      'extractAgain',
+    );
   });
 
   it('a reader runs only on a file it reads', async () => {
