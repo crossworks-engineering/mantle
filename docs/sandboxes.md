@@ -229,7 +229,7 @@ points at it. Its shape is a contract (code tools read it; schema 2):
 ```json
 {
   "schema": 2,
-  "image": "titanwest/mantle-sandbox:24.04-v5",
+  "image": "titanwest/mantle-sandbox:24.04-v6",
   "summary": "…",
   "languages": [
     {

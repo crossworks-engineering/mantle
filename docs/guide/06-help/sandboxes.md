@@ -38,7 +38,7 @@ database password or master key. A brain runs up to 100 sandboxes at once by def
 (`SANDBOX_IDLE_STOP_MINUTES`); its files and installed packages survive, and
 the next command starts it again.
 
-The sandbox image (`24.04-v5`) carries every language, each with a short kit
+The sandbox image (`24.04-v6`) carries every language, each with a short kit
 of libraries and tools:
 
 - Node 26 with npm and pnpm, and Bun.

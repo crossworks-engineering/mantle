@@ -88,7 +88,7 @@ const EGRESS_PROXY_HOST = process.env.SANDBOX_EGRESS_PROXY_HOST || 'mantle_sandb
  *  wasm32 target, each with its kit; see infra/sandbox-image/Dockerfile and
  *  /etc/mantle/sandbox-kit.json inside). Pinned tag: updating the image is an
  *  explicit SANDBOX_DEFAULT_IMAGE change, never silent drift. */
-const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v5';
+const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v6';
 /** Running sandboxes at once. A stopped one does not count: it holds disk,
  *  which DISK_BUDGET_BYTES bounds, and no memory or CPU (owner, 2026-11-18). */
 const MAX_SANDBOXES = Number(process.env.SANDBOX_MAX_COUNT || 100);
