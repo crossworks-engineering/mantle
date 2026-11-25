@@ -250,7 +250,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "188e0572bb67fdf2459a55803aba1d6e139936a61d6136ecbf66be5931bb44cc",
+  "sha256": "e63c94806dae61980827237bd30732463d40ec126186720b36cdfc0e1705198b",
   "names": [
    "access_grant_add",
    "access_set",
@@ -636,7 +636,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "0a2ba2beeea2f86f6dffb07df2fc41240c0bc853d3c730369c138a7bd1f15631",
+  "sha256": "df3deab17859088dc07c22869a33d147a23977a2f9be5dcd1b439812c21783b1",
   "names": [
    "access_grant_add",
    "access_set",
@@ -6291,7 +6291,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "188e0572bb67fdf2459a55803aba1d6e139936a61d6136ecbf66be5931bb44cc",
+  "sha256": "e63c94806dae61980827237bd30732463d40ec126186720b36cdfc0e1705198b",
   "names": [
    "access_grant_add",
    "access_set",
@@ -6677,7 +6677,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "0a2ba2beeea2f86f6dffb07df2fc41240c0bc853d3c730369c138a7bd1f15631",
+  "sha256": "df3deab17859088dc07c22869a33d147a23977a2f9be5dcd1b439812c21783b1",
   "names": [
    "access_grant_add",
    "access_set",
