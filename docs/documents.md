@@ -94,7 +94,9 @@ engine stores nothing, so off loses nothing.
   for the caller's login (`src/render-token.ts`; the print surface answers
   403 to a cookie it refuses, so a print never shows the login page);
   inline `html` and `markdown` become `index.html` and `file.md`. Caps: 64
-  MB per input, 128 MB in all, 4 MB inline, 50 files;
+  MB per input, 128 MB in all, 4 MB inline, 50 files. The markdown wrapper
+  runs as a Go template in the engine, so every `{{` in it must open
+  `{{ toHTML "name" }}` for a .md file sent, each once (GHSA-2m5g-g83x-jqp7);
 - the runner (`src/run.ts`): `runDocuments(call, caller, mode)` builds the
   form (with the node defaults: fail on 403 and 404, the bounded diagram
   wait, network idle, backgrounds), posts it, and lands the answer as a

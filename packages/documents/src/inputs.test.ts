@@ -13,6 +13,7 @@ import {
   DOCUMENTS_MAX_INLINE_BYTES,
   DOCUMENTS_MAX_INPUT_BYTES,
   DOCUMENTS_MAX_TOTAL_BYTES,
+  checkMarkdownWrapper,
   resolveInputs,
   type InputDeps,
 } from './inputs';
@@ -328,6 +329,83 @@ describe('html and markdown', () => {
         deps,
       ),
     ).rejects.toThrow(/asset_file_ids belongs to/);
+  });
+});
+
+describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
+  const NAMES = ['file.md', 'notes.md'];
+  const ALLOWED = [
+    '<body>{{ toHTML "file.md" }}</body>',
+    '<body>{{toHTML "file.md"}}</body>',
+    '<body>{{- toHTML "file.md" -}}</body>',
+    '<body>{{-\ttoHTML\n"file.md"\r\n-}}</body>',
+    '<body>{{ toHTML `file.md` }}</body>',
+    '<h1>A}}</h1>{{ toHTML "file.md" }}<hr>{{ toHTML "notes.md" }}',
+  ];
+  const REFUSED: Record<string, string> = {
+    'a range over an integer': '{{range 100000}}0123456789abcdef{{end}}{{ toHTML "file.md" }}',
+    'a range that only loops': '{{ toHTML "file.md" }}{{range 1000000000000000}}{{end}}',
+    'define and template': '{{define "a"}}x{{end}}{{template "a"}}{{ toHTML "file.md" }}',
+    'a comment': '{{/* a */}}{{ toHTML "file.md" }}',
+    'a trimmed comment': '{{- /* a */ -}}{{ toHTML "file.md" }}',
+    'a pipe into toHTML': '{{ "file.md" | toHTML }}',
+    'toHTML in parens': '{{ (toHTML "file.md") }}',
+    'a variable': '{{ $x := toHTML "file.md" }}{{ $x }}',
+    'an extra argument': '{{ toHTML "file.md" "notes.md" }}',
+    'a third brace': '{{{ toHTML "file.md" }}',
+    'a brace in the name': '{{ toHTML "file.md{{range 9}}" }}',
+    'an escape in the name': '{{ toHTML "file\\x2emd" }}',
+    'a trim marker with no space': '{{-toHTML "file.md"}}',
+    'a literal {{ in a script': '<script>if (a) {{ b() }}</script>{{ toHTML "file.md" }}',
+    'a {{ in an HTML comment': '<!-- {{range 9}}{{end}} -->{{ toHTML "file.md" }}',
+  };
+
+  it('takes {{ toHTML "name" }} with the spaces, trim markers and quotes Go takes', () => {
+    for (const w of ALLOWED) expect(() => checkMarkdownWrapper(w, NAMES)).not.toThrow();
+  });
+
+  for (const [name, w] of Object.entries(REFUSED)) {
+    it(`refuses ${name}, and says what is allowed`, () => {
+      expect(() => checkMarkdownWrapper(w, NAMES)).toThrow(
+        /may hold only \{\{ toHTML "file\.md" \}\}, once for each \.md file sent/,
+      );
+    });
+  }
+
+  it('refuses a name that was not sent, and a file placed twice', () => {
+    expect(() => checkMarkdownWrapper('{{ toHTML "other.md" }}', NAMES)).toThrow(
+      /names no \.md file sent, or names one twice; the files sent are file\.md, notes\.md/,
+    );
+    expect(() =>
+      checkMarkdownWrapper('{{ toHTML "file.md" }}{{ toHTML "file.md" }}', NAMES),
+    ).toThrow(/names one twice/);
+    expect(() => checkMarkdownWrapper('<body>no place</body>', NAMES)).toThrow(
+      /must place the markdown/,
+    );
+  });
+
+  it("guards the caller's wrapper and Mantle's own, whose file names go in it", async () => {
+    await expect(
+      resolveInputs(
+        r('chromium/convert/markdown'),
+        { markdown: '# Hi', html: '{{range 9}}{{end}}{{ toHTML "file.md" }}' },
+        caller,
+        deps,
+      ),
+    ).rejects.toThrow(/may hold only/);
+    const named = (filename: string): InputDeps => ({
+      ...deps,
+      readFile: async () => ({ filename, bytes: Buffer.from('# x') }),
+    });
+    const id = ['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'];
+    for (const filename of [
+      'a" }}{{range 1000000000000000}}{{end}}{{ toHTML "b.md',
+      '{{range 1000000000000000}}{{end}}.md',
+    ]) {
+      await expect(
+        resolveInputs(r('chromium/convert/markdown'), { file_ids: id }, caller, named(filename)),
+      ).rejects.toThrow(/html \(the markdown wrapper\)/);
+    }
   });
 });
 

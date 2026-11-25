@@ -138,6 +138,52 @@ function text(v: unknown, name: string): string | null {
 const ext = (filename: string): string => filename.toLowerCase().replace(/^.*\./, '');
 const stemOf = (filename: string): string => filename.replace(/\.[^.]+$/, '') || 'document';
 
+/** `{{ toHTML "name" }}` as Go's template lexer reads it: its spaces, its
+ *  trim markers (`{{- ` and ` -}}`), a quoted or a raw string. The name holds
+ *  no quote, backslash, brace or line break. Sticky: it must match where the
+ *  `{{` is. */
+const GO_SPACE = '[ \\t\\r\\n]';
+const TO_HTML_ACTION = new RegExp(
+  `\\{\\{(?:-${GO_SPACE})?${GO_SPACE}*toHTML${GO_SPACE}+` +
+    `(?:"([^"\\\\{}\\r\\n]*)"|\`([^\`{}\\r\\n]*)\`)${GO_SPACE}*(?:${GO_SPACE}-)?\\}\\}`,
+  'y',
+);
+
+/**
+ * The markdown wrapper runs as a Go template inside Gotenberg, with no limit
+ * (GHSA-2m5g-g83x-jqp7: `{{range}}`, `{{define}}` with `{{template}}` and the
+ * like can stop the engine). Every `{{` in it must open `{{ toHTML "name" }}`
+ * for a .md file sent, and each file is placed at most once, so the page is
+ * never larger than its files. The Markdown files are not templates, and a
+ * caller cannot change the delimiters, so this one check holds the route.
+ */
+export function checkMarkdownWrapper(wrapper: string, names: readonly string[]): void {
+  const left = new Set(names);
+  let placed = 0;
+  for (let at = wrapper.indexOf('{{'); at !== -1; at = wrapper.indexOf('{{', at)) {
+    TO_HTML_ACTION.lastIndex = at;
+    const m = TO_HTML_ACTION.exec(wrapper);
+    if (!m) {
+      throw new InputError(
+        `html (the markdown wrapper) may hold only {{ toHTML "file.md" }}, once for each .md file sent; it holds ${JSON.stringify(wrapper.slice(at, at + 40))}`,
+      );
+    }
+    const name = m[1] ?? m[2] ?? '';
+    if (!left.delete(name)) {
+      throw new InputError(
+        `html (the markdown wrapper): {{ toHTML ${JSON.stringify(name)} }} names no .md file sent, or names one twice; the files sent are ${names.join(', ')}`,
+      );
+    }
+    placed += 1;
+    at += m[0].length;
+  }
+  if (!placed) {
+    throw new InputError(
+      'html (the markdown wrapper) must place the markdown with {{ toHTML "file.md" }}',
+    );
+  }
+}
+
 /** A caller's inputs, checked and read, as the parts of one form. */
 export async function resolveInputs(
   route: RouteDef,
@@ -254,11 +300,8 @@ export async function resolveInputs(
         `<!doctype html><html><head><meta charset="utf-8"><title>${stem}</title></head><body>${names
           .map((n) => `{{ toHTML "${n}" }}`)
           .join('\n')}</body></html>`;
-      if (!/\{\{\s*toHTML\s+"[^"]+"\s*\}\}/.test(wrapper)) {
-        throw new InputError(
-          'html (the markdown wrapper) must place the markdown with {{ toHTML "file.md" }}',
-        );
-      }
+      // Both wrappers: the caller's, and Mantle's own (file names go in it).
+      checkMarkdownWrapper(wrapper, names);
       await take('files', 'index.html', Buffer.from(wrapper, 'utf8'));
       break;
     }
