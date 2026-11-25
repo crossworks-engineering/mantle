@@ -50,7 +50,7 @@
  * metadata-only instead of allocating gigabytes in-process.
  *
  * DWFx (`.dwfx`) is a different container (OPC/XPS) with no W2D stream: it
- * has its own reader, ./dwfx.ts (route `dwfx`). Dispatch in read-document.ts
+ * has its own reader, ../plot-dwfx/dwfx.ts (route `dwfx`). Dispatch in read-document.ts
  * is gated on {@link sniffDwf}, so a mislabelled `.dwf` (usually a renamed
  * DWFx) yields '' and takes the extractor's honest hollow-skip rather than
  * indexing its own filename.
@@ -150,7 +150,7 @@ function attr(tag: string, name: string): string | null {
 
 /** All `<ePlot:Property name value/>` pairs of a descriptor, one scan,
  *  attribute order free (first occurrence of a name wins). */
-export function properties(xml: string): Map<string, string> {
+function properties(xml: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const m of xml.matchAll(/<[^>]*Property\b[^>]*>/g)) {
     const name = attr(m[0], 'name');

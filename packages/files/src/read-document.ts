@@ -103,7 +103,7 @@ export async function readDocumentText(bytes: Buffer, ext: string): Promise<stri
   // read through the zip guard. Not a zip, or a zip with no page: '' (the
   // honest skip); a zip that cannot be opened throws a named error.
   if (e === 'dwfx') {
-    return (await import('./pipelines/pkg/plot-dwf/dwfx')).parseDwfx(bytes);
+    return (await import('./pipelines/pkg/plot-dwfx/dwfx')).parseDwfx(bytes);
   }
   // `.xml` is a container, not a format: only a document that is actually
   // MSPDI gets the plan renderer. A file that sniffs as a plan but yields no

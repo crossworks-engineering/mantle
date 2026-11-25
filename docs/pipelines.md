@@ -1966,8 +1966,8 @@ reads them again if wanted.
 ## The DWF reader as a package
 
 `plot-dwf` moved in MV4. Its folder is `pkg/plot-dwf/`: `step.ts`, and the
-container reader `dwf.ts`. Beside it, `dwfx.ts` reads a DWFx (the XPS form
-of a DWF set): see "The DWFx reader" below.
+container reader `dwf.ts`. A DWFx (the XPS form of a DWF set) has its own
+package: see "The DWFx reader" below.
 The step reads the bytes in hand: a file that is
 not a DWF by its magic (usually a renamed DWFx), and a DWF with no 2D
 sheets, are `ok` with no tabs (the word `no-rows`), as before; else the tabs
@@ -1985,12 +1985,11 @@ is still a heavy file: the lane comes from the extension
 `grid` job no longer reads DWF. The rows, the stamp and the version did not
 change: the golden files of the old path (`pkg/plot-dwf/golden/`) hold it.
 
-
 ## The DWFx reader
 
 A DWFx is the XPS form of a DWF set: a plain zip of XPS parts, with no
 `(DWF ` magic and no W2D stream, so `dwf.ts` cannot read it. Its reader is
-`pkg/plot-dwf/dwfx.ts`, in two places. The core text read (route `dwfx`,
+`pkg/plot-dwfx/dwfx.ts`, used in two places. The core text read (route `dwfx`,
 `read-document.ts`) gives one `## Sheet` block a page: the sheet title from
 the DWF `manifest.xml`, the source drawing, layout and author from the
 `descriptor.xml` beside the page, and the text of every `Glyphs`

@@ -1,9 +1,12 @@
 /**
- * Autodesk DWFx → text digest, in the same shape as the DWF digest (./dwf.ts).
+ * Autodesk DWFx → text digest, in the same shape as the DWF digest
+ * (../plot-dwf/dwf.ts).
  *
  * A `.dwfx` is the XPS form of a DWF plot set: a plain zip (OPC) of XPS
  * parts, with no `(DWF ` magic and no W2D stream, so ./dwf.ts cannot read
- * it. What it gives up readily, and what this reader takes:
+ * it. A package may import only its own folder and the kit, so the few
+ * lines it shares with the DWF reader (the descriptor's properties) are
+ * here again. What it gives up readily, and what this reader takes:
  *
  *   - the page order: the `.fdseq` names the `.fdoc` parts, and each `.fdoc`
  *     names its `.fpage` parts (a file with neither: every `.fpage`, by name);
@@ -25,11 +28,9 @@
  * cannot be opened, or whose every page is damaged, throws a named error.
  * What the digest leaves out is said on the file (../../../read-cut.ts).
  */
-import { errorMessage } from '@mantle/std';
 import { noteReadCut } from '../../../read-cut-sink';
 import { isDocumentTooLarge } from '../../../read-limit';
 import { loadZip, type Zip } from '../../../zip-guard';
-import { properties } from './dwf';
 
 /** Sheets read from one file. Real plot sets sit far below it. */
 const MAX_PAGES = 256;
@@ -109,6 +110,18 @@ function tagsOf(xml: string, tag: string): string[] {
   return [...xml.matchAll(re)].map((m) => m[0]);
 }
 
+/** The `<Property name value/>` pairs of a DWF descriptor (first one of a
+ *  name wins), as ../plot-dwf/dwf.ts reads them. */
+function properties(xml: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const tag of tagsOf(xml, 'Property')) {
+    const name = attrOf(tag, 'name');
+    const value = attrOf(tag, 'value');
+    if (name !== null && value !== null && !map.has(name)) map.set(name, value);
+  }
+  return map;
+}
+
 /** The text runs of one page: every Glyphs UnicodeString, in order. */
 export function glyphRuns(fpage: string): string[] {
   const runs: string[] = [];
@@ -126,9 +139,7 @@ async function openZip(bytes: Buffer): Promise<Zip> {
     return await loadZip(bytes);
   } catch (err) {
     if (isDocumentTooLarge(err)) throw err;
-    throw new Error(`dwfx: no readable ZIP archive in container (${errorMessage(err)})`, {
-      cause: err,
-    });
+    throw new Error(`dwfx: no readable ZIP archive in container (${String(err)})`, { cause: err });
   }
 }
 

@@ -8,7 +8,7 @@
  */
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { glyphRuns, parseDwfx, parseDwfxStructured } from './pipelines/pkg/plot-dwf/dwfx';
+import { glyphRuns, parseDwfx, parseDwfxStructured } from './pipelines/pkg/plot-dwfx/dwfx';
 import { DWFX_DESCRIPTION, dwfxGrids, step } from './pipelines/pkg/plot-dwfx/step';
 import { readDocumentText } from './read-document';
 import { withReadCutSink } from './read-cut-sink';

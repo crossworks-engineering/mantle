@@ -2,7 +2,7 @@
  * The step of `plot-dwfx`: an Autodesk DWFx plot set (the XPS form of a DWF
  * set) to its file database, the tabs Sheets and Texts, with the
  * description of a DWFx database. One step, one write call. It runs in the
- * parser job `pipelineRun`. The reader is ../plot-dwf/dwfx.ts, which the
+ * parser job `pipelineRun`. The reader is ./dwfx.ts, which the
  * text read (../../../read-document.ts, the job `text`) uses too.
  *
  * - Not a DWFx (not a zip, or a zip with no page): `ok` with no tabs. The
@@ -16,7 +16,7 @@
  */
 import type { ParsedSheet } from '../../../sheet-to-grid';
 import { FILE_TABS_WRITE, type PipelineStep } from '../../contract';
-import { parseDwfxStructured, type DwfxSheet } from '../plot-dwf/dwfx';
+import { parseDwfxStructured, type DwfxSheet } from './dwfx';
 
 export const step: PipelineStep = async (_req, job) => {
   const parsed = await parseDwfxStructured(await job.bytes());
