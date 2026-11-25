@@ -25,6 +25,7 @@
  * cannot be opened, or whose every page is damaged, throws a named error.
  * What the digest leaves out is said on the file (../../../read-cut.ts).
  */
+import { errorMessage } from '@mantle/std';
 import { noteReadCut } from '../../../read-cut-sink';
 import { isDocumentTooLarge } from '../../../read-limit';
 import { loadZip, type Zip } from '../../../zip-guard';
@@ -125,8 +126,9 @@ async function openZip(bytes: Buffer): Promise<Zip> {
     return await loadZip(bytes);
   } catch (err) {
     if (isDocumentTooLarge(err)) throw err;
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`dwfx: no readable ZIP archive in container (${msg})`, { cause: err });
+    throw new Error(`dwfx: no readable ZIP archive in container (${errorMessage(err)})`, {
+      cause: err,
+    });
   }
 }
 
