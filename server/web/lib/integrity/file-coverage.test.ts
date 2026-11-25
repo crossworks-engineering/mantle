@@ -201,6 +201,24 @@ describe('coverageOf', () => {
     expect(row).toMatchObject({ ext: 'py', route: 'text', indexed: 3, notFull: 1 });
   });
 
+  it('judges a file by the keys heldDatabaseKeys gives', async () => {
+    const { heldDatabaseKeys } = await import('@mantle/files');
+    const a = file('xlsx', done);
+    const b = file('xlsx', done);
+    const key = (f: CoverageFile) => `${f.id}.${SHA.slice(0, 16)}`;
+    const entry = (f: CoverageFile, ext: string) => ({
+      name: `${key(f)}.${ext}`,
+      fileId: f.id,
+      sha16: SHA.slice(0, 16),
+      bytes: 1,
+    });
+    // No `.none` is read for a file with a `.sqlite` name: the folder alone
+    // answers it.
+    const held = await heldDatabaseKeys({ names: [entry(a, 'sqlite')], builds: [] }, [a, b]);
+    const [row] = coverageOf([a, b], DB_EXTS, held);
+    expect(row).toMatchObject({ withDb: 1, noDb: 1, notFull: 1 });
+  });
+
   it('keeps an archive indexed: its detail cut is no shortfall', () => {
     const zip = file('zip', {
       ...done,

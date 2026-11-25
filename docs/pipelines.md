@@ -1757,7 +1757,8 @@ Pipelines phase 2. When a pipeline has a newer version, or its options
 changed, the files it read before are `older`. An Admin reads them again:
 `POST /api/pipelines/:id/reread`, and the MCP tool `pipeline_reread` with
 `id`, both call `rereadPipeline` (`packages/tools/src/pipeline-reread.ts`).
-The body is a `PipelineRereadBody` (`apply`, `limit`, `after`); the answer
+The body is a `PipelineRereadBody` (`apply`, `limit`, `after`,
+`missing`); the answer
 is M5's `PipelineRunAnswer`, with one choice, this pipeline, so both Run
 dialogs of the client read one shape.
 
@@ -1786,6 +1787,24 @@ in this page. The list's `older` stays the count of the look, which stops at
 the first 5,000 ids and then sets `countsPartial`. On a box past the cap the
 two differ: the list counts the first 5,000, the re-read reaches every file
 a page at a time.
+
+**Missing databases (`missing: true`).** A Reader only (any other role is
+refused with one sentence). In place of the older files, the files the
+Reader makes a database for that were read (indexed or partial) and have
+no database for their bytes: mostly files read before their Reader
+shipped. One rule decides, `missesDatabase` (`packages/files/src/
+file-db-missing.ts`), the same the coverage check counts as `noDb`, so the
+dry run counts what `files:coverage` counts (a word `no-rows` or
+`too-large` stands for a database; `unreadable` does not, so a newer parser
+may read it). The walk is over the box's live file rows of the Reader's
+types, by id, at most `PIPELINE_SCAN_MAX` a call, with `limit` and `next`
+as above. The run is the Reader's run, as for an older file: the database
+from the bytes, no model, and the file's text, summary and chunks stay. A
+file where the Reader is off in its home workspace is skipped
+(`not-attached`): there the missing database is the Admin's choice. A file
+that was skipped (`no_parser` before its Reader shipped) has no text and is
+not taken: `file_reindex` reads it whole, its database with it, and that
+read is paid.
 
 **The dry run comes first.** With no `apply`, nothing is sent; the dry run
 walks and says `busy` too. With `apply` on a busy queue the call walks

@@ -14,6 +14,8 @@
  *  - The reader of a PDF drawing is refused (`pdf`); a private file is
  *    skipped (`private`).
  *  - An `after` pipeline takes only the files with its entry.
+ *  - `missing`: a Reader's read files with no database for their bytes
+ *    (missesDatabase), the off list read, a non-Reader refused.
  */
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,12 +50,24 @@ vi.mock('@mantle/db', async (orig) => ({
   }),
 }));
 
-vi.mock('@mantle/files', async (orig) => ({
-  ...(await orig<typeof import('@mantle/files')>()),
-  fileDataRows: vi.fn(async (_owner: string, ids: readonly string[]) =>
-    ids.flatMap((id) => (h.rows.has(id) ? [h.rows.get(id)!] : [])),
-  ),
-}));
+vi.mock('@mantle/files', async (orig) => {
+  const real = await orig<typeof import('@mantle/files')>();
+  return {
+    ...real,
+    fileDataRows: vi.fn(async (_owner: string, ids: readonly string[]) =>
+      ids.flatMap((id) => (h.rows.has(id) ? [h.rows.get(id)!] : [])),
+    ),
+    // The live rows of these types by id, as the SQL reads them.
+    fileRowsOfTypes: vi.fn(
+      async (_owner: string, exts: readonly string[], opts: { after?: string; limit: number }) =>
+        [...h.rows.values()]
+          .filter((r) => exts.includes(real.extOf(r.title)))
+          .filter((r) => !opts.after || r.id > opts.after)
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .slice(0, opts.limit),
+    ),
+  };
+});
 
 vi.mock('@mantle/content/file-database', async (orig) => ({
   ...(await orig<typeof import('@mantle/content/file-database')>()),
@@ -100,7 +114,8 @@ vi.mock('./pipeline-look', async (orig) => ({
   },
 }));
 
-const { rereadPipeline, pipeline_reread } = await import('./pipeline-reread');
+const { rereadPipeline, pipeline_reread, MISSING_NEEDS_READER } = await import('./pipeline-reread');
+const { writeFileDbNone } = await import('@mantle/files');
 const { listPipelines, resetPipelineCounts } = await import('./pipelines');
 
 const OWNER = '00000000-0000-4000-8000-000000000000';
@@ -164,6 +179,18 @@ function file(
     ...(extraMeta ? { extraMeta } : {}),
   });
 }
+
+/** A file row with no database: read at `read` (an extract stamp), or
+ *  with these keys of its read state. */
+function bare(n: number, filename: string, state: Record<string, unknown> = READ) {
+  h.rows.set(id(n), {
+    id: id(n),
+    path: 'files',
+    title: filename,
+    data: { filename, sha256: sha(n), ...state },
+  });
+}
+const READ = { extract_completed_at: '2026-06-01T00:00:00Z' };
 
 const older = async (pid: string) =>
   (await listPipelines(OWNER)).pipelines.find((p) => p.id === pid)!.older;
@@ -447,6 +474,96 @@ describe('rereadPipeline', () => {
   });
 });
 
+describe('rereadPipeline with missing', () => {
+  it('takes the read files of the Reader with no database for their bytes, and no other', async () => {
+    bare(1, 'a.csv');
+    file(2, 'b.csv');
+    bare(3, 'c.xlsx', {});
+    bare(4, 'd.csv', { extract_skipped: { reason: 'no_parser' } });
+    bare(5, 'e.csv');
+    await writeFileDbNone(id(5), sha(5), 'no-rows');
+    bare(6, 'f.csv');
+    await writeFileDbNone(id(6), sha(6), 'unreadable');
+    bare(7, 'g.dwg');
+    bare(8, 'h.xlsx', {
+      ...READ,
+      read_cut: { sheet_rows: { what: 'rows', read: 5000, total: 9000, limit: 5000 } },
+    });
+    bare(9, 'i.csv', { ...READ, indexing_applied: 'metadata' });
+    const dry = await rereadPipeline(OWNER, 'sheet', { missing: true });
+    expect(dry).toEqual({
+      ok: true,
+      answer: {
+        apply: false,
+        busy: false,
+        choices: [{ pipeline: 'sheet', name: 'Spreadsheet', files: 3, refused: null }],
+        queued: 0,
+        skipped: {},
+        next: null,
+      },
+    });
+    expect(h.notified).toEqual([]);
+    const run = await rereadPipeline(OWNER, 'sheet', { missing: true, apply: true });
+    expect(run.ok && run.answer.queued).toBe(3);
+    expect(h.notified).toEqual([`sheet ${id(1)}`, `sheet ${id(6)}`, `sheet ${id(8)}`]);
+  });
+
+  it('reads the off list: a file where the Reader is off is skipped not-attached', async () => {
+    const ws = '00000000-0000-4000-8000-00000000aaaa';
+    h.home = ws;
+    h.offIn = [ws];
+    bare(1, 'a.csv');
+    const res = await rereadPipeline(OWNER, 'sheet', { missing: true, apply: true });
+    expect(res).toMatchObject({ ok: true, answer: { queued: 0, skipped: { 'not-attached': 1 } } });
+    expect(h.notified).toEqual([]);
+  });
+
+  it('skips a private file and counts it', async () => {
+    bare(1, 'a.csv');
+    bare(2, 'b.csv');
+    h.privateIds.add(id(1));
+    const res = await rereadPipeline(OWNER, 'sheet', { missing: true, apply: true });
+    expect(res.ok && res.answer).toMatchObject({ queued: 1, skipped: { private: 1 } });
+    expect(h.notified).toEqual([`sheet ${id(2)}`]);
+  });
+
+  it('takes at most limit files and its budget of ids a call, and next goes on', async () => {
+    for (const n of [1, 2, 3, 4, 5]) bare(n, `${n}.csv`);
+    file(6, '6.csv');
+    const first = await rereadPipeline(OWNER, 'sheet', { missing: true, apply: true, limit: 2 });
+    expect(first.ok && [first.answer.queued, first.answer.next]).toEqual([2, id(2)]);
+    h.max = 2;
+    const second = await rereadPipeline(OWNER, 'sheet', {
+      missing: true,
+      apply: true,
+      limit: 100,
+      after: id(2),
+    });
+    expect(second.ok && [second.answer.queued, second.answer.next]).toEqual([2, id(4)]);
+    h.max = 5000;
+    const last = await rereadPipeline(OWNER, 'sheet', {
+      missing: true,
+      apply: true,
+      limit: 100,
+      after: id(4),
+    });
+    expect(last.ok && [last.answer.queued, last.answer.next]).toEqual([1, null]);
+    expect(h.notified).toEqual([1, 2, 3, 4, 5].map((n) => `sheet ${id(n)}`));
+  });
+
+  it('refuses a pipeline that is not a Reader, and a missing that is not a boolean', async () => {
+    bare(1, 'a.dwg');
+    expect(await rereadPipeline(OWNER, 'site-tags', { missing: true, apply: true })).toEqual({
+      ok: false,
+      error: MISSING_NEEDS_READER,
+    });
+    expect(await rereadPipeline(OWNER, 'drawing-cad', { missing: 'yes' })).toMatchObject({
+      ok: false,
+    });
+    expect(h.notified).toEqual([]);
+  });
+});
+
 describe('pipeline_reread', () => {
   it('writes, MCP only, in the settings area, spends nothing, and is no recipe step', () => {
     expect(pipeline_reread.mcpOnly).toBe(true);
@@ -469,5 +586,14 @@ describe('pipeline_reread', () => {
       output: ((await rereadPipeline(OWNER, 'sheet', {})) as { answer: unknown }).answer,
     });
     expect(h.notified).toEqual([]);
+  });
+
+  it('passes missing through', async () => {
+    bare(1, 'a.csv');
+    const out = await pipeline_reread.handler({ id: 'sheet', missing: true, apply: true }, {
+      ownerId: OWNER,
+    } as ToolHandlerContext);
+    expect(out).toMatchObject({ ok: true, output: { queued: 1 } });
+    expect(h.notified).toEqual([`sheet ${id(1)}`]);
   });
 });

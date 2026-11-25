@@ -46,26 +46,44 @@
  * rebuilds a database and keeps a file's text, summary and chunks; new text
  * needs a re-extract, which makes a new summary, so it is a person's act.
  *
+ * `missing`: the files a Reader makes a database for that have none for
+ * their bytes, though they were read (missesDatabase, @mantle/files: the
+ * one rule of the coverage check's `noDb`, so the dry run counts what the
+ * check counts). Mostly files read before their Reader shipped. The walk
+ * is over the box's file rows of the Reader's types, by id, PIPELINE_SCAN_MAX
+ * ids a call, with `limit` and `next` as above. The run is the Reader's
+ * run, as for an older file: its database from the bytes, no model, and
+ * the file's text, summary and chunks stay. A Reader only; a file whose
+ * home workspace the Reader is off in is skipped (`not-attached`): its
+ * missing database is the Admin's choice.
+ *
  * Nothing starts by itself: a new version or a changed option starts no
  * re-read. Only a call with `apply` notifies.
  */
 import { extractQueueBusy, notifyPipelineRun } from '@mantle/db';
 import {
+  dbExpected,
+  fileDataExt,
   fileDataRows,
   fileIdsWithDatabase,
+  fileRowsOfTypes,
   fileSha256Of,
   filesRootMounted,
+  heldDatabaseKeys,
   isAgent,
   isFileSha256,
   isRouter,
+  listFileDbFolder,
+  missesDatabase,
   pipelineReadOf,
+  roleOf,
   type FileDataRow,
   type PipelineManifest,
 } from '@mantle/files';
 import { readFileRowNow } from '@mantle/content/file-database';
 import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
 import { diskAnswer } from '@mantle/content/pipeline-folder';
-import { pipelineStateOf } from '@mantle/content/pipeline-state';
+import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { UUID_RE } from '@mantle/std';
 import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
@@ -82,7 +100,17 @@ import type { BuiltinToolDef } from './types';
 /** The ids one read of file rows asks for. */
 const ROWS_AT_ONCE = 200;
 
-export type PipelineRereadInput = { apply?: unknown; limit?: unknown; after?: unknown };
+export type PipelineRereadInput = {
+  apply?: unknown;
+  limit?: unknown;
+  after?: unknown;
+  missing?: unknown;
+};
+
+/** The one refusal of `missing` for a pipeline that is not a Reader: only
+ *  a Reader makes a file's database. */
+export const MISSING_NEEDS_READER =
+  'missing builds the databases a Reader makes: name a Reader (role reader in pipeline_list).';
 
 /** The older files of one page of the walk, and where the next goes on. */
 async function olderPage(
@@ -121,6 +149,48 @@ async function olderPage(
   return { found, text, next: looked < ids.length ? ids[looked - 1]! : null };
 }
 
+/** The files of one page of the walk that miss their database (`missing`),
+ *  and where the next goes on. The box's live file rows of the Reader's
+ *  types, by id, at most PIPELINE_SCAN_MAX a call. */
+async function missingPage(
+  ownerId: string,
+  p: PipelineManifest,
+  after: string | undefined,
+  limit: number,
+  pipelines: BoxPipelines,
+): Promise<{ found: FileDataRow[]; text: ReadonlySet<string>; next: string | null }> {
+  const none = { found: [], text: new Set<string>(), next: null };
+  const exts = p.match.ext.filter(
+    (ext) => pipelines.readerFor(ext)?.id === p.id && dbExpected(ext, pipelines.dbExts),
+  );
+  if (exts.length === 0) return none;
+  // The folder first, so a row is never older than a name it is judged
+  // against (as the coverage check reads them).
+  const folder = await listFileDbFolder();
+  const rows = await fileRowsOfTypes(ownerId, exts, {
+    ...(after ? { after } : {}),
+    limit: PIPELINE_SCAN_MAX,
+  });
+  const files = rows.map((r) => ({
+    id: r.id,
+    ext: fileDataExt(r),
+    data: (r.data ?? {}) as Record<string, unknown>,
+  }));
+  const held = await heldDatabaseKeys(folder, files);
+  const found: FileDataRow[] = [];
+  let looked = 0;
+  for (const [i, f] of files.entries()) {
+    looked += 1;
+    if (pipelines.readerFor(f.ext)?.id === p.id && missesDatabase(f, pipelines.dbExts, held)) {
+      found.push(rows[i]!);
+    }
+    if (found.length >= limit) break;
+  }
+  // More ids may be left: the call stopped at `limit`, or read a full page.
+  const more = looked < rows.length || rows.length === PIPELINE_SCAN_MAX;
+  return { found, text: new Set(), next: more && looked > 0 ? rows[looked - 1]!.id : null };
+}
+
 /**
  * The dry run, or with `apply` the re-read, of the older files of pipeline
  * `id`. No rights check here: the route's policy and the tool's scope are
@@ -144,6 +214,11 @@ export async function rereadPipeline(
   }
   if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
   if (isAgent(p)) return { ok: false, error: AGENT_REREAD_REFUSED };
+  const missing = input.missing === true;
+  if (input.missing !== undefined && typeof input.missing !== 'boolean') {
+    return { ok: false, error: 'missing must be true or false.' };
+  }
+  if (missing && roleOf(p) !== 'reader') return { ok: false, error: MISSING_NEEDS_READER };
   // An own row that does not run (the registry's problem): a re-read would
   // queue jobs that run nothing.
   const problem = p.source === 'own' ? pipelines.problems.get(p.id) : undefined;
@@ -184,7 +259,9 @@ export async function rereadPipeline(
   // check, as the counts are; the skips with them.
   const { found, next, take, skipped } = await areaSystem('settings', async () => {
     const state = await pipelineStateOf(ownerId, p);
-    const page = await olderPage(ownerId, p, state.optionsHash, after, limit, pipelines);
+    const page = missing
+      ? await missingPage(ownerId, p, after, limit, pipelines)
+      : await olderPage(ownerId, p, state.optionsHash, after, limit, pipelines);
     const skipped: Partial<Record<PipelineRunSkip, number>> = {};
     const take: string[] = [];
     for (const row of page.found) {
@@ -197,6 +274,9 @@ export async function rereadPipeline(
         const now = await readFileRowNow(row.id, ownerId);
         if (!now || now.sha256 !== fileSha256Of(row)) skip = 'no-sha';
         else if (now.isPrivate) skip = 'private';
+        // The Reader is off where the file lives: its missing database is
+        // the Admin's choice (the older files keep their rule).
+        else if (missing && pipelineOffHere(state, now.home)) skip = 'not-attached';
       }
       if (skip) skipped[skip] = (skipped[skip] ?? 0) + 1;
       else take.push(row.id);
@@ -247,7 +327,7 @@ export const pipeline_reread: BuiltinToolDef = {
   },
   name: 'Read the older files again',
   description:
-    'Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files in this page, `skipped` counts the files it would not take. With `apply: true` each is queued: a reader builds its database again, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A file of text and no tabs is skipped (`text`): new text needs a re-extract. A queued PDF can still stay as it was. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.',
+    'Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files in this page, `skipped` counts the files it would not take. With `apply: true` each is queued: a reader builds its database again, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A file of text and no tabs is skipped (`text`): new text needs a re-extract. A queued PDF can still stay as it was. `missing: true` (a Reader only): the files that were read but have no database for their bytes, mostly read before the Reader shipped (`noDb` of the coverage check); each gets its database the same way, and a file where the Reader is off is skipped (`not-attached`). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -273,6 +353,12 @@ export const pipeline_reread: BuiltinToolDef = {
         format: 'uuid',
         description: 'Go on after this file id: the `next` of the call before.',
       },
+      missing: {
+        type: 'boolean',
+        default: false,
+        description:
+          'A Reader only. true: the read files that have no database for their bytes, in place of the older ones.',
+      },
     },
     required: ['id'],
   },
@@ -281,6 +367,7 @@ export const pipeline_reread: BuiltinToolDef = {
       apply: input.apply,
       limit: input.limit,
       after: input.after,
+      missing: input.missing,
     });
     return res.ok ? { ok: true, output: res.answer } : { ok: false, error: res.error };
   },

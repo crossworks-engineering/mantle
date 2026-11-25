@@ -199,6 +199,10 @@ export type PipelineRereadBody = {
   limit?: number;
   /** Go on after this file id: the `next` of the call before. */
   after?: string;
+  /** A Reader only: the files that were read but have no database for
+   *  their bytes (the coverage check's `noDb`), in place of the older
+   *  ones. */
+  missing?: boolean;
 };
 
 /** The answer of a run on demand, the dry run and the run alike. An older

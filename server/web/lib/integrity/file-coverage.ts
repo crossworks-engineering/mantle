@@ -17,9 +17,9 @@
  *  - it holds a shortcut cut: a reader that read only the first part to save
  *    work (SHORTCUT_CUT_REASONS). A safety cut (a size or a cost bound) is
  *    counted in `cuts` but is not a shortfall;
- *  - its type has a Reader with a file database and its current bytes have
- *    none (the PDF and the types whose Reader takes only some files left
- *    out, as in the file database lines).
+ *  - it misses its file database (missesDatabase, @mantle/files: the one
+ *    rule the build of the missing ones, `pipeline_reread` with `missing`,
+ *    takes too, so its dry run counts what `noDb` counts).
  * A file not read yet (`pending`) or indexed by name on purpose (`name_only`)
  * is counted, never "not full".
  *
@@ -31,26 +31,29 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { nodes, readOnlyTransaction } from '@mantle/db';
 import {
+  dbExpected,
   EXPORT_REQUIRED_EXTS,
   EXTRACTABLE_ARCHIVE_EXTS,
   extOf,
   extractionOf,
-  fileSha256Of,
+  fileReadStateKeys,
+  heldDatabaseKeys,
   isVisionImage,
   listFileDbFolder,
   MEDIA_EXTS,
   mimeForExt,
+  missesDatabase,
   parserRouteForExt,
   readByOf,
-  readFileDbNone,
   SEALED_ARCHIVE_EXTS,
-  SOME_FILES_EXTS,
+  type FileDbFolder,
+  type ReadStateFile,
 } from '@mantle/files';
 import { cutMakesPartial, readCutReason } from '@mantle/files/read-cut';
 import type { AuditCheck } from '@mantle/client-types/types/integrity';
 
-/** The folder of file databases, as listFileDbFolder gives it. */
-export type FileDbFolder = Awaited<ReturnType<typeof listFileDbFolder>>;
+export type { FileDbFolder };
+export { dbExpected };
 
 /** The types the coverage check scores (the plan's popular list). Others
  *  are counted and listed, not scored. */
@@ -185,7 +188,7 @@ export function routeOfExt(ext: string, dbExts: ReadonlySet<string>): CoverageRo
 
 /** One file, as the check reads it: its type, its read keys, its bytes'
  *  checksum. */
-export type CoverageFile = { id: string; ext: string; data: Record<string, unknown> };
+export type CoverageFile = ReadStateFile;
 
 export type CoverageRow = {
   ext: string;
@@ -213,16 +216,9 @@ const bump = (m: Record<string, number>, k: string) => {
   m[k] = (m[k] ?? 0) + 1;
 };
 
-/** Whether a type's files are expected to have a file database: a Reader
- *  with a database takes the type, and takes every file of it (not the
- *  PDF, whose router sends only drawings and books to a Reader, and not
- *  the types a Reader takes only some files of). */
-export function dbExpected(ext: string, dbExts: ReadonlySet<string>): boolean {
-  return dbExts.has(ext) && ext !== 'pdf' && !SOME_FILES_EXTS.has(ext);
-}
-
-/** The counts by type, from the rows and the database names (`id.sha16`).
- *  Pure: the tests drive it with made-up rows. */
+/** The counts by type, from the rows and the keys that hold a database
+ *  (`id.sha16`, heldDatabaseKeys). Pure: the tests drive it with made-up
+ *  rows. */
 export function coverageOf(
   files: readonly CoverageFile[],
   dbExts: ReadonlySet<string>,
@@ -290,13 +286,9 @@ export function coverageOf(
     }
     if (short) row.shortcut += 1;
     const read = ex.state === 'indexed' || ex.state === 'partial';
-    let noDb = false;
-    if (row.withDb !== null && read) {
-      const sha = fileSha256Of(f);
-      if (typeof sha === 'string' && named.has(`${f.id}.${sha.slice(0, 16)}`)) row.withDb += 1;
-      else noDb = true;
-    }
+    const noDb = missesDatabase(f, dbExts, named);
     if (noDb) row.noDb += 1;
+    else if (row.withDb !== null && read) row.withDb += 1;
     const lost =
       ex.state === 'failed' ||
       (ex.state === 'skipped' && !EMPTY_SKIPS.has(ex.reason ?? '')) ||
@@ -307,21 +299,6 @@ export function coverageOf(
   }
   return [...byExt.values()].sort((a, b) => b.files - a.files || a.ext.localeCompare(b.ext));
 }
-
-/** The keys of `data` the check reads, written out in the SQL: the read
- *  state's own (extractionOf, readCutsOfFile), the checksum, and the name
- *  and type of the file. Never its text. */
-const slimData = () => sql<Record<string, unknown>>`jsonb_strip_nulls(jsonb_build_object(
-  'filename', ${nodes.data}->'filename',
-  'mimeType', ${nodes.data}->'mimeType',
-  'sha256', ${nodes.data}->'sha256',
-  'indexing_applied', ${nodes.data}->'indexing_applied',
-  'extract_skipped', ${nodes.data}->'extract_skipped',
-  'extract_parked', ${nodes.data}->'extract_parked',
-  'extract_completed_at', ${nodes.data}->'extract_completed_at',
-  'read_cut', ${nodes.data}->'read_cut',
-  'ocr', ${nodes.data}->'ocr',
-  'images', ${nodes.data}->'images'))`;
 
 /**
  * Every live file of the brain, with the keys the check reads, and the file
@@ -335,7 +312,7 @@ export async function fileCoverage(ownerId: string, given?: FileDbFolder): Promi
   const { rows, dbExts } = await readOnlyTransaction(async (tx) => {
     const box = await boxPipelines(ownerId, tx);
     const rows = await tx
-      .select({ id: nodes.id, title: nodes.title, data: slimData() })
+      .select({ id: nodes.id, title: nodes.title, data: fileReadStateKeys() })
       .from(nodes)
       .where(
         and(
@@ -353,28 +330,7 @@ export async function fileCoverage(ownerId: string, given?: FileDbFolder): Promi
     const mime = typeof data.mimeType === 'string' ? data.mimeType : '';
     return { id: r.id, ext: typeOfName(name, mime, dbExts), data };
   });
-  return coverageOf(files, dbExts, await databaseNames(folder, files));
-}
-
-/** The names (`id.sha16`) of the files that have a database. A `.none`
- *  name is a word, not a database: `no-rows` (read, nothing in it) and
- *  `too-large` (said by its own cut) count as one, `unreadable` (the parser
- *  refused it for good) does not. Its word is read for these files only. */
-async function databaseNames(
-  folder: FileDbFolder,
-  files: readonly CoverageFile[],
-): Promise<Set<string>> {
-  const named = new Set(folder.names.map((n) => `${n.fileId}.${n.sha16}`));
-  const words = new Set(
-    folder.names.filter((n) => n.name.endsWith('.none')).map((n) => `${n.fileId}.${n.sha16}`),
-  );
-  for (const f of files) {
-    const sha = fileSha256Of(f);
-    if (typeof sha !== 'string') continue;
-    const key = `${f.id}.${sha.slice(0, 16)}`;
-    if (words.has(key) && (await readFileDbNone(f.id, sha)) === 'unreadable') named.delete(key);
-  }
-  return named;
+  return coverageOf(files, dbExts, await heldDatabaseKeys(folder, files));
 }
 
 /**

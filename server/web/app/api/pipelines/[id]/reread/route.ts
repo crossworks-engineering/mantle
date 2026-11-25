@@ -24,6 +24,7 @@ const Body = z
     apply: z.boolean().optional(),
     limit: z.number().optional(),
     after: z.string().max(40).optional(),
+    missing: z.boolean().optional(),
   })
   .strict();
 
@@ -31,7 +32,9 @@ const Body = z
  * POST /api/pipelines/:id/reread: read the older files of one pipeline
  * again (docs/pipelines.md, "Read the older files again"). With no `apply`,
  * the dry run: the older files found in this page, and nothing sent. With
- * `apply`, each file it takes is queued, after the busy check. The answer is
+ * `apply`, each file it takes is queued, after the busy check. With
+ * `missing` (a Reader only), the files that were read but have no database
+ * for their bytes, in place of the older ones. The answer is
  * a `PipelineRunAnswer` with one choice. An unknown pipeline is a 404; a
  * refused input is a 400 with its sentence. The MCP tool `pipeline_reread`
  * does the same, through the same function.

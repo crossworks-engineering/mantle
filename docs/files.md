@@ -406,7 +406,8 @@ What the brain did with a file, derived live (nothing new is stored):
   first part: `SHORTCUT_CUT_REASONS`; a safety cut such as `text_store` is
   counted but is no shortfall), or its type's Reader makes a database and
   its bytes have none (not a PDF, not a type a Reader takes only some files
-  of). A file not read yet or indexed by name is counted, never "not full".
+  of): `missesDatabase`, the rule `pipeline_reread` with `missing: true`
+  takes too, so an Admin builds those databases with no model. A file not read yet or indexed by name is counted, never "not full".
   Two ways in, one function: the corpus audit's line `file_coverage` (the
   popular types, the five with the most files not full) and
   `pnpm -C server/web files:coverage [--json]` (every type, with skip

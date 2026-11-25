@@ -175,6 +175,19 @@ export {
   writeWindowStage,
 } from './file-dbs';
 export type { FileDbNoneWord } from './file-dbs';
+// A missing file database: one rule for the coverage check and the build
+// of the missing ones (pipeline_reread `missing`).
+export {
+  dbExpected,
+  fileDbKeyOf,
+  fileReadStateKeys,
+  fileRowsOfTypes,
+  fileWasRead,
+  heldDatabaseKeys,
+  missesDatabase,
+  type FileDbFolder,
+  type ReadStateFile,
+} from './file-db-missing';
 // The pipeline contract and the built-in readers that make a file's
 // database (docs/pipelines.md).
 export {
