@@ -241,9 +241,7 @@ describe('the job of a run on demand', () => {
     // An Agent of fields, not page text: none.
     h.skip = 'body_too_short';
     const TIF = '10000000-0000-4000-8000-000000000000';
-    expect(await runPipelineJob(OWNER, TIF, 'iso-title-block')).not.toHaveProperty(
-      'extractAgain',
-    );
+    expect(await runPipelineJob(OWNER, TIF, 'iso-title-block')).not.toHaveProperty('extractAgain');
   });
 
   it('a reader runs only on a file it reads', async () => {
