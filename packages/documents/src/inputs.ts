@@ -142,26 +142,49 @@ const stemOf = (filename: string): string => filename.replace(/\.[^.]+$/, '') ||
 const htmlText = (s: string): string => s.replace(/[&<>{}]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /**
- * A file name as the engine stores and finds it, so two inputs it would
- * confuse are refused here. Gotenberg 8.40.0 (`sanitizeFilename` in
- * pkg/modules/api/context.go) keeps what follows the last `/` or `\`, drops
- * U+0000 to U+001F and U+007F, and NFC-normalizes; every file of every form
- * field then sits in one map and one folder, and a second file of a name
- * becomes `name (2).ext`. Its lookup (`FormData.path`) also takes the name
- * with its extension lower-cased. So `embeds/index.html` next to the
- * markdown wrapper could be the one the engine parses: one name, one file.
+ * Why a file name is not plain, or null when it is. A plain name reaches the
+ * engine as it is: the form writer, Go's multipart parse and Gotenberg's
+ * store leave it unchanged, so the name checked here is the name the engine
+ * stores, and one exact compare in `take` finds two names it would confuse.
+ * What changes a name on the way, by source:
+ *  - `"`: Bun's FormData writes it as %22 (1.4.4 and 1.4.5); an older writer
+ *    sent it raw, and Go's ParseMediaType then took a `filename*` instead.
+ *  - `\`: Go drops it before a special character (mime consumeValue), and
+ *    Gotenberg cuts the name at it (sanitizeFilename, 8.40.0).
+ *  - `/`: Go keeps the last part (filepath.Base in Part.FileName), and so
+ *    does Gotenberg.
+ *  - U+0000 to U+001F and U+007F: Bun writes CR and LF as %0D and %0A, Go
+ *    refuses a raw CR or LF in a header, and Gotenberg drops them all.
+ *  - half of a UTF-16 pair: UTF-8 cannot hold it; the writer sends U+FFFD.
+ *  - not NFC: Gotenberg normalizes the name to NFC.
+ *  - empty: Go reads a part with no file name as a value, not a file.
+ * Everything else (spaces, dots, `;`, `%`, braces, any letter) goes as it is.
  */
-export function engineName(filename: string): string {
-  const base = filename.slice(Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\')) + 1);
-  const name = base
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')
-    .split('')
-    .filter((c) => c.charCodeAt(0) >= 0x20 && c.charCodeAt(0) !== 0x7f)
-    .join('')
-    .normalize('NFC');
+export function notPlain(filename: string): string | null {
+  if (filename === '') return 'an empty name';
+  for (const c of filename) {
+    const n = c.codePointAt(0) ?? 0;
+    if (c === '"') return 'a double quote';
+    if (c === '\\') return 'a backslash';
+    if (c === '/') return 'a slash';
+    if (n < 0x20 || n === 0x7f) {
+      return `a control character (U+${n.toString(16).toUpperCase().padStart(4, '0')})`;
+    }
+    if (n >= 0xd800 && n <= 0xdfff) return 'a broken character (half of a UTF-16 pair)';
+  }
+  if (filename.normalize('NFC') !== filename) {
+    return 'letters in decomposed form (save the name in Unicode NFC)';
+  }
+  return null;
+}
+
+/** Gotenberg finds a file by its name as it is or with its extension in
+ *  lower case (FormData.path, 8.40.0), and keeps every file of a call in one
+ *  map and one folder: two names alike in this form are one file to it. */
+const lookupName = (name: string): string => {
   const dot = name.lastIndexOf('.');
   return dot === -1 ? name : name.slice(0, dot) + name.slice(dot).toLowerCase();
-}
+};
 
 /** `{{ toHTML "name" }}` as Go's template lexer reads it (text/template
  *  lex.go, the same in Go 1.25 and 1.27): its spaces, its trim markers
@@ -253,10 +276,16 @@ export async function resolveInputs(
         `the inputs together pass ${DOCUMENTS_MAX_TOTAL_BYTES / 1024 / 1024} MB; split the call`,
       );
     }
-    const same = parts.find((p) => engineName(p.filename) === engineName(filename));
+    const why = notPlain(filename);
+    if (why) {
+      throw new InputError(
+        `rename the file ${JSON.stringify(filename)}: a documents job takes a file name without ${why}`,
+      );
+    }
+    const same = parts.find((p) => lookupName(p.filename) === lookupName(filename));
     if (same) {
       throw new InputError(
-        `two inputs are both named ${engineName(filename)} as the engine stores them (${JSON.stringify(same.filename)} and ${JSON.stringify(filename)}); the engine keeps every file of a call in one flat directory, so names must differ: rename one`,
+        `two inputs are both named ${JSON.stringify(same.filename)}${same.filename === filename ? '' : ` and ${JSON.stringify(filename)}`}; the engine keeps every file of a call in one flat directory, so names must differ: rename one`,
       );
     }
     parts.push({ field, filename, bytes });
@@ -323,21 +352,13 @@ export async function resolveInputs(
         await take('files', f.filename, f.bytes);
         names.push(f.filename);
       }
-      if (!html) {
-        // Mantle's own wrapper places each file by its name in a Go string.
-        const bad = names.find((n) => /["\\\r\n]/.test(n));
-        if (bad !== undefined) {
-          throw new InputError(
-            `rename the file ${JSON.stringify(bad)}: the engine places a markdown file by its name inside a template string, and a name there may not hold a double quote, a backslash or a line break`,
-          );
-        }
-      }
       const wrapper =
         html ??
         `<!doctype html><html><head><meta charset="utf-8"><title>${htmlText(stem)}</title></head><body>${names
           .map((n) => `{{ toHTML "${n}" }}`)
           .join('\n')}</body></html>`;
-      // Both wrappers: the caller's, and Mantle's own (file names go in it).
+      // Both wrappers: the caller's, and Mantle's own, whose names `take`
+      // has already held to plain (no quote, backslash or line break).
       checkMarkdownWrapper(wrapper, names);
       await take('files', 'index.html', Buffer.from(wrapper, 'utf8'));
       break;

@@ -14,7 +14,7 @@ import {
   DOCUMENTS_MAX_INPUT_BYTES,
   DOCUMENTS_MAX_TOTAL_BYTES,
   checkMarkdownWrapper,
-  engineName,
+  notPlain,
   resolveInputs,
   type InputDeps,
 } from './inputs';
@@ -211,7 +211,7 @@ describe('files', () => {
         caller,
         same,
       ),
-    ).rejects.toThrow(/both named same.pdf/);
+    ).rejects.toThrow(/both named "same\.pdf"/);
   });
 });
 
@@ -409,7 +409,9 @@ describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
     for (const filename of ['a" }}{{range 9}}{{end}}{{ toHTML "b.md', 'a\\b.md']) {
       await expect(
         resolveInputs(r('chromium/convert/markdown'), { file_ids: id }, caller, named(filename)),
-      ).rejects.toThrow(/^rename the file .*a double quote, a backslash or a line break/);
+      ).rejects.toThrow(
+        /^rename the file .*: a documents job takes a file name without a (double quote|backslash)$/,
+      );
     }
     // Braces and markup in a name are fine: the title is escaped, and in the
     // toHTML string they are text.
@@ -427,17 +429,24 @@ describe('the markdown wrapper is no template (GHSA-2m5g-g83x-jqp7)', () => {
   });
 });
 
-describe('one flat directory: no two inputs the engine would confuse', () => {
+describe('plain names only, one name per file (the flat directory)', () => {
   const named = (files: Record<string, string>): InputDeps => ({
     ...deps,
     readFile: async (_o, id) => {
       const filename = files[id];
-      return filename ? { filename, bytes: Buffer.from('x') } : null;
+      return filename !== undefined ? { filename, bytes: Buffer.from('x') } : null;
     },
   });
   const ID = (n: number) =>
     `${String(n).repeat(8)}-${String(n).repeat(4)}-4${String(n).repeat(3)}-8${String(n).repeat(3)}-${String(n).repeat(12)}`;
   const md = r('chromium/convert/markdown');
+  const embed = (filename: string) =>
+    resolveInputs(
+      md,
+      { markdown: '# hi', embed_file_ids: [ID(5)] },
+      caller,
+      named({ [ID(5)]: filename }),
+    );
 
   it('an extra file named index.html cannot sit beside the markdown wrapper', async () => {
     const deps2 = named({ [ID(5)]: 'index.html' });
@@ -449,47 +458,73 @@ describe('one flat directory: no two inputs the engine would confuse', () => {
     ]) {
       await expect(
         resolveInputs(md, { markdown: '# hi', ...extra }, caller, deps2),
-      ).rejects.toThrow(/two inputs are both named index\.html as the engine stores them/);
+      ).rejects.toThrow(
+        /two inputs are both named "index\.html"; the engine keeps every file of a call in one flat directory/,
+      );
     }
   });
 
-  it('names the engine stores alike are one name: path, extension case, Unicode form, control characters', async () => {
-    const twins: Array<[string, string]> = [
-      ['a.pdf', 'folder/a.pdf'],
-      ['a.pdf', 'c:\\x\\a.pdf'],
-      ['a.pdf', 'a.PDF'],
-      ['caf\u00e9.pdf', 'cafe\u0301.pdf'],
-      ['a.pdf', 'a\u0000.pdf'],
-      ['a.pdf', '\u001fa\u007f.pdf'],
-    ];
-    for (const [one, two] of twins) {
+  it("refuses the auditor's filename* name as an embed and as a watermark", async () => {
+    const name = `a"; filename*=UTF-8''index.html; x="`;
+    const deps2 = named({ [ID(5)]: name });
+    for (const extra of [{ embed_file_ids: [ID(5)] }, { watermark_file_id: ID(5) }]) {
       await expect(
-        resolveInputs(
-          r('pdfengines/merge'),
-          { file_ids: [ID(5), ID(6)] },
-          caller,
-          named({ [ID(5)]: one, [ID(6)]: two }),
-        ),
+        resolveInputs(md, { markdown: '# hi', ...extra }, caller, deps2),
       ).rejects.toThrow(
-        /two inputs are both named a\.pdf|two inputs are both named caf\u00e9\.pdf/,
+        /^rename the file .*: a documents job takes a file name without a double quote$/,
       );
     }
+  });
+
+  const REFUSED: Array<[string, string, RegExp]> = [
+    ['a double quote', 'say "hi".pdf', /without a double quote$/],
+    ['a backslash', 'c:\\docs\\a.pdf', /without a backslash$/],
+    ['a slash', 'folder/a.pdf', /without a slash$/],
+    ['a trailing slash', 'index.html/', /without a slash$/],
+    ['a carriage return', 'a\rb.pdf', /without a control character \(U\+000D\)$/],
+    ['a line feed', 'a\nb.pdf', /without a control character \(U\+000A\)$/],
+    ['CR LF with a header', 'a.pdf\r\nX-Injected: 1', /without a control character \(U\+000D\)$/],
+    ['a tab', 'a\tb.pdf', /without a control character \(U\+0009\)$/],
+    ['a NUL', 'a\u0000b.pdf', /without a control character \(U\+0000\)$/],
+    ['DEL', 'a\u007fb.pdf', /without a control character \(U\+007F\)$/],
+    ['half of a UTF-16 pair', 'a\ud800.pdf', /without a broken character/],
+    ['a decomposed accent', 'cafe\u0301.pdf', /without letters in decomposed form/],
+    ['an empty name', '', /without an empty name$/],
+  ];
+  for (const [what, filename, why] of REFUSED) {
+    it(`refuses ${what}, for the person: rename the file`, async () => {
+      await expect(embed(filename)).rejects.toThrow(/^rename the file /);
+      await expect(embed(filename)).rejects.toThrow(why);
+    });
+  }
+
+  it('takes ordinary names: spaces, dots, dashes, parentheses, NFC letters, braces, ; and %', async () => {
+    for (const filename of [
+      'Report (final) v2.pdf',
+      'a.b-c_d.e.pdf',
+      ' lead and trail .pdf',
+      'caf\u00e9 r\u00e9sum\u00e9.pdf',
+      '\u65e5\u672c\u8a9e.pdf',
+      'Report {final}.md',
+      'semi;colon.pdf',
+      '100%.pdf',
+      '..',
+    ]) {
+      await expect(embed(filename)).resolves.toBeTruthy();
+    }
+  });
+
+  it('a name in another case of its extension is the same file to the engine', async () => {
     await expect(
       resolveInputs(
-        md,
-        { markdown: '# hi', embed_file_ids: [ID(5)] },
+        r('pdfengines/merge'),
+        { file_ids: [ID(5), ID(6)] },
         caller,
-        named({ [ID(5)]: 'sub/INDEX.html' }),
+        named({ [ID(5)]: 'a.pdf', [ID(6)]: 'a.PDF' }),
       ),
-    ).resolves.toBeTruthy();
-    await expect(
-      resolveInputs(
-        md,
-        { markdown: '# hi', embed_file_ids: [ID(5)] },
-        caller,
-        named({ [ID(5)]: 'x/index.HTML' }),
-      ),
-    ).rejects.toThrow(/both named index\.html/);
+    ).rejects.toThrow(/two inputs are both named "a\.pdf" and "a\.PDF"/);
+    await expect(embed('index.HTML')).rejects.toThrow(/both named "index\.html" and "index\.HTML"/);
+    await expect(embed('INDEX.html')).resolves.toBeTruthy();
   });
 
   it('two different names still pass', async () => {
@@ -502,11 +537,10 @@ describe('one flat directory: no two inputs the engine would confuse', () => {
     expect(out.parts.map((p) => p.filename)).toEqual(['a.pdf', 'b.pdf', 'c.pdf']);
   });
 
-  it('engineName follows Gotenberg 8.40.0', () => {
-    expect(engineName('x/y\\Na\u0001me.TXT')).toBe('Name.txt');
-    expect(engineName('.HTACCESS')).toBe('.htaccess');
-    expect(engineName('noext')).toBe('noext');
-    expect(engineName('a\ud800.pdf')).toBe('a\ufffd.pdf');
+  it('notPlain names what it found, or null', () => {
+    expect(notPlain('plain name.pdf')).toBeNull();
+    expect(notPlain('a/b')).toBe('a slash');
+    expect(notPlain('\u001f')).toBe('a control character (U+001F)');
   });
 });
 
