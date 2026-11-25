@@ -1965,7 +1965,9 @@ reads them again if wanted.
 ## The DWF reader as a package
 
 `plot-dwf` moved in MV4. Its folder is `pkg/plot-dwf/`: `step.ts`, and the
-container reader `dwf.ts`. The step reads the bytes in hand: a file that is
+container reader `dwf.ts`. Beside it, `dwfx.ts` reads a DWFx (the XPS form
+of a DWF set) for its text only, on the core route `dwfx`: no step, no tabs.
+The step reads the bytes in hand: a file that is
 not a DWF by its magic (usually a renamed DWFx), and a DWF with no 2D
 sheets, are `ok` with no tabs (the word `no-rows`), as before; else the tabs
 Sheets, Layers and Labels and the description of a DWF database, in one

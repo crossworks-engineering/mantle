@@ -24,7 +24,7 @@ import {
 import { passesGate } from './embedded-images';
 import { readEmbeddedImages } from './embedded-images-read';
 import { readDocumentText } from './read-document';
-import { INGESTABLE_EXTS, exportHintForExt, mimeForExt, parserRouteForExt } from './slug';
+import { INGESTABLE_EXTS, mimeForExt, parserRouteForExt } from './slug';
 
 const SECTION = 'com.autodesk.dwf.ePlot_AAAA0000-0000-0000-0000-000000000001';
 
@@ -277,10 +277,5 @@ describe('dwf routing', () => {
     expect(INGESTABLE_EXTS.has('dwf')).toBe(true);
     expect(parserRouteForExt('dwf')).toBe('dwf');
     expect(mimeForExt('dwf')).toBe('model/vnd.dwf');
-  });
-
-  it('dwfx stays unreadable but names its recovery move', () => {
-    expect(parserRouteForExt('dwfx')).toBe('none');
-    expect(exportHintForExt('dwfx')).toMatch(/DWF/);
   });
 });

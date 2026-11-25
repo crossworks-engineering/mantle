@@ -353,7 +353,7 @@ export function isHollowFilenameBody(opts: {
 
 /**
  * The routes whose reader sniffs its own bytes and gives '' for bytes that
- * are not its format: DWF, DWG, DXF, DGN and the legacy sheets. For these an
+ * are not its format: DWF, DWFx, DWG, DXF, DGN and the legacy sheets. For these an
  * empty read means "not this format" (the `no_parser` skip), so a reader
  * that FAILED on bytes of its format is no sniff miss: the extractor throws
  * its verdict and records `document_unreadable` (failed, with the parser's
@@ -361,5 +361,10 @@ export function isHollowFilenameBody(opts: {
  * an empty read of these routes only for a real sniff miss.
  */
 export function isSniffedRoute(parserRoute: string): boolean {
-  return parserRoute === 'dwf' || isCadExt(parserRoute) || parserRoute === 'legacy-sheet';
+  return (
+    parserRoute === 'dwf' ||
+    parserRoute === 'dwfx' ||
+    isCadExt(parserRoute) ||
+    parserRoute === 'legacy-sheet'
+  );
 }
