@@ -1,5 +1,5 @@
 /**
- * The option schemas, one group per block of the Gotenberg 8.39 docs, with
+ * The option schemas, one group per block of the Gotenberg 8.40 docs, with
  * the engine's own field names as the option names: the Gotenberg docs are
  * the docs. Every route's schema is strict (an unknown key is refused with
  * the first problem), and the fields Mantle owns (MANTLE_OWNED_FIELDS) are

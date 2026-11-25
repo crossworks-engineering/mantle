@@ -175,7 +175,7 @@ services:
   # list and a dev-only password; .env.local carries GOTENBERG_URL and
   # GOTENBERG_PASSWORD (see .env.example).
   gotenberg:
-    image: gotenberg/gotenberg:8.39.0
+    image: gotenberg/gotenberg:8.40.0
     container_name: mantle_dev_gotenberg
     restart: unless-stopped
     profiles: ['documents']

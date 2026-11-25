@@ -227,7 +227,7 @@ describe('gotenbergHealth', () => {
     delete process.env.MANTLE_COMPOSE_PROFILES;
     vi.stubGlobal('fetch', async (url: string) =>
       url.endsWith('/version')
-        ? new Response('8.39.0\n', { status: 200 })
+        ? new Response('8.40.0\n', { status: 200 })
         : new Response(
             JSON.stringify({
               status: 'up',
@@ -238,7 +238,7 @@ describe('gotenbergHealth', () => {
     );
     expect(await gotenbergHealth()).toEqual({
       up: true,
-      version: 'Gotenberg 8.39.0',
+      version: 'Gotenberg 8.40.0',
       modules: { chromium: 'up', libreoffice: 'up' },
     });
     vi.stubGlobal('fetch', async (url: string) =>

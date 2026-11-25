@@ -889,7 +889,7 @@ services:
   # render cookie never outlives its job. Two Chromium jobs at a time, ten
   # queued, 60 s each; LibreOffice is one at a time by nature, ten queued.
   gotenberg:
-    image: gotenberg/gotenberg:8.39.0
+    image: gotenberg/gotenberg:8.40.0
     container_name: mantle_gotenberg
     restart: unless-stopped
     logging: *default-logging

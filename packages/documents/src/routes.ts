@@ -1,5 +1,5 @@
 /**
- * The route table: Gotenberg 8.39 one to one. Every route the engine serves
+ * The route table: Gotenberg 8.40 one to one. Every route the engine serves
  * for conversions is here with its path, the inputs it takes and its option
  * schema (schemas.ts). The HTTP API (POST /api/v1/documents/<key>), the four
  * agent tools and the mini-app broker all resolve a key here, so the surfaces

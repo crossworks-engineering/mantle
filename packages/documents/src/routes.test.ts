@@ -1,5 +1,5 @@
 /**
- * The route table and its schemas: every Gotenberg 8.39 conversion route is
+ * The route table and its schemas: every Gotenberg 8.40 conversion route is
  * here, every route's options are a strict schema of the engine's own field
  * names, and the fields Mantle owns are refused everywhere, each with why.
  */

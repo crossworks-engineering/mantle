@@ -15,7 +15,7 @@ re-render stays on the browser sidecar.
 
 ## What runs
 
-`gotenberg/gotenberg:8.39.0` (the 8.31 line is not safe for us: before
+`gotenberg/gotenberg:8.40.0` (the 8.31 line is not safe for us: before
 8.38.0 every conversion shared one cookie jar, so one admin's render cookie
 could authenticate a later render; the screenshot `selector` and
 `deviceScaleFactor` fields arrived in 8.36 and 8.33). Measured on the dev
@@ -71,7 +71,7 @@ engine stores nothing, so off loses nothing.
 
 `packages/documents` (`@mantle/documents`) owns:
 
-- the route table (`src/routes.ts`): every Gotenberg 8.39 conversion route
+- the route table (`src/routes.ts`): every Gotenberg 8.40 conversion route
   by key (the engine path without `/forms/`: `chromium/convert/html`,
   `libreoffice/convert`, `pdfengines/merge`, ...), with its input kind, the
   extra files it takes and its option schema;
