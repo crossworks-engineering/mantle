@@ -515,7 +515,10 @@ services:
     # tag IS the Postgres major. Default pg18 — fresh installs come up on 18. An
     # EXISTING pg17 box must migrate first or pin POSTGRES_IMAGE_TAG=pg17 (a major
     # won't start on an old major's data dir). See the header note + docs/postgres-18-upgrade.md.
-    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
+    # The default is pinned by digest, so every box runs the same minor and git
+    # shows it: pg18 at this digest is 0.8.7-pg18, PostgreSQL 18.7 + pgvector
+    # 0.8.7 (pushed 2026-11-12). Moving the digest recreates Postgres on a roll.
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782}
     container_name: mantle_pg
     restart: unless-stopped
     logging: *default-logging
@@ -1180,8 +1183,10 @@ services:
   # Automatic HTTPS (Let's Encrypt) when MANTLE_SITE_ADDRESS is a hostname;
   # plain HTTP on :80 otherwise. Proxies public 80/443 → internal web:3000.
   # Point a DNS A record at the VPS and open 80 + 443 before first boot.
+  # Pinned by version and digest (2.11.9, pushed 2026-11-13), so every box runs
+  # the same Caddy and a new one arrives only through a reviewed change.
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     container_name: mantle_caddy
     restart: unless-stopped
     logging: *default-logging

@@ -21,7 +21,7 @@ The compose files gate the pgvector image behind `POSTGRES_IMAGE_TAG` (default
 `pg18`) in both `docker-compose.yml` and `docker-compose.dev.yml`:
 
 ```yaml
-image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
+image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782}
 ```
 
 **Fresh installs come up on pg18 directly**: a new box has no data dir, so it just
@@ -49,9 +49,10 @@ Without it, `POSTGRES_IMAGE_TAG=pg18` will not boot; the tag change alone is not
 enough.
 
 > `pgvector/pgvector` bundles Postgres **and** the vector extension in one image, so
-> "upgrade Postgres" and "upgrade pgvector" are the same image. `pg18` currently
-> ships **PostgreSQL 18.4 + pgvector 0.8.5** (same pgvector as the `pg17` image, so
-> the extension version does not change; only the Postgres major does).
+> "upgrade Postgres" and "upgrade pgvector" are the same image. The compose default
+> pins `pg18` by digest (2026-11-25): **PostgreSQL 18.7 + pgvector 0.8.7**. A new
+> digest is a new Postgres minor or pgvector version; it recreates the Postgres
+> container on the next roll (a database restart).
 
 ## ⚠️ After you land on pg18: scheduled backups need v0.202.1+
 

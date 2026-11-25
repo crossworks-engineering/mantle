@@ -18,7 +18,7 @@ set -uo pipefail
 SLOT=${1:-1}
 REPO=${MANTLE_CI_REPO:-crossworks-engineering/mantle}
 IMAGE=${MANTLE_CI_IMAGE:-mantle-ci-runner:2.338.2}
-PG_IMAGE=${MANTLE_CI_PG_IMAGE:-pgvector/pgvector:pg18}
+PG_IMAGE=${MANTLE_CI_PG_IMAGE:-pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782}
 LABELS=${MANTLE_CI_LABELS:-mantle-ws}
 CPUS=${MANTLE_CI_CPUS:-12}
 MEM=${MANTLE_CI_MEM:-16g}

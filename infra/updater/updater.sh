@@ -2474,7 +2474,7 @@ while true; do
       # health-start window, so the PUBLIC SITE (including the progress UI the
       # operator is watching) is dead for ~2 min. Worse, that price is usually
       # paid for nothing — on a release that changes neither the Caddyfile nor
-      # the floating caddy:2-alpine digest, caddy needs no recreate at all.
+      # the pinned caddy image, caddy needs no recreate at all.
       # Rolled separately below with --no-deps: unchanged ⇒ true no-op and
       # caddy never stops serving; changed ⇒ a ~1s recreate instead of ~2 min.
       SERVICES=$(printf '%s\n' "$ROLLABLE" | grep -vx caddy | tr '\n' ' ')

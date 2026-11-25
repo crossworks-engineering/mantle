@@ -19,7 +19,7 @@ services:
     # Tag = Postgres major. Default pg18 — fresh dev setups start on 18. An existing
     # pg17 data dir won't boot pg18: migrate (dump → wipe data dir → restore) or pin
     # POSTGRES_IMAGE_TAG=pg17 until you do. See docs/postgres-18-upgrade.md.
-    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782}
     container_name: mantle_dev_pg
     restart: unless-stopped
     # The same limit as docker-compose.yml: `pnpm dev` runs the same processes

@@ -55,7 +55,7 @@ jobs:
         # On the workstation runner the loop starts this Postgres itself (the
         # job gets no Docker there); an empty image skips the service. ('' is
         # falsy in expressions, so the empty case must come last.)
-        image: ${{ !(vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && 'pgvector/pgvector:pg18' || '' }}
+        image: ${{ !(vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && 'pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782' || '' }}
         env:
           POSTGRES_PASSWORD: postgres
         ports:

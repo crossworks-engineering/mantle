@@ -520,7 +520,7 @@ converged separately with `--no-deps`. It declares
 `depends_on: web {service_healthy}`, right for first boot, brutal mid-update,
 where it parked the public site (including the progress UI) behind web's
 ~2 min health-start window. On a release that changes neither the Caddyfile nor
-the floating `caddy:2-alpine` digest that is now a true no-op and caddy never
+the pinned `caddy` image that is now a true no-op and caddy never
 stops serving.
 
 ---
