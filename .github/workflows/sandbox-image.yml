@@ -45,7 +45,7 @@ jobs:
     env:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-sandbox
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -74,7 +74,7 @@ jobs:
             fi
           done
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -131,7 +131,7 @@ jobs:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-sandbox
       TAG: ${{ needs.check.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # The image and its build need more than a stock runner has free.
       - name: Free disk
@@ -142,14 +142,14 @@ jobs:
       # Fixed DNS for the build containers. On 2026-11-11 the arm64 runner's
       # build containers could not resolve the Ubuntu mirror three times in a
       # row, with nothing changed on our side; fixed resolvers remove that.
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
         with:
           buildkitd-config-inline: |
             [dns]
               nameservers = ["1.1.1.1", "8.8.8.8"]
 
       - name: Build (local, for the smoke test)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: infra/sandbox-image
           platforms: ${{ matrix.platform }}
@@ -176,7 +176,7 @@ jobs:
       - name: Image size
         run: docker image ls mantle-sandbox:smoke --format '{{.Size}}'
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -197,7 +197,7 @@ jobs:
           touch "${{ runner.temp }}/digests/${digest}"
           echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sandbox-digests-${{ env.PLATFORM_PAIR }}
           path: ${{ runner.temp }}/digests/*
@@ -213,15 +213,15 @@ jobs:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-sandbox
       TAG: ${{ needs.check.outputs.tag }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: ${{ runner.temp }}/digests
           pattern: sandbox-digests-*
           merge-multiple: true
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

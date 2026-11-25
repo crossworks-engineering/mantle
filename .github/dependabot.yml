@@ -9,6 +9,9 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # Version updates wait 3 days after a release (security updates do not).
+    cooldown:
+      default-days: 3
     groups:
       minor-and-patch:
         update-types: [minor, patch]
@@ -17,11 +20,18 @@ updates:
       # pnpm-workspace.yaml for why and when to lift it.
       - dependency-name: vitest
       - dependency-name: '@vitest/*'
+  # The workflows pin each action by commit hash with its tag in a comment
+  # (`uses: owner/repo@<sha> # vX.Y.Z`); Dependabot moves both together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        patterns: ['*']
   - package-ecosystem: docker
     directory: /
     schedule:
