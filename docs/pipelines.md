@@ -1998,9 +1998,9 @@ tabs Sheets (one row a sheet) and Texts (every text run, in page order),
 with the description of a DWFx database. Every part is read through the zip
 guard. Bytes that are not a DWFx give no text and no tabs; a zip that
 cannot be opened, or whose every page is missing, fails the read with a
-named error. The linework and the page pictures are not read. A DWFx is a
-light file: `dwfx` is no drawing extension (`isDrawingExt`), so it takes the
-light lane, whatever the manifest's weight.
+named error. The linework and the page pictures are not read. A DWFx is
+no drawing of the CAD tier (`isDrawingExt`), but one Reader has one weight,
+so it takes the heavy lane of `plot-dwf` (`extractWeightOfExt`).
 
 The new extension raised the version (see "When to raise a version"): every
 DWF database stamped 1.0.0 now shows as read by an older version, though its

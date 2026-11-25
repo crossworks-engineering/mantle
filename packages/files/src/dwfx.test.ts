@@ -8,7 +8,12 @@
  */
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { dwfxToGrids, glyphRuns, parseDwfx, parseDwfxStructured } from './pipelines/pkg/plot-dwf/dwfx';
+import {
+  dwfxToGrids,
+  glyphRuns,
+  parseDwfx,
+  parseDwfxStructured,
+} from './pipelines/pkg/plot-dwf/dwfx';
 import { DWFX_DESCRIPTION, step } from './pipelines/pkg/plot-dwf/step';
 import { readDocumentText } from './read-document';
 import { withReadCutSink } from './read-cut-sink';
@@ -257,12 +262,12 @@ describe('the plot-dwf step on a DWFx: the file database', () => {
 });
 
 describe('dwfx routing', () => {
-  it('is ingestable, on its own route, a light read, with no export hint', () => {
+  it('is ingestable, on its own route, in the DWF lane, with no export hint', () => {
     expect(INGESTABLE_EXTS.has('dwfx')).toBe(true);
     expect(parserRouteForExt('dwfx')).toBe('dwfx');
     expect(exportHintForExt('dwfx')).toBeUndefined();
     expect(isDrawingExt('dwfx')).toBe(false);
-    expect(extractWeightOfExt('dwfx')).toBe('light');
+    expect(extractWeightOfExt('dwfx')).toBe('heavy');
     expect(mimeForExt('dwfx')).toBe('model/vnd.dwfx+xps');
   });
 });

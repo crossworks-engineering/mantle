@@ -267,7 +267,9 @@ export function isDrawingExt(ext: string): boolean {
  *  documents, and its kind is known only after the read. */
 export type ExtractWeight = 'light' | 'heavy';
 export function extractWeightOfExt(ext: string): ExtractWeight {
-  return isDrawingExt(ext) ? 'heavy' : 'light';
+  // A DWFx is no drawing of the CAD tier, but its Reader is the DWF one
+  // (plot-dwf), and one Reader has one weight, so it takes the DWF lane.
+  return isDrawingExt(ext) || ext === 'dwfx' ? 'heavy' : 'light';
 }
 
 /**
@@ -336,7 +338,8 @@ export const INGESTABLE_EXTS = new Set<string>([
   'dwf',
   // Autodesk DWFx (the XPS form of a DWF set): sheet names and page text,
   // read in the parser (packages/files/src/pipelines/pkg/plot-dwf/dwfx.ts).
-  // A light read: not a drawing for the CAD tier (isDrawingExt).
+  // Not a drawing for the CAD tier (isDrawingExt); a heavy file, as its
+  // Reader plot-dwf is (extractWeightOfExt).
   'dwfx',
   // DWG, DXF and DGN drawings: the parser's CAD tier reads them.
   ...CAD_EXTS,

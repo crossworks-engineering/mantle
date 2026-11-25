@@ -91,7 +91,7 @@ describe('plot-dwf: the step gives what the old path gave', () => {
     await expect(readInProcess(fixture(DAMAGED))).rejects.toThrow(/no readable ZIP archive/);
   });
 
-  it('the stamp is the same: the id and the version did not move', async () => {
+  it('the stamp: the id did not move; the version is 1.1.0, the one that reads DWFx too', async () => {
     const parsed = await readInProcess(fixture('plot-set.dwf'));
     if (parsed.kind !== 'sheets') throw new Error('no sheets');
     expect(
@@ -101,7 +101,7 @@ describe('plot-dwf: the step gives what the old path gave', () => {
       ),
     ).toEqual({
       pipeline_id: 'plot-dwf',
-      pipeline_version: '1.0.0',
+      pipeline_version: '1.1.0',
       pipeline_api: '1',
       shapes: '',
     });
