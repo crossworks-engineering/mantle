@@ -666,6 +666,9 @@ async function handleExtractJob(
               book ? 'book' : undefined,
               data.pages === true,
             ).then(async (out) => {
+              // An Agent's new page text on a file whose extract found too
+              // little text: its extract once more (pipeline-run.ts).
+              if (out.extractAgain) await enqueueExtract(nodeId);
               // An Agent's run held by the provider or the day cap: the same
               // run again later (point 7). Never a retry of anything else.
               if (out.wait) {

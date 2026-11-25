@@ -3,7 +3,11 @@
  * real file database written here. The Reader's `Pages` tab gives each page
  * of the ORIGINAL file; an Agent's `page-<N>` answer stands over the
  * Reader's text of that page; `_meta` gives the pages read; a database of a
- * Reader that does not say `produces.pages` gives none. Made-up rows only.
+ * Reader that does not say `produces.pages` gives none. A Reader's run of
+ * page headings and no words (a one-page scan, every page left to its
+ * Agent) still stands over the core's PDF read, with the Agent's text of
+ * the page when the database holds it, else with no text
+ * (standingReaderText). Made-up rows only.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -34,11 +38,18 @@ const pipelines = {
   agents: [AGENT],
 };
 vi.mock('./pipeline-registry', () => ({ boxPipelines: async () => pipelines }));
+vi.mock('./pipeline-state', async (orig) => ({
+  ...(await orig<typeof import('./pipeline-state')>()),
+  pipelineStateOf: async () => ({ options: {} }),
+}));
 
 const { pipelineStampOf } = await import('@mantle/files');
 const { tabsOfSheets } = await import('./file-database');
 const { writeFileDatabaseDoc } = await import('./table-broker');
-const { filePagesOf, pagesText } = await import('./page-passages');
+const { filePagesOf, hasPageWords, pagesText } = await import('./page-passages');
+const { standingReaderText } = await import('./reader-passes');
+const { routedRunKey } = await import('./pipeline-runner');
+const { memoReaderRun } = await import('@mantle/files');
 const { bookVisionPageCountOf, bookVisionPageSetOf, bookVisionPagesOf } =
   await import('./book-pages');
 
@@ -126,5 +137,68 @@ describe("a book's scanned pages and its marked pages", () => {
     expect(await bookVisionPageCountOf({ id, sha256: SHA })).toBe(1);
     expect(await bookVisionPageCountOf({ id: randomUUID(), sha256: SHA })).toBe(0);
     expect(await bookVisionPagesOf(path.join(dir, `${id}.sqlite`))).toEqual([7]);
+  });
+});
+
+describe('a Reader run of page headings and no words', () => {
+  it('has no words; a page with text has', () => {
+    expect(hasPageWords('## Page 1')).toBe(false);
+    expect(hasPageWords('## Page 1\n\n## Page 2\n')).toBe(false);
+    expect(hasPageWords('## Page 1\n\nInvoice 42')).toBe(true);
+  });
+
+  /** A one-page scan the book reader left to its Agent: its run's text is
+   *  the page heading alone (pdf_pages.py), kept for the extract. */
+  function scanBook(sha: string, agentText: string | null): string {
+    const id = randomUUID();
+    const sheets = [
+      {
+        name: 'Pages',
+        columns: [
+          { name: 'Page', type: 'number' as const },
+          { name: 'Method', type: 'text' as const },
+          { name: 'Text', type: 'text' as const },
+        ],
+        rows: [[1, 'vision', '']],
+      },
+      ...(agentText
+        ? [
+            {
+              name: 'Page text',
+              columns: ['Key', 'Text', 'Model', 'Input hash'].map((name) => ({
+                name,
+                type: 'text' as const,
+              })),
+              rows: [['page-1', agentText, 'scan_reader:m', 'h1']],
+            },
+          ]
+        : []),
+    ];
+    writeFileDatabaseDoc(
+      path.join(dir, `${id}.sqlite`),
+      ensureWorkbookDoc({ tabs: tabsOfSheets(sheets) }),
+      { fileId: id, ownerId: randomUUID(), stamp: pipelineStampOf(BOOK as never, []) },
+    );
+    void memoReaderRun(routedRunKey(BOOK as never, sha, 'pdf', {}), async () => ({
+      status: 'ok',
+      write: { text: '## Page 1' },
+    }));
+    return id;
+  }
+
+  it('stands with no text before the Agent read the page: the core reads none of it', async () => {
+    const sha = 'c'.repeat(64);
+    const id = scanBook(sha, null);
+    // Not null (the core's OCR would read the page the Agent reads too),
+    // and not the heading as text.
+    expect(await standingReaderText('o', { id, sha256: sha }, 'pdf')).toEqual({ text: '' });
+  });
+
+  it("takes the Agent's text of the page once the database holds it", async () => {
+    const sha = 'd'.repeat(64);
+    const id = scanBook(sha, 'Invoice 42 from a made-up supplier, total 300');
+    expect(await standingReaderText('o', { id, sha256: sha }, 'pdf')).toEqual({
+      text: '## Page 1\nInvoice 42 from a made-up supplier, total 300',
+    });
   });
 });

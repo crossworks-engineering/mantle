@@ -151,6 +151,13 @@ export async function isAfterRun(ownerId: string, pipelineId: string): Promise<b
   return p ? isAfterPipeline(p) : false;
 }
 
+/** Whether the file's extract ended `body_too_short` (its stamp now). */
+async function tooShortNow(ownerId: string, nodeId: string): Promise<boolean> {
+  const row = await fileDataRow(ownerId, nodeId);
+  const skipped = (row?.data as Record<string, unknown> | undefined)?.extract_skipped;
+  return (skipped as { reason?: unknown } | undefined)?.reason === 'body_too_short';
+}
+
 /** The run itself, with no trace. Throws what the build or the patch throws. */
 async function runOnce(
   ownerId: string,
@@ -158,7 +165,7 @@ async function runOnce(
   pipelineId: string,
   pages: boolean,
   deps: RunDeps,
-): Promise<PipelineRunResult> {
+): Promise<PipelineRunResult & { extractAgain?: true }> {
   const pipelines = await boxPipelines(ownerId);
   const pipeline = pipelines.byId(pipelineId);
   if (!pipeline) return { status: 'skipped', reason: 'unknown-pipeline' };
@@ -215,6 +222,15 @@ async function runOnce(
           done.warnings.push(`the passages were not written again: ${errorMessage(err)}`);
         });
       }
+    }
+    // New page text, paid for in this run, on a file whose extract found
+    // too little text (a book of scanned pages only, read before its Agent
+    // ran): the extract runs once more, and the Agent's text is the file's
+    // text (reader-passes.ts standingReaderText). Two checks, so it is
+    // bounded: one extract for a run that paid for a page, and none once
+    // the extract read text (the stamp goes).
+    if (pipeline.produces.pages === true && done.made > 0 && (await tooShortNow(ownerId, nodeId))) {
+      return { ...done, extractAgain: true };
     }
     return done;
   }
@@ -276,7 +292,7 @@ export async function runPipelineJob(
   lane?: 'book',
   pages = false,
   deps: Partial<RunDeps> = {},
-): Promise<PipelineRunResult & { wait?: RunWait }> {
+): Promise<PipelineRunResult & { wait?: RunWait; extractAgain?: true }> {
   const d: RunDeps = { ...RUN_DEPS, ...deps };
   return startTrace(
     {
@@ -298,7 +314,7 @@ export async function runPipelineJob(
           kind: 'compute',
           input: { sourceFileId: nodeId, pipeline: pipelineId },
         },
-        async (h): Promise<PipelineRunResult & { wait?: RunWait }> => {
+        async (h): Promise<PipelineRunResult & { wait?: RunWait; extractAgain?: true }> => {
           try {
             const out = await runOnce(ownerId, nodeId, pipelineId, pages, d);
             // A read of the wait that fails is no wait: the run stops as a
