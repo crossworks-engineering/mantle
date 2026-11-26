@@ -223,7 +223,8 @@ export const ASSISTANT_WORKSPACE: GuideWorkspace = 'W';
 /**
  * The workspace kinds as the guide lists them ("Items and grants", Kinds:
  * "Folders, files, notes, pages, tables, apps, formulas, drawings, tasks,
- * events, Recall maps and canvases can be granted to any workspace"), by
+ * events, Recall maps, canvases and secrets can be granted to any
+ * workspace"), by
  * node type.
  * Written out here on purpose, not taken from the registry.
  */
@@ -240,6 +241,7 @@ export const GUIDE_WORKSPACE_KINDS: readonly string[] = Object.keys({
   event: 'events',
   recall: 'Recall maps',
   present: 'canvases',
+  secret: 'secrets',
 });
 
 /**

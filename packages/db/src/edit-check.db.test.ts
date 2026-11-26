@@ -12,7 +12,8 @@
  *  - the heads locks filtered by the scope;
  *  - the derived keys and the brain's columns of nodes; an app's switches
  *    (D5) and a new app's code (D4); a public link (an edit);
- *  - the two definers of 0281 (a renamed Recall map, a secret);
+ *  - the two definers of 0281 (a renamed Recall map, a secret), and the
+ *    secret's sealed reader and replace of 0400;
  *  - migrate's sync of the matrix-made triggers (no change takes no lock,
  *    a new trigger follows the box mode) and the coverage.
  *
@@ -658,6 +659,58 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
         who.owner,
         (tx) => tx`insert into secrets (node_id, ciphertext) values (${n.secret}, '\\x00'::bytea)`,
       ),
+    ).toMatchObject({ code: '42501', message: 'permission denied for table secrets' });
+    await setMode('off');
+  });
+
+  it('0400: a shared secret’s sealed value is replaced with Write and read with Read, through its two definers only', async () => {
+    await setMode('on');
+    // A secret homed in H with Write to W, and one with Read only to W.
+    const writable = await item('secret', HWgrants());
+    const readable = await item('secret', [
+      [ws.H, true, false],
+      [ws.W, false, false],
+    ]);
+    await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`insert into secrets (node_id, ciphertext) values (${readable}, '\\x0102'::bytea)`;
+    });
+    const put = (p: Who, node: string) =>
+      attempt(p, async (tx) => {
+        await tx`select mantle_secret_put(${node}, ${Buffer.from('sealed')}::bytea, 1)`;
+        // Made, then replaced: the second call is an update of the one row.
+        await tx`select mantle_secret_put(${node}, ${Buffer.from('again')}::bytea, 1)`;
+        return { count: 1 };
+      });
+    expect(await put(who.member, writable)).toMatchObject({ rows: 1 });
+    expect(await put(who.member, readable)).toMatchObject({ code: '42501', detail: 'no_edit' });
+    expect(await put(who.outsider, writable)).toMatchObject({ code: '42501' });
+
+    const sealedOf = async (p: Who, node: string): Promise<string | null | Result> => {
+      let got: string | null = null;
+      const r = await attempt(p, async (tx) => {
+        const [row] = await tx<{ c: Buffer | null }[]>`select mantle_secret_sealed(${node}) as c`;
+        got = row?.c ? row.c.toString('hex') : null;
+        return { count: 1 };
+      });
+      return 'code' in r ? r : got;
+    };
+    // A user of W reads the secret, so it reads the sealed value.
+    expect(await sealedOf(who.member, readable)).toBe('0102');
+    // A user who does not read it gets nothing, as for no secret at all.
+    expect(await sealedOf(who.outsider, readable)).toBeNull();
+    // A write-role caller with no scope reads nothing.
+    expect(
+      await sealedOf({ ws: [], mod: [], login: '', actor: `login:rw:${L.member}` }, readable),
+    ).toBeNull();
+    // Not a secret: nothing.
+    expect(await sealedOf(who.member, n.note)).toBeNull();
+    // The role itself still reads nothing of the table.
+    expect(
+      await attempt(who.member, async (tx) => {
+        await tx`select ciphertext from secrets where node_id = ${readable}`;
+        return { count: 1 };
+      }),
     ).toMatchObject({ code: '42501', message: 'permission denied for table secrets' });
     await setMode('off');
   });

@@ -15,7 +15,7 @@ import {
 const at = (placement: 'root' | 'folder') => ({ surface: 'sql' as const, placement });
 
 describe('the access oracle', () => {
-  it('"Folders, files, notes, pages, tables, apps, formulas, drawings, tasks, events, Recall maps and canvases"', () => {
+  it('"Folders, files, notes, pages, tables, apps, formulas, drawings, tasks, events, Recall maps, canvases and secrets"', () => {
     expect(guideWorkspaceKinds().sort()).toEqual(
       [
         'branch',
@@ -30,6 +30,7 @@ describe('the access oracle', () => {
         'event',
         'recall',
         'present',
+        'secret',
       ].sort(),
     );
     expect(guideKindClass('telegram_message')).toBe('conversation');

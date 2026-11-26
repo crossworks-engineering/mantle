@@ -321,13 +321,26 @@ every workspace it is granted to, each with a Write switch.
   but no", for every login, Admin users included. An item the caller
   reads but may not change answers "forbidden".
 - **Kinds.** Folders, files, notes, pages, tables, apps, formulas,
-  drawings, tasks, events, Recall maps and canvases can be granted to any
-  workspace.
+  drawings, tasks, events, Recall maps, canvases and secrets can be
+  granted to any workspace.
   Telegram messages are a class of their own: they belong to the workspace
   of the assistant that holds the chat, and a grant of one to any
   workspace is set by hand, never passed on by a folder. Every other kind
-  (mail, contacts, journal entries, secrets, saved places and the like)
-  lives in the Admin workspace only.
+  (mail, contacts, journal entries, saved places and the like) lives in
+  the Admin workspace only.
+- **Secrets** (0400, owner's word 2026-11-26: people share passwords,
+  .env files and logins with each other, securely). A secret follows the
+  table above: a user who reads it may reveal its value by hand, Write
+  edits it, a Moderator of its home deletes it. Each reveal is logged
+  first (`secret.reveal`, the secret's id, never the value), and the
+  value leaves only when the row is written; an Admin user with the users
+  area reads the trail, to know what to change when someone leaves. No
+  app, agent, API key or linked brain reads a value: no tool reveals one,
+  the secrets routes have no `/api/v1` row, and a secret never takes a
+  public link or a peer grant. The write role reaches the sealed value
+  through two definers only (`mantle_secret_put`, `mantle_secret_sealed`),
+  each asking the scope's right on the secret. Search and the agents see
+  its metadata (title, kind, description, tags) only, as before.
 - **Embeds.** Granting a page does not grant what it embeds. The panel
   offers to grant the embeds too, as a step you tick.
 - **Public links** stay per item. A public link serves
@@ -694,7 +707,7 @@ System (`mantle_area_rule`, the one rule every reader asks).
 | Settings             | Admin + System | brain settings, models, pools and AI workers, runs and traces, sandboxes, the terminal, MCP settings, the reminder channel                                                                         |
 | Assistants           | Admin + System | assistants, skills, tools, tool groups, Studio, heartbeats, attaching an assistant to a workspace                                                                                                  |
 | Connectors           | Admin + System | MCP and OpenAPI connectors, peers, mail and calendar accounts, Telegram bots, attaching a connector to a workspace                                                                                 |
-| Keys                 | Admin + System | vault keys, secrets and PDF passwords, pairing a key with a host, keys that never expire, keys with risky tools                                                                                    |
+| Keys                 | Admin + System | vault keys and PDF passwords, pairing a key with a host, keys that never expire, keys with risky tools                                                                                             |
 
 - The Admin content screens (journal, contacts, Recall, nodes, tasks,
   events, formulas) are Admin kinds: every Admin user reads them, as before.

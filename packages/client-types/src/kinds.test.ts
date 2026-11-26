@@ -64,6 +64,8 @@ describe('the kind registry', () => {
         'event',
         'recall',
         'present',
+        // Secrets (0400, owner 2026-11-26): shared by people, revealed by hand.
+        'secret',
       ]),
     );
     expect(kindsWhere((s) => s.class === 'conversation')).toEqual(['telegram_message']);
@@ -81,6 +83,18 @@ describe('the kind registry', () => {
       expect(s.tree?.shareable ?? false, t).toBe(false);
       expect(s.library, t).toBe(false);
     }
+  });
+
+  it('a secret is shared with workspaces only: never a public link or a peer grant', () => {
+    const s = ITEM_KINDS.secret;
+    expect(s.class).toBe('workspace');
+    expect(s.publicLink).toBe(false);
+    expect(s.peerShare).toBe(false);
+    expect(s.peerPick).toBe(false);
+    expect(s.linkServes).toBe(false);
+    expect(s.exportAs).toBe(false);
+    expect(s.embeds).toBe(false);
+    expect(s.teamHidden).toBe('never');
   });
 
   it('tree orders are unique and dense', () => {
@@ -200,7 +214,7 @@ describe('derived lists, pinned to their value before the registry', () => {
         kind: 'secrets',
         root: 'secrets',
         nodeType: 'secret',
-        shareable: false,
+        shareable: true,
         sorts: ['custom', 'name', 'updated'],
       },
       recall: {
