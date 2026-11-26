@@ -469,6 +469,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Manual only. Free: no model, no queue; it reads the File tab of each PDF database. Run the dry run first, read the count, then --apply. A second run finds none.',
   },
   {
+    slug: 'spend-backfill',
+    title: 'Price the stored model-call steps recorded at $0',
+    description:
+      "Until 2026-11-26 a paid model call could be recorded with its tokens and a cost of 0 (an adapter left the provider's billed cost behind, or the price table had no row for the id the route recorded). Dry run (default) walks the stored steps with usage and a recorded cost of exactly 0 and prints, per provider and model, the steps it would price, their tokens and the USD it would add; the steps it cannot price, per reason and model; the date range and the total. --apply writes the cost on each step, marks the step (meta.cost_backfill: the amount, the basis list_price, the time), and adds the same amount to the step's trace total, to the run item that copied that total and to that run's spent amount. The cost is the LIST PRICE of the stored token counts by the current price rules, never the billed cost. A cost above 0, a free route, a timed-out step and a model with no price row are left as they are; token counts and the member token budget are never changed. --undo lists the marked steps, and with --apply takes each mark and its amount out again. A second run changes nothing. Prints counts, provider ids and model ids only.",
+    kind: 'remedy',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/spend-backfill.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--undo', '--since=<date>', '--until=<date>', '--model=<id>', '--batch=<n>'],
+    notes:
+      'Manual only, after the box runs the release with the cost fix. Free: SQL only, no model. It works in batches by step id, one short transaction each, and takes only steps of a trace that closed more than an hour ago, so it can run while the box works; stop it and run it again at any point. Run the dry run first and read the numbers, then --apply. The Maintenance tab can run the dry run and the apply over the whole box; the bounds and --undo are terminal flags.',
+  },
+  {
     slug: 'dwg-reindex',
     title: "Build table-type files' read-only databases",
     description:
