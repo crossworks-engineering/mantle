@@ -43,8 +43,9 @@ const A8_TOOL_RUN_CEILING = 9000;
 
 /** The route cells' size ceiling: cells x check modes (each a request, a
  *  hidden one two). 3000 to 3500 for the plain user of R (readUser, 0383
- *  fix round 1): 3328 runs, a reader that may not edit on every route. */
-const A8_ROUTE_RUN_CEILING = 3500;
+ *  fix round 1): 3328 runs, a reader that may not edit on every route.
+ *  3500 to 3600 for the secrets routes (0400, a workspace kind): 3530 runs. */
+const A8_ROUTE_RUN_CEILING = 3600;
 
 /** The A8 counts (a8Uncovered, a8Exempt), and what makes them. */
 function a8Counts() {
@@ -350,7 +351,6 @@ const A8_EXEMPT_KINDS: readonly string[] = [
   'location',
   'mantle_peer',
   'printer_project',
-  'secret',
   'sermon',
   'telegram_message',
 ];
