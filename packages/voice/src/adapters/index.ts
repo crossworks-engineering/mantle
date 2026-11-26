@@ -134,6 +134,9 @@ export {
   type ImagesResult,
   type VisionImage,
 } from './vision-images';
+// Which provider and capability pairs return their own billed cost: read by
+// the shipped-defaults pricing test (docs/spend-recording.md, "Cost").
+export { REPORTS_COST } from './spend';
 
 export {
   findAdapterCatalogDrift,

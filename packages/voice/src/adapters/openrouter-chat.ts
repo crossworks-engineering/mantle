@@ -59,6 +59,7 @@ import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reason
 import { backoffMs, errorMessage, withRetry, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 import { fallbackToolCallId } from './fallback-call-id';
+import { reportedCost } from './reported-cost';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
@@ -1029,6 +1030,8 @@ async function openrouterChatStream(
       model,
       tokensIn: usage?.promptTokens ?? usage?.prompt_tokens,
       tokensOut: usage?.completionTokens ?? usage?.completion_tokens,
+      // A stopped stream that still got its usage chunk was billed: keep the cost.
+      ...reportedCost(usage),
     };
   }
 

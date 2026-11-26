@@ -805,6 +805,9 @@ export interface GenerateImageResult {
   mimeType: string;
   /** Model id that did the work. Echoed back for traces. */
   model: string;
+  /** What the provider billed for the call, in USD, when it says
+   *  (OpenRouter's `usage.cost`). The spend recorder takes it as the cost. */
+  reportedCostUsd?: number;
   /** Options the adapter deliberately did NOT send, because this MODEL has
    *  no such control. Empty/absent means everything the caller passed went on
    *  the wire. Callers must surface these rather than let a requested option
@@ -909,6 +912,9 @@ export interface EmbedResult {
   /** Total input tokens billed. Undefined when the provider doesn't
    *  report (Cohere v2 omits, some HF routes too). */
   tokensIn?: number;
+  /** What the provider billed for the call, in USD, when it says
+   *  (OpenRouter's `usage.cost`). The spend recorder takes it as the cost. */
+  reportedCostUsd?: number;
 }
 
 export interface EmbeddingDispatcher extends AdapterMeta {

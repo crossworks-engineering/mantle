@@ -20,7 +20,7 @@
  */
 import { errorMessage } from '@mantle/std';
 import { assertModelAllowed } from './model-policy';
-import { recordUsage, type ProviderUsage } from '@mantle/tracing';
+import { recordUsage, type ProviderUsage, type SpendCapability } from '@mantle/tracing';
 import type {
   ChatDispatcher,
   ChatOptions,
@@ -47,6 +47,26 @@ export function record(build: () => ProviderUsage): void {
   }
 }
 
+/**
+ * The provider and capability pairs whose adapter returns the provider's own
+ * billed cost with every answer, so the call needs no row in the price table
+ * (@mantle/tracing pricing.ts). `openrouter-cost.test.ts` holds every pair
+ * to it with a made-up reply; the shipped-defaults test
+ * (server/web/lib/system-manifest) asks for a price row for any shipped
+ * model outside this list. OpenRouter speech is not here: its reply is raw
+ * audio with no cost. `research` is the research tool's own OpenRouter call
+ * (captureLlmUsage). Mammouth is not here either: its adapter prices the
+ * models of its own catalog, not every answer.
+ */
+export const REPORTS_COST: Readonly<Record<string, readonly SpendCapability[]>> = {
+  openrouter: ['chat', 'decision', 'embedding', 'vision', 'image_gen', 'stt', 'research'],
+};
+
+/** A result's reported cost, as the usage field. */
+function reported(r: { reportedCostUsd?: number }): { reportedCostUsd?: number } {
+  return r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {};
+}
+
 function recordChat(provider: string, opts: ChatOptions, r: ChatResult): void {
   record(() => ({
     capability: 'chat',
@@ -57,7 +77,7 @@ function recordChat(provider: string, opts: ChatOptions, r: ChatResult): void {
     outputTokens: r.tokensOut ?? 0,
     cacheReadTokens: r.cacheReadTokens ?? 0,
     ...(r.cacheWriteTokens ? { cacheWriteTokens: r.cacheWriteTokens } : {}),
-    ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
+    ...reported(r),
   }));
 }
 
@@ -76,7 +96,7 @@ export function recordVision(
     priceAs: [opts.model, r.model],
     inputTokens: r.tokensIn ?? 0,
     outputTokens: r.tokensOut ?? 0,
-    ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
+    ...reported(r),
   }));
 }
 
@@ -140,7 +160,7 @@ export function recordingDecision(adapter: DecisionDispatcher): DecisionDispatch
         inputTokens: r.tokensIn ?? 0,
         outputTokens: r.tokensOut ?? 0,
         cacheReadTokens: 0,
-        ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
+        ...reported(r),
       }));
       return r;
     },
@@ -160,6 +180,7 @@ export function recordingEmbedding(adapter: EmbeddingDispatcher): EmbeddingDispa
         priceAs: [req.model, r.model],
         inputTokens: r.tokensIn ?? 0,
         outputTokens: 0,
+        ...reported(r),
       }));
       return r;
     },
@@ -214,6 +235,7 @@ export function recordingImageGen(adapter: ImageGenDispatcher): ImageGenDispatch
         provider: a.providerId,
         model: r.model || opts.model || '',
         units: { kind: 'images', count: 1 },
+        ...reported(r),
       }));
       return r;
     },
@@ -250,6 +272,7 @@ export function recordingStt(adapter: SttDispatcher): SttDispatcher {
         ...(typeof r.durationSeconds === 'number'
           ? { units: { kind: 'audio_seconds' as const, count: r.durationSeconds } }
           : {}),
+        ...reported(r),
       }));
       return r;
     },

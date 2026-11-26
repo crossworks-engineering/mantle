@@ -30,6 +30,7 @@ import type { GenerateImageOptions, GenerateImageResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
 import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
+import { reportedCost } from './reported-cost';
 
 export const OPENROUTER_IMAGE_DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview';
 
@@ -89,6 +90,7 @@ const PIXEL_SIZE_RE = /^\d{2,5}x\d{2,5}$/i;
 
 type OpenRouterImageResponse = {
   data?: Array<{ b64_json?: string; media_type?: string }>;
+  usage?: { cost?: number | null };
 };
 
 export const openrouterImageAdapter: ImageGenDispatcher = {
@@ -182,6 +184,7 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
       mimeType: first.media_type || 'image/png',
       model,
       ...(warnings.length > 0 ? { warnings } : {}),
+      ...reportedCost(parsed.usage),
     };
   },
   staticCatalog() {

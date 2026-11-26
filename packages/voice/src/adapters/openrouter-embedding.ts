@@ -22,6 +22,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { providerFetch } from './provider-fetch';
 import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
+import { reportedCost } from './reported-cost';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/embeddings';
 const CATALOG_URL = 'https://openrouter.ai/api/v1/embeddings/models';
@@ -134,7 +135,7 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
     const json = (await res.json()) as {
       data: Array<{ embedding: number[]; index: number }>;
       model?: string;
-      usage?: { prompt_tokens?: number; total_tokens?: number };
+      usage?: { prompt_tokens?: number; total_tokens?: number; cost?: number };
     };
     if (!Array.isArray(json.data)) {
       throw new Error('OpenRouter embeddings: malformed response (no data array)');
@@ -155,6 +156,7 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
       vectors,
       model: json.model ?? req.model,
       tokensIn: json.usage?.prompt_tokens,
+      ...reportedCost(json.usage),
     };
   },
 

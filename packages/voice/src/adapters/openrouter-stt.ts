@@ -16,6 +16,7 @@ import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 import { providerFetch } from './provider-fetch';
 import { PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
+import { reportedCost } from './reported-cost';
 
 /** Default OpenRouter STT route — GPT-4o mini Transcribe (cheap + accurate;
  *  operator-verified on a single OpenRouter key). */
@@ -106,13 +107,15 @@ export const openrouterSttAdapter: SttDispatcher = {
         message: `openrouter-stt ${res.status}: ${body.slice(0, 400)}`,
       });
     }
-    const parsed = (await res.json()) as { text?: string };
+    const parsed = (await res.json()) as { text?: string; usage?: { cost?: number } };
     return {
       text: (parsed.text ?? '').trim(),
       // The endpoint returns text + usage but not detected language / duration.
       language: opts.language ?? null,
       durationSeconds: null,
       model,
+      // The billed cost (`usage.cost`), the only price a transcription has here.
+      ...reportedCost(parsed.usage),
     };
   },
 

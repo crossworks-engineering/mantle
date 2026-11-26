@@ -40,6 +40,9 @@ export type TranscribeResult = {
   durationSeconds: number | null;
   /** Model that did the work, recorded for /traces. */
   model: string;
+  /** What the provider billed for the call, in USD, when it says
+   *  (OpenRouter's `usage.cost`). The spend recorder takes it as the cost. */
+  reportedCostUsd?: number;
 };
 
 /** OpenAI TTS voice names. Kept as a typed enum so the agent settings

@@ -31,6 +31,7 @@ import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openr
 import { errorMessage, PROVIDER_TIMEOUTS, ProviderHttpError } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 import { log } from '@mantle/tracing';
+import { reportedCost } from './reported-cost';
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 
@@ -149,7 +150,6 @@ async function post(
   const text = replyText(parsed.choices?.[0]?.message?.content).trim();
   const model = parsed.model || String(body.model);
   const finish = parsed.choices?.[0]?.finish_reason;
-  const cost = parsed.usage?.cost;
   const annotations = parsed.choices?.[0]?.message?.annotations;
   return {
     text,
@@ -158,7 +158,7 @@ async function post(
     tokensOut: parsed.usage?.completion_tokens,
     _model: model,
     ...(typeof finish === 'string' && finish ? { finishReason: finish } : {}),
-    ...(typeof cost === 'number' && Number.isFinite(cost) ? { reportedCostUsd: cost } : {}),
+    ...reportedCost(parsed.usage),
     ...(annotations !== undefined ? { annotations } : {}),
   };
 }
@@ -198,6 +198,24 @@ function isImageReader(
   if (!inputs.includes('image')) return false;
   if (outputs.length === 0) return true; // no output info — trust the input side
   return outputs.includes('text') && !outputs.includes('image');
+}
+
+/**
+ * What a read returns from a reply: its text, the served model, the usage
+ * and the billed cost. The one builder of `extract`, `extractDocument` and
+ * the several-image read, so none of them can leave the cost behind (they
+ * each built their own until 2026-11-26, and every OpenRouter vision call
+ * was priced from the table, most at $0).
+ */
+function answered(r: Awaited<ReturnType<typeof post>>): ImagesResult {
+  return {
+    text: r.text,
+    model: r.model,
+    tokensIn: r.tokensIn,
+    tokensOut: r.tokensOut,
+    ...(r.finishReason ? { finishReason: r.finishReason } : {}),
+    ...(r.reportedCostUsd !== undefined ? { reportedCostUsd: r.reportedCostUsd } : {}),
+  };
 }
 
 /** What a several-image request may add: a cap on the model's reasoning
@@ -245,13 +263,7 @@ export async function openrouterExtractImages(
     },
     PROVIDER_TIMEOUTS.visionImages,
   );
-  return {
-    text: r.text,
-    model: r.model,
-    tokensIn: r.tokensIn,
-    tokensOut: r.tokensOut,
-    ...(r.finishReason ? { finishReason: r.finishReason } : {}),
-  };
+  return answered(r);
 }
 
 export const openrouterVisionAdapter: VisionDispatcher = {
@@ -282,13 +294,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       },
       PROVIDER_TIMEOUTS.vision,
     );
-    return {
-      text: r.text,
-      model: r.model,
-      tokensIn: r.tokensIn,
-      tokensOut: r.tokensOut,
-      ...(r.finishReason ? { finishReason: r.finishReason } : {}),
-    };
+    return answered(r);
   },
 
   async extractDocument(pdf: Buffer, opts: VisionExtractOptions): Promise<VisionExtractResult> {
@@ -318,7 +324,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       },
       PROVIDER_TIMEOUTS.visionDocument,
     );
-    return { text: r.text, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+    return answered(r);
   },
 
   async parsePdf(pdf: Buffer, opts: VisionParsePdfOptions): Promise<VisionExtractResult> {
