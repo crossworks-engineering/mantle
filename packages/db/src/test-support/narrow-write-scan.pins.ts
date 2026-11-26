@@ -32,6 +32,8 @@ export const NARROW_SCAN_SYSTEM_FILES: Readonly<Record<string, string>> = Object
   'server/web/lib/maintenance/ui-calls-reap.ts': 'the maintenance runner (system work)',
   'server/web/lib/maintenance/history.ts':
     'the maintenance runner (CLI and nightly cron: system work)',
+  'server/web/lib/maintenance/spend-backfill.ts':
+    "the maintenance runner (system work): only scripts/spend-backfill.ts imports it, and that script is a process of its own (pnpm maintain, or the Maintenance tab's spawn of it), with no request scope and no login",
   'server/web/lib/system-manifest/reconcile.ts':
     "the manifest's boot reconcile (system work) and its apply at the manifest's spots",
 });
