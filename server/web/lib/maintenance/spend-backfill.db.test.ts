@@ -6,10 +6,12 @@
  * copied that total and to the run's spent amount; a cost above 0, a free
  * route, a timed-out step, a model with no price row, a step with no
  * recorded cost (the old shape), a step of a trace that closed a moment ago
- * and a step of a trace still running are left as they are; token counts
- * never change; a second apply changes nothing; the undo puts every row
- * back exactly as it was. A scratch database, dropped after (the walk is
- * box-wide).
+ * and a step of a trace still running are left as they are; a step of a
+ * run that has not ended is left too, with its run item and its run (no
+ * live run is paused by a list price), and a later run prices it once the
+ * run has ended; token counts never change; a second apply changes nothing;
+ * the undo puts every row back exactly as it was. A scratch database,
+ * dropped after (the walk is box-wide).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/maintenance/spend-backfill.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -41,6 +43,7 @@ describe.skipIf(!URL)('spend-backfill', () => {
     item: randomUUID(), // closed two hours ago: a run item copied its total
     fresh: randomUUID(), // closed five minutes ago
     running: randomUUID(), // never closed
+    openRun: randomUUID(), // closed two hours ago: the item of a run not ended
   };
   const step = {
     vision: randomUUID(), // the recorder shape, $0: to price
@@ -53,9 +56,12 @@ describe.skipIf(!URL)('spend-backfill', () => {
     sonnet: randomUUID(), // in the run item's trace: to price
     fresh: randomUUID(), // its trace closed a moment ago
     running: randomUUID(), // its trace is still open
+    openRun: randomUUID(), // it has a price, and its run has not ended
   };
-  const run = randomUUID();
+  const run = randomUUID(); // ended
   const item = randomUUID();
+  const openRun = randomUUID(); // paused on its budget: not ended
+  const openItem = randomUUID();
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -72,10 +78,12 @@ describe.skipIf(!URL)('spend-backfill', () => {
             from traces where owner_id = ${anchor}::uuid`,
     );
     const items = await x<{ id: string; cost: string | null }>(
-      sql`select id, cost_micro_usd::text as cost from run_items where run_id = ${run}::uuid`,
+      sql`select id, cost_micro_usd::text as cost from run_items
+           where run_id in (${run}::uuid, ${openRun}::uuid)`,
     );
     const runs = await x<{ id: string; spent: string }>(
-      sql`select id, spent_micro_usd::text as spent from runs where id = ${run}::uuid`,
+      sql`select id, spent_micro_usd::text as spent from runs
+           where id in (${run}::uuid, ${openRun}::uuid)`,
     );
     return {
       steps: Object.fromEntries(steps.map((r) => [r.id, r.meta])),
@@ -106,6 +114,7 @@ describe.skipIf(!URL)('spend-backfill', () => {
     await addTrace(trace.item, '2 hours', 0, 1_000_000);
     await addTrace(trace.fresh, '5 minutes', 0, 1_000_000);
     await addTrace(trace.running, null, 0, 1_000_000);
+    await addTrace(trace.openRun, '2 hours', 0, 1_000_000);
 
     let ordinal = 0;
     const addStep = (
@@ -163,11 +172,19 @@ describe.skipIf(!URL)('spend-backfill', () => {
     );
     await addStep(step.fresh, trace.fresh, 'llm_call', vision);
     await addStep(step.running, trace.running, 'llm_call', vision);
+    await addStep(step.openRun, trace.openRun, 'llm_call', vision);
 
-    await su(sql`insert into runs (id, owner_id, title, status, spent_micro_usd)
-                 values (${run}, ${anchor}, 'a made-up run', 'done', 0)`);
+    // An ended run: the engine stamps completed_at when a run finishes.
+    await su(sql`insert into runs (id, owner_id, title, status, spent_micro_usd, completed_at)
+                 values (${run}, ${anchor}, 'a made-up run', 'done', 0,
+                         now() - interval '2 hours')`);
     await su(sql`insert into run_items (id, run_id, position, kind, state, trace_ref)
                  values (${item}, ${run}, 0, 'tool_call', 'done', ${trace.item})`);
+    // A run paused on its budget: it has not ended, and an item of it is done.
+    await su(sql`insert into runs (id, owner_id, title, status, spent_micro_usd, budget_micro_usd)
+                 values (${openRun}, ${anchor}, 'a made-up open run', 'paused', 0, 1)`);
+    await su(sql`insert into run_items (id, run_id, position, kind, state, trace_ref)
+                 values (${openItem}, ${openRun}, 0, 'tool_call', 'done', ${trace.openRun})`);
   }, 180_000);
 
   afterAll(async () => {
@@ -194,6 +211,9 @@ describe.skipIf(!URL)('spend-backfill', () => {
       ['unpriced', 'made-up/unlisted'],
     ]);
     expect(tally.left).toEqual({ free: 1, timed_out: 1 });
+    // The step of the run that has not ended: on its own line, with its USD,
+    // and out of the total.
+    expect(tally.runOpen).toEqual({ steps: 1, microUsd: VISION_USD });
   });
 
   it('a bound holds a run to its model and its dates', async () => {
@@ -259,6 +279,7 @@ describe.skipIf(!URL)('spend-backfill', () => {
       step.oldShape,
       step.fresh,
       step.running,
+      step.openRun,
     ]) {
       expect(applied.steps[id], id).toEqual(start.steps[id]);
     }
@@ -279,6 +300,12 @@ describe.skipIf(!URL)('spend-backfill', () => {
     expect(start.items[item]).toBeNull();
     expect(applied.items[item]).toBe(String(SONNET_USD));
     expect(applied.runs[run]).toBe(String(SONNET_USD));
+
+    // The run that has not ended: its step's trace, its item and its spent
+    // amount are as they were, so the backfill cannot make it pause.
+    expect(applied.traces[trace.openRun]).toEqual(start.traces[trace.openRun]);
+    expect(applied.items[openItem]).toBeNull();
+    expect(applied.runs[openRun]).toBe('0');
 
     // The stored totals agree with the steps: a trace's backfilled amounts
     // are the sum of its steps' marks.
@@ -328,5 +355,35 @@ describe.skipIf(!URL)('spend-backfill', () => {
     expect(now.traces).toEqual(applied.traces);
     expect(now.items).toEqual(applied.items);
     expect(now.runs).toEqual(applied.runs);
+  });
+
+  it('once the run has ended, a later run prices its step and its totals', async () => {
+    // Every apply above left it: the step, its trace, the item and the run.
+    const before = await snapshot();
+    expect(before.steps[step.openRun]).toEqual(start.steps[step.openRun]);
+    expect(before.traces[trace.openRun]).toEqual(start.traces[trace.openRun]);
+    expect(before.items[openItem]).toBeNull();
+    expect(before.runs[openRun]).toBe('0');
+
+    // The run ends as the engine ends one: a final status and completed_at.
+    await su(sql`update runs set status = 'cancelled', completed_at = now()
+                  where id = ${openRun}::uuid`);
+    const { tally, written } = await backfill.runSpendBackfill({ mode: 'price', apply: true });
+    expect(tally.runOpen).toEqual({ steps: 0, microUsd: 0 });
+    expect(written).toMatchObject({ steps: 1, microUsd: VISION_USD, runItems: 1, runs: 1 });
+
+    const after = await snapshot();
+    expect(after.steps[step.openRun]).toMatchObject({
+      cost_micro_usd: VISION_USD,
+      cost_backfill: { micro_usd: VISION_USD, basis: 'list_price' },
+    });
+    expect(after.traces[trace.openRun]).toEqual({
+      ...start.traces[trace.openRun],
+      cost: String(VISION_USD),
+    });
+    expect(after.items[openItem]).toBe(String(VISION_USD));
+    expect(after.runs[openRun]).toBe(String(VISION_USD));
+    // The other run is as the last apply left it.
+    expect(after.runs[run]).toBe(String(SONNET_USD));
   });
 });

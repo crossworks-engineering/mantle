@@ -150,8 +150,11 @@ person starts it; nothing runs it by itself.
 stored step's model and token counts and prices them with the live path's own
 code (`priceUsage`), by the price rules of the day it runs. The bill itself
 is gone: a list price knows no discount, no cache write and no price tier,
-and a step with several calls is priced on the model its meta names. Each
-step it changes is marked, so the number is never taken for a billed one:
+and a step with several calls is priced on the model its meta names.
+Calibration: on one box, measured on 2026-11-26, the list-price total of the
+vision model's stored tokens was about 8 percent above the provider's bill
+for the same calls (the dry run prints this line too). Each step it changes
+is marked, so the number is never taken for a billed one:
 
 ```json
 "cost_micro_usd": 1237500,
@@ -175,18 +178,30 @@ only, never guessed; the provider is the meta's, else the one the step's
 input names, else the first word of the adapter's name, and it decides
 nothing but the free check.
 
+**The backfill never makes a live run pause.** A run's spent amount is what
+its budget reads, and a list price must not stop work in progress. So a step
+with a price is left when its trace is the trace of an item
+(`run_items.trace_ref`) of a run that has not ended. Its trace total, its
+run item and the run's spent amount stay as they are. The dry run counts
+these steps on their own line, with the USD they would add
+(`left: run still open`), and they are not in the total. A run has ended
+when the engine stamped `runs.completed_at`: its finish and its cancel both
+do, and nothing else does, so the rule reads that column and keeps no list of
+states (a paused run has not ended). A later backfill run, after the run
+has ended, prices them: nothing new is needed, a second run is always safe.
+
 The stored copies of a cost, and what the backfill does with each:
 
-| Store                                                            | What it is                                                  | Backfill                                                                                                            |
-| ---------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `trace_steps.meta.cost_micro_usd`                                | the step's cost                                             | written, with the mark                                                                                              |
-| `traces.cost_micro_usd`                                          | the trace total                                             | plus the sum of its steps' amounts                                                                                  |
-| `run_items.cost_micro_usd`                                       | a copy of the item's trace total, taken when the item ended | plus the same, by `trace_ref`                                                                                       |
-| `runs.spent_micro_usd`                                           | the sum of the run's item costs, read by the run budget     | plus the same. No pause is raised by the backfill; a running run over its budget pauses at its next item, as always |
-| `meta.child_cost_micro_usd` on a parent's delegation step        | a note of what the child trace cost when it returned        | left: nothing sums it, and the child trace it names holds the corrected total                                       |
-| a cost inside a step's output or a pending budget question       | a note of what was known at that moment                     | left                                                                                                                |
-| spend by day, by agent, by model, the dashboards, a run's cost   | read live from the rows above                               | nothing to do                                                                                                       |
-| token counts (`traces.tokens_*`, step tokens), the member budget | not costs                                                   | never changed                                                                                                       |
+| Store                                                            | What it is                                                  | Backfill                                                                                       |
+| ---------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `trace_steps.meta.cost_micro_usd`                                | the step's cost                                             | written, with the mark                                                                         |
+| `traces.cost_micro_usd`                                          | the trace total                                             | plus the sum of its steps' amounts                                                             |
+| `run_items.cost_micro_usd`                                       | a copy of the item's trace total, taken when the item ended | plus the same, by `trace_ref`, of a run that has ended only                                    |
+| `runs.spent_micro_usd`                                           | the sum of the run's item costs, read by the run budget     | plus the same, of a run that has ended only. A run that has not ended is never changed (above) |
+| `meta.child_cost_micro_usd` on a parent's delegation step        | a note of what the child trace cost when it returned        | left: nothing sums it, and the child trace it names holds the corrected total                  |
+| a cost inside a step's output or a pending budget question       | a note of what was known at that moment                     | left                                                                                           |
+| spend by day, by agent, by model, the dashboards, a run's cost   | read live from the rows above                               | nothing to do                                                                                  |
+| token counts (`traces.tokens_*`, step tokens), the member budget | not costs                                                   | never changed                                                                                  |
 
 Spend by usage that is on no step (a narrated status line, a follow-up
 suggestion: charged to the trace total only) has no stored record to price,

@@ -333,14 +333,23 @@ pnpm maintain spend-backfill --undo --apply      # take them out again
 - **A dry run is the default** and changes nothing. It prints, per provider
   and model, the steps it would price, their tokens in and out and the USD
   it would add; the steps it cannot price, per reason and model; the steps
-  it leaves (free route, timed out); the date range and the total.
+  it leaves (free route, timed out); the steps of a run that has not ended,
+  on their own line with their USD (`left: run still open`); the date range
+  and the total.
 - **The cost is the list price** of the stored token counts by the current
   price rules, not the billed cost. The output says so, and so does the mark
-  on each step (`meta.cost_backfill`, basis `list_price`).
+  on each step (`meta.cost_backfill`, basis `list_price`). Calibration: on
+  one box, measured on 2026-11-26, the list-price total of the vision model's
+  stored tokens was about 8 percent above the provider's bill for the same
+  calls.
 - `--apply` writes each step's cost and mark, and adds the same amount to
   the step's trace total, to the run item that copied that total and to
   that run's spent amount. A cost above 0 is never touched; token counts and
   the member token budget are never changed.
+- **No live run is paused.** A step of a run that has not ended (the engine
+  has not stamped `runs.completed_at`; a paused run counts as not ended) is
+  left, with its run item and its run. Run the task again after the run has
+  ended to price it.
 - `--undo` lists the marked steps; with `--apply` it puts each step back to
   0, removes the mark and takes the amount out of the same totals.
 - Bounds, for every mode: `--since=<date>` and `--until=<date>` (the step's

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { priceUsage } from '@mantle/tracing';
 import {
   BASIS,
+  CALIBRATION,
   chooseForStep,
   MARK,
   newTally,
@@ -241,6 +242,41 @@ describe('chooseForStep: the older shapes', () => {
   });
 });
 
+describe('chooseForStep: a run that has not ended', () => {
+  it('leaves a step it could price, and keeps the amount for the report', () => {
+    expect(chooseForStep(step(vision), { runOpen: true })).toEqual({
+      act: 'leave',
+      why: 'run_open',
+      microUsd: 825_000 + 412_500,
+      provider: 'openrouter',
+      model: 'google/gemini-3.8-flash',
+      tokensIn: 1_000_000,
+      tokensOut: 100_000,
+    });
+    // The same step once its run has ended: priced.
+    expect(chooseForStep(step(vision), { runOpen: false })).toMatchObject({ act: 'price' });
+  });
+
+  it('a step it would not price keeps its own reason', () => {
+    expect(chooseForStep(step({ ...vision, provider: 'local' }), { runOpen: true })).toMatchObject({
+      why: 'free',
+    });
+    expect(
+      chooseForStep(step({ ...vision, model: 'made-up/unlisted' }), { runOpen: true }),
+    ).toMatchObject({ why: 'unpriced' });
+    expect(chooseForStep(step({ ...vision, cost_micro_usd: 7 }), { runOpen: true })).toMatchObject({
+      why: 'has_cost',
+    });
+  });
+});
+
+describe('the calibration line', () => {
+  it('says how far a list price was from a bill, and in which direction', () => {
+    expect(CALIBRATION).toContain('about 8 percent above');
+    expect(CALIBRATION).toContain('2026-11-26');
+  });
+});
+
 describe('the report', () => {
   const row = (
     id: string,
@@ -266,13 +302,19 @@ describe('the report', () => {
       row('s6', 't5', { model: 'gpt-4o-mini', tokensIn: 10, tokensOut: 1 }, '2026-09-01T10:00:00Z'),
     ];
     for (const r of rows) tallyStep(t, r, chooseForStep(r));
-    expect(t.read).toBe(6);
+    // Two steps of a run that has not ended: on their own line, out of the total.
+    for (const id of ['s7', 's8']) {
+      const r = row(id, 't6', vision, '2026-11-25T10:00:00Z');
+      tallyStep(t, r, chooseForStep(r, { runOpen: true }));
+    }
+    expect(t.read).toBe(8);
     expect(totalMicroUsd(t)).toBe(2 * (825_000 + 412_500));
     expect(t.traces.size).toBe(1);
     expect(t.left).toEqual({ free: 1, timed_out: 1 });
+    expect(t.runOpen).toEqual({ steps: 2, microUsd: 2 * (825_000 + 412_500) });
     const lines = reportLines(t, 'to price');
     expect(lines).toEqual([
-      'steps read: 6',
+      'steps read: 8',
       'date range of the steps to price: 2026-11-06 to 2026-11-20',
       'to price, per provider and model (list price, not the billed cost):',
       '  openrouter  google/gemini-3.8-flash  steps 2  tokens in 2000000  out 200000  $2.4750',
@@ -280,6 +322,7 @@ describe('the report', () => {
       '  no price row  openrouter  made-up/unlisted  steps 1  tokens in 1000000  out 100000',
       '  old shape, no recorded cost  (no provider)  gpt-4o-mini  steps 1  tokens in 10  out 1',
       'left as they are: free route 1; timed out 1',
+      'left: run still open  steps 2  $2.4750  (a later run prices them, after the run has ended)',
       'total to price: 2 steps in 1 traces, $2.4750',
     ]);
   });
