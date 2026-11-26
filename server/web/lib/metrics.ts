@@ -318,6 +318,8 @@ export async function spendByModel(userId: string, daysBack: number): Promise<Mo
       tokensOut: sql<number>`coalesce(sum((${traceSteps.meta}->>'tokens_out')::int), 0)::int`,
       cacheReadTokens: sql<number>`coalesce(sum((${traceSteps.meta}->>'cache_read')::int), 0)::int`,
       calls: sql<number>`count(*)::int`,
+      // Calls nothing could price (docs/spend-recording.md, "Cost").
+      unpricedCalls: sql<number>`coalesce(sum((${traceSteps.meta}->>'unpriced')::int), 0)::int`,
     })
     .from(traceSteps)
     .innerJoin(traces, eq(traceSteps.traceId, traces.id))
@@ -338,6 +340,7 @@ export async function spendByModel(userId: string, daysBack: number): Promise<Mo
     tokensOut: r.tokensOut,
     cacheReadTokens: r.cacheReadTokens,
     calls: r.calls,
+    ...(r.unpricedCalls > 0 ? { unpricedCalls: r.unpricedCalls } : {}),
   }));
   return attachUseSpend(models, await spendByDecisionUse(userId, since));
 }

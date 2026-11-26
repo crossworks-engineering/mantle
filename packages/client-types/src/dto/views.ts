@@ -103,6 +103,11 @@ export type ModelSpend = {
   tokensOut: number;
   cacheReadTokens: number;
   calls: number;
+  /** Calls recorded at $0 because nothing could price them: no cost from the
+   *  provider, no row in the price table, not a free route
+   *  (trace_steps.meta.unpriced). The model's cost above is too low by what
+   *  these calls cost. Absent when there are none, and from an older server. */
+  unpricedCalls?: number;
   /** Per-use split of this model's calls, for models that serve typed
    *  decisions (trace_steps.meta.use, the decider's uses). Absent otherwise. */
   uses?: UseSpend[];
