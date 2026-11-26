@@ -1268,6 +1268,7 @@
     "POST /api/journal/:id/resolve|journal_resolve_gap|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "POST /api/recall/maps/:id/cards/reorder|recall_cards_reorder|narrower": "no real difference: the library refuses a non-Admin, so the open route is misleading",
     "POST /api/runs/:id|run_cancel|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
+    "POST /api/secrets|secret_create|narrower": "secrets are for people (owner, 2026-11-26: not for apps or agents): an agent saves a dictated value only in a keys-area login's turn; a member makes one in the app, in its own scope (0400)",
     "POST /api/settings/worker-groups|worker_group_ensure|area": "no real difference: both are System areas, so the same System users hold both; no screen sets a one-area limit today",
     "POST /api/tables/:id/history/:sid/restore|table_snapshot_restore|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
     "POST /api/tables/:id/history|table_snapshot_create|wider": "OPEN, route too narrow: the tool asks the item right and serves a member, and the Admin-only route looks stale",
