@@ -15,9 +15,26 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/content/src/secrets.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+// The seal itself is @mantle/crypto's (its own tests). Here a stand-in that
+// keeps the bytes readable, so the test keeps the lane's shared master key:
+// the viewer roles' passwords come from it, cluster-wide, and a 32-byte key
+// of its own would lock every other file of the lane out.
+vi.mock('@mantle/crypto', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  seal: (plain: string, aad: string) => ({
+    ciphertext: Buffer.from(JSON.stringify({ aad, plain })),
+    keyVersion: 1,
+  }),
+  open: (ciphertext: Buffer, aad: string) => {
+    const box = JSON.parse(ciphertext.toString()) as { aad: string; plain: string };
+    if (box.aad !== aad) throw new Error('sealed for another row');
+    return box.plain;
+  },
+}));
 
 describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
   type Ts = typeof import('@mantle/db/test-support');
@@ -36,7 +53,6 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
   const W = randomUUID();
   const O = randomUUID();
   let shared = '';
-  let prevMasterKey: string | undefined;
 
   /** Run `fn` as `who`, in a write request's scope (as its routes do). */
   const as = async <T>(who: string, fn: () => Promise<T>): Promise<T> => {
@@ -56,9 +72,7 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
     ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
-    // A 32-byte key: the secrets are sealed under it (as vault.db.test.ts).
-    prevMasterKey = process.env.MANTLE_MASTER_KEY;
-    process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 7).toString('base64');
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     s = await import('./secrets');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -81,8 +95,6 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
-    if (prevMasterKey === undefined) delete process.env.MANTLE_MASTER_KEY;
-    else process.env.MANTLE_MASTER_KEY = prevMasterKey;
   });
 
   it('a Moderator makes a secret in W; a user of W lists and reveals it; an outsider finds nothing', async () => {
