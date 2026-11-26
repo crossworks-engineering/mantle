@@ -78,6 +78,8 @@ describe.skipIf(!hasManifest)('route scope (W6a), over the rows', () => {
         '/api/recall/maps',
         // Present (P1)
         '/api/presents',
+        // Secrets (0400)
+        '/api/secrets',
       ]),
     );
   });

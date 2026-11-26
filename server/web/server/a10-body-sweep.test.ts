@@ -380,6 +380,14 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'batch-op (host.db.batch: the db broker takes a third op, and its 400 says so)';
   }
+  // Secrets as a workspace kind (0400): a kind for a whole .env file, and
+  // the 400 of a body with no valid kind names it.
+  if (
+    cell.startsWith('POST /api/secrets ') &&
+    now === main.replace('\\"card\\"|\\"note\\"', '\\"card\\"|\\"env\\"|\\"note\\"')
+  ) {
+    return 'secret-kind (0400: a secret kind env, for a whole .env file; its 400 names it)';
+  }
   // The Translator and the Scan reader (2026-11-19): a worker kind more
   // each, and the 400 of a body with no valid kind names them.
   if (

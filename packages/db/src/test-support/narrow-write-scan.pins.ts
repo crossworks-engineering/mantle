@@ -590,6 +590,8 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_secret_put:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
+  mantle_secret_sealed:
+    "a read definer granted to the viewer roles: a secret's ciphertext in a login scope that reads it (0400, the reveal and a partial edit); it answers nothing with no scope, so never on the narrow route",
   mantle_set_actor_check:
     'denied to the runtime role too (RUNTIME_DENIED_FUNCTIONS): migrate, the operator check switch or tests only',
   mantle_set_edit_check:
@@ -715,6 +717,8 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/content/src/pages/read.ts mantle_page_folder_id': 1,
   'packages/content/src/profile-preferences.ts mantle_profile_writable': 1,
   'packages/content/src/recall-native.ts mantle_recall_retarget': 1,
+  'packages/content/src/secrets.ts mantle_secret_put': 1,
+  'packages/content/src/secrets.ts mantle_secret_sealed': 1,
   'packages/content/src/tables/shared.ts mantle_table_app_link': 1,
   'packages/content/src/tree/node-ops.ts mantle_subtree_refuse_hidden': 1,
   'packages/content/src/tree/node-ops.ts mantle_subtree_rewrite': 1,
