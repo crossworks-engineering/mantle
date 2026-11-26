@@ -18,7 +18,7 @@ Federation links your brain with someone else's. Each brain stays its own; they 
 
 - You add the other brain under **Settings > Peers** and swap tokens.
 - You grant single items, or a whole kind (for example all pages, including pages you make later).
-- Secrets are never shared. Email and journal can only be granted one item at a time.
+- Secrets are never shared with a linked brain. Email and journal can only be granted one item at a time.
 - Revoking the peer closes both directions at once.
 
 A peer can also connect over MCP as one of your logins ([MCP as a login](../07-api/02-mcp-login.md)).

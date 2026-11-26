@@ -4,6 +4,9 @@
 > Live at `/secrets` in the web UI; encrypted at rest in the `secrets`
 > table; metadata mirrored onto `nodes` so the assistant can find them
 > by description without ever decrypting the value.
+> A workspace kind since 0400 (owner, 2026-11-26): people share passwords,
+> `.env` files and logins with each other. A user who reads a secret may
+> reveal it by hand; each reveal is logged. No app or agent reads a value.
 
 ---
 
@@ -11,10 +14,10 @@
 
 Each secret is two rows:
 
-| Row                            | Holds                                                                |
-|--------------------------------|----------------------------------------------------------------------|
-| `nodes` (type='secret')        | plaintext: title, description, kind, tags, summary, embedding        |
-| `secrets` (node_id-keyed)      | AES-256-GCM ciphertext of `{note, fields}`                            |
+| Row                       | Holds                                                         |
+| ------------------------- | ------------------------------------------------------------- |
+| `nodes` (type='secret')   | plaintext: title, description, kind, tags, summary, embedding |
+| `secrets` (node_id-keyed) | AES-256-GCM ciphertext of `{note, fields}`                    |
 
 The split is the security model: anything you'd want the LLM to read
 (so it can answer "where's my Linode password?") lives on `nodes`.
@@ -91,6 +94,30 @@ only `'branch'`; secrets are extracted with metadata only, by design.
 
 ---
 
+## 3a. Sharing (0400)
+
+A secret has a home and grants like a note ([workspaces.md](./workspaces.md),
+"Items and grants" and "Secrets"): Read lists it and reveals it, Write edits
+it, a Moderator of its home deletes it and changes its grants. Every call
+runs in the caller's own scope (`@mantle/content/secrets`). The write role
+holds no right on the `secrets` table; it reaches the sealed value through
+two definers only:
+
+| Definer                                    | Asks of the scope | Does                               |
+| ------------------------------------------ | ----------------- | ---------------------------------- |
+| `mantle_secret_put(node, sealed, version)` | edit              | makes or replaces the sealed value |
+| `mantle_secret_sealed(node)`               | read              | returns the ciphertext, or null    |
+
+The ciphertext alone is useless without the master key, which only the app
+process holds, and only `revealSecret` opens it. The reveal route writes an
+audit row (`secret.reveal`, `detail.secretId`, never the value), awaited,
+before it calls `revealSecret`: a reveal whose row fails reveals nothing.
+An Admin user with the users area reads the audit log.
+
+What stays strict: no public link, no peer grant, no `/api/v1` row (so no
+API key), no MCP tool that reveals (the route ledger's "people" line), and
+extraction reads metadata only, as before.
+
 ## 4. Where they live in the tree
 
 A lazy-created `secrets` root branch holds every secret as a child:
@@ -138,14 +165,16 @@ anything you can; an extra password prompt is theatre.
 
 ## 6. API
 
-| Method | Path                              | Auth | Returns                          |
-|--------|-----------------------------------|------|----------------------------------|
-| GET    | `/api/secrets`                    | owner | `{secrets: SecretRow[]}` (metadata only) |
-| POST   | `/api/secrets`                    | owner | `{secret: SecretRow}`            |
-| GET    | `/api/secrets/[id]`               | owner | `{secret: SecretRow}` (metadata only) |
-| PATCH  | `/api/secrets/[id]`               | owner | `{secret: SecretRow}` (metadata only) |
-| DELETE | `/api/secrets/[id]`               | owner | `{ok: true}`                     |
-| POST   | `/api/secrets/[id]/reveal`        | owner | `{metadata, payload: {note, fields}}` |
+| Method | Path                       | Auth                             | Returns                                  |
+| ------ | -------------------------- | -------------------------------- | ---------------------------------------- |
+| Method | Path                       | Needs (any login, its own scope) | Returns                                  |
+| ------ | -------------------------- | -------------------------------- | ---------------------------------------- |
+| GET    | `/api/secrets`             | reads                            | `{secrets: SecretRow[]}` (metadata only) |
+| POST   | `/api/secrets`             | `?ws=` names where it lands      | `{secret: SecretRow}`                    |
+| GET    | `/api/secrets/[id]`        | read                             | `{secret: SecretRow}` (metadata only)    |
+| PATCH  | `/api/secrets/[id]`        | edit                             | `{secret: SecretRow}` (metadata only)    |
+| DELETE | `/api/secrets/[id]`        | manage                           | `{ok: true}`                             |
+| POST   | `/api/secrets/[id]/reveal` | read (logged first)              | `{metadata, payload: {note, fields}}`    |
 
 Reveal is its own route so it stands out in access logs and audits.
 `Cache-Control: no-store` is set on the reveal response so no
@@ -155,14 +184,12 @@ intermediate cache stores plaintext.
 
 ## 7. Known sharp edges
 
-- **No MCP tools yet.** The MCP server has no `secret_*` tools. If
-  you want the assistant to reveal a secret on your behalf, that's a
-  separate design pass, currently you'd copy-paste from the UI.
-  Adding MCP would mean exposing decrypted values to whatever model
-  invokes the tool, which deserves its own conversation.
+- **No reveal over MCP, by the owner's word.** `secret_create` saves a
+  one-value secret; nothing reveals one to a model (owner, 2026-11-26:
+  not for apps or agents to use). Copy a value from the screen.
 - **No version history.** Updates overwrite the blob.
-- **No sharing primitives.** Single-user system. Don't worry about
-  team-shared secrets here.
+- **Who revealed it** is in the audit log only (`secret.reveal`); the
+  secret's own screen does not list it yet.
 - **`MANTLE_MASTER_KEY` rotation is manual.** A new key version bump
   in `@mantle/crypto` needs a re-seal pass over every existing row.
   No script for that yet.

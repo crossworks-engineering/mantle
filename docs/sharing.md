@@ -43,7 +43,9 @@
 `task`, `event`, `file`, `app`, `table`, `formula`, `draw`, `present`, and
 `branch` (= a **files folder**).
 **Never shareable:** `secret`, `email` / `email_thread`, `contact`, `journal`
-(sensitive), the share API rejects them.
+(sensitive), the share API rejects them. A secret is shared with workspaces
+only, never by a link or to a peer ([workspaces.md](./workspaces.md),
+"Secrets").
 
 Two of these carry extra semantics:
 

@@ -323,11 +323,12 @@ in the ticket's login scope.
 A folder is an item with a home and grants like any other
 ([workspaces.md](./workspaces.md), "Folders"). The tree offers the
 folder's Grant Access panel on folders of files, notes, pages, draw,
-tables, formulas and apps (the kinds `TREE_KIND_SPECS` marks `shareable`),
+tables, formulas, apps and secrets (the kinds `TREE_KIND_SPECS` marks `shareable`),
 never on a system folder (Auto-filed). Tasks, events and Recall maps are
 workspace kinds too (`mantle_kind_class`, migration 0241): the grants
-routes take them, but the tree offers no folder panel for them yet. Only
-contacts, secrets and the other Admin-class kinds live in the Admin
+routes take them, but the tree offers no folder panel for them yet.
+Secrets are a workspace kind since 0400 ([workspaces.md](./workspaces.md),
+"Secrets"). Only contacts and the other Admin-class kinds live in the Admin
 workspace alone.
 
 - **Placing an item in a folder** (by create or by move) gives the item the

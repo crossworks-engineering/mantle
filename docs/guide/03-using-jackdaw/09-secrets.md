@@ -4,17 +4,17 @@ Store passwords, codes and keys in a sealed vault that the assistant can search 
 
 ## How a secret is split
 
-| Part                                              | Who can read it                         |
-| ------------------------------------------------- | --------------------------------------- |
-| **Title**, **Description**, **Tags**              | You, search and the assistant.          |
-| Fields (label and value) and **Note (encrypted)** | Only you, in the app, after **Reveal**. |
+| Part                                              | Who can read it                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------- |
+| **Title**, **Description**, **Tags**              | You, search and the assistant.                                      |
+| Fields (label and value) and **Note (encrypted)** | You and the users you shared it with, in the app, after **Reveal**. |
 
 The sealed part is never sent to a model and never indexed. So the assistant can tell you a secret exists and what it is for, but cannot read the value out.
 
 ## Add a secret
 
 1. Open **Secrets** and create a secret.
-2. Fill in **Title** and pick a **Kind**: password, token, server, card, note or other.
+2. Fill in **Title** and pick a **Kind**: password, token, server, card, env, note or other. For a whole `.env` file, pick **env** and paste the file into the note.
 3. Write a **Description** that helps you find it later, without the value. For example: "Pairing code for the gate remote."
 4. Click **Add field** for each value, such as `username` and `password`.
 5. Add free-form text to **Note (encrypted)** if needed, then save.
@@ -24,6 +24,14 @@ The sealed part is never sent to a model and never indexed. So the assistant can
 1. Open the secret.
 2. Click **Reveal**. Show or copy each field.
 3. Click **Hide** when you are done.
+
+## Share a secret
+
+1. Open the secret and click **Access**.
+2. Click **Add workspace** and pick the workspace.
+3. Leave **Writable** off to let its users reveal the secret only. Turn it on to let them change it too.
+
+Every reveal is logged with who and when. When someone leaves, an admin reads the audit log to see which secrets they revealed, and changes those passwords. A secret never gets a public link, and no app or linked brain reads it.
 
 ## Ask the assistant
 
