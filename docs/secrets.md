@@ -114,6 +114,10 @@ audit row (`secret.reveal`, `detail.secretId`, never the value), awaited,
 before it calls `revealSecret`: a reveal whose row fails reveals nothing.
 An Admin user with the users area reads the audit log.
 
+Secrets made before 0400 stay homed in Admin with no grant: no member reads
+one until a person shares it, and every user of the Admin workspace reads
+them (before, only the keys area's): trusted logins, accepted.
+
 What stays strict: no public link, no peer grant, no `/api/v1` row (so no
 API key), no MCP tool that reveals (the route ledger's "people" line), and
 extraction reads metadata only, as before.
