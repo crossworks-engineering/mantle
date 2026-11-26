@@ -1,10 +1,18 @@
 /**
- * Fallback model pricing — only used when the provider doesn't return
- * usage.cost on the response. Best-effort; missing slugs return 0 and
- * traces show $0.00 for that step. Live pricing is preferred.
+ * Fallback model pricing: only used when the provider doesn't return
+ * usage.cost on the response. Best-effort; a model with no row here costs
+ * $0 and its call is marked unpriced (spend.ts). Live pricing is preferred.
  *
  * Prices are USD per token (not per million). Stored that way so we
  * never accidentally fence-post-error a million.
+ *
+ * ONE ROW PER MODEL. The lookup does not read the vendor prefix, a leading
+ * `~`, or the dot/dash spelling of a version (`priceKey`), so
+ * `anthropic/claude-sonnet-4.6` (OpenRouter) and `claude-sonnet-4-6`
+ * (Anthropic direct) are one row, and so are `openai/text-embedding-3-large`
+ * and the bare `text-embedding-3-large` a direct OpenAI route records. Do
+ * not add a second row for another spelling: `pricing.test.ts` fails on two
+ * rows with one key.
  */
 
 type PricePerToken = {
@@ -13,19 +21,35 @@ type PricePerToken = {
   cacheRead?: number;
 };
 
+/** Billing units of a call that is not billed by the token. */
+export type UnitKind = 'audio_seconds' | 'characters' | 'images';
+
+/** The list price of one unit, for a model billed by the unit. */
+type PricePerUnit = { kind: UnitKind; usd: number };
+
 const PRICING: Record<string, PricePerToken> = {
-  // Anthropic via OpenRouter
+  // Anthropic (the OpenRouter slug; the direct id `claude-sonnet-5-5` is the
+  // same row). The 5.5 rows: Anthropic's API price list, 2026-11-03, the same
+  // on OpenRouter's list, 2026-11-26. Haiku 5.5 is the rate to a 100k-token
+  // prompt; a longer prompt costs more ($0.50 / $2.50).
+  'anthropic/claude-sonnet-5.5': { input: 0.000002, output: 0.00001, cacheRead: 0.0000001 },
+  'anthropic/claude-haiku-5.5': { input: 0.0000001, output: 0.0000005, cacheRead: 0.00000001 },
+  'anthropic/claude-opus-5.5': { input: 0.000004, output: 0.00002, cacheRead: 0.0000002 },
   'anthropic/claude-haiku-4.5': { input: 0.0000008, output: 0.000004, cacheRead: 0.00000008 },
   'anthropic/claude-sonnet-5': { input: 0.000002, output: 0.00001, cacheRead: 0.0000002 },
   'anthropic/claude-sonnet-4.6': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
   'anthropic/claude-opus-4.7': { input: 0.000015, output: 0.000075, cacheRead: 0.0000015 },
   'anthropic/claude-opus-4.7-fast': { input: 0.00003, output: 0.00015, cacheRead: 0.000003 },
 
-  // OpenAI via OpenRouter
+  // OpenAI (the OpenRouter slug; a direct route's bare id is the same row).
   // GPT-6 (OpenRouter list, 2026-11-10): the base rate; a prompt over 272k
   // tokens costs more, which OpenRouter's reported cost carries.
   'openai/gpt-6-astra': { input: 0.00001, output: 0.00005 },
   'openai/gpt-6.1-sol': { input: 0.000002, output: 0.00001 },
+  // The shipped worker and agent models (OpenRouter list, 2026-11-26): the
+  // base rate, as above.
+  'openai/gpt-6.1-terra': { input: 0.000001, output: 0.000005, cacheRead: 0.00000005 },
+  'openai/gpt-6-luna': { input: 0.0000001, output: 0.0000005, cacheRead: 0.00000001 },
   'openai/gpt-5.5': { input: 0.000005, output: 0.00003 },
   'openai/gpt-5.4': { input: 0.0000025, output: 0.000015 },
   'openai/gpt-5.4-mini': { input: 0.00000075, output: 0.0000045 },
@@ -35,31 +59,12 @@ const PRICING: Record<string, PricePerToken> = {
   'openai/text-embedding-3-small': { input: 0.00000002, output: 0 },
   'openai/text-embedding-3-large': { input: 0.00000013, output: 0 },
 
-  // Direct-OpenAI adapters (vision / image-gen / TTS·STT) call the OpenAI
-  // API natively and pass the BARE model id, not the `openai/` OpenRouter
-  // slug. Same price, keyed both ways so fallback pricing resolves for a
-  // direct vision worker (e.g. the default gpt-4o-mini librarian) instead of
-  // silently reading $0. See docs/file-ingestion.md V1.
-  'gpt-4o': { input: 0.0000025, output: 0.00001 },
-  'gpt-4o-mini': { input: 0.00000015, output: 0.0000006 },
-
-  // Direct-Anthropic adapters (vision / document) call the Anthropic API
-  // natively and pass the BARE catalog id (claude-sonnet-4-6), not the dotted
-  // `anthropic/claude-sonnet-4.6` OpenRouter slug — so key both ways or a
-  // direct Claude vision/document worker prices at $0. Same rates as above.
-  'claude-haiku-4-5': { input: 0.0000008, output: 0.000004, cacheRead: 0.00000008 },
-  'claude-sonnet-5': { input: 0.000002, output: 0.00001, cacheRead: 0.0000002 },
-  'claude-sonnet-4-6': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
-  'claude-opus-4-7': { input: 0.000015, output: 0.000075, cacheRead: 0.0000015 },
-
-  // Direct-Google (Gemini) vision/document workers pass bare ids too.
-  'gemini-2.5-flash': { input: 0.0000003, output: 0.0000025 },
-  'gemini-2.5-pro': { input: 0.00000125, output: 0.00001 },
-
   // DeepSeek
   'deepseek/deepseek-chat': { input: 0.00000027, output: 0.0000011 },
 
-  // Google
+  // Google (a direct Gemini route's bare id is the same row).
+  // Gemini 3.8 Flash, the shipped read worker (OpenRouter list, 2026-11-26).
+  'google/gemini-3.8-flash': { input: 0.000000825, output: 0.000004125, cacheRead: 0.0000000825 },
   'google/gemini-2.5-flash': { input: 0.0000003, output: 0.0000025 },
   'google/gemini-2.5-pro': { input: 0.00000125, output: 0.00001 },
 
@@ -105,19 +110,85 @@ const PRICING: Record<string, PricePerToken> = {
 };
 
 /**
+ * Models billed by the unit, where no reply carries the cost: speech (a raw
+ * audio reply, on OpenRouter too) and xAI's transcription. Same key rule as
+ * PRICING.
+ */
+const UNIT_PRICING: Record<string, PricePerUnit> = {
+  // xAI speech: $15 per 1M characters (xAI price list and OpenRouter list,
+  // 2026-11-26). `grok-voice-latest` is the direct route's alias.
+  'x-ai/grok-voice-tts-1.0': { kind: 'characters', usd: 0.000015 },
+  'grok-voice-latest': { kind: 'characters', usd: 0.000015 },
+  // xAI transcription over REST: $0.10 per hour of audio (xAI price list,
+  // 2026-11-26).
+  'grok-stt': { kind: 'audio_seconds', usd: 0.1 / 3600 },
+};
+
+/**
+ * The key a model is priced by: lowercase, without a leading `~` (an
+ * auto-updating alias), without the vendor prefix, a version's dots as
+ * dashes. One model, one key, however the provider spells it.
+ */
+export function priceKey(model: string): string {
+  const id = model.toLowerCase().replace(/^~/, '');
+  return id.slice(id.lastIndexOf('/') + 1).replaceAll('.', '-');
+}
+
+function byKey<T>(table: Record<string, T>): Map<string, T> {
+  return new Map(Object.entries(table).map(([id, price]) => [priceKey(id), price]));
+}
+
+const TOKEN_PRICES = byKey(PRICING);
+const UNIT_PRICES = byKey(UNIT_PRICING);
+
+/** The ids of the price rows, for the test that no two share a key. */
+export const PRICED_MODEL_IDS: readonly string[] = [
+  ...Object.keys(PRICING),
+  ...Object.keys(UNIT_PRICING),
+];
+
+/**
+ * A call that costs nothing by its route: a self-hosted model (the `local`
+ * provider: Ollama chat, the bundled embedder) or a provider's free variant
+ * (an id ending `:free`). The whole list; anything else with no price is
+ * unpriced, not free.
+ */
+export function isFreeCall(provider: string, model: string): boolean {
+  return provider === 'local' || model.toLowerCase().endsWith(':free');
+}
+
+/**
+ * The list price of a call in micro-USD, or null when the table has no row
+ * for the model (for a call billed by the unit: no row of that unit).
+ */
+export function listPriceMicroUsd(
+  model: string,
+  tokens: { input: number; output: number; cacheRead?: number },
+  units?: { kind: UnitKind; count: number },
+): number | null {
+  const key = priceKey(model);
+  const price = TOKEN_PRICES.get(key);
+  const unitRow = UNIT_PRICES.get(key);
+  const unit = unitRow && units && units.kind === unitRow.kind && units.count > 0 ? unitRow : null;
+  if (!price && !unit) return null;
+  let usd = 0;
+  if (price) {
+    const cacheRate = price.cacheRead ?? price.input;
+    const cacheTokens = tokens.cacheRead ?? 0;
+    const freshInput = Math.max(0, tokens.input - cacheTokens);
+    usd += freshInput * price.input + cacheTokens * cacheRate + tokens.output * price.output;
+  }
+  if (unit && units) usd += units.count * unit.usd;
+  return Math.round(usd * 1_000_000);
+}
+
+/**
  * Compute cost in micro-USD from a model slug + token counts. Returns 0
- * if the model isn't in the table. The model is normalised to lowercase
- * before lookup, since some routes inject case variants.
+ * if the model isn't in the table.
  */
 export function fallbackCostMicroUsd(
   model: string,
   tokens: { input: number; output: number; cacheRead?: number },
 ): number {
-  const price = PRICING[model.toLowerCase()];
-  if (!price) return 0;
-  const cacheRate = price.cacheRead ?? price.input;
-  const cacheTokens = tokens.cacheRead ?? 0;
-  const freshInput = Math.max(0, tokens.input - cacheTokens);
-  const usd = freshInput * price.input + cacheTokens * cacheRate + tokens.output * price.output;
-  return Math.round(usd * 1_000_000);
+  return listPriceMicroUsd(model, tokens) ?? 0;
 }

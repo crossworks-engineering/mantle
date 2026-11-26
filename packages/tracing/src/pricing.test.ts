@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { fallbackCostMicroUsd } from './pricing';
+import {
+  fallbackCostMicroUsd,
+  isFreeCall,
+  listPriceMicroUsd,
+  priceKey,
+  PRICED_MODEL_IDS,
+} from './pricing';
 
 describe('fallbackCostMicroUsd', () => {
   it('prices every decision model that answers a full-size request', () => {
@@ -78,5 +84,49 @@ describe('fallbackCostMicroUsd', () => {
 
   it('returns 0 for an unknown model rather than throwing', () => {
     expect(fallbackCostMicroUsd('some/unlisted-model', { input: 1000, output: 1000 })).toBe(0);
+  });
+
+  it('one row per model: the vendor prefix, a `~` and the dot spelling do not matter', () => {
+    const tokens = { input: 1_000_000, output: 1_000_000 };
+    for (const [a, b] of [
+      ['openai/text-embedding-3-large', 'text-embedding-3-large'],
+      ['openai/text-embedding-3-small', 'text-embedding-3-small'],
+      ['anthropic/claude-sonnet-5.5', 'claude-sonnet-5-5'],
+      ['anthropic/claude-haiku-5.5', 'claude-haiku-5-5'],
+      ['anthropic/claude-opus-5.5', 'claude-opus-5-5'],
+      ['deepseek/deepseek-chat', 'deepseek-chat'],
+      ['google/gemini-2.5-flash', 'gemini-2.5-flash'],
+      ['google/gemini-3.8-flash', '~google/gemini-3.8-flash'],
+      ['x-ai/grok-4.7', 'grok-4.7'],
+    ] as const) {
+      const price = fallbackCostMicroUsd(a, tokens);
+      expect(price, a).toBeGreaterThan(0);
+      expect(fallbackCostMicroUsd(b, tokens), b).toBe(price);
+    }
+  });
+
+  it('no two rows share a key (a second spelling of a model is not a second row)', () => {
+    const keys = PRICED_MODEL_IDS.map(priceKey);
+    const twice = keys.filter((k, i) => keys.indexOf(k) !== i);
+    expect(twice).toEqual([]);
+  });
+
+  it('says a model has no row with null, not with $0', () => {
+    expect(listPriceMicroUsd('some/unlisted-model', { input: 1000, output: 1000 })).toBeNull();
+    expect(listPriceMicroUsd('openai/gpt-4o-mini', { input: 0, output: 0 })).toBe(0);
+    // A unit row prices its own unit only.
+    const none = { input: 0, output: 0 };
+    expect(listPriceMicroUsd('grok-stt', none, { kind: 'audio_seconds', count: 3600 })).toBe(
+      100_000,
+    );
+    expect(listPriceMicroUsd('grok-stt', none, { kind: 'characters', count: 3600 })).toBeNull();
+    expect(listPriceMicroUsd('grok-stt', none)).toBeNull();
+  });
+
+  it('the free list: a self-hosted model and a `:free` id, nothing else', () => {
+    expect(isFreeCall('local', 'embeddinggemma:latest')).toBe(true);
+    expect(isFreeCall('openrouter', 'made-up/model:free')).toBe(true);
+    expect(isFreeCall('openrouter', 'made-up/model')).toBe(false);
+    expect(isFreeCall('custom', 'made-up-model')).toBe(false);
   });
 });

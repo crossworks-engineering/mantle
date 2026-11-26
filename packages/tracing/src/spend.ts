@@ -22,10 +22,14 @@
  *
  * Cost: the provider's reported cost when it gave one, else the static price
  * table (pricing.ts). Never a network call: recording spend must not spend.
+ * A call with neither, that is not free by its route, is recorded at $0 and
+ * marked `unpriced` on its step, with one log line per model: a paid call is
+ * never a silent $0.
  */
 
 import { attributeUsage } from './store';
-import { fallbackCostMicroUsd } from './pricing';
+import { isFreeCall, listPriceMicroUsd, type UnitKind } from './pricing';
+import { log } from './log';
 import { errorMessage } from '@mantle/std';
 
 /** What kind of provider call it was. */
@@ -34,7 +38,7 @@ export type SpendCapability =
 
 /** Billing units of a call that is not billed by the token. */
 export type SpendUnits = {
-  kind: 'audio_seconds' | 'characters' | 'images';
+  kind: UnitKind;
   count: number;
 };
 
@@ -72,25 +76,54 @@ export type ProviderUsage = {
   timedOut?: boolean;
 };
 
+/** Calls billed by the unit: one that returned was billed, tokens or not. */
+const UNIT_CAPABILITIES: ReadonlySet<SpendCapability> = new Set(['image_gen', 'tts', 'stt']);
+
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
-/** The call's cost in micro-USD: reported, else the price table. */
-export function usageCostMicroUsd(u: ProviderUsage): number {
+/**
+ * The call's cost in micro-USD, and whether it has a source: the provider's
+ * reported cost, a free route, or a row of the price table (tried on
+ * `priceAs` in order). `priced: false` is a call nothing could price.
+ */
+export function priceUsage(u: ProviderUsage): { costMicroUsd: number; priced: boolean } {
   const reported = num(u.reportedCostUsd);
-  if (reported > 0) return Math.round(reported * 1_000_000);
+  if (reported > 0) return { costMicroUsd: Math.round(reported * 1_000_000), priced: true };
+  const ids = (u.priceAs ?? [u.model]).filter((m): m is string => !!m);
+  if ([u.model, ...ids].some((m) => isFreeCall(u.provider, m))) {
+    return { costMicroUsd: 0, priced: true };
+  }
   const tokens = {
     input: num(u.inputTokens),
     output: num(u.outputTokens),
     cacheRead: num(u.cacheReadTokens),
   };
-  for (const model of u.priceAs ?? [u.model]) {
-    if (!model) continue;
-    const cost = fallbackCostMicroUsd(model, tokens);
-    if (cost > 0) return cost;
+  const units = u.units ? { kind: u.units.kind, count: num(u.units.count) } : undefined;
+  for (const model of ids) {
+    const cost = listPriceMicroUsd(model, tokens, units);
+    if (cost !== null) return { costMicroUsd: cost, priced: true };
   }
-  return 0;
+  return { costMicroUsd: 0, priced: false };
+}
+
+/** The call's cost in micro-USD: reported, else the price table. */
+export function usageCostMicroUsd(u: ProviderUsage): number {
+  return priceUsage(u).costMicroUsd;
+}
+
+const unpricedLogged = new Set<string>();
+
+/** One line per provider and model per process, never one per call. */
+function logUnpricedOnce(u: ProviderUsage): void {
+  const key = `${u.provider}/${u.model}`;
+  if (unpricedLogged.has(key)) return;
+  unpricedLogged.add(key);
+  log('spend').warn(
+    `no price for ${u.capability} model '${u.model}' on '${u.provider}': its calls are ` +
+      `recorded at $0 and marked unpriced. Add a row to packages/tracing/src/pricing.ts.`,
+  );
 }
 
 /**
@@ -99,7 +132,7 @@ export function usageCostMicroUsd(u: ProviderUsage): number {
  */
 export function recordUsage(u: ProviderUsage): number {
   try {
-    const costMicroUsd = usageCostMicroUsd(u);
+    const { costMicroUsd, priced } = priceUsage(u);
     const input = num(u.inputTokens);
     const output = num(u.outputTokens);
     const cacheRead = num(u.cacheReadTokens);
@@ -117,6 +150,13 @@ export function recordUsage(u: ProviderUsage): number {
     if (u.units && num(u.units.count) > 0) meta[u.units.kind] = num(u.units.count);
     meta.cost_micro_usd = costMicroUsd;
     if (u.timedOut) meta.timed_out = 1;
+    // A billed call nothing could price: a count on the step (summed like
+    // `timed_out`), so a $0 that is not a true $0 can be found and counted.
+    const billed = input + output + cacheWrite > 0 || UNIT_CAPABILITIES.has(u.capability);
+    if (!priced && billed && !u.timedOut) {
+      meta.unpriced = 1;
+      logUnpricedOnce(u);
+    }
     // An embedding's tokens are not completion tokens: the member token
     // budget reads tokens in + out, never these (docs/spend-recording.md).
     const tokens =

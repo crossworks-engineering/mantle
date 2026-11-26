@@ -40,7 +40,14 @@ import {
   withTracePrelude,
   type SpendTarget,
 } from './store';
-import { captureLlmUsage, recordUsage, usageCostMicroUsd, type ProviderUsage } from './spend';
+import {
+  captureLlmUsage,
+  priceUsage,
+  recordUsage,
+  usageCostMicroUsd,
+  type ProviderUsage,
+} from './spend';
+import { registerLogSink } from './log';
 
 afterEach(() => {
   h.traceUpdates.length = 0;
@@ -77,7 +84,7 @@ describe('usageCostMicroUsd', () => {
     expect(usageCostMicroUsd(chat({ model: 'x', priceAs: ['nope', null, 'nope-2'] }))).toBe(0);
   });
 
-  it('a unit-billed call with no reported cost is $0 (no price table for units)', () => {
+  it('a unit-billed call with no reported cost and no unit price is $0', () => {
     expect(
       usageCostMicroUsd({
         capability: 'tts',
@@ -86,6 +93,169 @@ describe('usageCostMicroUsd', () => {
         units: { kind: 'characters', count: 400 },
       }),
     ).toBe(0);
+  });
+
+  it('a unit-billed call prices from its unit row', () => {
+    // xAI speech: $15 per 1M characters, on OpenRouter and direct.
+    for (const [provider, model] of [
+      ['openrouter', 'x-ai/grok-voice-tts-1.0'],
+      ['xai', 'grok-voice-latest'],
+    ] as const) {
+      expect(
+        priceUsage({
+          capability: 'tts',
+          provider,
+          model,
+          units: { kind: 'characters', count: 2000 },
+        }),
+      ).toEqual({ costMicroUsd: 30_000, priced: true });
+    }
+    // xAI transcription: $0.10 per hour of audio.
+    expect(
+      usageCostMicroUsd({
+        capability: 'stt',
+        provider: 'xai',
+        model: 'grok-stt',
+        units: { kind: 'audio_seconds', count: 1800 },
+      }),
+    ).toBe(50_000);
+  });
+
+  it('prices the bare embedding id a direct or misnamed route records', () => {
+    // 14.6M tokens of `text-embedding-3-large` (no `openai/`) read $0.00 on a
+    // real box: the table had the prefixed id only.
+    const usage = (model: string): ProviderUsage => ({
+      capability: 'embedding',
+      provider: 'openrouter',
+      model,
+      priceAs: [model, model],
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    });
+    expect(priceUsage(usage('text-embedding-3-large'))).toEqual({
+      costMicroUsd: 130_000,
+      priced: true,
+    });
+    expect(usageCostMicroUsd(usage('openai/text-embedding-3-large'))).toBe(130_000);
+  });
+
+  it('prices the direct Anthropic id of a shipped model', () => {
+    // `claude-sonnet-5-5` on the direct route reports no cost: $2 in, $10
+    // out, $0.10 cache read per 1M tokens.
+    expect(
+      priceUsage({
+        capability: 'chat',
+        provider: 'anthropic',
+        model: 'claude-sonnet-5-5',
+        priceAs: ['claude-sonnet-5-5', 'claude-sonnet-5-5'],
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        cacheReadTokens: 500_000,
+      }),
+    ).toEqual({ costMicroUsd: 1_000_000 + 50_000 + 1_000_000, priced: true });
+  });
+
+  it('a free route is priced at $0: a local model, a `:free` id', () => {
+    const local = chat({ provider: 'local', model: 'gemma3:4b', priceAs: undefined });
+    expect(priceUsage(local)).toEqual({ costMicroUsd: 0, priced: true });
+    // A local model is never priced from the table, whatever its name.
+    expect(priceUsage(chat({ provider: 'local', model: 'gpt-4o' })).costMicroUsd).toBe(0);
+    const free = chat({ provider: 'openrouter', model: 'made-up/model:free' });
+    expect(priceUsage(free)).toEqual({ costMicroUsd: 0, priced: true });
+  });
+
+  it('a model with no cost, no row and no free route is not priced', () => {
+    expect(priceUsage(chat({ model: 'made-up/unlisted', provider: 'openrouter' }))).toEqual({
+      costMicroUsd: 0,
+      priced: false,
+    });
+    // A priced model whose few tokens round to $0 is still priced.
+    expect(
+      priceUsage({
+        capability: 'embedding',
+        provider: 'openai',
+        model: 'text-embedding-3-large',
+        inputTokens: 2,
+      }),
+    ).toEqual({ costMicroUsd: 0, priced: true });
+  });
+});
+
+describe('recordUsage: an unpriced call is marked, never a silent $0', () => {
+  const warned: string[] = [];
+  const sink = {
+    info: () => {},
+    warn: (m: string) => void warned.push(m),
+    error: () => {},
+  };
+
+  async function metaOf(usages: ProviderUsage[]): Promise<Record<string, unknown>> {
+    registerLogSink(sink);
+    try {
+      await startTrace({ ownerId: 'o', kind: 'manual' }, () =>
+        step({ name: 's', kind: 'llm_call' }, async () => {
+          for (const u of usages) recordUsage(u);
+        }),
+      );
+      await flush();
+    } finally {
+      registerLogSink(null);
+    }
+    return h.stepUpdates.at(-1)!.meta as Record<string, unknown>;
+  }
+
+  afterEach(() => {
+    warned.length = 0;
+  });
+
+  it('counts the calls on the step and logs one line for the model', async () => {
+    const u = chat({ provider: 'openrouter', model: 'made-up/unpriced-a' });
+    const meta = await metaOf([u, u, u]);
+    expect(meta).toMatchObject({ cost_micro_usd: 0, tokens_in: 3000, unpriced: 3 });
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain("'made-up/unpriced-a' on 'openrouter'");
+    // A later step with the same model: counted again, not logged again.
+    expect(await metaOf([u])).toMatchObject({ unpriced: 1 });
+    expect(warned).toHaveLength(1);
+  });
+
+  it('marks a unit call with no price (speech on a model with no unit row)', async () => {
+    const meta = await metaOf([
+      {
+        capability: 'tts',
+        provider: 'openai',
+        model: 'made-up-tts',
+        units: { kind: 'characters', count: 400 },
+      },
+    ]);
+    expect(meta).toMatchObject({ characters: 400, cost_micro_usd: 0, unpriced: 1 });
+  });
+
+  it('does not mark a priced call, a free call, a timed-out call or an empty one', async () => {
+    const meta = await metaOf([
+      chat(),
+      chat({ reportedCostUsd: 0.01, model: 'made-up/reported', provider: 'openrouter' }),
+      chat({ provider: 'local', model: 'gemma3:4b' }),
+      chat({ provider: 'openrouter', model: 'made-up/model:free' }),
+      {
+        capability: 'vision',
+        provider: 'openrouter',
+        model: 'made-up/timed-out',
+        inputTokens: 0,
+        outputTokens: 0,
+        timedOut: true,
+      },
+      // No tokens came back (a stopped stream): nothing to say it was billed.
+      {
+        capability: 'chat',
+        provider: 'openrouter',
+        model: 'made-up/empty',
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+    ]);
+    expect(meta).not.toHaveProperty('unpriced');
+    expect(warned).toEqual([]);
   });
 });
 
@@ -223,6 +393,8 @@ describe('recordUsage', () => {
       provider: 'openai',
       audio_seconds: 42,
       cost_micro_usd: 0,
+      // No reported cost and no unit price for this model: marked, not silent.
+      unpriced: 1,
     });
   });
 

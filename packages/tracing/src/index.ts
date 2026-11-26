@@ -48,11 +48,12 @@ export {
   type DurableStepExecutor,
 } from './durable';
 
-export { fallbackCostMicroUsd } from './pricing';
+export { fallbackCostMicroUsd, isFreeCall, listPriceMicroUsd, type UnitKind } from './pricing';
 export {
   recordUsage,
   captureLlmUsage,
   usageCostMicroUsd,
+  priceUsage,
   type ProviderUsage,
   type SpendCapability,
   type SpendUnits,
