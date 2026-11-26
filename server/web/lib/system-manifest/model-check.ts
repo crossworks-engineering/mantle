@@ -44,7 +44,7 @@ export type ModelCheckAgentRow = {
 };
 
 /** The agents' route: every manifest agent is seeded on OpenRouter. */
-const AGENT_PROVIDER = 'openrouter';
+export const AGENT_PROVIDER = 'openrouter';
 
 /** The model ids a params object names: every string value of a key that
  *  ends in `_model`. */
