@@ -30,14 +30,21 @@
  * - `traces.cost_micro_usd`: plus the sum of its steps' amounts;
  * - `run_items.cost_micro_usd` (a copy of the item's trace total, by
  *   `trace_ref`): plus the same;
- * - `runs.spent_micro_usd` (the sum of its items' costs): plus the same. No
- *   pause is raised here; a running run over its budget pauses at its next
- *   item, as the engine always does;
+ * - `runs.spent_micro_usd` (the sum of its items' costs): plus the same,
+ *   and only of a run that has ended (below);
  * - `meta.child_cost_micro_usd` on a parent's delegation step, and a cost
  *   written into a step's output or a pending question: left. Each is a
  *   note of what was known at that moment, nothing sums it, and the child
  *   trace it points at holds the corrected total.
  * Token counts and the member token budget are never changed.
+ *
+ * It never makes a live run pause. A step whose trace is the trace of an
+ * item of a run that has not ended is left, and counted on its own line
+ * with the USD it would add: the run's spent amount is what its budget
+ * reads, and a list price must not stop work in progress. A run has ended
+ * when the engine stamped `runs.completed_at` (its finish and its cancel
+ * both do, and nothing else). A later backfill run, after the run has
+ * ended, prices those steps.
  *
  * It runs while the box works: a keyset walk over `trace_steps` by id, one
  * short transaction per batch, and only steps of a trace that closed more
@@ -48,7 +55,7 @@
  *
  * Output is counts, model ids and provider ids only: safe on a client box.
  */
-import { and, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { db, runItems, runs, traces, traceSteps } from '@mantle/db';
 import { isFreeCall, priceUsage, type UnitKind } from '@mantle/tracing';
 
@@ -56,6 +63,12 @@ import { isFreeCall, priceUsage, type UnitKind } from '@mantle/tracing';
 export const MARK = 'cost_backfill';
 /** What a backfilled cost is: the list price of the stored token counts. */
 export const BASIS = 'list_price';
+
+/** How far a list price is from a bill, so the reader of a dry run knows the
+ *  direction and the size of the error. One measurement, not a rule. */
+export const CALIBRATION =
+  "Calibration: on one box, measured on 2026-11-26, the list-price total of the vision model's " +
+  "stored tokens was about 8 percent above the provider's bill for the same calls.";
 
 /** The two constants as SQL literals (the same text; a test holds them equal). */
 const MARK_SQL = sql`'cost_backfill'`;
@@ -83,7 +96,8 @@ export type Leave =
   | 'no_usage'
   | 'free'
   | 'unpriced'
-  | 'rounds_to_zero';
+  | 'rounds_to_zero'
+  | 'run_open';
 
 export type StepUsage = {
   provider: string;
@@ -92,8 +106,11 @@ export type StepUsage = {
   tokensOut: number;
 };
 
+/** `microUsd` on a step that is left: what a later run would add
+ *  (`run_open` only). */
 export type Choice =
-  ({ act: 'price'; microUsd: number } & StepUsage) | ({ act: 'leave'; why: Leave } & StepUsage);
+  | ({ act: 'price'; microUsd: number } & StepUsage)
+  | ({ act: 'leave'; why: Leave; microUsd?: number } & StepUsage);
 
 /** A stored count: a whole number of 0 or more, else 0. Never a guess. */
 function count(v: unknown): number {
@@ -122,9 +139,14 @@ export function usageOf(row: Pick<StepRow, 'meta' | 'inputProvider'>): StepUsage
 
 /**
  * Pure: what to do with one stored step. The price is the live recorder's
- * own (`priceUsage`), on the step's summed usage and its model.
+ * own (`priceUsage`), on the step's summed usage and its model. `runOpen`:
+ * the step's trace belongs to a run that has not ended, so a step with a
+ * price is left for a later run (with the amount, for the report).
  */
-export function chooseForStep(row: Pick<StepRow, 'meta' | 'inputProvider'>): Choice {
+export function chooseForStep(
+  row: Pick<StepRow, 'meta' | 'inputProvider'>,
+  opts: { runOpen?: boolean } = {},
+): Choice {
   const meta = row.meta ?? {};
   const usage = usageOf(row);
   const { provider, model, tokensIn, tokensOut } = usage;
@@ -150,6 +172,7 @@ export function chooseForStep(row: Pick<StepRow, 'meta' | 'inputProvider'>): Cho
   });
   if (!priced) return leave('unpriced');
   if (costMicroUsd <= 0) return leave('rounds_to_zero');
+  if (opts.runOpen) return { act: 'leave', why: 'run_open', microUsd: costMicroUsd, ...usage };
   return { act: 'price', microUsd: costMicroUsd, ...usage };
 }
 
@@ -166,6 +189,8 @@ export type Tally = {
   cannot: Map<string, ModelLine & { why: Leave }>;
   /** Steps left for another reason, by reason. */
   left: Partial<Record<Leave, number>>;
+  /** Steps with a price whose run has not ended: left for a later run. */
+  runOpen: { steps: number; microUsd: number };
   traces: Set<string>;
   first: Date | null;
   last: Date | null;
@@ -177,6 +202,7 @@ export function newTally(): Tally {
     price: new Map(),
     cannot: new Map(),
     left: {},
+    runOpen: { steps: 0, microUsd: 0 },
     traces: new Set(),
     first: null,
     last: null,
@@ -206,6 +232,9 @@ export function tallyStep(t: Tally, row: StepRow, c: Choice): void {
       if (!t.first || at < t.first) t.first = at;
       if (!t.last || at > t.last) t.last = at;
     }
+  } else if (c.why === 'run_open') {
+    t.runOpen.steps += 1;
+    t.runOpen.microUsd += c.microUsd ?? 0;
   } else if (CANNOT.has(c.why)) {
     const key = `${c.why}\n${c.provider}\n${c.model}`;
     addLine(t.cannot, key, () => ({ ...zero, microUsd: 0, why: c.why }), c);
@@ -264,6 +293,11 @@ export function reportLines(
     .map(([why, n]) => `${WHY_TEXT[why as Leave] ?? why} ${n}`)
     .join('; ');
   if (left) out.push(`left as they are: ${left}`);
+  if (t.runOpen.steps > 0) {
+    out.push(
+      `left: run still open  steps ${t.runOpen.steps}  ${usd(t.runOpen.microUsd)}  (a later run prices them, after the run has ended)`,
+    );
+  }
   out.push(`total ${verb}: ${steps} steps in ${t.traces.size} traces, ${usd(totalMicroUsd(t))}`);
   return out;
 }
@@ -311,6 +345,23 @@ async function markedPage(after: string | null, limit: number, b: Bounds): Promi
     order by s.id
     limit ${limit}
   `)) as unknown as StepRow[];
+}
+
+/**
+ * Of these traces, the ones that belong to a run that has not ended: the
+ * trace of an item (`run_items.trace_ref`) of a run with no `completed_at`.
+ * The engine stamps `completed_at` when a run finishes and when it is
+ * cancelled, and nothing else does, so this is its own notion of ended; no
+ * list of states is kept here.
+ */
+async function openRunTraces(traceIds: readonly string[]): Promise<Set<string>> {
+  if (traceIds.length === 0) return new Set();
+  const rows = await db
+    .select({ traceRef: runItems.traceRef })
+    .from(runItems)
+    .innerJoin(runs, eq(runs.id, runItems.runId))
+    .where(and(inArray(runItems.traceRef, [...traceIds]), isNull(runs.completedAt)));
+  return new Set(rows.flatMap((r) => (r.traceRef ? [r.traceRef] : [])));
 }
 
 /** What the batches of a run changed. A trace, run item or run whose
@@ -474,6 +525,12 @@ export async function runSpendBackfill(opts: BackfillOptions): Promise<BackfillR
     if (page.length === 0) break;
     after = page[page.length - 1]!.id;
     const todo: Array<{ id: string; microUsd: number }> = [];
+    // A run that has ended never opens again, so this read holds for the
+    // page's write below.
+    const open =
+      opts.mode === 'price'
+        ? await openRunTraces([...new Set(page.map((r) => r.traceId))])
+        : new Set<string>();
     for (const row of page) {
       if (opts.mode === 'undo') {
         // The mark is the record: its amount is what comes out.
@@ -483,7 +540,7 @@ export async function runSpendBackfill(opts: BackfillOptions): Promise<BackfillR
         if (microUsd > 0) todo.push({ id: row.id, microUsd });
         continue;
       }
-      const choice = chooseForStep(row);
+      const choice = chooseForStep(row, { runOpen: open.has(row.traceId) });
       tallyStep(tally, row, choice);
       if (choice.act === 'price') todo.push({ id: row.id, microUsd: choice.microUsd });
     }

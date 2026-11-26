@@ -18,6 +18,7 @@
 import { errorMessage } from '@mantle/std';
 import { closeDb } from '@mantle/db';
 import {
+  CALIBRATION,
   DEFAULT_BATCH,
   reportLines,
   runSpendBackfill,
@@ -65,7 +66,11 @@ async function main(): Promise<number> {
     'A backfilled cost is the LIST PRICE of the stored token counts by the current price ' +
       'rules. It is not the billed cost.',
   );
-  if (!undo) say('Steps of a trace that closed less than an hour ago are left for a later run.');
+  say(CALIBRATION);
+  if (!undo) {
+    say('Steps of a trace that closed less than an hour ago are left for a later run.');
+    say('Steps of a run that has not ended are left for a later run: no live run is paused.');
+  }
 
   const { tally, written } = await runSpendBackfill({
     mode: undo ? 'undo' : 'price',
