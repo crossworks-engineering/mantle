@@ -766,11 +766,8 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     // contact routes, a Telegram chat's block or unpair, an assistant's
     // delete) run on the full route, where the gateway's SET carries it.
     'POST /api/agents/:id/telegram/chats': ['acting-login'],
-    'POST /api/secrets': ['acting-login'],
-    'PATCH /api/secrets/:id': ['acting-login'],
     'DELETE /api/agents/:id': ['acting-login'],
     'DELETE /api/peers/:id': ['acting-login'],
-    'DELETE /api/secrets/:id': ['acting-login'],
     // A switch turned on (0324: enabled, is_default and backup_enabled
     // only off on the narrow login): its spot.
     'POST /api/ai-workers/:id/default': ['model-route'],

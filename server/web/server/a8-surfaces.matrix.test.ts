@@ -145,6 +145,9 @@ const OWNER_SIDE = /owner-side tool: not available here/;
  *  a run with no workspace is Admin's, and withAgentScope refuses a login
  *  with no seat there). */
 const NOT_ADMIN_USER = /not a user of the Admin workspace/;
+/** The refusal of a hidden kind on a team surface (packages/tools/src/
+ *  team-visibility.ts HIDDEN_NODE_ERROR): worded as not found. */
+const HIDDEN_ON_TEAM = /node not found — the id may be stale or mistyped/;
 
 describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s answer', () => {
   type Ts = typeof import('@mantle/db/test-support');
@@ -501,9 +504,25 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
       return true;
     },
     // A deny the oracle cannot see (it knows no tools), each run as a cell.
-    narrow: (kind, action) => {
+    narrow: (kind, action, role) => {
       const tc = toolCall(kind, action, 'x');
       if (!tc) return null;
+      // A secret is a workspace kind (0400) for people; an agent on a team
+      // surface never sees one, its metadata included (teamHidden 'never',
+      // TEAM_NEVER_TYPES; owner, 2026-11-26: not for apps or agents). The
+      // team surfaces: a member's chat turn, a workspace assistant's
+      // heartbeat, and a member's turn approved from Pending.
+      if (
+        kind === 'secret' &&
+        (surface === 'team-turn' ||
+          surface === 'heartbeat' ||
+          (surface === 'pending' && role !== null && !isAdminUser(role)))
+      ) {
+        return {
+          why: 'a secret is hidden on a team surface (teamHidden never)',
+          says: HIDDEN_ON_TEAM,
+        };
+      }
       // "Linked brains": a peer calls a risky tool only when its list
       // allows it; the fixture's peers allow none.
       if (surface === 'peer' && peerRisky.has(tc.slug)) {

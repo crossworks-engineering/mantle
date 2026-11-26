@@ -96,6 +96,9 @@ const PEND_ASKER: Record<string, string | null> = {
 
 /** Main's recorded lines of the section being compared, by cell (the F4
  *  changes compare a write context's answer with main's read one). */
+/** A member's tree kinds since 0400: secrets, between tables and apps. */
+const SECRETS_TREE_KIND = '"tables","secrets","apps"';
+
 let RECORDED = new Map<string, string>();
 /** The section whose body is running (null between sections). */
 let RUNNING: string | null = null;
@@ -480,15 +483,17 @@ const NAMED_CHANGES: Record<
             /\{"id":"ws:other\(System\)","name":"System","isAdmin":false,"isSystem":true,[^}]*\},/g,
             '',
           )
-          .replace(',"noAutoTables":false,', ','),
+          .replace(',"noAutoTables":false,', ',')
+          .replace(SECRETS_TREE_KIND, '"tables","apps"'),
     },
     {
       cells: /^GET \/api\/shell (pending )?\w+$/,
       reason:
         "the shell says whether the box has the line (noAutoTables, false here: the sweep's box " +
-        "has no MANTLE_NO_AUTO_TABLES), for the client's upload hint. A new field only: every " +
-        'other byte answers as main.',
-      back: (now) => now.replace(',"noAutoTables":false,', ','),
+        "has no MANTLE_NO_AUTO_TABLES), for the client's upload hint; and a member's treeKinds " +
+        'holds secrets, a workspace kind since 0400 (its own screen). Every other byte answers as main.',
+      back: (now) =>
+        now.replace(',"noAutoTables":false,', ',').replace(SECRETS_TREE_KIND, '"tables","apps"'),
     },
     {
       // The pre-check removal part 2 (round 4): an app's PATCH asks the

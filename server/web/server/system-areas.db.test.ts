@@ -93,7 +93,8 @@ describe.skipIf(!URL)('the System workspace: areas, routes and recovery', () => 
     users: '/api/users',
     assistants: '/api/agents/options',
     connectors: '/api/peers',
-    keys: '/api/secrets',
+    // Not /api/secrets: a workspace kind since 0400, open to members.
+    keys: '/api/keys',
   } as const;
 
   beforeAll(async () => {

@@ -102,7 +102,9 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  it('secrets: POST, PATCH, DELETE (secret-item)', async () => {
+  // Secrets are a content row since 0400 (no area exit): the owner's own
+  // POST, PATCH and DELETE still answer through the app.
+  it('secrets: POST, PATCH, DELETE as the owner (a content row since 0400)', async () => {
     const made = await call('/api/secrets', 'POST', {
       title: `${tag} secret`,
       kind: 'password',
