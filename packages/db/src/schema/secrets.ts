@@ -12,7 +12,8 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
  * Secrets: AES-256-GCM ciphertext sealed by @mantle/crypto. The metadata
  * (title, branch, tags, embedding) lives on the parent `nodes` row so AI
  * can _find_ a secret without ever decrypting it. The plaintext only leaves
- * here when the user (or an explicitly-authorised AI call) opens it.
+ * here when a person who reads the secret reveals it (0400); no agent or app
+ * ever reads it.
  */
 export const secrets = pgTable('secrets', {
   id: uuid('id')

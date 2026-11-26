@@ -3,7 +3,9 @@
 -- other, securely; not for apps or agents to use):
 --  1. mantle_kind_class: 'secret' joins the workspace kinds. A secret has a
 --     home and grants like a note. Every secret made before stays homed in
---     Admin with no grant, so nobody new reads one until a person shares it.
+--     Admin with no grant: no member reads one until a person shares it.
+--     Every user of the Admin workspace reads them now, not only the keys
+--     area's (trusted logins: accepted, docs/secrets.md "Sharing").
 --  2. mantle_secret_put (0281) also replaces the sealed value of a secret
 --     that has one: an edit in a login's scope. The same check: the scope
 --     may edit the secret.
