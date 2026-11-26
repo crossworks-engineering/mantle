@@ -27,11 +27,16 @@ export function isTreeLiveKind(kind: TreeKind): boolean {
 }
 
 /** The kinds a member's own screens are trees of, named here and not by the
- *  registry's `library` flag (which drives the Library lists): apps and
- *  Present canvases. Each screen lists the items its row rules read (GET
- *  /api/apps, GET /api/presents), and the tree reads the same rows with the
- *  folders on the way to them, so the screen keeps its folders. */
-const READER_SCREEN_KINDS: ReadonlySet<TreeKind> = new Set<TreeKind>(['apps', 'present']);
+ *  registry's `library` flag (which drives the Library lists): apps,
+ *  Present canvases and secrets. Each screen lists the items its row rules
+ *  read (GET /api/apps, GET /api/presents, GET /api/secrets), and the tree
+ *  reads the same rows with the folders on the way to them, so the screen
+ *  keeps its folders. */
+const READER_SCREEN_KINDS: ReadonlySet<TreeKind> = new Set<TreeKind>([
+  'apps',
+  'present',
+  'secrets',
+]);
 
 /** The kinds the member and client trees serve: the live kinds whose items a
  *  Library holds (files, notes, pages, drawings, tables; the registry's

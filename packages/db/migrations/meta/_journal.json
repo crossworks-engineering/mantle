@@ -2794,6 +2794,13 @@
       "when": 1792340300000,
       "tag": "0399_sso_label",
       "breakpoints": true
+    },
+    {
+      "idx": 400,
+      "version": "7",
+      "when": 1792340360000,
+      "tag": "0400_secrets_workspace_kind",
+      "breakpoints": true
     }
   ]
 }
