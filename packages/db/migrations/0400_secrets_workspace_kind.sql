@@ -7,8 +7,8 @@
 --  2. mantle_secret_put (0281) also replaces the sealed value of a secret
 --     that has one: an edit in a login's scope. The same check: the scope
 --     may edit the secret.
---  3. mantle_secret_sealed(node): the sealed value of a secret, only for a
---     secret the scope reads. The write role holds no right on the secrets
+--  3. mantle_secret_sealed(node): the sealed value of a secret, only in a
+--     login's scope that reads the secret (no scope: nothing). The write role holds no right on the secrets
 --     table; this and mantle_secret_put are its two doors (this one the
 --     workspace role's, a read; put the write role's). It returns the
 --     ciphertext only: the plaintext needs the master key, which only the
@@ -62,13 +62,11 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n."id" = node AND n."type" = 'secret') THEN
     RETURN NULL;
   END IF;
-  -- The write role always carries a scope; with none it reads nothing.
-  IF "public"."mantle_caller_is_write_role"() AND NOT "public"."mantle_scope_active"() THEN
-    RETURN NULL;
-  END IF;
-  -- A secret the scope does not read answers as one that is not there.
-  IF "public"."mantle_scope_active"()
-     AND NOT coalesce("public"."mantle_check_item"(node, 'read'), false) THEN
+  -- Only a login's scope that reads the secret gets it (the reveal and a
+  -- partial edit always run in one): no scope, or a secret the scope does
+  -- not read, answers as one that is not there, whatever role calls.
+  IF NOT "public"."mantle_scope_active"()
+     OR NOT coalesce("public"."mantle_check_item"(node, 'read'), false) THEN
     RETURN NULL;
   END IF;
   SELECT s."ciphertext" INTO c FROM "public"."secrets" s WHERE s."node_id" = node;

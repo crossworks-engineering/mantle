@@ -703,6 +703,9 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     expect(
       await sealedOf({ ws: [], mod: [], login: '', actor: `login:rw:${L.member}` }, readable),
     ).toBeNull();
+    // Nor does any caller with no scope (audit round 1, L2): the system pool.
+    const [sys] = await sql<{ c: Buffer | null }[]>`select mantle_secret_sealed(${readable}) as c`;
+    expect(sys!.c).toBeNull();
     // Not a secret: nothing.
     expect(await sealedOf(who.member, n.note)).toBeNull();
     // The role itself still reads nothing of the table.
