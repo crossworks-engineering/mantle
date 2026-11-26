@@ -124,7 +124,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_recall_retarget(uuid,text,text)']!,
   'mantle_secret_put(uuid,bytea,integer)':
     WRITE_ROLE_FUNCTIONS['public.mantle_secret_put(uuid,bytea,integer)']!,
-  'mantle_secret_sealed(uuid)': WRITE_ROLE_FUNCTIONS['public.mantle_secret_sealed(uuid)']!,
+  'mantle_secret_sealed(uuid)':
+    'the workspace role reads it (0400): a secret’s ciphertext, only for a secret the scope reads; the plaintext needs the master key, which only the app holds',
   'mantle_subtree_rewrite(uuid,ltree,ltree)':
     WRITE_ROLE_FUNCTIONS['public.mantle_subtree_rewrite(uuid,ltree,ltree)']!,
   'mantle_subtree_refuse_hidden(uuid,ltree)':

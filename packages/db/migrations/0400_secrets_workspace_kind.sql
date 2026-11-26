@@ -9,7 +9,8 @@
 --     may edit the secret.
 --  3. mantle_secret_sealed(node): the sealed value of a secret, only for a
 --     secret the scope reads. The write role holds no right on the secrets
---     table; this and mantle_secret_put are its two doors. It returns the
+--     table; this and mantle_secret_put are its two doors (this one the
+--     workspace role's, a read; put the write role's). It returns the
 --     ciphertext only: the plaintext needs the master key, which only the
 --     app holds, and only the reveal route opens it (and logs it).
 --
@@ -76,3 +77,7 @@ END
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_secret_sealed"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+-- A read: the workspace role's, so the write role's too (its function
+-- rights are the workspace role's plus WRITE_ROLE_FUNCTIONS).
+GRANT EXECUTE ON FUNCTION "public"."mantle_secret_sealed"(uuid) TO "mantle_view_user";
