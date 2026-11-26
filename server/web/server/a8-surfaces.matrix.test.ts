@@ -146,8 +146,9 @@ const OWNER_SIDE = /owner-side tool: not available here/;
  *  with no seat there). */
 const NOT_ADMIN_USER = /not a user of the Admin workspace/;
 /** The refusal of a hidden kind on a team surface (packages/tools/src/
- *  team-visibility.ts HIDDEN_NODE_ERROR): worded as not found. */
-const HIDDEN_ON_TEAM = /node not found — the id may be stale or mistyped/;
+ *  team-visibility.ts HIDDEN_NODE_ERROR): worded as not found; a cell the
+ *  oracle denies anyway answers the read's own not found first. */
+const HIDDEN_ON_TEAM = /node (\S+ )?not found/;
 
 describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s answer', () => {
   type Ts = typeof import('@mantle/db/test-support');
