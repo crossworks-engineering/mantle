@@ -36,6 +36,7 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
   const W = randomUUID();
   const O = randomUUID();
   let shared = '';
+  let prevMasterKey: string | undefined;
 
   /** Run `fn` as `who`, in a write request's scope (as its routes do). */
   const as = async <T>(who: string, fn: () => Promise<T>): Promise<T> => {
@@ -55,7 +56,9 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
     ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
-    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    // A 32-byte key: the secrets are sealed under it (as vault.db.test.ts).
+    prevMasterKey = process.env.MANTLE_MASTER_KEY;
+    process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 7).toString('base64');
     m = await import('@mantle/db');
     s = await import('./secrets');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -78,6 +81,8 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
+    if (prevMasterKey === undefined) delete process.env.MANTLE_MASTER_KEY;
+    else process.env.MANTLE_MASTER_KEY = prevMasterKey;
   });
 
   it('a Moderator makes a secret in W; a user of W lists and reveals it; an outsider finds nothing', async () => {
