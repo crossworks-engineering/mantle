@@ -11,6 +11,12 @@
  * same, so no page is ever left out. The answer is the window's bytes
  * (`out.bin`) and `{ pageFrom, pageTo, pagesTotal }` (`meta.json`).
  *
+ * A one-page cut for the Scan reader (`fitMb` on `pdfSplit`, and every
+ * `qpdfPage`) past what one call may send is drawn again smaller
+ * (`fitPage`, cad/pdf_fit.py): a large scanned drawing is read from a
+ * picture of fewer dots, not left unread. The answer says the dots an inch
+ * it was drawn at (`drawnDpi`) and the size of the cut before (`fromBytes`).
+ *
  * One window a job, not every window in one: the parser's scratch space is
  * a tmpfs counted in its memory (1 GB by default), and it holds the body
  * and one window, never the body and all its parts; one window is also one
@@ -21,6 +27,9 @@
  * window is taken. Any other exit is the file's verdict, `failed`.
  */
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { PIPELINE_ASK_PICTURE_MAX_BYTES } from '@mantle/files/pipelines/contract';
+import { CAD_DIR, pythonOf } from './cad';
 import { JobFailure } from './job-failure';
 import { childEnv, runChild } from './proc';
 
@@ -84,9 +93,49 @@ async function cut(
 }
 
 /**
+ * The one-page PDF at `file`, past `maxBytes`, drawn again in place as a
+ * smaller one (cad/pdf_fit.py: grey, at the highest dpi under
+ * PDF_MAX_IMAGE_PIXELS and `maxBytes`). The dpi it was drawn at, or null
+ * when it does not fit even at the script's lowest dpi or could not be
+ * drawn (the file is then as cut, and the caller says the page is too
+ * large). Never throws.
+ */
+export async function fitPage(
+  file: string,
+  maxBytes: number,
+  dir: string,
+  timeoutMs: number,
+): Promise<number | null> {
+  const fitted = `${file}.fit.pdf`;
+  try {
+    const ended = await runChild(
+      pythonOf(),
+      [path.join(CAD_DIR, 'pdf_fit.py'), file, fitted, String(maxBytes)],
+      {
+        timeoutMs: Math.max(1_000, timeoutMs),
+        cwd: dir,
+        env: childEnv(dir, { PYTHONDONTWRITEBYTECODE: '1' }),
+        stdout: true,
+      },
+    );
+    if (ended.code !== 0) return null;
+    const dpi = (JSON.parse(ended.stdout.trim()) as { dpi?: unknown }).dpi;
+    if (typeof dpi !== 'number' || !(dpi > 0)) return null;
+    if ((await fs.stat(fitted)).size > maxBytes) return null;
+    await fs.rename(fitted, file);
+    return dpi;
+  } catch {
+    return null;
+  } finally {
+    await fs.rm(fitted, { force: true }).catch(() => {});
+  }
+}
+
+/**
  * The job `pdfSplit`: one window of the body, as the module says. Options:
- * `from` (1-based), `pages` (the most pages) and `mb` (the most MB). A
- * `from` past the last page is a `bad_request`: the brain asks only for
+ * `from` (1-based), `pages` (the most pages) and `mb` (the most MB), and
+ * `fitMb`: a one-page window past it is drawn again under it (`fitPage`).
+ * A `from` past the last page is a `bad_request`: the brain asks only for
  * pages it was told are there.
  */
 export async function runPdfSplitJob(
@@ -97,6 +146,7 @@ export async function runPdfSplitJob(
   const from = wholeIn(opts.from, 1, 1_000_000, 'from');
   const pages = wholeIn(opts.pages, 1, 500, 'pages');
   const mb = wholeIn(opts.mb, 1, 64, 'mb');
+  const fitMb = opts.fitMb === undefined ? null : wholeIn(opts.fitMb, 1, 64, 'fitMb');
   const left = () => jobEnd - Date.now();
   const total = await qpdfPageCount(p.input, p.dir, left());
   if (total === null) throw new JobFailure('failed', 'qpdf could not read the PDF');
@@ -113,9 +163,21 @@ export async function runPdfSplitJob(
     await cut(p.input, from, to, p.outBin, p.dir, left());
     const { size } = await fs.stat(p.outBin);
     if (size <= maxBytes || count === 1 || i >= CUTS_MAX) {
+      const fitBytes = fitMb === null ? null : fitMb * 1024 * 1024;
+      const drawnDpi =
+        count === 1 && fitBytes !== null && size > fitBytes
+          ? await fitPage(p.outBin, fitBytes, p.dir, left())
+          : null;
+      const bytes = drawnDpi === null ? size : (await fs.stat(p.outBin)).size;
       await fs.writeFile(
         p.meta,
-        JSON.stringify({ pageFrom: from, pageTo: to, pagesTotal: total, bytes: size }),
+        JSON.stringify({
+          pageFrom: from,
+          pageTo: to,
+          pagesTotal: total,
+          bytes,
+          ...(drawnDpi === null ? {} : { drawnDpi, fromBytes: size }),
+        }),
       );
       return;
     }
@@ -128,8 +190,10 @@ export async function runPdfSplitJob(
 /**
  * One page of the PDF at `input` (1-based) as a PDF of its own at `out`
  * (the Scan reader reads a scanned page as a one-page PDF: docs/ai-workers.md,
- * "The Scan reader"). Its size in bytes, or null when qpdf could not cut it
- * (the page is then read by vision as before). Never throws.
+ * "The Scan reader"), drawn again under what one call may send
+ * (PIPELINE_ASK_PICTURE_MAX_BYTES) when the cut is past it (`fitPage`). Its
+ * size in bytes, or null when qpdf could not cut it (the page is then left
+ * unread, said so). Never throws.
  */
 export async function qpdfPage(
   input: string,
@@ -140,7 +204,11 @@ export async function qpdfPage(
 ): Promise<number | null> {
   if (!Number.isInteger(page) || page < 1) return null;
   try {
+    const end = Date.now() + timeoutMs;
     await cut(input, page, page, out, dir, timeoutMs);
+    const { size } = await fs.stat(out);
+    if (size <= PIPELINE_ASK_PICTURE_MAX_BYTES) return size;
+    await fitPage(out, PIPELINE_ASK_PICTURE_MAX_BYTES, dir, end - Date.now());
     return (await fs.stat(out)).size;
   } catch {
     await fs.rm(out, { force: true }).catch(() => {});

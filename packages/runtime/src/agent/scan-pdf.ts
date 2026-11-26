@@ -16,8 +16,10 @@
  * a white page is blank (no paid call for it), and a scanned page gets its
  * line count by the ink bands of its picture (`Lines`), the free evidence of
  * the Scan reader's check. Each scanned page is then cut as a one-page PDF
- * (qpdf) and read by the Scan reader, one paid call a page (two only when
- * the provider gave no answer at all: runScanReader `tries: 2`).
+ * (qpdf; a cut past what one call may send, a large scanned drawing, is
+ * drawn again by the parser under it at fewer dots: `fitMb`) and read by the
+ * Scan reader, one paid call a page (two only when the provider gave no
+ * answer at all: runScanReader `tries: 2`).
  *
  * The verdict of a read is the book path's, one function for both
  * (scanVerdictOf, also in server/api pipeline-ask.ts): judged good, the
@@ -250,11 +252,25 @@ const defaultDeps: ScanPdfDeps = {
     return pageMarksOf(write);
   },
   cut: async (part, page) => {
+    // Past what one call may send (a large scanned drawing), the parser
+    // draws the page again under it, at fewer dots: read, not too large.
+    // Said in the trace, with the dots and the size of the cut before.
     const one = await parserPdfSplit(part.bytes, {
       from: page - part.pageFrom + 1,
       pages: 1,
       mb: 64,
+      fitMb: PIPELINE_ASK_PICTURE_MAX_BYTES / (1024 * 1024),
     });
+    if (one.drawnDpi !== undefined) {
+      await step(
+        {
+          name: 'scan_page_redrawn',
+          kind: 'compute',
+          input: { page, dpi: one.drawnDpi, from_bytes: one.fromBytes, bytes: one.bytes.length },
+        },
+        async () => {},
+      );
+    }
     return one.bytes;
   },
   draw: async (pdf) => {

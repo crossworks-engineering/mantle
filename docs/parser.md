@@ -1332,6 +1332,20 @@ failure counts per window (its first page in the ledger key), so one bad
 window never makes the next one terminal. qpdf's exit 3 (done, with
 warnings: a repaired xref) is a window taken.
 
+A one-page cut for the Scan reader past what one call may send
+(`PIPELINE_ASK_PICTURE_MAX_BYTES`, 10 MB: `pdfSplit` with `fitMb`, and every
+`job.pdfPage`) is drawn again under it (`fitPage`,
+`server/parser/cad/pdf_fit.py`): pypdfium2 draws the page in grey at the
+highest dpi up to 300 whose picture stays under `PDF_MAX_IMAGE_PIXELS` (75 M)
+and whose one-page JPEG PDF fits, down by a fifth a try, never below 72
+dpi. The page keeps its size on paper. The meta says `drawnDpi` and the
+cut's size before (`fromBytes`). A large scanned drawing (an A0 sheet at 300
+dpi, one picture of about 114 M pixels in 14 to 48 MB) is read this way;
+before, each such page was `too_large` and a file of them was skipped as
+`pdf_too_large`. pypdfium2 draws a picture of any size, as the Reader
+`pdf-pages` already does for its marks: the parser's memory limit stands
+behind it.
+
 A step's job handle has `pdfPageCount()`: qpdf's `--show-npages` on the body,
 for a router that must name a file past the size pdfjs opens.
 

@@ -859,6 +859,11 @@ export type PdfWindow = {
   pageTo: number;
   /** The pages of the original file. */
   pagesTotal: number;
+  /** A one-page window asked with `fitMb` that was past it: drawn again
+   *  under it at this many dots an inch (server/parser/src/pdf-split.ts
+   *  `fitPage`), from a cut of `fromBytes` bytes. */
+  drawnDpi?: number;
+  fromBytes?: number;
 };
 
 /**
@@ -867,16 +872,23 @@ export type PdfWindow = {
  * most `mb` MB (a single page past `mb` is a window of its own). Any size
  * the parser takes: qpdf decodes no page. Counted per window (the failure
  * ledger's part is the window's first page), so one bad window never makes
- * the next one terminal. Throws a ParserError.
+ * the next one terminal. With `fitMb`, a one-page window past it is drawn
+ * again under it (a large scanned drawing for the Scan reader: `drawnDpi`
+ * says so). Throws a ParserError.
  */
 export async function parserPdfSplit(
   bytes: Buffer,
-  opts: { from: number; pages: number; mb: number; sha256?: string },
+  opts: { from: number; pages: number; mb: number; fitMb?: number; sha256?: string },
 ): Promise<PdfWindow> {
   const answer = await exchange(
     'pdfSplit',
     bytes,
-    { from: opts.from, pages: opts.pages, mb: opts.mb },
+    {
+      from: opts.from,
+      pages: opts.pages,
+      mb: opts.mb,
+      ...(opts.fitMb !== undefined ? { fitMb: opts.fitMb } : {}),
+    },
     // A window is never more than the file sent: a single page past the
     // answer cap (a huge scan) is still taken (server/parser/src/answer.ts).
     Math.max(PARSER_ANSWER_MAX_BYTES, bytes.length),
@@ -899,7 +911,14 @@ export async function parserPdfSplit(
       terminal: false,
     });
   }
-  return { bytes: answer.body, pageFrom, pageTo, pagesTotal };
+  const drawnDpi = typeof meta.drawnDpi === 'number' && meta.drawnDpi > 0 ? meta.drawnDpi : null;
+  return {
+    bytes: answer.body,
+    pageFrom,
+    pageTo,
+    pagesTotal,
+    ...(drawnDpi !== null ? { drawnDpi, fromBytes: whole(meta.fromBytes) } : {}),
+  };
 }
 
 /** A PDF's page count, or null when it cannot be read. */

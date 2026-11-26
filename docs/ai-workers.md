@@ -826,7 +826,12 @@ and the chat turn (`scanPdfForTurn`, ./attachments.ts):
    gets its `Lines` (the ink bands), the evidence of the check. A Reader that
    fails leaves every page to the Scan reader with no line count;
 3. each scanned page cut as a one-page PDF (qpdf); a page past
-   `PIPELINE_ASK_PICTURE_MAX_BYTES` is not sent (`too_large`);
+   `PIPELINE_ASK_PICTURE_MAX_BYTES` (a large scanned drawing: an A0 sheet
+   at 300 dpi is 14 to 48 MB) is drawn again by the parser under it, in
+   grey, at the highest dpi up to 300 that fits and whose picture stays under
+   `PDF_MAX_IMAGE_PIXELS` (`fitPage`, server/parser/cad/pdf_fit.py; the
+   trace step `scan_page_redrawn` says the dpi). Only a page that does not
+   fit even at 72 dpi is not sent (`too_large`);
 4. `runScanReader` (`tries: 2`), 4 pages at once (`SCAN_PAGES_AT_ONCE`), and
    the verdict `scanVerdictOf`, the same function the book's paid ask uses
    (pipeline-ask.ts): judged good, the page's text; judged bad, `unread`;

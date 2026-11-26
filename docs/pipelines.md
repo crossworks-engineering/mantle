@@ -2929,7 +2929,9 @@ Agent's run does three things in one job, with no hand-over to another:
   (200 dpi, a PNG, or a JPEG past 4 MB), with no model;
 - **read**: the core answers the page's ask, from the tab `Page text` by the
   hash of the picture when it is there, else with one paid call. A page of
-  Why `scan` is cut as a one-page PDF too (`job.pdfPage`, qpdf; the PDFs
+  Why `scan` is cut as a one-page PDF too (`job.pdfPage`, qpdf; a cut past
+  `PIPELINE_ASK_PICTURE_MAX_BYTES` is drawn again under it at fewer dots,
+  server/parser/cad/pdf_fit.py; the PDFs
   take what the pictures leave of the answer's budget, and a page whose PDF
   cannot be sent is not asked: unread, with a warning) and read by the Scan
   reader alone, with its `Lines` from the tab `Pages`

@@ -24,6 +24,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  META_HEADER,
   PARSER_ANSWER_DEADLINE_MS,
   PARSER_ERROR_STATUS,
   PARSER_INTERACTIVE_WAIT_MS,
@@ -44,6 +45,7 @@ import {
   parserHealth,
   parserImages,
   parserPdfDrawing,
+  parserPdfSplit,
   parserPipelineRun,
   parserText,
   resetParserFailures,
@@ -587,5 +589,34 @@ describe('a pipelineRun answer with spilled rows (ROWS_LENGTH_HEADER)', () => {
     );
     expect(err.code).toBe('crashed');
     expect(existsSync(to)).toBe(false);
+  });
+});
+
+describe('parserPdfSplit: a one-page cut drawn again to fit (fitMb)', () => {
+  const window = (meta: Record<string, unknown>) => {
+    const body = Buffer.from('%PDF-1.7 one page');
+    reply = {
+      raw: {
+        body,
+        headers: {
+          'content-type': 'application/pdf',
+          'content-length': String(body.length),
+          [META_HEADER]: encodeURIComponent(JSON.stringify(meta)),
+        },
+      },
+    };
+  };
+
+  it('sends fitMb only when asked, and says the dpi the page was drawn at', async () => {
+    window({ pageFrom: 3, pageTo: 3, pagesTotal: 9, bytes: 17, drawnDpi: 194.4, fromBytes: 31e6 });
+    const out = await parserPdfSplit(doc(), { from: 3, pages: 1, mb: 64, fitMb: 10 });
+    expect(JSON.parse(heads.at(-1)!)).toMatchObject({ from: 3, pages: 1, mb: 64, fitMb: 10 });
+    expect(out).toMatchObject({ pageFrom: 3, pageTo: 3, pagesTotal: 9, drawnDpi: 194.4 });
+    expect(out.fromBytes).toBe(31e6);
+
+    window({ pageFrom: 1, pageTo: 4, pagesTotal: 4, bytes: 17 });
+    const plain = await parserPdfSplit(doc(), { from: 1, pages: 20, mb: 32 });
+    expect(JSON.parse(heads.at(-1)!)).not.toHaveProperty('fitMb');
+    expect(plain).not.toHaveProperty('drawnDpi');
   });
 });
