@@ -79,6 +79,10 @@ export type VisionResult = {
   adapterName?: string;
   tokensIn?: number;
   tokensOut?: number;
+  /** No text, and the answer stopped at its token cap (the provider said
+   *  `length`, or the answer used every token): a thinking model spent the
+   *  cap on its hidden thinking. Not a verdict that the picture is empty. */
+  cut?: true;
   /** The provider said "not now" (a rate limit, no credit, busy:
    *  @mantle/std provider-wait.ts): the work waits and is tried again
    *  later, never read as "nothing in it". Only with `ran: false`. */
@@ -194,6 +198,7 @@ export async function runVisionWorker(opts: {
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';
     noteAnswerCut(r.tokensOut, maxTokens);
+    const cut = !text && (r.finishReason === 'length' || atCap(r.tokensOut, maxTokens));
     // The call's spend (tokens, cost from the price table) was recorded by the
     // adapter registry on the step in context: the extractor's photo_ingest
     // extract_vision, or a conversational turn's attachment step
@@ -201,7 +206,12 @@ export async function runVisionWorker(opts: {
     const answer: VisionResult = {
       ran: true,
       text,
-      note: text ? null : 'Vision worker returned no text.',
+      note: text
+        ? null
+        : cut
+          ? `Vision answer stopped at its token cap (${maxTokens}) with no text.`
+          : 'Vision worker returned no text.',
+      ...(cut ? { cut: true as const } : {}),
       model: worker.model,
       adapterName: adapter.adapterName,
       tokensIn: r.tokensIn,
@@ -227,12 +237,18 @@ export async function runVisionWorker(opts: {
 /** The default answer a vision call keeps: any text. */
 const hasText = (text: string): boolean => text !== '';
 
+/** The answer used its whole token budget (only where the provider counts
+ *  the answer's tokens). */
+function atCap(tokensOut: number | undefined, maxTokens: number): boolean {
+  return tokensOut !== undefined && Number.isFinite(tokensOut) && tokensOut >= maxTokens;
+}
+
 /** A model's answer that used its whole token budget stopped there, most
  *  likely in mid-description: said in the read's sink (an extract's;
  *  @mantle/files read-cut-sink.ts), so the file shows as read in part. Only
  *  where the provider counts the answer's tokens; a chat turn has no sink. */
 function noteAnswerCut(tokensOut: number | undefined, maxTokens: number): void {
-  if (tokensOut === undefined || !Number.isFinite(tokensOut) || tokensOut < maxTokens) return;
+  if (!atCap(tokensOut, maxTokens)) return;
   noteReadCut('vision_answer', { what: 'answers', read: 0, total: 1, limit: maxTokens });
 }
 

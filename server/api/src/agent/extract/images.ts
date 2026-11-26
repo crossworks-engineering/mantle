@@ -556,8 +556,9 @@ export async function visionIngestImageNode(
   text: string | null;
   failure: string | null;
   /** The vision worker really read the image. False when the bytes were
-   *  missing or the worker did not run (none wired, a provider error): the
-   *  caller then must not stamp the node terminal. */
+   *  missing, the worker did not run (none wired, a provider error), or its
+   *  answer stopped at the token cap with no text: the caller then must not
+   *  stamp the node terminal. */
   ran: boolean;
   /** The provider said "not now" (@mantle/std provider-wait.ts): the read
    *  waits in the queue (the caller raises ProviderWaitError). */
@@ -598,7 +599,17 @@ export async function visionIngestImageNode(
           // conversational surfaces (HEIC transcode + worker resolution live
           // inside runVisionWorker). A missing/unwired/erroring worker returns
           // ran:false + a note rather than throwing; the trace records it.
-          const r = await runVisionWorker({ ownerId, bytes, mimeType, filename });
+          // The least thinking: a thinking model's hidden thinking filled the
+          // whole answer cap and left no text (client boxes 2026-11-26: 58
+          // and 17 empty answers at the cap; the sketch read's bench
+          // 2026-11-11: 16 of 508 read without it, 431 with it).
+          const r = await runVisionWorker({
+            ownerId,
+            bytes,
+            mimeType,
+            filename,
+            leastThinking: true,
+          });
           h.setMeta({
             ran: r.ran,
             note: r.note,
@@ -607,6 +618,7 @@ export async function visionIngestImageNode(
             tokensIn: r.tokensIn,
             tokensOut: r.tokensOut,
             textLength: r.text.length,
+            ...(r.cut ? { cut: true } : {}),
           });
           return r;
         },
@@ -615,10 +627,12 @@ export async function visionIngestImageNode(
       if (!result.text) {
         // Nothing to index — hand the WHY up so the terminal skip names it
         // (a wrong model id fails here silently otherwise; 2026-08-31).
+        // An answer cut at its token cap with no text is no verdict on the
+        // picture: not terminal, so a later drain reads it again.
         return {
           text: null,
           failure: result.note ?? 'vision worker returned no text',
-          ran: result.ran,
+          ran: result.ran && !result.cut,
           ...(result.wait ? { wait: result.wait } : {}),
         };
       }
