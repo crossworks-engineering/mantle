@@ -113,8 +113,7 @@ So `openai/text-embedding-3-large` (OpenRouter) and `text-embedding-3-large`
 **An unpriced call is marked, never a silent $0.** A call with none of the
 three sources is recorded at $0 with `unpriced: 1` on its step meta (a count,
 summed over the step's calls like `timed_out`), and one log line per provider
-and model per process names the model. It applies to a call with tokens, and
-to every image, speech and transcription call that returned. Spend by model
+and model per process names the model. It applies to a call with tokens, and to every image, speech, transcription and embedding call that returned (some providers return no token count for an embedding). Spend by model
 (`server/web/lib/metrics.ts`, `GET /api/debug/spend`) gives the count per
 model as `unpricedCalls`: that model's cost is too low by what those calls
 cost. The fix is a row in the price table.

@@ -231,6 +231,20 @@ describe('recordUsage: an unpriced call is marked, never a silent $0', () => {
     expect(meta).toMatchObject({ characters: 400, cost_micro_usd: 0, unpriced: 1 });
   });
 
+  it('marks an embedding whose provider returned no token count', async () => {
+    const meta = await metaOf([
+      { capability: 'embedding', provider: 'google', model: 'made-up-embedder', inputTokens: 0 },
+      // The self-hosted embedder is free: not marked.
+      {
+        capability: 'embedding',
+        provider: 'local',
+        model: 'embeddinggemma:latest',
+        inputTokens: 0,
+      },
+    ]);
+    expect(meta).toMatchObject({ cost_micro_usd: 0, unpriced: 1 });
+  });
+
   it('does not mark a priced call, a free call, a timed-out call or an empty one', async () => {
     const meta = await metaOf([
       chat(),

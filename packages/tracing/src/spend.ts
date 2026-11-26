@@ -76,8 +76,15 @@ export type ProviderUsage = {
   timedOut?: boolean;
 };
 
-/** Calls billed by the unit: one that returned was billed, tokens or not. */
-const UNIT_CAPABILITIES: ReadonlySet<SpendCapability> = new Set(['image_gen', 'tts', 'stt']);
+/** Calls that were billed if they returned, whatever usage came back: the
+ *  ones billed by the unit, and an embedding (it always has input; some
+ *  providers return no token count for it). */
+const ALWAYS_BILLED: ReadonlySet<SpendCapability> = new Set([
+  'image_gen',
+  'tts',
+  'stt',
+  'embedding',
+]);
 
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
@@ -152,7 +159,7 @@ export function recordUsage(u: ProviderUsage): number {
     if (u.timedOut) meta.timed_out = 1;
     // A billed call nothing could price: a count on the step (summed like
     // `timed_out`), so a $0 that is not a true $0 can be found and counted.
-    const billed = input + output + cacheWrite > 0 || UNIT_CAPABILITIES.has(u.capability);
+    const billed = input + output + cacheWrite > 0 || ALWAYS_BILLED.has(u.capability);
     if (!priced && billed && !u.timedOut) {
       meta.unpriced = 1;
       logUnpricedOnce(u);
