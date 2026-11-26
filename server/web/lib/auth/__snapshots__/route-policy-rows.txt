@@ -48,7 +48,7 @@ DELETE /api/push/subscriptions/:id class=self scope=self caller=owner gone=false
 DELETE /api/recall/maps/:id class=content scope=content caller=owner gone=false
 DELETE /api/recall/maps/:id/cards/:card class=content scope=content caller=owner gone=false
 DELETE /api/sandboxes/:id class=area scope=area:settings caller=owner gone=false
-DELETE /api/secrets/:id class=area scope=area:keys caller=owner gone=false
+DELETE /api/secrets/:id class=content scope=content caller=owner gone=false
 DELETE /api/settings/worker-groups/:id class=area scope=area:settings caller=owner gone=false
 DELETE /api/shares/:id class=content scope=content caller=owner gone=false
 DELETE /api/sidecar/mail/accounts/:id class=public scope=- caller=- gone=false
@@ -274,8 +274,8 @@ GET /api/runs/:id class=area scope=area:settings caller=owner gone=false
 GET /api/sandboxes class=area scope=area:settings caller=owner gone=false
 GET /api/sandboxes/:id class=area scope=area:settings caller=owner gone=false
 GET /api/search class=content scope=content caller=owner gone=false
-GET /api/secrets class=area scope=area:keys caller=owner gone=false
-GET /api/secrets/:id class=area scope=area:keys caller=owner gone=false
+GET /api/secrets class=content scope=content caller=owner gone=false
+GET /api/secrets/:id class=content scope=content caller=owner gone=false
 GET /api/services class=area scope=area:settings caller=owner gone=false
 GET /api/services/status class=area scope=area:settings caller=owner gone=false
 GET /api/services/sync/oauth/callback class=public scope=- caller=- gone=false
@@ -578,8 +578,8 @@ HEAD /api/runs/:id class=area scope=area:settings caller=owner gone=false
 HEAD /api/sandboxes class=area scope=area:settings caller=owner gone=false
 HEAD /api/sandboxes/:id class=area scope=area:settings caller=owner gone=false
 HEAD /api/search class=content scope=content caller=owner gone=false
-HEAD /api/secrets class=area scope=area:keys caller=owner gone=false
-HEAD /api/secrets/:id class=area scope=area:keys caller=owner gone=false
+HEAD /api/secrets class=content scope=content caller=owner gone=false
+HEAD /api/secrets/:id class=content scope=content caller=owner gone=false
 HEAD /api/services class=area scope=area:settings caller=owner gone=false
 HEAD /api/services/status class=area scope=area:settings caller=owner gone=false
 HEAD /api/services/sync/oauth/callback class=public scope=- caller=- gone=false
@@ -709,7 +709,7 @@ PATCH /api/pending/:id class=area scope=area:users caller=owner gone=false
 PATCH /api/pipelines/:id class=area scope=area:settings caller=owner gone=false
 PATCH /api/presents/:id class=content scope=content caller=owner gone=false
 PATCH /api/recall/maps/:id class=content scope=content caller=owner gone=false
-PATCH /api/secrets/:id class=area scope=area:keys caller=owner gone=false
+PATCH /api/secrets/:id class=content scope=content caller=owner gone=false
 PATCH /api/settings/worker-groups/:id class=area scope=area:settings caller=owner gone=false
 PATCH /api/shares/:id class=content scope=content caller=owner gone=false
 PATCH /api/skills/:id class=area scope=area:assistants caller=owner gone=false
@@ -920,8 +920,8 @@ POST /api/runners/:id class=area scope=area:settings caller=owner gone=false
 POST /api/runs/:id class=area scope=area:settings caller=owner gone=false
 POST /api/sandboxes/:id/stop class=area scope=area:settings caller=owner gone=false
 POST /api/screenshots class=content scope=content caller=owner gone=false
-POST /api/secrets class=area scope=area:keys caller=owner gone=false
-POST /api/secrets/:id/reveal class=area scope=area:keys caller=owner gone=false
+POST /api/secrets class=content scope=content caller=owner gone=false
+POST /api/secrets/:id/reveal class=content scope=content caller=owner gone=false
 POST /api/services/:name class=area scope=area:settings caller=owner gone=false
 POST /api/services/:name/frame-ticket class=area scope=area:connectors caller=owner gone=false
 POST /api/services/sync/ui class=public scope=- caller=- gone=false

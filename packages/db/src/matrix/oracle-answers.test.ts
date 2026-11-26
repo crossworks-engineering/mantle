@@ -21,7 +21,9 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // off) deny to allow, writeGrant (a user of W, Write on) allow to deny,
   // and the deny's words of the others ("may not add to the folder"). No
   // other answer moved (checked with --against).
-  a1: { inputs: 360, sha256: '2e6abb054430f3fe83f56647e76264983bd16af74ce98a7b5829a736fd9a987d' },
+  // Secrets (0400, a workspace kind): 24 inputs added, every earlier
+  // answer unchanged (checked with --against: no line removed or moved).
+  a1: { inputs: 384, sha256: '72473557570407ba8ecd46af12b0214e7165dd49c528464cc9c6627815799b0e' },
   'a1-folders': {
     inputs: 18,
     sha256: 'b7cb517807e2bbd8f7fca9c4955ca46fbafc30ad8a1646c6507ec983c4b05461',
@@ -57,9 +59,10 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // adminWriteGrant on a create in the folder (12). No other answer moved
   // (checked with --against). An Admin user who does not read the item gets
   // nothing more (the a8 grid's admin seat on H's items).
+  // Secrets (0400): 2,208 inputs added, no earlier answer moved (--against).
   a3a: {
-    inputs: 33_120,
-    sha256: '8aa497cff103f6b98244aaefe35b1120adc5d4461837153ae84e8f5bf1fc801c',
+    inputs: 35_328,
+    sha256: 'e84160a3fd0541ad5dac2169ea5c3d165d77f460767e110eb0a07cf152954722',
   },
   'a3a-detail': {
     inputs: 1_104,
@@ -91,9 +94,10 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // Write on) allow to deny on a create in the folder; other roles' create
   // denials have new words. An app's acts stay as they were. No other
   // answer moved (checked with --against).
+  // Secrets (0400): 20,944 inputs added, no earlier answer moved (--against).
   a8: {
-    inputs: 314_160,
-    sha256: '43ca1cbb36bde1684c1a22abb059605367e9c6f33fc0b1ed70cea9e860ddde6b',
+    inputs: 335_104,
+    sha256: '567045da7285e753767079c8c279470f1b618616170582de6caf5a76a3181989',
   },
 };
 
