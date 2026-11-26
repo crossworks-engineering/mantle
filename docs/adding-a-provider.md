@@ -246,12 +246,14 @@ These are NOT required to ship a working provider; they're polish that improves 
 [`packages/tracing/src/pricing.ts`](../packages/tracing/src/pricing.ts). The fallback cost calculation when `reportedCostUsd` is undefined. Add an entry per model:
 
 ```ts
-'<your-provider-or-slug>/<model>': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
+'<vendor>/<model>': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
 ```
 
-Without this, the spend recorder writes `cost_micro_usd: 0` for your provider; the trace still has token counts, but the cost dashboard won't reflect spend.
+One row per model: the lookup does not read the vendor prefix, a leading `~`, or the dot/dash spelling of a version, so the OpenRouter slug and a direct provider's bare id are one row. Say the price source and the date in a comment.
 
-**Per the user's guidance, this is optional and best-effort.** The `/models` page explorer is the canonical pricing surface; static-table pricing is just a fallback for the trace. Don't go out of your way to keep it perfectly accurate.
+Without a row, a provider that reports no cost records `cost_micro_usd: 0` with `unpriced: 1` on the step, and one log line names the model ([spend-recording.md](spend-recording.md), "Cost"). A model the system manifest ships must have a cost source: `priced-defaults.test.ts` fails without one.
+
+If your provider's reply carries the billed cost, return it as `reportedCostUsd` on every capability's result (the reader is `packages/voice/src/adapters/reported-cost.ts`), and add the provider and capability to `REPORTS_COST` (`packages/voice/src/adapters/spend.ts`) with a test. The reported cost is the truth; the row is the floor under it.
 
 ### Model context limits
 

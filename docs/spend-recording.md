@@ -39,7 +39,8 @@ a total. A caller that needs a total reads it from the trace in context.
 - `units`: for a call not billed by the token: `images` (1 per image),
   `characters` (speech: the text length), `audio_seconds` (transcription: the
   duration the provider reports);
-- `reportedCostUsd`: the provider's quoted cost (OpenRouter `usage.cost`).
+- `reportedCostUsd`: the provider's quoted cost (OpenRouter `usage.cost`), on
+  every capability whose adapter returns it ("Cost", below).
 
 ### Where it lands
 
@@ -58,7 +59,8 @@ a total. A caller that needs a total reads it from the trace in context.
   show `tokensEmbed` as its own number beside the completion tokens.
 
 - **The running step's meta** (`model`, `provider`, `tokens_in`, `tokens_out`,
-  `cache_read`, `cache_write`, the unit key, `cost_micro_usd`): numbers are
+  `cache_read`, `cache_write`, the unit key, `cost_micro_usd`, and the counts
+  `timed_out` and `unpriced` where they apply): numbers are
   summed over the step's calls, `model` and `provider` name the last one.
   Spend-by-model reads these. Only a step of the same trace takes it: a
   delegated agent's trace never writes onto its parent's tool step.
@@ -79,11 +81,63 @@ a total. A caller that needs a total reads it from the trace in context.
 
 ### Cost
 
-The provider's reported cost when it gave one; else the static table in
-[`packages/tracing/src/pricing.ts`](../packages/tracing/src/pricing.ts), tried on
-`priceAs` in order. Recording spend never makes a network call: no price
-lookup per request. Units have no price in the table, so an image, speech or
-transcription call records its units at `$0` unless the provider quoted a cost.
+One call, one cost, from the first source that has one:
+
+1. **The provider's reported cost** (`reportedCostUsd`). OpenRouter puts the
+   billed cost in every reply (`usage.cost`; its `usage: { include: true }`
+   request field is deprecated and has no effect). Every OpenRouter adapter
+   reads it with the one reader (`packages/voice/src/adapters/reported-cost.ts`)
+   and returns it: chat, stream, decision, embedding, vision (one image, a
+   document, several images, a parsed PDF page), image generation and
+   transcription. `REPORTS_COST` (`packages/voice/src/adapters/spend.ts`) is
+   the list of provider and capability pairs that do this;
+   `openrouter-cost.test.ts` holds each OpenRouter pair to it with a made-up
+   reply. OpenRouter speech is not on the list: its reply is raw audio with no
+   cost, and the cost lookup by generation id would be a network call.
+2. **A free route** (`isFreeCall`): the `local` provider (a self-hosted model,
+   the bundled embedder) and an id that ends `:free`. $0, and that is true.
+3. **The static table** in
+   [`packages/tracing/src/pricing.ts`](../packages/tracing/src/pricing.ts), tried
+   on `priceAs` in order. Token prices, and unit prices for the models billed
+   by the unit where no reply carries a cost (speech by the character, xAI
+   transcription by the second).
+
+Recording spend never makes a network call: no price lookup per request.
+
+**One row per model.** The table is read by a key (`priceKey`): lowercase,
+without a leading `~`, without the vendor prefix, a version's dots as dashes.
+So `openai/text-embedding-3-large` (OpenRouter) and `text-embedding-3-large`
+(a direct OpenAI route) are one row, and `anthropic/claude-sonnet-5.5` and
+`claude-sonnet-5-5` are one row. Never add a second row for another spelling.
+
+**An unpriced call is marked, never a silent $0.** A call with none of the
+three sources is recorded at $0 with `unpriced: 1` on its step meta (a count,
+summed over the step's calls like `timed_out`), and one log line per provider
+and model per process names the model. It applies to a call with tokens, and
+to every image, speech and transcription call that returned. Spend by model
+(`server/web/lib/metrics.ts`, `GET /api/debug/spend`) gives the count per
+model as `unpricedCalls`: that model's cost is too low by what those calls
+cost. The fix is a row in the price table.
+
+**Every shipped model has a source.**
+`server/web/lib/system-manifest/priced-defaults.test.ts` walks the manifest
+agents, the manifest workers (default route, alt route, the models in their
+params) and the embedders onboarding offers. It fails when one has no reported
+cost, no free route and no price row; a token-billed one must have a price row
+as well, as a floor under the reported cost. A new shipped model gets its row
+in the same change: the provider's public price list, with the source and the
+date in a comment.
+
+Old trace rows are not changed: a call recorded at $0 before this rule stays
+$0, with no mark.
+
+Why: on 2026-11-26 a box showed about 13 USD of spend where the provider had
+billed about 75. The OpenRouter vision reads built their result without the
+cost the reply carried, and the shipped read model had no price row, so tens
+of thousands of calls were recorded with their tokens and $0. The same fault
+was in the embedding, image and transcription adapters, which never read the
+cost; and a bare embedding id and the direct Anthropic ids missed the table by
+their spelling.
 
 ## The one call outside an adapter
 

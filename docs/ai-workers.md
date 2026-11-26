@@ -624,9 +624,9 @@ A scanned ~5-page invoice on `claude-sonnet-4-6` is ~$0.06 per native
 extraction (≈8 K in / 2.4 K out). Note: each upload extracts twice (the live
 turn for the immediate reply, the indexer for the durable copy), consistent
 with the two-layer design images already use. Direct-provider vision/document
-calls pass the **bare** model id (`claude-sonnet-4-6`), so `pricing.ts` keys
-both the bare ids and the dotted OpenRouter slugs, otherwise spend read $0 in
-`/debug`.
+calls pass the **bare** model id (`claude-sonnet-4-6`); the `pricing.ts`
+lookup reads the bare id and the dotted OpenRouter slug as one row
+(`priceKey`), otherwise spend read $0 in `/debug`.
 
 ### The native-capability source of truth
 
