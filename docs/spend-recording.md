@@ -127,8 +127,9 @@ as well, as a floor under the reported cost. A new shipped model gets its row
 in the same change: the provider's public price list, with the source and the
 date in a comment.
 
-Old trace rows are not changed: a call recorded at $0 before this rule stays
-$0, with no mark.
+Old trace rows are not changed by the fix itself: a call recorded at $0
+before this rule stays $0, with no mark, until a person runs the backfill
+(below).
 
 Why: on 2026-11-26 a box showed about 13 USD of spend where the provider had
 billed about 75. The OpenRouter vision reads built their result without the
@@ -137,6 +138,71 @@ of thousands of calls were recorded with their tokens and $0. The same fault
 was in the embedding, image and transcription adapters, which never read the
 cost; and a bare embedding id and the direct Anthropic ids missed the table by
 their spelling.
+
+### Backfill of old $0 steps
+
+The maintenance task `spend-backfill`
+([`server/web/lib/maintenance/spend-backfill.ts`](../server/web/lib/maintenance/spend-backfill.ts),
+`docs/maintenance-runner.md`) prices the steps stored before the fix. A
+person starts it; nothing runs it by itself.
+
+**What it writes is the list price, not the billed cost.** It reads a
+stored step's model and token counts and prices them with the live path's own
+code (`priceUsage`), by the price rules of the day it runs. The bill itself
+is gone: a list price knows no discount, no cache write and no price tier,
+and a step with several calls is priced on the model its meta names. Each
+step it changes is marked, so the number is never taken for a billed one:
+
+```json
+"cost_micro_usd": 1237500,
+"cost_backfill": { "micro_usd": 1237500, "basis": "list_price", "at": "2026-11-27T08:00:00Z" }
+```
+
+A step is priced when it has usage (tokens, or a unit count), a recorded
+cost of exactly 0, no mark, and a price. It is left at $0, and counted in
+the report, when:
+
+- its route is free (`isFreeCall`), or a call of it timed out;
+- its model has no price row (still unpriced);
+- its few tokens round to $0;
+- it has tokens but no `cost_micro_usd` key at all. That is the shape from
+  before the one recorder (`tokensIn` / `tokensOut` / `adapter` on the
+  meta): its cost reached the trace total by another path, so a write here
+  could count it twice.
+
+A cost above 0 is never touched. The model is read from the step's meta
+only, never guessed; the provider is the meta's, else the one the step's
+input names, else the first word of the adapter's name, and it decides
+nothing but the free check.
+
+The stored copies of a cost, and what the backfill does with each:
+
+| Store                                                            | What it is                                                  | Backfill                                                                                                            |
+| ---------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `trace_steps.meta.cost_micro_usd`                                | the step's cost                                             | written, with the mark                                                                                              |
+| `traces.cost_micro_usd`                                          | the trace total                                             | plus the sum of its steps' amounts                                                                                  |
+| `run_items.cost_micro_usd`                                       | a copy of the item's trace total, taken when the item ended | plus the same, by `trace_ref`                                                                                       |
+| `runs.spent_micro_usd`                                           | the sum of the run's item costs, read by the run budget     | plus the same. No pause is raised by the backfill; a running run over its budget pauses at its next item, as always |
+| `meta.child_cost_micro_usd` on a parent's delegation step        | a note of what the child trace cost when it returned        | left: nothing sums it, and the child trace it names holds the corrected total                                       |
+| a cost inside a step's output or a pending budget question       | a note of what was known at that moment                     | left                                                                                                                |
+| spend by day, by agent, by model, the dashboards, a run's cost   | read live from the rows above                               | nothing to do                                                                                                       |
+| token counts (`traces.tokens_*`, step tokens), the member budget | not costs                                                   | never changed                                                                                                       |
+
+Spend by usage that is on no step (a narrated status line, a follow-up
+suggestion: charged to the trace total only) has no stored record to price,
+so the backfill cannot see it.
+
+It can run while the box works. It walks `trace_steps` once by id, a page
+at a time, and writes each page in one short transaction (the steps, their
+traces, the run rows). It takes only steps of a trace that closed more than
+an hour ago: the live recorder writes a running trace's totals as absolute
+values, and a run item copies its trace's cost just after the close. A stop
+at any point loses nothing, and a second run changes nothing: a marked step
+is not read again.
+
+`--undo` takes out exactly what the marks record: each marked step's cost
+goes back to 0, its mark is removed, and its amount comes out of the same
+totals, only while the step's cost is still what its mark says.
 
 ## The one call outside an adapter
 
