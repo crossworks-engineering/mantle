@@ -114,6 +114,10 @@ export type AuditEntry = {
     | 'key.revoked'
     | 'key.refused'
     | 'api.write'
+    // A person revealed a secret's value (POST /api/secrets/:id/reveal,
+    // 0400): detail.secretId, never the value. Written before the value
+    // leaves; the trail of who saw what, for rotating when someone leaves.
+    | 'secret.reveal'
     // An admin put a member's team-shared item back to private (Shared by
     // members). detail.itemId, detail.type, detail.authorLoginId.
     | 'member_item.unshared'

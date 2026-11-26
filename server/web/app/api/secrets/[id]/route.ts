@@ -10,19 +10,26 @@ import { ownerCaller } from '@/lib/auth';
 import { SECRET_KINDS, deleteSecret, getSecretMetadata, updateSecret } from '@/lib/secrets';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
+/** The [id] is a uuid: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
+
+/** A workspace kind since 0400: read where a grant reads it, edited with
+ *  Write, deleted by a Moderator of its home, as for notes. */
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'keys' },
+  GET: { class: 'content', open: 'owner' },
   PATCH: {
-    class: 'area',
-    area: 'keys',
-    item: { none: 'manages the keys area: the Admin step checks it' },
+    class: 'content',
+    open: 'owner',
+    item: { param: 'id', need: 'edit' },
   },
   DELETE: {
-    class: 'area',
-    area: 'keys',
-    item: { none: 'manages the keys area: the Admin step checks it' },
+    class: 'content',
+    open: 'owner',
+    item: { param: 'id', need: 'manage' },
   },
 });
 

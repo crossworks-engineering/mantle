@@ -334,14 +334,17 @@ export const ITEM_KINDS = {
     },
   },
   secret: {
-    class: 'admin_only',
+    // A workspace kind since 0400 (owner, 2026-11-26): people share
+    // passwords, .env files and logins with each other. A reader reveals
+    // the value by hand (logged); no app or agent reads it.
+    class: 'workspace',
     tree: {
       kind: 'secrets',
       root: 'secrets',
       order: 10,
       liveOrder: 9,
       sorts: ['name', 'updated'],
-      shareable: false,
+      shareable: true,
     },
     publicLink: false,
     peerShare: false,

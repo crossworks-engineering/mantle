@@ -13,12 +13,15 @@ import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
+/** A workspace kind since 0400: a member lists the secrets its workspaces
+ *  read and makes one where ?ws= names, as for notes. */
 export const policy = routePolicy({
-  GET: { class: 'area', area: 'keys' },
+  GET: { class: 'content', open: 'owner' },
   POST: {
-    class: 'area',
-    area: 'keys',
-    item: { none: 'manages the keys area: the Admin step checks it' },
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
   },
 });
 
