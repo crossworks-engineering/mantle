@@ -70,12 +70,12 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
 
   beforeAll(async () => {
     ts = await import('@mantle/db/test-support');
+    // Both checks on, as on a box (as a3b-store-brokers.db.test.ts): a
+    // change the scope may not make is refused by the database, not only by
+    // the route's item check.
+    process.env.MANTLE_ACTOR_CHECK = 'on';
+    process.env.MANTLE_TEST_EDIT_CHECK = 'on';
     scratch = await ts.createMigratedScratchDatabase(URL!);
-    // The database's edit check on, as on a box, before any connection
-    // opens (a connection keeps the setting it opened with): a change the
-    // scope may not make is refused here, not only by the route's check.
-    sqlTag = (await import('drizzle-orm')).sql;
-    await ts.superuserExec(scratch.url, sqlTag`select mantle_set_edit_check('on', 50, 'test')`);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
