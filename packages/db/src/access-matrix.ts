@@ -1937,8 +1937,6 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a renamed Recall map’s cross-map options in every map (0281): the brain’s references',
   'public.mantle_secret_put(uuid,bytea,integer)':
     'a secret’s sealed value, made or replaced (0281, 0400): the role holds no right on secrets',
-  'public.mantle_secret_sealed(uuid)':
-    'a secret’s sealed value, only for a secret the scope reads (0400): the reveal route opens it',
   'public.mantle_subtree_rewrite(uuid,ltree,ltree)':
     'a folder’s rename or move (0282): every row below it, those the scope does not read too',
   'public.mantle_subtree_refuse_hidden(uuid,ltree)':
