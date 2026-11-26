@@ -316,6 +316,46 @@ with a read again (`file_reindex`). Free (no model, no queue), manual only,
 counts only; on a box `docker exec mantle_web pnpm maintain scan-pages-stamp
 [--apply]`. A second run finds none.
 
+## Old steps recorded at $0 (`spend-backfill`)
+
+`pnpm maintain spend-backfill` prices the model-call steps stored at a cost
+of 0 before the cost fix of 2026-11-26 (`docs/spend-recording.md`, "Backfill
+of old $0 steps", has the rules and the table of every stored cost). Run it
+after the box has the release with the fix.
+
+```sh
+pnpm maintain spend-backfill                     # DRY RUN: numbers only
+pnpm maintain spend-backfill --apply             # write the list prices
+pnpm maintain spend-backfill --undo              # DRY RUN of the undo
+pnpm maintain spend-backfill --undo --apply      # take them out again
+```
+
+- **A dry run is the default** and changes nothing. It prints, per provider
+  and model, the steps it would price, their tokens in and out and the USD
+  it would add; the steps it cannot price, per reason and model; the steps
+  it leaves (free route, timed out); the date range and the total.
+- **The cost is the list price** of the stored token counts by the current
+  price rules, not the billed cost. The output says so, and so does the mark
+  on each step (`meta.cost_backfill`, basis `list_price`).
+- `--apply` writes each step's cost and mark, and adds the same amount to
+  the step's trace total, to the run item that copied that total and to
+  that run's spent amount. A cost above 0 is never touched; token counts and
+  the member token budget are never changed.
+- `--undo` lists the marked steps; with `--apply` it puts each step back to
+  0, removes the mark and takes the amount out of the same totals.
+- Bounds, for every mode: `--since=<date>` and `--until=<date>` (the step's
+  start, UTC, `until` not included; `2026-11-01` or a full instant) and
+  `--model=<id>` (the exact id on the step). `--batch=<n>` is the steps per
+  transaction (1000 by default, 5000 at most).
+
+Free: SQL only, no model, no provider call. It walks the steps by id, one
+short transaction per page, and takes only steps of a trace that closed more
+than an hour ago, so it can run while the box ingests. Stop it and start it
+again at any point; a second run changes nothing. Output is counts, provider
+ids and model ids only. The Maintenance tab can run the dry run and the
+apply over the whole box; the bounds and `--undo` are terminal flags. On a
+box: `scripts/box-maintain.sh <box> spend-backfill [--apply]`.
+
 ## Long runs on a box (`scripts/box-maintain.sh`)
 
 A task that runs for more than a few minutes on a box (`chunk-windows
