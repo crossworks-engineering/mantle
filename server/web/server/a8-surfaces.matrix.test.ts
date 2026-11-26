@@ -1263,7 +1263,12 @@ describe.skipIf(!DB_URL)('A8 surface cells: every way in gives the oracle’s an
  *  unseen. */
 const NARROWED: Readonly<Record<string, number>> = {
   'peer: a peer may not call app_delete: a risky tool its list does not allow': 6,
-  'run: run_plan is Admin only': 61,
+  // Secrets (0400): hidden from an agent on a team surface; the kind's
+  // cells also moved the pairwise pick (run_plan 61 to 65).
+  'team-turn: a secret is hidden on a team surface (teamHidden never)': 6,
+  'heartbeat: a secret is hidden on a team surface (teamHidden never)': 3,
+  'pending: a secret is hidden on a team surface (teamHidden never)': 5,
+  'run: run_plan is Admin only': 65,
   'run: a run item may not run app_delete: it waits for approval': 5,
   'run-demoted: its login left Admin before the item ran: fail closed': 1,
   'recipe: a recipe step may not call app_delete: it waits for approval': 3,
@@ -1274,7 +1279,7 @@ const NARROWED: Readonly<Record<string, number>> = {
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
   'a snapshot copy carries no link or share': 5,
   'a snapshot copy holds no grant but its home': 60,
-  'an Admin-homed item holds no grant but its home': 144,
+  'an Admin-homed item holds no grant but its home': 156,
   "no snapshot copy of a app is made (only an accepted item's kinds)": 146,
   "no snapshot copy of a branch is made (only an accepted item's kinds)": 79,
   "no snapshot copy of a event is made (only an accepted item's kinds)": 202,
@@ -1283,6 +1288,7 @@ const NOT_APPLICABLE: Readonly<Record<string, number>> = {
   // canvas too, and a snapshot copy of one is not made.
   "no snapshot copy of a present is made (only an accepted item's kinds)": 92,
   "no snapshot copy of a recall is made (only an accepted item's kinds)": 91,
+  "no snapshot copy of a secret is made (only an accepted item's kinds)": 91,
   "no snapshot copy of a task is made (only an accepted item's kinds)": 208,
   'no tool row: note_delete is MCP only': 144,
 };
