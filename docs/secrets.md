@@ -165,8 +165,6 @@ anything you can; an extra password prompt is theatre.
 
 ## 6. API
 
-| Method | Path                       | Auth                             | Returns                                  |
-| ------ | -------------------------- | -------------------------------- | ---------------------------------------- |
 | Method | Path                       | Needs (any login, its own scope) | Returns                                  |
 | ------ | -------------------------- | -------------------------------- | ---------------------------------------- |
 | GET    | `/api/secrets`             | reads                            | `{secrets: SecretRow[]}` (metadata only) |

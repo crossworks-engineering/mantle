@@ -3,8 +3,10 @@
 -- rollback). Not a migration: nothing runs it on its own.
 --
 -- An older image keeps secrets in the Admin workspace and writes them on
--- the keys area's exit. This revert puts 'secret' back with the Admin-only
--- kinds, so every secret is read in Admin only again (a grant to another
+-- the keys area's exit, on the system pool by the brain's id: every Admin
+-- user with the keys area then sees every secret, those homed in a member's
+-- workspace after 0400 too (trusted users; members see none). This revert
+-- puts 'secret' back with the Admin-only kinds (a grant to another
 -- workspace stays on its row but reads nothing: the kind's rule refuses it),
 -- drops the sealed reader, and takes 0400 off the ledger, so the next roll
 -- forward runs it again (0400 is re-runnable). mantle_secret_put keeps its

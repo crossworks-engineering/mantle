@@ -18,7 +18,9 @@
  *
  * Security invariants:
  *   - `listSecrets` / `getSecretMetadata` never return ciphertext or fields.
- *   - `revealSecret` is the ONLY entry point that decrypts.
+ *   - `revealSecret` is the ONLY entry point that returns a decrypted value.
+ *     `updateSecret` decrypts too, inside, to keep the part a partial edit
+ *     does not change; it never returns or logs it.
  *   - New secrets land under the `secrets` root, which the extractor reads
  *     as metadata only (type='secret': title, kind, description, tags).
  */
