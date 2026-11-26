@@ -1591,9 +1591,15 @@ export const DEFAULT_WORKER_MODEL = 'anthropic/claude-haiku-5.5';
 /** The extractor and the suggester. */
 export const FACT_WORKER_MODEL = 'openai/gpt-6-luna';
 
-/** The workers that read: the reflector, the document reader, the vision
- *  worker, and the Reader specialist. */
+/** The workers that read: the reflector, the document reader, and the
+ *  Reader specialist. */
 export const READ_WORKER_MODEL = 'google/gemini-3.8-flash';
+
+/** The vision worker (picture and drawing reads). Owner decision
+ *  2026-11-26: vision was most of a box's AI spend, and a read-only trial
+ *  of drawing pieces read by both models found flash-lite as good as
+ *  3.8 Flash on the numbers and codes. */
+export const VISION_WORKER_MODEL = 'google/gemini-3.1-flash-lite';
 
 /** The Scan reader's model: the chat model a page parsed by its engine
  *  (OpenRouter's `mistral-ocr`, fixed in @mantle/runtime SCAN_READER_ENGINE:
@@ -2302,7 +2308,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Read images',
     required: false,
     provider: 'openrouter',
-    model: READ_WORKER_MODEL,
+    model: VISION_WORKER_MODEL,
   },
   // Scan reader: reads every scanned page of a PDF book (docs/ai-workers.md,
   // "The Scan reader"), with OpenRouter's mistral-ocr; no local OCR first,

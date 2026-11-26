@@ -5,6 +5,7 @@ import {
   DEFAULT_WORKER_MODEL,
   FACT_WORKER_MODEL,
   READ_WORKER_MODEL,
+  VISION_WORKER_MODEL,
   type ManifestWorker,
 } from './manifest';
 
@@ -52,7 +53,7 @@ describe('resolveWorkerRoute', () => {
       summarizer: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
       reflector: { provider: 'openrouter', model: READ_WORKER_MODEL },
       document: { provider: 'openrouter', model: READ_WORKER_MODEL },
-      vision: { provider: 'openrouter', model: READ_WORKER_MODEL },
+      vision: { provider: 'openrouter', model: VISION_WORKER_MODEL },
       narrator: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
       suggester: { provider: 'openrouter', model: FACT_WORKER_MODEL },
       image_gen: { provider: 'openrouter', model: 'google/gemini-nano-banana-2.1' },

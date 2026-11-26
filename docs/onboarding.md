@@ -99,14 +99,15 @@ over the same surfaces the settings pages use.
 `provisionDefaults(ownerId)` is driven by which keys exist (idempotent, a
 kind/slug that already exists is left alone):
 
-| Capability                                           | Worker kind                       | Provider · model                                                                            | Gated by                          |
-| ---------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------- |
-| Fact extraction, follow-up suggestions               | `extractor`, `suggester`          | OpenRouter · `openai/gpt-6-luna`                                                            | OpenRouter key                    |
-| Summaries, the live status trail                     | `summarizer`, `narrator`          | OpenRouter · `anthropic/claude-haiku-5.5`                                                   | OpenRouter key                    |
-| Reflection, document/PDF reading, image/scan reading | `reflector`, `document`, `vision` | OpenRouter · `google/gemini-3.8-flash`                                                      | OpenRouter key                    |
-| Image generation                                     | `image_gen`                       | OpenRouter · `google/gemini-nano-banana-2.1`                                                | OpenRouter key                    |
-| Spoken replies                                       | `tts`                             | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara/rex) | xAI key if added, else OpenRouter |
-| Voice notes → text                                   | `stt`                             | xAI · `grok-stt` **or** OpenRouter · `openai/gpt-4o-transcribe`                             | xAI key if added, else OpenRouter |
+| Capability                             | Worker kind              | Provider · model                                                                            | Gated by                          |
+| -------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------- | --------------------------------- |
+| Fact extraction, follow-up suggestions | `extractor`, `suggester` | OpenRouter · `openai/gpt-6-luna`                                                            | OpenRouter key                    |
+| Summaries, the live status trail       | `summarizer`, `narrator` | OpenRouter · `anthropic/claude-haiku-5.5`                                                   | OpenRouter key                    |
+| Reflection, document/PDF reading       | `reflector`, `document`  | OpenRouter · `google/gemini-3.8-flash`                                                      | OpenRouter key                    |
+| Image and drawing reading              | `vision`                 | OpenRouter · `google/gemini-3.1-flash-lite`                                                 | OpenRouter key                    |
+| Image generation                       | `image_gen`              | OpenRouter · `google/gemini-nano-banana-2.1`                                                | OpenRouter key                    |
+| Spoken replies                         | `tts`                    | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara/rex) | xAI key if added, else OpenRouter |
+| Voice notes → text                     | `stt`                    | xAI · `grok-stt` **or** OpenRouter · `openai/gpt-4o-transcribe`                             | xAI key if added, else OpenRouter |
 
 The models are the manifest's (`MANIFEST_WORKERS`), the ones the reference box
 runs (2026-11-19), each checked against the live OpenRouter catalog. The Models
