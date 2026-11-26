@@ -241,6 +241,11 @@ const FILE_NOT_ARCHIVE =
 export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'PATCH /api/notes/:id': { kind: 'note', action: 'edit', body: title, warnMade: true },
   'DELETE /api/notes/:id': { kind: 'note', action: 'delete' },
+  // Secrets (0400): a workspace kind. A title edit is one statement, the
+  // database's check alone, as a note's; a reveal is a read, logged.
+  'PATCH /api/secrets/:id': { kind: 'secret', action: 'edit', body: title, warnMade: true },
+  'DELETE /api/secrets/:id': { kind: 'secret', action: 'delete' },
+  'POST /api/secrets/:id/reveal': { kind: 'secret', action: 'read' },
   'PATCH /api/tasks/:id': { kind: 'task', action: 'edit', body: title, warnMade: true },
   'DELETE /api/tasks/:id': { kind: 'task', action: 'delete' },
   // Files on tasks: a text file put on the task. The task row does not
