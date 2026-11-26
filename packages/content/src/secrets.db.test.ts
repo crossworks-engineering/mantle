@@ -1,7 +1,7 @@
 /**
  * Secrets as a workspace kind (0400, plan page 0f5ce59b part S2), on a
- * migrated scratch brain on workspaces, every call in a login's own write
- * scope, as the routes run it:
+ * migrated scratch brain on workspaces with the edit check on (as on a
+ * box), every call in a login's own write scope, as the routes run it:
  *
  *  - a Moderator of W makes a secret in W; a user of W lists it and reveals
  *    its value; a login outside W finds nothing and reveals nothing;
@@ -71,6 +71,11 @@ describe.skipIf(!URL)('secrets: a workspace kind (0400)', () => {
   beforeAll(async () => {
     ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
+    // The database's edit check on, as on a box, before any connection
+    // opens (a connection keeps the setting it opened with): a change the
+    // scope may not make is refused here, not only by the route's check.
+    sqlTag = (await import('drizzle-orm')).sql;
+    await ts.superuserExec(scratch.url, sqlTag`select mantle_set_edit_check('on', 50, 'test')`);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
