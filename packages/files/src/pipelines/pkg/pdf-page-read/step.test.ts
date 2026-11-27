@@ -229,6 +229,51 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
     expect(bookOf(300, [...sample(3, form), ...sample(6, scan), ...sample(11, ocr)])).toBe(false);
   });
 
+  it('an eye-read page whose lines lean on the isometric axes keeps a drawing (rules 6, BOOK_ISO_MAX)', () => {
+    const ocr = { class: 'scan_hidden_text' as const, size: 'a4' as const, kind: 'scan' as const };
+    const scan = { class: 'scan' as const, size: 'a4' as const, kind: 'scan' as const };
+    const eyed = <P extends SamplePage>(p: P, iso: number, other: number, textAreas: number) => ({
+      ...p,
+      eye: {
+        axes: { h: 0.9 - iso - other, v: 0.1, iso, other, longMm: 9_000 },
+        skewDeg: 0,
+        ink: 0.08,
+        textAreas,
+      },
+    });
+    // A 24-page pack of OCR'd sketch forms on A4 paper, its bench numbers: the eye's
+    // 3 pages lean 0.025 to 0.036 on the isometric axes. No book.
+    const sketches: SamplePage[] = [
+      eyed(ocr, 0.036, 0.024, 412),
+      ...sample(10, ocr),
+      eyed(ocr, 0.036, 0.024, 412),
+      ...sample(11, ocr),
+      eyed(ocr, 0.025, 0.532, 244),
+    ];
+    expect(bookOf(24, sketches)).toBe(false);
+    // The same pages with no lean on those axes: the OCR'd A4 pages are
+    // typed pages (ruledScanOf), so the pack would be a book.
+    const level = sketches.map((p) => (p.eye ? eyed(ocr, 0, p.eye.axes.other, 412) : p));
+    expect(bookOf(24, level)).toBe(true);
+    // Office books, their bench numbers (the eye's pages 0.000): typed scans
+    // and OCR'd scans stay books, long and short.
+    const typed = { class: 'scan' as const, size: 'a4' as const, kind: 'document' as const };
+    for (const p of [typed, { ...typed, class: 'scan_hidden_text' as const }]) {
+      expect(bookOf(24, [eyed(p, 0, 0, 27), ...sample(22, p), eyed(p, 0, 0, 2)])).toBe(true);
+      expect(bookOf(5, [eyed(p, 0, 0, 27), ...sample(4, p)])).toBe(true);
+    }
+    // A scanned spec of tables, the eye's pages 0.000: a book.
+    expect(bookOf(30, [eyed(ocr, 0, 0, 276), ...sample(28, ocr), eyed(ocr, 0, 0, 296)])).toBe(true);
+    // A 28-page pack of OCR'd drawing scans on A3 sheets (0.001 to 0.002): the
+    // A3 size keeps it a drawing, as before; the lean of a scan on A3 sheets
+    // (up to 0.004) blocks nothing.
+    const a3 = { ...ocr, size: 'a3' as const };
+    expect(bookOf(28, [eyed(a3, 0.002, 0.088, 1277), ...sample(27, a3)])).toBe(false);
+    expect(bookOf(24, [eyed(ocr, 0.004, 0, 300), ...sample(23, ocr)])).toBe(true);
+    // A class `scan` sketch pack (no text layer) stays a drawing, as before.
+    expect(bookOf(24, [eyed(scan, 0.036, 0.024, 422), ...sample(23, scan)])).toBe(false);
+  });
+
   it('mostly: at least 80% scans or typed text; a sample with no page read is no book', () => {
     const drawn = {
       class: 'vector_no_text' as const,

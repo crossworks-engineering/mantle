@@ -43,7 +43,9 @@ const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
  *  (2026-11-20): a long file whose first pages fail the book sample is a
  *  book when all its pages, read whole, pass bookOf. 6 (2026-11-21): an
  *  OCR'd scan on A4 paper (class `scan_hidden_text`) is a typed page, not a
- *  ruled scan, in a long file's book rule (ruledScanOf, ./pdf-kind.ts). */
+ *  ruled scan, in a long file's book rule (ruledScanOf, ./pdf-kind.ts),
+ *  and an eye-read page whose lines lean on the isometric axes keeps any
+ *  file from being a book (BOOK_ISO_MAX). */
 export const PDF_KIND_RULES_VERSION = 6;
 
 /** The clock columns of a reader's tabs, by tab name: a time a read took,
