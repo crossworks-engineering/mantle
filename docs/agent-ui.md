@@ -250,6 +250,11 @@ on the screen and what to press; `ui_look` is for how it looks.
   answers `{ok, route, title, scope, width, height, blanked, blankFrames,
 image: {mimeType, base64}}`: a PNG, or a JPEG at 0.85 when the PNG is over
   1 MB. The agent bar says "Looking at your window" meanwhile.
+- Secret fields are kept out twice. While the pixels are taken, `<html>`
+  carries `data-agent-look` and one style rule stops the page painting any
+  secret field, so a value a person reveals during a slow capture is never
+  in the picture, whatever the delay. Then each field's box, as read before
+  and after the pixels, is painted over.
 - App frames: the page redraw cannot read inside a sandboxed app frame, so
   on the web the window asks each app frame in the box over the app bridge
   (`{kind: 'look', id, scale}`, one `look.res` back) and paints its picture

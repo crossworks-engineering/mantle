@@ -173,6 +173,25 @@ are Postgres-only.
 - "Edit" mode: title/description/tags can be updated alone; if you
   edit note/fields the blob gets re-sealed.
 
+### For every login (the client's member screens)
+
+The screens are in the mantle-client repo (`client/web/app/(app)/secrets/`).
+
+- Every login with a reader's tree of secrets (`treeKinds` on
+  `GET /api/shell` names `secrets`) has the Secrets entry and sees the
+  secrets its workspaces read, in the item tree, as pages and files.
+- The detail opens with the item header every item has. Its Access slot is
+  the Grant Access panel of a page: home workspace, grants and the Write
+  switch. A folder of secrets offers the same panel from its menu.
+- What a login may do is what the row's caps say: whoever reads a secret
+  reveals it; Edit needs `mayEdit`; Delete, Move and Access need
+  `mayManage`. The client adds no rule of its own.
+- A new secret lands in the workspace the switcher shows (`?ws=`).
+- A revealed value stays in a `data-secret` box, in the component's state
+  only: never in an address, a cache, a toast or an error text.
+- For an agent that drives the window, the header of a secret and Reveal are
+  a person's own acts (`data-agent-risk`).
+
 There's no re-auth prompt before reveal, the session cookie already
 proves it's you. Anyone who steals the session can already do
 anything you can; an extra password prompt is theatre.
