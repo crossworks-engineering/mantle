@@ -367,7 +367,7 @@ describe.skipIf(!URL)('round 13: the identity gateway (0322)', () => {
         ],
         [
           'structure delete',
-          `select * from mantle_structure_item('secret-item', 'delete', '${ids.owner}', '${ids.owner}', array[gen_random_uuid()], null)`,
+          `select * from mantle_structure_item('docs-item', 'delete', '${ids.owner}', '${ids.owner}', array[gen_random_uuid()], null)`,
         ],
       ];
       const bad: string[] = [];

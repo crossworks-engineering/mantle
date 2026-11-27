@@ -2801,6 +2801,13 @@
       "when": 1792340360000,
       "tag": "0400_secrets_workspace_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 401,
+      "version": "7",
+      "when": 1792340420000,
+      "tag": "0401_structure_item_no_secret",
+      "breakpoints": true
     }
   ]
 }

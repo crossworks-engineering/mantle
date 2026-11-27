@@ -1,9 +1,11 @@
 /**
  * The structure items an Admin area's narrow exit makes, edits and
- * removes: the Secrets root, a secret, a peer, a sender's contact, a
- * documentation item and the folders above one, and the events a calendar
- * synced (removed only). One gateway for the six writers (secrets-root, secret-item,
- * peer-item, sender-contact, docs-collection, calendar-events).
+ * removes: the Secrets root, a peer, a sender's contact, a documentation
+ * item and the folders above one, and the events a calendar synced (removed
+ * only). One gateway for the five writers (secrets-root, peer-item,
+ * sender-contact, docs-collection, calendar-events). A secret is not one: a
+ * workspace kind since 0400, written in the caller's own scope
+ * (@mantle/content/secrets); 0401 took its kind off the definer's list.
  *
  * On the narrow route (narrowRouteNow: the switch on and the exit's pick)
  * each write is one call of the definer mantle_structure_item (migration
@@ -20,7 +22,6 @@ import { indexWorkFor, type IndexWork } from '@mantle/client-types/kinds';
 import { RuntimeFaultError } from '@mantle/std';
 import type * as schema from '../schema/index';
 import { nodes, type Node } from '../schema/nodes';
-import { secrets } from '../schema/secrets';
 import { markContentChanged } from '../content-changed';
 import { actingLoginNow, currentCreateHome, currentSpaceScope, onFullSystemRoute } from '../viewer';
 import { atActingLogin } from './acting-login';
@@ -35,7 +36,6 @@ type Tx = PostgresJsDatabase<typeof schema>;
 /** The listed kinds, each with its item type (the definer's own list). */
 export const STRUCTURE_KINDS = Object.freeze({
   'secrets-root': 'branch',
-  'secret-item': 'secret',
   'peer-item': 'mantle_peer',
   'contact-item': 'contact',
   'docs-folder': 'branch',
@@ -105,31 +105,16 @@ async function callDefiner(
   return rows.map((r) => r.id);
 }
 
-/** A secret's sealed value for its new row (the row's id is the seal's
- *  associated data): data only, so no caller's statement runs at a spot. */
-export type SealedFor = (row: Node) => { ciphertext: Buffer; keyVersion: number };
-
 /**
- * Make one structure item with the heads of the folder it lands in, and
- * insert its sealed value in the same transaction when `sealed` is given (a
- * secret: its row in secrets). A branch kind already at its path makes
- * nothing: null, no sealed row. Wrap in withDeadlockRetry, as the heads
- * helpers. The sealed value is computed by the caller but written here:
- * the caller passes no statement into the acting-login spot.
+ * Make one structure item with the heads of the folder it lands in. A
+ * branch kind already at its path makes nothing: null. Wrap in
+ * withDeadlockRetry, as the heads helpers. The caller passes values only,
+ * no statement, so nothing of its own runs at the acting-login spot.
  */
 export async function insertStructureItem(
   kind: StructureKind,
   values: StructureInsert,
-  sealed?: SealedFor,
 ): Promise<Node | null> {
-  const then = sealed
-    ? async (tx: Tx, row: Node) => {
-        const s = sealed(row);
-        await tx
-          .insert(secrets)
-          .values({ nodeId: row.id, ciphertext: s.ciphertext, keyVersion: s.keyVersion });
-      }
-    : undefined;
   const type = STRUCTURE_KINDS[kind];
   const branch = type === 'branch';
   const route = structureRoute();
@@ -147,7 +132,6 @@ export async function insertStructureItem(
         if (!id) return null;
         const [row] = await tx.select().from(nodes).where(eq(nodes.id, id));
         if (!row) throw new Error('insertStructureItem: the new row is not readable');
-        if (then) await then(tx, row);
         return row;
       }),
     );
@@ -175,7 +159,6 @@ export async function insertStructureItem(
         if (branch) return null;
         throw new Error('insertStructureItem: insert returned no row');
       }
-      if (then) await then(tx, row);
       return row;
     }),
   );
@@ -193,8 +176,8 @@ export type StructureUpdate = {
  * fields `changed` names (markContentChanged), in one transaction. Its row
  * after, or null when no such item.
  */
-export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>(
-  kind: K,
+export async function updateStructureItem(
+  kind: 'docs-item',
   ownerId: string,
   id: string,
   set: StructureUpdate,
@@ -208,7 +191,7 @@ export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>
     if (set.title !== undefined) fields.title = set.title;
     if (set.tags !== undefined) fields.tags = set.tags;
     if (work === 'embed') {
-      // Neither kind indexes a field for embed work only (the kind
+      // The kind indexes no field for embed work only (the kind
       // registry): the definer resets for extract only.
       throw new RuntimeFaultError(`updateStructureItem: no embed reset for ${kind}`);
     }
@@ -261,7 +244,7 @@ export async function updateStructureItem<K extends 'secret-item' | 'docs-item'>
  * withDeadlockRetry, as the heads helpers.
  */
 export async function deleteStructureItems(
-  kind: 'secret-item' | 'peer-item' | 'docs-item' | 'calendar-event',
+  kind: 'peer-item' | 'docs-item' | 'calendar-event',
   ownerId: string,
   ids: readonly string[],
   match?: Readonly<Record<string, string>>,

@@ -523,7 +523,7 @@ on the system pool's own login) and `structure-no-login`
 a narrow exit a spot changes nothing.
 
 The structure items an Admin area's narrow exit makes, edits and removes
-(the Secrets root, a secret, a peer, a sender's contact, a documentation
+(the Secrets root, a peer, a sender's contact, a documentation
 item and the folders above one, and the events a calendar synced, which
 its unsubscribe removes) left the spots in S7b part b2: on the
 narrow route each write is one call of `mantle_structure_item` (migration
@@ -535,7 +535,9 @@ login, and that login must hold the kind's area (`mantle_area_rule`). The
 narrow role runs it and holds no right on `nodes`. Anywhere else (a
 login's scope, a full reason) the app's own statements run
 as before; the definer does what they did (the row, the heads, the index
-reset), so placement and readers are the same.
+reset), so placement and readers are the same. A secret is no structure
+item: it is a workspace kind since 0400, written in the caller's own scope,
+and migration 0401 took its kind (`secret-item`) off the definer's list.
 
 Two more left the spots in part b2's third round, each for a definer of
 its own with the same caller rule (migration 0317,

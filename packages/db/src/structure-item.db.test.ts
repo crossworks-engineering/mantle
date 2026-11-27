@@ -1,13 +1,18 @@
 /**
  * The structure item definer (migration 0316, gateway/structure-item.ts,
  * plan v3.2 S7b part b2): on an Admin area's narrow exit the Secrets root,
- * a secret, a peer, a contact, a documentation item and its folders are
+ * a peer, a contact, a documentation item and its folders are
  * made, edited and removed by mantle_structure_item, and each answer equals
  * the app's own statements on the full route (the five full-route spots
  * they replace): the row, its create home and readers (home_ws, read_ws,
  * write_ws), the index reset. Refused: an unlisted kind or operation, a
  * place the kind does not land at, the write role and the user role, no or
  * another acting login, a login without the kind's area, a scope.
+ *
+ * A secret is no structure item (0401, plan page 0f5ce59b, the S2 audit's
+ * N4): the kind 'secret-item' is refused as any unlisted kind, for insert,
+ * update and delete. A secret is written in the caller's own scope
+ * (packages/content/src/secrets.db.test.ts).
  */
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
@@ -127,7 +132,6 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
     expect(docsRoot?.type).toBe('branch');
 
     const cases = [
-      ['secret-item', { title: 's', path: 'secrets', data: { kind: 'token' }, tags: ['a'] }, []],
       ['peer-item', { title: 'p', path: 'peers', data: { base_url: 'https://x.test' } }, []],
       [
         'contact-item',
@@ -167,73 +171,101 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
     }
   });
 
-  it("a secret's sealed row in the definer's transaction; edit and remove equal the full route", async () => {
+  it("a documentation item's edit and remove equal the full route", async () => {
     const make = (run: typeof exit) =>
       run(() =>
-        m.insertStructureItem(
-          'secret-item',
-          {
-            ownerId: brain,
-            title: 'k',
-            path: 'secrets',
-            data: { description: 'old' },
-            tags: ['t'],
-          },
-          () => ({ ciphertext: Buffer.from('sealed'), keyVersion: 1 }),
-        ),
+        m.insertStructureItem('docs-item', {
+          ownerId: brain,
+          title: 'k.md',
+          slug: null,
+          path: 'documentation',
+          data: { content: 'old', sha256: 'a' },
+          tags: ['documentation'],
+        }),
       );
     const a = (await make(exit))!;
     const b = (await make(exitFull))!;
     for (const id of [a.id, b.id]) {
-      expect((await su`select 1 from secrets where node_id = ${id}`).length).toBe(1);
       // A summary and a vector stamp the extract reset drops.
       await su`update nodes set data = data || '{"summary": "s", "entities": [1], "index_work": "embed",
                                                   "index_work_had_vector": true}'::jsonb
                 where id = ${id}`;
     }
-    const set = { title: 'k2', tags: ['t', 'u'], data: { description: 'new', kind: 'token' } };
-    const changed = ['title', 'description', 'tags'];
-    const ua = await exit(() => m.updateStructureItem('secret-item', brain, a.id, set, changed));
-    const ub = await exitFull(() =>
-      m.updateStructureItem('secret-item', brain, b.id, set, changed),
-    );
+    const set = {
+      title: 'k2.md',
+      tags: ['documentation', 'u'],
+      data: { content: 'new', sha256: 'b' },
+    };
+    // The text feeds the index (the kind registry's `indexed`): extract.
+    const changed = ['content'];
+    const ua = await exit(() => m.updateStructureItem('docs-item', brain, a.id, set, changed));
+    const ub = await exitFull(() => m.updateStructureItem('docs-item', brain, b.id, set, changed));
     expect(ua?.id).toBe(a.id);
     expect(ub?.id).toBe(b.id);
     const ra = await rowOf(a.id);
     expect(ra).toEqual(await rowOf(b.id));
-    expect(ra!.data).toEqual({ description: 'new', kind: 'token', index_work: 'extract' });
+    expect(ra!.title).toBe('k2.md');
+    expect(ra!.tags).toEqual(['documentation', 'u']);
+    expect(ra!.data).toEqual({ content: 'new', sha256: 'b', index_work: 'extract' });
     expect(ra!.embedding).toBeNull();
     // An edit of nothing that feeds the index resets nothing, on both.
-    const quiet = { data: { description: 'new', kind: 'token', x: 1 } };
-    await exit(() => m.updateStructureItem('secret-item', brain, a.id, quiet, ['sealed']));
-    await exitFull(() => m.updateStructureItem('secret-item', brain, b.id, quiet, ['sealed']));
-    expect(await rowOf(a.id)).toEqual(await rowOf(b.id));
+    const quiet = { data: { content: 'new', sha256: 'b', x: 1 } };
+    await exit(() => m.updateStructureItem('docs-item', brain, a.id, quiet, ['sha256']));
+    await exitFull(() => m.updateStructureItem('docs-item', brain, b.id, quiet, ['sha256']));
+    const qa = await rowOf(a.id);
+    expect(qa).toEqual(await rowOf(b.id));
+    expect(qa!.data).toEqual({ content: 'new', sha256: 'b', x: 1 });
     // No such item: null on both.
     const none = randomUUID();
     expect(
-      await exit(() => m.updateStructureItem('secret-item', brain, none, set, changed)),
+      await exit(() => m.updateStructureItem('docs-item', brain, none, set, changed)),
     ).toBeNull();
     expect(
-      await exitFull(() => m.updateStructureItem('secret-item', brain, none, set, changed)),
+      await exitFull(() => m.updateStructureItem('docs-item', brain, none, set, changed)),
     ).toBeNull();
-    // Remove: the item and (by its foreign key) the sealed row; an id of
-    // another type is left alone on both.
+    // Remove: the item; an id of another type is left alone on both.
     const peer = (await exit(() =>
       m.insertStructureItem('peer-item', { ownerId: brain, title: 'p2', path: 'peers' }),
     ))!;
-    expect(await exit(() => m.deleteStructureItems('secret-item', brain, [a.id, peer.id]))).toEqual(
-      [a.id],
-    );
+    expect(await exit(() => m.deleteStructureItems('docs-item', brain, [a.id, peer.id]))).toEqual([
+      a.id,
+    ]);
     expect(
-      await exitFull(() => m.deleteStructureItems('secret-item', brain, [b.id, peer.id])),
+      await exitFull(() => m.deleteStructureItems('docs-item', brain, [b.id, peer.id])),
     ).toEqual([b.id]);
     for (const id of [a.id, b.id]) {
       expect((await su`select 1 from nodes where id = ${id}`).length).toBe(0);
-      expect((await su`select 1 from secrets where node_id = ${id}`).length).toBe(0);
     }
     expect(await exit(() => m.deleteStructureItems('peer-item', brain, [peer.id]))).toEqual([
       peer.id,
     ]);
+  });
+
+  it("a secret is no structure item (0401): 'secret-item' is refused as an unlisted kind, for every operation", async () => {
+    const pre = [acting(admin)];
+    const sid = randomUUID();
+    await su`insert into nodes (id, owner_id, type, title, path, data)
+             values (${sid}, ${brain}, 'secret', 's', 'secrets', '{"description": "d"}'::jsonb)`;
+    const on = (op: string) =>
+      `select * from public.mantle_structure_item('secret-item', '${op}', '${admin}'::uuid,
+         '${brain}'::uuid, ${op === 'insert' ? 'null' : `'{${sid}}'::uuid[]`},
+         '{"title": "x", "path": "secrets", "data": {}}'::jsonb)`;
+    for (const op of ['insert', 'update', 'delete']) {
+      expect(await call(su, on(op), pre), op).toMatch(/^42501: .*not a listed kind/);
+    }
+    // The secret is as it was, and the definer's source names the kind
+    // nowhere.
+    const [r] = await su<{ d: unknown; t: string }[]>`
+      select data as d, title as t from nodes where id = ${sid}`;
+    expect(r).toEqual({ d: { description: 'd' }, t: 's' });
+    const [f] = await su<{ named: boolean }[]>`
+      select prosrc like '%secret-item%' as named from pg_proc
+       where oid = 'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)'::regprocedure`;
+    expect(f!.named).toBe(false);
+    // The gateway's own list holds no such kind either.
+    expect(Object.keys(m.STRUCTURE_KINDS)).not.toContain('secret-item');
+    expect(Object.values(m.STRUCTURE_KINDS)).not.toContain('secret');
+    await su`delete from nodes where id = ${sid}`;
   });
 
   it("a calendar's synced events removed on the narrow route as on the full route; another event left", async () => {
@@ -289,7 +321,7 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
 
   it('refused: an unlisted kind or operation, another place, another brain', async () => {
     const pre = [acting(admin)];
-    expect(await call(su, def('secret-item', 'insert', admin), pre)).toBe('ok');
+    expect(await call(su, def('secrets-root', 'insert', admin), pre)).toBe('ok');
     expect(await call(su, def('note', 'insert', admin, 'notes'), pre)).toMatch(
       /^42501: .*not a listed kind/,
     );
@@ -302,7 +334,7 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
     expect(await call(su, def('secrets-root', 'update', admin), pre)).toMatch(
       /^42501: .*not an operation of this kind/,
     );
-    expect(await call(su, def('secret-item', 'insert', admin, 'notes'), pre)).toMatch(
+    expect(await call(su, def('secrets-root', 'insert', admin, 'notes'), pre)).toMatch(
       /^42501: .*not where this kind lands/,
     );
     expect(await call(su, def('docs-item', 'insert', admin, 'notes'), pre)).toMatch(
@@ -312,10 +344,10 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
       /^42501: .*not where this kind lands/,
     );
     expect(
-      await call(su, def('secret-item', 'insert', admin, 'secrets', randomUUID()), pre),
+      await call(su, def('secrets-root', 'insert', admin, 'secrets', randomUUID()), pre),
     ).toMatch(/^42501: .*only on this brain/);
     expect(
-      await call(su, `${def('secret-item', 'insert', admin)}`, [
+      await call(su, `${def('secrets-root', 'insert', admin)}`, [
         ...pre,
         "select set_config('mantle.write_mode', 'ro', true)",
       ]),
@@ -324,24 +356,24 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
 
   it('refused: no or another acting login, a login without the area, a scope', async () => {
     for (const [who, on] of [['the superuser', su]] as const) {
-      expect(await call(on, def('secret-item', 'insert', admin)), `${who}, none`).toMatch(
+      expect(await call(on, def('secrets-root', 'insert', admin)), `${who}, none`).toMatch(
         /^42501: .*(only the acting login|no acting login)/,
       );
       expect(
-        await call(on, def('secret-item', 'insert', admin), [acting(plain)]),
+        await call(on, def('secrets-root', 'insert', admin), [acting(plain)]),
         `${who}, another`,
       ).toMatch(/^42501: .*(only the acting login|no acting login)/);
       expect(
-        await call(on, def('secret-item', 'insert', admin), [acting(admin)]),
+        await call(on, def('secrets-root', 'insert', admin), [acting(admin)]),
         `${who}, its own`,
       ).toBe('ok');
       // Not in the Admin workspace; in it with keys taken away (connectors kept).
       expect(
-        await call(on, def('secret-item', 'insert', plain), [acting(plain)]),
+        await call(on, def('secrets-root', 'insert', plain), [acting(plain)]),
         `${who}, plain`,
       ).toMatch(/^42501: .*does not hold the area/);
       expect(
-        await call(on, def('secret-item', 'insert', noKeys), [acting(noKeys)]),
+        await call(on, def('secrets-root', 'insert', noKeys), [acting(noKeys)]),
         `${who}, no keys`,
       ).toMatch(/^42501: .*does not hold the area/);
       expect(
@@ -349,7 +381,7 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
         `${who}, connectors`,
       ).toBe('ok');
       expect(
-        await call(on, def('secret-item', 'insert', admin), [
+        await call(on, def('secrets-root', 'insert', admin), [
           acting(admin),
           `select set_config('mantle.scope_login', '${admin}', true)`,
         ]),
@@ -358,7 +390,7 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
     }
     // Through the gateway: an exit of a login without the area.
     const err = await exit(
-      () => m.insertStructureItem('secret-item', { ownerId: brain, title: 'x', path: 'secrets' }),
+      () => m.insertStructureItem('secrets-root', { ownerId: brain, title: 'x', path: 'secrets' }),
       noKeys,
     ).then(
       () => null,
@@ -382,7 +414,7 @@ describe.skipIf(!URL)('0316: the structure items on the narrow route', () => {
         const [me] = await on.unsafe<{ s: string }[]>('select session_user::text as s');
         expect(me!.s).toBe(name);
       }
-      expect(await call(on, def('secret-item', 'insert', admin), clear), who).toMatch(
+      expect(await call(on, def('secrets-root', 'insert', admin), clear), who).toMatch(
         /^42501: permission denied for function mantle_structure_item/,
       );
     }

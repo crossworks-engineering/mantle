@@ -639,24 +639,26 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       return fn();
     });
   const exitFull = <T>(fn: () => Promise<T>) => exit(() => v.onFullSystemRoute('profile-row', fn));
-  const secret = async () => {
+  /** A documentation item: the one kind the definer edits (a secret is no
+   *  structure item since 0401). */
+  const doc = async () => {
     const id = randomUUID();
     await su`insert into nodes (id, owner_id, type, title, path, data)
-             values (${id}, ${brain}, 'secret', 's', 'secrets', '{"description": "d"}'::jsonb)`;
+             values (${id}, ${brain}, 'documentation', 's', 'documentation', '{"content": "d"}'::jsonb)`;
     return id;
   };
 
   it('an update that names no data is refused (22023), the row unchanged', async () => {
-    const id = await secret();
+    const id = await doc();
     for (const fields of [`'{"title": "x"}'::jsonb`, 'null::jsonb', `'{"data": "s"}'::jsonb`]) {
-      const call = `select * from mantle_structure_item('secret-item', 'update', '${admin}'::uuid,
+      const call = `select * from mantle_structure_item('docs-item', 'update', '${admin}'::uuid,
                       '${brain}'::uuid, array['${id}'::uuid], ${fields})`;
       expect(await run(su, [acting(admin), call]), fields).toBe('22023');
     }
     const [r] = await su<
       { d: unknown; t: string }[]
     >`select data as d, title as t from nodes where id = ${id}`;
-    expect(r).toEqual({ d: { description: 'd' }, t: 's' });
+    expect(r).toEqual({ d: { content: 'd' }, t: 's' });
   });
 
   it("a delete's match is read again under the heads: an event moved to another account, a doc to another collection, left on both routes", async () => {
@@ -692,28 +694,34 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
   });
 
   /** The session and acting login a structure write's own transaction saw:
-   *  a scratch trigger on secrets records them as the sealed row lands (the
-   *  caller passes only the sealed value now, no statement). */
+   *  a scratch trigger on nodes records them as the item's row lands (a
+   *  peer's item, by its title; the caller passes values only, no
+   *  statement). The trigger is dropped again after the write. */
   const sawOf = async () => {
-    await su.unsafe(`create table if not exists zz_saw (s text, a text, at timestamptz default clock_timestamp());
-      grant all on zz_saw to public;
-      create or replace function zz_saw_fn() returns trigger language plpgsql as $f$
+    await su.unsafe(`create table if not exists public.zz_saw (s text, a text, at timestamptz default clock_timestamp());
+      grant all on public.zz_saw to public;
+      create or replace function public.zz_saw_fn() returns trigger language plpgsql as $f$
       begin
-        insert into zz_saw (s, a)
+        insert into public.zz_saw (s, a)
           values (session_user::text, nullif(current_setting('mantle.acting_login', true), ''));
         return new;
       end $f$;
-      grant execute on function zz_saw_fn() to public;
-      drop trigger if exists zz_saw_t on secrets;
-      create trigger zz_saw_t before insert on secrets for each row execute function zz_saw_fn();`);
-    const row = await m.insertStructureItem(
-      'secret-item',
-      { ownerId: brain, title: 't', path: 'secrets' },
-      () => ({ ciphertext: Buffer.from('sealed'), keyVersion: 1 }),
-    );
-    expect(row).not.toBeNull();
+      grant execute on function public.zz_saw_fn() to public;
+      drop trigger if exists zz_saw_t on public.nodes;
+      create trigger zz_saw_t before insert on public.nodes for each row
+        when (new.title = 'zz-saw') execute function public.zz_saw_fn();`);
+    try {
+      const row = await m.insertStructureItem('peer-item', {
+        ownerId: brain,
+        title: 'zz-saw',
+        path: 'peers',
+      });
+      expect(row).not.toBeNull();
+    } finally {
+      await su.unsafe('drop trigger if exists zz_saw_t on public.nodes');
+    }
     const [r] = await su<{ s: string; a: string | null }[]>`
-      select s, a from zz_saw order by at desc limit 1`;
+      select s, a from public.zz_saw order by at desc limit 1`;
     return { s: r!.s, a: r!.a } as Record<string, string | null>;
   };
   const turn = <T>(
@@ -757,17 +765,15 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       await listener.listen('node_ingested', (id) => heard.push(id));
       const [dim] = await su<{ d: number }[]>`
         select atttypmod as d from pg_attribute where attrelid = 'public.nodes'::regclass and attname = 'embedding'`;
-      const ids = [await secret(), await secret()];
+      const ids = [await doc(), await doc()];
       for (const id of ids) {
         await su.unsafe(
           `update nodes set embedding = array_fill(0.01::real, array[${dim!.d}])::vector where id = '${id}'`,
         );
       }
-      const set = { title: 'k2', data: { description: 'new' } };
-      await exit(() => m.updateStructureItem('secret-item', brain, ids[0]!, set, ['description']));
-      await exitFull(() =>
-        m.updateStructureItem('secret-item', brain, ids[1]!, set, ['description']),
-      );
+      const set = { title: 'k2', data: { content: 'new' } };
+      await exit(() => m.updateStructureItem('docs-item', brain, ids[0]!, set, ['content']));
+      await exitFull(() => m.updateStructureItem('docs-item', brain, ids[1]!, set, ['content']));
       // The announcement: sent on both routes, the same number of times. Both
       // writes are committed, and Postgres delivers in commit order, so once
       // the barrier is heard every announcement of theirs is in.

@@ -254,7 +254,7 @@ export const RUNTIME_SYSTEM_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_tg_login_moderates(uuid,uuid,uuid)':
     "packages/telegram chat-login.ts loginModeratesBot: a Telegram bot's Moderator rule about a login, a read definer (0313)",
   'public.mantle_structure_item(text,text,uuid,uuid,uuid[],jsonb)':
-    'gateway/structure-item.ts: a listed structure item (Secrets root, secret, peer, contact, documentation) a narrow exit makes, edits or removes; the definer holds the rule (0316)',
+    'gateway/structure-item.ts: a listed structure item (Secrets root, peer, contact, documentation) a narrow exit makes, edits or removes; the definer holds the rule (0316; a secret is no kind of it since 0401)',
   'public.mantle_space_settle_promotion(uuid,uuid)':
     "login-update.ts: a login made admin, its personal space's shared and submitted items back to private drafts, on the users area's narrow exit; the definer holds the rule (0317)",
   'public.mantle_member_turn_claim(text,uuid,timestamp with time zone,integer,bigint)':

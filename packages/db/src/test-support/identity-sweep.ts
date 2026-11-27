@@ -43,7 +43,7 @@ select f.sig,
                   when 'text' then case
                     when coalesce(f.names[a.ord], '') ~* '^action$' then '''unpair'''
                     when coalesce(f.names[a.ord], '') ~* 'area' then '''assistants'''
-                    when coalesce(f.names[a.ord], '') ~* '^kind$' then '''secret-item'''
+                    when coalesce(f.names[a.ord], '') ~* '^kind$' then '''docs-item'''
                     when coalesce(f.names[a.ord], '') ~* '^op$' then '''delete'''
                     when coalesce(f.names[a.ord], '') ~* '^fn$' then '''mantle_ws_set_moderator'''
                     else '''admin''' end
