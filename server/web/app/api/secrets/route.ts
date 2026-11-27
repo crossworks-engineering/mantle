@@ -2,6 +2,10 @@
  * GET  /api/secrets             — list metadata (no ciphertext, no fields)
  * POST /api/secrets             — create a new secret + sealed payload
  *
+ * Every row carries what the caller may do with it, as a note's row does
+ * (lib/list-workspaces): `workspaces`, `hasLink`, `mayEdit`, `mayManage`
+ * and `mayMove` on the list; the three caps on the secret a POST made.
+ *
  * The reveal endpoint is intentionally separate (`/api/secrets/[id]/reveal`)
  * so it shows up distinctly in access logs and pen-test inventories.
  */
@@ -11,6 +15,7 @@ import { ownerCaller } from '@/lib/auth';
 import { SECRET_KINDS, countSecrets, createSecret, listSecrets } from '@/lib/secrets';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { chipped, cappedOne } from '@/lib/list-workspaces';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 /** A workspace kind since 0400: a member lists the secrets its workspaces
@@ -57,7 +62,12 @@ export async function GET(req: Request) {
     listSecrets(user.id, { query, kind, tag, limit: PAGE_SIZE, offset }),
     countSecrets(user.id, { query, kind, tag }),
   ]);
-  return NextResponse.json({ secrets, total, page, pageSize: PAGE_SIZE });
+  return NextResponse.json({
+    secrets: await chipped(user.id, user.actor.id, secrets),
+    total,
+    page,
+    pageSize: PAGE_SIZE,
+  });
 }
 
 export async function POST(req: Request) {
@@ -68,5 +78,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const row = await createSecret(user.id, parsed.data);
-  return NextResponse.json({ secret: row }, { status: 201 });
+  return NextResponse.json({ secret: await cappedOne(row) }, { status: 201 });
 }

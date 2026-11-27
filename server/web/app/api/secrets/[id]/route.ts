@@ -2,6 +2,9 @@
  * PATCH /api/secrets/[id]  — update metadata and/or the sealed payload
  * DELETE /api/secrets/[id] — drop the node (cascades to `secrets` row)
  *
+ * GET and PATCH answer the secret with the caller's caps (`mayEdit`,
+ * `mayManage`, `mayMove`), as a note's item response (lib/list-workspaces).
+ *
  * Reveal lives at /api/secrets/[id]/reveal so it audits separately.
  */
 import { NextResponse } from '@/server/http-compat';
@@ -10,6 +13,7 @@ import { ownerCaller } from '@/lib/auth';
 import { SECRET_KINDS, deleteSecret, getSecretMetadata, updateSecret } from '@/lib/secrets';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
+import { cappedOne } from '@/lib/list-workspaces';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -52,7 +56,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const row = await getSecretMetadata(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ secret: row });
+  return NextResponse.json({ secret: await cappedOne(row) });
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -65,7 +69,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   const row = await updateSecret(user.id, id, parsed.data);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ secret: row });
+  return NextResponse.json({ secret: await cappedOne(row) });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

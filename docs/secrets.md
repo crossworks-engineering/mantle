@@ -119,6 +119,13 @@ the structure definer `mantle_structure_item` takes no secret (migration
 0401): a login with the keys area writes a secret only as any login does,
 in its own scope, under the workspace rules.
 
+The routes answer what the caller may do with each secret, as the notes
+routes do (`server/web/lib/list-workspaces.ts`). Every row of
+`GET /api/secrets` carries `workspaces`, `hasLink`, `mayEdit`, `mayManage`
+and `mayMove`. `GET` and `PATCH /api/secrets/:id`, and the secret a `POST`
+made, carry the three caps. The client draws its Edit, Share, Move and
+Delete from them; the database still decides every write.
+
 Secrets made before 0400 stay homed in Admin with no grant: no member reads
 one until a person shares it, and every user of the Admin workspace reads
 them (before, only the keys area's): trusted logins, accepted.
