@@ -156,9 +156,9 @@ COPY . .
 # change: dwg_read.py's one check (`reads_dwg`) refuses every DWG on an ezdwg
 # without the full reader, and the parser's health says `ezdwg_reader
 # missing`.
-# maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
+# maturin v1.16.0, pinned by its multi-arch index digest (amd64 and arm64):
 # a moved tag cannot change the build.
-FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdwg-build
+FROM ghcr.io/pyo3/maturin@sha256:50bf2ff99eeff7b09332bad9baf4a5e925e2502304ae2f88f48ce8c06fd9957c AS ezdwg-build
 ARG EZDWG_COMMIT
 ADD --checksum=sha256:b877ca67e243a0795ca33a20ed80148b5c43508d95fac12c59afa2fd27d3bede \
   https://github.com/crossworks-engineering/ezdwg/archive/${EZDWG_COMMIT}.tar.gz /tmp/ezdwg-src.tar.gz
@@ -182,9 +182,9 @@ RUN maturin build --release --locked --interpreter python3.15 --out /wheels
 # in the /opt/cad pip install ("ezdgn==<version>", --only-binary ezdgn). No
 # Python change: dgn_read.py's one check (`reads_data`) finds what the
 # installed ezdgn reads.
-# maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
+# maturin v1.16.0, pinned by its multi-arch index digest (amd64 and arm64):
 # a moved tag cannot change the build.
-FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdgn-build
+FROM ghcr.io/pyo3/maturin@sha256:50bf2ff99eeff7b09332bad9baf4a5e925e2502304ae2f88f48ce8c06fd9957c AS ezdgn-build
 ARG EZDGN_COMMIT
 ADD --checksum=sha256:01ca83a3f626a5dc49724acb8bc458093a5038ec58877baef083fbccd6730f96 \
   https://github.com/crossworks-engineering/ezdgn/archive/${EZDGN_COMMIT}.tar.gz /tmp/ezdgn-src.tar.gz
