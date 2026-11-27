@@ -15,6 +15,7 @@ import {
   bookOf,
   bookUnsureOf,
   officePaperOf,
+  pageClassOf,
 } from '../../../pdf-kind';
 import { PDF_MAX_BYTES } from '../../../pdf-open';
 import { renderPdfWindows } from '../../../rasterize';
@@ -187,6 +188,31 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
       false,
     );
     expect(bookOf(40, [...sample(19), { ...scan, kind: 'isometric' }])).toBe(false);
+  });
+
+  it("an OCR'd A4 scan is a typed page; a drawing scan stays ruled (rules 6)", () => {
+    const ocr = { class: 'scan_hidden_text' as const, size: 'a4' as const, kind: 'scan' as const };
+    const drawn = { class: 'vector_text' as const, size: 'a4' as const, kind: 'unsure' as const };
+    // Shaped as a real spec addendum (made-up pages, its counts): 602 OCR'd
+    // scans the eye's few looks made kind `scan`, 67 drawn tables with a text
+    // layer, 10 typed pages, 3 not read, all A4.
+    const book2: SamplePage[] = [
+      ...sample(3, {}),
+      ...sample(67, drawn),
+      ...sample(599, ocr),
+      ...sample(3, { ...ocr, kind: 'document' }),
+      ...sample(10),
+    ];
+    expect(book2).toHaveLength(682);
+    expect(bookOf(682, book2)).toBe(true);
+    // A long scanned drawing set, kept a drawing: no text layer (class
+    // `scan`) on A4 paper, or a text layer of tags on A3 sheets.
+    expect(bookOf(60, sample(60, scan))).toBe(false);
+    expect(bookOf(60, sample(60, { ...ocr, size: 'a3' }))).toBe(false);
+    // A short tag-only text layer is no usable text layer: class `scan`.
+    expect(pageClassOf({ chars: 12, hiddenShare: 1, imageCover: 1, segments: 0 })).toBe('scan');
+    // A P&ID or an isometric page keeps a drawing set, OCR'd or not.
+    expect(bookOf(60, [...sample(59, ocr), { ...ocr, kind: 'isometric' }])).toBe(false);
   });
 
   it('mostly: at least 80% scans or typed text; a sample with no page read is no book', () => {

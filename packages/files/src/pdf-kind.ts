@@ -511,7 +511,8 @@ const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
  * the pages read or more are on office paper (`a4` or `a3`: an A4 sheet, a
  * Letter or an A3 sheet; a fold-out sheet in a spec book makes no drawing set of it),
  * none is a P&ID or an isometric, and BOOK_MIN_SHARE of them or more are
- * scans or typed text. The ruled scans of a long file (kind `scan`) are
+ * scans or typed text. The ruled scans of a long file (kind `scan`, but
+ * for an OCR'd A4 page: ruledScanOf) are
  * under 1 - BOOK_MIN_SHARE of its pages read, or tables the eye read
  * (tablePageOf): a scanned drawing set on office paper is no book. A file
  * of BOOK_MIN_PAGES pages or fewer must also
@@ -529,12 +530,25 @@ export function bookOf(pageCount: number | null, sample: readonly BookSamplePage
   // A long file: its ruled scans (kind `scan`: a table, a form, a drawing)
   // are a few fold-outs, or tables the eye read: a scanned drawing set on office paper stays the drawing reader's.
   if (pageCount > BOOK_MIN_PAGES) {
-    const ruled = read.filter((p) => p.kind === 'scan');
+    const ruled = read.filter(ruledScanOf);
     return read.length - ruled.length >= BOOK_MIN_SHARE * read.length || ruledTablesOf(ruled);
   }
   const documents = read.filter((p) => p.kind === 'document').length;
   if (documents > 0 && documents >= DOCUMENT_MIN_SHARE * read.length) return true;
   return tableScansOf(read);
+}
+
+/**
+ * A ruled scan of a long file (rules 6, 2026-11-21): a page of kind `scan`,
+ * but for an OCR'd page on A4 paper (class `scan_hidden_text`, size `a4`).
+ * That is typed text under its picture, an office page: a spec book of 682
+ * A4 pages, 602 of them OCR'd scans, was named a drawing by them before. On
+ * an A3 or larger sheet the text layer may be a drawing's tags, so the page
+ * stays ruled, as tablePageOf judges no A3 sheet a table. A scan with no
+ * usable text layer (class `scan`) stays ruled on any paper.
+ */
+function ruledScanOf(p: BookSamplePage): boolean {
+  return p.kind === 'scan' && !(p.class === 'scan_hidden_text' && p.size === 'a4');
 }
 
 /** A page of a book's sample: its facts, its kind, and what the eye saw of

@@ -20,14 +20,15 @@ const PAGES = 682;
 
 /** One page row as the reader gives it, on A4 paper. */
 function page(n: number, cls: PdfDrawingPage['class'], kind: PdfDrawingPage['kind']) {
+  const ocr = cls === 'scan_hidden_text';
   return {
     page: n,
     status: cls ? 'ok' : 'failed',
     ...(cls ? { class: cls, size: 'a4' as const } : { why: 'damaged' }),
-    chars: cls === 'text' || cls === 'vector_text' ? 1800 : 0,
+    chars: cls === 'text' || cls === 'vector_text' || ocr ? 1800 : 0,
     runs: 0,
-    hiddenShare: 0,
-    imageCover: cls === 'scan' ? 1 : 0,
+    hiddenShare: ocr ? 1 : 0,
+    imageCover: cls === 'scan' || ocr ? 1 : 0,
     segments: cls === 'vector_text' ? 400 : 0,
     axes: null,
     tagLike: 0,
@@ -52,6 +53,22 @@ const ALL: PdfDrawingPage[] = Array.from({ length: PAGES }, (_, i) => {
   return page(n, 'scan', 'document');
 });
 
+/** A second spec addendum (rules 6), its counts on made-up pages:
+ *  pages 1-3 damaged, 4-70 drawn tables with a text layer, 10 typed pages,
+ *  then OCR'd scans (`scan_hidden_text`) the eye's few looks named ruled
+ *  (kind `scan`), 3 of them `document`. */
+const OCR: PdfDrawingPage[] = Array.from({ length: PAGES }, (_, i) => {
+  const n = i + 1;
+  if (n <= 3) return page(n, undefined, 'none');
+  if (n <= 70) return page(n, 'vector_text', 'unsure');
+  if (n <= 80) return page(n, 'text', 'document');
+  if (n <= 83) return page(n, 'scan_hidden_text', 'document');
+  return page(n, 'scan_hidden_text', 'scan');
+});
+
+/** The pages the faked reader gives: one of the two files. */
+let current = ALL;
+
 const drawingOf = (pages: PdfDrawingPage[]): PdfDrawing => ({
   numPages: PAGES,
   pageCountMayBeShort: false,
@@ -68,7 +85,7 @@ vi.mock('../../../pdf-drawing', async (importOriginal) => {
   return {
     ...actual,
     readPdfDrawingInJob: async (_b: Buffer, _j: unknown, _box: unknown, max?: number) =>
-      drawingOf(max === undefined ? ALL : ALL.slice(0, max)),
+      drawingOf(max === undefined ? current : current.slice(0, max)),
   };
 });
 
@@ -97,6 +114,28 @@ describe('a long office PDF whose first pages are no book', () => {
     for (const asks of [false, true]) {
       const r = await step(request(asks), job);
       expect(r, `asks ${asks}`).toEqual({ status: 'ok', kind: 'book' });
+    }
+  });
+});
+
+describe("a long office PDF of OCR'd A4 scans (rules 6)", () => {
+  it('the facts are shaped as that file: 599 OCR pages of kind scan, still a book', () => {
+    expect(OCR.filter((p) => p.class === 'scan_hidden_text' && p.kind === 'scan')).toHaveLength(
+      599,
+    );
+    expect(bookOf(PAGES, OCR.slice(0, BOOK_SAMPLE_PAGES))).toBe(false);
+    expect(bookOf(PAGES, OCR)).toBe(true);
+  });
+
+  it('is a book, with no ask', async () => {
+    current = OCR;
+    try {
+      for (const asks of [false, true]) {
+        const r = await step(request(asks), job);
+        expect(r, `asks ${asks}`).toEqual({ status: 'ok', kind: 'book' });
+      }
+    } finally {
+      current = ALL;
     }
   });
 });

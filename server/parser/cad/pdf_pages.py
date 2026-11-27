@@ -111,7 +111,7 @@ FILE_TAB = "File"
 RESERVED_TABS = {TABLES_TAB.lower(), PAGES_TAB.lower(), FILE_TAB.lower(), "page text"}
 # The kind rules this Reader's File tab names (PDF_KIND_RULES_VERSION,
 # packages/files/src/pdf-drawing-sheets.ts; a test holds them equal).
-PDF_KIND_RULES_VERSION = 5
+PDF_KIND_RULES_VERSION = 6
 
 PAPERS = [  # name, short side mm, long side mm
     ("A5", 148, 210),

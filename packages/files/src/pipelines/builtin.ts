@@ -174,7 +174,9 @@ export const BUILTIN_PIPELINES = [
     // live: the lanes of the pages name the file's Reader (pdfFrameKindOf);
     // a page is blank only when its picture is white and no image covers
     // it, and every page is drawn with large images.
-    version: '1.4.0',
+    // 1.4.1 (2026-11-27): an OCR'd scan on A4 paper is a typed page, not a
+    // ruled scan, in a long file's book rule (PDF_KIND_RULES_VERSION 6).
+    version: '1.4.1',
     match: { ext: ['pdf'] },
     // The eleven kinds of PDF_KINDS (../pdf-kind.ts). The rules name seven
     // (`book` by its own rule, bookOf); the decider may also answer the four
@@ -221,7 +223,8 @@ export const BUILTIN_PIPELINES = [
     // `decider` (M4, live), and Kind is then the answer's kind.
     // 1.1.6 (2026-11-24): the File tab's `Scan pages not read` and why (the
     // sketch read reads every scan page; a page it did not read is stated).
-    version: '1.1.6',
+    // 1.1.7 (2026-11-27): the kind rules of PDF_KIND_RULES_VERSION 6.
+    version: '1.1.7',
     // Every kind the router names but `document` and `book`: a document gets
     // no database, and a book is the book reader's (`pdf-pages`). An unsure
     // PDF gets one, as before the router. A new claim changes the pin and
@@ -513,7 +516,8 @@ export const BUILTIN_PIPELINES = [
     // page types (Kind, Kind from, Decider kind, Decider confidence), put in
     // by the core (../../pdf-page-kinds.ts). 1.3.3 (2026-11-23): Kind from
     // may say `decider` (M4, live), and Kind is then the answer's kind.
-    version: '1.3.3',
+    // 1.3.4 (2026-11-27): the File tab's Rules version 6.
+    version: '1.3.4',
     match: { ext: ['pdf'], kind: ['book'] },
     produces: { text: true, table: false, pages: true },
     // The lane: a PDF of BOOK_HEAVY_MIN_BYTES or more is heavy

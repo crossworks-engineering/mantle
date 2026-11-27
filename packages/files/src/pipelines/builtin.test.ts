@@ -442,8 +442,9 @@ describe('the PDF router', () => {
     );
     // 1.1.1: the File tab's Rules version 3 (the kind `book`); 1.1.2: rules 4;
     // 1.1.3: rules 5; 1.1.4: the page types in Pages (M3); 1.1.5: Kind
-    // from `decider` (M4); 1.1.6: the File tab's scan pages not read.
-    expect(reader.version).toBe('1.1.6');
+    // from `decider` (M4); 1.1.6: the File tab's scan pages not read; 1.1.7:
+    // rules 6.
+    expect(reader.version).toBe('1.1.7');
   });
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {

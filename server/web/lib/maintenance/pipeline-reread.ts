@@ -34,8 +34,8 @@
  *
  * `drawing-pdf`: a read again keeps the decider's answer and asks no model.
  * It keeps the stored kind too, unless that kind came from older kind rules
- * (the File tab's rules version under PDF_KIND_RULES_VERSION, 5 since
- * drawing-pdf 1.1.3, and no decider answer used: pdfReadAgainOf's `reroute`,
+ * (the File tab's rules version under PDF_KIND_RULES_VERSION, 6 since
+ * drawing-pdf 1.1.7, and no decider answer used: pdfReadAgainOf's `reroute`,
  * packages/content/src/pdf-read.ts): then the router names the kind again,
  * by its rules, with no ask. So `--apply` can turn a stored drawing into a
  * book, and the book read (the reader's pages, OCR in the parser) then runs
