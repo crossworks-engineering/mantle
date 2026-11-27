@@ -2875,10 +2875,10 @@ front) is a book too when all its pages, read whole, pass the long-file rule
 named a drawing by its ruled scans before. In that long-file rule an OCR'd
 scan on A4 paper (page class `scan_hidden_text`) is a typed page, not a ruled
 scan (rules 6, 2026-11-21, `pdf-router` 1.4.1); a scan with no text layer, or
-an OCR'd sheet on A3 or larger paper, stays ruled. A page the eye looked at
-with more than 0.01 of its long lines on the isometric axes (`BOOK_ISO_MAX`)
-keeps a file from being a book, as an isometric page does: a long pack of
-OCR'd A4 sketch forms stays a drawing. A file stored under older rules
+an OCR'd sheet on A3 or larger paper, stays ruled. When a page the eye looked
+at has more than 0.01 of its long lines on the isometric axes (`BOOK_ISO_MAX`),
+the OCR'd pages count as ruled again, as under rules 5: a long pack of OCR'd
+A4 sketch forms stays a drawing. A file stored under older rules
 (its File tab's `Rules version` below 6, with no decider answer used) is
 routed again on its next read, with no ask. The router names `document` no more: no PDF is left
 to the core's own text read and its scan read (the Scan reader, every page,

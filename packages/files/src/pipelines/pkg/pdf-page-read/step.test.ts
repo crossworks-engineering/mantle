@@ -229,9 +229,8 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
     expect(bookOf(300, [...sample(3, form), ...sample(6, scan), ...sample(11, ocr)])).toBe(false);
   });
 
-  it('an eye-read page whose lines lean on the isometric axes keeps a drawing (rules 6, BOOK_ISO_MAX)', () => {
+  it("an eye page that leans on the isometric axes ends the OCR'd page exemption of a long file (rules 6, BOOK_ISO_MAX)", () => {
     const ocr = { class: 'scan_hidden_text' as const, size: 'a4' as const, kind: 'scan' as const };
-    const scan = { class: 'scan' as const, size: 'a4' as const, kind: 'scan' as const };
     const eyed = <P extends SamplePage>(p: P, iso: number, other: number, textAreas: number) => ({
       ...p,
       eye: {
@@ -241,8 +240,9 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
         textAreas,
       },
     });
-    // A 24-page pack of OCR'd sketch forms on A4 paper, its bench numbers: the eye's
-    // 3 pages lean 0.025 to 0.036 on the isometric axes. No book.
+    // Only this case needs the lean test: a 24-page pack of OCR'd sketch
+    // forms on A4 paper, its bench numbers (the eye's 3 pages lean 0.025 to
+    // 0.036). Every page of kind `scan` is ruled, as under rules 5: no book.
     const sketches: SamplePage[] = [
       eyed(ocr, 0.036, 0.024, 412),
       ...sample(10, ocr),
@@ -251,27 +251,43 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
       eyed(ocr, 0.025, 0.532, 244),
     ];
     expect(bookOf(24, sketches)).toBe(false);
-    // The same pages with no lean on those axes: the OCR'd A4 pages are
-    // typed pages (ruledScanOf), so the pack would be a book.
+    // The same pages with no lean: the OCR'd pages are typed pages, a book.
     const level = sketches.map((p) => (p.eye ? eyed(ocr, 0, p.eye.axes.other, 412) : p));
     expect(bookOf(24, level)).toBe(true);
-    // Office books, their bench numbers (the eye's pages 0.000): typed scans
-    // and OCR'd scans stay books, long and short.
-    const typed = { class: 'scan' as const, size: 'a4' as const, kind: 'document' as const };
-    for (const p of [typed, { ...typed, class: 'scan_hidden_text' as const }]) {
+    // The edge (the eye gives 3 decimals): 0.010 and 0.009 keep the
+    // exemption, 0.011 ends it.
+    const pack = (iso: number) => [eyed(ocr, iso, 0.03, 400), ...sample(23, ocr)];
+    expect(bookOf(24, pack(0.009))).toBe(true);
+    expect(bookOf(24, pack(0.01))).toBe(true);
+    expect(bookOf(24, pack(0.011))).toBe(false);
+    // These pass without the lean test too (rules 6 before step A): office
+    // books, the eye's pages 0.000, OCR'd or not, and a scanned table spec.
+    const typedScan = { class: 'scan' as const, size: 'a4' as const, kind: 'document' as const };
+    for (const p of [typedScan, { ...typedScan, class: 'scan_hidden_text' as const }]) {
       expect(bookOf(24, [eyed(p, 0, 0, 27), ...sample(22, p), eyed(p, 0, 0, 2)])).toBe(true);
-      expect(bookOf(5, [eyed(p, 0, 0, 27), ...sample(4, p)])).toBe(true);
     }
-    // A scanned spec of tables, the eye's pages 0.000: a book.
     expect(bookOf(30, [eyed(ocr, 0, 0, 276), ...sample(28, ocr), eyed(ocr, 0, 0, 296)])).toBe(true);
-    // A 28-page pack of OCR'd drawing scans on A3 sheets (0.001 to 0.002): the
-    // A3 size keeps it a drawing, as before; the lean of a scan on A3 sheets
-    // (up to 0.004) blocks nothing.
-    const a3 = { ...ocr, size: 'a3' as const };
-    expect(bookOf(28, [eyed(a3, 0.002, 0.088, 1277), ...sample(27, a3)])).toBe(false);
-    expect(bookOf(24, [eyed(ocr, 0.004, 0, 300), ...sample(23, ocr)])).toBe(true);
-    // A class `scan` sketch pack (no text layer) stays a drawing, as before.
-    expect(bookOf(24, [eyed(scan, 0.036, 0.024, 422), ...sample(23, scan)])).toBe(false);
+  });
+
+  it('a leaning eye page sends a file back to the rules-5 count, never further (rules 6 holds rules 5)', () => {
+    const sketch = {
+      ...scan,
+      eye: {
+        axes: { h: 0.6, v: 0.34, iso: 0.03, other: 0.03, longMm: 9_000 },
+        skewDeg: 0,
+        ink: 0.08,
+        textAreas: 380,
+      },
+    };
+    // A typed report of 10 pages with one scanned sketch insert: a book by
+    // its typed pages (the short branch has no lean test).
+    expect(bookOf(10, [...sample(9), sketch])).toBe(true);
+    // A long typed report with a few scanned sketch inserts, under a fifth
+    // of the pages: a book, as under rules 5.
+    expect(bookOf(60, [...sample(17), ...sample(3, sketch)])).toBe(true);
+    // A short scan of typed and leaning ruled pages: the decider is asked, as under rules 5.
+    const typedScan = { ...scan, kind: 'document' as const };
+    expect(bookUnsureOf(4, [typedScan, typedScan, sketch, sketch])).toBe(true);
   });
 
   it('mostly: at least 80% scans or typed text; a sample with no page read is no book', () => {

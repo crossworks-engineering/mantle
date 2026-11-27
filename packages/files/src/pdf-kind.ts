@@ -505,32 +505,24 @@ const BOOK_CLASSES: readonly PageClass[] = [
  *  book's: the drawing reader and the sheet read stay its readers. */
 const BOOK_NOT_KINDS: readonly PageKind[] = ['pid', 'isometric'];
 /**
- * A page the eye looked at with more than this share of its long lines on
- * the two isometric axes is an isometric too, for the book rule, though
- * under ISO_MIN_SHARE (rules 6, 2026-11-21). Bench measure, 2026-11-21: the
- * typed and scanned office pages the eye saw give 0.000, drawing scans on
- * A3 sheets 0.000 to 0.004, and isometric sketch forms on A4 paper 0.020 to
- * 0.045, OCR'd or not. 0.01 sits between, with room on both sides, so a long pack
- * of OCR'd sketch forms is no book.
+ * The exemption of ruledScanOf for OCR'd pages on A4 paper holds only
+ * while no page the eye looked at has more than this share of its long lines on the two isometric
+ * axes (rules 6, 2026-11-21): such a page is a sketch form under
+ * ISO_MIN_SHARE, and the file is counted as under rules 5. Bench measure,
+ * 2026-11-21: typed and scanned office pages the eye saw give 0.000,
+ * drawing scans on A3 sheets 0.000 to 0.004, and isometric sketch forms on
+ * A4 paper 0.020 to 0.045, OCR'd or not. 0.01 sits between.
  */
 export const BOOK_ISO_MAX = 0.01;
-
-/** A page that keeps a file from being a book: a P&ID or an isometric, or
- *  an eye-read page whose lines lean on the isometric axes (BOOK_ISO_MAX). */
-function drawingPageOf(p: BookSamplePage): boolean {
-  if (p.kind !== undefined && BOOK_NOT_KINDS.includes(p.kind)) return true;
-  return (p.eye?.axes.iso ?? 0) > BOOK_ISO_MAX;
-}
 
 /**
  * Whether a PDF is a book, from its pages' facts and kinds (the sample of a
  * long file, every page of a short one), with no model. BOOK_MIN_SHARE of
  * the pages read or more are on office paper (`a4` or `a3`: an A4 sheet, a
  * Letter or an A3 sheet; a fold-out sheet in a spec book makes no drawing set of it),
- * none is a P&ID or an isometric (an eye-read page whose lines lean on the
- * isometric axes counts as one: BOOK_ISO_MAX), and BOOK_MIN_SHARE of them or more are
+ * none is a P&ID or an isometric, and BOOK_MIN_SHARE of them or more are
  * scans or typed text. The ruled scans of a long file (kind `scan`, but
- * for an OCR'd A4 page: ruledScanOf) are
+ * for an OCR'd A4 page while no eye page leans: ruledScanOf, BOOK_ISO_MAX) are
  * under 1 - BOOK_MIN_SHARE of its pages read, or its pages of kind `scan`,
  * OCR'd or not, are tables the eye read
  * (tablePageOf): a scanned drawing set on office paper is no book. A file
@@ -550,7 +542,10 @@ export function bookOf(pageCount: number | null, sample: readonly BookSamplePage
   // pages of kind `scan` (a table, a form, a drawing, OCR'd or not) are
   // tables the eye read: a scanned drawing set on office paper stays the drawing reader's.
   if (pageCount > BOOK_MIN_PAGES) {
-    const ruled = read.filter(ruledScanOf).length;
+    // An eye page that leans on the isometric axes (BOOK_ISO_MAX): every
+    // page of kind `scan` is ruled again, as under rules 5.
+    const slanted = read.some((p) => (p.eye?.axes.iso ?? 0) > BOOK_ISO_MAX);
+    const ruled = read.filter((p) => (slanted ? p.kind === 'scan' : ruledScanOf(p))).length;
     return (
       read.length - ruled >= BOOK_MIN_SHARE * read.length ||
       ruledTablesOf(read.filter((p) => p.kind === 'scan'))
@@ -635,12 +630,11 @@ export function officePaperOf(sample: readonly BookSamplePage[]): boolean {
 }
 
 /** The office rule of {@link bookOf}, with no page count: the pages read
- *  are office paper, typed or scanned, with no P&ID or isometric
- *  (drawingPageOf). */
+ *  are office paper, typed or scanned, with no P&ID or isometric. */
 export function officePagesOf(sample: readonly BookSamplePage[]): boolean {
   const read = sample.filter((p) => p.class !== undefined);
   if (!officePaperOf(read)) return false;
-  if (read.some(drawingPageOf)) return false;
+  if (read.some((p) => p.kind !== undefined && BOOK_NOT_KINDS.includes(p.kind))) return false;
   const typed = read.filter((p) => BOOK_CLASSES.includes(p.class!)).length;
   return typed >= BOOK_MIN_SHARE * read.length;
 }
