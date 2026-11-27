@@ -1,6 +1,6 @@
 # Papa Parse in a mini app
 
-Version: papaparse 5.7.0, as this brain's app runtime serves it.
+Version: papaparse 5.7.1, as this brain's app runtime serves it.
 Source: the Papa Parse docs (papaparse.com: config, results, unparse) and
 its changelog. Written for Mantle, not copied.
 

@@ -14,9 +14,9 @@
     "@mantle/email": "workspace:*",
     "@mantle/std": "workspace:*",
     "ical.js": "2.2.1",
-    "imapflow": "2.9.1",
-    "mailparser": "3.13.0",
-    "nodemailer": "10.3.0"
+    "imapflow": "2.12.2",
+    "mailparser": "3.15.0",
+    "nodemailer": "10.6.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

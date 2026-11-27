@@ -1,6 +1,6 @@
 # Three.js in a mini app
 
-Version: three 0.186.1, as this brain's app runtime serves it (r186).
+Version: three 0.187.0, as this brain's app runtime serves it (r187).
 Source: the three.js manual and docs (threejs.org) and its release notes.
 Written for Mantle, not copied.
 

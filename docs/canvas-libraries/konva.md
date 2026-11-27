@@ -1,6 +1,6 @@
 # Konva in a canvas
 
-Version: konva 10.9.0, as this brain's canvas runtime pins it.
+Version: konva 10.10.0, as this brain's canvas runtime pins it.
 Source: the Konva docs (konvajs.org, its llms.txt index and API reference)
 and its changelog. Written for Mantle, not copied.
 

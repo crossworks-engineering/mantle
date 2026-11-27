@@ -1,6 +1,6 @@
 # Three.js in a canvas
 
-Version: three 0.186.1, as this brain's canvas runtime pins it (r186).
+Version: three 0.187.0, as this brain's canvas runtime pins it (r187).
 Source: the three.js manual and docs (threejs.org, its llms.txt index) and
 its release notes. Written for Mantle, not copied.
 

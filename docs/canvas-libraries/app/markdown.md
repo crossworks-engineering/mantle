@@ -1,7 +1,7 @@
 # Markdown in a mini app (markdown-it and DOMPurify)
 
 Version: markdown-it 15.0.3, as this brain's app runtime serves it, with
-dompurify 3.4.17.
+dompurify 3.5.0.
 Source: the markdown-it docs (its API and options) and the DOMPurify
 README (config, hooks). Written for Mantle, not copied.
 

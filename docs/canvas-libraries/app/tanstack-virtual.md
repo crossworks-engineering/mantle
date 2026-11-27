@@ -1,6 +1,6 @@
 # TanStack Virtual in a mini app
 
-Version: @tanstack/react-virtual 3.14.24, as this brain's app runtime serves it.
+Version: @tanstack/react-virtual 3.14.28, as this brain's app runtime serves it.
 Source: the TanStack Virtual docs (tanstack.com/virtual: the virtualizer
 API, dynamic sizes, window scrolling). Written for Mantle, not copied.
 

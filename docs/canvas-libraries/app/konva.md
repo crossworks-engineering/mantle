@@ -1,6 +1,6 @@
 # Konva in a mini app
 
-Version: konva 10.9.0, as this brain's app runtime serves it.
+Version: konva 10.10.0, as this brain's app runtime serves it.
 Source: the Konva docs (konvajs.org: API reference and the Stage, Layer and
 drag pages) and its changelog. Written for Mantle, not copied.
 
