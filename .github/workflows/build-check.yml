@@ -71,16 +71,16 @@ jobs:
       # cannot read `runner`).
       CI_DATABASE_URL: postgres://postgres:postgres@${{ (vars.CI_SELF_HOSTED == 'on' && github.event_name == 'push') && 'pg' || 'localhost' }}:5432/postgres
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # pnpm first, so setup-node's pnpm cache has a binary to key on. Version
       # matches package.json `packageManager` (pnpm@11.28.5).
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 11.28.5
 
       # Node stays for pnpm, tsc and eslint.
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26 # package.json engines: node >=26
           cache: pnpm
