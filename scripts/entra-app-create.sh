@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runs-on: Azure Cloud Shell (bash), or any machine with the Azure CLI. Keep it bash 3.2 and BSD-tool safe.
+# runs-on: mac. A dev or operator machine, the Mac included, and Azure Cloud Shell: keep it bash 3.2 and BSD-tool safe.
 #
 # entra-app-create.sh: make the Microsoft Entra app registration that a
 # Mantle box needs for company sign-in (docs/oidc-entra.md, "With the script").
@@ -125,8 +125,12 @@ az_retry() {
   done
 }
 
-end_date() { # today plus MONTHS months, YYYY-MM-DD (GNU date, then BSD date)
-  date -u -d "+$MONTHS months" +%Y-%m-%d 2>/dev/null || date -u -v+"$MONTHS"m +%Y-%m-%d
+end_date() { # today plus MONTHS months, YYYY-MM-DD. Plain arithmetic: GNU and BSD date take different flags.
+  local y m d
+  y=$(date -u +%Y); m=$(date -u +%m); d=$(date -u +%d)
+  m=$((10#$m + MONTHS)); y=$((y + (m - 1) / 12)); m=$(((m - 1) % 12 + 1))
+  d=$((10#$d)); [ "$d" -le 28 ] || d=28 # every month has a day 28
+  printf '%04d-%02d-%02d\n' "$y" "$m" "$d"
 }
 
 # ---------------------------------------------------------------- checks

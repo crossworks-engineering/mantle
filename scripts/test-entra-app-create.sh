@@ -82,6 +82,13 @@ run() { : >"$AZ_LOG"; PATH="$FAKE_PATH" bash "$SCRIPT" "$@" >"$tmp/out" 2>&1; ec
 calls() { sed 's/ --.*//' "$AZ_LOG" | tr '\n' ',' | sed 's/,$//'; }
 has() { grep -qF -- "$1" "$tmp/out"; }
 
+plus_months() { # today plus $1 months, YYYY-MM-DD, the script's own rule (day 28 at most)
+  local y m d
+  y=$(date -u +%Y); m=$(date -u +%m); d=$(date -u +%d)
+  m=$((10#$m + $1)); y=$((y + (m - 1) / 12)); m=$(((m - 1) % 12 + 1))
+  d=$((10#$d)); [ "$d" -le 28 ] || d=28
+  printf '%04d-%02d-%02d\n' "$y" "$m" "$d"
+}
 # 1. A new app: every call, in order, and the three values.
 run https://box.example.com
 want="account show,ad app list,ad app create,ad sp list,ad sp create,ad sp update,ad app permission list-grants,ad sp show,ad app permission grant,ad app credential list,ad app credential reset"
@@ -98,7 +105,7 @@ has "Tenant ID:      11111111-1111-1111-1111-111111111111" && has "Client ID:   
   ok "new app: prints the three values and the end date" || { bad "new app: output"; cat "$tmp/out"; }
 grep "credential reset" "$AZ_LOG" | grep -q -- "--append" && ok "reset always --append" || bad "reset without --append"
 end=$(grep -o 'end-date [0-9-]*' "$AZ_LOG" | cut -d' ' -f2)
-exp=$(date -u -d "+12 months" +%Y-%m-%d 2>/dev/null || date -u -v+12m +%Y-%m-%d)
+exp=$(plus_months 12)
 [ "$end" = "$exp" ] && ok "default end date: 12 months" || bad "end date $end, want $exp"
 
 # 2. Run again: reuse, no create, no new secret.
@@ -112,7 +119,7 @@ has "found and reused" && has "none made: the app has 1 already" && ! grep -q S3
 run --new-secret --months 6 https://box.example.com
 has "Client secret:  S3CRET-2-" && grep "credential reset" "$AZ_LOG" | grep -q -- "--append" &&
   ok "--new-secret: a second secret, appended" || { bad "--new-secret"; cat "$tmp/out"; }
-exp=$(date -u -d "+6 months" +%Y-%m-%d 2>/dev/null || date -u -v+6m +%Y-%m-%d)
+exp=$(plus_months 6)
 grep -q -- "--end-date $exp" "$AZ_LOG" && ok "--months 6" || bad "--months 6"
 [ "$(grep -c "^aaaaaaaa-0000-0000-0000-000000000001\$" "$AZ_STATE/creds")" = 2 ] && ok "no secret removed" || bad "creds count"
 
