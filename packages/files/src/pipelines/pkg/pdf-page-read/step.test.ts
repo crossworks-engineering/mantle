@@ -215,6 +215,20 @@ describe('bookOf: a long run of office pages, mostly scans or typed text', () =>
     expect(bookOf(60, [...sample(59, ocr), { ...ocr, kind: 'isometric' }])).toBe(false);
   });
 
+  it("the table check still takes the OCR'd pages the eye read (audit 1): a book under rules 5 stays one", () => {
+    const ocr = { class: 'scan_hidden_text' as const, size: 'a4' as const, kind: 'scan' as const };
+    const scan = { class: 'scan' as const, size: 'a4' as const, kind: 'scan' as const };
+    const axes = { h: 0.95, v: 0.05, iso: 0, other: 0, longMm: 15_911 };
+    const table = { ...ocr, eye: { axes, skewDeg: 0, ink: 0.08, textAreas: 267 } };
+    // A long scanned spec: 3 OCR'd table pages the eye read, 30% class
+    // `scan` pages (blank backs, photos), the rest OCR'd text.
+    const spec: SamplePage[] = [...sample(3, table), ...sample(6, scan), ...sample(11, ocr)];
+    expect(bookOf(300, spec)).toBe(true);
+    // The same with the eye's pages a drawing form (slanted lines): no book.
+    const form = { ...table, eye: { ...table.eye, axes: { ...axes, h: 0.93, iso: 0.02 } } };
+    expect(bookOf(300, [...sample(3, form), ...sample(6, scan), ...sample(11, ocr)])).toBe(false);
+  });
+
   it('mostly: at least 80% scans or typed text; a sample with no page read is no book', () => {
     const drawn = {
       class: 'vector_no_text' as const,
