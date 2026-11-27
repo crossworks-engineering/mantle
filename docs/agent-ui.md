@@ -254,7 +254,11 @@ image: {mimeType, base64}}`: a PNG, or a JPEG at 0.85 when the PNG is over
   carries `data-agent-look` and one style rule stops the page painting any
   secret field, so a value a person reveals during a slow capture is never
   in the picture, whatever the delay. Then each field's box, as read before
-  and after the pixels, is painted over.
+  and after the pixels, is painted over. The mark comes off after 10 s at
+  the latest, and the look then answers `timeout`. A person's area
+  screenshot keeps secret fields out the same way (client
+  `lib/secret-boxes.ts`, one place for both pictures). A redraw draws a
+  scrolled pane at its scroll offset, so the boxes line up.
 - App frames: the page redraw cannot read inside a sandboxed app frame, so
   on the web the window asks each app frame in the box over the app bridge
   (`{kind: 'look', id, scale}`, one `look.res` back) and paints its picture

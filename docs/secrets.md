@@ -189,8 +189,14 @@ The screens are in the mantle-client repo (`client/web/app/(app)/secrets/`).
 - A new secret lands in the workspace the switcher shows (`?ws=`).
 - A revealed value stays in a `data-secret` box, in the component's state
   only: never in an address, a cache, a toast or an error text.
-- For an agent that drives the window, the header of a secret and Reveal are
-  a person's own acts (`data-agent-risk`).
+- For an agent that drives the window, the header of a secret, Reveal, and
+  the Show, Hide and Copy of a revealed value are a person's own acts
+  (`data-agent-risk`).
+- The create form says so when a new secret is shared the moment it is
+  saved (the switcher shows a shared workspace the login moderates).
+- No picture of the window holds a secret box: an agent's look, and a
+  person's area screenshot (it is saved to Files and read by the image
+  model), see `docs/agent-ui.md` "Look".
 
 There's no re-auth prompt before reveal, the session cookie already
 proves it's you. Anyone who steals the session can already do
