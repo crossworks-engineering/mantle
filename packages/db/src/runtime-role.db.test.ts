@@ -414,6 +414,15 @@ describe.skipIf(!URL)('the runtime role is not the owner (arch A9)', () => {
     expect(live.length).toBeGreaterThan(100);
     const wrong = live.filter((r) => r.privs.join() !== want(r.t).join());
     expect(wrong).toEqual([]);
+    // Sealed values: no right at all (0401). A secret's value goes through
+    // its two definers in a login's scope (0400), never a narrow statement.
+    expect(narrowFor(byTable.get('public.secrets')!)).toBe('none');
+    expect(live.find((r) => r.t === 'public.secrets')?.privs).toEqual([]);
+    for (const p of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+      const [g] = await admin<{ ok: boolean }[]>`
+        select has_table_privilege(${NARROW_ROLE}, 'public.secrets', ${p}) as ok`;
+      expect(g!.ok, p).toBe(false);
+    }
     // Every matrix table is in this database.
     const tables = new Set(live.map((r) => r.t));
     expect(ACCESS_MATRIX.filter((t) => !tables.has(t.table)).map((t) => t.table)).toEqual([]);

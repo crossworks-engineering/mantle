@@ -648,7 +648,9 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // ai_answer_cache all (0392: the paid answers of queue work, a system table
 // read and written on the system pool outside every scope, as
 // embedding_cache; no narrow write is granted).
-const NARROW_COUNTS = { all: 110, read: 52, none: 11 };
+// secrets none (0401: a sealed value goes through its two definers in a
+// login's scope, 0400; the keys area's narrow write of the table is gone).
+const NARROW_COUNTS = { all: 109, read: 52, none: 12 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

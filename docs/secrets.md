@@ -114,6 +114,11 @@ audit row (`secret.reveal`, `detail.secretId`, never the value), awaited,
 before it calls `revealSecret`: a reveal whose row fails reveals nothing.
 An Admin user with the users area reads the audit log.
 
+The narrow system role holds no right on the `secrets` table either, and
+the structure definer `mantle_structure_item` takes no secret (migration
+0401): a login with the keys area writes a secret only as any login does,
+in its own scope, under the workspace rules.
+
 Secrets made before 0400 stay homed in Admin with no grant: no member reads
 one until a person shares it, and every user of the Admin workspace reads
 them (before, only the keys area's): trusted logins, accepted.

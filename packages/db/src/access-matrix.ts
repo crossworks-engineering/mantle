@@ -165,7 +165,10 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'all',
     why: 'the users area adds, changes and removes a login (POST, PATCH, DELETE /api/users), and a login changes its own password (login-self)',
   },
-  'public.secrets': { narrow: 'all', why: 'the keys area writes secrets (/api/secrets)' },
+  'public.secrets': {
+    narrow: 'none',
+    why: "a secret's sealed value goes in through mantle_secret_put and comes out through mantle_secret_sealed (definers, 0400), each in a login's own scope: no narrow statement reads or writes the table since the keys area's secret-item kind went (0401)",
+  },
   'public.api_keys': {
     narrow: 'all',
     why: 'the keys and connectors areas (/api/keys, MCP connectors), connector-call refreshes an OAuth token, sandbox_publish (admin-area), and systemDb notes last use in a turn',
@@ -764,12 +767,6 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     update: ['last_used_at', 'status'],
     delete: true,
     why: 'measured (round 8): INSERT, UPDATE, DELETE by system:admin-area, system:http:admin-area. Round 12: a sandbox made (its maker, created_by) runs at the full-route spot sandbox-make: with INSERT and DELETE the narrow login could put a deleted sandbox back under another maker',
-  },
-  'public.secrets': {
-    insert: true,
-    update: ['ciphertext', 'key_version', 'updated_at'],
-    delete: false,
-    why: 'measured (round 8): INSERT, UPDATE by system:http:admin-area',
   },
   'public.skills': {
     update: ['updated_at'],
@@ -1501,7 +1498,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
 
   // ── Admin only: the private corpus, credentials, the owner's own memory ───
   none('public.api_keys'),
-  none('public.secrets'),
+  // Sealed values (0400): the two secret definers only; the narrow role
+  // holds no right on it (NARROW_CREDENTIAL_TABLES).
+  { ...none('public.secrets'), narrow: 'none' },
   none('public.pdf_passwords'),
   userOnly('public.emails', 'admin'),
   none('public.email_accounts'),
