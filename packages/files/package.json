@@ -59,7 +59,7 @@
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/tracing": "workspace:*",
-    "@napi-rs/canvas": "1.0.13",
+    "@napi-rs/canvas": "1.2.0",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "heic-convert": "^2.1.0",
@@ -68,12 +68,12 @@
     "mammoth": "^1.13.0",
     "mdb-reader": "3.2.2",
     "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "6.4.299",
+    "pdfjs-dist": "6.5.438",
     "saxes": "^6.0.0"
   },
   "devDependencies": {
     "@types/heic-convert": "^2.1.1",
-    "@types/node": "^26.6.6",
+    "@types/node": "^26.6.7",
     "typescript": "^5.9.3"
   }
 }

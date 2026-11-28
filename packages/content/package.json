@@ -81,13 +81,13 @@
     "jszip": "^3.10.2",
     "livekit-server-sdk": "2.20.1",
     "marked": "^18.1.2",
-    "mathjs": "15.2.0",
+    "mathjs": "15.3.0",
     "saxes": "6.0.0",
     "tz-lookup": "^6.1.25",
     "wawoff2": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6",
+    "@types/node": "^26.6.7",
     "typescript": "^5.9.3"
   }
 }
